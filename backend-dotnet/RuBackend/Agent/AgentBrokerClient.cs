@@ -11,6 +11,7 @@ namespace RuBackend.Agent;
 public sealed class AgentBrokerClient : IAgentBrokerClient
 {
     private const int MaxFrameBytes = 64 * 1024;
+    private const long MaximumDescriptorBytes = 1 * 1024 * 1024;
     private static readonly Regex ToolIdPattern = new("^[a-z][a-z0-9]*(?:\\.[a-z0-9][a-z0-9_-]*)+$", RegexOptions.Compiled);
     private static readonly Regex VersionPattern = new("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", RegexOptions.Compiled);
     private static readonly Regex ScopePattern = new("^[a-z][a-z0-9_.-]{0,63}$", RegexOptions.Compiled);
@@ -848,8 +849,14 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     private static BrokerSessionDescriptor LoadDescriptor(string path)
     {
         var fullPath = Path.GetFullPath(path);
+        var fileInfo = new FileInfo(fullPath);
+        if (!fileInfo.Exists || fileInfo.Length > MaximumDescriptorBytes)
+        {
+            throw new AgentBrokerException("invalid_descriptor");
+        }
+
         var descriptor = JsonSerializer.Deserialize<BrokerSessionDescriptor>(
-            File.ReadAllText(fullPath),
+            ReadBoundedText(fullPath, checked((int)MaximumDescriptorBytes)),
             BrokerSessionDescriptor.JsonOptions)
             ?? throw new AgentBrokerException("invalid_descriptor");
         if (!Uri.TryCreate(descriptor.BaseUrl, UriKind.Absolute, out var uri)
@@ -864,6 +871,22 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         }
 
         return descriptor;
+    }
+
+    private static string ReadBoundedText(string path, int maximumBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new AgentBrokerException("invalid_descriptor");
+            output.Write(buffer, 0, read);
+        }
+        using var text = new StreamReader(new MemoryStream(output.ToArray(), writable: false), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return text.ReadToEnd();
     }
 
     private static async Task SendAsync(

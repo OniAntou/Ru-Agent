@@ -211,4 +211,22 @@ public sealed class ChatMessageAttachmentTests
         filtered = models.FindAll(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase));
         Assert.Empty(filtered);
     }
+
+    [Fact]
+    public void ChatView_XAML_has_unified_send_and_stop_button_contract()
+    {
+        string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.Combine("Views", "ChatView.xaml");
+        }
+        if (File.Exists(xamlPath))
+        {
+            string xaml = File.ReadAllText(xamlPath);
+            Assert.Contains("x:Name=\"SendButton\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("x:Name=\"SendButtonIcon\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("Click=\"OnSendClick\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("AutomationProperties.AutomationId=\"AgentStopButton\"", xaml, StringComparison.Ordinal);
+        }
+    }
 }

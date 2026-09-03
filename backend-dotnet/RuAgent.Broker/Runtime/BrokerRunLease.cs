@@ -35,7 +35,8 @@ public sealed record BrokerRunLease(
         string snapshotHash,
         DateTimeOffset expiresAt,
         BrokerPolicySnapshotWire snapshotWire,
-        long bindingVersion = 1)
+        long bindingVersion = 1,
+        IReadOnlyList<string>? advertisedCapabilities = null)
     {
         if (string.IsNullOrWhiteSpace(runId) || runId.Length > 128)
         {
@@ -120,9 +121,9 @@ public sealed record BrokerRunLease(
             throw new AgentProtocolException("workspace_identity_mismatch");
         }
 
-        // Phase-2 advertises only the fallback read capabilities; terminal and remaining file
-        // tools arrive in later tasks.
-        var capabilities = BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
+        var capabilities = advertisedCapabilities is { Count: > 0 }
+            ? advertisedCapabilities
+            : BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
 
         return new BrokerRunLease(
             runId,

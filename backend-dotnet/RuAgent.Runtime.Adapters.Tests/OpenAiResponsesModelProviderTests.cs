@@ -30,8 +30,8 @@ public sealed class OpenAiResponsesModelProviderTests
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal("test-model", body["model"]!.GetValue<string>());
         Assert.Equal("system prompt", body["instructions"]!.GetValue<string>());
-        Assert.Equal(true, body["stream"]!.GetValue<bool>());
-        Assert.Equal(false, body["store"]!.GetValue<bool>());
+        Assert.True(body["stream"]!.GetValue<bool>());
+        Assert.False(body["store"]!.GetValue<bool>());
         Assert.NotNull(body["input"]);
     }
 

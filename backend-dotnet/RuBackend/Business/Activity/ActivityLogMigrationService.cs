@@ -3,6 +3,7 @@ namespace RuBackend.Business.Activity;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuBackend.Diagnostics;
 
 public sealed class ActivityLogMigrationService
 {
@@ -35,54 +36,71 @@ public sealed class ActivityLogMigrationService
 
         try
         {
-            var lines = await File.ReadAllLinesAsync(_logFile, cancellationToken).ConfigureAwait(false);
-            var sanitizedLines = new List<string>(lines.Length);
-
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    if (JsonNode.Parse(line) is JsonObject root)
-                    {
-                        var ts = root.TryGetPropertyValue("ts", out var tsv) && tsv is JsonValue tv && tv.TryGetValue<double>(out var t) ? t : 0;
-                        var iso = root.TryGetPropertyValue("iso", out var isov) && isov is JsonValue isv ? isv.GetValue<string>() : string.Empty;
-                        var type = root.TryGetPropertyValue("type", out var typev) && typev is JsonValue tyv ? tyv.GetValue<string>() : "chat";
-                        var eventId = root.TryGetPropertyValue("event_id", out var eidv) && eidv is JsonValue eiv ? eiv.GetValue<string>() : null;
-                        var sessionId = root.TryGetPropertyValue("session_id", out var sidv) && sidv is JsonValue sv ? sv.GetValue<string>() : null;
-                        var data = root.TryGetPropertyValue("data", out var datav) && datav is JsonObject d ? d : new JsonObject();
-
-                        var evt = new ActivityEvent(eventId, ts, iso, type, sessionId, data);
-                        var sanitized = ActivityPreview.SanitizeEvent(evt);
-                        sanitizedLines.Add(JsonSerializer.Serialize(sanitized, JsonOptions));
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Skip malformed line
-                }
-            }
-
-            var content = string.Join(Environment.NewLine, sanitizedLines) + (sanitizedLines.Count > 0 ? Environment.NewLine : string.Empty);
-            var bytes = Encoding.UTF8.GetBytes(content);
-
-            await using (var stream = new FileStream(
-                temporaryFile,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
+            await using (var sourceStream = new FileStream(
+                _logFile,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite,
                 4096,
                 useAsync: true))
+            using (var reader = new BoundedTextLineReader(new StreamReader(sourceStream, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true), 256_000))
             {
-                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await using (var targetStream = new FileStream(
+                    temporaryFile,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    4096,
+                    useAsync: true))
+                {
+                    await using (var writer = new StreamWriter(targetStream, new UTF8Encoding(false)))
+                    {
+                        while (true)
+                        {
+                            var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                            if (read.EndOfFile) break;
+                            if (read.TooLarge) continue;
+                            var line = read.Line!;
+                            if (string.IsNullOrWhiteSpace(line))
+                            {
+                                continue;
+                            }
+
+                            try
+                            {
+                                if (JsonNode.Parse(line) is JsonObject root)
+                                {
+                                    var ts = root.TryGetPropertyValue("ts", out var tsv) && tsv is JsonValue tv && tv.TryGetValue<double>(out var t) ? t : 0;
+                                    var iso = root.TryGetPropertyValue("iso", out var isov) && isov is JsonValue isv ? isv.GetValue<string>() : string.Empty;
+                                    var type = root.TryGetPropertyValue("type", out var typev) && typev is JsonValue tyv ? tyv.GetValue<string>() : "chat";
+                                    var eventId = root.TryGetPropertyValue("event_id", out var eidv) && eidv is JsonValue eiv ? eiv.GetValue<string>() : null;
+                                    var sessionId = root.TryGetPropertyValue("session_id", out var sidv) && sidv is JsonValue sv ? sv.GetValue<string>() : null;
+                                    var data = root.TryGetPropertyValue("data", out var datav) && datav is JsonObject d ? d : new JsonObject();
+
+                                    var evt = new ActivityEvent(eventId, ts, iso, type, sessionId, data);
+                                    var sanitized = ActivityPreview.SanitizeEvent(evt);
+                                    await writer.WriteLineAsync(JsonSerializer.Serialize(sanitized, JsonOptions))
+                                        .ConfigureAwait(false);
+                                }
+                            }
+                            catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException)
+                            {
+                                // Skip malformed line
+                            }
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+                        await targetStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                }
             }
 
             File.Move(temporaryFile, _logFile, overwrite: true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception)
         {

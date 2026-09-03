@@ -93,6 +93,28 @@ public sealed class ProviderCatalogTests : IDisposable
         Assert.Equal(2, _handler.Count);
     }
 
+    [Fact]
+    public async Task Refresh_for_one_scope_does_not_block_a_different_scope()
+    {
+        var service = Service();
+        var firstSettings = await SettingsAsync();
+        var secondSettings = firstSettings with
+        {
+            Backend = "Custom OpenAI",
+            CustomUrl = "https://custom.invalid/v1",
+        };
+        _handler.Hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = service.GetAsync(firstSettings, true, default);
+        await _handler.Started.Task;
+        var second = service.GetAsync(secondSettings, true, default);
+
+        await _handler.SecondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(2, _handler.Count);
+        _handler.Hold.SetResult();
+        await Task.WhenAll(first, second);
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"data\":null}")]
@@ -239,11 +261,13 @@ public sealed class ProviderCatalogTests : IDisposable
         public string? Authorization;
         public TaskCompletionSource? Hold;
         public TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Interlocked.Increment(ref Count);
+            var count = Interlocked.Increment(ref Count);
             Authorization = request.Headers.Authorization?.ToString();
             Started.TrySetResult();
+            if (count == 2) SecondStarted.TrySetResult();
             if (Hold is not null) await Hold.Task.WaitAsync(cancellationToken);
             var response = new HttpResponseMessage(Status) { Content = new StringContent(Json) };
             if (Status == HttpStatusCode.TooManyRequests) response.Headers.RetryAfter = new(TimeSpan.FromMinutes(2));

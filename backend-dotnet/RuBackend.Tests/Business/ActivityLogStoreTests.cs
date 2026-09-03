@@ -62,6 +62,26 @@ public sealed class ActivityLogStoreTests
     }
 
     [Fact]
+    public async Task Failed_append_does_not_poison_event_id_for_retry()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.ActivityLogFile)!);
+        Directory.CreateDirectory(paths.ActivityLogFile);
+        var activity = new ActivityEvent("evt_retry", 1, "iso", "chat", null, new JsonObject
+        {
+            ["content"] = "retry me",
+        });
+
+        await Assert.ThrowsAnyAsync<Exception>(() => store.AppendAsync(activity, CancellationToken.None));
+        Directory.Delete(paths.ActivityLogFile);
+
+        await store.AppendAsync(activity, CancellationToken.None);
+
+        var actual = Assert.Single(await store.ReadAsync(200, CancellationToken.None));
+        Assert.Equal("evt_retry", actual.EventId);
+    }
+
+    [Fact]
     public async Task Read_skips_malformed_lines_sorts_by_timestamp_and_clamps_limit()
     {
         var (store, paths) = CreateStore();
@@ -96,6 +116,19 @@ public sealed class ActivityLogStoreTests
         Assert.False(actual.Data.ContainsKey("content"));
         Assert.Equal("secret [REDACTED_TOKEN] and prompt", actual.Data["preview"]!.GetValue<string>());
         Assert.Equal(30, actual.Data["original_length"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task Read_skips_a_giant_legacy_line_and_continues_with_later_events()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.ActivityLogFile)!);
+        await File.WriteAllTextAsync(paths.ActivityLogFile,
+            new string('x', 512_000) +
+            "\n{\"event_id\":\"small\",\"ts\":2,\"iso\":\"two\",\"type\":\"chat\",\"data\":{\"preview\":\"ok\",\"original_length\":2,\"redacted\":false}}\n");
+
+        var actual = Assert.Single(await store.ReadAsync(200, CancellationToken.None));
+        Assert.Equal("small", actual.EventId);
     }
 
     [Fact]
@@ -148,6 +181,27 @@ public sealed class ActivityLogStoreTests
 
         Assert.False(File.Exists(paths.ActivityLogFile));
         Assert.Empty(await store.ReadAsync(200, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Failed_clear_preserves_duplicate_suppression_state()
+    {
+        var (store, paths) = CreateStore();
+        var activity = new ActivityEvent("evt_clear_retry", 1, "iso", "chat", null, new JsonObject
+        {
+            ["content"] = "keep",
+        });
+        await store.AppendAsync(activity, CancellationToken.None);
+
+        File.Delete(paths.ActivityLogFile);
+        Directory.CreateDirectory(paths.ActivityLogFile);
+        await Assert.ThrowsAnyAsync<Exception>(() => store.ClearAsync(CancellationToken.None));
+        Directory.Delete(paths.ActivityLogFile);
+        await File.WriteAllTextAsync(paths.ActivityLogFile, "existing\n");
+
+        await store.AppendAsync(activity, CancellationToken.None);
+
+        Assert.Equal("existing\n", await File.ReadAllTextAsync(paths.ActivityLogFile));
     }
 
     private static (ActivityLogStore Store, DataPaths Paths) CreateStore(TimeProvider? clock = null)

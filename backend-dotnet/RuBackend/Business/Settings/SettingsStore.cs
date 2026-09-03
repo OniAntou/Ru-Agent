@@ -12,6 +12,7 @@ public interface ISettingsStore
 
 public sealed class SettingsStore : ISettingsStore
 {
+    private const long MaximumSettingsFileBytes = 1 * 1024 * 1024;
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
     private const string BackendOllama = "Ollama";
@@ -136,9 +137,12 @@ public sealed class SettingsStore : ISettingsStore
         {
             try
             {
-                var json = await File.ReadAllTextAsync(_settingsFile, cancellationToken)
-                    .ConfigureAwait(false);
-                raw = JsonNode.Parse(json) as JsonObject ?? [];
+                if (new FileInfo(_settingsFile).Length <= MaximumSettingsFileBytes)
+                {
+                    var bytes = await ReadBoundedBytesAsync(_settingsFile, MaximumSettingsFileBytes, cancellationToken)
+                        .ConfigureAwait(false);
+                    raw = JsonNode.Parse(bytes) as JsonObject ?? [];
+                }
             }
             catch (JsonException)
             {
@@ -149,6 +153,10 @@ public sealed class SettingsStore : ISettingsStore
                 raw = [];
             }
             catch (UnauthorizedAccessException)
+            {
+                raw = [];
+            }
+            catch (InvalidDataException)
             {
                 raw = [];
             }
@@ -230,6 +238,11 @@ public sealed class SettingsStore : ISettingsStore
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(persisted, JsonOptions);
+            if (bytes.LongLength > MaximumSettingsFileBytes)
+            {
+                throw new InvalidDataException("settings_file_too_large");
+            }
+
             await using (var stream = new FileStream(
                 temporary,
                 FileMode.CreateNew,
@@ -300,6 +313,30 @@ public sealed class SettingsStore : ISettingsStore
         }
 
         return Math.Clamp(result, minimum, maximum);
+    }
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(
+        string path,
+        long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var output = new MemoryStream((int)Math.Min(maximumBytes, 81920));
+        var buffer = new byte[(int)Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("settings_file_too_large");
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+        return output.ToArray();
     }
 
     private static int ReadBoundedInt(

@@ -6,6 +6,7 @@ namespace RuBackend.Speech;
 public static class SttEndpoints
 {
     private const int MaxAudioBase64Characters = 7_500_000;
+    private const int MaxRequestBodyBytes = 8 * 1024 * 1024;
     private const int DefaultSampleRate = 16_000;
     private const int MinimumSampleRate = 8_000;
     private const int MaximumSampleRate = 192_000;
@@ -21,10 +22,46 @@ public static class SttEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        if (context.Request.ContentLength is > MaxRequestBodyBytes)
+        {
+            await WriteJsonAsync(
+                context,
+                StatusCodes.Status422UnprocessableEntity,
+                new { detail = "Invalid STT request." },
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         byte[] requestBody;
         await using (var body = new MemoryStream())
         {
-            await context.Request.Body.CopyToAsync(body, cancellationToken).ConfigureAwait(false);
+            var buffer = new byte[64 * 1024];
+            int read;
+            while ((read = await context.Request.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                var remaining = MaxRequestBodyBytes - body.Length;
+                if (remaining <= 0)
+                {
+                    await WriteJsonAsync(
+                        context,
+                        StatusCodes.Status422UnprocessableEntity,
+                        new { detail = "Invalid STT request." },
+                        cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                var count = (int)Math.Min(read, remaining);
+                await body.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+                if (count < read)
+                {
+                    await WriteJsonAsync(
+                        context,
+                        StatusCodes.Status422UnprocessableEntity,
+                        new { detail = "Invalid STT request." },
+                        cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+            }
             requestBody = body.ToArray();
         }
 

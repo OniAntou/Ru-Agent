@@ -1,3 +1,4 @@
+using RuBackend.Configuration;
 using RuBackend.Business.Settings;
 using RuBackend.Providers;
 
@@ -9,6 +10,7 @@ public static class StatusEndpoints
     {
         app.MapGet("/status", HandleAsync);
         app.MapGet("/models", ModelsAsync);
+        app.MapPost("/host/shutdown", ShutdownAsync);
     }
 
     private static async Task<IResult> ModelsAsync(HttpContext context, ISettingsStore settings,
@@ -38,6 +40,7 @@ public static class StatusEndpoints
         HttpContext context,
         IRuntimeWorkerClient workerClient,
         ILoggerFactory loggerFactory,
+        Microsoft.Extensions.Options.IOptions<BackendOptions> options,
         CancellationToken cancellationToken) =>
         RuntimeEndpointRelay.SendAsync(
             context,
@@ -45,5 +48,18 @@ public static class StatusEndpoints
             loggerFactory,
             "RuBackend.Status",
             "Runtime worker is not ready.",
+            options.Value.MaxRequestBodyBytes,
             cancellationToken);
+
+    private static IResult ShutdownAsync(IHostApplicationLifetime lifetime)
+    {
+        // Auth already enforced by DesktopTokenMiddleware.
+        // Trigger graceful shutdown after response is sent.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100).ConfigureAwait(false);
+            lifetime.StopApplication();
+        });
+        return Results.Json(new { status = "ok" });
+    }
 }

@@ -117,6 +117,20 @@ public sealed class GoogleSpeechRecognizerTests
     }
 
     [Fact]
+    public async Task Recognizer_rejects_an_unbounded_provider_transcript_before_split()
+    {
+        var recognizer = new GoogleSpeechRecognizer(
+            new FakeTransport { Transcript = new string('x', 64 * 1024 + 1) });
+
+        var error = await Assert.ThrowsAsync<SpeechProviderException>(() => recognizer.RecognizeAsync(
+            new SpeechRequest(ValidWav(16_000, 1, 16, new byte[] { 0, 0 }), 16_000, 1, "vi-VN"),
+            CancellationToken.None));
+
+        Assert.Equal("speech_response_too_large", error.Code);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
     public async Task Recognizer_applies_fifteen_second_timeout_and_cancellation()
     {
         using var cancellation = new CancellationTokenSource();

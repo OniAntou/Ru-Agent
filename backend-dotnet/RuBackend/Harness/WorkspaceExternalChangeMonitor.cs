@@ -13,16 +13,18 @@ public sealed record WorkspaceExternalChangeEvent(
 
 public sealed class WorkspaceExternalChangeMonitor
 {
+    private const int MaxExpectedContentBytes = 16 * 1024 * 1024;
     private readonly ConcurrentDictionary<string, string> _expectedHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte[]> _expectedContents = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _lastObservedHashes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, Timer> _debounceTimers = new(StringComparer.OrdinalIgnoreCase);
 
     public void RegisterExpectedHash(string path, string sha256)
     {
         var normalized = NormalizeRelativePath(path);
         _ = WorkspaceExternalChangeDetector.Detect(normalized, sha256, sha256);
         _expectedHashes[normalized] = sha256;
+        _expectedContents.TryRemove(normalized, out _);
+        _lastObservedHashes.TryRemove(normalized, out _);
     }
 
     public void RegisterExpectedHash(string workspaceRoot, string path, string sha256)
@@ -30,7 +32,10 @@ public sealed class WorkspaceExternalChangeMonitor
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         var normalized = NormalizeRelativePath(path);
         _ = WorkspaceExternalChangeDetector.Detect(normalized, sha256, sha256);
-        _expectedHashes[ExpectedKey(workspaceRoot, normalized)] = sha256;
+        var key = ExpectedKey(workspaceRoot, normalized);
+        _expectedHashes[key] = sha256;
+        _expectedContents.TryRemove(key, out _);
+        _lastObservedHashes.TryRemove(key, out _);
     }
 
     public bool TryGetExpectedContent(string workspaceRoot, string path, out byte[]? content)
@@ -54,10 +59,18 @@ public sealed class WorkspaceExternalChangeMonitor
             throw new ArgumentOutOfRangeException(nameof(maxFiles));
         }
 
+        ClearExpectedHashes(workspaceRoot);
         var captured = 0;
         try
         {
-            foreach (var path in Directory.EnumerateFiles(workspaceRoot, "*", SearchOption.AllDirectories))
+            var enumerationOptions = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                ReturnSpecialDirectories = false,
+                AttributesToSkip = FileAttributes.ReparsePoint,
+            };
+            foreach (var path in Directory.EnumerateFiles(workspaceRoot, "*", enumerationOptions))
             {
                 if (captured >= maxFiles)
                 {
@@ -68,12 +81,17 @@ public sealed class WorkspaceExternalChangeMonitor
                 {
                     var relative = Path.GetRelativePath(workspaceRoot, path);
                     var normalized = NormalizeRelativePath(relative);
-                    var bytes = File.ReadAllBytes(path);
-                    var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-                    _expectedHashes[ExpectedKey(workspaceRoot, normalized)] = hash;
-                    if (bytes.Length <= 16 * 1024 * 1024)
+                    var snapshot = ComputeHashAndOptionalContent(path);
+                    var key = ExpectedKey(workspaceRoot, normalized);
+                    _expectedHashes[key] = snapshot.Hash;
+                    _lastObservedHashes.TryRemove(key, out _);
+                    if (snapshot.Content is not null)
                     {
-                        _expectedContents[ExpectedKey(workspaceRoot, normalized)] = bytes;
+                        _expectedContents[key] = snapshot.Content;
+                    }
+                    else
+                    {
+                        _expectedContents.TryRemove(key, out _);
                     }
                     captured++;
                 }
@@ -93,6 +111,31 @@ public sealed class WorkspaceExternalChangeMonitor
         }
 
         return captured;
+    }
+
+    public int ClearExpectedHashes(string workspaceRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        var prefix = Path.GetFullPath(workspaceRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + "|";
+        var removed = 0;
+        foreach (var pair in _expectedHashes.Keys.ToArray())
+        {
+            if (!pair.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (_expectedHashes.TryRemove(pair, out _))
+            {
+                removed++;
+            }
+            _expectedContents.TryRemove(pair, out _);
+            _lastObservedHashes.TryRemove(pair, out _);
+        }
+
+        return removed;
     }
 
     public WorkspaceExternalChangeEvent? Observe(
@@ -154,74 +197,136 @@ public sealed class WorkspaceExternalChangeMonitor
         {
             IncludeSubdirectories = true,
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
-            EnableRaisingEvents = true,
         };
-        FileSystemEventHandler handler = (_, args) => QueueObservation(root, args.FullPath, onChange, delay);
-        RenamedEventHandler renamed = (_, args) => QueueObservation(root, args.FullPath, onChange, delay);
+        var registrationCts = new CancellationTokenSource();
+        var debounceTimers = new ConcurrentDictionary<string, Timer>(StringComparer.OrdinalIgnoreCase);
+        var rescanGate = new SemaphoreSlim(1, 1);
+        FileSystemEventHandler handler = (_, args) => QueueObservation(root, args.FullPath, onChange, delay, debounceTimers, registrationCts.Token);
+        RenamedEventHandler renamed = (_, args) => QueueObservation(root, args.FullPath, onChange, delay, debounceTimers, registrationCts.Token);
+        ErrorEventHandler error = (_, _) => _ = RescanExpectedFilesAsync(
+            root,
+            onChange,
+            rescanGate,
+            registrationCts.Token);
         watcher.Changed += handler;
         watcher.Created += handler;
         watcher.Deleted += handler;
         watcher.Renamed += renamed;
-        return new WatchRegistration(watcher, handler, renamed, _debounceTimers);
+        watcher.Error += error;
+        watcher.EnableRaisingEvents = true;
+        return new WatchRegistration(watcher, handler, renamed, error, debounceTimers, registrationCts, rescanGate);
     }
 
     private void QueueObservation(
         string root,
         string fullPath,
         Func<WorkspaceExternalChangeEvent, Task> onChange,
-        TimeSpan delay)
+        TimeSpan delay,
+        ConcurrentDictionary<string, Timer> debounceTimers,
+        CancellationToken registrationCancellation)
     {
-        var normalized = NormalizeRelativePath(Path.GetRelativePath(root, fullPath));
-        if (!_expectedHashes.TryGetValue(ExpectedKey(root, normalized), out var expected)
-            && !_expectedHashes.TryGetValue(normalized, out expected))
+        if (registrationCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+        string normalized;
+        try
+        {
+            normalized = NormalizeRelativePath(Path.GetRelativePath(root, fullPath));
+        }
+        catch (ArgumentException)
+        {
+            // FileSystemWatcher can surface paths through a junction/reparse
+            // boundary that are no longer under the watched root. Ignore them
+            // without allowing an event-thread exception to escape.
+            return;
+        }
+        if (!_expectedHashes.ContainsKey(ExpectedKey(root, normalized))
+            && !_expectedHashes.ContainsKey(normalized))
         {
             return;
         }
 
-        var timer = new Timer(
+        Timer? timer = null;
+        timer = new Timer(
             _ =>
             {
                 try
                 {
+                    if (registrationCancellation.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    // A baseline may be updated while the debounce timer is
+                    // pending. Read it at observation time so an already
+                    // acknowledged write is not reported as an external change.
+                    if (!_expectedHashes.TryGetValue(ExpectedKey(root, normalized), out var expected)
+                        && !_expectedHashes.TryGetValue(normalized, out expected))
+                    {
+                        return;
+                    }
+
                     var observed = File.Exists(fullPath)
-                        ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(fullPath))).ToLowerInvariant()
+                        ? ComputeHashAndOptionalContent(fullPath).Hash
                         : new string('0', 64);
                     var change = Observe(normalized, expected, observed);
                     if (change is not null)
                     {
                         var key = ExpectedKey(root, normalized);
-                        if (_lastObservedHashes.TryGetValue(key, out var previous)
-                            && string.Equals(previous, observed, StringComparison.OrdinalIgnoreCase))
+                        if (!TryMarkObserved(key, observed))
                         {
                             return;
                         }
 
-                        _lastObservedHashes[key] = observed;
-
-                        _ = DispatchAsync(onChange, change);
+                        _ = DispatchAsync(onChange, change, registrationCancellation);
                     }
                 }
                 catch (IOException)
                 {
                     // The authoritative pre/post hash pass retries on the next event.
                 }
+                catch (UnauthorizedAccessException)
+                {
+                    // The file may have become inaccessible between the watcher
+                    // notification and the hash pass; retry on a later event.
+                }
+                finally
+                {
+                    if (timer is not null
+                        && debounceTimers.TryGetValue(normalized, out var current)
+                        && ReferenceEquals(current, timer))
+                    {
+                        ((ICollection<KeyValuePair<string, Timer>>)debounceTimers)
+                            .Remove(new KeyValuePair<string, Timer>(normalized, timer));
+                    }
+
+                    timer?.Dispose();
+                }
             },
             null,
-            delay,
+            Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan);
-        _debounceTimers.AddOrUpdate(normalized, timer, (_, previous) =>
+        var scheduledTimer = timer!;
+        debounceTimers.AddOrUpdate(normalized, scheduledTimer, (_, previous) =>
         {
             previous.Dispose();
-            return timer;
+            return scheduledTimer;
         });
+        scheduledTimer.Change(delay, Timeout.InfiniteTimeSpan);
     }
 
     private static async Task DispatchAsync(
         Func<WorkspaceExternalChangeEvent, Task> onChange,
-        WorkspaceExternalChangeEvent change)
+        WorkspaceExternalChangeEvent change,
+        CancellationToken cancellationToken)
     {
         try
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
             await onChange(change).ConfigureAwait(false);
         }
         catch
@@ -231,14 +336,149 @@ public sealed class WorkspaceExternalChangeMonitor
         }
     }
 
+    private async Task RescanExpectedFilesAsync(
+        string workspaceRoot,
+        Func<WorkspaceExternalChangeEvent, Task> onChange,
+        SemaphoreSlim rescanGate,
+        CancellationToken cancellationToken)
+    {
+        var acquired = false;
+        try
+        {
+            await rescanGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
+            var root = Path.GetFullPath(workspaceRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var prefix = root + "|";
+            foreach (var pair in _expectedHashes.ToArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!pair.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var normalized = pair.Key[prefix.Length..];
+                string fullPath;
+                try
+                {
+                    fullPath = Path.Combine(root, normalized.Replace('/', Path.DirectorySeparatorChar));
+                    var observed = File.Exists(fullPath)
+                        ? ComputeHashAndOptionalContent(fullPath).Hash
+                        : new string('0', 64);
+                    var change = Observe(normalized, pair.Value, observed);
+                    if (change is not null && TryMarkObserved(pair.Key, observed))
+                    {
+                        await DispatchAsync(onChange, change, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // Ignore a corrupt key or path that no longer resolves under
+                    // the watched root.
+                }
+                catch (IOException)
+                {
+                    // A concurrent writer may make the file unreadable; the next
+                    // watcher error or normal event will retry the observation.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Same retry semantics for ACL transitions.
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            if (acquired)
+            {
+                try { rescanGate.Release(); } catch (ObjectDisposedException) { }
+            }
+        }
+    }
+
+    private static (string Hash, byte[]? Content) ComputeHashAndOptionalContent(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 64 * 1024,
+            options: FileOptions.SequentialScan);
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var content = new MemoryStream();
+        var buffer = new byte[64 * 1024];
+        long totalBytes = 0;
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            hasher.AppendData(buffer, 0, read);
+            if (totalBytes < MaxExpectedContentBytes)
+            {
+                var captureLength = (int)Math.Min(read, MaxExpectedContentBytes - totalBytes);
+                content.Write(buffer, 0, captureLength);
+            }
+
+            totalBytes += read;
+        }
+
+        var hash = Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant();
+        return (hash, totalBytes <= MaxExpectedContentBytes ? content.ToArray() : null);
+    }
+
+    private bool TryMarkObserved(string key, string observed)
+    {
+        while (true)
+        {
+            if (_lastObservedHashes.TryGetValue(key, out var previous))
+            {
+                if (string.Equals(previous, observed, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                if (_lastObservedHashes.TryUpdate(key, observed, previous))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (_lastObservedHashes.TryAdd(key, observed))
+            {
+                return true;
+            }
+        }
+    }
+
     private static string NormalizeRelativePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path) || path == ".." || path.StartsWith("..\\", StringComparison.Ordinal) || path.StartsWith("../", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path))
         {
             throw new ArgumentException("Path must be workspace-relative.", nameof(path));
         }
 
-        return path.Replace('\\', '/');
+        var segments = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(segment => segment is "." or ".."))
+        {
+            throw new ArgumentException("Path must not contain traversal segments.", nameof(path));
+        }
+
+        var normalized = string.Join('/', segments);
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException("Path must be workspace-relative.", nameof(path));
+        }
+
+        return normalized;
     }
 
     private static string ExpectedKey(string workspaceRoot, string normalizedPath) =>
@@ -249,33 +489,52 @@ public sealed class WorkspaceExternalChangeMonitor
         private readonly FileSystemWatcher _watcher;
         private readonly FileSystemEventHandler _handler;
         private readonly RenamedEventHandler _renamed;
+        private readonly ErrorEventHandler _error;
         private readonly ConcurrentDictionary<string, Timer> _timers;
+        private readonly CancellationTokenSource _cancellation;
+        private readonly SemaphoreSlim _rescanGate;
+        private int _disposed;
 
         public WatchRegistration(
             FileSystemWatcher watcher,
             FileSystemEventHandler handler,
             RenamedEventHandler renamed,
-            ConcurrentDictionary<string, Timer> timers)
+            ErrorEventHandler error,
+            ConcurrentDictionary<string, Timer> timers,
+            CancellationTokenSource cancellation,
+            SemaphoreSlim rescanGate)
         {
             _watcher = watcher;
             _handler = handler;
             _renamed = renamed;
+            _error = error;
             _timers = timers;
+            _cancellation = cancellation;
+            _rescanGate = rescanGate;
         }
 
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _cancellation.Cancel();
             _watcher.EnableRaisingEvents = false;
             _watcher.Changed -= _handler;
             _watcher.Created -= _handler;
             _watcher.Deleted -= _handler;
             _watcher.Renamed -= _renamed;
+            _watcher.Error -= _error;
             _watcher.Dispose();
             foreach (var pair in _timers)
             {
                 pair.Value.Dispose();
                 _timers.TryRemove(pair.Key, out _);
             }
+            _rescanGate.Dispose();
+            _cancellation.Dispose();
         }
     }
 }

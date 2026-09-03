@@ -37,7 +37,7 @@ public sealed class AgentRunSummaryItem
         : IsCancelled
             ? "\uE711"
             : IsFailure
-                ? "\uE74D"
+                ? "\uEA39"
                 : "\uE895";
 
     public string DisplayText => IsVerifiedSuccess

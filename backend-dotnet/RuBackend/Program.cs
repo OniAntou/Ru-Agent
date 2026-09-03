@@ -34,11 +34,13 @@ var isManagedRuntime = args.Contains("--managed-runtime", StringComparer.Ordinal
 RuAgent.Hosting.PublicHostSingleInstance? managedSingleInstance = null;
 RuAgent.Hosting.WorkerBrokerProcessManager? managedWorkerBrokerManager = null;
 RuAgent.Hosting.RuntimeDescriptorWriter? managedDescriptorWriter = null;
-RuAgent.Hosting.RuntimeClientLeaseRegistry? managedLeaseRegistry = null;
 var managedAgentWorkerToken = string.Empty;
 var managedDeviceWorkerToken = string.Empty;
 var managedAgentWorkerPort = PublicHostRuntimeOptions.DefaultWorkerPort;
 var managedDeviceWorkerPort = PublicHostRuntimeOptions.DefaultDeviceWorkerPort;
+// Web tool configuration is defined once and shared: the Host executor uses
+// it directly, the Broker process receives it through the environment.
+const string BrokerWebSearchEndpoint = "https://html.duckduckgo.com/html/";
 
 var builder = WebApplication.CreateBuilder(args);
 var migrationMode = ParseRuntimeMigrationMode(
@@ -131,6 +133,12 @@ if (isManagedRuntime)
         .GetAwaiter()
         .GetResult();
 
+    // Web tool configuration is forwarded to the Broker process (the execution
+    // authority) through the environment before the children start.
+    Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED", "true");
+    Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", BrokerWebSearchEndpoint);
+    Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "false");
+
     // Start Worker and Broker in one Job
     managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
     var startup = new WorkerBrokerStartupOptions(
@@ -186,11 +194,6 @@ if (isManagedRuntime)
         RuAgent.Hosting.PublicHostRuntimeOptions.GenerateNonce(),
         DateTimeOffset.UtcNow.ToString("O"));
     managedDescriptorWriter.WriteAsync(descriptor).GetAwaiter().GetResult();
-
-    // Lease registry and idle monitor
-    managedLeaseRegistry = new RuAgent.Hosting.RuntimeClientLeaseRegistry();
-    // Idle monitor will be created after DataPaths etc but we can create here with lease registry; need hasActiveRun/hasApproval hooks
-    // We'll create idle monitor as singleton later with proper hooks; for now keep registry singleton
 }
 
 builder.Services.Configure<BackendOptions>(options =>
@@ -241,10 +244,9 @@ builder.Services.AddSingleton<AgentWebToolExecutor>(services =>
     new AgentWebToolExecutor(
         new WebOptions(
             enabled: true,
-            searchEndpoint: new Uri("https://html.duckduckgo.com/html/"),
+            searchEndpoint: new Uri(BrokerWebSearchEndpoint),
             requireApproval: false),
-        services.GetRequiredService<HttpClient>()));
-builder.Services.AddSingleton<AgentReplyPolicy>();
+        services.GetRequiredService<HttpClient>()));builder.Services.AddSingleton<AgentReplyPolicy>();
 builder.Services.AddSingleton<IAgentReplyPolicy>(services =>
     services.GetRequiredService<AgentReplyPolicy>());
 builder.Services.AddSingleton<AgentReplyEffectSink>();
@@ -332,6 +334,8 @@ builder.Services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistr
 builder.Services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
 builder.Services.AddSingleton<RuBackend.Harness.Reconciliation.IAgentApprovalGrants, RuBackend.Harness.Reconciliation.InMemoryAgentApprovalGrants>();
 builder.Services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
+builder.Services.AddSingleton(_ =>
+    new RuBackend.Harness.Broker.BrokerToolGatewayFactory(brokerDescriptor));
 builder.Services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
     Path.Combine(
         Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,
@@ -373,24 +377,9 @@ builder.Services.AddSingleton(services => new AgentProviderSnapshotFactory(
         return run is null || run.TerminalAt.HasValue;
     }));
 builder.Services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
-// Lease registry and idle monitor singletons (managed or not)
-if (managedLeaseRegistry is not null)
+if (isManagedRuntime)
 {
-    builder.Services.AddSingleton(managedLeaseRegistry);
-    // Create idle monitor that checks active runs/approvals via store? For now simple suppressed check via lease and stub active checks
-    // We'll provide a monitor that defaults to 10 min and suppressed while lease exists
-    builder.Services.AddSingleton<RuntimeIdleMonitor>(services =>
-    {
-        var registry = services.GetRequiredService<RuntimeClientLeaseRegistry>();
-        return new RuntimeIdleMonitor(registry);
-    });
-    builder.Services.AddHostedService<RuntimeIdleHostedService>();
-}
-else
-{
-    var fallbackRegistry = new RuntimeClientLeaseRegistry();
-    builder.Services.AddSingleton(fallbackRegistry);
-    builder.Services.AddSingleton<RuntimeIdleMonitor>(services => new RuntimeIdleMonitor(services.GetRequiredService<RuntimeClientLeaseRegistry>()));
+    builder.Services.AddHostedService<RuAgent.Hosting.ParentProcessWatcher>();
 }
 builder.Services.AddSingleton<HarnessStoreHealth>(services =>
 {
@@ -433,6 +422,7 @@ var app = builder.Build();
 if (isManagedRuntime)
 {
     var lifetime = app.Lifetime;
+    managedWorkerBrokerManager!.Exited += (_, _) => lifetime.StopApplication();
     lifetime.ApplicationStopping.Register(() =>
     {
         try { managedDescriptorWriter?.Cleanup(); } catch { }
@@ -641,29 +631,6 @@ internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Pri
         var copy = new byte[32];
         Buffer.BlockCopy(_key, 0, copy, 0, 32);
         return ValueTask.FromResult(copy);
-    }
-}
-
-internal sealed class RuntimeIdleHostedService : BackgroundService
-{
-    private readonly RuntimeIdleMonitor _monitor;
-    private readonly IHostApplicationLifetime _lifetime;
-    public RuntimeIdleHostedService(RuntimeIdleMonitor monitor, IHostApplicationLifetime lifetime)
-    {
-        _monitor = monitor;
-        _lifetime = lifetime;
-    }
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
-            if (_monitor.ShouldShutdown())
-            {
-                _lifetime.StopApplication();
-                break;
-            }
-        }
     }
 }
 

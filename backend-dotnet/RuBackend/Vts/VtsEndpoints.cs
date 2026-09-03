@@ -1,3 +1,4 @@
+using RuBackend.Configuration;
 using RuBackend.Runtime;
 
 namespace RuBackend.Vts;
@@ -31,13 +32,20 @@ public static class VtsEndpoints
         HttpContext context,
         IRuntimeWorkerClient workerClient,
         ILoggerFactory loggerFactory,
+        Microsoft.Extensions.Options.IOptions<BackendOptions> options,
         CancellationToken cancellationToken)
     {
-        byte[] requestBody;
-        await using (var body = new MemoryStream())
+        var requestBody = await RuntimeEndpointRelay.ReadBoundedBodyAsync(
+            context.Request,
+            options.Value.MaxRequestBodyBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (requestBody is null)
         {
-            await context.Request.Body.CopyToAsync(body, cancellationToken).ConfigureAwait(false);
-            requestBody = body.ToArray();
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await context.Response.WriteAsJsonAsync(
+                new { detail = "Request body too large" },
+                cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         try

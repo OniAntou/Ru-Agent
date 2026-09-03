@@ -191,6 +191,24 @@ public sealed class RunGitStateStoreTests
         }
     }
 
+    [Fact]
+    public async Task Attributed_paths_reject_unbounded_input_before_persistence()
+    {
+        var dbPath = NewDbPath();
+        try
+        {
+            using var store = new SqliteRunGitStateStore(dbPath);
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                store.SetAttributedPathsAsync(
+                    RunId,
+                    Enumerable.Repeat("src/file.txt", SqliteRunGitStateStore.MaxStoredEntries + 1).ToArray()));
+        }
+        finally
+        {
+            TryDelete(dbPath);
+        }
+    }
+
     private static string NewDbPath() =>
         Path.Combine(Path.GetTempPath(), "ru-git-state-" + Guid.NewGuid().ToString("N") + ".db");
 

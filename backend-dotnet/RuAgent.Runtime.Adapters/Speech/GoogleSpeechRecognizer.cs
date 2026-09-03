@@ -31,6 +31,7 @@ public sealed record GoogleSpeechRecognizerOptions
 
 public sealed class GoogleSpeechRecognizer : ISpeechRecognizer
 {
+    private const int MaximumTranscriptCharacters = 64 * 1024;
     private readonly IGoogleSpeechTransport _transport;
     private readonly GoogleSpeechRecognizerOptions _options;
 
@@ -101,6 +102,11 @@ public sealed class GoogleSpeechRecognizer : ISpeechRecognizer
         if (string.IsNullOrWhiteSpace(transcript))
         {
             throw new SpeechProviderException("speech_no_match", retryable: false);
+        }
+
+        if (transcript.Length > MaximumTranscriptCharacters)
+        {
+            throw new SpeechProviderException("speech_response_too_large", retryable: false);
         }
 
         var normalized = string.Join(

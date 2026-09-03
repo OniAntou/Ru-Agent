@@ -46,6 +46,23 @@ public sealed class SttEndpointTests
         Assert.Empty(worker.Requests);
     }
 
+    [Fact]
+    public async Task AspNet_mode_rejects_oversized_body_before_buffering_it()
+    {
+        var worker = WorkerReturning("{\"status\":\"ok\",\"text\":\"unexpected\"}");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var content = new ByteArrayContent(new byte[8 * 1024 * 1024 + 1]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var response = await client.PostAsync("/voice/transcribe", content);
+
+        Assert.Contains(
+            response.StatusCode,
+            new[] { HttpStatusCode.RequestEntityTooLarge, HttpStatusCode.UnprocessableEntity });
+        Assert.Empty(worker.Requests);
+    }
+
     [Theory]
     [InlineData(7999)]
     [InlineData(192001)]

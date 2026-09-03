@@ -154,12 +154,12 @@ public static class WorkspaceMergeEngine
     {
         if (HasPrefix(bytes, 0xFF, 0xFE))
         {
-            return Encoding.Unicode.GetString(bytes[2..]);
+            return "\uFEFF" + Encoding.Unicode.GetString(bytes[2..]);
         }
 
         if (HasPrefix(bytes, 0xFE, 0xFF))
         {
-            return Encoding.BigEndianUnicode.GetString(bytes[2..]);
+            return "\uFEFF" + Encoding.BigEndianUnicode.GetString(bytes[2..]);
         }
 
         return StrictUtf8.GetString(bytes);

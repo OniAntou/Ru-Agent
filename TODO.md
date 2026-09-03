@@ -1,6 +1,55 @@
 # Ru Roadmap
 
-Last reviewed: 2026-09-01.
+Last reviewed: 2026-09-02.
+
+## Completed hardening (2026-09-02)
+
+- [x] Closed workspace watcher stale-dedup and bounded snapshot edge cases;
+  each run now resets the workspace baseline, baseline updates reset observation
+  state per workspace/path, and debounce callbacks re-read the latest baseline
+  before emitting. Escaping/reparse watcher events are ignored safely instead
+  of escaping from event callbacks; watcher buffer errors trigger a bounded
+  baseline rescan.
+- [x] Made activity-log append/clear failure semantics retry-safe and changed
+  read, trim, and migration paths to bounded streaming processing; malformed
+  migration rows no longer abort the whole migration.
+- [x] Bounded activity-preview sanitization input and output lengths (including
+  tiny caller limits) before privacy regex processing, while preserving the
+  capped original-length field.
+- [x] Added fail-closed size caps for legacy memory/history files and broker
+  session descriptors, harness/runtime descriptors, and policy files, and made
+  malformed activity-outbox rows independently skippable.
+- [x] Added bounded SQLite BLOB reads for workspace roots, policy records, and
+  model-context payloads; restore now computes current-file hashes by streaming
+  instead of allocating the whole workspace file.
+- [x] Added bounded reads for session/settings JSON and the VTube Studio token
+  file so oversized local state cannot trigger unbounded parsing allocations.
+- [x] Closed the metadata-check race for legacy memory/history, session, and
+  settings readers, and capped the history migration manifest.
+- [x] Bounded STT request-body buffering for both content-length and chunked
+  uploads before forwarding audio to the runtime worker.
+- [x] Applied the configured request-body cap inside runtime/VTS relays too,
+  covering unexpected bodies on GET routes before worker dispatch.
+- [x] Hardened policy and workspace-root key handling so missing/invalid key
+  material returns a fail-closed store error instead of a null dereference.
+- [x] Added bounded, structurally validated Windows Credential Manager blobs
+  and rejected oversized secrets before native writes.
+- [x] Made declarative skill package reads streaming and bounded after the
+  initial file-size check, preventing a concurrent file growth from bypassing
+  package limits.
+- [x] Bounded GUI attachment and theme-preference reads; clipboard image
+  preview/upload streams are independent, and oversized growing text files are
+  rejected instead of silently queued with missing content.
+- [x] Reclaimed one-shot workspace watcher debounce timers after callbacks so
+  long-lived registrations do not retain every changed path.
+- [x] Fixed `files.read` truncated-window arithmetic to avoid `Int32` overflow
+  for offsets near the 2-GiB boundary.
+- [x] Added reparse-point boundary checks around workspace-change restore
+  hashing and replacement to fail closed on junction/symlink redirection.
+- [x] Bounded durable run-Git attributed paths on write and rehydration,
+  including count, path length, and serialized-column limits.
+- [x] Disposed client/CLI JSON documents at their ownership boundary and
+  removed a Windows diagnostic-test file-sharing race.
 
 ## Active Architecture: Cloud-First & External OpenAI-Compatible Providers
 
@@ -76,9 +125,55 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
 
 ## Pending product work
 
-- [x] Implement the grouped provider model picker per [the design](docs/superpowers/specs/2026-09-01-grouped-provider-model-picker-design.md) and [the plan](docs/superpowers/plans/2026-09-01-grouped-provider-model-picker.md): Chat shows all usable provider catalogs in stable groups with global provider/model search; one selection saves a strict two-field payload (`backend_choice` + `selected_model`) through the existing atomic `POST /settings` transaction (the Host expands `selected_model` onto the mapped provider model field); `GroupedProviderCatalogController` composes seven per-provider controllers with isolated failures, stale same-identity labeling, coalesced refreshes and late-result rejection; `ProviderModelPicker` renders grouped rows with deterministic automation names. The Host serves `GET /models` for every provider whose credential is configured, active or not, so the dropdown shows exactly the providers the user has keys for; unknown aliases fail closed as `provider_not_active` and no provider/model/key/protocol fallback exists. Deterministic backend/GUI gates (backend 706, GUI 354, Python 409), the unchanged 56+1 route contract, the WinUI Release build, and a non-secret live-API spot check passed; live GUI acceptance remains separate.
+- [ ] Implement a real end-to-end multimodal image attachment path (Agent
+  request validation, run persistence, provider projection, and backend size
+  negotiation). Until then the GUI rejects image sends explicitly instead of
+  silently dropping them.
+- [x] Make oversized Agent payload responses fail explicitly instead of
+  silently truncating client-visible JSON/base64 content.
+- [x] Make `files.read` account for concurrent file growth and avoid reporting
+  a complete snapshot from stale `FileInfo.Length` metadata.
+- [x] Repeat the STT body cap inside the private speech runtime handler so a
+  direct worker invocation cannot force an unbounded JSON parse.
+- [x] Apply the same direct-invocation body boundary to VTube Studio and
+  observation-control handlers before parsing their JSON payloads.
+- [x] Bound Google speech transcripts before normalization so an oversized
+  provider response cannot create an unbounded split/allocation.
+- [x] Bound session message content and persisted titles before history
+  projection/UI display; oversized legacy fields now fail closed or use the
+  default title.
+- [x] Preflight aggregate session content before JSON serialization so an
+  oversized append cannot allocate a document that the 16 MiB file cap rejects.
+- [x] Enforce the settings JSON file cap on writes as well as reads, including
+  unknown future properties preserved through the settings round-trip.
+- [x] Route OpenAI-compatible SSE responses through the bounded line/event
+  reader so a single giant provider line cannot cause an unbounded allocation.
+- [x] Serialize OmniVoice process-handle state with a dedicated lock so status
+  checks cannot race disposal and late starts cannot resurrect a disposed host.
+- [x] Drain OmniVoice child stdout/stderr in fixed-size chunks so one giant log
+  line cannot create an unbounded throwaway allocation.
+- [x] Bound all Agent REST client response bodies before JSON parsing, including
+  chunked responses with no trustworthy Content-Length header.
+- [x] Reuse the same bounded response reader for session creation and SSE error
+  responses so all Agent client adapters enforce the same 8 MiB limit.
+- [x] Replace Agent SSE's unbounded line reader with a bounded byte reader so
+  one giant event-stream line cannot force a large allocation, while preserving
+  BOM and CR/LF compatibility.
+- [x] Enforce the SessionApiClient's documented ASCII session-ID alphabet;
+  Unicode letters are rejected before any URL/lookup use.
+- [x] Isolate provider catalog refresh single-flight gates per provider scope;
+  global cache state is no longer held across HTTP, and canceled refreshes
+  restore retry state before propagating cancellation. Different provider
+  endpoints can refresh concurrently without cross-scope blocking.
+- [x] Bound diagnostic and activity JSONL line reads so oversized legacy or
+  hostile records are discarded without `ReadLineAsync` allocating the full
+  line; valid records after an oversized line remain readable.
+- [x] Bound Gemini Vision image requests and response bodies before decoding or
+  JSON parsing, including responses without a usable `Content-Length`.
+
+- [x] Implement the grouped provider model picker per [the design](docs/superpowers/specs/2026-09-01-grouped-provider-model-picker-design.md) and [the plan](docs/superpowers/plans/2026-09-01-grouped-provider-model-picker.md): Chat shows all usable provider catalogs in stable groups with global provider/model search; one selection saves a strict two-field payload (`backend_choice` + `selected_model`) through the existing atomic `POST /settings` transaction (the Host expands `selected_model` onto the mapped provider model field); `GroupedProviderCatalogController` composes seven per-provider controllers with isolated failures, stale same-identity labeling, coalesced refreshes and late-result rejection; `ProviderModelPicker` renders grouped rows with deterministic automation names. The Host serves `GET /models` for every provider whose credential is configured, active or not, so the dropdown shows exactly the providers the user has keys for; unknown aliases fail closed as `provider_not_active` and no provider/model/key/protocol fallback exists. Deterministic backend/GUI gates (backend 706, GUI 354, Python 409) passed against the then-current 56+1 route contract; the WinUI Release build and a non-secret live-API spot check passed; live GUI acceptance remains separate.
 - [x] Implement provider model-catalog auto-refresh (on demand plus five-minute active-Chat polling) and model-aware reasoning-effort selection per [the combined design](docs/superpowers/specs/2026-09-01-provider-catalog-refresh-design.md) and [the provider catalog plan](docs/superpowers/plans/2026-09-01-provider-catalog-refresh.md). Host owns discovery/cache (`ProviderCatalogService`, `ProviderCatalogParser`) with 5-min cache, 30-s throttle, single-flight, credential-revision identity, and bounded HTTP semantics; `GET /models` returns the typed additive snapshot (`catalog`, `stale`, `error_code`, `last_success_utc`) without credentials. GUI polls only while Chat is active and throttles manual refresh; Worker transport pins model/endpoint/key/reasoning per run through a protected DPAPI handoff. Deterministic gates and the visible Kilo catalog startup smoke passed; commit/publish, live generation and manual control acceptance remain separate; see [verification](docs/operations/verification.md).
-- [x] Implement native OpenAI Responses and Anthropic Messages providers per [the native provider design](docs/superpowers/specs/2026-09-01-native-openai-anthropic-providers-design.md) and [plan](docs/superpowers/plans/2026-09-01-native-openai-anthropic-providers.md): fixed official endpoints (`https://api.openai.com/v1` / `https://api.anthropic.com/v1`), isolated Credential Manager accounts (`openai_api_key`/`anthropic_api_key`), source-dated `2026-09-01` capability registry, `ProviderCatalogRequestFactory` with `Authorization: Bearer` / `x-api-key`+`anthropic-version: 2023-06-01`, `store:false` and internal 8192 `max_tokens`, protected per-step `Protocol`+`MaximumOutputTokens` pinning, `BoundedSseReader` (raw-byte bounded, strict UTF-8, BOM-aware), `OpenAiResponsesModelProvider`/`AnthropicMessagesModelProvider` with strict protocol-ordered parsing and exact dispatch via `IModelProviderResolver`; malformed persisted providers remain unselected instead of falling back to OpenCode, unsupported native turn roles fail before HTTP, contradictory event/type pairs, malformed nested JSON containers, and duplicate OpenAI terminals fail closed; the internal `per-step` bootstrap starts without selecting a fallback provider; `ChatView` allows `openai_responses`/`anthropic_messages`; `.gitignore` `models/`→`/models/` so `RuAgent.Runtime.Adapters/Models` is tracked. Focused coverage is `BoundedSseReaderTests` 16, `OpenAiResponsesModelProviderTests` 24, `AnthropicMessagesModelProviderTests` 31 and `OfficialProviderTests` 5. Deterministic gates (`RuBackend.Tests` 683, `gui-winui3.Tests` 330, `RuAgent.Runtime.Worker.Tests` 55, `RuAgent.Runtime.Adapters.Tests` 169, Python 409, route 56+1, WinUI Release) passed; local managed-host startup returned HTTP 200, and no live provider key/catalog/generation/push was performed.
+- [x] Implement native OpenAI Responses and Anthropic Messages providers per [the native provider design](docs/superpowers/specs/2026-09-01-native-openai-anthropic-providers-design.md) and [plan](docs/superpowers/plans/2026-09-01-native-openai-anthropic-providers.md): fixed official endpoints (`https://api.openai.com/v1` / `https://api.anthropic.com/v1`), isolated Credential Manager accounts (`openai_api_key`/`anthropic_api_key`), source-dated `2026-09-01` capability registry, `ProviderCatalogRequestFactory` with `Authorization: Bearer` / `x-api-key`+`anthropic-version: 2023-06-01`, `store:false` and internal 8192 `max_tokens`, protected per-step `Protocol`+`MaximumOutputTokens` pinning, `BoundedSseReader` (raw-byte bounded, strict UTF-8, BOM-aware), `OpenAiResponsesModelProvider`/`AnthropicMessagesModelProvider` with strict protocol-ordered parsing and exact dispatch via `IModelProviderResolver`; malformed persisted providers remain unselected instead of falling back to OpenCode, unsupported native turn roles fail before HTTP, contradictory event/type pairs, malformed nested JSON containers, and duplicate OpenAI terminals fail closed; the internal `per-step` bootstrap starts without selecting a fallback provider; `ChatView` allows `openai_responses`/`anthropic_messages`; `.gitignore` `models/`→`/models/` so `RuAgent.Runtime.Adapters/Models` is tracked. Focused coverage is `BoundedSseReaderTests` 16, `OpenAiResponsesModelProviderTests` 24, `AnthropicMessagesModelProviderTests` 31 and `OfficialProviderTests` 5. Deterministic gates passed against the then-current 56+1 route contract (`RuBackend.Tests` 683, `gui-winui3.Tests` 330, `RuAgent.Runtime.Worker.Tests` 55, `RuAgent.Runtime.Adapters.Tests` 169, Python 409); local managed-host startup returned HTTP 200, and no live provider key/catalog/generation/push was performed.
 - [x] Investigate diagnostic-writer shutdown under concurrent host teardown:
   `StructuredDiagnosticLogWriter.Dispose` waits via `StopAsync(2s)` and only disposes gates after `Completion` proves writer quiescence. Ten writer shutdown cases and one actual Host shutdown case cover the lifecycle. Business endpoint fixtures still use a discarding emitter for isolation.
 - [x] Remove all credential alias/cross-provider fallback from generation;

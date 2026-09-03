@@ -19,11 +19,14 @@ namespace RuBackend.Harness.Broker;
 /// </summary>
 public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
 {
+    internal const string AuthorizationTokenPrefix = "auth:";
+
     private readonly Uri _brokerUrl;
     private readonly string _bearer;
     private readonly string _sessionId;
     private readonly string _runId;
     private readonly Func<JsonObject> _runOpenPayloadFactory;
+    private readonly BrokerApprovalState? _approvals;
     private readonly SemaphoreSlim _wire = new(1, 1);
     private readonly Dictionary<string, PendingExecution> _pending = new(StringComparer.Ordinal);
     private readonly HashSet<string> _cancelled = new(StringComparer.Ordinal);
@@ -35,6 +38,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         string ToolVersion,
         ToolAccessKind AccessKind,
         string PreparationToken,
+        string? AuthorizationToken,
         string ArgumentsJson);
 
     public BrokerToolGateway(
@@ -42,7 +46,8 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         string bearer,
         string sessionId,
         string runId,
-        Func<JsonObject> runOpenPayloadFactory)
+        Func<JsonObject> runOpenPayloadFactory,
+        BrokerApprovalState? approvals = null)
     {
         ArgumentNullException.ThrowIfNull(brokerUrl);
         ArgumentException.ThrowIfNullOrWhiteSpace(bearer);
@@ -55,6 +60,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         _sessionId = sessionId;
         _runId = runId;
         _runOpenPayloadFactory = runOpenPayloadFactory;
+        _approvals = approvals;
     }
 
     public async Task<ToolProposalDecision> EvaluateAsync(
@@ -62,6 +68,17 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(proposal);
+        var accessKind = AccessKindForTool(proposal.ToolId);
+        var argsKey = ApprovalArgsKey(proposal.ToolId, proposal.Arguments);
+        if (_approvals is not null
+            && _approvals.TryPeekAuthorizationToken(_runId, argsKey, out var storedToken)
+            && storedToken is not null)
+        {
+            return ToolProposalDecision.Allow(
+                accessKind,
+                AuthorizationTokenPrefix + storedToken);
+        }
+
         var decisionReply = await RpcAsync(
             AgentMessageTypes.ToolEvaluate,
             new JsonObject
@@ -74,7 +91,6 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             },
             cancellationToken).ConfigureAwait(false);
 
-        var accessKind = AccessKindForTool(proposal.ToolId);
         JsonObject body;
         try
         {
@@ -94,14 +110,36 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             "deny" => ToolProposalDecision.Deny(
                 accessKind,
                 body["reason_code"]?.GetValue<string>() ?? "policy_denied"),
-            "ask" => ToolProposalDecision.Ask(
+            "ask" => RegisterBrokerAsk(
+                proposal,
+                argsKey,
+                body["approval_id"]?.GetValue<string>()
+                    ?? throw new ToolTransportException("missing_approval_id"),
                 accessKind,
-                InternalApprovalId(body["approval_id"]?.GetValue<string>() ?? string.Empty),
-                body["reason_code"]?.GetValue<string>() == "external_directory_required"
-                    ? "external_directory_required"
-                    : "approval_required"),
+                body["reason_code"]?.GetValue<string>()),
             _ => throw new ToolTransportException("invalid_decision"),
         };
+    }
+
+    private ToolProposalDecision RegisterBrokerAsk(
+        ToolProposal proposal,
+        string argsKey,
+        string brokerApprovalId,
+        ToolAccessKind accessKind,
+        string? reasonCode)
+    {
+        var hostApprovalId = InternalApprovalId(brokerApprovalId);
+        _approvals?.RegisterAsk(
+            _runId,
+            hostApprovalId.Value,
+            brokerApprovalId,
+            argsKey);
+        return ToolProposalDecision.Ask(
+            accessKind,
+            hostApprovalId,
+            reasonCode == "external_directory_required"
+                ? "external_directory_required"
+                : "approval_required");
     }
 
     public async Task<PreparedToolExecution> PrepareAsync(
@@ -109,32 +147,45 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(execution);
-        var prepared = await RpcAsync(
-            AgentMessageTypes.ToolPrepare,
-            new JsonObject
-            {
-                ["run_id"] = _runId,
-                ["tool_id"] = execution.Proposal.ToolId,
-                ["decision_token"] = execution.CanonicalIntentToken,
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        var body = ThrowIfTransportError(prepared);
-        var token = body["preparation_token"]?.GetValue<string>()
-            ?? throw new ToolTransportException("missing_preparation_token");
         var accessKind = AccessKindForTool(execution.Proposal.ToolId);
+        string? authorizationToken = null;
+        string preparationToken;
+        var canonicalToken = execution.CanonicalIntentToken;
+        if (canonicalToken.StartsWith(AuthorizationTokenPrefix, StringComparison.Ordinal))
+        {
+            authorizationToken = canonicalToken[AuthorizationTokenPrefix.Length..];
+            preparationToken = canonicalToken;
+        }
+        else
+        {
+            var prepared = await RpcAsync(
+                AgentMessageTypes.ToolPrepare,
+                new JsonObject
+                {
+                    ["run_id"] = _runId,
+                    ["tool_id"] = execution.Proposal.ToolId,
+                    ["decision_token"] = execution.CanonicalIntentToken,
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            var body = ThrowIfTransportError(prepared);
+            preparationToken = body["preparation_token"]?.GetValue<string>()
+                ?? throw new ToolTransportException("missing_preparation_token");
+        }
+
         _pending[execution.ExecutionId.Value] = new PendingExecution(
             execution.Proposal.ToolId,
             execution.Proposal.ToolVersion,
             accessKind,
-            token,
+            preparationToken,
+            authorizationToken,
             execution.Proposal.Arguments.GetRawText());
         return new PreparedToolExecution(
             execution.ExecutionId,
             execution.Proposal.ToolCallId,
             execution.Proposal.ModelOrder,
             accessKind,
-            token,
+            authorizationToken ?? preparationToken,
             []);
     }
 
@@ -169,7 +220,8 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
                 ["run_id"] = _runId,
                 ["tool_id"] = pending.ToolId,
                 ["tool_version"] = pending.ToolVersion,
-                ["preparation_token"] = pending.PreparationToken,
+                [pending.AuthorizationToken is null ? "preparation_token" : "authorization_token"] =
+                    pending.AuthorizationToken ?? pending.PreparationToken,
                 ["arguments"] = ParseArgumentsJson(pending.ArgumentsJson),
             },
             cancellationToken).ConfigureAwait(false);
@@ -202,6 +254,59 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         _cancelled.Add(executionId.Value);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Forwards an approval resolution to the Broker on this gateway's
+    /// connection (whose session owns the run lease). On success the returned
+    /// one-time authorization token is stored under the original intent key so
+    /// the resumed proposal evaluates, prepares, and executes without a new
+    /// ask.
+    /// </summary>
+    public async Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
+        string brokerApprovalId,
+        string command,
+        string argsKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(brokerApprovalId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command);
+        ArgumentException.ThrowIfNullOrWhiteSpace(argsKey);
+
+        var reply = await RpcAsync(
+            AgentMessageTypes.ApprovalRespond,
+            new JsonObject
+            {
+                ["run_id"] = _runId,
+                ["approval_id"] = brokerApprovalId,
+                ["command"] = command,
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (reply.MessageType != AgentMessageTypes.ApprovalResult
+            || reply.Payload["status"]?.GetValue<string>() != "authorized")
+        {
+            return (false, null);
+        }
+
+        var token = reply.Payload["authorization_token"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return (false, null);
+        }
+
+        _approvals?.StoreAuthorizationToken(
+            _runId,
+            argsKey,
+            token,
+            DateTimeOffset.UtcNow.AddSeconds(60));
+        return (true, token);
+    }
+
+    private static string ApprovalArgsKey(string toolId, JsonElement arguments)
+    {
+        var canonicalArguments = JsonNode.Parse(arguments.GetRawText())!.ToJsonString();
+        return toolId + "|" + canonicalArguments;
     }
 
     public async ValueTask DisposeAsync()

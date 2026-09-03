@@ -52,7 +52,7 @@ runtime surface.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **61 HTTP plus 1 WebSocket** (41 + 20 `/agent/v1/*`;
+> - Public Contract is now **62 HTTP plus 1 WebSocket** (41 + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
@@ -67,10 +67,11 @@ runtime surface.
 
 ## Current capability matrix
 
-The Worker v2 settings currently use one static executable surface for both
-permission presets. The model therefore receives the same ten core bindings
-plus managed read-only `web.search` and `web.fetch` bindings in Standard and
-Full Access; the preset changes Broker policy decisions and fallbacks, not the
+The Worker v2 settings derive from the immutable Protocol tool-definition
+catalog. The model therefore receives the same eleven core bindings (including
+offline `help.docs`) plus each
+runtime-enabled read-only `web.search`/`web.fetch` binding in Standard and Full
+Access; the preset changes Broker policy decisions and fallbacks, not the
 advertised list. Managed startup constructs enabled WebOptions with the fixed
 DuckDuckGo endpoint `https://html.duckduckgo.com/html/`. The `network_intent` argument on a
 terminal request is descriptive input metadata, not a security boundary.
@@ -79,13 +80,14 @@ terminal request is descriptive input metadata, not a security boundary.
 | --- | --- | --- |
 | `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic |
 | `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | `allow` for ordinary trusted-workspace create/edit; outside paths ask with `external_directory_required`; `workspace_changed` on preimage mismatch | `allow` fallback (never bypasses trust or invariants) |
-| `files.delete@1.0.0` (`workspace.write`, recoverable) | `ask` → approval card + preview; `recovery_too_large` beyond 1 MiB; opaque `recovery_id` | ordinary targets use the Full fallback; protected/root targets still ask or deny; recovery remains bounded |
+| `files.delete@1.0.0` (`workspace.write`, recoverable) | `ask` → approval card + preview; bounded recovery cap; opaque `recovery_id` | ordinary targets use the Full fallback; protected/root targets still ask or deny; recovery remains bounded |
 | `files.restore@1.0.0` (`workspace.write`, one-time) | advertised; requires a live recovery record; replay returns `recovery_consumed` | advertised; same one-time recovery constraint |
 | `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | advertised; analyzer/rule/approval policy decides each request | advertised; well-formed calls normally use the Full fallback; extended timeouts still ask |
 | `system.volume@1.0.0` (`system.write`) | not a model-selection binding; deterministic parser with verified readback | same deterministic direct-action path |
 | `notes.create@1.0.0`, `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` | Broker-internal; not advertised | Broker-internal; not advertised |
 | `web.search@1.0.0` (`network.search`) | advertised read-only; fixed DuckDuckGo endpoint; at most ten bounded citations | same |
 | `web.fetch@1.0.0` (`network.fetch`) | advertised read-only; bounded sanitized text | same |
+| `help.docs@1.0.0` (`system.read`) | advertised read-only; searches five bundled Markdown sources offline; no workspace, network, or approval | same |
 | Connectors, `app.open` | Broker-internal; not advertised | Broker-internal; not advertised |
 | Declarative Skills (`skill.execute`) | only explicitly granted manifests; each step rechecks tool scope/approval | same explicit grant and checks |
 
@@ -127,15 +129,23 @@ for patch application does not create a public model capability.
 
 ## Model selection channel
 
-The model invokes its advertised bindings through a structured selection
-loop on every Agent run. Both presets receive the same ten core Worker v2
-bindings plus managed `web.search`/`web.fetch` bindings. Full Access only
-changes policy fallbacks. Each step allows at most 10
-sequential tool selections; exhausting that budget forces one final wrap-up
-answer without tools. Approvals still gate mutating tools — a card with a
-bounded preview and an explicit user decision precede every side effect, in
-every profile. The `hint` strings inside the advertisement are static usage
-shapes: prompt material for the model, never executable schemas.
+The model invokes its advertised bindings through the exact selection contract
+rendered by System Prompt Composer. Each capability includes ID/version,
+description, scope, strict proposal schema, example, and digest; selection is
+one JSON object with `tool_id`, `tool_version`, and `arguments`, with no prose
+success claim. Both presets receive the same runtime-enabled definitions. Each
+step allows at most 10 sequential tool selections; exhausting that budget
+forces one final wrap-up answer without tools. Approvals still gate mutating
+tools — a card with a bounded preview and an explicit user decision precede
+every side effect, in every profile.
+
+Use `help.docs` when the user asks how Ru's own features, architecture,
+configuration, tools, providers, or operating boundaries work. It returns
+bounded excerpts from the five current bundled documents (`ru-overview`,
+`architecture`, `runtime`, `agent-tools`, and `provider-catalog`). Use runtime
+context or other system tools for live machine, process, device, and workspace
+state. `app.docs` is a product-language alias only; the model-visible contract
+contains exactly `help.docs@1.0.0`.
 
 ## One execution path
 
@@ -158,6 +168,12 @@ The Public Host keeps one active Broker lease. It reuses a valid matching
 session, and closes the previous lease before opening a different Agent
 session. Close or open failure stops before adapter execution; the Broker
 continues to reject concurrent owners with `session_conflict`.
+
+The desktop session switch also waits for the previous Harness run's
+cancellation commit before creating a run for the replacement session. A
+workspace-trust run that was abandoned past its ten-minute trust window is
+cancelled during startup recovery, so an interrupted prompt cannot keep the
+workspace's active-run lock indefinitely.
 
 Agent turns continue through normal streamed generation. Ambiguous volume
 wording produces deterministic clarification instead of an inferred action;
@@ -220,9 +236,15 @@ zero exit is `succeeded`; non-zero exit and start failure are `failed`; timeout
 is `timed_out`. `files.write`/`files.edit` are `allow` for ordinary
 trusted-workspace create/edit in Standard and otherwise `ask`; Full Access
 uses its fallback for ordinary calls while protected paths and invariants stay
-gated. Every mutation requires `expected_sha256` (`missing` or 64-hex
-lowercase) and fails with `workspace_changed` on mismatch without writing;
-`files.delete` refuses `recovery_too_large` beyond 1 MiB.
+gated. Every mutation binds the preimage hash captured by Host preparation and
+fails with `workspace_changed` on mismatch without writing; the hash is not a
+model argument. `files.delete` keeps its bounded, host-configurable recovery cap
+(default and hard maximum 4 MiB) and returns an opaque `recovery_id`.
+`files.edit` accepts LF-authored markers in CRLF files while preserving the
+file's newline style. `files.search` uses bounded concurrent reads, propagates
+cancellation, and sorts results by ordinal path/line before applying its result
+cap. Terminal children receive redirected stdin that is closed immediately;
+TTY/editor-style requests remain rejected by canonical command policy.
 
 Declarative Skills are available at session-open only when their validated
 manifest IDs are included in the session grant. `/skills` lists only those

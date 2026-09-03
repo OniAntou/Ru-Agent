@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -10,6 +11,8 @@ public sealed partial class SessionStore : ISessionStore
     private const string DefaultTitle = "Cuộc trò chuyện mới";
     private const int MaximumMessages = 200;
     private const int MaximumTitleCharacters = 50;
+    private const int MaximumMessageBytes = 1024 * 1024;
+    private const long MaximumSessionFileBytes = 16 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -202,6 +205,10 @@ public sealed partial class SessionStore : ISessionStore
         {
             return false;
         }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
         finally
         {
             _gate.Release();
@@ -253,8 +260,13 @@ public sealed partial class SessionStore : ISessionStore
 
         try
         {
-            var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-            var root = JsonNode.Parse(json) as JsonObject;
+            if (new FileInfo(path).Length > MaximumSessionFileBytes)
+            {
+                return null;
+            }
+
+            var bytes = await ReadBoundedBytesAsync(path, MaximumSessionFileBytes, cancellationToken).ConfigureAwait(false);
+            var root = JsonNode.Parse(bytes) as JsonObject;
             if (root is null || root["messages"] is not JsonArray messagesNode)
             {
                 return null;
@@ -295,11 +307,16 @@ public sealed partial class SessionStore : ISessionStore
                 return null;
             }
 
+            var storedTitle = ReadString(root, "title", DefaultTitle);
+            if (storedTitle.Length is 0 or > MaximumTitleCharacters
+                || storedTitle.Any(char.IsControl))
+            {
+                storedTitle = DefaultTitle;
+            }
+
             return new SessionDocument(
                 storedId,
-                ReadString(root, "title", DefaultTitle) is { Length: > 0 } title
-                    ? title
-                    : DefaultTitle,
+                storedTitle,
                 ReadTimestamp(root, "created_at"),
                 ReadTimestamp(root, "updated_at"),
                 messages,
@@ -317,6 +334,10 @@ public sealed partial class SessionStore : ISessionStore
         {
             return null;
         }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
     }
 
     private async Task WriteUnlockedAsync(
@@ -331,6 +352,11 @@ public sealed partial class SessionStore : ISessionStore
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
+            if (bytes.Length > MaximumSessionFileBytes)
+            {
+                throw new InvalidDataException("session_file_too_large");
+            }
+
             await using (var stream = new FileStream(
                 temporary,
                 FileMode.CreateNew,
@@ -354,10 +380,35 @@ public sealed partial class SessionStore : ISessionStore
     private string SessionPath(string sessionId) =>
         Path.Combine(_sessionDirectory, $"{sessionId}.json");
 
+    private static async Task<byte[]> ReadBoundedBytesAsync(
+        string path,
+        long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var output = new MemoryStream((int)Math.Min(maximumBytes, 81920));
+        var buffer = new byte[(int)Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("session_file_too_large");
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+        return output.ToArray();
+    }
+
     private static bool IsValidMessage(SessionMessage? message) =>
         message is not null &&
         (message.Role == "user" || message.Role == "ai") &&
         message.Content is not null &&
+        Encoding.UTF8.GetByteCount(message.Content) <= MaximumMessageBytes &&
         ((message.SourceMessageId is null && message.SourceRunId is null)
             || (IsValidSourceId(message.SourceMessageId)
                 && IsValidSourceId(message.SourceRunId)));

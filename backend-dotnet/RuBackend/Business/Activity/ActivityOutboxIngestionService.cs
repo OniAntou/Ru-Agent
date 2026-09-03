@@ -1,11 +1,14 @@
 namespace RuBackend.Business.Activity;
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
+using RuBackend.Diagnostics;
 
 public sealed class ActivityOutboxIngestionService : BackgroundService
 {
+    private const int MaximumRecordBytes = 256_000;
     private readonly IActivityLogStore _activityLogStore;
     private readonly string _logRoot;
     private readonly string _outboxFile;
@@ -70,10 +73,16 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
             return 0;
         }
 
-        string[] lines;
+        FileStream stream;
         try
         {
-            lines = await File.ReadAllLinesAsync(filePath, cancellationToken).ConfigureAwait(false);
+            stream = new FileStream(
+                filePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 64 * 1024,
+                useAsync: true);
         }
         catch (IOException)
         {
@@ -84,9 +93,15 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
             return 0;
         }
 
+        await using var ownedStream = stream;
+        using var reader = new BoundedTextLineReader(new StreamReader(ownedStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true), MaximumRecordBytes);
         var ingestedCount = 0;
-        foreach (var line in lines)
+        while (true)
         {
+            var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (read.EndOfFile) break;
+            if (read.TooLarge) continue;
+            var line = read.Line!;
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
@@ -108,7 +123,7 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
                     ingestedCount++;
                 }
             }
-            catch (JsonException)
+            catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException)
             {
                 // Skip malformed line
             }

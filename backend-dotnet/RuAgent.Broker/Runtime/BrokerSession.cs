@@ -25,6 +25,8 @@ public sealed class BrokerSession
     private IReadOnlySet<string> _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
     private readonly Dictionary<string, BrokerRunLease> _runLeases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingDecision> _pendingDecisions = new(StringComparer.Ordinal);
+    private IReadOnlyList<string> _advertisedCapabilities =
+        RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
     private long _decisionCounter;
 
     private sealed record PendingDecision(
@@ -45,6 +47,31 @@ public sealed class BrokerSession
 
     public string DescriptorPath { get; }
     public BrokerSessionDescriptor Descriptor { get; }
+
+    /// <summary>
+    /// Capability list every run lease must advertise. The BrokerHost pins it
+    /// from its options (web tools extend the authoritative fallback set);
+    /// lease opens fail closed when a connection advertises anything else.
+    /// </summary>
+    public IReadOnlyList<string> AdvertisedCapabilities
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _advertisedCapabilities;
+            }
+        }
+    }
+
+    public void ConfigureAdvertisedCapabilities(IReadOnlyList<string> capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        lock (_gate)
+        {
+            _advertisedCapabilities = capabilities.ToArray();
+        }
+    }
 
     public bool IsReady
     {
@@ -418,8 +445,9 @@ public sealed class BrokerSession
                 return false;
             }
 
-            // Validate snapshot hash matches recomputed canonical (phase-1 empty snapshot)
-            var expectedCapabilities = RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
+            // Validate the connection's advertisement matches the host-configured
+            // capability set; mismatch fails closed.
+            var expectedCapabilities = _advertisedCapabilities;
             // hash already validated in BrokerRunLease.CreateValidated, but double-check
             if (!expectedCapabilities.SequenceEqual(lease.AdvertisedCapabilities))
             {

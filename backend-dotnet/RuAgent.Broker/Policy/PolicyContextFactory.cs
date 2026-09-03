@@ -25,6 +25,13 @@ public sealed class PolicyContextFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
 
+        // Preimages are Broker-captured at execution time and must never enter
+        // the model proposal; `regex` is the retired name of `is_regex`.
+        if (arguments.ContainsKey("expected_sha256") || arguments.ContainsKey("regex"))
+        {
+            throw new PolicyContextException("invalid_arguments");
+        }
+
         var resolver = new CanonicalPathResolver(_canonicalRoot);
         var operationClass = OperationClassFor(toolId);
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
@@ -46,7 +53,12 @@ public sealed class PolicyContextFactory
         var argv = PolicyContext.EmptyArgv;
         string? resolvedExecutable = null;
 
-        if (operationClass == PolicyOperationClasses.Terminal)
+        if (IsTargetFreeTool(toolId))
+        {
+            // System and web tools carry no workspace target; their identity is
+            // the tool id plus the argument set captured in the intent hash.
+        }
+        else if (operationClass == PolicyOperationClasses.Terminal)
         {
             var workingDirectory = OptionalText(arguments, "working_directory") ?? ".";
             try
@@ -223,8 +235,14 @@ public sealed class PolicyContextFactory
         "files.restore" => PolicyOperationClasses.Restore,
         "terminal.run" => PolicyOperationClasses.Terminal,
         "terminal.shell" => PolicyOperationClasses.Terminal,
+        "help.docs" or "system.time" or "system.status" or "app.list"
+            or "web.search" or "web.fetch" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
+
+    private static bool IsTargetFreeTool(string toolId) => toolId
+        is "help.docs" or "system.time" or "system.status" or "app.list"
+        or "web.search" or "web.fetch";
 
     private static string? OptionalText(JsonObject arguments, string key)
     {

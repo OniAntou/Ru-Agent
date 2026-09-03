@@ -714,13 +714,33 @@ public sealed class WorkspaceCoordinatorStore
             reader.GetInt64(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(11),
             DateTimeOffset.Parse(reader.GetString(12), null, System.Globalization.DateTimeStyles.RoundtripKind));
+
+        var nonceLength = reader.GetBytes(8, 0, null, 0, 0);
+        var ciphertextLength = reader.GetBytes(7, 0, null, 0, 0);
+        var tagLength = reader.GetBytes(9, 0, null, 0, 0);
+        if (nonceLength != 12 || tagLength != 16)
+        {
+            throw new HarnessStoreException("journal_envelope_invalid");
+        }
+
+        if (ciphertextLength > WorkspaceJournalProtector.MaximumJournalBytes)
+        {
+            throw new HarnessStoreException("journal_too_large");
+        }
+
+        var nonce = new byte[checked((int)nonceLength)];
+        var ciphertext = new byte[checked((int)ciphertextLength)];
+        var authenticationTag = new byte[checked((int)tagLength)];
+        reader.GetBytes(8, 0, nonce, 0, nonce.Length);
+        reader.GetBytes(7, 0, ciphertext, 0, ciphertext.Length);
+        reader.GetBytes(9, 0, authenticationTag, 0, authenticationTag.Length);
         return new WorkspaceChangeEnvelope(
             change,
             new EncryptedWorkspaceJournal(
                 reader.GetInt32(10),
-                (byte[])reader[8],
-                (byte[])reader[7],
-                (byte[])reader[9]));
+                nonce,
+                ciphertext,
+                authenticationTag));
     }
 
     public async Task<WorkspaceChangeRecord> MarkChangeRestoredAsync(
@@ -812,13 +832,17 @@ public sealed class WorkspaceCoordinatorStore
             || string.IsNullOrWhiteSpace(normalizedPath)
             || normalizedPath.Length > 4096
             || Path.IsPathRooted(normalizedPath)
-            || normalizedPath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries).Any(segment => segment == "..")
+            || normalizedPath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries).Any(segment => segment is "." or "..")
             || status is not ("prepared" or "committed" or "restored" or "rejected")
             || encrypted.ProtectionVersion != WorkspaceJournalProtector.CurrentProtectionVersion
             || encrypted.Nonce.Length != 12
-            || encrypted.AuthenticationTag.Length != 16)
+            || encrypted.AuthenticationTag.Length != 16
+            || encrypted.Ciphertext.Length > WorkspaceJournalProtector.MaximumJournalBytes)
         {
-            throw new HarnessStoreException("invalid_workspace_change");
+            throw new HarnessStoreException(
+                encrypted.Ciphertext.Length > WorkspaceJournalProtector.MaximumJournalBytes
+                    ? "journal_too_large"
+                    : "invalid_workspace_change");
         }
 
         static bool IsHash(string? value) => value is null || (value.Length == 64 && value.All(Uri.IsHexDigit));

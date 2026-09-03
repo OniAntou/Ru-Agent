@@ -81,6 +81,19 @@ public sealed class ObservationControlRequestHandlerTests
         Assert.Equal("skipped", Body(response)["status"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task React_rejects_oversized_body_before_parsing()
+    {
+        var handler = Handler("OpenCode Zen");
+        var error = await Assert.ThrowsAsync<PrivateRuntimeRequestException>(() => InvokeAsync(
+            handler,
+            "POST",
+            "/observation/react",
+            new string('x', 256 * 1024 + 1)));
+
+        Assert.Equal("invalid_request", error.Code);
+    }
+
     [Theory]
     [InlineData("confidence", 2.0)]
     [InlineData("novelty", -0.1)]

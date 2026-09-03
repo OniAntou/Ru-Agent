@@ -56,7 +56,7 @@ public sealed class AnthropicMessagesModelProviderTests
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal("test-model", body["model"]!.GetValue<string>());
         Assert.Equal("system prompt", body["system"]!.GetValue<string>());
-        Assert.Equal(true, body["stream"]!.GetValue<bool>());
+        Assert.True(body["stream"]!.GetValue<bool>());
         Assert.Equal(8192, body["max_tokens"]!.GetValue<int>());
         Assert.NotNull(body["thinking"]);
         Assert.NotNull(body["output_config"]);
@@ -149,7 +149,7 @@ public sealed class AnthropicMessagesModelProviderTests
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
         var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
-        Assert.Single(deltas.Where(d => d.Text is not null));
+        Assert.Single(deltas, d => d.Text is not null);
         Assert.Equal("answer", deltas.First(d => d.Text is not null).Text);
     }
 

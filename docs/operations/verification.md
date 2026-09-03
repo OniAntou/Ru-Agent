@@ -32,6 +32,121 @@ including the test that could open a real VTube Studio connection. Managed C#
 VTS tests and opt-in native acceptance remain separate. Build and launcher
 unit tests replace only their external process boundary and never open RuApp.
 
+### Cross-system hardening evidence (2026-09-02)
+
+- Workspace external-change detection resets per-workspace baselines between
+  runs, resets per-path observation state when a new baseline is registered,
+  skips reparse-point traversal, hashes through a bounded streaming pass, and
+  keeps watcher debounce state isolated per registration. Debounce callbacks
+  re-read the latest baseline before emitting; watcher callbacks also ignore
+  paths escaping through reparse boundaries without leaking exceptions, and
+  watcher buffer errors trigger a bounded baseline rescan. The stale-dedup,
+  lifetime, and race regressions and eight monitor cases pass.
+- Activity logs now mark event IDs only after a successful append, preserve
+  duplicate state when clear fails, and read/trim/migrate JSONL through bounded
+  streaming paths. Malformed migration rows are skipped independently. The
+  ActivityLogStore and migration slices pass, including fault-injected retries.
+- Activity preview sanitization now bounds the raw text entering regex/privacy
+  processing and clamps caller-provided preview lengths (including tiny limits),
+  preventing oversized malformed activity payloads from causing avoidable
+  allocations.
+- Legacy `memory_texts.json`, `history.json`, broker session descriptors, and
+  harness/runtime descriptors are rejected before parsing when they exceed
+  their bounded input caps; bounded streaming also closes the metadata-check
+  race. Oversized fixtures pass without allocating the full payload.
+- History migration manifests, session files, settings, and legacy memory
+  imports use the same bounded streaming discipline; oversized or concurrently
+  growing local state falls back to the existing safe-empty/failed-import path.
+- SQLite workspace roots, policy documents, model-context payloads, and journal
+  envelopes now validate BLOB lengths before allocation/decryption. Workspace
+  restore hashes the current file in a streaming pass instead of loading it
+  wholly into memory.
+- Local session/settings JSON and the VTube Studio token file use bounded
+  streaming reads before parsing; malformed or oversized local state falls back
+  to the existing safe-empty behavior. Session messages are capped at 1 MiB
+  and persisted titles are bounded to the UI's 50-character contract before
+  they can be split or displayed; session writes preflight aggregate content
+  size before serializing a document that cannot fit the 16 MiB file cap.
+- The STT HTTP endpoint now bounds request-body buffering (including chunked
+  requests) before forwarding audio to the worker; oversized requests are
+  rejected without a worker call. The private speech runtime handler repeats
+  the same 8 MiB cap before JSON parsing so direct worker invocation cannot
+  bypass that boundary, and the Google recognizer rejects provider transcripts
+  over 64 KiB before whitespace normalization/splitting.
+- Runtime and VTS relays now apply the configured request-body cap themselves,
+  including GET routes with unexpected bodies; oversized relay requests stop
+  before the worker is dispatched. The direct VTS and observation-control
+  handlers also cap their JSON bodies before parsing, so tests/compositions
+  that invoke a handler without the router keep the same boundary.
+- Policy and workspace-root cryptographic paths now treat missing or malformed
+  key material as explicit fail-closed errors and never dereference/clear a
+  null key buffer.
+- Windows Credential Manager reads now validate blob size, pointer, and UTF-16
+  alignment before allocation; writes reject unreasonably large secrets before
+  entering the native API.
+- Declarative skill package loading now reads manifest/instructions through a
+  bounded streaming path, so a file that grows after the initial metadata check
+  cannot bypass the package size limits.
+- GUI file attachments now re-check and stream image/text payloads through
+  bounded readers; clipboard image preview and upload use independent streams,
+  and a file that grows beyond the text cap is rejected instead of being added
+  with empty content. Unsupported binary files are rejected instead of being
+  queued with no transmission path. Because Agent v1 still ignores its legacy
+  image field, image sends now fail explicitly in the GUI rather than silently
+  disappearing; Agent v1 rejects the legacy field for external callers too, and
+  the local UI-theme preference reader is capped as well.
+- Watcher debounce timers remove themselves after firing, preventing a long-
+  lived registration from retaining one timer per changed path indefinitely.
+- `files.read` now performs offset/window arithmetic in `Int64`, avoiding a
+  2-GiB boundary overflow that could incorrectly clear the `truncated` flag;
+  it also rechecks the open handle's final length so concurrent appends are
+  reported as truncated instead of being mistaken for a complete read.
+- Workspace-change restore checks the target and every existing parent for
+  reparse points both before hashing and immediately before replacement, so a
+  junction/symlink cannot silently redirect the restore path outside the
+  trusted workspace boundary.
+- Durable run Git state now caps attributed path count, path length, and JSON
+  column size on both write and rehydration; malformed persisted path sets fail
+  closed instead of being deserialized without bounds.
+- Agent payload reads now reject oversized client-visible payloads explicitly;
+  they no longer silently truncate JSON or base64 content into a corrupt value.
+- OpenAI-compatible streaming responses now use the bounded SSE reader, so a
+  provider cannot force an unbounded `ReadLineAsync` allocation with one giant
+  line; line, event, and total response caps are enforced before JSON parsing.
+- OmniVoice process state now has a dedicated synchronization boundary around
+  handle replacement/disposal; `IsRunning` cannot observe a disposed handle,
+  and `StartAsync` rechecks disposal after acquiring its lifecycle gate.
+- OmniVoice's private process-log drain now consumes bounded char chunks rather
+  than allocating an entire stdout/stderr line before discarding it.
+- Agent REST, session and SSE client adapters now share an 8 MiB streaming
+  response cap before JSON/error parsing, including chunked responses, so
+  malformed/hostile local HTTP peers cannot force an unbounded allocation.
+- The Agent SSE client now reads lines from bounded byte chunks instead of
+  `ReadLineAsync`, preserving strict UTF-8 and CR/LF handling while rejecting
+  oversized lines before allocation; the first-line UTF-8 BOM behavior remains
+  compatible with the previous `StreamReader` implementation.
+- Session ID validation now enforces the documented ASCII
+  `a-zA-Z0-9_-` alphabet instead of accepting arbitrary Unicode letters.
+- Provider catalog refreshes now use a per-provider-scope single-flight gate;
+  a slow or unavailable endpoint cannot hold the global cache lock and block
+  unrelated provider scopes. Canceled refreshes restore the prior attempt
+  timestamp before propagating cancellation, so the next request is not
+  falsely throttled.
+- Diagnostic and activity JSONL readers now consume fixed-size text chunks and
+  discard overlong records before materializing strings, while continuing to
+  later valid records in the same file.
+- Gemini Vision now caps screenshot request bytes and response bodies before
+  decoding/parsing, including chunked responses without a trustworthy length.
+- Activity outbox ingestion also skips malformed scalar rows and continues with
+  later events, instead of leaving a processing file stuck for every retry.
+- CLI/client JSON response parsing disposes `JsonDocument` instances promptly;
+  the full .NET matrix remains clean after the ownership changes.
+- The diagnostic endpoint fixture writes to a prior-day file so its seed data
+  cannot race the live writer's current-day append handle on Windows.
+- Sequential `scripts/test_dotnet.ps1 -NoRestore`: `2,392 passed` across all
+  13 test projects; Python suite: `413 passed`; route contract: `62 HTTP + 1
+  WebSocket`; documentation/route checks: `8 passed`; `git diff --check` clean.
+
 ### Test-suite cleanup evidence (2026-08-31)
 
 - Python: `402 passed` (audit baseline: `510`); unused VTS/overlay tests,
@@ -103,7 +218,7 @@ Performance acceptance remains open in TODO, independently of bug-fix tests.
   Connectors 3, Harness.Core 210, Persistence 79, Hosting 36, Protocol 11,
   Runtime.Adapters 84, Runtime.Core 6, Worker 49, RuBackend 661, GUI 309).
   `ruff check src tests scripts tools`, `mypy src` (39 files), `pip check`,
-  `56 HTTP + 1 WebSocket` route validation and `git diff --check` passed.
+  `62 HTTP + 1 WebSocket` route validation and `git diff --check` passed.
   Actual WinUI Release/x64 compile passed with zero warnings/errors using
   `dotnet build gui-winui3/RuApp.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 --no-restore`.
   That compile did not update the shortcut's published GUI artifact; see the
@@ -128,7 +243,7 @@ Focused and sequential gates on this uncommitted working tree after native OpenA
 - Worker `RuAgent.Runtime.Worker.Tests` `55 passed` (including Worker v2 reasoning-option stripping, trusted-root bootstrap requirement, protocol dispatch via `IModelProviderResolver`, cancellation cleanup, and internal `per-step` bootstrap startup without provider fallback).
 - Adapters `RuAgent.Runtime.Adapters.Tests` `169 passed` (including protected-bootstrap lifecycle with protocol/output-cap, `BoundedSseReaderTests` 16, `OpenAiResponsesModelProviderTests` 24, `AnthropicMessagesModelProviderTests` 31). Regression coverage proves raw-byte line rejection before whole-stream consumption, CR-only framing, strict native roles before HTTP, duplicate OpenAI terminal rejection, matching SSE event/type pairs, known-event/ping mismatch rejection, and safe malformed scalar/container mapping.
 - Full `scripts/test_dotnet.ps1` Release `2,234 passed` across all 13 projects (Broker 488, CLI 119, Client 45, Connectors 3, Harness.Core 210, Persistence 79, Hosting 36, Protocol 11, Adapters 169, Core 6, Worker 55, RuBackend 683, GUI 330). A local managed-host smoke test also kept Backend, Worker, and Broker alive and returned authenticated HTTP 200 from `/settings`.
-- Python `409 passed` (`ruff check src tests scripts tools` clean, `56 HTTP + 1 WebSocket` route contract clean, `git diff --check` clean, `test_current_documentation.py` 2/2, doc links valid).
+- Python `409 passed` (`ruff check src tests scripts tools` clean, `62 HTTP + 1 WebSocket` route contract clean, `git diff --check` clean, `test_current_documentation.py` 2/2, doc links valid).
 - `dotnet build gui-winui3/RuApp.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 --no-restore` clean. `.gitignore` fixed: `models/` → `/models/` so `RuAgent.Runtime.Adapters/Models` (BoundedSseReader, OpenAiResponses, AnthropicMessages, resolvers) is no longer ignored. Anthropic: matching `event: ping` frames are ignored, mismatches involving a known event fail closed, and unknown future event pairs remain forward-compatible.
 
 Boundaries: `mypy src` passed for 39 source files; native/microphone/speaker/VTube Studio/observation live acceptance remain pending.
@@ -171,7 +286,7 @@ Sequential deterministic gates on this working tree:
   invalidation with late-result rejection, due-only polling, disposal without
   post-dispose publication), exact two-field body serialization for
   Kilo/OpenAI/Anthropic, and `SettingsSaved` raised only on a success envelope.
-- Python `409 passed`; `56 HTTP + 1 WebSocket` route contract unchanged;
+- Python `409 passed`; `62 HTTP + 1 WebSocket` route contract unchanged;
   `git diff --check` clean; the documentation/route-matrix pairing passed `4/4`.
 - `dotnet build gui-winui3/RuApp.csproj -c Release -p:Platform=x64 --no-restore`
   passed with zero warnings and zero errors.
@@ -200,13 +315,14 @@ save with a simulated failure) remains a user-run manual gate.
   path shown below. Its self-contained runtime config, PRI and all 11 loose
   compiled XAML files were verified; GUI/Client/CLI/Worker/Broker/backend DLLs
   and PRI matched their build outputs by SHA-256.
-- Ruff, mypy (39 files), dependency and `56 HTTP + 1 WebSocket` route checks
+- Ruff, mypy (39 files), dependency and `62 HTTP + 1 WebSocket` route checks
   passed. No GUI was launched, no user Ru process was stopped, and no live
   provider/audio/VTS acceptance was claimed. The old rebuildable GUI publish
   output was replaced; user settings, credentials and session data were untouched.
 
-The route checker must remain at 56 HTTP routes and 1 WebSocket
-route (`/voice/stream`; 41 legacy plus 15 additive `/agent/v1/*`). The
+The route checker must remain at 62 HTTP routes and 1 WebSocket
+route (`/voice/stream`; 41 legacy plus 20 additive `/agent/v1/*` plus
+`POST /host/shutdown`). The
 deterministic Harness is contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows

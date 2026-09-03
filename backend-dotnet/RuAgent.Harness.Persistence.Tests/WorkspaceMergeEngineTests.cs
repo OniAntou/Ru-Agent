@@ -74,4 +74,24 @@ public sealed class WorkspaceMergeEngineTests
         Assert.StartsWith("\uFEFF", result.Content);
         Assert.Contains("ONE\r\nTWO\r\n", result.Content);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Utf16_bom_is_preserved_for_text_bytes(bool bigEndian)
+    {
+        var encoding = bigEndian ? Encoding.BigEndianUnicode : Encoding.Unicode;
+        var preamble = encoding.GetPreamble();
+        var result = WorkspaceMergeEngine.MergeBytes(
+            preamble.Concat(encoding.GetBytes("one\r\ntwo\r\n")).ToArray(),
+            preamble.Concat(encoding.GetBytes("ONE\r\ntwo\r\n")).ToArray(),
+            preamble.Concat(encoding.GetBytes("one\r\nTWO\r\n")).ToArray(),
+            localSequence: 1,
+            externalSequence: 2,
+            extension: ".cs");
+
+        Assert.Equal(WorkspaceMergeOutcome.Merged, result.Outcome);
+        Assert.StartsWith("\uFEFF", result.Content);
+        Assert.Contains("ONE\r\nTWO\r\n", result.Content);
+    }
 }

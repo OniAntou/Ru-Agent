@@ -71,6 +71,13 @@ public sealed class SessionApiClientTests
         Assert.Throws<AgentApiException>(() => SessionApiClient.ParseSessionId("{\"status\":\"ok\",\"session_id\":\"valid\",\"unknown\":\"field\"}"));
     }
 
+    [Fact]
+    public void ParseRejectsUnicodeLettersOutsideTheAsciiContract()
+    {
+        Assert.Throws<AgentApiException>(() => SessionApiClient.ParseSessionId(
+            "{\"status\":\"ok\",\"session_id\":\"session-é\"}"));
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

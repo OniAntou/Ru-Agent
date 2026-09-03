@@ -1,3 +1,5 @@
+using RuBackend.Configuration;
+
 namespace RuBackend.Runtime;
 
 public static class ObservationEndpoints
@@ -26,6 +28,7 @@ public static class ObservationEndpoints
         HttpContext context,
         IRuntimeWorkerClient workerClient,
         ILoggerFactory loggerFactory,
+        Microsoft.Extensions.Options.IOptions<BackendOptions> options,
         CancellationToken cancellationToken) =>
         RuntimeEndpointRelay.SendAsync(
             context,
@@ -33,5 +36,6 @@ public static class ObservationEndpoints
             loggerFactory,
             "RuBackend.Observation",
             "Observation runtime is temporarily unavailable.",
+            options.Value.MaxRequestBodyBytes,
             cancellationToken);
 }

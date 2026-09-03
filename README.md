@@ -1,4 +1,4 @@
-# Ru
+﻿# Ru
 
 Ru is a Vietnamese-English conversational companion built around a WinUI 3
 desktop app, an ASP.NET Core public backend, and one managed C# Worker serving
@@ -11,6 +11,7 @@ Current maintainer documentation:
 - [Architecture](docs/architecture.md)
 - [Domain language](CONTEXT.md)
 - [Runtime behavior](docs/operations/runtime-behavior.md)
+- [Agent tools](docs/operations/agent-tools.md) (including bundled `help.docs`)
 - [Verification](docs/operations/verification.md)
 - [Architecture decisions](docs/adr/)
 
@@ -26,18 +27,18 @@ Public Host creates separate per-run Agent and Device Worker secrets, starts the
  managed C# Worker on loopback ports 8005 (`/worker/v2`) and 8006
  (`/worker/v1`), starts the isolated `RuAgentBroker` on a
 dynamic loopback port, binds the ASP.NET Core Public Host on port 8000, waits
-for public readiness, and assigns all children to one Job Object. Idle Public
-Host exits after 10 minutes without an active Agent run,
-approval, or long-lived Agent SSE lease. Broker descriptors and
+for public readiness, and assigns all children to one Job Object. The Host
+remains running until explicitly stopped and does not auto-exit on idle.
+Broker descriptors and
 grants are session-scoped and removed during shutdown.
 
 ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, Agent
 run ordering, public errors, durable Agent harness (Core + SQLite
 `agent_harness.db` + AES-GCM payloads, conversation outbox, workspace trust,
-session permissions, encrypted policy snapshots), and all 61 HTTP plus
+session permissions, encrypted policy snapshots), and all 62 HTTP plus
 1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 20 additive
-`/agent/v1/*`).
+`/agent/v1/*` plus 1 `POST /host/shutdown`).
 The public Agent path uses Worker v2 (`/worker/v2` one-step `AssistantStep` and
 `/agent/v1/*` 20-route API/SSE with bearer auth, `id:<sequence>`/
 `Last-Event-ID` cursor, idempotency 409, `workspace_busy` 409,
@@ -134,7 +135,7 @@ Do not start either worker or the voice engine as independent public services.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - In the WinUI shell, conversation and Voice are the primary navigation surfaces.
-  Log, Diagnostics, Policy, and Audit are grouped under `Công cụ`; the composer
+  Log, Diagnostics, Policy, and Audit are grouped under `CÃ´ng cá»¥`; the composer
   shows one static Agent indicator and one compact preset dropdown with
   `Standard` and `Full Access`. Agent is the only generation mode. The UI always
   uses the known project root as the initial Agent workspace; workspace selection
@@ -146,10 +147,10 @@ Do not start either worker or the voice engine as independent public services.
   the conversation transcript can show a transient safe activity feed for the
   current run. The feed is separate from durable messages and never places raw
   tool payloads in the transcript.
-- The current Worker v2 model surface has ten core bindings in both presets:
+- The current Worker v2 model surface has eleven core bindings in both presets (including offline `help.docs`):
   `files.list`, `files.glob`, `files.search`, `files.read`, `files.write`,
-  `files.edit`, `files.delete`, `files.restore`, `terminal.run`, and
-  `terminal.shell`, plus the managed Agent's read-only `web.search` and
+  `files.edit`, `files.delete`, `files.restore`, `terminal.run`,
+  `terminal.shell`, and `help.docs`, plus the managed Agent's read-only `web.search` and
   `web.fetch` bindings. Standard automatically allows ordinary trusted-workspace
   file reads/creates/edits and applies analyzer/rule/approval decisions to
   terminal calls. Full Access keeps the same advertised list but normally uses
@@ -159,7 +160,7 @@ Do not start either worker or the voice engine as independent public services.
   Explicit absolute paths outside the project ask with
   `external_directory_required`; the user can grant only the canonical
   directory for the run or project, and that grant covers read/create/edit
-  operations only. Every file mutation uses `expected_sha256`, preimage checks,
+  operations only. Every file mutation uses Host-captured preimage checks,
   atomic same-volume replacement where supported, before/after hashes, bounded
   diff summary, run attribution, and recoverable delete/one-time restore
   semantics. Terminal calls run as the current Windows user and can execute
@@ -221,8 +222,8 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 61 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
-plus 20 `/agent/v1/*`), requires correct-bearer success plus
+The backend artifact covers 62 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
+plus 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), requires correct-bearer success plus
 wrong/missing-bearer rejection, and records observation routes as explicit
 hardware/external skips. It uses synthetic STT/TTS and records only statuses,
 timings, counts, event types, and cleanup state. In deterministic mode it also
@@ -302,3 +303,4 @@ Model weights, voice assets, active datasets, credentials, runtime app data,
 and local caches are not source files. Do not commit them. Do not treat a model
 download, unit-test pass, benchmark score, or historical report as live quality
 acceptance.
+

@@ -44,7 +44,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(61, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 61
+        Assert.Equal(62, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 62 (41 + 20 Agent + POST /host/shutdown)
     }
 
     [Theory]
@@ -168,6 +168,28 @@ public sealed class AgentV1EndpointTests
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("runtime_not_ready", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_rejects_legacy_image_attachments_instead_of_dropping_them()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                workspace_path = Path.GetTempPath(),
+                prompt = "inspect image",
+                preset = "standard",
+                idempotency_key = "image-attachment-test",
+                image_attachments = new[] { "data:image/png;base64,abc" },
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("image_attachments_unsupported", json.GetProperty("error_code").GetString());
     }
 
     [Fact]

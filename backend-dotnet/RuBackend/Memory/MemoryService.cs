@@ -27,6 +27,7 @@ public sealed record MemoryLegacyImportResult(int Imported, int Rejected);
 
 public sealed class MemoryService : IMemoryService, IAsyncDisposable
 {
+    private const long MaximumLegacyFileBytes = 16 * 1024 * 1024;
     private const string UserPrefix = "User: ";
     private const string AssistantMarker = "\nAssistant:";
 
@@ -195,7 +196,21 @@ public sealed class MemoryService : IMemoryService, IAsyncDisposable
                 return new MemoryLegacyImportResult(0, 0);
             }
 
-            var source = await File.ReadAllBytesAsync(path).ConfigureAwait(false);
+            var fileInfo = new FileInfo(path);
+            if (fileInfo.Length > MaximumLegacyFileBytes)
+            {
+                return new MemoryLegacyImportResult(0, 1);
+            }
+
+            byte[] source;
+            try
+            {
+                source = await ReadBoundedBytesAsync(path, MaximumLegacyFileBytes).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                return new MemoryLegacyImportResult(0, 1);
+            }
             var sourceHash = Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant();
             if (await _repository.IsLegacyMigrationRecordedAsync(sourceHash, CancellationToken.None)
                     .ConfigureAwait(false))
@@ -308,6 +323,27 @@ public sealed class MemoryService : IMemoryService, IAsyncDisposable
         {
             _writeGate.Release();
         }
+    }
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(string path, long maximumBytes)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var output = new MemoryStream((int)Math.Min(maximumBytes, 81920));
+        var buffer = new byte[(int)Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("memory_legacy_file_too_large");
+            await output.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+        }
+        return output.ToArray();
     }
 
     private async Task<IReadOnlyList<MemoryRecord>> UpsertCandidatesAsync(

@@ -113,18 +113,37 @@ public sealed partial class HarnessPayloadStore
                 requireActiveRun ? "payload_recovery_unavailable" : "payload_not_found");
         }
 
+        var byteCap = reader.GetInt32(3);
+        var ciphertextLength = reader.GetBytes(4, 0, null, 0, 0);
+        var nonceLength = reader.GetBytes(6, 0, null, 0, 0);
+        var tagLength = reader.GetBytes(7, 0, null, 0, 0);
+        if (byteCap is <= 0 or > HarnessPayloadIntent.MaximumByteCap
+            || ciphertextLength > byteCap
+            || nonceLength != 12
+            || tagLength != 16)
+        {
+            throw new HarnessStoreException("payload_envelope_invalid");
+        }
+
+        var nonce = new byte[checked((int)nonceLength)];
+        var ciphertext = new byte[checked((int)ciphertextLength)];
+        var authenticationTag = new byte[checked((int)tagLength)];
+        reader.GetBytes(6, 0, nonce, 0, nonce.Length);
+        reader.GetBytes(4, 0, ciphertext, 0, ciphertext.Length);
+        reader.GetBytes(7, 0, authenticationTag, 0, authenticationTag.Length);
+
         var intent = new HarnessPayloadIntent(
             payloadId,
             (HarnessPayloadKind)reader.GetInt32(0),
             (HarnessPayloadAudience)reader.GetInt32(1),
             (HarnessPayloadEncoding)reader.GetInt32(2),
-            reader.GetInt32(3),
+            byteCap,
             ReadOnlyMemory<byte>.Empty);
         var encrypted = new EncryptedHarnessPayload(
             reader.GetInt32(5),
-            (byte[])reader[6],
-            (byte[])reader[4],
-            (byte[])reader[7]);
+            nonce,
+            ciphertext,
+            authenticationTag);
         return new StoredPayload(
             intent,
             encrypted,

@@ -13,6 +13,8 @@ public static class RuntimeDescriptorValidator
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new AgentApiException("invalid_descriptor", ex.Message); }
+        using (doc)
+        {
 
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
@@ -71,6 +73,7 @@ public static class RuntimeDescriptorValidator
         // Additionally ensure bearer does not contain provider secrets? Not needed.
 
         return new RuntimeDescriptor(version, baseUrl, bearer, pid, startTime, nonce, created);
+        }
     }
 
     public static bool TryParseStrict(string json, out RuntimeDescriptor? descriptor, out string? error)

@@ -97,7 +97,7 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
         byte[] fileBytes;
         try
         {
-            fileBytes = await File.ReadAllBytesAsync(_keyPath, cancellationToken)
+            fileBytes = await ReadBoundedBytesAsync(_keyPath, 64 * 1024, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -130,6 +130,21 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
         {
             throw new HarnessStoreException("harness_key_unprotect_failed", exception);
         }
+    }
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(string path, int maximumBytes, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new HarnessStoreException("harness_key_invalid");
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+        return output.ToArray();
     }
 
     private static void HardenFile(string path)

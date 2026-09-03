@@ -9,6 +9,9 @@ namespace RuAgent.Runtime.Adapters.Speech;
 public sealed class SpeechRuntimeRequestHandler : IPrivateRuntimeRequestHandler
 {
     private const int MaxAudioBase64Chars = 7_500_000;
+    // Keep the private handler bounded even when it is invoked directly by a
+    // worker/router instead of through the public STT endpoint's body limiter.
+    private const int MaxRequestBodyBytes = 8 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly ISpeechRecognizer _recognizer;
 
@@ -26,6 +29,11 @@ public sealed class SpeechRuntimeRequestHandler : IPrivateRuntimeRequestHandler
         if (request.Method != "POST" || path != "/voice/transcribe")
         {
             throw new PrivateRuntimeRequestException("unsupported_route");
+        }
+
+        if (request.Body.Length > MaxRequestBodyBytes)
+        {
+            return InvalidRequest();
         }
 
         JsonObject payload;

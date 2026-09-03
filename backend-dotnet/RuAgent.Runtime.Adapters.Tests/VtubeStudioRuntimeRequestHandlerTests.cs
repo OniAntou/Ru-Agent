@@ -92,6 +92,19 @@ public sealed class VtubeStudioRuntimeRequestHandlerTests
     }
 
     [Fact]
+    public async Task Config_rejects_oversized_body_before_parsing()
+    {
+        var handler = new VtubeStudioRuntimeRequestHandler(new FakeVtubeStudioClient());
+        var error = await Assert.ThrowsAsync<PrivateRuntimeRequestException>(() => InvokeAsync(
+            handler,
+            "POST",
+            "/vts/config",
+            new string('x', 256 * 1024 + 1)));
+
+        Assert.Equal("invalid_request", error.Code);
+    }
+
+    [Fact]
     public async Task Connect_failure_does_not_publish_provider_exception_text()
     {
         const string secret = "vts-secret-from-provider";

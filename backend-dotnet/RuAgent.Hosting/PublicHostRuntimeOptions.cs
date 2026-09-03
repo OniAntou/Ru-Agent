@@ -12,7 +12,6 @@ public sealed class PublicHostRuntimeOptions
     public const int DefaultBrokerPortRangeStart = 1024;
     public const int DefaultBrokerPortRangeEnd = 65535;
     public const string DefaultBindUrl = "http://127.0.0.1:8000";
-    public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromMinutes(10);
 
     public int PublicPort { get; init; } = DefaultPublicPort;
     public int AgentWorkerPort { get; init; } = DefaultWorkerPort;

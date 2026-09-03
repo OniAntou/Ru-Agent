@@ -30,8 +30,9 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 61 HTTP method/path pairs plus the single
-`/voice/stream` WebSocket (41 legacy plus 20 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 62 HTTP method/path pairs plus the single
+`/voice/stream` WebSocket (41 legacy plus 20 additive `/agent/v1/*` plus 1
+`POST /host/shutdown`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is
@@ -60,10 +61,25 @@ The private, process-isolated .NET service that validates tool manifests,
 session scopes, approval state, and adapter execution before a local action.
 _Avoid_: public API route, unrestricted shell
 
+**Execution Authority**:
+The single module that actually performs a model-visible tool call:
+RuAgentBroker, reached through the `IToolGateway` seam. No in-process Host
+copy of tool semantics may exist.
+_Avoid_: dual execution paths, HarnessToolGateway
+
 **Tool Manifest**:
-The versioned declaration of a tool's identity, adapter, risk class, scopes,
-schemas, timeout, output limit, and trust class.
+The Broker policy declaration of a tool's identity, adapter, risk class, scopes,
+execution schemas, timeout, output limit, and trust class. Its ID/version and
+proposal schema digest must match the immutable definition in
+`RuAgent.Protocol`; it does not itself make a tool model-visible.
 _Avoid_: dynamically constructed tool ID
+
+**Tool Definition**:
+The immutable Protocol-owned declaration of a tool's ID/version, model-facing
+description, canonical scope, exposure flags, strict proposal schema, example,
+and stable ordering. The Host runtime projection selects enabled
+`ModelVisible` definitions for both the prompt and Worker `model_tools`.
+_Avoid_: treating a Broker manifest or adapter list as the model contract
 
 **Skill Manifest**:
 The declarative, bounded description of an allowed workflow, its named tools,
@@ -76,11 +92,10 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The session-scoped Agent preset that controls the model-visible Worker v2
-bindings and Broker policy. The current Worker v2 advertisement is the same
-ten file/terminal bindings in Standard and Full Access; Full Access only
-loosens policy fallbacks, and every launch starts with the Agent Standard
-preset.
+The session-scoped Agent preset that controls Broker policy. The model-visible
+Worker v2 list is the runtime projection of eleven core Protocol definitions
+(including offline `help.docs`) plus independently enabled `web.search`/`web.fetch`; Standard and Full Access receive
+the same enabled list, while Full Access only loosens policy fallbacks.
 _Avoid_: permanent permission
 
 **Deterministic Device Action**:

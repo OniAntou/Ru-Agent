@@ -75,7 +75,7 @@ public sealed class WorkspaceTrustService
         var key = await keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (key.Length != 32)
+            if (key is not { Length: 32 })
             {
                 throw new HarnessStoreException("harness_key_invalid");
             }
@@ -105,7 +105,10 @@ public sealed class WorkspaceTrustService
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(key);
+            if (key is not null)
+            {
+                CryptographicOperations.ZeroMemory(key);
+            }
         }
     }
 
@@ -122,7 +125,7 @@ public sealed class WorkspaceTrustService
         var tag = new byte[16];
         try
         {
-            if (key.Length != 32)
+            if (key is not { Length: 32 })
             {
                 throw new HarnessStoreException("harness_key_invalid");
             }
@@ -133,7 +136,10 @@ public sealed class WorkspaceTrustService
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(key);
+            if (key is not null)
+            {
+                CryptographicOperations.ZeroMemory(key);
+            }
             CryptographicOperations.ZeroMemory(plaintext);
         }
     }

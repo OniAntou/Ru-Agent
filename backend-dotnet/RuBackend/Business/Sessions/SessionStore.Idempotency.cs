@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -56,6 +57,10 @@ public sealed partial class SessionStore
         {
             return SessionAppendOutcome.TransientFailure;
         }
+        catch (InvalidDataException)
+        {
+            return SessionAppendOutcome.TransientFailure;
+        }
         finally
         {
             _gate.Release();
@@ -68,6 +73,18 @@ public sealed partial class SessionStore
         CancellationToken cancellationToken)
     {
         var merged = current.Messages.Concat(messages).ToArray();
+        long contentBytes = 0;
+        foreach (var message in merged)
+        {
+            contentBytes += Encoding.UTF8.GetByteCount(message.Content);
+            if (contentBytes > MaximumSessionFileBytes)
+            {
+                // Reject before JsonSerializer allocates a potentially much
+                // larger document for a session that cannot be persisted.
+                throw new InvalidDataException("session_file_too_large");
+            }
+        }
+
         var ledger = BuildSourceLedger(current);
         foreach (var message in messages.Where(message => message.SourceMessageId is not null))
         {

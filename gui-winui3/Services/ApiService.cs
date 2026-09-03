@@ -954,6 +954,24 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<bool> ShutdownHostAsync(CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                using var response = await _httpClient.PostAsync($"{_baseUrl}/host/shutdown", null, cancellationToken);
+                return response.IsSuccessStatusCode;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("ShutdownHostAsync", ex);
+                return false;
+            }
+        }
+
         public void Dispose()
         {
             _httpClient.Dispose();

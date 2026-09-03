@@ -93,29 +93,24 @@ public sealed class DiagnosticLogReader
             try
             {
                 using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var reader = new StreamReader(stream);
+                using var reader = new BoundedTextLineReader(new StreamReader(stream), DiagnosticLogQueryPolicy.MaxRecordBytes);
 
                 var scannedBytes = 0;
-                string? line;
-                while ((line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) != null)
+                while (true)
                 {
+                    var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                    if (read.EndOfFile) break;
+                    scannedBytes += read.Bytes;
+                    if (scannedBytes > DiagnosticLogQueryPolicy.MaxScanBytesPerFile)
+                    {
+                        break;
+                    }
+                    if (read.TooLarge) continue;
+                    var line = read.Line!;
                     if (string.IsNullOrWhiteSpace(line))
                     {
                         continue;
                     }
-
-                    var lineBytes = Encoding.UTF8.GetByteCount(line) + 1;
-                    if (lineBytes > DiagnosticLogQueryPolicy.MaxRecordBytes)
-                    {
-                        continue;
-                    }
-
-                    if (scannedBytes + lineBytes > DiagnosticLogQueryPolicy.MaxScanBytesPerFile)
-                    {
-                        break;
-                    }
-
-                    scannedBytes += lineBytes;
 
                     var evt = DiagnosticEventPolicy.Deserialize(line);
                     if (evt == null)

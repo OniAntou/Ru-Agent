@@ -18,6 +18,7 @@ public interface IWindowsCredentialApi
 
 public sealed class WindowsCredentialStore : ICredentialStore
 {
+    private const int MaximumSecretCharacters = 32 * 1024;
     private readonly IWindowsCredentialApi _native;
 
     public WindowsCredentialStore()
@@ -75,6 +76,10 @@ public sealed class WindowsCredentialStore : ICredentialStore
         if (normalizedSecret.Length == 0)
         {
             throw new ArgumentException("Credential cannot be empty.", nameof(secret));
+        }
+        if (normalizedSecret.Length > MaximumSecretCharacters)
+        {
+            throw new ArgumentException("Credential is too large.", nameof(secret));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -147,6 +152,7 @@ public sealed class WindowsCredentialStore : ICredentialStore
 
 public sealed class WindowsCredentialApi : IWindowsCredentialApi
 {
+    private const uint MaximumCredentialBlobBytes = 64 * 1024;
     private const uint GenericCredential = 1;
     private const uint PersistEnterprise = 3;
     private const int ErrorNotFound = 1168;
@@ -168,6 +174,13 @@ public sealed class WindowsCredentialApi : IWindowsCredentialApi
         try
         {
             var credential = Marshal.PtrToStructure<NativeCredential>(pointer);
+            if (credential.CredentialBlobSize > MaximumCredentialBlobBytes
+                || (credential.CredentialBlobSize > 0 && credential.CredentialBlob == IntPtr.Zero)
+                || credential.CredentialBlobSize % 2 != 0)
+            {
+                throw new InvalidDataException("Windows credential data is invalid.");
+            }
+
             var secretBytes = new byte[credential.CredentialBlobSize];
             if (secretBytes.Length > 0)
             {

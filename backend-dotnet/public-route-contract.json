@@ -1,5 +1,6 @@
 [
   {"method":"GET","path":"/status","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.GetStatusAsync"]},
+  {"method":"POST","path":"/host/shutdown","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ShutdownHostAsync"]},
   {"method":"GET","path":"/diagnostics/logs","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetDiagnosticLogsAsync"]},
   {"method":"GET","path":"/diagnostics/export","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ExportDiagnosticLogsAsync"]},
   {"method":"GET","path":"/diagnostics/status","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetDiagnosticStatusAsync"]},

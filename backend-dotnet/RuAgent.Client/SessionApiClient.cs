@@ -30,7 +30,7 @@ public sealed class SessionApiClient
         if (!response.IsSuccessStatusCode)
             throw new AgentApiException("session_create_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
 
-        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
         return ParseSessionId(content);
     }
 
@@ -41,6 +41,8 @@ public sealed class SessionApiClient
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        using (doc)
+        {
 
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
@@ -76,10 +78,14 @@ public sealed class SessionApiClient
             throw new AgentApiException("invalid_session_id", "Length invalid");
         foreach (var c in sessionId)
         {
-            if (!(char.IsLetterOrDigit(c) || c == '_' || c == '-'))
+            if (!((c is >= 'a' and <= 'z')
+                || (c is >= 'A' and <= 'Z')
+                || (c is >= '0' and <= '9')
+                || c is '_' or '-'))
                 throw new AgentApiException("invalid_session_id", $"Invalid char {c}");
         }
 
         return sessionId;
+        }
     }
 }

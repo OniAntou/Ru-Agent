@@ -8,7 +8,6 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
-using RuAgent.Broker.Tools.Help;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 
@@ -141,7 +140,10 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
 /// </summary>
 public interface IAgentRuntimeCoordinatorFactory
 {
-    AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null);
+    AgentRunCoordinator Create(
+        string workspaceRoot,
+        PolicySnapshot? policySnapshot = null,
+        RunId? runId = null);
 }
 
 public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFactory
@@ -162,8 +164,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly ITimeProvider _time;
     private readonly IModelContextLimitProvider _contextLimit;
     private readonly Broker.AgentWebToolExecutor? _webExecutor;
-    private readonly HelpDocsTool _helpDocs;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -182,7 +184,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         ITimeProvider? time = null,
         IModelContextLimitProvider? contextLimit = null,
         Broker.AgentWebToolExecutor? webExecutor = null,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        Broker.BrokerToolGatewayFactory? brokerGateways = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -201,27 +204,27 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _contextLimit = contextLimit
             ?? new StaticModelContextLimitProvider(32_768);
         _webExecutor = webExecutor;
-        _helpDocs = HelpDocsTool.CreateDefault();
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _brokerGateways = brokerGateways;
     }
 
-    public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
+    public AgentRunCoordinator Create(
+        string workspaceRoot,
+        PolicySnapshot? policySnapshot = null,
+        RunId? runId = null)
     {
         var availability = new AgentToolRuntimeAvailability(
             _webExecutor?.IsSearchEnabled == true,
             _webExecutor?.IsFetchEnabled == true);
-        var projectedDefinitions = AgentToolRuntimeProjection.Select(availability);
-        var gateway = new Broker.HarnessToolGateway(
-            workspaceRoot,
-            projectedDefinitions.Select(definition => definition.ToolId).ToArray(),
-            presetProvider: runId => policySnapshot?.Preset ?? AgentPermissionPreset.Standard,
-            idGenerator: new CryptographicIdGenerator(),
-            approvalGrants: _approvalGrants,
-            policySnapshot: policySnapshot,
-            webExecutor: _webExecutor,
-            helpDocsTool: _helpDocs,
-            workspaceCoordinatorStore: _workspaceCoordinatorStore,
-            eventStore: _store);
+        if (_brokerGateways is not { IsConfigured: true }
+            || policySnapshot is null
+            || runId is not { } brokerRunId)
+        {
+            throw new InvalidOperationException(
+                "broker_gateway_unavailable: every tool call must execute inside the Broker");
+        }
+
+        IToolGateway gateway = _brokerGateways.Create(workspaceRoot, policySnapshot, brokerRunId);
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
@@ -290,6 +293,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
+    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
 
     public AgentRuntimeLoopService(
         AgentConversationOutboxDispatcher dispatcher,
@@ -300,7 +304,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         AgentRunSummaryLivePublisher? summaryPublisher = null,
         WorkspaceExternalChangeMonitor? workspaceChangeMonitor = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        WorkspaceJournalProtector? workspaceJournalProtector = null)
+        WorkspaceJournalProtector? workspaceJournalProtector = null,
+        Broker.BrokerToolGatewayFactory? brokerGateways = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -311,6 +316,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _workspaceChangeMonitor = workspaceChangeMonitor;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
+        _brokerGateways = brokerGateways;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -409,6 +415,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         }
     }
 
+    private void RemoveRunRegistration(RunId runId)
+    {
+        _roots.Remove(runId);
+        _brokerGateways?.CloseRun(runId.Value);
+    }
+
     private async Task<AgentRun?> LoadRunAsync(string runIdValue, CancellationToken cancellationToken) =>
         await _store.GetRunAsync(new RunId(runIdValue), cancellationToken).ConfigureAwait(false);
 
@@ -454,7 +466,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                     workspaceRoot,
                     change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
             }
-            coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot);
+            coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot, runId);
             _roots.RegisterCoordinator(runId, coordinator);
 
             if (policySnapshot is null)
@@ -490,7 +502,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 if (result.Run.State.IsTerminal())
                 {
                     _summaryPublisher?.TryPublishSummary(result.Run);
-                    _roots.Remove(runId);
+                    RemoveRunRegistration(runId);
                 }
 
                 break;
@@ -504,7 +516,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 // A missing/replaced workspace can make gateway construction fail
                 // before a coordinator exists. Park the registration instead of
                 // retrying the same bad root on every 250 ms poll.
-                _roots.Remove(runId);
+                RemoveRunRegistration(runId);
                 return;
             }
 
@@ -521,6 +533,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         finally
         {
             workspaceWatcher?.Dispose();
+            _workspaceChangeMonitor?.ClearExpectedHashes(workspaceRoot);
             if (membership is not null && _workspaceCoordinatorStore is not null)
             {
                 try

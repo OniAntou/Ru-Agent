@@ -219,7 +219,7 @@ public sealed class AgentApprovalEndpointTests
                 ToolCall("files.read", externalArguments),
                 ToolCall("files.read", externalArguments),
                 FinalStep("done"));
-            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "external directory approval");
@@ -280,7 +280,7 @@ public sealed class AgentApprovalEndpointTests
             var secondRunner = new ScriptedRunner(
                 ToolCall("files.list", JsonSerializer.Serialize(new { path = Path.GetDirectoryName(externalFile)! })),
                 FinalStep("done"));
-            using var secondFactory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: secondRunner);
+            using var secondFactory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: secondRunner, withInProcessBroker: true);
             var secondClient = secondFactory.CreateAuthenticatedClient();
             var secondCreated = await CreateRunAndTrustAsync(secondClient, sessionId, wsPath, "reuse external directory approval");
             var secondRunId = secondCreated.GetProperty("run_id").GetString()!;
@@ -292,9 +292,13 @@ public sealed class AgentApprovalEndpointTests
                     TimeSpan.FromSeconds(30)),
                 "new run did not reach a terminal/history state");
             var secondEvents = await ReadEventsAsync(secondClient, secondRunId);
-            Assert.False(
-                secondEvents.Any(e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested"),
-                "Project rules: " + policyJson.GetRawText());
+            // The Broker lease binds the latest policy snapshot, so the durable
+            // project rule lets the new run read the external directory without
+            // another approval round-trip.
+            Assert.DoesNotContain(
+                secondEvents,
+                e => e.TryGetProperty("event_type", out var type)
+                    && type.GetString() == "approval.requested");
             Assert.Contains(secondEvents, e => e.TryGetProperty("event_type", out var type) && type.GetString() == "tool.execution_completed");
         }
         finally
@@ -339,7 +343,7 @@ public sealed class AgentApprovalEndpointTests
                 JsonDocument.Parse("""{"executable":"git","arguments":["commit","-m","x"]}""").RootElement.Clone()) },
             AssistantFinishReason.ToolCalls,
             0));
-        var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+        var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
         var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
         var runBody = new

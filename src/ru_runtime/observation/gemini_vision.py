@@ -19,6 +19,8 @@ GEMINI_VISION_MODELS = (
 )
 DEFAULT_GEMINI_VISION_MODEL = GEMINI_VISION_MODELS[0]
 _MODELS_WITHOUT_SAMPLING_PARAMS = ("gemini-3.6-", "gemini-3.7-")
+MAX_GEMINI_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_GEMINI_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 def _generation_config(model_name: str) -> dict[str, object]:
@@ -68,7 +70,13 @@ def _send_gemini_vision_request(
 
     try:
         with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
-            resp_body = response.read().decode("utf-8")
+            declared_length = response.headers.get("Content-Length")
+            if isinstance(declared_length, str) and declared_length.isdigit() and int(declared_length) > MAX_GEMINI_RESPONSE_BYTES:
+                return None
+            raw_body = response.read(MAX_GEMINI_RESPONSE_BYTES + 1)
+            if len(raw_body) > MAX_GEMINI_RESPONSE_BYTES:
+                return None
+            resp_body = raw_body.decode("utf-8")
             decoded = json.loads(resp_body)
             return decoded if isinstance(decoded, dict) else None
     except urllib.error.HTTPError as http_err:
@@ -92,6 +100,9 @@ def analyze_screenshot_with_gemini(
 
     if not image_bytes:
         logger.warning("Image bytes for Gemini Vision are empty.")
+        return None
+    if len(image_bytes) > MAX_GEMINI_IMAGE_BYTES:
+        logger.warning("Image bytes for Gemini Vision exceed the bounded request limit.")
         return None
 
     b64_data = base64.b64encode(image_bytes).decode("ascii")

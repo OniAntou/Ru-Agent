@@ -13,14 +13,14 @@
 
     <UserControl.Resources>
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,12" HorizontalAlignment="Stretch">
+            <Grid Margin="0,8" HorizontalAlignment="Stretch">
                 <Border MaxWidth="620"
                         HorizontalAlignment="Right"
                         Background="{StaticResource RuSurfaceBrush}"
                         BorderBrush="{StaticResource RuLineBrush}"
                         BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="16,12">
+                        CornerRadius="14,14,4,14"
+                        Padding="14,10">
                     <StackPanel Spacing="8">
                         <ItemsControl ItemsSource="{x:Bind Attachments, Mode=OneWay}"
                                       Visibility="{x:Bind HasAttachments, Mode=OneWay}">
@@ -70,41 +70,21 @@
 
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,16" HorizontalAlignment="Stretch">
-                <Grid MaxWidth="740"
-                      HorizontalAlignment="Left"
-                      ColumnDefinitions="Auto,*">
-                    <Border Grid.Column="0"
-                            Width="26"
-                            Height="26"
-                            Margin="0,2,12,0"
-                            VerticalAlignment="Top"
-                            Background="{StaticResource RuAccentSoftBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="13">
-                        <TextBlock Text="Ru"
-                                   FontFamily="{StaticResource RuDisplayFontFamily}"
-                                   FontSize="11"
-                                   FontWeight="Bold"
-                                   Foreground="{StaticResource RuAccentBrush}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" />
-                    </Border>
-                    <StackPanel Grid.Column="1"
-                                Spacing="6">
-                        <Rectangle x:Name="TypingCaret"
-                                   Width="2"
-                                   Height="18"
-                                   HorizontalAlignment="Left"
-                                   Fill="{StaticResource RuAccentBrush}"
-                                   Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                        <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                                FontSize="15"
-                                                Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
-                                                FontFamily="{StaticResource RuUiFontFamily}"
-                                                Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                    </StackPanel>
-                </Grid>
+                <StackPanel MaxWidth="760"
+                            HorizontalAlignment="Left"
+                            Spacing="6">
+                    <Rectangle x:Name="TypingCaret"
+                               Width="2"
+                               Height="18"
+                               HorizontalAlignment="Left"
+                               Fill="{StaticResource RuAccentBrush}"
+                               Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                            FontSize="15"
+                                            Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
+                                            FontFamily="{StaticResource RuUiFontFamily}"
+                                            Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </StackPanel>
             </Grid>
         </DataTemplate>
 
@@ -313,7 +293,7 @@
                                                       FontSize="13"
                                                       Foreground="{StaticResource RuSuccessBrush}"
                                                       Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                            <FontIcon Glyph="&#xE74D;"
+                                            <FontIcon Glyph="&#xEA39;"
                                                       FontSize="13"
                                                       Foreground="{StaticResource RuDangerBrush}"
                                                       Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
@@ -345,27 +325,41 @@
                     <Border x:Name="AgentRunSummaryPanel"
                             Grid.Row="2"
                             Visibility="Collapsed"
-                            Margin="16,10,16,16"
-                            Padding="12,10"
-                            Background="{StaticResource RuSurfaceBrush}"
+                            HorizontalAlignment="Left"
+                            MaxWidth="560"
+                            Margin="16,8,16,14"
+                            Padding="14,10"
+                            Background="{StaticResource RuCanvasBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
                             BorderThickness="1"
-                            CornerRadius="6"
+                            CornerRadius="8"
                             AutomationProperties.AutomationId="AgentRunSummary"
                             AutomationProperties.Name="Tóm tắt phiên Coding Agent"
                             AutomationProperties.LiveSetting="Polite">
-                        <Grid ColumnDefinitions="22,*"
-                              ColumnSpacing="8">
-                            <FontIcon x:Name="AgentRunSummaryGlyph"
-                                      Grid.Column="0"
-                                      FontSize="14"
-                                      Foreground="{StaticResource RuAccentBrush}"
-                                      VerticalAlignment="Top" />
+                        <Grid ColumnDefinitions="26,*"
+                              ColumnSpacing="10">
+                            <Border Grid.Column="0"
+                                    Width="24"
+                                    Height="24"
+                                    CornerRadius="12"
+                                    Background="{StaticResource RuSurfaceBrush}"
+                                    BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1"
+                                    VerticalAlignment="Top"
+                                    HorizontalAlignment="Center">
+                                <FontIcon x:Name="AgentRunSummaryGlyph"
+                                          FontSize="11"
+                                          Foreground="{StaticResource RuAccentBrush}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                            </Border>
                             <StackPanel Grid.Column="1"
-                                        Spacing="2">
+                                        Spacing="2"
+                                        VerticalAlignment="Center">
                                 <TextBlock x:Name="AgentRunSummaryText"
                                            FontFamily="{StaticResource RuUiFontFamily}"
                                            FontSize="13"
+                                           FontWeight="SemiBold"
                                            Foreground="{StaticResource RuInkBrush}"
                                            TextWrapping="Wrap" />
                                 <TextBlock x:Name="AgentRunSummaryMetadata"
@@ -402,20 +396,33 @@
                         Grid.Row="1"
                         Visibility="Collapsed"
                         Spacing="6"
-                        Margin="8,0,8,8">
+                        Margin="8,0,8,6">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <TextBlock x:Name="AgentStatusText"
-                               AutomationProperties.AutomationId="AgentStatusText"
-                               AutomationProperties.LiveSetting="Polite"
-                               TextWrapping="Wrap"
-                               Foreground="{StaticResource RuMutedBrush}"
-                               VerticalAlignment="Center" />
+                    <Border Background="{StaticResource RuCanvasBrush}"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="10,4"
+                            HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="{StaticResource RuMutedBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="AgentStatusText"
+                                       AutomationProperties.AutomationId="AgentStatusText"
+                                       AutomationProperties.LiveSetting="Polite"
+                                       FontSize="11.5"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       Foreground="{StaticResource RuMutedBrush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
                     <Button x:Name="AgentStopButton"
                             Grid.Column="1"
                             Content="Dừng"
                             Click="OnAgentStopClick"
                             Visibility="Collapsed"
                             Padding="10,4"
+                            CornerRadius="6"
+                            FontSize="12"
                             AutomationProperties.AutomationId="AgentStopButton"
                             AutomationProperties.Name="Dừng Coding Agent" />
                 </Grid>
@@ -1100,6 +1107,7 @@
 
                             <Button x:Name="SendButton"
                                     AutomationProperties.AutomationId="SendButton"
+                                    AutomationProperties.Name="Gửi tin nhắn"
                                     Click="OnSendClick"
                                     Width="32"
                                     Height="32"
@@ -1111,7 +1119,7 @@
                                     BorderBrush="{StaticResource RuLineBrush}"
                                     BorderThickness="1"
                                     VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE725;" FontSize="13" Foreground="{StaticResource RuInkBrush}" Margin="-1,1,0,0" />
+                                <FontIcon x:Name="SendButtonIcon" Glyph="&#xE725;" FontSize="13" Foreground="{StaticResource RuInkBrush}" Margin="-1,1,0,0" />
                             </Button>
                         </StackPanel>
                     </Grid>

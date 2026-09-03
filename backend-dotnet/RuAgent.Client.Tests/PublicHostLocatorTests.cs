@@ -27,6 +27,20 @@ public sealed class PublicHostLocatorTests : IDisposable
     }
 
     [Fact]
+    public void OversizedDescriptorRejectedBeforeParsing()
+    {
+        var locator = new PublicHostLocator(_root);
+        Directory.CreateDirectory(Path.GetDirectoryName(locator.DescriptorPath)!);
+        using (var stream = new FileStream(locator.DescriptorPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+        {
+            stream.SetLength(1024 * 1024 + 1);
+        }
+
+        Assert.False(locator.TryGetValidDescriptor(out _, out var error));
+        Assert.Equal("too_large", error);
+    }
+
+    [Fact]
     public void ValidDescriptorAcceptedIfProcessAlive()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();

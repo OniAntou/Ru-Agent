@@ -184,6 +184,45 @@ public sealed class ModelContextSourceTests
         Assert.Equal("payload_authentication_failed", exception.Code);
     }
 
+    [Fact]
+    public async Task Oversized_stored_payload_is_rejected_before_decryption()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var request = fixture.NewRun(1, 1, 1);
+        await fixture.CreateEventStore().TryCreateRunAsync(request, CancellationToken.None);
+        var entry = new HarnessBaseContextEntry(
+            HarnessStoreTestFixture.Payload(31),
+            "base:1:user",
+            1,
+            ModelContextRole.User,
+            "bounded context");
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId,
+            [entry],
+            HarnessStoreTestFixture.Timestamp.AddSeconds(1),
+            CancellationToken.None);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE agent_payloads
+                SET protected_content = zeroblob(4194305)
+                WHERE payload_id = $payload_id
+                """;
+            command.Parameters.AddWithValue("$payload_id", entry.PayloadId.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var exception = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            new SqliteModelContextSource(fixture.Options, fixture.PayloadStore)
+                .LoadAsync(request.Run.RunId, CancellationToken.None));
+
+        Assert.Equal("context_payload_invalid", exception.Code);
+    }
+
     private static HarnessPayloadIntent TextPayload(
         int number,
         HarnessPayloadKind kind,

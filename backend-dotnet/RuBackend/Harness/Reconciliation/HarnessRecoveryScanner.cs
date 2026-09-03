@@ -26,6 +26,8 @@ public sealed class HarnessRecoveryScanner(
     ITimeProvider time,
     Func<CancellationToken, Task<IReadOnlyList<RunId>>>? pendingRunSource = null)
 {
+    private static readonly TimeSpan WorkspaceTrustTimeout = TimeSpan.FromMinutes(10);
+
     public async Task<IReadOnlyList<RecoveredRunSummary>> ScanPendingRunsAsync(
         CancellationToken cancellationToken)
     {
@@ -50,7 +52,23 @@ public sealed class HarnessRecoveryScanner(
         CancellationToken cancellationToken)
     {
         var run = await store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (run is null || run.State != HarnessRunState.Running)
+        if (run is null || run.State.IsTerminal())
+        {
+            return null;
+        }
+
+        // Workspace trust requests expire after ten minutes. If the host died or
+        // the client abandoned the prompt, leaving this row non-terminal would
+        // keep the workspace's unique active-run lock forever. Trust is a
+        // pre-execution gate, so cancelling an expired request cannot roll back
+        // any tool side effect.
+        if (run.State == HarnessRunState.WaitingWorkspaceTrust
+            && run.UpdatedAt <= time.UtcNow - WorkspaceTrustTimeout)
+        {
+            return await CancelExpiredWorkspaceTrustAsync(run, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (run.State != HarnessRunState.Running)
         {
             return null;
         }
@@ -186,6 +204,41 @@ public sealed class HarnessRecoveryScanner(
                 "recovery_read_only_incomplete" => "failed_read_only_incomplete",
                 _ => "failed_pre_dispatch",
             })
+            : null;
+    }
+
+    private async Task<RecoveredRunSummary?> CancelExpiredWorkspaceTrustAsync(
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        var transition = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.Cancel);
+        if (!transition.Accepted)
+        {
+            return null;
+        }
+
+        const string safeCode = "workspace_trust_expired";
+        var next = Advance(run, transition.Next, 1, time.UtcNow, safeCode);
+        var result = await store.CommitAsync(
+                new HarnessCommit(
+                    run.RunId,
+                    run.Version,
+                    next,
+                    new[]
+                    {
+                        new HarnessEventIntent(
+                            new RuAgent.Harness.Core.EventId($"evt_{Guid.NewGuid():N}"),
+                            HarnessEventKind.RunStateChanged,
+                            safeCode: safeCode),
+                    },
+                    Array.Empty<HarnessPayloadIntent>(),
+                    Array.Empty<ConversationOutboxIntent>()),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return result.Outcome == HarnessCommitOutcome.Committed
+            ? new RecoveredRunSummary(run.RunId, "cancelled_workspace_trust_expired")
             : null;
     }
 }

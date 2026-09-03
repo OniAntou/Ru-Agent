@@ -38,6 +38,21 @@ public sealed class ActivityPreviewTests
     }
 
     [Fact]
+    public void FormatPreview_bounds_the_sanitization_input_and_requested_output()
+    {
+        var (preview, originalLength, redacted) = ActivityPreview.FormatPreview(
+            new string('x', 60_000),
+            int.MaxValue);
+
+        Assert.Equal(60_000, originalLength);
+        Assert.True(redacted);
+        Assert.Equal(50_000, preview.Length);
+
+        Assert.Equal(string.Empty, ActivityPreview.FormatPreview("hello", 0).Preview);
+        Assert.Equal("..", ActivityPreview.FormatPreview("hello", 2).Preview);
+    }
+
+    [Fact]
     public void SanitizeEvent_converts_raw_chat_content_to_preview()
     {
         var rawEvent = new ActivityEvent(

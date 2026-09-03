@@ -214,6 +214,60 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
+    public async Task AppendIfAbsent_rejects_oversized_message_content()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        var message = new SessionMessage(
+            "user",
+            new string('x', 1024 * 1024 + 1),
+            "evt_oversized_message",
+            "run_oversized_message");
+
+        var result = await store.AppendIfAbsentAsync(sessionId, message, CancellationToken.None);
+
+        Assert.Equal(SessionAppendOutcome.InvalidMessage, result);
+        Assert.Empty((await store.GetAsync(sessionId, CancellationToken.None))!.Messages);
+    }
+
+    [Fact]
+    public async Task Get_falls_back_to_default_for_an_oversized_persisted_title()
+    {
+        var (store, paths) = CreateStore();
+        const string sessionId = "22222222222222222222222222222222";
+        Directory.CreateDirectory(paths.SessionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(paths.SessionDirectory, $"{sessionId}.json"),
+            $$"""
+            {
+              "id": "{{sessionId}}",
+              "title": "{{new string('x', 51)}}",
+              "created_at": "2026-08-24T00:00:00+00:00",
+              "updated_at": "2026-08-24T00:00:00+00:00",
+              "messages": []
+            }
+            """);
+
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Equal("Cuộc trò chuyện mới", loaded!.Title);
+    }
+
+    [Fact]
+    public async Task Append_rejects_a_merged_session_document_that_exceeds_the_file_cap()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        var messages = Enumerable.Range(0, 17)
+            .Select(index => new SessionMessage("user", new string((char)('a' + index % 26), 1024 * 1024)))
+            .ToArray();
+
+        Assert.False(await store.AppendAsync(sessionId, messages, CancellationToken.None));
+        Assert.Empty((await store.GetAsync(sessionId, CancellationToken.None))!.Messages);
+    }
+
+    [Fact]
     public async Task Ordinary_append_cannot_overwrite_the_idempotency_ledger()
     {
         var (store, _) = CreateStore();

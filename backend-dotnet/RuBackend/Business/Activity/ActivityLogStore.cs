@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuBackend.Diagnostics;
 
 namespace RuBackend.Business.Activity;
 
@@ -8,6 +9,7 @@ public sealed class ActivityLogStore : IActivityLogStore
 {
     private const int MaximumRead = 500;
     private const int MaximumEntries = 5_000;
+    private const int MaximumRecordBytes = 256_000;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -39,19 +41,12 @@ public sealed class ActivityLogStore : IActivityLogStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!string.IsNullOrWhiteSpace(sanitized.EventId))
+            var eventId = sanitized.EventId;
+            if (!string.IsNullOrWhiteSpace(eventId))
             {
-                if (_seenEventIds.Contains(sanitized.EventId))
+                if (_seenEventIds.Contains(eventId))
                 {
                     return; // Duplicate event suppression
-                }
-
-                _seenEventIds.Add(sanitized.EventId);
-                _seenOrder.Enqueue(sanitized.EventId);
-                if (_seenOrder.Count > MaximumEntries)
-                {
-                    var oldest = _seenOrder.Dequeue();
-                    _seenEventIds.Remove(oldest);
                 }
             }
 
@@ -70,6 +65,19 @@ public sealed class ActivityLogStore : IActivityLogStore
                 useAsync: true))
             {
                 await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Mark the event only after the append succeeds. A failed write must
+            // remain retryable instead of being suppressed as a duplicate.
+            if (!string.IsNullOrWhiteSpace(eventId))
+            {
+                _seenEventIds.Add(eventId);
+                _seenOrder.Enqueue(eventId);
+                if (_seenOrder.Count > MaximumEntries)
+                {
+                    var oldest = _seenOrder.Dequeue();
+                    _seenEventIds.Remove(oldest);
+                }
             }
 
             var fileInfo = new FileInfo(_logFile);
@@ -98,17 +106,32 @@ public sealed class ActivityLogStore : IActivityLogStore
                 return [];
             }
 
-            var events = new List<ActivityEvent>();
-            foreach (var line in await File.ReadAllLinesAsync(_logFile, cancellationToken)
-                         .ConfigureAwait(false))
+            var events = new Queue<ActivityEvent>(MaximumEntries);
+            await using var stream = new FileStream(
+                _logFile,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite,
+                4096,
+                useAsync: true);
+            using var reader = new BoundedTextLineReader(new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true), MaximumRecordBytes);
+            while (true)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                if (read.EndOfFile) break;
+                if (read.TooLarge) continue;
+                var line = read.Line!;
                 var parsed = ParseEvent(line);
                 if (parsed is not null)
                 {
                     // Re-sanitize on read as a defense-in-depth boundary for
                     // legacy files written before the privacy policy existed.
-                    events.Add(ActivityPreview.SanitizeEvent(parsed, _clock));
+                    if (events.Count == MaximumEntries)
+                    {
+                        events.Dequeue();
+                    }
+
+                    events.Enqueue(ActivityPreview.SanitizeEvent(parsed, _clock));
                 }
             }
 
@@ -136,9 +159,9 @@ public sealed class ActivityLogStore : IActivityLogStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            File.Delete(_logFile);
             _seenEventIds.Clear();
             _seenOrder.Clear();
-            File.Delete(_logFile);
         }
         finally
         {
@@ -148,14 +171,38 @@ public sealed class ActivityLogStore : IActivityLogStore
 
     private async Task TrimUnlockedAsync(CancellationToken cancellationToken)
     {
-        var lines = await File.ReadAllLinesAsync(_logFile, cancellationToken)
-            .ConfigureAwait(false);
-        if (lines.Length <= MaximumEntries)
+        var retained = new Queue<string>(MaximumEntries);
+        var total = 0;
+        await using (var stream = new FileStream(
+            _logFile,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite,
+            4096,
+            useAsync: true))
+        using (var reader = new BoundedTextLineReader(new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true), MaximumRecordBytes))
+        {
+            while (true)
+            {
+                var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                if (read.EndOfFile) break;
+                if (read.TooLarge) continue;
+                var line = read.Line!;
+                total++;
+                if (retained.Count == MaximumEntries)
+                {
+                    retained.Dequeue();
+                }
+
+                retained.Enqueue(line);
+            }
+        }
+
+        if (total <= MaximumEntries)
         {
             return;
         }
 
-        var retained = lines.TakeLast(MaximumEntries);
         await WriteAtomicAsync(
             string.Join(Environment.NewLine, retained) + Environment.NewLine,
             cancellationToken).ConfigureAwait(false);

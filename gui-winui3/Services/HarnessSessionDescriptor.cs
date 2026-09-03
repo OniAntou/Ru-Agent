@@ -10,6 +10,7 @@ public sealed record HarnessSessionDescriptor(
     string EventsPath,
     string VoiceMode)
 {
+    private const int MaximumDescriptorBytes = 1 * 1024 * 1024;
     public string? WorkspacePath { get; init; }
 
     private static readonly HashSet<string> AllowedScenarios = new(StringComparer.OrdinalIgnoreCase)
@@ -63,7 +64,15 @@ public sealed record HarnessSessionDescriptor(
         var descriptorPath = Path.GetFullPath(path);
         try
         {
-            var json = File.ReadAllText(descriptorPath);
+            var info = new FileInfo(descriptorPath);
+            if (info.Length > MaximumDescriptorBytes)
+            {
+                throw new InvalidDataException("Harness descriptor is too large.");
+            }
+            var bytes = ReadBoundedBytes(descriptorPath, MaximumDescriptorBytes);
+            using var stream = new MemoryStream(bytes, writable: false);
+            using var reader = new StreamReader(stream, new System.Text.UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true);
+            var json = reader.ReadToEnd();
             var payload = JsonSerializer.Deserialize<DescriptorPayload>(json)
                 ?? throw new InvalidDataException("Harness descriptor is empty.");
             var descriptor = Create(
@@ -175,6 +184,21 @@ public sealed record HarnessSessionDescriptor(
         catch (UnauthorizedAccessException)
         {
         }
+    }
+
+    private static byte[] ReadBoundedBytes(string path, int maximumBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("Harness descriptor is too large.");
+            output.Write(buffer, 0, read);
+        }
+        return output.ToArray();
     }
 
     private sealed class DescriptorPayload

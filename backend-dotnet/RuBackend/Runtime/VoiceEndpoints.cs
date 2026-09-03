@@ -1,3 +1,5 @@
+using RuBackend.Configuration;
+
 namespace RuBackend.Runtime;
 
 public static class VoiceEndpoints
@@ -23,6 +25,7 @@ public static class VoiceEndpoints
         HttpContext context,
         IRuntimeWorkerClient workerClient,
         ILoggerFactory loggerFactory,
+        Microsoft.Extensions.Options.IOptions<BackendOptions> options,
         CancellationToken cancellationToken) =>
         RuntimeEndpointRelay.SendAsync(
             context,
@@ -30,5 +33,6 @@ public static class VoiceEndpoints
             loggerFactory,
             "RuBackend.Voice",
             "Voice runtime is temporarily unavailable.",
+            options.Value.MaxRequestBodyBytes,
             cancellationToken);
 }

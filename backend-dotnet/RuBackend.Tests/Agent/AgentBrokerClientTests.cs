@@ -240,6 +240,26 @@ public sealed class AgentBrokerClientTests
         Assert.Contains("AgentMessageTypes.SkillStart", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Client_rejects_an_oversized_descriptor_before_parsing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-agent-descriptor-cap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "broker.json");
+            File.WriteAllText(path, new string('x', 1 * 1024 * 1024 + 1));
+
+            var error = Assert.Throws<AgentBrokerException>(() => new AgentBrokerClient(path));
+
+            Assert.Equal("invalid_descriptor", error.Code);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
     private static JsonArray DefaultTools() => new()
     {
         new JsonObject

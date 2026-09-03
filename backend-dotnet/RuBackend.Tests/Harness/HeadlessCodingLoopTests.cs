@@ -27,7 +27,7 @@ public sealed class HeadlessCodingLoopTests
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["commit","-m","managed attempt"]}"""));
 
-        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
         using var client = factory.CreateAuthenticatedClient();
         var runId = await CreateTrustedRunAsync(client, workspace.Path);
 
@@ -68,7 +68,7 @@ public sealed class HeadlessCodingLoopTests
         var runner = new ScriptedRunner();
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["commit","-m","contested"]}"""));
 
-        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner);
+        using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
         using var desktopClient = factory.CreateAuthenticatedClient();
         using var cliClient = factory.CreateAuthenticatedClient();
         var runId = await CreateTrustedRunAsync(desktopClient, workspace.Path);

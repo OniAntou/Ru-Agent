@@ -14,6 +14,7 @@ namespace RuAgent.Runtime.Adapters.Observation;
 /// </summary>
 public sealed class ObservationControlRequestHandler : IPrivateRuntimeRequestHandler
 {
+    private const int MaxRequestBodyBytes = 256 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly ManagedRuntimeSettingsService _settings;
     private readonly bool _voiceAvailable;
@@ -182,6 +183,11 @@ public sealed class ObservationControlRequestHandler : IPrivateRuntimeRequestHan
 
     private static JsonObject ParseObject(PrivateRuntimeRequest request, bool allowEmpty)
     {
+        if (request.Body.Length > MaxRequestBodyBytes)
+        {
+            throw new PrivateRuntimeRequestException("invalid_request");
+        }
+
         if (request.Body.IsEmpty && allowEmpty)
         {
             return [];

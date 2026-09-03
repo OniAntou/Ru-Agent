@@ -166,6 +166,17 @@ public sealed class PublicHostStarter : IDisposable
             };
             // Pass bearer via environment for Host to pick up
             psi.Environment["RU_DESKTOP_TOKEN"] = bearer;
+            // Track GUI parent so Host can auto-exit if GUI is killed via Task Manager
+            // (normal close uses POST /host/shutdown). Only set for RuApp, not CLI tracer.
+            try
+            {
+                var currentName = Environment.ProcessPath is { } path ? Path.GetFileNameWithoutExtension(path) : Process.GetCurrentProcess().ProcessName;
+                if (currentName.Contains("RuApp", StringComparison.OrdinalIgnoreCase))
+                {
+                    psi.Environment["RU_PARENT_PID"] = Environment.ProcessId.ToString();
+                }
+            }
+            catch { }
             lock (_lifecycleGate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);

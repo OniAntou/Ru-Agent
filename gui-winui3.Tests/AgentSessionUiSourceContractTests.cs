@@ -139,7 +139,7 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void Agent_session_reset_still_cancels_and_clears_active_state()
+    public void Agent_session_reset_clears_state_and_session_switch_cancels_before_replacement()
     {
         string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
 
@@ -148,10 +148,15 @@ public sealed class AgentSessionUiSourceContractTests
         int nextMethod = codeBehind.IndexOf("\n        private", resetStart + 1, StringComparison.Ordinal);
         string resetBody = nextMethod > resetStart ? codeBehind[resetStart..nextMethod] : codeBehind[resetStart..];
 
-        Assert.Contains("_agentController?.CanCancel == true", resetBody, StringComparison.Ordinal);
-        Assert.Contains("_agentController.CancelAsync()", resetBody, StringComparison.Ordinal);
         Assert.Contains("AbandonActiveAgentReply", resetBody, StringComparison.Ordinal);
         Assert.Contains("UpdateAgentComposerVisuals", resetBody, StringComparison.Ordinal);
+
+        int openStart = codeBehind.IndexOf("public async Task OpenSessionAsync", StringComparison.Ordinal);
+        int switchSession = codeBehind.IndexOf("_activeSessionId = sessionId;", openStart, StringComparison.Ordinal);
+        Assert.True(openStart >= 0);
+        Assert.True(switchSession > openStart);
+        Assert.True(
+            codeBehind.LastIndexOf("await StopActiveAgentAsync(force: true);", switchSession, StringComparison.Ordinal) > openStart);
     }
 
     private static string FindSource(params string[] parts)

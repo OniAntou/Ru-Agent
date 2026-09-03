@@ -287,6 +287,21 @@ public sealed class SettingsStoreTests
         Assert.Equal(before, await File.ReadAllBytesAsync(paths.SettingsFile));
     }
 
+    [Fact]
+    public async Task Save_rejects_an_oversized_unknown_settings_document()
+    {
+        var (store, paths) = CreateStore();
+        var current = await store.ReadAsync(CancellationToken.None);
+        var raw = current.Raw.DeepClone().AsObject();
+        raw["unknown_future_payload"] = new string('x', 1 * 1024 * 1024);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.SaveAsync(
+            current with { Raw = raw },
+            CancellationToken.None));
+
+        Assert.False(File.Exists(paths.SettingsFile));
+    }
+
     private static (SettingsStore Store, DataPaths Paths) CreateStore()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-settings-tests", Guid.NewGuid().ToString("N"));

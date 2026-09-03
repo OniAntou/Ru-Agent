@@ -46,6 +46,7 @@ public sealed class AgentV1Service
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private readonly IAgentBrokerClient? _agentBrokerClient;
+    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
 
@@ -79,6 +80,7 @@ public sealed class AgentV1Service
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         HarnessPolicySnapshotService? policySnapshotService = null,
         IAgentBrokerClient? agentBrokerClient = null,
+        Broker.BrokerToolGatewayFactory? brokerGateways = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         WorkspaceJournalProtector? workspaceJournalProtector = null)
     {
@@ -100,6 +102,7 @@ public sealed class AgentV1Service
         _inspectionGate = inspectionGate;
         _approvalGrants = approvalGrants;
         _agentBrokerClient = agentBrokerClient;
+        _brokerGateways = brokerGateways;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
     }
@@ -138,6 +141,14 @@ public sealed class AgentV1Service
         if (request is null)
         {
             return BoundedError(400, "invalid_request", "Request body required.");
+        }
+
+        if (request.ImageAttachments is { Count: > 0 })
+        {
+            return BoundedError(
+                400,
+                "image_attachments_unsupported",
+                "Image attachments are not supported by Agent v1.");
         }
 
         var sessionIdRaw = request.SessionId?.Trim() ?? string.Empty;
@@ -653,8 +664,14 @@ public sealed class AgentV1Service
 
             var root = await _trustService.DecryptCanonicalRootAsync(stored, cancellationToken).ConfigureAwait(false);
             var target = ResolveWorkspaceFile(root, envelope.Change.NormalizedPath);
-            var current = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false) : Array.Empty<byte>();
-            var currentSha = Convert.ToHexString(SHA256.HashData(current)).ToLowerInvariant();
+            if (ContainsReparsePointBoundary(root, target))
+            {
+                throw new UnauthorizedAccessException("workspace_reparse_boundary");
+            }
+
+            var currentSha = File.Exists(target)
+                ? await ComputeFileSha256Async(target, cancellationToken).ConfigureAwait(false)
+                : Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())).ToLowerInvariant();
             if (!string.Equals(currentSha, request.ExpectedCurrentSha256, StringComparison.Ordinal))
             {
                 return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_stale"));
@@ -678,6 +695,11 @@ public sealed class AgentV1Service
             var encrypted = await protector.EncryptAsync(workspaceId, restoreChangeId, envelope.Change.NormalizedPath, restorePayload, cancellationToken).ConfigureAwait(false);
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            if (ContainsReparsePointBoundary(root, target))
+            {
+                throw new UnauthorizedAccessException("workspace_reparse_boundary");
+            }
+
             var temporary = target + ".ru-restore-" + Guid.NewGuid().ToString("N");
             try
             {
@@ -721,6 +743,26 @@ public sealed class AgentV1Service
         {
             return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_io_failed"));
         }
+        catch (UnauthorizedAccessException)
+        {
+            return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_io_failed"));
+        }
+    }
+
+    private static async Task<string> ComputeFileSha256Async(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 128 * 1024,
+            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var sha256 = SHA256.Create();
+        var hash = await sha256.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     public async Task<AgentServiceResult> GetRunAsync(string runIdRaw, CancellationToken cancellationToken)
@@ -1073,9 +1115,14 @@ public sealed class AgentV1Service
             var payloadJson = content.Encoding == HarnessPayloadEncoding.Opaque
                 ? Convert.ToBase64String(content.Plaintext.ToArray())
                 : Encoding.UTF8.GetString(content.Plaintext.Span);
-            if (payloadJson.Length > 4 * 1024 * 1024)
+            // Never silently truncate a payload: callers may persist the returned
+            // value as a prompt or recovery artifact, so truncation would turn a
+            // valid document/base64 blob into corrupt data.  Keep the response
+            // bounded by rejecting oversized payloads explicitly instead.
+            const int maxClientPayloadCharacters = 4 * 1024 * 1024;
+            if (payloadJson.Length > maxClientPayloadCharacters)
             {
-                payloadJson = payloadJson[..(4 * 1024 * 1024)];
+                return BoundedError(413, "payload_too_large", "Payload exceeds the client response limit.");
             }
 
             var body = new
@@ -1878,6 +1925,23 @@ public sealed class AgentV1Service
                 return BoundedError(409, "commit_conflict", "Commit conflict.");
             }
 
+            // Best-effort cross-system cleanup: the Broker pending approval expires
+            // on its own, so a failed cleanup must not fail the durable denial.
+            if (_brokerGateways is { IsConfigured: true })
+            {
+                try
+                {
+                    await _brokerGateways.RespondApprovalAsync(
+                        runIdRaw,
+                        approvalIdRaw,
+                        "deny",
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (ToolTransportException)
+                {
+                }
+            }
+
             return new AgentServiceResult(200, new
             {
                 approval_id = approvalIdRaw,
@@ -1890,6 +1954,7 @@ public sealed class AgentV1Service
 
         bool ruleSaveFailed = false;
         string? ruleId = null;
+        string? brokerAuthorizationToken = null;
         var externalDirectoryRequested = string.Equals(
             pendingApprovalEvent?.SafeCode,
             "external_directory_required",
@@ -1897,6 +1962,34 @@ public sealed class AgentV1Service
         string? externalDirectory = isAllowRun || isAllowProject
             ? TryGetExternalDirectory(run, approvalBinding, externalDirectoryRequested)
             : null;
+        // The Broker is the execution authority: without consuming its pending
+        // approval first there is no way for the resumed step to execute, so a
+        // failed bridge fails closed while the run is still waiting.
+        if (_brokerGateways is { IsConfigured: true })
+        {
+            var brokerCommand = isAllowRun ? "allow_run" : isAllowProject ? "allow_project" : "allow_once";
+            bool bridged;
+            try
+            {
+                (bridged, brokerAuthorizationToken) = await _brokerGateways
+                    .RespondApprovalAsync(runIdRaw, approvalIdRaw, brokerCommand, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (ToolTransportException)
+            {
+                bridged = false;
+            }
+
+            if (!bridged)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                return BoundedError(
+                    409,
+                    "approval_stale",
+                    "Approval could not be authorized by the execution authority.");
+            }
+        }
+
         if (isAllowRun || isAllowProject)
         {
             try
@@ -1990,7 +2083,8 @@ public sealed class AgentV1Service
         {
             approval_id = approvalIdRaw,
             status = "authorized",
-            authorization_token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+            authorization_token = brokerAuthorizationToken
+                ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
             expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
             matcher_preview = matcherPreview,
             rule_saved = !ruleSaveFailed && (isAllowRun || isAllowProject),
@@ -3044,6 +3138,38 @@ public sealed class AgentV1Service
         }
 
         return target;
+    }
+
+    private static bool ContainsReparsePointBoundary(string root, string target)
+    {
+        var canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var current = Path.GetFullPath(target);
+        while (true)
+        {
+            if (File.Exists(current) || Directory.Exists(current))
+            {
+                var attributes = File.GetAttributes(current);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    return true;
+                }
+            }
+
+            if (string.Equals(current, canonicalRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrWhiteSpace(parent)
+                || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase)
+                || !parent.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            current = parent;
+        }
     }
 
     private static bool TryReadRestoreContent(ReadOnlySpan<byte> plaintext, out byte[] content)

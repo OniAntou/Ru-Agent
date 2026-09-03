@@ -466,7 +466,11 @@ public sealed class AgentCommands
                 && body.Contains("reconcile_stale", StringComparison.Ordinal)))
         {
             JsonElement doc;
-            try { doc = JsonDocument.Parse(body).RootElement.Clone(); }
+            try
+            {
+                using var parsed = JsonDocument.Parse(body);
+                doc = parsed.RootElement.Clone();
+            }
             catch (JsonException)
             {
                 await _err.WriteLineAsync("reconcile_unavailable: malformed host response").ConfigureAwait(false);

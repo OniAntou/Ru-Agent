@@ -113,8 +113,8 @@ public sealed class SkillPackageLoader
             throw new InvalidDataException("skill_package_too_large");
         }
 
-        var manifestText = ReadUtf8(manifestPath, manifestLength);
-        var instructions = ReadUtf8(instructionsPath, instructionsLength);
+        var manifestText = ReadUtf8(manifestPath, _maxManifestBytes);
+        var instructions = ReadUtf8(instructionsPath, _maxInstructionsBytes);
         JsonObject json;
         try
         {
@@ -253,16 +253,31 @@ public sealed class SkillPackageLoader
         }
     }
 
-    private static string ReadUtf8(string path, long length)
+    private static string ReadUtf8(string path, int maximumBytes)
     {
-        if (length > int.MaxValue)
-        {
-            throw new InvalidDataException("skill_package_too_large");
-        }
-
         try
         {
-            return new System.Text.UTF8Encoding(false, true).GetString(File.ReadAllBytes(path));
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                81920,
+                FileOptions.SequentialScan);
+            using var content = new MemoryStream(Math.Min(maximumBytes, 81920));
+            var buffer = new byte[Math.Min(maximumBytes, 81920)];
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                if (content.Length > maximumBytes - read)
+                {
+                    throw new InvalidDataException("skill_package_too_large");
+                }
+
+                content.Write(buffer, 0, read);
+            }
+
+            return new System.Text.UTF8Encoding(false, true).GetString(content.GetBuffer(), 0, checked((int)content.Length));
         }
         catch (DecoderFallbackException)
         {

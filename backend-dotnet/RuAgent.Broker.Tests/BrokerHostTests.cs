@@ -731,7 +731,52 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "terminal.run", "terminal.shell" }, caps);
+        Assert.Equal(new[] { "app.list", "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "notes.create", "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell" }, caps);
+    }
+
+    [Fact]
+    public async Task V2_run_open_advertises_web_capabilities_when_web_is_enabled()
+    {
+        await using var fixture = await HostFixture.StartAsync(
+            web: new Configuration.WebOptions(
+                enabled: true,
+                searchEndpoint: new Uri("https://html.duckduckgo.com/html/")));
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "hello-web", AgentMessageTypes.Hello, "session-web", null, 10_000, new System.Text.Json.Nodes.JsonObject { ["profile"] = "chat" }),
+            cts.Token);
+        await ReceiveAsync(socket, cts.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                2,
+                "run-open-web",
+                AgentMessageTypes.RunOpen,
+                "session-web",
+                null,
+                10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(
+                    "run_web11111111111111111111111111111",
+                    "session-web",
+                    Path.GetTempPath(),
+                    EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        var opened = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
+        var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
+        Assert.Equal(
+            new[]
+            {
+                "app.list", "files.delete", "files.edit", "files.glob", "files.list",
+                "files.read", "files.restore", "files.search", "files.write",
+                "help.docs", "notes.create", "system.status", "system.time",
+                "system.volume", "terminal.run", "terminal.shell", "web.fetch", "web.search",
+            },
+            caps);
     }
 
     [Fact]
@@ -775,7 +820,8 @@ public sealed class BrokerHostTests
             {
                 "files.delete", "files.edit", "files.glob", "files.list",
                 "files.read", "files.restore", "files.search", "files.write",
-                "terminal.run", "terminal.shell",
+                "help.docs", "notes.create", "system.volume", "terminal.run",
+                "terminal.shell",
             },
             ids);
     }
@@ -866,7 +912,7 @@ public sealed class BrokerHostTests
             cts.Token);
         _ = await ReceiveAsync(socket, cts.Token);
 
-        foreach (var toolId in new[] { "notes.create", "web.search" })
+        foreach (var toolId in new[] { "web.search", "totally.unknown" })
         {
             await SendAsync(
                 socket,
@@ -1050,7 +1096,9 @@ public sealed class BrokerHostTests
         public string Token { get; }
         public BrokerHost Host { get; }
 
-        public static async Task<HostFixture> StartAsync(IVolumeController? volumeController = null)
+        public static async Task<HostFixture> StartAsync(
+            IVolumeController? volumeController = null,
+            Configuration.WebOptions? web = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "ru-agent-host-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -1075,9 +1123,11 @@ public sealed class BrokerHostTests
             PreviousWorkspaceRoot = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
             Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", root);
 
-            var host = volumeController is null
-                ? await BrokerHost.StartAsync(descriptorPath)
-                : await BrokerHost.StartAsync(descriptorPath, volumeController);
+            var host = web is not null
+                ? await BrokerHost.StartAsync(new Configuration.BrokerOptions(descriptorPath, Web: web))
+                : volumeController is null
+                    ? await BrokerHost.StartAsync(descriptorPath)
+                    : await BrokerHost.StartAsync(descriptorPath, volumeController);
             return new HostFixture(root, token, host);
         }
 
@@ -1157,3 +1207,5 @@ public sealed class BrokerHostTests
         return AgentEnvelopeCodec.Parse(Encoding.UTF8.GetString(buffer, 0, result.Count));
     }
 }
+
+

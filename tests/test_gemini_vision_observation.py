@@ -70,6 +70,15 @@ def test_analyze_screenshot_missing_key():
     assert obs is None
 
 
+def test_gemini_vision_rejects_an_oversized_response_before_json_parsing():
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b"x" * (4 * 1024 * 1024 + 1)
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        assert analyze_screenshot_with_gemini(b"fake_jpeg", "fake_key", model_name="gemini-3.1-flash-lite") is None
+
+
 def test_gemini_37_request_uses_header_auth_and_omits_deprecated_sampling_fields():
     fake_gemini_response = {
         "candidates": [

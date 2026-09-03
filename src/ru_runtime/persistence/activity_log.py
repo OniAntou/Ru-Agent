@@ -20,6 +20,7 @@ from ru_runtime.persistence.activity_outbox import (
 logger = logging.getLogger("ru_runtime.persistence.activity_log")
 
 MAX_ENTRIES = 5000
+MAX_RECORD_BYTES = 256_000
 _log_lock = threading.Lock()
 
 
@@ -61,7 +62,18 @@ def read(limit: int = 200) -> list[dict]:
     with _log_lock:
         try:
             with target.open("r", encoding="utf-8") as fh:
-                for line in fh:
+                while True:
+                    line = fh.readline(MAX_RECORD_BYTES + 1)
+                    if not line:
+                        break
+                    if len(line) > MAX_RECORD_BYTES:
+                        # Drain the remainder of an overlong physical record,
+                        # then continue with the next newline-delimited event.
+                        while not line.endswith(("\n", "\r")):
+                            line = fh.readline(MAX_RECORD_BYTES + 1)
+                            if not line:
+                                break
+                        continue
                     line = line.strip()
                     if not line:
                         continue

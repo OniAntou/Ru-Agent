@@ -110,11 +110,7 @@ public sealed class WorkerBrokerLaunchPlan
             publishedBroker,
             string.Empty,
             root,
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["RU_AGENT_BROKER_DESCRIPTOR"] = descriptorPath,
-                    ["RU_LOG_ROOT"] = resolvedLogRoot,
-                },
+            CreateBrokerEnvironment(descriptorPath, resolvedLogRoot),
             Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
             Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")));
 
@@ -136,6 +132,34 @@ public sealed class WorkerBrokerLaunchPlan
         {
             throw new ArgumentException("Public, worker, device, VTube Studio, and Broker ports must be distinct and valid.");
         }
+    }
+
+    private static Dictionary<string, string> CreateBrokerEnvironment(string descriptorPath, string logRoot)
+    {
+        var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["RU_AGENT_BROKER_DESCRIPTOR"] = descriptorPath,
+            ["RU_LOG_ROOT"] = logRoot,
+        };
+
+        // Web options are configured on the Host and forwarded to the Broker
+        // process through the environment; unset variables keep web disabled.
+        foreach (var name in (string[])
+            [
+                "RU_AGENT_BROKER_WEB_ENABLED",
+                "RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT",
+                "RU_AGENT_BROKER_WEB_MAX_RESPONSE_BYTES",
+                "RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL",
+            ])
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                environment[name] = value;
+            }
+        }
+
+        return environment;
     }
 
     private static bool IsOwnedPath(string root, string path)

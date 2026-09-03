@@ -1,8 +1,9 @@
+extern alias Broker;
 using System;
 using System.IO;
 using System.Text;
 using System.Threading;
-using RuBackend.Harness.Broker;
+using FilesAdapter = Broker::RuAgent.Broker.Tools.Files.FileSearchAdapter;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -15,7 +16,7 @@ public sealed class HarnessFileSearchTests
         var bytes = Encoding.UTF8.GetBytes("hello world from search test");
         using var stream = new MemoryStream(bytes);
 
-        var result = HarnessToolGateway.ReadSearchText(stream, 1024 * 1024, 8000, CancellationToken.None);
+        var result = FilesAdapter.ReadSearchText(stream, 1024 * 1024, 8000, CancellationToken.None);
 
         Assert.Equal("hello world from search test", result);
     }
@@ -26,7 +27,7 @@ public sealed class HarnessFileSearchTests
         var bytes = new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0x77, 0x6F };
         using var stream = new MemoryStream(bytes);
 
-        var result = HarnessToolGateway.ReadSearchText(stream, 1024, 8000, CancellationToken.None);
+        var result = FilesAdapter.ReadSearchText(stream, 1024, 8000, CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -38,7 +39,7 @@ public sealed class HarnessFileSearchTests
         using var stream = new MemoryStream(bytes);
 
         var ex = Assert.Throws<ArgumentException>(() =>
-            HarnessToolGateway.ReadSearchText(stream, 1024, 8000, CancellationToken.None));
+            FilesAdapter.ReadSearchText(stream, 1024, 8000, CancellationToken.None));
 
         Assert.Equal("invalid_utf8", ex.Message);
     }
@@ -50,7 +51,7 @@ public sealed class HarnessFileSearchTests
         using var stream = new MemoryStream(bytes);
 
         var ex = Assert.Throws<ArgumentException>(() =>
-            HarnessToolGateway.ReadSearchText(stream, 100, 50, CancellationToken.None));
+            FilesAdapter.ReadSearchText(stream, 100, 50, CancellationToken.None));
 
         Assert.Equal("file_too_large", ex.Message);
     }
@@ -60,7 +61,7 @@ public sealed class HarnessFileSearchTests
     {
         using var stream = new MemoryStream(Array.Empty<byte>());
 
-        var result = HarnessToolGateway.ReadSearchText(stream, 1024, 8000, CancellationToken.None);
+        var result = FilesAdapter.ReadSearchText(stream, 1024, 8000, CancellationToken.None);
 
         Assert.Equal(string.Empty, result);
     }
@@ -74,6 +75,7 @@ public sealed class HarnessFileSearchTests
         cts.Cancel();
 
         Assert.Throws<OperationCanceledException>(() =>
-            HarnessToolGateway.ReadSearchText(stream, 1024, 8000, cts.Token));
+            FilesAdapter.ReadSearchText(stream, 1024, 8000, cts.Token));
     }
 }
+

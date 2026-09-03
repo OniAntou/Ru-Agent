@@ -113,6 +113,28 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
+    public async Task Client_rejects_an_oversized_http_response_before_json_parsing()
+    {
+        var session = Session();
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(new string('x', 8 * 1024 * 1024 + 1), Encoding.UTF8, "application/json"),
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(
+            new CreateAgentRunRequest(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "D:\\LLM",
+                "hello",
+                "standard",
+                1,
+                "idem-key-123")));
+
+        Assert.Equal("response_too_large", error.ErrorCode);
+    }
+
+    [Fact]
     public async Task Compact_sends_bearer_and_parses_metadata_only_response()
     {
         var bearer = new string('e', 64);

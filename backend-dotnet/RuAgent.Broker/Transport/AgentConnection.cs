@@ -27,6 +27,7 @@ public sealed class AgentConnection
     private readonly Func<IReadOnlyList<SkillManifest>>? _skillCatalogProvider;
     private readonly Func<string, string, SkillManifest?>? _skillResolver;
     private readonly Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? _skillExecutor;
+    private readonly IReadOnlyList<string>? _advertisedCapabilities;
     private readonly Dictionary<string, SkillRequestReplay> _skillRequests = new(StringComparer.Ordinal);
 
     private sealed record SkillRequestReplay(
@@ -45,7 +46,8 @@ public sealed class AgentConnection
         Func<string, IReadOnlyList<SkillManifest>>? skillListProvider = null,
         Func<IReadOnlyList<SkillManifest>>? skillCatalogProvider = null,
         Func<string, string, SkillManifest?>? skillResolver = null,
-        Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? skillExecutor = null)
+        Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? skillExecutor = null,
+        IReadOnlyList<string>? advertisedCapabilities = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _capabilityProvider = capabilityProvider ?? throw new ArgumentNullException(nameof(capabilityProvider));
@@ -64,6 +66,7 @@ public sealed class AgentConnection
         _skillCatalogProvider = skillCatalogProvider;
         _skillResolver = skillResolver;
         _skillExecutor = skillExecutor;
+        _advertisedCapabilities = advertisedCapabilities;
     }
 
     internal PendingApprovalStore PendingV2Store => _pendingV2;
@@ -623,7 +626,8 @@ public sealed class AgentConnection
             snapshotVersion,
             snapshotHash,
             expiresAt,
-            snapshot);
+            snapshot,
+            advertisedCapabilities: _advertisedCapabilities);
     }
 
     private AgentEnvelope HandleRunClose(AgentEnvelope request)

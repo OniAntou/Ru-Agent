@@ -66,6 +66,7 @@ EXPECTED_HTTP_ROUTES = {
     ("GET", "/agent/v1/workspaces/{workspaceId}/activity"),
     ("GET", "/agent/v1/workspaces/{workspaceId}/changes"),
     ("POST", "/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore"),
+    ("POST", "/host/shutdown"),
 }
 
 EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
@@ -74,7 +75,7 @@ EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (61, 1)
+    assert validate_route_contract(repo_root) == (62, 1)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -123,6 +124,7 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/agent/v1/workspaces/{workspaceId}/concurrency",
         "/agent/v1/workspaces/{workspaceId}/activity",
         "/agent/v1/workspaces/{workspaceId}/changes",
+        "/host/shutdown",
     }
     for entry in contract:
         expected = (

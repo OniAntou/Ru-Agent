@@ -221,9 +221,9 @@ public sealed class SqliteWorkspaceStore
             reader.GetString(4),
             reader.GetString(5));
         var root = new WorkspaceRootCiphertext(
-            (byte[])reader[0],
-            (byte[])reader[1],
-            (byte[])reader[2]);
+            HarnessSqliteMapper.ReadBoundedBlob(reader, 0, 12, "workspace_store_corrupt", 12),
+            HarnessSqliteMapper.ReadBoundedBlob(reader, 1, 1024 * 1024, "workspace_store_corrupt"),
+            HarnessSqliteMapper.ReadBoundedBlob(reader, 2, 16, "workspace_store_corrupt", 16));
         var requestedAt = ParseUtc(reader.GetString(7));
         var expiresAt = ParseUtc(reader.GetString(8));
         var request = new WorkspaceTrustRequest(

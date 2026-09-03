@@ -103,7 +103,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     {
         AgentActivityState.Started => "\uE895",
         AgentActivityState.Completed => "\uE73E",
-        AgentActivityState.Failed => "\uE74D",
+        AgentActivityState.Failed => "\uEA39",
         AgentActivityState.Waiting => "\uE823",
         _ => "\uE895",
     };

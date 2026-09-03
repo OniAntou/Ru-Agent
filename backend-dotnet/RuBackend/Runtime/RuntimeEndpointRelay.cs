@@ -2,19 +2,53 @@ namespace RuBackend.Runtime;
 
 internal static class RuntimeEndpointRelay
 {
+    internal static async Task<byte[]?> ReadBoundedBodyAsync(
+        HttpRequest request,
+        long configuredMaximumBytes,
+        CancellationToken cancellationToken)
+    {
+        var maximumBytes = Math.Max(0, configuredMaximumBytes);
+        if (request.ContentLength is > 0 && request.ContentLength > maximumBytes)
+        {
+            return null;
+        }
+
+        await using var body = new MemoryStream((int)Math.Min(maximumBytes, 81920));
+        var buffer = new byte[64 * 1024];
+        int read;
+        while ((read = await request.Body.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (body.Length > maximumBytes - read)
+            {
+                return null;
+            }
+
+            await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        return body.ToArray();
+    }
+
     public static async Task SendAsync(
         HttpContext context,
         IRuntimeWorkerClient workerClient,
         ILoggerFactory loggerFactory,
         string component,
         string unavailableMessage,
+        long maximumBodyBytes,
         CancellationToken cancellationToken)
     {
-        byte[] requestBody;
-        await using (var body = new MemoryStream())
+        var requestBody = await ReadBoundedBodyAsync(
+            context.Request,
+            maximumBodyBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (requestBody is null)
         {
-            await context.Request.Body.CopyToAsync(body, cancellationToken).ConfigureAwait(false);
-            requestBody = body.ToArray();
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await context.Response.WriteAsJsonAsync(
+                new { detail = "Request body too large" },
+                cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         try

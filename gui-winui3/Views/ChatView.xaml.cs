@@ -53,6 +53,8 @@ namespace RuApp.Views
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
         private const double ReadingColumnMaxWidth = 820;
+        private const int MaxImageAttachmentBytes = 10 * 1024 * 1024;
+        private const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
 
         private ApiService? _apiService;
         private VoicePlaybackService? _voicePlayback;
@@ -808,6 +810,42 @@ namespace RuApp.Views
                 "Bắt đầu trò chuyện bằng giọng nói");
         }
 
+        private bool _isSendButtonInStopMode;
+
+        private void UpdateSendButtonMode(bool isAgentRunning)
+        {
+            if (SendButton is null) return;
+
+            _isSendButtonInStopMode = isAgentRunning;
+
+            if (isAgentRunning)
+            {
+                if (SendButtonIcon is not null)
+                {
+                    SendButtonIcon.Glyph = "\uE71A";
+                    SendButtonIcon.Margin = new Thickness(0);
+                    if (Application.Current.Resources.TryGetValue("RuDangerBrush", out var dangerBrush) && dangerBrush is Brush danger)
+                    {
+                        SendButtonIcon.Foreground = danger;
+                    }
+                }
+                AutomationProperties.SetName(SendButton, "Dừng Coding Agent");
+            }
+            else
+            {
+                if (SendButtonIcon is not null)
+                {
+                    SendButtonIcon.Glyph = "\uE725";
+                    SendButtonIcon.Margin = new Thickness(-1, 1, 0, 0);
+                    if (Application.Current.Resources.TryGetValue("RuInkBrush", out var inkBrush) && inkBrush is Brush ink)
+                    {
+                        SendButtonIcon.Foreground = ink;
+                    }
+                }
+                AutomationProperties.SetName(SendButton, "Gửi tin nhắn");
+            }
+        }
+
         private void UpdateAgentInlineState()
         {
             if (_agentController is null)
@@ -821,6 +859,7 @@ namespace RuApp.Views
                 AgentContinueButton.Visibility = Visibility.Collapsed;
                 AgentTrustPanel.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
+                UpdateSendButtonMode(isAgentRunning: false);
                 return;
             }
 
@@ -836,8 +875,12 @@ namespace RuApp.Views
                 AgentContinueButton.Visibility = Visibility.Collapsed;
                 AgentTrustPanel.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
+                UpdateSendButtonMode(isAgentRunning: false);
                 return;
             }
+
+            bool isRunning = _agentController.CanCancel || IsActiveAgentRunPending();
+            UpdateSendButtonMode(isAgentRunning: isRunning);
 
             bool hasRunState = _agentActivityVisible
                 || _agentController.IsBusy
@@ -853,9 +896,7 @@ namespace RuApp.Views
             }
 
             AgentStatusText.Text = SafeAgentStatus(_agentController.StatusText);
-            AgentStopButton.Visibility = _agentController.CanCancel
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = _agentController.CanContinue
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -967,10 +1008,6 @@ namespace RuApp.Views
         {
             ClearAgentActivities();
             ClearAgentRunSummary();
-            if (_agentController?.CanCancel == true)
-            {
-                _ = _agentController.CancelAsync();
-            }
 
             var monitor = _agentMonitorCts;
             _agentMonitorCts = null;
@@ -995,6 +1032,7 @@ namespace RuApp.Views
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = Visibility.Collapsed;
             AgentStatusText.Text = string.Empty;
+            UpdateSendButtonMode(isAgentRunning: false);
         }
 
 
@@ -1024,6 +1062,12 @@ namespace RuApp.Views
         {
             try
             {
+                if (_isSendButtonInStopMode || IsActiveAgentRunPending() || _agentController?.CanCancel == true)
+                {
+                    await StopActiveAgentAsync();
+                    return;
+                }
+
                 await SendCurrentMessageAsync();
             }
             catch (Exception ex)
@@ -1060,6 +1104,10 @@ namespace RuApp.Views
                     if (!shiftDown)
                     {
                         e.Handled = true;
+                        if (_isSendButtonInStopMode || IsActiveAgentRunPending())
+                        {
+                            return;
+                        }
                         await SendCurrentMessageAsync();
                     }
                 }
@@ -1148,14 +1196,23 @@ namespace RuApp.Views
                 if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
                 {
                     var streamRef = await package.GetBitmapAsync();
-                    using var stream = await streamRef.OpenReadAsync();
+                    using var previewStream = await streamRef.OpenReadAsync();
+                    if (previewStream.Size > (ulong)MaxImageAttachmentBytes)
+                    {
+                        ShowAgentInlineStatus("Ảnh clipboard vượt quá kích thước 10MB cho phép.");
+                        return;
+                    }
                     var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    await bitmap.SetSourceAsync(stream);
+                    await bitmap.SetSourceAsync(previewStream);
 
-                    using var readStream = stream.AsStreamForRead();
-                    using var memoryStream = new System.IO.MemoryStream();
-                    await readStream.CopyToAsync(memoryStream);
-                    byte[] bytes = memoryStream.ToArray();
+                    using var payloadStream = await streamRef.OpenReadAsync();
+                    using var readStream = payloadStream.AsStreamForRead();
+                    var bytes = await ReadBoundedBytesAsync(readStream, MaxImageAttachmentBytes);
+                    if (bytes is null)
+                    {
+                        ShowAgentInlineStatus("Ảnh clipboard vượt quá kích thước 10MB cho phép.");
+                        return;
+                    }
                     string base64 = Convert.ToBase64String(bytes);
 
                     var item = new ImageAttachmentItem
@@ -1195,23 +1252,36 @@ namespace RuApp.Views
             {
                 var props = await file.GetBasicPropertiesAsync();
                 bool isImage = IsImageFile(file.Name);
+                if (!isImage && !IsTextOrCodeFile(file.Name))
+                {
+                    ShowAgentInlineStatus($"Tệp '{file.Name}' chưa được hỗ trợ. Chỉ nhận ảnh và tệp văn bản/mã nguồn.");
+                    return;
+                }
 
                 if (isImage)
                 {
-                    if (props.Size > 10 * 1024 * 1024)
+                    if (props.Size > MaxImageAttachmentBytes)
                     {
                         ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
                         return;
                     }
 
                     using var stream = await file.OpenReadAsync();
+                    if (stream.Size > (ulong)MaxImageAttachmentBytes)
+                    {
+                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
+                        return;
+                    }
                     var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
                     await bitmap.SetSourceAsync(stream);
 
                     using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
-                    using var memoryStream = new System.IO.MemoryStream();
-                    await readStream.CopyToAsync(memoryStream);
-                    byte[] bytes = memoryStream.ToArray();
+                    var bytes = await ReadBoundedBytesAsync(readStream, MaxImageAttachmentBytes);
+                    if (bytes is null)
+                    {
+                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
+                        return;
+                    }
                     string base64 = Convert.ToBase64String(bytes);
 
                     string ext = System.IO.Path.GetExtension(file.Name).ToLowerInvariant();
@@ -1228,7 +1298,7 @@ namespace RuApp.Views
                     {
                         FileName = file.Name,
                         FilePath = file.Path,
-                        ByteSize = (long)props.Size,
+                        ByteSize = bytes.Length,
                         Base64Data = base64,
                         MimeType = mimeType,
                         IsImage = true,
@@ -1239,7 +1309,7 @@ namespace RuApp.Views
                 }
                 else
                 {
-                    if (props.Size > 5 * 1024 * 1024)
+                    if (props.Size > MaxTextAttachmentBytes)
                     {
                         ShowAgentInlineStatus($"Tệp '{file.Name}' vượt quá kích thước 5MB cho phép.");
                         return;
@@ -1251,7 +1321,15 @@ namespace RuApp.Views
                         try
                         {
                             using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
-                            using var reader = new System.IO.StreamReader(readStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                            var bytes = await ReadBoundedBytesAsync(readStream, MaxTextAttachmentBytes);
+                            if (bytes is null)
+                            {
+                                ShowAgentInlineStatus($"Tệp '{file.Name}' vượt quá kích thước 5MB cho phép.");
+                                return;
+                            }
+
+                            using var textStream = new System.IO.MemoryStream(bytes, writable: false);
+                            using var reader = new System.IO.StreamReader(textStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
                             textContent = await reader.ReadToEndAsync();
                         }
                         catch (Exception ex)
@@ -1279,6 +1357,24 @@ namespace RuApp.Views
             {
                 System.Diagnostics.Debug.WriteLine($"[ChatView] Error adding attachment: {ex.Message}");
             }
+        }
+
+        private static async Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes)
+        {
+            using var output = new System.IO.MemoryStream(Math.Min(maximumBytes, 81920));
+            var buffer = new byte[Math.Min(maximumBytes, 81920)];
+            int read;
+            while ((read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
+            {
+                if (output.Length > maximumBytes - read)
+                {
+                    return null;
+                }
+
+                await output.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+            }
+
+            return output.ToArray();
         }
 
         private static bool IsImageFile(string name)
@@ -1309,6 +1405,17 @@ namespace RuApp.Views
                 var attachments = PendingAttachments.ToList();
 
                 if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
+
+                // The v1 Agent contract currently has no multimodal execution
+                // path; sending these would either exceed the JSON envelope cap
+                // or be silently discarded by the backend. Keep the preview,
+                // but fail explicitly until the provider-bound image path is
+                // implemented end-to-end.
+                if (attachments.Any(static attachment => attachment.IsImage))
+                {
+                    ShowAgentInlineStatus("Đính kèm ảnh chưa được hỗ trợ trong Agent v1; hãy xoá ảnh hoặc gửi tệp văn bản/mã nguồn.");
+                    return;
+                }
 
                 if (string.Equals(text, "/full", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(text, "/fullaccess", StringComparison.OrdinalIgnoreCase))
@@ -1449,6 +1556,7 @@ namespace RuApp.Views
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Đang chuẩn bị thao tác…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
+                UpdateSendButtonMode(isAgentRunning: true);
                 UpdateAgentInlineState();
                 await _agentController.CreateAndRunAsync(request, cancellationToken);
                 _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
@@ -1987,14 +2095,29 @@ namespace RuApp.Views
         }
 
 
-        private async void OnAgentStopClick(object sender, RoutedEventArgs e)
+        private async Task StopActiveAgentAsync(bool force = false)
         {
-            await RunAgentActionAsync(
-                () => _agentController?.CancelAsync() ?? Task.CompletedTask,
-                "Đang dừng Coding Agent…");
+            if (force)
+            {
+                // Session replacement must not be blocked by another UI action
+                // already in flight; the old run still has to be closed first.
+                await (_agentController?.CancelAsync() ?? Task.CompletedTask);
+            }
+            else
+            {
+                await RunAgentActionAsync(
+                    () => _agentController?.CancelAsync() ?? Task.CompletedTask,
+                    "Đang dừng Coding Agent…");
+            }
             AbandonActiveAgentReply(notifyVoice: true);
             ClearAgentActivities();
             ClearAgentRunSummary();
+            UpdateSendButtonMode(isAgentRunning: false);
+        }
+
+        private async void OnAgentStopClick(object sender, RoutedEventArgs e)
+        {
+            await StopActiveAgentAsync();
         }
 
         private async void OnAgentContinueClick(object sender, RoutedEventArgs e)
@@ -2078,6 +2201,11 @@ namespace RuApp.Views
             {
                 if (_apiService == null) return;
                 await ReplaceVoiceSessionAsync();
+                // A workspace is single-owner while a run is non-terminal. Wait for
+                // the cancellation commit before switching sessions; fire-and-forget
+                // cancellation races the next create request and surfaces as the
+                // misleading "workspace busy" error.
+                await StopActiveAgentAsync(force: true);
                 _activeSessionId = sessionId;
                 ResetAgentState();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));

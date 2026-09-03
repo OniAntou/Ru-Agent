@@ -74,6 +74,7 @@ public sealed class OmniVoiceProcessController : IAsyncDisposable
     private readonly OmniVoiceProcessOptions _options;
     private readonly IOmniVoiceProcessLauncher _launcher;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _stateSync = new();
     private IOmniVoiceProcessHandle? _process;
     private int _disposed;
 
@@ -90,7 +91,7 @@ public sealed class OmniVoiceProcessController : IAsyncDisposable
     {
         get
         {
-            lock (_gate)
+            lock (_stateSync)
             {
                 return _process is { HasExited: false };
             }
@@ -103,13 +104,25 @@ public sealed class OmniVoiceProcessController : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_process is { HasExited: false })
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            IOmniVoiceProcessHandle? previous;
+            lock (_stateSync)
             {
-                return;
+                if (_process is { HasExited: false })
+                {
+                    return;
+                }
+
+                previous = _process;
+                _process = null;
             }
 
-            _process?.Dispose();
-            _process = _launcher.Start(_options);
+            previous?.Dispose();
+            var started = _launcher.Start(_options);
+            lock (_stateSync)
+            {
+                _process = started;
+            }
         }
         finally
         {
@@ -124,8 +137,12 @@ public sealed class OmniVoiceProcessController : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var process = _process;
-            _process = null;
+            IOmniVoiceProcessHandle? process;
+            lock (_stateSync)
+            {
+                process = _process;
+                _process = null;
+            }
             if (process is null)
             {
                 return;
@@ -203,7 +220,8 @@ public sealed class WindowsOmniVoiceProcessLauncher : IOmniVoiceProcessLauncher
     {
         try
         {
-            while (await reader.ReadLineAsync().ConfigureAwait(false) is not null)
+            var buffer = new char[4096];
+            while (await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false) > 0)
             {
             }
         }

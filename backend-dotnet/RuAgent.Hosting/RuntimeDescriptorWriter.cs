@@ -8,6 +8,7 @@ namespace RuAgent.Hosting;
 
 public sealed class RuntimeDescriptorWriter
 {
+    private const int MaximumDescriptorBytes = 1 * 1024 * 1024;
     private readonly string _descriptorPath;
 
     public RuntimeDescriptorWriter(string descriptorPath)
@@ -75,7 +76,7 @@ public sealed class RuntimeDescriptorWriter
 
         try
         {
-            var json = File.ReadAllText(_descriptorPath);
+            var json = ReadBoundedText(_descriptorPath);
             descriptor = RuntimeDescriptorValidator.ParseStrict(json);
             // Additional bind check: PID/start-time
             if (!IsProcessBound(descriptor))
@@ -109,7 +110,7 @@ public sealed class RuntimeDescriptorWriter
         if (!File.Exists(_descriptorPath)) return true;
         try
         {
-            var json = File.ReadAllText(_descriptorPath);
+            var json = ReadBoundedText(_descriptorPath);
             var descriptor = RuntimeDescriptorValidator.ParseStrict(json);
             return !IsProcessBound(descriptor);
         }
@@ -134,6 +135,25 @@ public sealed class RuntimeDescriptorWriter
             throw new ArgumentException("instance_nonce invalid");
         if (string.IsNullOrWhiteSpace(descriptor.CreatedAt) || !DateTimeOffset.TryParse(descriptor.CreatedAt, out _))
             throw new ArgumentException("created_at invalid");
+    }
+
+    private static string ReadBoundedText(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(MaximumDescriptorBytes, 81920));
+        var buffer = new byte[Math.Min(MaximumDescriptorBytes, 81920)];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length > MaximumDescriptorBytes - read)
+                throw new InvalidDataException("descriptor_too_large");
+            output.Write(buffer, 0, read);
+        }
+        using var text = new StreamReader(
+            new MemoryStream(output.ToArray(), writable: false),
+            System.Text.Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true);
+        return text.ReadToEnd();
     }
 
     private static bool IsProcessBound(RuntimeDescriptor descriptor)
@@ -188,6 +208,7 @@ public static class RuntimeDescriptorValidator
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException ex) { throw new ArgumentException("invalid_json: " + ex.Message); }
+        using var documentLease = doc;
 
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object)

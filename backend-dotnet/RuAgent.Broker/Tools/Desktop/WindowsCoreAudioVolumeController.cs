@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 [assembly: InternalsVisibleTo("RuAgent.Broker.Tests")]
+[assembly: InternalsVisibleTo("RuBackend.Tests")]
 
 namespace RuAgent.Broker.Tools.Desktop;
 

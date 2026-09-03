@@ -1,9 +1,9 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 61 HTTP routes
+when started as `RuBackend.exe --managed-runtime` and owns all 62 HTTP routes
 plus the single `/voice/stream` WebSocket (41 legacy routes plus 20 additive
-`/agent/v1/*`). Text turns use the current Worker v2-backed Agent HTTP/SSE
+`/agent/v1/*` plus 1 `POST /host/shutdown`). Text turns use the current Worker v2-backed Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
 Harness construction, but it is not a product mode switch and cannot re-enable
@@ -91,7 +91,8 @@ and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 and encrypted policy snapshots) is the current path. Worker v2 performs
 exactly one `generate_reply` per `agent.step.start` and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same ten bindings in Standard and Full Access: `files.list`/`files.glob`/
+the same eleven bindings in Standard and Full Access (including offline
+`help.docs`): `files.list`/`files.glob`/
 `files.search`/`files.read` (offset/limit, streaming, bounded `truncated`),
 hash-guarded `files.write`/`files.edit`, recoverable
 `files.delete`/`files.restore` (one-time, `recovery_too_large` beyond 1 MiB,

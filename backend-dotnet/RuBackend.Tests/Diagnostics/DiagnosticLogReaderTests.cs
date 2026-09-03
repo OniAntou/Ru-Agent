@@ -136,4 +136,19 @@ public sealed class DiagnosticLogReaderTests : IDisposable
         var actual = Assert.Single(result.Events);
         Assert.Equal("small", actual.EventId);
     }
+
+    [Fact]
+    public async Task Reader_skips_a_giant_unterminated_record_without_unbounded_line_allocation()
+    {
+        var logFile = Path.Combine(_tempLogDir, "aspnetcore-2026-08-20.jsonl");
+        await File.WriteAllTextAsync(logFile,
+            new string('x', DiagnosticLogQueryPolicy.MaxRecordBytes * 2) +
+            "\n{\"event_id\":\"small\",\"ts\":2,\"iso\":\"2026-08-20T00:00:01Z\",\"level\":\"info\",\"component\":\"host\",\"event_code\":\"small\"}");
+
+        var result = await new DiagnosticLogReader(_tempLogDir)
+            .ReadLogsAsync(new DiagnosticLogQuery(Limit: 10));
+
+        var actual = Assert.Single(result.Events);
+        Assert.Equal("small", actual.EventId);
+    }
 }

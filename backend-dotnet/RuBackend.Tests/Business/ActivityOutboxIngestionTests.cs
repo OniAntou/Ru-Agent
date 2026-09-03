@@ -59,4 +59,24 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
         Assert.Equal("evt_w2", events[1].EventId);
         Assert.Equal("expression", events[1].Data["category"]!.GetValue<string>());
     }
+
+    [Fact]
+    public async Task Ingestion_skips_malformed_scalar_without_aborting_remaining_rows()
+    {
+        var outboxPath = Path.Combine(_paths.LogRoot, "activity_outbox.jsonl");
+        await File.WriteAllLinesAsync(outboxPath, new[]
+        {
+            "{\"event_id\":\"evt_before\",\"ts\":100.0,\"iso\":\"2026-08-20T00:00:00Z\",\"type\":\"chat\",\"data\":{\"preview\":\"before\"}}",
+            "{\"event_id\":\"evt_bad\",\"ts\":101.0,\"iso\":\"2026-08-20T00:00:01Z\",\"type\":123,\"data\":{}}",
+            "{\"event_id\":\"evt_after\",\"ts\":102.0,\"iso\":\"2026-08-20T00:00:02Z\",\"type\":\"chat\",\"data\":{\"preview\":\"after\"}}",
+        });
+
+        var ingestion = new ActivityOutboxIngestionService(_store, _paths);
+        var ingested = await ingestion.IngestPendingAsync();
+
+        Assert.Equal(2, ingested);
+        Assert.False(File.Exists(outboxPath));
+        var events = await _store.ReadAsync(100, CancellationToken.None);
+        Assert.Equal(new[] { "evt_before", "evt_after" }, events.Select(item => item.EventId));
+    }
 }

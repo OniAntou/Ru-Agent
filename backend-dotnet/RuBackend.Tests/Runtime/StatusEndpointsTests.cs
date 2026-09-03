@@ -38,6 +38,23 @@ public sealed class StatusEndpointsTests
         Assert.DoesNotContain("private model path", text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Status_rejects_an_oversized_GET_body_before_worker_dispatch()
+    {
+        var worker = WorkerReturning("{\"status\":\"ok\"}");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
+        using var client = factory.CreateAuthenticatedClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/status")
+        {
+            Content = new ByteArrayContent(new byte[8 * 1024 * 1024 + 1]),
+        };
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Empty(worker.Requests);
+    }
+
     private static StubRuntimeWorkerClient WorkerReturning(string body) => new(new RuntimeWorkerResponse(
         StatusCodes.Status200OK,
         "application/json",

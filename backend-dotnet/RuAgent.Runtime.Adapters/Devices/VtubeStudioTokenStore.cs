@@ -66,8 +66,43 @@ public sealed class FileVtubeStudioTokenStore : IVtubeStudioTokenStore
             return null;
         }
 
-        var token = (await File.ReadAllTextAsync(_path, Encoding.UTF8, cancellationToken).ConfigureAwait(false)).Trim();
-        return IsSafeToken(token) ? token : null;
+        try
+        {
+            if (new FileInfo(_path).Length > Encoding.UTF8.GetMaxByteCount(MaxTokenChars))
+            {
+                return null;
+            }
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = await ReadBoundedBytesAsync(
+                _path,
+                Encoding.UTF8.GetMaxByteCount(MaxTokenChars),
+                cancellationToken).ConfigureAwait(false);
+            var token = Encoding.UTF8.GetString(bytes).Trim();
+            return IsSafeToken(token) ? token : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
     }
 
     public async Task WriteAsync(string token, CancellationToken cancellationToken)
@@ -90,4 +125,28 @@ public sealed class FileVtubeStudioTokenStore : IVtubeStudioTokenStore
         !string.IsNullOrWhiteSpace(token)
         && token.Length <= MaxTokenChars
         && !token.Any(char.IsControl);
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(
+        string path,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("VTube Studio token is too large.");
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+        return output.ToArray();
+    }
 }

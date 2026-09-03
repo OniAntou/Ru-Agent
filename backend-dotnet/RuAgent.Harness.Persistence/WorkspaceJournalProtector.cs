@@ -14,6 +14,7 @@ public sealed record EncryptedWorkspaceJournal(
 public sealed class WorkspaceJournalProtector
 {
     public const int CurrentProtectionVersion = 1;
+    public const int MaximumJournalBytes = 16 * 1024 * 1024;
     private readonly IHarnessKeyStore _keyStore;
 
     public WorkspaceJournalProtector(IHarnessKeyStore keyStore) =>
@@ -28,6 +29,11 @@ public sealed class WorkspaceJournalProtector
     {
         _ = workspaceId.Value;
         ValidateMetadata(changeId, normalizedPath);
+        if (plaintext.Length > MaximumJournalBytes)
+        {
+            throw new HarnessStoreException("journal_too_large");
+        }
+
         var key = await ReadKeyAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -55,9 +61,13 @@ public sealed class WorkspaceJournalProtector
         ValidateMetadata(changeId, normalizedPath);
         if (encrypted.ProtectionVersion != CurrentProtectionVersion
             || encrypted.Nonce.Length != 12
-            || encrypted.AuthenticationTag.Length != 16)
+            || encrypted.AuthenticationTag.Length != 16
+            || encrypted.Ciphertext.Length > MaximumJournalBytes)
         {
-            throw new HarnessStoreException("journal_envelope_invalid");
+            throw new HarnessStoreException(
+                encrypted.Ciphertext.Length > MaximumJournalBytes
+                    ? "journal_too_large"
+                    : "journal_envelope_invalid");
         }
 
         var key = await ReadKeyAsync(cancellationToken).ConfigureAwait(false);
@@ -116,6 +126,12 @@ public sealed class WorkspaceJournalProtector
         if (string.IsNullOrWhiteSpace(normalizedPath) || normalizedPath.Length > 4096 || Path.IsPathRooted(normalizedPath))
         {
             throw new ArgumentException("Journal path is invalid.", nameof(normalizedPath));
+        }
+
+        var segments = normalizedPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0 || segments.Any(segment => segment is "." or ".."))
+        {
+            throw new ArgumentException("Journal path must not contain traversal segments.", nameof(normalizedPath));
         }
     }
 }

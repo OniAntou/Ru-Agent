@@ -66,12 +66,12 @@ public sealed class AgentSseClient : IDisposable
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
             throw new AgentApiException("sse_failed", body, (int)response.StatusCode);
         }
 
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var reader = new StreamReader(stream, StrictUtf8, detectEncodingFromByteOrderMarks: true);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        var reader = new BoundedLineReader(stream, MaxSseFrameDataBytes);
 
         string? currentId = null;
         string? currentEvent = null;
@@ -80,22 +80,9 @@ public sealed class AgentSseClient : IDisposable
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            string? line;
-            try
-            {
-                line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (DecoderFallbackException ex)
-            {
-                throw new AgentApiException("invalid_sse_data", ex.Message);
-            }
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
 
             if (line is null) break;
-
-            if (line.Length > MaxSseFrameDataBytes)
-            {
-                throw new AgentApiException("sse_frame_too_large", "SSE frame is too large.");
-            }
 
             if (string.IsNullOrEmpty(line))
             {
@@ -233,7 +220,7 @@ public sealed class AgentSseClient : IDisposable
             // Strict: try to parse data as HarnessSafeEventEnvelope and check version
             try
             {
-                var doc = JsonDocument.Parse(data);
+                using var doc = JsonDocument.Parse(data);
                 if (doc.RootElement.ValueKind != JsonValueKind.Object
                     || !doc.RootElement.TryGetProperty("protocol_version", out var v)
                     || !v.TryGetInt32(out var ver))
@@ -266,6 +253,91 @@ public sealed class AgentSseClient : IDisposable
             || runId.Length != 36
             || runId.AsSpan(4).IndexOfAnyExcept("0123456789abcdef") >= 0)
             throw new AgentApiException("invalid_run_id", "run_id invalid");
+    }
+
+    private sealed class BoundedLineReader
+    {
+        private readonly Stream _stream;
+        private readonly int _maximumBytes;
+        private readonly byte[] _readBuffer = new byte[4096];
+        private int _bufferOffset;
+        private int _bufferCount;
+        private bool _skipLf;
+        private bool _firstLine = true;
+
+        public BoundedLineReader(Stream stream, int maximumBytes)
+        {
+            _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+            _maximumBytes = maximumBytes;
+        }
+
+        public async Task<string?> ReadLineAsync(CancellationToken cancellationToken)
+        {
+            var line = new List<byte>(Math.Min(_maximumBytes, 4096));
+            while (true)
+            {
+                if (_bufferOffset == _bufferCount)
+                {
+                    _bufferCount = await _stream.ReadAsync(_readBuffer.AsMemory(), cancellationToken)
+                        .ConfigureAwait(false);
+                    _bufferOffset = 0;
+                    if (_bufferCount == 0)
+                    {
+                        if (line.Count == 0)
+                        {
+                            return null;
+                        }
+
+                        return Decode(line);
+                    }
+                }
+
+                var value = _readBuffer[_bufferOffset++];
+                if (_skipLf)
+                {
+                    _skipLf = false;
+                    if (value == (byte)'\n')
+                    {
+                        continue;
+                    }
+                }
+
+                if (value is (byte)'\r' or (byte)'\n')
+                {
+                    _skipLf = value == (byte)'\r';
+                    return Decode(line);
+                }
+
+                if (line.Count >= _maximumBytes)
+                {
+                    throw new AgentApiException("sse_frame_too_large", "SSE line is too large.");
+                }
+
+                line.Add(value);
+            }
+        }
+
+        private string Decode(List<byte> line)
+        {
+            try
+            {
+                var value = StrictUtf8.GetString(line.ToArray());
+                if (_firstLine)
+                {
+                    _firstLine = false;
+                    if (value.Length > 0 && value[0] == '\uFEFF')
+                    {
+                        value = value[1..];
+                    }
+                }
+
+                return value;
+            }
+            catch (DecoderFallbackException ex)
+            {
+                throw new AgentApiException("invalid_sse_data", ex.Message);
+            }
+        }
     }
 
     public void Dispose()

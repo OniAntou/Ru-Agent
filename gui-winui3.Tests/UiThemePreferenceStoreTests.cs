@@ -51,6 +51,16 @@ public sealed class UiThemePreferenceStoreTests : IDisposable
     }
 
     [Fact]
+    public void Load_returns_light_without_allocating_an_oversized_preference_file()
+    {
+        var path = Path.Combine(_root, "ui-preferences.json");
+        Directory.CreateDirectory(_root);
+        File.WriteAllBytes(path, new byte[64 * 1024 + 1]);
+
+        Assert.Equal(UiTheme.Light, new UiThemePreferenceStore(path).Load());
+    }
+
+    [Fact]
     public void TrySave_returns_false_when_target_path_is_a_directory()
     {
         var path = Path.Combine(_root, "ui-preferences.json");

@@ -8,9 +8,6 @@ namespace RuAgent.Runtime.Adapters.Models;
 
 public sealed class OpenAiCompatibleModelProvider : IModelProvider
 {
-    private const int MaxResponseBytes = 5 * 1024 * 1024;
-    private const int MaxLineBytes = 256 * 1024;
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HttpClient _httpClient;
 
     public OpenAiCompatibleModelProvider(HttpClient httpClient)
@@ -64,45 +61,12 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             }
 
             using (stream)
-            using (var reader = new StreamReader(stream, StrictUtf8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: false))
             {
-                long responseBytes = 0;
                 var sawData = false;
-                while (true)
+                await foreach (var serverEvent in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
-                    string? line;
-                    try
-                    {
-                        line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        throw new ModelProviderException("timeout", retryable: true);
-                    }
-                    catch (DecoderFallbackException error)
-                    {
-                        throw new ModelProviderException("malformed_payload", retryable: false, error);
-                    }
-
-                    if (line is null)
-                    {
-                        break;
-                    }
-
-                    var lineBytes = Encoding.UTF8.GetByteCount(line) + 1;
-                    responseBytes += lineBytes;
-                    if (lineBytes > MaxLineBytes || responseBytes > MaxResponseBytes)
-                    {
-                        throw new ModelProviderException("response_too_large", retryable: false);
-                    }
-
-                    if (!line.StartsWith("data:", StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
                     sawData = true;
-                    var payload = line[5..].Trim();
+                    var payload = serverEvent.Data.Trim();
                     if (payload == "[DONE]")
                     {
                         yield return new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "stop");
@@ -144,9 +108,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                 }
 
                 if (!sawData)
-                {
                     throw new ModelProviderException("malformed_payload", retryable: false);
-                }
             }
         }
     }

@@ -98,6 +98,25 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_rejects_a_single_oversized_sse_line_before_buffering_it()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: " + new string('x', 256 * 1024) + "\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync());
+
+        Assert.Equal("response_too_large", error.Code);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
     public async Task GenerateAsync_maps_malformed_tool_fields_to_a_bounded_payload_error()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

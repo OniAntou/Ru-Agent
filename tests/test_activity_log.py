@@ -78,3 +78,13 @@ def test_clear_empties_log():
 def test_clear_missing_file_is_noop():
     clear()
     assert read() == []
+
+
+def test_read_skips_an_oversized_legacy_record(tmp_path):
+    (tmp_path / "activity_outbox.jsonl").write_text(
+        "x" * 512_000
+        + "\n"
+        + '{"event_id":"small","ts":2,"iso":"two","type":"chat","session_id":null,"data":{"role":"assistant","content":"ok"}}\n',
+        encoding="utf-8",
+    )
+    assert [event["event_id"] for event in read()] == ["small"]

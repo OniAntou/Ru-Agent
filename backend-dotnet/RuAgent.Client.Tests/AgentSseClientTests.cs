@@ -18,7 +18,7 @@ public sealed class AgentSseClientTests
     {
         var runId = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         var sseBody =
-            "id: 1\n" +
+            "\uFEFFid: 1\n" +
             "data: {\"protocol_version\":1,\"event_id\":\"evt_1\",\"run_id\":\"" + runId + "\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sequence\":1,\"event_type\":\"run.state_changed\",\"occurred_at\":\"2026-08-24T00:00:00Z\",\"status\":\"running\",\"safe_summary\":\"ok\"}\n\n" +
             "id: 2\n" +
             "data: {\"protocol_version\":1,\"event_id\":\"evt_2\",\"run_id\":\"" + runId + "\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sequence\":2,\"event_type\":\"tool.proposed\",\"occurred_at\":\"2026-08-24T00:00:01Z\",\"status\":\"running\",\"safe_summary\":\"proposed\"}\n\n";
@@ -72,6 +72,27 @@ public sealed class AgentSseClientTests
         Assert.False(frames[2].IsTransient);
         Assert.Equal(1, frames[1].TransientSequence);
         Assert.Null(frames[1].DurableSequence);
+    }
+
+    [Fact]
+    public async Task Oversized_single_line_is_rejected_before_unbounded_buffering()
+    {
+        var runId = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var sseBody = "id: 1\n" + "data: " + new string('x', 512 * 1024) + "\n\n";
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sseBody, Encoding.UTF8, "text/event-stream"),
+        });
+        var client = new AgentSseClient(Session(), new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(async () =>
+        {
+            await foreach (var _ in client.ReadEventsAsync(runId))
+            {
+            }
+        });
+
+        Assert.Equal("sse_frame_too_large", error.ErrorCode);
     }
 
     [Fact]

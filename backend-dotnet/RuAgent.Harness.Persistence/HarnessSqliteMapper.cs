@@ -125,6 +125,51 @@ internal static class HarnessSqliteMapper
     internal static DateTimeOffset ParseUtc(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
+    internal static byte[] ReadBoundedBlob(
+        SqliteDataReader reader,
+        int ordinal,
+        int maximumLength,
+        string errorCode,
+        int? requiredLength = null)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        if (maximumLength < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumLength));
+        }
+
+        if (reader.IsDBNull(ordinal))
+        {
+            throw new HarnessStoreException(errorCode);
+        }
+
+        long length;
+        try
+        {
+            length = reader.GetBytes(ordinal, 0, null, 0, 0);
+        }
+        catch (Exception exception) when (exception is InvalidCastException or SqliteException)
+        {
+            throw new HarnessStoreException(errorCode, exception);
+        }
+
+        if (length < 0
+            || length > maximumLength
+            || (requiredLength is { } expected && length != expected))
+        {
+            throw new HarnessStoreException(errorCode);
+        }
+
+        var buffer = new byte[checked((int)length)];
+        var copied = reader.GetBytes(ordinal, 0, buffer, 0, buffer.Length);
+        if (copied != length)
+        {
+            throw new HarnessStoreException(errorCode);
+        }
+
+        return buffer;
+    }
+
     private static T? Optional<T>(
         SqliteDataReader reader,
         int index,

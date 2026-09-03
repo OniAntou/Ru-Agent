@@ -152,6 +152,31 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
+    public async Task Oversized_legacy_source_is_rejected_before_loading_into_memory()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var legacyPath = Path.Combine(directory, "memory_texts.json");
+            await using (var stream = new FileStream(legacyPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            {
+                stream.SetLength(16 * 1024 * 1024 + 1);
+            }
+
+            await using var service = CreateService(
+                new FakeMemoryRepository(),
+                new FakeMemoryPolicy(),
+                new MemorySqliteOptions { LegacyTextsPath = legacyPath });
+
+            Assert.Equal(new MemoryLegacyImportResult(0, 1), await service.InitializeAsync(CancellationToken.None));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Read_only_service_skips_legacy_import_and_write_side_effects()
     {
         var directory = CreateTempDirectory();

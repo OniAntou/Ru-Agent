@@ -13,6 +13,8 @@ public interface IHistoryStore
 
 public sealed class HistoryStore : IHistoryStore
 {
+    private const long MaximumLegacyFileBytes = 16 * 1024 * 1024;
+    private const int MaximumManifestBytes = 1 * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -64,7 +66,12 @@ public sealed class HistoryStore : IHistoryStore
             byte[] sourceBytes;
             try
             {
-                sourceBytes = await File.ReadAllBytesAsync(_historyFile, cancellationToken)
+                if (new FileInfo(_historyFile).Length > MaximumLegacyFileBytes)
+                {
+                    return null;
+                }
+
+                sourceBytes = await ReadBoundedBytesAsync(_historyFile, MaximumLegacyFileBytes, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (IOException)
@@ -72,6 +79,10 @@ public sealed class HistoryStore : IHistoryStore
                 return null;
             }
             catch (UnauthorizedAccessException)
+            {
+                return null;
+            }
+            catch (InvalidDataException)
             {
                 return null;
             }
@@ -149,7 +160,12 @@ public sealed class HistoryStore : IHistoryStore
 
         try
         {
-            var bytes = await File.ReadAllBytesAsync(_historyFile, cancellationToken)
+            if (new FileInfo(_historyFile).Length > MaximumLegacyFileBytes)
+            {
+                return [];
+            }
+
+            var bytes = await ReadBoundedBytesAsync(_historyFile, MaximumLegacyFileBytes, cancellationToken)
                 .ConfigureAwait(false);
             return ParseLegacy(bytes);
         }
@@ -158,6 +174,10 @@ public sealed class HistoryStore : IHistoryStore
             return [];
         }
         catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
+        catch (InvalidDataException)
         {
             return [];
         }
@@ -205,14 +225,42 @@ public sealed class HistoryStore : IHistoryStore
 
         try
         {
-            var json = await File.ReadAllTextAsync(_manifestFile, cancellationToken)
+            var bytes = await ReadBoundedBytesAsync(_manifestFile, MaximumManifestBytes, cancellationToken)
                 .ConfigureAwait(false);
-            return JsonNode.Parse(json) as JsonArray ?? [];
+            return JsonNode.Parse(bytes) as JsonArray ?? [];
         }
         catch (JsonException)
         {
             return [];
         }
+        catch (InvalidDataException)
+        {
+            return [];
+        }
+    }
+
+    private static async Task<byte[]> ReadBoundedBytesAsync(
+        string path,
+        long maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            81920,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var output = new MemoryStream((int)Math.Min(maximumBytes, 81920));
+        var buffer = new byte[(int)Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("history_file_too_large");
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+        return output.ToArray();
     }
 
     private string BuildBackupPath()

@@ -65,7 +65,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
         EnsureAuth(httpRequest);
         using var resp = await _httpClient.SendAsync(httpRequest, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await BoundedHttpResponseReader.ReadAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if ((int)resp.StatusCode == 409)
@@ -88,7 +88,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await BoundedHttpResponseReader.ReadAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
@@ -110,7 +110,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
@@ -143,7 +143,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
@@ -151,6 +151,8 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 
         JsonDocument doc;
         try { doc = JsonDocument.Parse(body); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        using (doc)
+        {
         var root = doc.RootElement;
         if (root.TryGetProperty("run_id", out var rid) && rid.ValueKind == JsonValueKind.String)
         {
@@ -166,6 +168,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
             return content.GetString() ?? string.Empty;
         return body;
+        }
     }
 
     public async Task CancelAsync(string runId, CancellationToken ct = default)
@@ -175,7 +178,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if (!resp.IsSuccessStatusCode)
@@ -189,7 +192,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(ExtractErrorCode(body) ?? "continue_failed", body, (int)resp.StatusCode);
     }
@@ -210,7 +213,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
         {
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
@@ -254,7 +257,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
         {
             throw new AgentApiException(
@@ -283,10 +286,10 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(ExtractErrorCode(body) ?? "approval_failed", body, (int)resp.StatusCode);
-        return JsonDocument.Parse(body).RootElement.Clone();
+        return ParseJsonClone(body);
     }
 
     public async Task<JsonElement> DenyAsync(string runId, string approvalId, CancellationToken ct = default)
@@ -298,10 +301,10 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(ExtractErrorCode(body) ?? "approval_failed", body, (int)resp.StatusCode);
-        return JsonDocument.Parse(body).RootElement.Clone();
+        return ParseJsonClone(body);
     }
 
     public async Task<IReadOnlyList<JsonElement>> ListPoliciesAsync(string? scope = null, string? workspaceId = null, CancellationToken ct = default)
@@ -310,10 +313,10 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(ExtractErrorCode(body) ?? "policy_list_failed", body, (int)resp.StatusCode);
-        var doc = JsonDocument.Parse(body);
+        using var doc = JsonDocument.Parse(body);
         if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
         {
             var list = new List<JsonElement>();
@@ -331,14 +334,14 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         EnsureAuth(req);
         AddInteractiveHeader(req, interactive);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
         {
             var code = ExtractErrorCode(body) ?? "policy_create_failed";
             var msg = ExtractErrorMessage(body) ?? (string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}" : body);
             throw new AgentApiException(code, msg, (int)resp.StatusCode);
         }
-        return JsonDocument.Parse(body).RootElement.Clone();
+        return ParseJsonClone(body);
     }
 
     public async Task<JsonElement> SetSessionPresetAsync(string sessionId, string preset, long expectedVersion, bool interactive, CancellationToken ct = default)
@@ -355,7 +358,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         EnsureAuth(req);
         AddInteractiveHeader(req, interactive);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
-        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(ExtractErrorCode(body) ?? "policy_delete_failed", body, (int)resp.StatusCode);
     }
@@ -379,10 +382,23 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         return sb.ToString();
     }
 
+    private static async Task<string> ReadBoundedResponseAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+        => await BoundedHttpResponseReader.ReadAsync(content, cancellationToken).ConfigureAwait(false);
+
+    private static JsonElement ParseJsonClone(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+
     private static CreateAgentRunResponse ParseCreateResponseStrict(string json)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        using (doc)
+        {
         var root = doc.RootElement;
         var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
@@ -400,12 +416,15 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             return result;
         }
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        }
     }
 
     private static GetAgentRunResponse ParseGetResponseStrict(string json)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        using (doc)
+        {
         var root = doc.RootElement;
         var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
@@ -424,6 +443,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             return result;
         }
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        }
     }
 
     private static CompactAgentRunResponse ParseCompactResponseStrict(
@@ -541,7 +561,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
     {
         try
         {
-            var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("error_code", out var code) && code.ValueKind == JsonValueKind.String)
                 return code.GetString();
             if (doc.RootElement.TryGetProperty("code", out var commandCode) && commandCode.ValueKind == JsonValueKind.String)
@@ -557,7 +577,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
     {
         try
         {
-            var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String)
                 return msg.GetString();
             if (doc.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String)

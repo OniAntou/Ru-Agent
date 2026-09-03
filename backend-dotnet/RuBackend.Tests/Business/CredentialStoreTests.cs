@@ -72,6 +72,18 @@ public sealed class CredentialStoreTests
     }
 
     [Fact]
+    public async Task Set_rejects_an_oversized_secret_before_calling_Windows()
+    {
+        var native = new FakeWindowsCredentialApi();
+        var store = new WindowsCredentialStore(native);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            store.SetAsync("mini_gpt", "api_key", new string('x', 32 * 1024 + 1), CancellationToken.None));
+
+        Assert.Empty(native.Values);
+    }
+
+    [Fact]
     public async Task Native_failures_are_redacted_and_do_not_include_the_secret()
     {
         var native = new FakeWindowsCredentialApi { ThrowOnWrite = true };

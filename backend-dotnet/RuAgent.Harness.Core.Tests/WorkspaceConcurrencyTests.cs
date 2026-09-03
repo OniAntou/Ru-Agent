@@ -36,4 +36,29 @@ public sealed class WorkspaceConcurrencyTests
         Assert.Equal("unknown_external", change.WriterKind);
         Assert.Equal("src/app.cs", change.NormalizedPath);
     }
+
+    [Fact]
+    public void Traversal_aliases_are_rejected_before_claim_comparison()
+    {
+        var claim = new WorkspacePathClaim("src/../app.cs", WorkspacePathKind.Text);
+
+        Assert.Throws<ArgumentException>(() => claim.Normalize());
+        Assert.Throws<ArgumentException>(() => WorkspaceExternalChangeDetector.Detect(
+            "src/../app.cs",
+            new string('a', 64),
+            new string('b', 64)));
+    }
+
+    [Fact]
+    public void Repeated_separators_are_canonicalized_for_claims_and_changes()
+    {
+        var claim = new WorkspacePathClaim("src//app.cs", WorkspacePathKind.Text);
+        var change = WorkspaceExternalChangeDetector.Detect(
+            "src\\app.cs",
+            new string('a', 64),
+            new string('b', 64));
+
+        Assert.Equal("src/app.cs", claim.Normalize().NormalizedPath);
+        Assert.Equal("src/app.cs", change.NormalizedPath);
+    }
 }

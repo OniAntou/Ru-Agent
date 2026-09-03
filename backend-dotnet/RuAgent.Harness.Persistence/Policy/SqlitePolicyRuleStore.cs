@@ -13,6 +13,8 @@ public sealed class SqlitePolicyRuleStore
     private const int CurrentProtectionVersion = 1;
     private const int NonceSize = 12;
     private const int TagSize = 16;
+    private const int MaximumDocumentBytes = 1024 * 1024;
+    private const int MaximumMatcherBytes = 1024 * 1024;
 
     private readonly HarnessSqliteOptions _options;
     private readonly IHarnessKeyStore _keyStore;
@@ -318,7 +320,11 @@ public sealed class SqlitePolicyRuleStore
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            list.Add((byte[])reader[0]);
+            list.Add(HarnessSqliteMapper.ReadBoundedBlob(
+                reader,
+                0,
+                MaximumDocumentBytes,
+                "policy_rule_corrupt"));
         }
         return list;
     }
@@ -355,7 +361,10 @@ public sealed class SqlitePolicyRuleStore
             var ciphertext = Convert.FromBase64String(matcherEncrypted.GetProperty("ciphertext").GetString()!);
             var tag = Convert.FromBase64String(matcherEncrypted.GetProperty("tag").GetString()!);
             var version = matcherEncrypted.GetProperty("version").GetInt32();
-            if (version != CurrentProtectionVersion || nonce.Length != NonceSize || tag.Length != TagSize)
+            if (version != CurrentProtectionVersion
+                || nonce.Length != NonceSize
+                || tag.Length != TagSize
+                || ciphertext.Length > MaximumMatcherBytes)
             {
                 throw new HarnessStoreException("policy_matcher_envelope_invalid");
             }
@@ -382,9 +391,13 @@ public sealed class SqlitePolicyRuleStore
         var key = await _keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (key.Length != 32)
+            if (key is not { Length: 32 })
             {
                 throw new HarnessStoreException("harness_key_invalid");
+            }
+            if (ciphertext.Length > MaximumMatcherBytes)
+            {
+                throw new HarnessStoreException("policy_matcher_envelope_invalid");
             }
             var plaintext = new byte[ciphertext.Length];
             using var aes = new AesGcm(key, TagSize);
@@ -401,7 +414,10 @@ public sealed class SqlitePolicyRuleStore
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(key);
+            if (key is not null)
+            {
+                CryptographicOperations.ZeroMemory(key);
+            }
         }
     }
 
@@ -411,7 +427,7 @@ public sealed class SqlitePolicyRuleStore
         var key = await _keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (key.Length != 32)
+            if (key is not { Length: 32 })
             {
                 throw new HarnessStoreException("harness_key_invalid");
             }
@@ -424,7 +440,10 @@ public sealed class SqlitePolicyRuleStore
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(key);
+            if (key is not null)
+            {
+                CryptographicOperations.ZeroMemory(key);
+            }
         }
     }
 

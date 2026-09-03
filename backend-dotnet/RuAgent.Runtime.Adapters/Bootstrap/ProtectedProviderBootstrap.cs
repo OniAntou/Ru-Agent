@@ -80,6 +80,7 @@ public sealed record ProviderBootstrapData
 public static class ProtectedProviderBootstrap
 {
     private const int MaxSerializedBytes = 16 * 1024;
+    private const int MaxProtectedBytes = 64 * 1024;
     private const string FilePrefix = "provider-bootstrap-";
 
     public static string Write(string sessionRoot, ProviderBootstrapData data)
@@ -122,7 +123,7 @@ public static class ProtectedProviderBootstrap
         var fullPath = ResolveOwnedPath(root, path);
         try
         {
-            var protectedBytes = File.ReadAllBytes(fullPath);
+            var protectedBytes = ReadBoundedBytes(fullPath, MaxProtectedBytes);
             var json = ProtectedData.Unprotect(protectedBytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
             if (json.Length > MaxSerializedBytes)
             {
@@ -147,6 +148,21 @@ public static class ProtectedProviderBootstrap
         {
             Delete(root, fullPath);
         }
+    }
+
+    private static byte[] ReadBoundedBytes(string path, int maximumBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new InvalidDataException("Provider bootstrap exceeds its byte cap.");
+            output.Write(buffer, 0, read);
+        }
+        return output.ToArray();
     }
 
     public static void Delete(string sessionRoot, string path)

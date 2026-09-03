@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace RuAgent.Cli;
@@ -52,6 +53,7 @@ public static class PolicyJsonCodec
         {
             throw new PolicyJsonException("invalid_policy_json", $"Invalid JSON: {ex.Message}");
         }
+        using var documentLease = doc;
 
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object)
@@ -247,8 +249,28 @@ public static class PolicyJsonCodec
     {
         if (string.IsNullOrWhiteSpace(path)) throw new PolicyJsonException("invalid_path", "Path is empty.");
         if (!File.Exists(path)) throw new PolicyJsonException("file_not_found", $"File not found: {path}");
-        var json = File.ReadAllText(path);
-        if (json.Length > 1 * 1024 * 1024) throw new PolicyJsonException("file_too_large", "Policy file too large.");
+        const int maximumBytes = 1 * 1024 * 1024;
+        var info = new FileInfo(path);
+        if (info.Length > maximumBytes) throw new PolicyJsonException("file_too_large", "Policy file too large.");
+        var bytes = ReadBoundedBytes(path, maximumBytes);
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var reader = new StreamReader(stream, new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true);
+        var json = reader.ReadToEnd();
         return Parse(json);
+    }
+
+    private static byte[] ReadBoundedBytes(string path, int maximumBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new PolicyJsonException("file_too_large", "Policy file too large.");
+            output.Write(buffer, 0, read);
+        }
+        return output.ToArray();
     }
 }

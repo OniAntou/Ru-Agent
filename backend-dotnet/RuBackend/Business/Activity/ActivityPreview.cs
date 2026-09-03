@@ -20,10 +20,18 @@ public static class ActivityPreview
         }
 
         var origLen = text.Length;
-        var redacted = false;
+        maxLength = Math.Clamp(maxLength, 0, MaxActivityOriginalLength);
+        var redacted = text.Length > MaxActivityOriginalLength;
+
+        // Keep the privacy regex pipeline bounded even when a malformed or
+        // hostile event supplies an enormous content string. Preserve the
+        // original length separately for the metadata contract.
+        var boundedText = text.Length > MaxActivityOriginalLength
+            ? text[..MaxActivityOriginalLength]
+            : text;
 
         // Strip control markers
-        var cleaned = ControlMarkerPattern.Replace(text, _ =>
+        var cleaned = ControlMarkerPattern.Replace(boundedText, _ =>
         {
             redacted = true;
             return string.Empty;
@@ -63,8 +71,9 @@ public static class ActivityPreview
         string preview;
         if (normalized.Length > maxLength)
         {
-            var cut = Math.Max(0, maxLength - 3);
-            preview = normalized[..cut].TrimEnd() + "...";
+            preview = maxLength <= 3
+                ? "..."[..maxLength]
+                : normalized[..(maxLength - 3)].TrimEnd() + "...";
             redacted = true;
         }
         else

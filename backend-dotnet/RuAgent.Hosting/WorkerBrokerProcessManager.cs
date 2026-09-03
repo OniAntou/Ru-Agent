@@ -27,6 +27,7 @@ public interface IWorkerBrokerReadinessProbe
 public sealed class WorkerBrokerProcessManager : IDisposable
 {
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _startGate = new(1, 1);
     private readonly IWorkerBrokerProcessFactory _processFactory;
     private readonly IWorkerBrokerJobFactory _jobFactory;
     private readonly IWorkerBrokerReadinessProbe _readinessProbe;
@@ -58,7 +59,13 @@ public sealed class WorkerBrokerProcessManager : IDisposable
 
     public bool IsRunning
     {
-        get { lock (_gate) return _children.Count > 0 && _children.All(c => !c.HasExited); }
+        get
+        {
+            lock (_gate)
+            {
+                return _children.Count > 0 && _children.All(IsAlive);
+            }
+        }
     }
 
     public async Task<bool> StartAsync(
@@ -66,12 +73,57 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         WorkerBrokerStartupOptions startup,
         CancellationToken cancellationToken = default)
     {
+        await _startGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await StartCoreAsync(projectRoot, startup, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _startGate.Release();
+        }
+    }
+
+    private async Task<bool> StartCoreAsync(
+        string projectRoot,
+        WorkerBrokerStartupOptions startup,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(startup);
+        List<IWorkerBrokerProcessHandle>? staleChildren = null;
+        OwnedProcessTree? staleJob = null;
+        string? staleDescriptorPath = null;
+        string? staleSessionRoot = null;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_children.Count > 0) return IsRunning;
+            if (_children.Count > 0)
+            {
+                if (_children.All(IsAlive))
+                {
+                    return true;
+                }
+
+                // A child can exit between the watcher wake-up and a concurrent
+                // StartAsync call. Reclaim that stale generation while holding the
+                // start gate, otherwise the stale handles would block restarts.
+                staleChildren = _children;
+                _children = new List<IWorkerBrokerProcessHandle>();
+                staleJob = _job;
+                _job = null;
+                staleDescriptorPath = _brokerDescriptorPath;
+                staleSessionRoot = _brokerSessionRoot;
+                _brokerDescriptorPath = null;
+                _brokerSessionRoot = null;
+                BrokerDescriptorPath = null;
+                BrokerSessionRoot = null;
+            }
             LastError = null;
+        }
+
+        if (staleChildren is not null)
+        {
+            Cleanup(staleChildren, staleJob, staleDescriptorPath, staleSessionRoot);
         }
 
         var startedChildren = new List<IWorkerBrokerProcessHandle>();
@@ -134,13 +186,38 @@ public sealed class WorkerBrokerProcessManager : IDisposable
     {
         try
         {
-            var tasks = children.Where(c => !c.HasExited).Select(c => Task.Run(() => c.WaitForExit(Timeout.InfiniteTimeSpan))).ToList();
+            var tasks = children.Where(IsAlive).Select(c => Task.Run(() => c.WaitForExit(Timeout.InfiniteTimeSpan))).ToList();
             if (tasks.Count > 0) await Task.WhenAny(tasks).ConfigureAwait(false);
-            lock (_gate)
+            await _startGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
             {
-                if (_disposed || !ReferenceEquals(_children, children)) return;
+                List<IWorkerBrokerProcessHandle> exitedChildren;
+                OwnedProcessTree? job;
+                string? descriptorPath;
+                string? sessionRoot;
+                lock (_gate)
+                {
+                    if (_disposed || !ReferenceEquals(_children, children)) return;
+                    exitedChildren = _children;
+                    _children = new List<IWorkerBrokerProcessHandle>();
+                    job = _job;
+                    _job = null;
+                    descriptorPath = _brokerDescriptorPath;
+                    sessionRoot = _brokerSessionRoot;
+                    _brokerDescriptorPath = null;
+                    _brokerSessionRoot = null;
+                    BrokerDescriptorPath = null;
+                    BrokerSessionRoot = null;
+                    LastError = "Worker/Broker exited unexpectedly.";
+                }
+
+                Cleanup(exitedChildren, job, descriptorPath, sessionRoot);
+                Exited?.Invoke(this, EventArgs.Empty);
             }
-            Exited?.Invoke(this, EventArgs.Empty);
+            finally
+            {
+                _startGate.Release();
+            }
         }
         catch { }
     }
@@ -183,6 +260,18 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         }
         try { job?.Dispose(); } catch { }
         DeleteOwnedArtifacts(descriptorPath, sessionRoot);
+    }
+
+    private static bool IsAlive(IWorkerBrokerProcessHandle child)
+    {
+        try
+        {
+            return !child.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void DeleteOwnedArtifacts(string? descriptorPath, string? sessionRoot)

@@ -30,6 +30,7 @@ public sealed class BrokerHost : IAsyncDisposable
     {
         _application = application;
         _session = session;
+        session.ConfigureAdvertisedCapabilities(AdvertisedCapabilities(options?.Web));
         _tools = new ToolExecutionService(
             session,
             ResolveWorkspaceRoot(),
@@ -173,8 +174,29 @@ public sealed class BrokerHost : IAsyncDisposable
             skillListProvider: _tools.ListSkills,
             skillCatalogProvider: _tools.ListAllSkills,
             skillResolver: _tools.ResolveSkill,
-            skillExecutor: _tools.ExecuteSkillAsync)
+            skillExecutor: _tools.ExecuteSkillAsync,
+            advertisedCapabilities: _session.AdvertisedCapabilities)
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
+    }
+
+    private static IReadOnlyList<string> AdvertisedCapabilities(Configuration.WebOptions? web)
+    {
+        var capabilities = new List<string>(
+            RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities());
+        if (web is { Enabled: true })
+        {
+            if (web.FetchEnabled)
+            {
+                capabilities.Add("web.fetch");
+            }
+
+            if (web.SearchEnabled)
+            {
+                capabilities.Add("web.search");
+            }
+        }
+
+        return capabilities;
     }
 
     private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteToolAsync(

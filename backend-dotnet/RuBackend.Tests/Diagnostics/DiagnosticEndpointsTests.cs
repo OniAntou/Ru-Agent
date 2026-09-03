@@ -17,7 +17,7 @@ public sealed class DiagnosticEndpointsTests
         var paths = factory.Services.GetRequiredService<DataPaths>();
         Directory.CreateDirectory(paths.LogRoot);
 
-        var logFile = Path.Combine(paths.LogRoot, $"aspnetcore-{DateTimeOffset.UtcNow:yyyy-MM-dd}.jsonl");
+        var logFile = Path.Combine(paths.LogRoot, $"aspnetcore-{DateTimeOffset.UtcNow.AddDays(-1):yyyy-MM-dd}.jsonl");
         var lines = new[]
         {
             """{"event_id":"evt_1","ts":1000.0,"iso":"2026-08-20T00:00:00.000Z","level":"info","component":"host","event_code":"app.start","correlation_id":"c_test_diag_01"}""",
@@ -43,7 +43,7 @@ public sealed class DiagnosticEndpointsTests
         var paths = factory.Services.GetRequiredService<DataPaths>();
         Directory.CreateDirectory(paths.LogRoot);
 
-        var logFile = Path.Combine(paths.LogRoot, $"aspnetcore-{DateTimeOffset.UtcNow:yyyy-MM-dd}.jsonl");
+        var logFile = Path.Combine(paths.LogRoot, $"aspnetcore-{DateTimeOffset.UtcNow.AddDays(-1):yyyy-MM-dd}.jsonl");
         var lines = new[]
         {
             """{"event_id":"evt_10","ts":1000.0,"iso":"2026-08-20T00:00:00.000Z","level":"info","component":"host","event_code":"app.start","correlation_id":"c_test_diag_02"}""",
@@ -68,7 +68,7 @@ public sealed class DiagnosticEndpointsTests
         var paths = factory.Services.GetRequiredService<DataPaths>();
         Directory.CreateDirectory(paths.LogRoot);
 
-        var logFile = Path.Combine(paths.LogRoot, $"aspnetcore-{DateTimeOffset.UtcNow:yyyy-MM-dd}.jsonl");
+        var logFile = Path.Combine(paths.LogRoot, $"aspnetcore-{DateTimeOffset.UtcNow.AddDays(-1):yyyy-MM-dd}.jsonl");
         var lines = new[]
         {
             """{"event_id":"evt_1","ts":1000.0,"iso":"2026-08-20T00:00:00.000Z","level":"info","component":"host","event_code":"app.start"}""",

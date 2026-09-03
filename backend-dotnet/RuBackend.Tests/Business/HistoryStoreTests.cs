@@ -93,6 +93,32 @@ public sealed class HistoryStoreTests
         Assert.Equal("created", sessions.DeletedSessionId);
     }
 
+    [Fact]
+    public async Task Oversized_legacy_file_is_not_loaded_or_migrated()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-history-tests", Guid.NewGuid().ToString("N"));
+        var paths = CreatePaths(root);
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using (var stream = new FileStream(paths.HistoryFile, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+            {
+                stream.SetLength(16 * 1024 * 1024 + 1);
+            }
+
+            var sessions = new SessionStore(paths);
+            var history = new HistoryStore(paths, sessions);
+
+            Assert.Empty(await history.ReadLegacyAsync(CancellationToken.None));
+            Assert.Null(await history.MigrateToSessionAsync(CancellationToken.None));
+            Assert.True(File.Exists(paths.HistoryFile));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
     private static (HistoryStore History, SessionStore Sessions, DataPaths Paths) CreateStores()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-history-tests", Guid.NewGuid().ToString("N"));

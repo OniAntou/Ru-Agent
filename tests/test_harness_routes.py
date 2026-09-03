@@ -15,8 +15,8 @@ def test_registry_covers_the_current_contract_without_silent_skips() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     registry = build_route_registry(load_contract(repo_root))
 
-    # 56 HTTP routes plus the single /voice/stream WebSocket entry.
-    assert len(registry) == 57
+    # 62 HTTP routes plus the single /voice/stream WebSocket entry.
+    assert len(registry) == 63
     assert all(
         entry.safety
         in {

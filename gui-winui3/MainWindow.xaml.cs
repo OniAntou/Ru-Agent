@@ -580,6 +580,17 @@ namespace RuApp
             {
                 _apiService.SettingsSaved -= OnSettingsSaved;
             }
+            // GUI owns Host lifetime: closing GUI should terminate the shared Host (and its Worker/Broker Job).
+            // Fire authenticated shutdown so Host can gracefully dispose the Job Object and descriptor.
+            if (_apiService != null)
+            {
+                try
+                {
+                    using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await _apiService.ShutdownHostAsync(shutdownCts.Token);
+                }
+                catch { }
+            }
             await _startupTask;
             _startup.Dispose();
             if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();

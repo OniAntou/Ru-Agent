@@ -14,6 +14,7 @@ namespace RuAgent.Runtime.Adapters.Devices;
 /// </summary>
 public sealed class VtubeStudioRuntimeRequestHandler : IPrivateRuntimeRequestHandler
 {
+    private const int MaxRequestBodyBytes = 256 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlySet<string> SafeConnectErrorCodes =
         new HashSet<string>(
@@ -427,6 +428,11 @@ public sealed class VtubeStudioRuntimeRequestHandler : IPrivateRuntimeRequestHan
 
     private static JsonObject ParseObject(PrivateRuntimeRequest request, bool allowEmpty)
     {
+        if (request.Body.Length > MaxRequestBodyBytes)
+        {
+            throw new PrivateRuntimeRequestException("invalid_request");
+        }
+
         if (request.Body.IsEmpty && allowEmpty)
         {
             return [];

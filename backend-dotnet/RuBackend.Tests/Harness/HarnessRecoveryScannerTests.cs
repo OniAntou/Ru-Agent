@@ -140,6 +140,33 @@ public sealed class HarnessRecoveryScannerTests
     }
 
     [Fact]
+    public async Task Expired_workspace_trust_run_is_cancelled_so_it_cannot_keep_the_workspace_locked()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var tracked = new List<RunId>();
+            var run = await CreateDistinctRunAsync(
+                fixture,
+                new HarnessRunStatus(HarnessRunState.WaitingWorkspaceTrust),
+                "run_44444444444444444444444444444444");
+            tracked.Add(run.RunId);
+
+            var summaries = await ScanAsync(fixture, tracked, Timestamp.AddMinutes(11));
+
+            var summary = Assert.Single(summaries);
+            Assert.Equal("cancelled_workspace_trust_expired", summary.Action);
+            var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Cancelled, after!.State);
+            Assert.Equal("workspace_trust_expired", after.TerminalErrorCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task Recovery_never_reissues_an_old_mutation_execution_id()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
@@ -321,10 +348,11 @@ public sealed class HarnessRecoveryScannerTests
 
     private static async Task<IReadOnlyList<RecoveredRunSummary>> ScanAsync(
         BackendHarnessTestFixture fixture,
-        IReadOnlyList<RunId> tracked) =>
+        IReadOnlyList<RunId> tracked,
+        DateTimeOffset? now = null) =>
         await new HarnessRecoveryScanner(
             fixture.EventStore,
-            new FixedTime(Timestamp),
+            new FixedTime(now ?? Timestamp),
             _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).ScanPendingRunsAsync(CancellationToken.None);
 
     private static EventId NewEventId() =>

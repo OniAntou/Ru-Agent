@@ -158,9 +158,9 @@ public sealed class SqliteModelContextSource : IModelContextSource
 
             var encrypted = new EncryptedHarnessPayload(
                 reader.GetInt32(8),
-                (byte[])reader[9],
-                (byte[])reader[7],
-                (byte[])reader[10]);
+                HarnessSqliteMapper.ReadBoundedBlob(reader, 9, 12, "context_compaction_payload_invalid", 12),
+                HarnessSqliteMapper.ReadBoundedBlob(reader, 7, metadata.ByteCap, "context_compaction_payload_invalid"),
+                HarnessSqliteMapper.ReadBoundedBlob(reader, 10, 16, "context_compaction_payload_invalid", 16));
             var plaintext = await _payloadStore.DecryptAsync(
                     runId,
                     metadata,
@@ -265,9 +265,9 @@ public sealed class SqliteModelContextSource : IModelContextSource
 
         var encrypted = new EncryptedHarnessPayload(
             reader.GetInt32(6),
-            (byte[])reader[7],
-            (byte[])reader[5],
-            (byte[])reader[8]);
+            HarnessSqliteMapper.ReadBoundedBlob(reader, 7, 12, "context_payload_invalid", 12),
+            HarnessSqliteMapper.ReadBoundedBlob(reader, 5, metadata.ByteCap, "context_payload_invalid"),
+            HarnessSqliteMapper.ReadBoundedBlob(reader, 8, 16, "context_payload_invalid", 16));
         var plaintext = await _payloadStore.DecryptAsync(
                 runId,
                 metadata,

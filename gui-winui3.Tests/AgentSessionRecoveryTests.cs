@@ -41,6 +41,21 @@ public sealed class AgentSessionRecoveryTests
         Assert.Contains("RecoverAgentSessionAsync", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ChatView_waits_for_the_previous_agent_run_to_cancel_before_switching_session()
+    {
+        var source = File.ReadAllText(FindChatViewPath());
+        var openSession = source.IndexOf("public async Task OpenSessionAsync", StringComparison.Ordinal);
+        var switchSession = source.IndexOf("_activeSessionId = sessionId;", openSession, StringComparison.Ordinal);
+
+        Assert.True(openSession >= 0);
+        Assert.True(switchSession > openSession);
+        var stopBeforeSwitch = source.LastIndexOf("await StopActiveAgentAsync(force: true);", switchSession, StringComparison.Ordinal);
+        Assert.True(
+            stopBeforeSwitch > openSession,
+            "Switching sessions must await cancellation of the previous run before changing the active session.");
+    }
+
     private static string FindChatViewPath()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

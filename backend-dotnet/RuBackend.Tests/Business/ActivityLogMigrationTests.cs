@@ -37,6 +37,7 @@ public sealed class ActivityLogMigrationTests : IDisposable
         var legacyJsonl = """
         {"ts":100,"iso":"2026-08-20T00:00:00Z","type":"chat","session_id":"s1","data":{"role":"user","content":"Secret message containing sk-1234567890abcdef"}}
         {"ts":101,"iso":"2026-08-20T00:00:01Z","type":"chat","session_id":"s1","data":{"role":"assistant","content":"Response to user"}}
+        {"ts":102,"iso":"2026-08-20T00:00:02Z","type":123,"data":{}}
         """;
 
         await File.WriteAllTextAsync(_paths.ActivityLogFile, legacyJsonl);

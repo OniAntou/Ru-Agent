@@ -188,10 +188,6 @@ public sealed class FileSearchAdapter
         {
             isRegex = rvVal;
         }
-        else if (arguments.TryGetPropertyValue("regex", out var reNode2) && reNode2 is JsonValue rv2 && rv2.TryGetValue<bool>(out var rvVal2))
-        {
-            isRegex = rvVal2;
-        }
 
         Regex? queryRegex = null;
         if (isRegex)

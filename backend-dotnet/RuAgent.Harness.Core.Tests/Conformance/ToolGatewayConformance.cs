@@ -35,6 +35,12 @@ public abstract class ToolGatewayConformance : IDisposable
 
     protected virtual IReadOnlyList<string> AdvertisedCapabilities { get; } =
     [
+        "system.time",
+        "system.status",
+        "system.volume",
+        "help.docs",
+        "app.list",
+        "notes.create",
         "files.list",
         "files.glob",
         "files.search",
@@ -85,7 +91,7 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task UnadvertisedToolId_is_denied_as_phase_not_available()
     {
-        var decision = await Gateway.EvaluateAsync(Proposal("notes.create", []), CancellationToken.None);
+        var decision = await Gateway.EvaluateAsync(Proposal("web.search", []), CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("phase_not_available", decision.SafeCode);
@@ -98,6 +104,68 @@ public abstract class ToolGatewayConformance : IDisposable
 
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("phase_not_available", decision.SafeCode);
+    }
+
+    // ---- canonical proposal invariants (migrated from the Host gateway) ----
+
+    [Fact]
+    public async Task Delete_rejects_preimage_hash_in_model_arguments()
+    {
+        var decision = await Gateway.EvaluateAsync(
+            Proposal("files.delete", new JsonObject
+            {
+                ["path"] = "notes/a.txt",
+                ["expected_sha256"] = new string('a', 64),
+            }),
+            CancellationToken.None);
+
+        Assert.Equal(PolicyDecision.Deny, decision.Decision);
+        Assert.Equal("invalid_arguments", decision.SafeCode);
+    }
+
+    [Fact]
+    public async Task Search_rejects_the_retired_regex_argument_name()
+    {
+        var decision = await Gateway.EvaluateAsync(
+            Proposal("files.search", new JsonObject
+            {
+                ["query"] = "needle",
+                ["regex"] = false,
+            }),
+            CancellationToken.None);
+
+        Assert.Equal(PolicyDecision.Deny, decision.Decision);
+        Assert.Equal("invalid_arguments", decision.SafeCode);
+    }
+
+    [Fact]
+    public async Task HelpDocs_executes_read_only_within_bounds()
+    {
+        var proposal = Proposal("help.docs", new JsonObject
+        {
+            ["query"] = "approval",
+            ["max_results"] = 1,
+        });
+
+        var decision = await Gateway.EvaluateAsync(proposal, CancellationToken.None);
+        Assert.Equal(PolicyDecision.Allow, decision.Decision);
+        Assert.Equal(ToolAccessKind.ReadOnly, decision.AccessKind);
+
+        var prepared = await Gateway.PrepareAsync(
+            new ApprovedToolExecution(proposal, NextExecutionId(), decision.CanonicalIntentToken!),
+            CancellationToken.None);
+        Assert.Empty(prepared.PreparationPayloads);
+
+        var receipt = await Gateway.ExecuteAsync(
+            prepared,
+            _ => ValueTask.CompletedTask,
+            CancellationToken.None);
+        Assert.True(
+            receipt.Outcome == ToolExecutionOutcome.Succeeded,
+            $"help.docs execution failed: code={receipt.Code}");
+        var output = ParseModelContent(receipt);
+        Assert.Equal("approval", output["query"]!.GetValue<string>());
+        Assert.True(output["results"]!.AsArray().Count <= 1);
     }
 
     // ---- evaluate: path boundary ----

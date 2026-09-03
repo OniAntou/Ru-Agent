@@ -23,7 +23,19 @@ public sealed record WorkspacePathClaim(string NormalizedPath, WorkspacePathKind
             throw new ArgumentException("Workspace claims must be non-empty relative paths.", nameof(NormalizedPath));
         }
 
-        return this with { NormalizedPath = NormalizedPath.Replace('\\', '/') };
+        var segments = NormalizedPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(segment => segment is "." or ".."))
+        {
+            throw new ArgumentException("Workspace claims must not contain traversal segments.", nameof(NormalizedPath));
+        }
+
+        var normalized = string.Join('/', segments);
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException("Workspace claims must be non-empty relative paths.", nameof(NormalizedPath));
+        }
+
+        return this with { NormalizedPath = normalized };
     }
 }
 
@@ -74,7 +86,18 @@ public static class WorkspaceExternalChangeDetector
 
         ValidateHash(expectedSha256, nameof(expectedSha256), allowNull: true);
         ValidateHash(observedSha256, nameof(observedSha256), allowNull: false);
-        var normalized = path.Replace('\\', '/');
+        var segments = path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Any(segment => segment is "." or ".."))
+        {
+            throw new ArgumentException("Workspace path must not contain traversal segments.", nameof(path));
+        }
+
+        var normalized = string.Join('/', segments);
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException("Workspace path must be non-empty relative.", nameof(path));
+        }
+
         var changed = !string.Equals(expectedSha256, observedSha256, StringComparison.Ordinal);
         return new WorkspaceExternalChange(
             normalized,

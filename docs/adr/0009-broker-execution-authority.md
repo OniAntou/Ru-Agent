@@ -31,35 +31,42 @@ projection, approvals, and recovery persistence only.
 - Migration is strangler-ordered: conformance tests first, then read-only
   file tools, mutations, terminal, web.
 
-## Migration status (2026-09-02)
-
-- A shared `ToolGatewayConformance` suite (in
-  `RuAgent.Harness.Core.Tests/Conformance/`) locks one behavior contract
-  across adapters; both the in-process gateway and `BrokerToolGateway`
-  subclass it. Twenty facts run against each adapter.
-- Migrated and conformance-locked over the V2 wire flow: read-only file
-  tools, `files.write/edit/delete/restore` (Broker-captured preimage),
-  and `terminal.run/shell` (analyzer-safe forms allow; unrecognized forms
-  ask). Broker fallback capabilities now advertise these ten bindings.
-- `BrokerSession` now supports multiple concurrent run leases (per-run
-  decision/preparation registries, per-lease close), and
-  `ToolExecutionService` resolves every workspace-bound adapter against
-  the lease's canonical root (per-root tool sets) instead of the legacy
-  environment root — the precondition for multiple concurrent runs on one
-  Broker process.
-- Remaining cutover legs, in order:
-  1. Snapshot handoff: map the Host `PolicySnapshot` to
-     `BrokerPolicySnapshotWire` and open/close a per-run Broker lease in
-     `AgentRuntimeCoordinatorFactory.Create` (the single production
-     constructor of the tool gateway), with gateway disposal tied to
-     `AgentRuntimeLoopService.Remove`.
-  2. Approval bridging: `/agent/v1/runs/{runId}/approvals/{approvalId}`
-     must forward `approval.respond` to the Broker and execute with the
-     returned `authorization_token` (the adapter already accepts either
-     token on `tool.execute`).
-  3. Web wiring: `BrokerHost` needs `WebOptions` plumbed from the Host so
-     `web.search/web.fetch` advertise; live-network acceptance stays
-     separate per docs/operations/verification.md.
-  4. Delete `HarnessToolGateway` and `RuBackend/Agent/CapabilityProfile.cs`
-     and move the Host-gateway regression tests onto the conformance
-     suite.
+- Migration status (updated 2026-09-03, cutover complete):
+  - `BrokerSession` supports multiple concurrent run leases (per-run
+    decision/preparation registries, per-lease close), and
+    `ToolExecutionService` resolves every workspace-bound adapter against
+    the lease's canonical root — the precondition for multiple concurrent
+    runs on one Broker process.
+  - A shared `ToolGatewayConformance` suite (in
+    `RuAgent.Harness.Core.Tests/Conformance/`) locks one behavior contract
+    across adapters; both the in-process gateway and `BrokerToolGateway`
+    subclassed it. Twenty-three facts run against the Broker adapter,
+    including the migrated regression facts (preimage never in model
+    proposals, canonical `is_regex`, `help.docs` read-only lifecycle).
+  - All V2-wire tool families are conformance-locked: read-only file tools,
+    `files.write/edit/delete/restore` (Broker-captured preimage), and
+    `terminal.run/shell` (analyzer-safe forms allow; unrecognized forms ask).
+  - The Host projects its `PolicySnapshot` onto the wire via
+    `PolicySnapshotMapper` (hash-identical to the Core canonicalizer) and
+    `AgentRuntimeCoordinatorFactory` opens a per-run Broker lease through
+    `BrokerToolGatewayFactory`; gateway disposal is tied to run teardown in
+    `AgentRuntimeLoopService`. The in-process `HarnessToolGateway` and its
+    fallback branch are deleted — a missing or unconfigured Broker descriptor
+    fails closed (`broker_gateway_unavailable`) instead of silently
+    downgrading to the Host path.
+  - Approval bridging: the Host approval endpoint forwards the resolution to
+    the Broker (`approval.respond`) before resuming the run and the resumed
+    proposal executes with the returned one-time `authorization_token`
+    (60 s). The legacy process-local external-directory grant memory is
+    replaced by per-execution Broker approvals; reusable `allow_run` /
+    `allow_project` rules stay Host-durable, and the Broker lease rebind
+    remains future work.
+  - Web wiring: web options are defined once on the Host, forwarded to the
+    Broker process through the environment, and the v2 lease advertises
+    `web.search` / `web.fetch` only when enabled. Live-network acceptance
+    stays separate per docs/operations/verification.md.
+  - The v2 lease advertises the full authoritative tool set (16 bindings:
+    system, help, notes, files, terminal) plus web when enabled.
+  - `RuBackend/Agent/CapabilityProfile.cs` is intentionally kept: it is the
+    v1 wire contract of `AgentBrokerClient` (chat/agent profiles), not a
+    duplicate of the Broker's three-profile enum.

@@ -20,6 +20,10 @@ public sealed record RunGitRehydratedState(
 public sealed class SqliteRunGitStateStore : IDisposable
 {
     public const int MaxStoredEntries = 1000;
+    private const int MaxRunIdLength = 128;
+    private const int MaxSnapshotJsonCharacters = 4_000_000;
+    private const int MaxAttributedPathLength = 4096;
+    private const int MaxAttributedPathsJsonCharacters = 1_000_000;
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -48,9 +52,14 @@ public sealed class SqliteRunGitStateStore : IDisposable
 
     public async Task SaveStartSnapshotAsync(string runId, RunGitWorktreeSnapshot snapshot, CancellationToken cancellationToken = default)
     {
+        ValidateRunId(runId);
         ArgumentNullException.ThrowIfNull(snapshot);
         var bounded = BoundEntries(snapshot);
         var json = JsonSerializer.Serialize(bounded, SerializerOptions);
+        if (json.Length > MaxSnapshotJsonCharacters)
+        {
+            throw new ArgumentException("start_snapshot_too_large", nameof(snapshot));
+        }
         var now = DateTimeOffset.UtcNow.ToString("O");
         await _gate.WaitAsync(cancellationToken);
         try
@@ -84,6 +93,7 @@ public sealed class SqliteRunGitStateStore : IDisposable
 
     private async Task<bool> ReadIneligibilityAsync(string runId, CancellationToken cancellationToken)
     {
+        ValidateRunId(runId);
         await using var command = CreateCommand(
             "SELECT managed_commit_eligible FROM run_git_state WHERE run_id = $run_id");
         command.Parameters.AddWithValue("$run_id", runId);
@@ -93,6 +103,7 @@ public sealed class SqliteRunGitStateStore : IDisposable
 
     public async Task<RunGitWorktreeSnapshot?> TryGetStartSnapshotAsync(string runId, CancellationToken cancellationToken = default)
     {
+        ValidateRunId(runId);
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -115,8 +126,26 @@ public sealed class SqliteRunGitStateStore : IDisposable
 
     public async Task SetAttributedPathsAsync(string runId, IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
     {
+        ValidateRunId(runId);
         ArgumentNullException.ThrowIfNull(paths);
-        var json = JsonSerializer.Serialize(paths, SerializerOptions);
+        if (paths.Count > MaxStoredEntries)
+        {
+            throw new ArgumentException("attributed_paths_too_many", nameof(paths));
+        }
+
+        var boundedPaths = paths
+            .Select(path => path?.Trim() ?? string.Empty)
+            .ToArray();
+        if (boundedPaths.Any(path => path.Length == 0 || path.Length > MaxAttributedPathLength))
+        {
+            throw new ArgumentException("attributed_path_invalid", nameof(paths));
+        }
+
+        var json = JsonSerializer.Serialize(boundedPaths, SerializerOptions);
+        if (json.Length > MaxAttributedPathsJsonCharacters)
+        {
+            throw new ArgumentException("attributed_paths_too_large", nameof(paths));
+        }
         var now = DateTimeOffset.UtcNow.ToString("O");
         await _gate.WaitAsync(cancellationToken);
         try
@@ -141,6 +170,7 @@ public sealed class SqliteRunGitStateStore : IDisposable
 
     public async Task<IReadOnlyList<string>?> TryGetAttributedPathsAsync(string runId, CancellationToken cancellationToken = default)
     {
+        ValidateRunId(runId);
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -153,7 +183,7 @@ public sealed class SqliteRunGitStateStore : IDisposable
                 return null;
             }
 
-            return JsonSerializer.Deserialize<List<string>>(reader.GetString(0), SerializerOptions) ?? new List<string>();
+            return DeserializeAttributedPaths(reader.GetString(0));
         }
         finally
         {
@@ -168,6 +198,7 @@ public sealed class SqliteRunGitStateStore : IDisposable
     /// </summary>
     public async Task<RunGitRehydratedState?> TryLoadForRefreshedLeaseAsync(string runId, CancellationToken cancellationToken = default)
     {
+        ValidateRunId(runId);
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -189,7 +220,11 @@ public sealed class SqliteRunGitStateStore : IDisposable
                 return null;
             }
 
-            var paths = JsonSerializer.Deserialize<List<string>>(reader.GetString(1), SerializerOptions) ?? new List<string>();
+            var paths = DeserializeAttributedPaths(reader.GetString(1));
+            if (paths is null)
+            {
+                return null;
+            }
             var storedAt = DateTimeOffset.TryParse(reader.GetString(2), out var parsed) ? parsed : DateTimeOffset.MinValue;
             return new RunGitRehydratedState(snapshot, paths, storedAt);
         }
@@ -218,6 +253,11 @@ public sealed class SqliteRunGitStateStore : IDisposable
 
     private static RunGitWorktreeSnapshot? DeserializeSnapshot(string json)
     {
+        if (string.IsNullOrWhiteSpace(json) || json.Length > MaxSnapshotJsonCharacters)
+        {
+            return null;
+        }
+
         try
         {
             return JsonSerializer.Deserialize<RunGitWorktreeSnapshot>(json, SerializerOptions);
@@ -225,6 +265,43 @@ public sealed class SqliteRunGitStateStore : IDisposable
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    private static IReadOnlyList<string>? DeserializeAttributedPaths(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json.Length > MaxAttributedPathsJsonCharacters)
+        {
+            return null;
+        }
+
+        try
+        {
+            var paths = JsonSerializer.Deserialize<List<string>>(json, SerializerOptions);
+            if (paths is null || paths.Count > MaxStoredEntries)
+            {
+                return null;
+            }
+
+            var bounded = paths
+                .Select(path => path?.Trim() ?? string.Empty)
+                .ToArray();
+            return bounded.Any(path => path.Length == 0 || path.Length > MaxAttributedPathLength)
+                ? null
+                : bounded;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void ValidateRunId(string runId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        if (runId.Length > MaxRunIdLength)
+        {
+            throw new ArgumentException("run_id_too_long", nameof(runId));
         }
     }
 

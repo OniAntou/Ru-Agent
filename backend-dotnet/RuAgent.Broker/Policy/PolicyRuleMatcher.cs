@@ -149,8 +149,20 @@ public static class PolicyRuleMatcher
     {
         // Restricted grammar: '*' matches within one path segment, '**' spans separators,
         // everything else compares case-insensitively as literals. Patterns are anchored
-        // to the whole value.
-        return GlobMatchCore(pattern.AsSpan(), candidate.AsSpan());
+        // to the whole value, separators compare uniformly, and "{dir}/**" also covers
+        // the directory itself so a directory grant reaches its own listing.
+        var normalizedPattern = pattern.Replace('\\', '/');
+        var normalizedCandidate = candidate.Replace('\\', '/');
+        if (normalizedPattern.EndsWith("/**", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                normalizedPattern[..^3],
+                normalizedCandidate,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return GlobMatchCore(normalizedPattern.AsSpan(), normalizedCandidate.AsSpan());
     }
 
     private static bool GlobMatchCore(ReadOnlySpan<char> pattern, ReadOnlySpan<char> candidate)

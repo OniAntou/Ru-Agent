@@ -29,8 +29,16 @@ public sealed class McpClient : IAsyncDisposable, IDisposable
         _readLoopTask = Task.Run(ReadLoopAsync);
     }
 
+    public const int MaxFrameChars = 16 * 1024 * 1024; // 16 MB maximum JSON-RPC frame limit
+
     public static McpClient StartProcess(string executable, IReadOnlyList<string> arguments, string? workingDirectory = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executable);
+        if (!string.IsNullOrEmpty(workingDirectory) && !Directory.Exists(workingDirectory))
+        {
+            throw new DirectoryNotFoundException($"Working directory does not exist: {workingDirectory}");
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = executable,
@@ -189,6 +197,7 @@ public sealed class McpClient : IAsyncDisposable, IDisposable
                 var line = await _reader.ReadLineAsync(_cts.Token).ConfigureAwait(false);
                 if (line is null) break;
                 if (string.IsNullOrWhiteSpace(line)) continue;
+                if (line.Length > MaxFrameChars) continue;
 
                 try
                 {

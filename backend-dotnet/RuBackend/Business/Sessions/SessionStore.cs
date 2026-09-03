@@ -272,6 +272,10 @@ public sealed partial class SessionStore : ISessionStore
             var title = string.IsNullOrWhiteSpace(newTitle)
                 ? $"{original.Title} (Nhánh)"
                 : newTitle.Trim();
+            if (title.Length > 256)
+            {
+                title = title[..256];
+            }
 
             var forkedDoc = new SessionDocument(
                 forkedId,

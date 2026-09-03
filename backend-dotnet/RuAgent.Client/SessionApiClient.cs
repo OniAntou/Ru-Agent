@@ -88,4 +88,75 @@ public sealed class SessionApiClient
         return sessionId;
         }
     }
+
+    public async Task<JsonElement> ListAsync(CancellationToken cancellationToken = default)
+    {
+        var url = new Uri(_session.BaseUri, "sessions");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("session_list_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(content);
+        return doc.RootElement.Clone();
+    }
+
+    public async Task<JsonElement> ForkAsync(string sessionId, int upToMessageIndex, string? newTitle = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var url = new Uri(_session.BaseUri, $"sessions/{Uri.EscapeDataString(sessionId)}/fork");
+        var payload = JsonSerializer.Serialize(new
+        {
+            up_to_message_index = upToMessageIndex,
+            new_title = newTitle,
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("session_fork_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(content);
+        return doc.RootElement.Clone();
+    }
+
+    public async Task<JsonElement> RewindAsync(string sessionId, int toMessageIndex, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var url = new Uri(_session.BaseUri, $"sessions/{Uri.EscapeDataString(sessionId)}/rewind");
+        var payload = JsonSerializer.Serialize(new
+        {
+            to_message_index = toMessageIndex,
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("session_rewind_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(content);
+        return doc.RootElement.Clone();
+    }
 }

@@ -803,4 +803,247 @@ public sealed class AgentCommands
             await _out.FlushAsync().ConfigureAwait(false);
         }
     }
+
+    public async Task<int> ChatAsync(ChatCommand cmd, CancellationToken cancellationToken)
+    {
+        string canonicalWorkspace;
+        try
+        {
+            canonicalWorkspace = Path.GetFullPath(cmd.WorkspacePath);
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"invalid_workspace: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+
+        string sessionId = cmd.SessionId ?? string.Empty;
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            try
+            {
+                sessionId = await _sessionClient.CreateAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"session_create_failed: {ex.Message}").ConfigureAwait(false);
+                return 1;
+            }
+        }
+
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╔════════════════════════════════════════════════════════════════════════════╗")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("║   RuAgent Interactive Terminal (TUI Mode)                                  ║")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("║   Commands: /help, /fork [title], /rewind <idx>, /status, /clear, /exit    ║")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╚════════════════════════════════════════════════════════════════════════════╝")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"Session ID: {sessionId}")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"Workspace:  {canonicalWorkspace}")).ConfigureAwait(false);
+        await _out.WriteLineAsync().ConfigureAwait(false);
+        await _out.FlushAsync().ConfigureAwait(false);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Green("ruagent > "))).ConfigureAwait(false);
+            await _out.FlushAsync().ConfigureAwait(false);
+            var line = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null) break;
+            line = line.Trim();
+            if (string.IsNullOrEmpty(line)) continue;
+
+            if (line.StartsWith("/", StringComparison.Ordinal))
+            {
+                var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                var slashCmd = parts[0].ToLowerInvariant();
+                var arg = parts.Length > 1 ? parts[1].Trim() : null;
+
+                if (slashCmd is "/exit" or "/quit")
+                {
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Dim("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    return 0;
+                }
+                if (slashCmd is "/help")
+                {
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Available slash commands:")).ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /fork [title]    - Fork session into a new branch from current point").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /rewind <index>  - Rewind session to specified message index").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /status          - Display session details").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /clear           - Clear terminal screen").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /exit, /quit     - Exit interactive mode").ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    continue;
+                }
+                if (slashCmd is "/clear")
+                {
+                    try { Console.Clear(); } catch { }
+                    continue;
+                }
+                if (slashCmd is "/fork")
+                {
+                    try
+                    {
+                        var forked = await _sessionClient.ForkAsync(sessionId, 999999, arg, cancellationToken).ConfigureAwait(false);
+                        if (forked.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
+                        {
+                            sessionId = newId.GetString()!;
+                            await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Forked to new branch: {sessionId}")).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await _err.WriteLineAsync("fork_failed: unable to create branch").ConfigureAwait(false);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await _err.WriteLineAsync($"fork_error: {ex.Message}").ConfigureAwait(false);
+                    }
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    continue;
+                }
+                if (slashCmd is "/rewind")
+                {
+                    if (arg is null || !int.TryParse(arg, out var toIndex))
+                    {
+                        await _err.WriteLineAsync("usage: /rewind <message_index>").ConfigureAwait(false);
+                        continue;
+                    }
+                    try
+                    {
+                        await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
+                        await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        await _err.WriteLineAsync($"rewind_error: {ex.Message}").ConfigureAwait(false);
+                    }
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    continue;
+                }
+                if (slashCmd is "/status")
+                {
+                    await _out.WriteLineAsync($"Current Session: {sessionId} (Preset: {cmd.Preset})").ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    continue;
+                }
+
+                await _err.WriteLineAsync($"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
+                continue;
+            }
+
+            var idempotencyKey = Guid.NewGuid().ToString("N");
+            var request = new CreateAgentRunRequest(
+                sessionId,
+                canonicalWorkspace,
+                line,
+                cmd.Preset,
+                null,
+                idempotencyKey);
+
+            try
+            {
+                var resp = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
+                await foreach (var frame in _sseClient.ReadEventsAsync(resp.RunId, afterSequence: 0, cancellationToken: cancellationToken).ConfigureAwait(false))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (cmd.Json)
+                    {
+                        NdjsonEventRenderer.RenderFrame(frame, _out);
+                    }
+                    else
+                    {
+                        Tui.TuiEventRenderer.RenderFrame(frame, _out);
+                    }
+                    await _out.FlushAsync().ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                await _out.WriteLineAsync(Tui.AnsiTheme.Yellow("Run interrupted by user.")).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync(Tui.AnsiTheme.Red($"run_error: {ex.Message}")).ConfigureAwait(false);
+            }
+            await _out.FlushAsync().ConfigureAwait(false);
+        }
+
+        return 0;
+    }
+
+    public async Task<int> SessionListAsync(SessionListCommand cmd, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var element = await _sessionClient.ListAsync(cancellationToken).ConfigureAwait(false);
+            if (cmd.Json)
+            {
+                await _out.WriteLineAsync(JsonSerializer.Serialize(element)).ConfigureAwait(false);
+                return 0;
+            }
+
+            await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Active Sessions:")).ConfigureAwait(false);
+            if (element.TryGetProperty("sessions", out var array) && array.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in array.EnumerateArray())
+                {
+                    var id = item.GetProperty("id").GetString();
+                    var title = item.GetProperty("title").GetString();
+                    var msgCount = item.TryGetProperty("message_count", out var mc) ? mc.GetInt32() : 0;
+                    await _out.WriteLineAsync($"  • {Tui.AnsiTheme.Cyan(id ?? "")} - {title} ({msgCount} messages)").ConfigureAwait(false);
+                }
+            }
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"session_list_error: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+    }
+
+    public async Task<int> SessionForkAsync(SessionForkCommand cmd, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var element = await _sessionClient.ForkAsync(cmd.SessionId, cmd.UpToMessageIndex, cmd.NewTitle, cancellationToken).ConfigureAwait(false);
+            if (cmd.Json)
+            {
+                await _out.WriteLineAsync(JsonSerializer.Serialize(element)).ConfigureAwait(false);
+                return 0;
+            }
+
+            if (element.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
+            {
+                await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Successfully forked session to: {newId.GetString()}")).ConfigureAwait(false);
+                return 0;
+            }
+            await _err.WriteLineAsync("session_fork_failed: invalid server response").ConfigureAwait(false);
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"session_fork_error: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+    }
+
+    public async Task<int> SessionRewindAsync(SessionRewindCommand cmd, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var element = await _sessionClient.RewindAsync(cmd.SessionId, cmd.ToMessageIndex, cancellationToken).ConfigureAwait(false);
+            if (cmd.Json)
+            {
+                await _out.WriteLineAsync(JsonSerializer.Serialize(element)).ConfigureAwait(false);
+                return 0;
+            }
+
+            await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Successfully rewound session {cmd.SessionId} to message {cmd.ToMessageIndex}")).ConfigureAwait(false);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"session_rewind_error: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+    }
 }

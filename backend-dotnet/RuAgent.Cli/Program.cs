@@ -68,6 +68,10 @@ public static class Program
                 ReconcileCommand reconcile => await commands.ReconcileAsync(reconcile, cts.Token).ConfigureAwait(false),
                 OutputCommand output => await commands.OutputAsync(output, cts.Token).ConfigureAwait(false),
                 DispatchCommandCommand dispatch => await commands.DispatchCommandAsync(dispatch, cts.Token).ConfigureAwait(false),
+                ChatCommand chat => await commands.ChatAsync(chat, cts.Token).ConfigureAwait(false),
+                SessionListCommand slist => await commands.SessionListAsync(slist, cts.Token).ConfigureAwait(false),
+                SessionForkCommand sfork => await commands.SessionForkAsync(sfork, cts.Token).ConfigureAwait(false),
+                SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
                 _ => 1
             };
         }
@@ -96,6 +100,21 @@ public static class Program
                 return Directory.GetCurrentDirectory();
             }
         }
+        if (command is ChatCommand chat)
+        {
+            try
+            {
+                var full = Path.GetFullPath(chat.WorkspacePath);
+                if (Directory.Exists(full)) return full;
+                var dir = Path.GetDirectoryName(full);
+                if (dir is not null && Directory.Exists(dir)) return dir;
+                return Directory.GetCurrentDirectory();
+            }
+            catch
+            {
+                return Directory.GetCurrentDirectory();
+            }
+        }
         return Directory.GetCurrentDirectory();
     }
 
@@ -103,6 +122,10 @@ public static class Program
     {
         Console.Error.WriteLine("Usage:");
         Console.Error.WriteLine("  agent run [--preset standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--json]");
+        Console.Error.WriteLine("  agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json]");
+        Console.Error.WriteLine("  agent session list [--json]");
+        Console.Error.WriteLine("  agent session fork <session-id> [--index <n>] [--title <title>] [--json]");
+        Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");
         Console.Error.WriteLine("  agent approve <run-id> <approval-id> --scope once|run|project");

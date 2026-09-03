@@ -61,4 +61,23 @@ public sealed class ConPtySessionTests
         session.Resize(120, 40);
         session.Terminate();
     }
+
+    [Fact]
+    public void ConPty_Throws_WhenWorkingDirectoryDoesNotExist()
+    {
+        if (!ConPtySession.IsSupported) return;
+        Assert.Throws<DirectoryNotFoundException>(() => ConPtySession.Start("cmd.exe", "Z:\\NonExistentPath_xyz123"));
+    }
+
+    [Fact]
+    public async Task ConPty_Dispose_KillsRunningProcessImmediately()
+    {
+        if (!ConPtySession.IsSupported) return;
+        var session = ConPtySession.Start("cmd.exe", ".");
+        var pid = session.ProcessId;
+        Assert.True(pid > 0);
+        session.Dispose();
+        await Task.Delay(200);
+        Assert.Throws<ArgumentException>(() => System.Diagnostics.Process.GetProcessById(pid));
+    }
 }

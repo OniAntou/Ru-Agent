@@ -300,4 +300,12 @@ public sealed class McpClientTests
         Assert.Equal("mcp_error", outcome.ErrorCode);
         Assert.Contains("Syntax error in SQL query", outcome.SafeSummary);
     }
+
+    [Fact]
+    public void McpClient_StartProcess_ValidatesArgumentsAndDirectory()
+    {
+        Assert.Throws<ArgumentException>(() => McpClient.StartProcess("", []));
+        Assert.Throws<ArgumentException>(() => McpClient.StartProcess("   ", []));
+        Assert.Throws<DirectoryNotFoundException>(() => McpClient.StartProcess("cmd.exe", [], "Z:\\NonExistentPath_xyz123"));
+    }
 }

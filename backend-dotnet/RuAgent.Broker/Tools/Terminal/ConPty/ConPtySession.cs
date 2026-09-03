@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -53,6 +54,12 @@ public sealed class ConPtySession : IAsyncDisposable, IDisposable
 
     private void Initialize(string commandLine, string workingDirectory, short cols, short rows)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandLine);
+        if (!string.IsNullOrEmpty(workingDirectory) && !Directory.Exists(workingDirectory))
+        {
+            throw new DirectoryNotFoundException($"Working directory does not exist: {workingDirectory}");
+        }
+
         var sec = new ConPtyNative.SECURITY_ATTRIBUTES
         {
             nLength = Marshal.SizeOf<ConPtyNative.SECURITY_ATTRIBUTES>(),
@@ -265,8 +272,29 @@ public sealed class ConPtySession : IAsyncDisposable, IDisposable
             _hThread = IntPtr.Zero;
         }
 
+        if (_processId > 0)
+        {
+            try
+            {
+                using var proc = Process.GetProcessById(_processId);
+                if (!proc.HasExited)
+                {
+                    proc.Kill(entireProcessTree: true);
+                }
+            }
+            catch { }
+        }
+
         if (_hProcess != IntPtr.Zero)
         {
+            try
+            {
+                if (ConPtyNative.WaitForSingleObject(_hProcess, 0) != 0)
+                {
+                    ConPtyNative.TerminateProcess(_hProcess, 1);
+                }
+            }
+            catch { }
             ConPtyNative.CloseHandle(_hProcess);
             _hProcess = IntPtr.Zero;
         }

@@ -5,6 +5,10 @@ Thin headless client for the Agent v2 headless coding loop (Phase 3). Delegates 
 ## Commands
 
 ```text
+agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json]
+agent session list [--json]
+agent session fork <session-id> [--index <n>] [--title <title>] [--json]
+agent session rewind <session-id> --index <n> [--json]
 agent run [--preset standard|full_access] --workspace PATH "prompt" [--session <id>] [--json]
 agent attach <run-id> [--json]
 agent trust <run-id> --approve|--deny
@@ -21,7 +25,9 @@ agent policy import --global FILE
 agent policy remove <rule-id>
 ```
 
-- `run` creates a new Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
+- `chat` (or `repl`) launches an interactive Terminal User Interface (TUI) with real-time ANSI-styled streaming, diff syntax highlighting, and inline slash commands (`/fork`, `/rewind`, `/status`, `/clear`, `/help`, `/exit`).
+- `session list`, `session fork`, and `session rewind` provide explicit command-line controls for managing session branch trees and time-travel rewinds.
+- `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
 - `--preset full_access` (alias `full`) shows an interactive warning and requires confirmation; it changes the session's stored preset via `POST /agent/v1/policies` with `kind=session_preset` and requires header `X-Interactive-Confirmed: true`. `--json` cannot be used with `full_access`; the preset change affects the next run only and is not sticky across new sessions.
 - `attach` streams an existing run's durable events from `after_sequence=0` via `AgentSseClient`.
 - `trust` wraps `POST /agent/v1/runs/{runId}/trust`.

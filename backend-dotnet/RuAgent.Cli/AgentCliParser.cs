@@ -19,6 +19,10 @@ public enum CliCommandKind
     Reconcile,
     Output,
     Command,
+    Chat,
+    SessionList,
+    SessionFork,
+    SessionRewind,
 }
 
 public enum ApprovalScope
@@ -113,6 +117,26 @@ public sealed record DispatchCommandCommand(
     string Text,
     bool Json) : AgentCommand(CliCommandKind.Command, Json);
 
+public sealed record ChatCommand(
+    string WorkspacePath,
+    string? SessionId,
+    string Preset,
+    bool Json) : AgentCommand(CliCommandKind.Chat, Json);
+
+public sealed record SessionListCommand(
+    bool Json) : AgentCommand(CliCommandKind.SessionList, Json);
+
+public sealed record SessionForkCommand(
+    string SessionId,
+    int UpToMessageIndex,
+    string? NewTitle,
+    bool Json) : AgentCommand(CliCommandKind.SessionFork, Json);
+
+public sealed record SessionRewindCommand(
+    string SessionId,
+    int ToMessageIndex,
+    bool Json) : AgentCommand(CliCommandKind.SessionRewind, Json);
+
 public sealed record AgentCliParseResult(
     bool Success,
     AgentCommand? Command,
@@ -158,11 +182,21 @@ public static class AgentCliParser
         if (args.Length == 0)
             return Fail("missing_command", "Expected 'agent' subcommand.");
 
+        if (string.Equals(args[0], "chat", StringComparison.Ordinal) || string.Equals(args[0], "repl", StringComparison.Ordinal))
+        {
+            return ParseChat(args, 1);
+        }
+
+        if (string.Equals(args[0], "session", StringComparison.Ordinal))
+        {
+            return ParseSession(args, 1);
+        }
+
         if (!string.Equals(args[0], "agent", StringComparison.Ordinal))
             return Fail("unknown_command", $"Unknown command '{args[0]}'. Expected 'agent'.");
 
         if (args.Length < 2)
-            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status|approve|deny|policy.");
+            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status|approve|deny|policy|chat|session.");
 
         var sub = args[1];
         return sub switch
@@ -179,6 +213,8 @@ public static class AgentCliParser
             "reconcile" => ParseReconcile(args),
             "output" => ParseOutput(args),
             "command" => ParseDispatchCommand(args),
+            "chat" or "repl" => ParseChat(args, 2),
+            "session" => ParseSession(args, 2),
             _ => Fail("unknown_subcommand", $"Unknown agent subcommand '{sub}'.")
         };
     }
@@ -906,6 +942,233 @@ public static class AgentCliParser
         if (!RuleIdRegex.IsMatch(ruleId))
             return Fail("invalid_rule_id", $"Rule id must match rule_[0-9a-f]{{32}}. Got '{ruleId}'.");
         return null;
+    }
+
+    private static AgentCliParseResult ParseChat(string[] args, int startIndex)
+    {
+        string? workspace = null;
+        bool workspaceSeen = false;
+        string preset = "standard";
+        bool presetSeen = false;
+        string? sessionId = null;
+        bool sessionSeen = false;
+        bool json = false;
+        bool jsonSeen = false;
+
+        for (int i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--workspace")
+            {
+                if (workspaceSeen)
+                    return Fail("duplicate_switch", "Duplicate --workspace.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --workspace.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --workspace.");
+                if (val.Length == 0 || val.Length > MaxWorkspacePathLength)
+                    return Fail("invalid_workspace", $"Workspace path length must be 1..{MaxWorkspacePathLength}.");
+                if (val.Contains('\0'))
+                    return Fail("invalid_workspace", "Workspace path contains null.");
+                workspace = val;
+                workspaceSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--preset")
+            {
+                if (presetSeen)
+                    return Fail("duplicate_switch", "Duplicate --preset.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --preset.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --preset.");
+                if (val.Length == 0 || val.Length > MaxPresetLength)
+                    return Fail("invalid_preset", "Preset too long.");
+                if (val == "full")
+                    val = "full_access";
+                if (val != "standard" && val != "full_access")
+                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'standard' or 'full_access'.");
+                preset = val;
+                presetSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--session")
+            {
+                if (sessionSeen)
+                    return Fail("duplicate_switch", "Duplicate --session.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --session.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --session.");
+                if (val.Length == 0 || val.Length > MaxSessionIdLength)
+                    return Fail("invalid_session_id", $"Session id length must be 1..{MaxSessionIdLength}.");
+                if (!SessionIdLooseRegex.IsMatch(val))
+                    return Fail("invalid_session_id", "Session id contains invalid characters.");
+                sessionId = val;
+                sessionSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+            {
+                return Fail("unknown_switch", $"Unknown switch '{token}' for chat.");
+            }
+            return Fail("too_many_arguments", $"Unexpected argument '{token}' for chat.");
+        }
+
+        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json));
+    }
+
+    private static AgentCliParseResult ParseSession(string[] args, int startIndex)
+    {
+        if (args.Length <= startIndex)
+            return Fail("missing_subcommand", "Missing session subcommand. Expected list|fork|rewind.");
+
+        var sub = args[startIndex];
+        return sub switch
+        {
+            "list" => ParseSessionList(args, startIndex + 1),
+            "fork" => ParseSessionFork(args, startIndex + 1),
+            "rewind" => ParseSessionRewind(args, startIndex + 1),
+            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|fork|rewind.")
+        };
+    }
+
+    private static AgentCliParseResult ParseSessionList(string[] args, int startIndex)
+    {
+        bool json = false;
+        bool jsonSeen = false;
+        for (int i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            return Fail("unknown_switch", $"Unknown switch '{token}' for session list.");
+        }
+        return Success(new SessionListCommand(json));
+    }
+
+    private static AgentCliParseResult ParseSessionFork(string[] args, int startIndex)
+    {
+        string? sessionId = null;
+        int upToIndex = -1;
+        string? newTitle = null;
+        bool json = false;
+        bool jsonSeen = false;
+        bool indexSeen = false;
+        bool titleSeen = false;
+
+        for (int i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token == "--index")
+            {
+                if (indexSeen) return Fail("duplicate_switch", "Duplicate --index.");
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out upToIndex))
+                    return Fail("missing_value", "Missing integer value for --index.");
+                indexSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--title")
+            {
+                if (titleSeen) return Fail("duplicate_switch", "Duplicate --title.");
+                if (i + 1 >= args.Length) return Fail("missing_value", "Missing value for --title.");
+                newTitle = args[i + 1];
+                titleSeen = true;
+                i++;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session fork.");
+
+            if (sessionId is null)
+            {
+                if (!SessionIdLooseRegex.IsMatch(token))
+                    return Fail("invalid_session_id", "Session id contains invalid characters.");
+                sessionId = token;
+                continue;
+            }
+            return Fail("too_many_arguments", $"Unexpected argument '{token}' for session fork.");
+        }
+
+        if (sessionId is null)
+            return Fail("missing_session_id", "Missing required <session-id> for session fork.");
+
+        return Success(new SessionForkCommand(sessionId, upToIndex, newTitle, json));
+    }
+
+    private static AgentCliParseResult ParseSessionRewind(string[] args, int startIndex)
+    {
+        string? sessionId = null;
+        int toIndex = -1;
+        bool json = false;
+        bool jsonSeen = false;
+        bool indexSeen = false;
+
+        for (int i = startIndex; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen) return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token == "--index")
+            {
+                if (indexSeen) return Fail("duplicate_switch", "Duplicate --index.");
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out toIndex))
+                    return Fail("missing_value", "Missing integer value for --index.");
+                indexSeen = true;
+                i++;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session rewind.");
+
+            if (sessionId is null)
+            {
+                if (!SessionIdLooseRegex.IsMatch(token))
+                    return Fail("invalid_session_id", "Session id contains invalid characters.");
+                sessionId = token;
+                continue;
+            }
+            return Fail("too_many_arguments", $"Unexpected argument '{token}' for session rewind.");
+        }
+
+        if (sessionId is null)
+            return Fail("missing_session_id", "Missing required <session-id> for session rewind.");
+        if (!indexSeen)
+            return Fail("missing_index", "Missing required --index for session rewind.");
+
+        return Success(new SessionRewindCommand(sessionId, toIndex, json));
     }
 
     private static AgentCliParseResult Fail(string code, string message) =>

@@ -110,6 +110,9 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
 
     private static string BuildBody(ModelRequest request)
     {
+        if (request.Images.Count > 0 && !ModelImage.IsVisionModel(request.Model))
+            throw new ModelProviderException("vision_unsupported", false);
+
         var input = new JsonArray();
         foreach (var turn in request.Turns)
         {
@@ -117,7 +120,28 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                 throw new ModelProviderException("malformed_payload", false);
             input.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
         }
-        input.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
+
+        if (request.Images.Count > 0)
+        {
+            var content = new JsonArray
+            {
+                new JsonObject { ["type"] = "input_text", ["text"] = request.Prompt }
+            };
+            foreach (var img in request.Images)
+            {
+                content.Add(new JsonObject
+                {
+                    ["type"] = "input_image",
+                    ["image_url"] = $"data:{img.MimeType};base64,{img.Base64Data}"
+                });
+            }
+            input.Add(new JsonObject { ["role"] = "user", ["content"] = content });
+        }
+        else
+        {
+            input.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
+        }
+
         var body = new JsonObject
         {
             ["model"] = request.Model,

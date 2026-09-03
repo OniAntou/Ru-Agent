@@ -173,6 +173,57 @@ public sealed class OpenAiCompatibleModelProviderTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await task);
     }
 
+    [Fact]
+    public async Task OpenAiCompatible_with_image_includes_image_url()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var req = new ModelRequest(
+            "gpt-4o",
+            "system prompt",
+            "describe image",
+            Array.Empty<ModelTurn>(),
+            new JsonObject(),
+            new Uri("https://provider.invalid/v1/chat/completions"),
+            "provider-secret",
+            100,
+            new[] { new ModelImage("image/png", "iVBORw0KGgo=") });
+
+        _ = await provider.GenerateAsync(req, CancellationToken.None).ToListAsync();
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        var messages = body["messages"]!.AsArray();
+        var userTurn = messages[^1]!.AsObject();
+        var content = userTurn["content"]!.AsArray();
+        var textPart = Assert.Single(content, n => n!["type"]!.GetValue<string>() == "text");
+        Assert.Equal("describe image", textPart!["text"]!.GetValue<string>());
+        var imgPart = Assert.Single(content, n => n!["type"]!.GetValue<string>() == "image_url");
+        var imgObj = imgPart!["image_url"]!.AsObject();
+        Assert.Equal("data:image/png;base64,iVBORw0KGgo=", imgObj["url"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task OpenAiCompatible_with_image_rejects_non_vision_model()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var req = new ModelRequest(
+            "test-model",
+            "system prompt",
+            "describe image",
+            Array.Empty<ModelTurn>(),
+            new JsonObject(),
+            new Uri("https://provider.invalid/v1/chat/completions"),
+            "provider-secret",
+            100,
+            new[] { new ModelImage("image/png", "iVBORw0KGgo=") });
+
+        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await provider.GenerateAsync(req, CancellationToken.None).ToListAsync());
+        Assert.Equal("vision_unsupported", ex.Code);
+    }
+
     private static ModelRequest Request(JsonObject? settings = null) => new(
         "test-model",
         "system prompt",

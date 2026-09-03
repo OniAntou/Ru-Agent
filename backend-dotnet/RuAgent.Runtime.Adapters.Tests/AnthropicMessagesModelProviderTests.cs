@@ -35,9 +35,9 @@ public sealed class AnthropicMessagesModelProviderTests
         Sse("message_stop", new JsonObject { ["type"] = "message_stop" });
     private static string Ping() => "event: ping\ndata:\n\n";
 
-    private static string FullLifecycle(string stopReason = "end_turn")
+    private static string FullLifecycle(string stopReason = "end_turn", string model = "test-model")
     {
-        return MessageStart() + ContentBlockStart(0, "text") + ContentBlockDeltaText(0, "Hello ") + ContentBlockDeltaText(0, "world") + ContentBlockStop(0) + MessageDelta(stopReason) + MessageStop();
+        return MessageStart(model) + ContentBlockStart(0, "text") + ContentBlockDeltaText(0, "Hello ") + ContentBlockDeltaText(0, "world") + ContentBlockStop(0) + MessageDelta(stopReason) + MessageStop();
     }
 
     // ---------- request tests ----------
@@ -351,6 +351,56 @@ public sealed class AnthropicMessagesModelProviderTests
                 CancellationToken.None)));
 
         Assert.Equal("malformed_payload", ex.Code);
+    }
+
+    [Fact]
+    public async Task AnthropicMessages_with_image_includes_image_block()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(FullLifecycle(model: "claude-3-5-sonnet"), Encoding.UTF8, "text/event-stream") });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+        var req = new ModelRequest(
+            "claude-3-5-sonnet",
+            "system prompt",
+            "describe image",
+            Array.Empty<ModelTurn>(),
+            new JsonObject(),
+            new Uri("https://provider.invalid/v1/messages"),
+            "synthetic-anthropic",
+            8192,
+            new[] { new ModelImage("image/png", "iVBORw0KGgo=") });
+
+        _ = await CollectAsync(provider.GenerateAsync(req, CancellationToken.None));
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        var messages = body["messages"]!.AsArray();
+        var userTurn = messages[^1]!.AsObject();
+        var content = userTurn["content"]!.AsArray();
+        var imgBlock = Assert.Single(content, n => n!["type"]!.GetValue<string>() == "image");
+        var source = imgBlock!["source"]!.AsObject();
+        Assert.Equal("base64", source["type"]!.GetValue<string>());
+        Assert.Equal("image/png", source["media_type"]!.GetValue<string>());
+        Assert.Equal("iVBORw0KGgo=", source["data"]!.GetValue<string>());
+        var textBlock = Assert.Single(content, n => n!["type"]!.GetValue<string>() == "text");
+        Assert.Equal("describe image", textBlock!["text"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task AnthropicMessages_with_image_rejects_non_vision_model()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+        var req = new ModelRequest(
+            "test-model",
+            "system prompt",
+            "describe image",
+            Array.Empty<ModelTurn>(),
+            new JsonObject(),
+            new Uri("https://provider.invalid/v1/messages"),
+            "synthetic-anthropic",
+            8192,
+            new[] { new ModelImage("image/png", "iVBORw0KGgo=") });
+
+        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(provider.GenerateAsync(req, CancellationToken.None)));
+        Assert.Equal("vision_unsupported", ex.Code);
     }
 
     private static ModelRequest Request(

@@ -199,6 +199,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
 
     private static string BuildBody(ModelRequest request)
     {
+        if (request.Images.Count > 0 && !ModelImage.IsVisionModel(request.Model))
+            throw new ModelProviderException("vision_unsupported", false);
+
         var messages = new JsonArray();
         foreach (var turn in request.Turns)
         {
@@ -206,7 +209,31 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                 throw new ModelProviderException("malformed_payload", false);
             messages.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
         }
-        messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
+
+        if (request.Images.Count > 0)
+        {
+            var content = new JsonArray();
+            foreach (var img in request.Images)
+            {
+                content.Add(new JsonObject
+                {
+                    ["type"] = "image",
+                    ["source"] = new JsonObject
+                    {
+                        ["type"] = "base64",
+                        ["media_type"] = img.MimeType,
+                        ["data"] = img.Base64Data,
+                    }
+                });
+            }
+            content.Add(new JsonObject { ["type"] = "text", ["text"] = request.Prompt });
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = content });
+        }
+        else
+        {
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = request.Prompt });
+        }
+
         var body = new JsonObject
         {
             ["model"] = request.Model,

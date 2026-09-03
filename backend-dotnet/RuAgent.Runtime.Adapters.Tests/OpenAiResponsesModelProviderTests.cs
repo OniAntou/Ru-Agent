@@ -284,6 +284,54 @@ public sealed class OpenAiResponsesModelProviderTests
         Assert.Equal("response_too_large", ex.Code);
     }
 
+    [Fact]
+    public async Task OpenAiResponses_with_image_includes_input_image()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "gpt-4o", ["status"] = "completed" } }), Encoding.UTF8, "text/event-stream")
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var req = new ModelRequest(
+            "gpt-4o",
+            "system prompt",
+            "describe image",
+            Array.Empty<ModelTurn>(),
+            new JsonObject(),
+            new Uri("https://provider.invalid/v1/responses"),
+            "synthetic-openai",
+            100,
+            new[] { new ModelImage("image/png", "iVBORw0KGgo=") });
+
+        _ = await CollectAsync(provider.GenerateAsync(req, CancellationToken.None));
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        var input = body["input"]!.AsArray();
+        var userTurn = input[^1]!.AsObject();
+        var content = userTurn["content"]!.AsArray();
+        Assert.Contains(content, n => n!["type"]!.GetValue<string>() == "input_text" && n["text"]!.GetValue<string>() == "describe image");
+        Assert.Contains(content, n => n!["type"]!.GetValue<string>() == "input_image" && n["image_url"]!.GetValue<string>() == "data:image/png;base64,iVBORw0KGgo=");
+    }
+
+    [Fact]
+    public async Task OpenAiResponses_with_image_rejects_non_vision_model()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var req = new ModelRequest(
+            "text-model",
+            "system prompt",
+            "describe image",
+            Array.Empty<ModelTurn>(),
+            new JsonObject(),
+            new Uri("https://provider.invalid/v1/responses"),
+            "synthetic-openai",
+            100,
+            new[] { new ModelImage("image/png", "iVBORw0KGgo=") });
+
+        var ex = await Assert.ThrowsAsync<ModelProviderException>(async () => await CollectAsync(provider.GenerateAsync(req, CancellationToken.None)));
+        Assert.Equal("vision_unsupported", ex.Code);
+    }
+
     private static ModelRequest Request(JsonObject? settings = null, IReadOnlyList<ModelTurn>? turns = null) => new(
         "test-model",
         "system prompt",

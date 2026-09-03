@@ -432,7 +432,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
     private static JsonArray ExtractTurns(ModelContextSnapshot context)
     {
-        var turns = new JsonArray();
+        var allPairs = new List<JsonObject>();
         string? pendingUser = null;
         foreach (var entry in context.Entries)
         {
@@ -455,14 +455,17 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             var response = entry.AssistantStep.Text;
             if (pendingUser.Length <= WorkerV2Contracts.MaxPromptChars && response.Length <= 32_000)
             {
-                turns.Add(new JsonObject { ["prompt"] = pendingUser, ["response"] = response });
+                allPairs.Add(new JsonObject { ["prompt"] = pendingUser, ["response"] = response });
             }
 
             pendingUser = null;
-            if (turns.Count >= 8)
-            {
-                break;
-            }
+        }
+
+        var turns = new JsonArray();
+        var recentPairs = allPairs.TakeLast(8);
+        foreach (var pair in recentPairs)
+        {
+            turns.Add(pair);
         }
 
         return turns;

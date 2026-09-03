@@ -202,7 +202,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _contextLimit = contextLimit
-            ?? new StaticModelContextLimitProvider(32_768);
+            ?? new DynamicModelContextLimitProvider(_settings);
         _webExecutor = webExecutor;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _brokerGateways = brokerGateways;

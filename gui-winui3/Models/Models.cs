@@ -175,7 +175,54 @@ namespace RuApp.Models
         public string? Base64Data
         {
             get => _base64Data;
-            set => SetProperty(ref _base64Data, value);
+            set
+            {
+                if (SetProperty(ref _base64Data, value))
+                {
+                    EnsurePreviewFromBase64();
+                }
+            }
+        }
+
+        public void EnsurePreviewFromBase64()
+        {
+            if (_previewImage != null || string.IsNullOrWhiteSpace(_base64Data) || !_isImage)
+            {
+                return;
+            }
+
+            try
+            {
+                var raw = _base64Data;
+                var commaIdx = raw.IndexOf(";base64,", StringComparison.OrdinalIgnoreCase);
+                if (commaIdx >= 0)
+                {
+                    raw = raw.Substring(commaIdx + 8);
+                }
+
+                var bytes = Convert.FromBase64String(raw);
+                if (_byteSize == 0)
+                {
+                    ByteSize = bytes.Length;
+                }
+                var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                using (var writer = new Windows.Storage.Streams.DataWriter(stream.GetOutputStreamAt(0)))
+                {
+                    writer.WriteBytes(bytes);
+                    writer.StoreAsync().AsTask().GetAwaiter().GetResult();
+                }
+                stream.Seek(0);
+                var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                bmp.SetSource(stream);
+                _previewImage = bmp;
+                _thumbnailImage = bmp;
+                OnPropertyChanged(nameof(PreviewImage));
+                OnPropertyChanged(nameof(ThumbnailImage));
+            }
+            catch
+            {
+                // Fallback gracefully if decoding fails
+            }
         }
 
         public string? TextContent

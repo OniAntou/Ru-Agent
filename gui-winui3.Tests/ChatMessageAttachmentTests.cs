@@ -289,4 +289,43 @@ public sealed class ChatMessageAttachmentTests
             Assert.Contains("ToolTipService.ToolTip=\"{x:Bind FormattedSize, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         }
     }
+
+    [Fact]
+    public void ImageAttachmentItem_EnsurePreviewFromBase64_DecodesBase64()
+    {
+        var item = new ImageAttachmentItem
+        {
+            IsImage = true,
+            Base64Data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+            FileName = "dot.png"
+        };
+        Assert.True(item.ByteSize > 0);
+        Assert.Equal("68 B", item.FormattedSize);
+    }
+
+    [Fact]
+    public void ChatView_has_image_tapped_zoom_contract()
+    {
+        string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.Combine("Views", "ChatView.xaml");
+        }
+        if (File.Exists(xamlPath))
+        {
+            string xaml = File.ReadAllText(xamlPath);
+            Assert.Contains("Tapped=\"OnImageAttachmentTapped\"", xaml, StringComparison.Ordinal);
+        }
+
+        string csPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml.cs");
+        if (!File.Exists(csPath))
+        {
+            csPath = Path.Combine("Views", "ChatView.xaml.cs");
+        }
+        if (File.Exists(csPath))
+        {
+            string cs = File.ReadAllText(csPath);
+            Assert.Contains("OnImageAttachmentTapped", cs, StringComparison.Ordinal);
+        }
+    }
 }

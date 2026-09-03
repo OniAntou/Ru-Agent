@@ -1869,6 +1869,33 @@ namespace RuApp.Views
             return await dialog.ShowAsync() == ContentDialogResult.Primary;
         }
 
+        private async void OnImageAttachmentTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.Tag is ImageAttachmentItem item && item.PreviewImage is not null && XamlRoot is not null)
+            {
+                var image = new Image
+                {
+                    Source = item.PreviewImage,
+                    Stretch = Stretch.Uniform,
+                    MaxWidth = 800,
+                    MaxHeight = 600,
+                };
+                var dialog = new ContentDialog
+                {
+                    Title = string.IsNullOrWhiteSpace(item.FileName) ? "Hình ảnh đính kèm" : item.FileName,
+                    Content = new ScrollViewer
+                    {
+                        Content = image,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    },
+                    CloseButtonText = "Đóng",
+                    XamlRoot = XamlRoot,
+                };
+                await dialog.ShowAsync();
+            }
+        }
+
         private static bool IsTerminalStatus(string? status) => status is
             "completed" or "failed" or "cancelled" or "interrupted";
 

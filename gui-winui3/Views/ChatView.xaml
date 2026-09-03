@@ -34,9 +34,11 @@
                                     <Grid Margin="0,0,6,4">
                                         <!-- Image Rendering -->
                                         <Border Visibility="{x:Bind IsImage, Mode=OneWay}"
-                                                Width="140" Height="105" CornerRadius="6"
+                                                MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="8"
                                                 Background="{StaticResource RuCanvasBrush}"
-                                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
+                                                BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
+                                                Tapped="OnImageAttachmentTapped" Tag="{x:Bind}"
+                                                ToolTipService.ToolTip="Nhấn để phóng to ảnh">
                                             <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
                                         </Border>
 

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
+using RuAgent.Broker.Tools.Git;
 using RuAgent.Broker.Tools.Terminal;
 using Xunit;
 
@@ -595,6 +596,111 @@ public sealed class TerminalAdapterTests
             new DirectoryInfo(link).Delete();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    [Fact]
+    public void ManagedCommitService_TryExtractCommitMessage_ParsesFormats()
+    {
+        Assert.Equal("feat: test", ManagedCommitService.TryExtractCommitMessage(new[] { "commit", "-m", "feat: test" }));
+        Assert.Equal("fix: bug", ManagedCommitService.TryExtractCommitMessage(new[] { "commit", "-mfix: bug" }));
+        Assert.Equal("docs: update", ManagedCommitService.TryExtractCommitMessage(new[] { "commit", "--message", "docs: update" }));
+        Assert.Equal("chore: refactor", ManagedCommitService.TryExtractCommitMessage(new[] { "commit", "--message=chore: refactor" }));
+        Assert.Null(ManagedCommitService.TryExtractCommitMessage(new[] { "commit" }));
+        Assert.Null(ManagedCommitService.TryExtractCommitMessage(new[] { "status" }));
+    }
+
+    [Fact]
+    public async Task TerminalAdapter_ManagedCommit_Refuses_MissingMessage()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-git-");
+        try
+        {
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                new ShellRuntimeResolver(),
+                approvals);
+
+            var intent = adapter.CanonicalizeRun(new TerminalRunRequest(
+                "powershell", ".", "git", new[] { "commit" }, 10_000, false, "token", "req-1", "sess-1", false));
+
+            var token = approvals.Issue("req-1", "sess-1", "terminal.run", "1.0.0", intent.IntentHash, TimeSpan.FromSeconds(30));
+
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                new TerminalRunRequest("powershell", ".", "git", new[] { "commit" }, 10_000, false, token, "req-1", "sess-1", false),
+                confineWorkspace: true,
+                CancellationToken.None);
+
+            Assert.Equal("failed", result.Status);
+            Assert.Contains("commit message must be provided", result.StderrTail);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task TerminalAdapter_ManagedCommit_Refuses_WhenRealIndexHasStagedChanges()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-staged-");
+        try
+        {
+            var psiInit = new ProcessStartInfo("git", "init") { WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true };
+            using var pInit = Process.Start(psiInit)!;
+            pInit.WaitForExit();
+
+            Process.Start(new ProcessStartInfo("git", "config user.name test") { WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true })!.WaitForExit();
+            Process.Start(new ProcessStartInfo("git", "config user.email test@example.com") { WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true })!.WaitForExit();
+
+            File.WriteAllText(Path.Combine(root, "init.txt"), "hello");
+            Process.Start(new ProcessStartInfo("git", "add init.txt") { WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true })!.WaitForExit();
+            Process.Start(new ProcessStartInfo("git", "commit -m \"init\"") { WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true })!.WaitForExit();
+
+            File.WriteAllText(Path.Combine(root, "user_staged.txt"), "user work");
+            Process.Start(new ProcessStartInfo("git", "add user_staged.txt") { WorkingDirectory = root, UseShellExecute = false, CreateNoWindow = true })!.WaitForExit();
+
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                new ShellRuntimeResolver(),
+                approvals);
+
+            var intent = adapter.CanonicalizeRun(new TerminalRunRequest(
+                "powershell", ".", "git", new[] { "commit", "-m", "agent commit" }, 10_000, false, "token", "req-1", "sess-1", false));
+
+            var token = approvals.Issue("req-1", "sess-1", "terminal.run", "1.0.0", intent.IntentHash, TimeSpan.FromSeconds(30));
+
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                new TerminalRunRequest("powershell", ".", "git", new[] { "commit", "-m", "agent commit" }, 10_000, false, token, "req-1", "sess-1", false),
+                confineWorkspace: true,
+                CancellationToken.None);
+
+            Assert.Equal("failed", result.Status);
+            Assert.Contains("index_not_empty", result.StderrTail);
+        }
+        finally
+        {
+            ForceDeleteDirectory(root);
+        }
+    }
+
+    private static void ForceDeleteDirectory(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) return;
+            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+            Directory.Delete(path, recursive: true);
+        }
+        catch
         {
         }
     }

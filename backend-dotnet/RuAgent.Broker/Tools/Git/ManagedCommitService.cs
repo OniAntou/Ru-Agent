@@ -59,6 +59,36 @@ public sealed class ManagedCommitService(IGitCli cli)
         return false;
     }
 
+    public static string? TryExtractCommitMessage(IReadOnlyList<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var arg = arguments[i];
+            if (arg is "-m" or "--message")
+            {
+                if (i + 1 < arguments.Count)
+                {
+                    return arguments[i + 1];
+                }
+
+                return null;
+            }
+
+            if (arg.StartsWith("-m", StringComparison.Ordinal) && arg.Length > 2)
+            {
+                return arg[2..];
+            }
+
+            if (arg.StartsWith("--message=", StringComparison.Ordinal))
+            {
+                return arg["--message=".Length..];
+            }
+        }
+
+        return null;
+    }
+
     public async Task<ManagedCommitPlanResult> BuildPreviewAsync(
         string repositoryRoot,
         IReadOnlyList<string> attributedPaths,

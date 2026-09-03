@@ -579,7 +579,8 @@
                                 <DataTemplate x:DataType="models:ImageAttachmentItem">
                                     <Grid Margin="0,0,4,0">
                                         <!-- Image Thumbnail Box -->
-                                        <Grid Visibility="{x:Bind IsImage, Mode=OneWay}" Width="60" Height="60">
+                                        <Grid Visibility="{x:Bind IsImage, Mode=OneWay}" Width="60" Height="60"
+                                              ToolTipService.ToolTip="{x:Bind FormattedSize, Mode=OneWay}">
                                             <Border CornerRadius="8" Background="{StaticResource RuCanvasBrush}"
                                                     BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
                                                 <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill"/>

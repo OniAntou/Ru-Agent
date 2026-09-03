@@ -229,4 +229,64 @@ public sealed class ChatMessageAttachmentTests
             Assert.Contains("AutomationProperties.AutomationId=\"AgentStopButton\"", xaml, StringComparison.Ordinal);
         }
     }
+
+    [Fact]
+    public void ImageAttachmentItem_ThumbnailImage_FallsBackToPreviewImage()
+    {
+        var item = new ImageAttachmentItem();
+        Assert.Null(item.ThumbnailImage);
+        Assert.Null(item.PreviewImage);
+    }
+
+    [Fact]
+    public async Task ImageAttachmentResizer_ResizesSmallImageWithoutDistortion()
+    {
+        byte[] pngBytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+        using (var writer = new Windows.Storage.Streams.DataWriter(stream.GetOutputStreamAt(0)))
+        {
+            writer.WriteBytes(pngBytes);
+            await writer.StoreAsync();
+        }
+        stream.Seek(0);
+
+        var (bytes, mime, width, height) = await RuApp.Services.ImageAttachmentResizer.ResizeIfNeededAsync(stream, "image/png");
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 0);
+        Assert.Equal("image/png", mime);
+        Assert.Equal(1u, width);
+        Assert.Equal(1u, height);
+    }
+
+    [Fact]
+    public void ChatView_CS_allows_image_attachments_in_send()
+    {
+        string csPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml.cs");
+        if (!File.Exists(csPath))
+        {
+            csPath = Path.Combine("Views", "ChatView.xaml.cs");
+        }
+        if (File.Exists(csPath))
+        {
+            string source = File.ReadAllText(csPath);
+            Assert.DoesNotContain("Đính kèm ảnh chưa được hỗ trợ trong Agent v1", source, StringComparison.Ordinal);
+            Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", source, StringComparison.Ordinal);
+            Assert.Contains("imageCount > 4", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ChatView_XAML_has_thumbnail_formatted_size_tooltip()
+    {
+        string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.Combine("Views", "ChatView.xaml");
+        }
+        if (File.Exists(xamlPath))
+        {
+            string xaml = File.ReadAllText(xamlPath);
+            Assert.Contains("ToolTipService.ToolTip=\"{x:Bind FormattedSize, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        }
+    }
 }

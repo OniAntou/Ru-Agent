@@ -18,6 +18,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
 using RuApp.Services;
+using Windows.Storage.Streams;
 
 namespace RuApp.Views
 {
@@ -1195,34 +1196,44 @@ namespace RuApp.Views
                 var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
                 if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
                 {
-                    var streamRef = await package.GetBitmapAsync();
-                    using var previewStream = await streamRef.OpenReadAsync();
-                    if (previewStream.Size > (ulong)MaxImageAttachmentBytes)
+                    if (PendingAttachments.Count(static a => a.IsImage) >= 4)
                     {
-                        ShowAgentInlineStatus("Ảnh clipboard vượt quá kích thước 10MB cho phép.");
+                        ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi thêm.");
                         return;
                     }
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    await bitmap.SetSourceAsync(previewStream);
 
-                    using var payloadStream = await streamRef.OpenReadAsync();
-                    using var readStream = payloadStream.AsStreamForRead();
-                    var bytes = await ReadBoundedBytesAsync(readStream, MaxImageAttachmentBytes);
-                    if (bytes is null)
+                    var streamRef = await package.GetBitmapAsync();
+                    using var sourceStream = await streamRef.OpenReadAsync();
+                    if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
                     {
                         ShowAgentInlineStatus("Ảnh clipboard vượt quá kích thước 10MB cho phép.");
                         return;
                     }
+
+                    var (bytes, mimeType, width, height) = await ImageAttachmentResizer.ResizeIfNeededAsync(sourceStream, "image/png");
                     string base64 = Convert.ToBase64String(bytes);
+
+                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    using (var previewMs = new InMemoryRandomAccessStream())
+                    {
+                        using (var writer = new DataWriter(previewMs.GetOutputStreamAt(0)))
+                        {
+                            writer.WriteBytes(bytes);
+                            await writer.StoreAsync();
+                        }
+                        previewMs.Seek(0);
+                        await bitmap.SetSourceAsync(previewMs);
+                    }
 
                     var item = new ImageAttachmentItem
                     {
                         FileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
                         ByteSize = bytes.Length,
                         Base64Data = base64,
-                        MimeType = "image/png",
+                        MimeType = mimeType,
                         IsImage = true,
-                        PreviewImage = bitmap
+                        PreviewImage = bitmap,
+                        ThumbnailImage = bitmap
                     };
 
                     PendingAttachments.Add(item);
@@ -1260,32 +1271,20 @@ namespace RuApp.Views
 
                 if (isImage)
                 {
+                    if (PendingAttachments.Count(static a => a.IsImage) >= 4)
+                    {
+                        ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi thêm.");
+                        return;
+                    }
+
                     if (props.Size > MaxImageAttachmentBytes)
                     {
                         ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
                         return;
                     }
 
-                    using var stream = await file.OpenReadAsync();
-                    if (stream.Size > (ulong)MaxImageAttachmentBytes)
-                    {
-                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
-                        return;
-                    }
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    await bitmap.SetSourceAsync(stream);
-
-                    using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
-                    var bytes = await ReadBoundedBytesAsync(readStream, MaxImageAttachmentBytes);
-                    if (bytes is null)
-                    {
-                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
-                        return;
-                    }
-                    string base64 = Convert.ToBase64String(bytes);
-
                     string ext = System.IO.Path.GetExtension(file.Name).ToLowerInvariant();
-                    string mimeType = ext switch
+                    string inputMime = ext switch
                     {
                         ".jpg" or ".jpeg" => "image/jpeg",
                         ".png" => "image/png",
@@ -1293,6 +1292,28 @@ namespace RuApp.Views
                         ".bmp" => "image/bmp",
                         _ => "image/png"
                     };
+
+                    using var sourceStream = await file.OpenReadAsync();
+                    if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
+                    {
+                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
+                        return;
+                    }
+
+                    var (bytes, mimeType, width, height) = await ImageAttachmentResizer.ResizeIfNeededAsync(sourceStream, inputMime);
+                    string base64 = Convert.ToBase64String(bytes);
+
+                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    using (var previewMs = new InMemoryRandomAccessStream())
+                    {
+                        using (var writer = new DataWriter(previewMs.GetOutputStreamAt(0)))
+                        {
+                            writer.WriteBytes(bytes);
+                            await writer.StoreAsync();
+                        }
+                        previewMs.Seek(0);
+                        await bitmap.SetSourceAsync(previewMs);
+                    }
 
                     var item = new ImageAttachmentItem
                     {
@@ -1302,7 +1323,8 @@ namespace RuApp.Views
                         Base64Data = base64,
                         MimeType = mimeType,
                         IsImage = true,
-                        PreviewImage = bitmap
+                        PreviewImage = bitmap,
+                        ThumbnailImage = bitmap
                     };
 
                     PendingAttachments.Add(item);
@@ -1406,14 +1428,10 @@ namespace RuApp.Views
 
                 if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
 
-                // The v1 Agent contract currently has no multimodal execution
-                // path; sending these would either exceed the JSON envelope cap
-                // or be silently discarded by the backend. Keep the preview,
-                // but fail explicitly until the provider-bound image path is
-                // implemented end-to-end.
-                if (attachments.Any(static attachment => attachment.IsImage))
+                int imageCount = attachments.Count(static attachment => attachment.IsImage);
+                if (imageCount > 4)
                 {
-                    ShowAgentInlineStatus("Đính kèm ảnh chưa được hỗ trợ trong Agent v1; hãy xoá ảnh hoặc gửi tệp văn bản/mã nguồn.");
+                    ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi gửi.");
                     return;
                 }
 

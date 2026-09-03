@@ -235,6 +235,14 @@ namespace RuApp.Models
             set => SetProperty(ref _previewImage, value);
         }
 
+        private Microsoft.UI.Xaml.Media.Imaging.BitmapImage? _thumbnailImage;
+
+        public Microsoft.UI.Xaml.Media.Imaging.BitmapImage? ThumbnailImage
+        {
+            get => _thumbnailImage ?? _previewImage;
+            set => SetProperty(ref _thumbnailImage, value);
+        }
+
         public string FormattedSize
         {
             get

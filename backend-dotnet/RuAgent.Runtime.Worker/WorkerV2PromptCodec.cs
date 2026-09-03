@@ -11,7 +11,8 @@ public sealed record WorkerV2StartRequest(
     string Prompt,
     IReadOnlyList<ModelTurn> Turns,
     SystemPromptContext Context,
-    JsonObject Settings);
+    JsonObject Settings,
+    IReadOnlyList<ModelImage>? Images = null);
 
 /// <summary>One typed JSON conversion boundary for Worker v2 prompt records.</summary>
 public static class WorkerV2PromptCodec
@@ -49,7 +50,26 @@ public static class WorkerV2PromptCodec
             var settings = payload["settings"] is JsonObject configured
                 ? (JsonObject)configured.DeepClone()
                 : new JsonObject();
-            return new WorkerV2StartRequest(prompt, turns, context, settings);
+
+            var images = new List<ModelImage>();
+            if (payload["images"] is JsonArray imagesArray)
+            {
+                foreach (var node in imagesArray)
+                {
+                    if (node is JsonValue iv && iv.TryGetValue<string>(out var dataUrl))
+                    {
+                        var semi = dataUrl.IndexOf(";base64,", StringComparison.Ordinal);
+                        if (semi >= 5)
+                        {
+                            var mime = dataUrl.Substring(5, semi - 5);
+                            var b64 = dataUrl.Substring(semi + 8);
+                            images.Add(new ModelImage(mime, b64));
+                        }
+                    }
+                }
+            }
+
+            return new WorkerV2StartRequest(prompt, turns, context, settings, images);
         }
         catch (AgentProtocolException)
         {

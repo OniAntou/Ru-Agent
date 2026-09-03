@@ -27,6 +27,38 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_includes_images_in_model_request()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("mo ta", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var payload = StartPayload();
+        payload["images"] = new JsonArray { "data:image/png;base64,aGVsbG8=" };
+        var result = await new WorkerV2StepService(provider).RunAsync(payload, CancellationToken.None);
+
+        Assert.Single(provider.Requests);
+        Assert.Single(provider.Requests[0].Images);
+        Assert.Equal("image/png", provider.Requests[0].Images[0].MimeType);
+        Assert.Equal("aGVsbG8=", provider.Requests[0].Images[0].Base64Data);
+    }
+
+    [Fact]
+    public async Task Step_service_accepts_empty_prompt_when_image_present()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("anh dep", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var payload = StartPayload();
+        payload["prompt"] = "";
+        payload["images"] = new JsonArray { "data:image/jpeg;base64,d29ybGQ=" };
+        var result = await new WorkerV2StepService(provider).RunAsync(payload, CancellationToken.None);
+
+        Assert.Single(provider.Requests);
+        Assert.Equal("", provider.Requests[0].Prompt);
+        Assert.Single(provider.Requests[0].Images);
+        Assert.Equal("image/jpeg", provider.Requests[0].Images[0].MimeType);
+        Assert.Equal("d29ybGQ=", provider.Requests[0].Images[0].Base64Data);
+    }
+
+    [Fact]
     public async Task Step_service_forwards_visible_deltas_without_waiting_for_done()
     {
         var provider = new FakeModelProvider(

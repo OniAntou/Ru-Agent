@@ -58,7 +58,7 @@ public static class WorkerV2Contracts
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlySet<string> EnvelopeFields = new HashSet<string>(["v", "id", "type", "seq", "correlation_id", "payload"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> EnvelopeRequired = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings", "provider_bootstrap_path"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings", "provider_bootstrap_path", "images"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> TurnFields = new HashSet<string>(["prompt", "response"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(
         ["model_tools", "reasoning", "reasoning_effort", "reasoning_model", "kilo_reasoning_enabled", "api_variant", "max_tokens"],
@@ -235,8 +235,33 @@ public static class WorkerV2Contracts
             throw new AgentProtocolException("invalid_request");
         }
 
+        var hasImages = false;
+        if (payload.ContainsKey("images"))
+        {
+            if (payload["images"] is not JsonArray imagesArray)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+            if (imagesArray.Count > 4)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+            foreach (var imgNode in imagesArray)
+            {
+                if (imgNode is not JsonValue iv || !iv.TryGetValue<string>(out var imgStr) || string.IsNullOrWhiteSpace(imgStr))
+                {
+                    throw new AgentProtocolException("invalid_request");
+                }
+                if (!imgStr.StartsWith("data:image/", StringComparison.Ordinal) || !imgStr.Contains(";base64,", StringComparison.Ordinal))
+                {
+                    throw new AgentProtocolException("invalid_request");
+                }
+            }
+            hasImages = imagesArray.Count > 0;
+        }
+
         var promptNode = payload["prompt"];
-        if (promptNode is not JsonValue pv || !pv.TryGetValue<string>(out var prompt) || string.IsNullOrWhiteSpace(prompt) || prompt.Length > MaxPromptChars)
+        if (promptNode is not JsonValue pv || !pv.TryGetValue<string>(out var prompt) || (prompt.Length == 0 ? !hasImages : (string.IsNullOrWhiteSpace(prompt) || prompt.Length > MaxPromptChars)))
         {
             throw new AgentProtocolException("invalid_request");
         }

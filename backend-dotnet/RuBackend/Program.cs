@@ -366,6 +366,29 @@ builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
     new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>())
     {
         CreateProviderBootstrapAsync = services.GetRequiredService<AgentProviderSnapshotFactory>().CreateAsync,
+        LoadRunImagesAsync = async (runId, ct) =>
+        {
+            var store = services.GetRequiredService<HarnessPayloadStore>();
+            var options = services.GetRequiredService<HarnessSqliteOptions>();
+            await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={options.DatabasePath}");
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT payload_id FROM agent_payloads WHERE run_id = $runId AND kind = 11 ORDER BY rowid ASC";
+            cmd.Parameters.AddWithValue("$runId", runId.Value);
+            var payloadIds = new List<PayloadId>();
+            await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                payloadIds.Add(new PayloadId(reader.GetString(0)));
+            }
+            var list = new List<string>();
+            foreach (var pid in payloadIds)
+            {
+                var content = await store.ReadForModelAsync(runId, pid, ct).ConfigureAwait(false);
+                list.Add(System.Text.Encoding.UTF8.GetString(content.Plaintext.Span));
+            }
+            return list;
+        },
     });
 builder.Services.AddSingleton(services => new AgentProviderSnapshotFactory(
     services.GetRequiredService<ISettingsStore>(), services.GetRequiredService<ICredentialStore>(),

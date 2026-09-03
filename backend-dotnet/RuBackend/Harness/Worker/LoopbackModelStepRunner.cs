@@ -34,6 +34,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     }
 
     public Func<ModelStepRequest, CancellationToken, Task<string>>? CreateProviderBootstrapAsync { get; init; }
+    public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>>? LoadRunImagesAsync { get; init; }
 
     // Test-only injection for fake WebSocket handling.
     internal LoopbackModelStepRunner(AgentWorkerClientOptions options, Func<ClientWebSocket>? socketFactory)
@@ -156,7 +157,25 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         }
 
         // Prepare start payload
-        var prompt = ExtractPrompt(request.Context);
+        IReadOnlyList<string>? images = null;
+        if (LoadRunImagesAsync is not null)
+        {
+            try
+            {
+                images = await LoadRunImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // Fallback gracefully if image loading fails
+            }
+        }
+
+        var hasImages = images is { Count: > 0 };
+        var prompt = ExtractPrompt(request.Context, hasImages);
         var turns = ExtractTurns(request.Context);
         var settings = BuildSettings(request.PromptContext);
 
@@ -167,6 +186,15 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(request.PromptContext),
             ["settings"] = settings,
         };
+        if (hasImages)
+        {
+            var imagesArr = new JsonArray();
+            foreach (var img in images!)
+            {
+                imagesArr.Add(img);
+            }
+            startPayload["images"] = imagesArr;
+        }
         if (providerBootstrapPath is not null)
         {
             startPayload["provider_bootstrap_path"] = providerBootstrapPath;
@@ -375,7 +403,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         }
     }
 
-    private static string ExtractPrompt(ModelContextSnapshot context)
+    private static string ExtractPrompt(ModelContextSnapshot context, bool hasImages = false)
     {
         // Find last user text entry; fallback to first entry or generic prompt.
         var userText = context.Entries.LastOrDefault(e => e.Role == ModelContextRole.User && e.Kind == ModelContextEntryKind.Text)?.Content;
@@ -388,6 +416,11 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(anyText))
         {
             return anyText;
+        }
+
+        if (hasImages)
+        {
+            return string.Empty;
         }
 
         // Context must contain at least one text entry for the model step.

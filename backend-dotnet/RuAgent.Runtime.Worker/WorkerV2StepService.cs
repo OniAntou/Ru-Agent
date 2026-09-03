@@ -117,7 +117,8 @@ public sealed class WorkerV2StepService
             BuildRequestSettings(start.Settings, providerBootstrap.RequestOptions),
             providerBootstrap.Endpoint,
             providerBootstrap.Credential,
-            providerBootstrap.MaximumOutputTokens);
+            providerBootstrap.MaximumOutputTokens,
+            start.Images ?? Array.Empty<ModelImage>());
         var holdback = new DeltaHoldback(onDelta);
 
         RuntimeLease? generationLease = null;

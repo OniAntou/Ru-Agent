@@ -235,6 +235,18 @@ default, observation control is an explicit disabled/unavailable surface until
 the C# screen-capture/reaction loop is delivered; the retired Python observer is
 not reachable from managed startup.
 
+### Multimodal image attachments
+
+The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP.NET Core Public Host, Worker v2, and LLM providers:
+- **Client preparation:** WinUI 3 `ImageAttachmentResizer` scales images exceeding 2048px on their longest dimension down proportionally and compresses them to JPEG (quality 0.85) or PNG (if alpha present). Up to 4 images can be attached per user turn.
+- **Backend validation & persistence:** `POST /agent/v1/runs` accepts up to 1 MB JSON requests containing `image_attachments` (data URLs). ASP.NET Core validates MIME types (`image/png`, `image/jpeg`, `image/webp`), base64 structure, decoded per-image size (<=4 MB), total decoded size (<=20 MB), and vision compatibility of the selected model. Image data URLs are persisted as AES-GCM encrypted `agent_payloads` of kind `UserImage` (value 11) with audience `AuthenticatedClient | ModelContext`. Prompts may be empty when images are attached.
+- **Worker integration:** Worker v2 `agent.step.start` includes an optional `"images"` array populated from decrypted `UserImage` payloads. `WorkerV2StepService` projects these into `ModelRequest.Images` (`IReadOnlyList<ModelImage>`).
+- **Provider projection:** Model adapters project images into provider-native payloads:
+  - OpenAI Responses: `{"type": "input_image", "image_url": "data:image/..."}`
+  - Anthropic Messages: `{"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}`
+  - OpenAI-Compatible: `{"type": "image_url", "image_url": {"url": "data:image/..."}}`
+  Non-vision models fail closed with `vision_unsupported`.
+
 ## Data ownership
 
 ASP.NET Core owns business persistence. Settings, history, sessions, activity,

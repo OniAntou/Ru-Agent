@@ -50,6 +50,7 @@ an operating contract.
 - [Test-suite cleanup](superpowers/plans/2026-08-31-test-suite-cleanup.md) — obsolete Python VTS/overlay source and synthetic tests retired; documentation/UI checks reduced to integrity contracts; CI and local testing share automatic .NET project discovery.
 - [Python-to-C# Runtime Phase 2 implementation plan](superpowers/plans/2026-08-30-python-to-csharp-runtime-phase-2.md) — managed Worker v1/device ownership, parity/privacy gates, and release/manual acceptance evidence.
 - [Python runtime Phase 3 retirement plan](superpowers/plans/2026-08-30-python-runtime-phase-3-retirement.md) — production Python Agent/Worker retirement and the bounded native-acceptance boundary.
+- [Multimodal Image Attachment](superpowers/plans/2026-09-03-image-multimodal.md) — real end-to-end multimodal image attachment path: GUI client resize (max 2048px, JPEG 0.85/PNG), `POST /agent/v1/runs` validation (max 4 images, 4MB decoded per image, 20MB total, PNG/JPEG/WebP strict base64, vision model compatibility), encrypted SQLite `agent_payloads` of kind `UserImage` (11), Worker v2 loopback integration with `ModelRequest.Images`, provider projection (OpenAI Responses `input_image`, Anthropic Messages `image`, OpenAI-Compatible `image_url`), fail-closed non-vision rejection (`vision_unsupported`), and chat bubble rendering with zoom dialog. See [design](superpowers/specs/2026-09-03-image-multimodal-design.md) and [verification](verification/2026-09-03-image-multimodal-verification.md).
 
 ## Approved future work
 

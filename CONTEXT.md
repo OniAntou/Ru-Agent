@@ -144,6 +144,15 @@ An isolated calendar, task, or mail integration that separates preview from
 side effect and requires one-time approval for writes or sends.
 _Avoid_: ambient account access
 
+**Multimodal Image Payload**:
+A client-attached image (`image/png`, `image/jpeg`, `image/webp`) resized to at
+most 2048px on client, validated against strict MIME and size bounds (max 4
+images, 4 MB decoded per image, 20 MB total decoded), persisted atomically in
+SQLite `agent_payloads` under kind `UserImage` (value 11) with dual audience
+`AuthenticatedClient | ModelContext`, and projected to vision-capable model
+providers through Worker v2 and `ModelRequest.Images`.
+_Avoid_: Unbounded base64 uploads, client-side raw file passthrough
+
 **Protected User Data**:
 Settings, sessions, history, activity, structured memory, credentials, and
 reviewed examples used by the active product. Business records live under

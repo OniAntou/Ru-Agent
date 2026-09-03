@@ -29,7 +29,7 @@
 - Consumes: `HarnessPayloadIntent.ValidateAndCopy`
 - Produces: `HarnessPayloadKind.UserImage` (value 11), usable as `new HarnessPayloadIntent(id, UserImage, AuthClient|ModelContext, Utf8Text, cap, bytes)`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```csharp
 [Fact]
@@ -52,11 +52,11 @@ public void UserImage_rejects_internal_only_audience()
 }
 ```
 
-- [ ] **Step 2: Run to fail**
+- [x] **Step 2: Run to fail**
 
 Run: `dotnet test backend-dotnet/RuAgent.Harness.Core.Tests --filter UserImage -v` Expected: FAIL "UserImage not defined"
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```csharp
 public enum HarnessPayloadKind {
@@ -68,11 +68,11 @@ public enum HarnessPayloadKind {
 
 No extra validation change (only RecoveryOpaque and ModelContextSummary have special checks). Ensure enum IsDefined passes.
 
-- [ ] **Step 4: Run pass**
+- [x] **Step 4: Run pass**
 
 Run: `dotnet test backend-dotnet/RuAgent.Harness.Core.Tests --filter UserImage -v` Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend-dotnet/RuAgent.Harness.Core/Persistence/HarnessPayloadIntent.cs backend-dotnet/RuAgent.Harness.Core.Tests/*
@@ -90,7 +90,7 @@ git commit -m "feat(harness): add UserImage payload kind"
 - Consumes: `HarnessPayloadIntent.UserImage`
 - Produces: `record ModelImage(string MimeType, string Base64Data)` and `ModelRequest.Images: IReadOnlyList<ModelImage>` (0..4, total decoded ≤20MB)
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```csharp
 [Fact]
@@ -109,9 +109,9 @@ public void ModelRequest_rejects_too_many_images()
 }
 ```
 
-- [ ] **Step 2: Run fail** `dotnet test RuAgent.Runtime.Adapters.Tests --filter ModelRequest -v`
+- [x] **Step 2: Run fail** `dotnet test RuAgent.Runtime.Adapters.Tests --filter ModelRequest -v`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```csharp
 // ModelImage.cs
@@ -126,9 +126,9 @@ public sealed record ModelImage(string MimeType, string Base64Data) {
 // store Images = images?.ToArray() ?? Array.Empty<ModelImage>();
 ```
 
-- [ ] **Step 4: Run pass**
+- [x] **Step 4: Run pass**
 
-- [ ] **Step 5: Commit** `feat(runtime): ModelRequest Images`
+- [x] **Step 5: Commit** `feat(runtime): ModelRequest Images`
 
 ### Task 3: Backend validation & persistence (/agent/v1/runs)
 
@@ -142,7 +142,7 @@ public sealed record ModelImage(string MimeType, string Base64Data) {
 - Consumes: `HarnessPayloadKind.UserImage`, `ProviderCatalogService` (optional for vision check hardlist fallback)
 - Produces: `CreateRunAsync` creates `UserImage` payloads atomically; error codes `image_limit_exceeded`, `invalid_image_mime`, `invalid_image_base64`, `image_too_large`, `vision_unsupported`
 
-- [ ] **Step 1: Write failing tests** (replace legacy reject test)
+- [x] **Step 1: Write failing tests** (replace legacy reject test)
 
 ```csharp
 [Fact]
@@ -173,9 +173,9 @@ public async Task Create_run_rejects_vision_unsupported()
 
 Note: actual vision check may need `ProviderSelection.From(settings)` + catalog; for first pass implement hardlist `IsVisionModel(model)` containing `gpt-4o`, `claude-3`, `gemini`, `vision`, `o1`, `llama-3.2-vision`.
 
-- [ ] **Step 2: Run fail** `dotnet test RuBackend.Tests --filter AgentV1 -v`
+- [x] **Step 2: Run fail** `dotnet test RuBackend.Tests --filter AgentV1 -v`
 
-- [ ] **Step 3: Implement validation**
+- [x] **Step 3: Implement validation**
 
 ```csharp
 if (request.ImageAttachments is { Count: >0 }) {
@@ -200,7 +200,7 @@ if (request.ImageAttachments is { Count: >0 }) {
 }
 ```
 
-- [ ] **Step 4: Endpoints bump**
+- [x] **Step 4: Endpoints bump**
 
 ```csharp
 private const int MaxJsonBodyBytesDefault = 64*1024;
@@ -209,7 +209,7 @@ private static Task<IResult> CreateRunAsync(...) => ReadBoundedBodyTextAsync(con
 private static async Task<string?> ReadBoundedBodyTextAsync(HttpRequest req, CancellationToken ct, int cap = MaxJsonBodyBytesDefault)
 ```
 
-- [ ] **Step 5: Persistence**
+- [x] **Step 5: Persistence**
 
 After validation, before `TryCreateRunAsync`, create payloads:
 
@@ -226,11 +226,11 @@ var events = new List<HarnessEventIntent>{ new(promptEventId,..., payloadId: pro
 // Also optionally emit UserImageAttached events per image
 ```
 
-- [ ] **Step 6: Run tests pass**
+- [x] **Step 6: Run tests pass**
 
 Run: `dotnet test RuBackend.Tests --filter AgentV1 -v`  Expected: new tests PASS, old `image_attachments_unsupported` test removed
 
-- [ ] **Step 7: Commit** `feat(backend): validate and persist image attachments`
+- [x] **Step 7: Commit** `feat(backend): validate and persist image attachments`
 
 ### Task 4: Provider projection (3 providers)
 
@@ -246,7 +246,7 @@ Run: `dotnet test RuBackend.Tests --filter AgentV1 -v`  Expected: new tests PASS
 - Consumes: `ModelRequest.Images`
 - Produces: provider-specific JSON with image blocks
 
-- [ ] **Step 1: Write failing provider tests**
+- [x] **Step 1: Write failing provider tests**
 
 ```csharp
 [Fact]
@@ -264,9 +264,9 @@ public async Task OpenAiResponses_with_image_includes_input_image()
 
 Similarly for Anthropic: assert `messages[0]["content"]` contains `{"type":"image","source":{"type":"base64",...}}`
 
-- [ ] **Step 2: Run fail**
+- [x] **Step 2: Run fail**
 
-- [ ] **Step 3: Implement BuildBody changes**
+- [x] **Step 3: Implement BuildBody changes**
 
 Anthropic:
 
@@ -296,9 +296,9 @@ Compatible similar with `image_url`.
 
 Add guard: if `Images.Count>0` and `!IsVisionModel(request.Model)` throw `ModelProviderException("vision_unsupported", false)`.
 
-- [ ] **Step 4: Run pass**
+- [x] **Step 4: Run pass**
 
-- [ ] **Step 5: Commit** `feat(providers): project images to OpenAI/Anthropic/Compatible`
+- [x] **Step 5: Commit** `feat(providers): project images to OpenAI/Anthropic/Compatible`
 
 ### Task 5: Worker integration
 
@@ -311,7 +311,7 @@ Add guard: if `Images.Count>0` and `!IsVisionModel(request.Model)` throw `ModelP
 - Consumes: `HarnessPayloadStore.ReadForModelContextAsync`, `ModelRequest.Images`
 - Produces: `ModelRequest` with images populated from latest run's UserImage payloads
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```csharp
 [Fact]
@@ -326,9 +326,9 @@ public async Task StepService_includes_images_in_model_request()
 
 Simplify: test via `FakeModelProvider` captures `ModelRequest`.
 
-- [ ] **Step 2: Run fail**
+- [x] **Step 2: Run fail**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```csharp
 var imagePayloads = await _payloadStore.ReadForModelContextAsync(run.RunId, cancellationToken);
@@ -345,9 +345,9 @@ var request = new ModelRequest(model, systemPrompt, prompt, turns, settings, end
 
 Add DI for `IHarnessPayloadStore` if not already.
 
-- [ ] **Step 4: Run pass**
+- [x] **Step 4: Run pass**
 
-- [ ] **Step 5: Commit** `feat(worker): feed UserImage payloads into ModelRequest`
+- [x] **Step 5: Commit** `feat(worker): feed UserImage payloads into ModelRequest`
 
 ### Task 6: GUI client resize & enable
 
@@ -361,7 +361,7 @@ Add DI for `IHarnessPayloadStore` if not already.
 - Consumes: `Windows.Graphics.Imaging.BitmapDecoder/Encoder`
 - Produces: `PendingAttachments` with resized `Base64Data`, `SendCurrentMessageAsync` now sends `data:mime;base64`
 
-- [ ] **Step 1: Write failing GUI test**
+- [x] **Step 1: Write failing GUI test**
 
 ```csharp
 [Fact]
@@ -379,9 +379,9 @@ public void SendCurrentMessage_allows_images()
 
 For unit, test resize helper extracted to `ImageAttachmentResizer`.
 
-- [ ] **Step 2: Run fail** `dotnet test gui-winui3.Tests -v`
+- [x] **Step 2: Run fail** `dotnet test gui-winui3.Tests -v`
 
-- [ ] **Step 3: Implement resizer**
+- [x] **Step 3: Implement resizer**
 
 ```csharp
 private static async Task<(byte[] bytes, string mime)> ResizeIfNeededAsync(IRandomAccessStream stream, string mime)
@@ -400,9 +400,9 @@ Update `SendCurrentMessageAsync`: remove `if (attachments.Any(IsImage)) return` 
 
 Add `ThumbnailImage` 120px generation for `ChatMessageItem` bubble.
 
-- [ ] **Step 4: Run pass** `dotnet build gui-winui3/RuApp.csproj -c Release` and `dotnet test gui-winui3.Tests`
+- [x] **Step 4: Run pass** `dotnet build gui-winui3/RuApp.csproj -c Release` and `dotnet test gui-winui3.Tests`
 
-- [ ] **Step 5: Commit** `feat(gui): client resize and enable image send`
+- [x] **Step 5: Commit** `feat(gui): client resize and enable image send`
 
 ### Task 7: History render & payload readback
 
@@ -416,7 +416,7 @@ Add `ThumbnailImage` 120px generation for `ChatMessageItem` bubble.
 - Consumes: `HarnessPayloadKind.UserImage` read via `GetPayloadAsync`
 - Produces: chat bubble shows thumbnails, payload endpoint returns dataUrl
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```csharp
 [Fact]
@@ -430,9 +430,9 @@ public async Task GetPayload_returns_image_dataUrl()
 }
 ```
 
-- [ ] **Step 2: Run fail**
+- [x] **Step 2: Run fail**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `GetPayloadAsync`, allow `HarnessPayloadKind.UserImage` (currently only checks `RecoveryOpaque` forbidden). Ensure `audience.HasFlag(AuthenticatedClient)` passes for UserImage.
 
@@ -448,9 +448,9 @@ In `ChatView.xaml` bubble template:
 
 `BeginAgentReply` already copies `Attachments` into `ChatMessageItem`.
 
-- [ ] **Step 4: Run pass**
+- [x] **Step 4: Run pass**
 
-- [ ] **Step 5: Commit** `feat(gui+backend): render image history`
+- [x] **Step 5: Commit** `feat(gui+backend): render image history`
 
 ### Task 8: Full verification & docs
 
@@ -463,27 +463,27 @@ In `ChatView.xaml` bubble template:
 - Consumes: all prior tasks
 - Produces: green gates
 
-- [ ] **Step 1: Run full backend**
+- [x] **Step 1: Run full backend**
 
 Run: `dotnet test backend-dotnet/RuBackend.Tests -v` Expected: all pass incl new image tests
 Run: `dotnet test backend-dotnet/RuAgent.Runtime.Adapters.Tests -v`
 Run: `dotnet test backend-dotnet/RuAgent.Runtime.Worker.Tests -v`
 Run: `dotnet test backend-dotnet/RuAgent.Harness.Core.Tests -v`
 
-- [ ] **Step 2: Run GUI**
+- [x] **Step 2: Run GUI**
 
 Run: `dotnet build gui-winui3/RuApp.csproj -c Release -v q` Expected: 0 warnings
 Run: `dotnet test gui-winui3.Tests -v` Expected: PASS
 
-- [ ] **Step 3: Manual smoke**
+- [x] **Step 3: Manual smoke**
 
 - Start `RuBackend --managed-runtime`, open `RuApp`, attach 1 png 2MB + text "mô tả ảnh này", send via `gpt-4o` or `claude-3-5-sonnet`, verify provider receives image (check logs), history reload shows thumbnail, 5th image rejected with `image_limit_exceeded`.
 
-- [ ] **Step 4: Update docs**
+- [x] **Step 4: Update docs**
 
 Edit `TODO.md:127` to `[x] Implement a real end-to-end multimodal...` and `docs/operations/verification.md` with measured gates.
 
-- [ ] **Step 5: Commit** `docs: mark image multimodal complete and add verification`
+- [x] **Step 5: Commit** `docs: mark image multimodal complete and add verification`
 
 ---
 

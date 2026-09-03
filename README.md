@@ -1,4 +1,4 @@
-﻿# Ru
+# Ru
 
 Ru is a Vietnamese-English conversational companion built around a WinUI 3
 desktop app, an ASP.NET Core public backend, and one managed C# Worker serving
@@ -147,6 +147,15 @@ Do not start either worker or the voice engine as independent public services.
   the conversation transcript can show a transient safe activity feed for the
   current run. The feed is separate from durable messages and never places raw
   tool payloads in the transcript.
+- Multimodal image attachments: the composer accepts image pasting and file
+  attachments (PNG, JPEG, WebP, max 4 images, auto-resized on client up to
+  2048px / JPEG 0.85). ASP.NET Core validates payload bounds (4 MB per image,
+  20 MB total decoded) and persists encrypted SQLite `agent_payloads` of kind
+  `UserImage` (value 11). Worker v2 projects images into `ModelRequest.Images`,
+  which provider adapters map to native image blocks (`input_image` for OpenAI
+  Responses, `image` for Anthropic Messages, `image_url` for OpenAI-Compatible).
+  Models without vision capability fail closed with `vision_unsupported`. Message
+  bubbles render thumbnails up to 240px and provide click-to-zoom preview.
 - The current Worker v2 model surface has eleven core bindings in both presets (including offline `help.docs`):
   `files.list`, `files.glob`, `files.search`, `files.read`, `files.write`,
   `files.edit`, `files.delete`, `files.restore`, `terminal.run`,

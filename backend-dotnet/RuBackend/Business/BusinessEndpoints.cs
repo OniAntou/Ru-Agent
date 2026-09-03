@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
@@ -18,6 +19,8 @@ public static class BusinessEndpoints
         app.MapGet("/sessions", ListSessionsAsync);
         app.MapPost("/sessions/new", CreateSessionAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
+        app.MapPost("/sessions/{sessionId}/fork", ForkSessionAsync);
+        app.MapPost("/sessions/{sessionId}/rewind", RewindSessionAsync);
         app.MapDelete("/sessions/{sessionId}", DeleteSessionAsync);
         app.MapGet("/history", GetHistoryAsync);
         app.MapGet("/activity-log", GetActivityAsync);
@@ -234,6 +237,57 @@ public static class BusinessEndpoints
         {
             LogFailure(loggers, "session delete", error);
             return Results.Ok(new { status = "error", message = "Không xoá được session." });
+        }
+    }
+
+    public sealed record ForkSessionRequest(
+        [property: JsonPropertyName("up_to_message_index")] int UpToMessageIndex,
+        [property: JsonPropertyName("title")] string? Title = null);
+
+    public sealed record RewindSessionRequest(
+        [property: JsonPropertyName("to_message_index")] int ToMessageIndex);
+
+    private static async Task<IResult> ForkSessionAsync(
+        string sessionId,
+        ForkSessionRequest? request,
+        ISessionStore sessions,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var upTo = request?.UpToMessageIndex ?? int.MaxValue;
+            var doc = await sessions.ForkAsync(sessionId, upTo, request?.Title, cancellationToken).ConfigureAwait(false);
+            return doc is null
+                ? Results.Ok(new { status = "error", message = "Không tìm thấy session để fork." })
+                : Results.Ok(new { status = "ok", session = doc });
+        }
+        catch (Exception error)
+        {
+            LogFailure(loggers, "session fork", error);
+            return Results.Ok(new { status = "error", message = "Lỗi khi fork session." });
+        }
+    }
+
+    private static async Task<IResult> RewindSessionAsync(
+        string sessionId,
+        RewindSessionRequest? request,
+        ISessionStore sessions,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var toIndex = request?.ToMessageIndex ?? 0;
+            var doc = await sessions.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
+            return doc is null
+                ? Results.Ok(new { status = "error", message = "Không tìm thấy session để rewind." })
+                : Results.Ok(new { status = "ok", session = doc });
+        }
+        catch (Exception error)
+        {
+            LogFailure(loggers, "session rewind", error);
+            return Results.Ok(new { status = "error", message = "Lỗi khi rewind session." });
         }
     }
 

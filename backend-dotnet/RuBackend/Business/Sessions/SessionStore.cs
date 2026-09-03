@@ -58,7 +58,9 @@ public sealed partial class SessionStore : ISessionStore
                     document.Title,
                     document.CreatedAt,
                     document.UpdatedAt,
-                    document.Messages.Count));
+                    document.Messages.Count,
+                    document.ParentSessionId,
+                    document.ForkedFromMessageId));
             }
 
             return sessions
@@ -243,6 +245,107 @@ public sealed partial class SessionStore : ISessionStore
         }
     }
 
+    public async Task<SessionDocument?> ForkAsync(
+        string sessionId,
+        int upToMessageIndex,
+        string? newTitle,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidSessionId(sessionId))
+        {
+            return null;
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var original = await LoadUnlockedAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            if (original is null)
+            {
+                return null;
+            }
+
+            var count = Math.Clamp(upToMessageIndex + 1, 0, original.Messages.Count);
+            var forkedMessages = original.Messages.Take(count).ToList();
+            var forkedId = Guid.NewGuid().ToString("N");
+            var now = _clock.GetUtcNow().ToUniversalTime();
+            var title = string.IsNullOrWhiteSpace(newTitle)
+                ? $"{original.Title} (Nhánh)"
+                : newTitle.Trim();
+
+            var forkedDoc = new SessionDocument(
+                forkedId,
+                title,
+                now,
+                now,
+                forkedMessages,
+                original.SourceMessageLedger,
+                ParentSessionId: original.Id,
+                ForkedFromMessageId: forkedMessages.LastOrDefault()?.SourceMessageId);
+
+            await WriteUnlockedAsync(forkedDoc, cancellationToken).ConfigureAwait(false);
+            return forkedDoc;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<SessionDocument?> RewindAsync(
+        string sessionId,
+        int toMessageIndex,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidSessionId(sessionId))
+        {
+            return null;
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var original = await LoadUnlockedAsync(sessionId, cancellationToken).ConfigureAwait(false);
+            if (original is null)
+            {
+                return null;
+            }
+
+            var count = Math.Clamp(toMessageIndex + 1, 0, original.Messages.Count);
+            var rewoundMessages = original.Messages.Take(count).ToList();
+            var now = _clock.GetUtcNow().ToUniversalTime();
+
+            var rewoundDoc = original with
+            {
+                Messages = rewoundMessages,
+                UpdatedAt = now,
+            };
+
+            await WriteUnlockedAsync(rewoundDoc, cancellationToken).ConfigureAwait(false);
+            return rewoundDoc;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private async Task<SessionDocument?> LoadUnlockedAsync(
         string sessionId,
         CancellationToken cancellationToken)
@@ -314,13 +417,18 @@ public sealed partial class SessionStore : ISessionStore
                 storedTitle = DefaultTitle;
             }
 
+            var parentSessionId = ReadNullableString(root, "parent_session_id");
+            var forkedFromMessageId = ReadNullableString(root, "forked_from_message_id");
+
             return new SessionDocument(
                 storedId,
                 storedTitle,
                 ReadTimestamp(root, "created_at"),
                 ReadTimestamp(root, "updated_at"),
                 messages,
-                ledger.Count == 0 ? null : ledger);
+                ledger.Count == 0 ? null : ledger,
+                parentSessionId,
+                forkedFromMessageId);
         }
         catch (JsonException)
         {

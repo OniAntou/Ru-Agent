@@ -26,14 +26,20 @@ public sealed record SessionDocument(
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("messages")] IReadOnlyList<SessionMessage> Messages,
     [property: JsonPropertyName("source_message_ledger")]
-    IReadOnlyDictionary<string, string>? SourceMessageLedger = null);
+    IReadOnlyDictionary<string, string>? SourceMessageLedger = null,
+    [property: JsonPropertyName("parent_session_id")]
+    string? ParentSessionId = null,
+    [property: JsonPropertyName("forked_from_message_id")]
+    string? ForkedFromMessageId = null);
 
 public sealed record SessionSummary(
     string Id,
     string Title,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    int MessageCount);
+    int MessageCount,
+    string? ParentSessionId = null,
+    string? ForkedFromMessageId = null);
 
 public sealed record ConversationTurn(string Prompt, string Response);
 
@@ -61,4 +67,15 @@ public interface ISessionStore
         string sessionId,
         int maxTurns,
         CancellationToken cancellationToken);
+
+    Task<SessionDocument?> ForkAsync(
+        string sessionId,
+        int upToMessageIndex,
+        string? newTitle,
+        CancellationToken cancellationToken) => Task.FromResult<SessionDocument?>(null);
+
+    Task<SessionDocument?> RewindAsync(
+        string sessionId,
+        int toMessageIndex,
+        CancellationToken cancellationToken) => Task.FromResult<SessionDocument?>(null);
 }

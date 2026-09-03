@@ -13,6 +13,7 @@ public enum HarnessPayloadKind
     ModelContextBase,
     ModelContextSummary,
     PromptReceipt,
+    UserImage = 11,
 }
 
 [Flags]
@@ -129,6 +130,15 @@ public sealed record HarnessPayloadIntent
         {
             throw new ArgumentException(
                 "ModelContextSummary must be UTF-8 and model-only.",
+                nameof(kind));
+        }
+
+        if (kind == HarnessPayloadKind.UserImage
+            && (audience != (HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext)
+                || encoding != HarnessPayloadEncoding.Utf8Text))
+        {
+            throw new ArgumentException(
+                "UserImage must be UTF-8 and visible to client and model.",
                 nameof(kind));
         }
 

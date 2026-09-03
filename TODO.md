@@ -125,10 +125,19 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
 
 ## Pending product work
 
-- [ ] Implement a real end-to-end multimodal image attachment path (Agent
+- [x] Implement a real end-to-end multimodal image attachment path (Agent
   request validation, run persistence, provider projection, and backend size
-  negotiation). Until then the GUI rejects image sends explicitly instead of
-  silently dropping them.
+  negotiation): Harness payload kind `UserImage` with AuthenticatedClient | ModelContext;
+  `ModelRequest` multimodal extension with `IReadOnlyList<ModelImage>`; backend validation
+  (4 images, 4MB per image, 20MB total, strict Base64 data URL, vision model check) and
+  persistence in SQLite `agent_payloads`; provider projection for OpenAI Responses (`input_image`),
+  Anthropic Messages (`image`), and OpenAI-Compatible (`image_url`) with fail-closed non-vision
+  rejection (`vision_unsupported`); Worker v2 integration feeding `UserImage` payloads into
+  `ModelRequest`; WinUI 3 client image resizer (max 2048px / JPEG 0.85 quality) with 4-image
+  guard and attachment preview/bubble zoom dialog. See
+  [the design](docs/superpowers/specs/2026-09-03-image-multimodal-design.md),
+  [the plan](docs/superpowers/plans/2026-09-03-image-multimodal.md), and
+  [verification](docs/verification/2026-09-03-image-multimodal-verification.md).
 - [x] Make oversized Agent payload responses fail explicitly instead of
   silently truncating client-visible JSON/base64 content.
 - [x] Make `files.read` account for concurrent file growth and avoid reporting

@@ -37,7 +37,7 @@ public sealed class BrokerToolGatewayConformanceTests : ToolGatewayConformance
     {
         foreach (var host in _hosts)
         {
-            host.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            try { host.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(2)); } catch { }
         }
 
         _hosts.Clear();

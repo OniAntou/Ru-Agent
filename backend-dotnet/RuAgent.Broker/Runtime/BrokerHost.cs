@@ -116,6 +116,7 @@ public sealed class BrokerHost : IAsyncDisposable
 
         _disposed = true;
         IsReady = false;
+        try { _shutdown.Cancel(); } catch { }
         _session.ClearDecisions();
         _tools.ClearPendingApprovals();
         _pendingV2.Clear();

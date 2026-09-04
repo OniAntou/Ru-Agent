@@ -121,3 +121,17 @@
 - [ ] Run `git diff --check` and distinguish pre-existing unrelated whitespace failures from owned-file failures.
 - [ ] Repeat a live read-only DuckDuckGo smoke using the production endpoint and verify at least one decoded non-DuckDuckGo citation for two ordinary queries.
 - [ ] Commit only plan-owned source, test, and documentation files in focused commits; do not push unless explicitly requested.
+
+## Completion record (2026-09-05)
+
+- Implemented directly on `main` as authorized.
+- RED confirmed both the DuckDuckGo redirect parsing failure and the stale
+  internal/model capability projection before production changes.
+- Sequential .NET matrix: 2,548 passed across 13 projects.
+- Python: 417 passed. Documentation: 4 passed. Route matrix: 64 HTTP + 1
+  WebSocket. Release build: 13/13 stages and 2/2 native overlay tests.
+- Live production `WebSearchAdapter`: two ordinary queries returned 10 decoded,
+  policy-validated citations each; no fallback provider was added.
+- Full-tree `git diff --check` remains blocked only by pre-existing trailing
+  whitespace in dirty `gui-winui3/Views/MemoryView.xaml` and
+  `gui-winui3/Views/VoiceView.xaml`; all files owned by this plan pass.

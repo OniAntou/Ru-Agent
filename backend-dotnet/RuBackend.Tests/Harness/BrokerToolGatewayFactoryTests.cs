@@ -129,7 +129,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         var (authorized, token) = await factory.RespondApprovalAsync(
             runId.Value,
             hostApprovalId,
-            "allow_once",
+            "allow_session_directory",
             CancellationToken.None);
         Assert.True(authorized);
         Assert.False(string.IsNullOrWhiteSpace(token));
@@ -147,10 +147,12 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             prepared,
             _ => ValueTask.CompletedTask,
             CancellationToken.None);
-        // File adapters stay workspace-bounded: the one-time token resumes
-        // the flow, but execution outside the workspace still fails closed.
-        Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
-        Assert.True(File.Exists(externalPath));
+        // Session grants open execution: the approved external read runs
+        // against the granted directory and returns its content.
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        var output = System.Text.Json.JsonDocument.Parse(
+            System.Text.Encoding.UTF8.GetString(receipt.ModelContent.Span)).RootElement;
+        Assert.Equal("factory-external", output.GetProperty("content").GetString());
         try { File.Delete(externalPath); } catch { }
 
         factory.CloseRun(runId.Value);

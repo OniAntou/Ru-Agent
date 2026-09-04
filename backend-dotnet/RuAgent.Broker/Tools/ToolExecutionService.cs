@@ -600,23 +600,23 @@ public sealed class ToolExecutionService : IToolInvoker
             ["system.volume"] = ExecuteVolumeAsync,
             ["app.list"] = (_, _, _) => Succeeded(_apps.List(), "Application list read."),
             ["files.list"] = (context, arguments, _) => Succeeded(
-                ToolsFor(context).List.Execute(arguments),
+                ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
                 "Workspace entries listed."),
             ["files.glob"] = (context, arguments, _) => Succeeded(
-                ToolsFor(context).Glob.Execute(arguments),
+                ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(arguments),
                 "Workspace glob completed."),
             ["files.search"] = (context, arguments, _) => Succeeded(
-                ToolsFor(context).Search.Execute(arguments),
+                ResolveTools(context, TargetPathOf(arguments)).Search.Execute(arguments),
                 "Workspace search completed."),
             ["files.read"] = (context, arguments, _) => Succeeded(
-                ToolsFor(context).Read.Execute(arguments),
+                ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
                 "Workspace file read."),
             ["files.edit"] = (_, arguments, _) => ExecuteFileEdit(arguments),
             ["files.write"] = (context, arguments, _) => Succeeded(
                 ExecuteFileWrite(context, arguments),
                 "Workspace file written."),
             ["files.delete"] = (context, arguments, _) => Succeeded(
-                ToolsFor(context).Delete.Execute(WithInternalExpectedHash(ToolsFor(context).MutationResolver, arguments)),
+                ExecuteDelete(context, arguments),
                 "Workspace file deleted."),
             ["files.restore"] = (context, arguments, _) => Succeeded(
                 ToolsFor(context).Restore.Execute(arguments),
@@ -645,8 +645,73 @@ public sealed class ToolExecutionService : IToolInvoker
         return executors;
     }
 
-    private JsonObject ExecuteFileWrite(ToolExecutionContext context, JsonObject arguments) =>
-        ToolsFor(context).Write.Execute(WithInternalExpectedHash(ToolsFor(context).MutationResolver, arguments));
+    private JsonObject ExecuteFileWrite(ToolExecutionContext context, JsonObject arguments)
+    {
+        var tools = ResolveTools(context, TargetPathOf(arguments));
+        return tools.Write.Execute(WithInternalExpectedHash(tools.MutationResolver, arguments));
+    }
+
+    private JsonObject ExecuteDelete(ToolExecutionContext context, JsonObject arguments)
+    {
+        var tools = ResolveTools(context, TargetPathOf(arguments));
+        return tools.Delete.Execute(WithInternalExpectedHash(tools.MutationResolver, arguments));
+    }
+
+    private static string? TargetPathOf(JsonObject arguments)
+    {
+        if (arguments["path"] is JsonValue value
+            && value.TryGetValue<string>(out var path)
+            && !string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Selects the adapter root for one files.* call. Lease-rooted targets
+    /// behave exactly as before. Outside targets execute against the longest
+    /// matching session-granted directory; without a grant the adapters keep
+    /// their own <c>outside_workspace</c> denial. Malformed inputs fall back
+    /// to the lease toolset so adapters keep their native errors.
+    /// files.edit/restore/notes stay lease-rooted (follow-up).
+    /// </summary>
+    private RootToolSet ResolveTools(ToolExecutionContext context, string? pathInput)
+    {
+        var tools = ToolsFor(context);
+        if (string.IsNullOrWhiteSpace(pathInput))
+        {
+            return tools;
+        }
+
+        var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
+        if (grants.Count == 0)
+        {
+            return tools;
+        }
+
+        string selectedRoot;
+        try
+        {
+            selectedRoot = Files.FileToolRootSelector.SelectRoot(
+                tools.MutationResolver,
+                tools.MutationResolver.CanonicalRoot,
+                grants,
+                pathInput);
+        }
+        catch (ArgumentException)
+        {
+            return tools;
+        }
+
+        if (string.Equals(selectedRoot, tools.MutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return tools;
+        }
+
+        return ToolsForRoot(selectedRoot);
+    }
 
     private static JsonObject WithInternalExpectedHash(CanonicalPathResolver resolver, JsonObject arguments)
     {
@@ -677,7 +742,12 @@ public sealed class ToolExecutionService : IToolInvoker
             return _defaultTools;
         }
 
-        var root = Path.GetFullPath(lease.CanonicalRoot);
+        return ToolsForRoot(lease.CanonicalRoot);
+    }
+
+    private RootToolSet ToolsForRoot(string canonicalRoot)
+    {
+        var root = Path.GetFullPath(canonicalRoot);
         return _toolSetsByRoot.GetOrAdd(root, static (_, resolvedRoot) => RootToolSet.Create(resolvedRoot), root);
     }
 

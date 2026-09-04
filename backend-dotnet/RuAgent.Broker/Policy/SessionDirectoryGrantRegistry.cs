@@ -99,6 +99,26 @@ public sealed class SessionDirectoryGrantRegistry : ISessionDirectoryGrantRegist
         }
     }
 
+    /// <summary>
+    /// Snapshot of one session's granted directories for execution dispatch.
+    /// The caller re-checks containment per call; adapters still enforce
+    /// their own root plus protected-path denials.
+    /// </summary>
+    public IReadOnlyList<string> GetGrantedDirectories(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return Array.Empty<string>();
+        }
+
+        lock (_gate)
+        {
+            return _bySession.TryGetValue(sessionId, out var directories)
+                ? directories.ToArray()
+                : Array.Empty<string>();
+        }
+    }
+
     private static bool IsWithin(string candidate, string directory)
     {
         if (string.Equals(candidate, directory, StringComparison.OrdinalIgnoreCase))

@@ -196,6 +196,7 @@ namespace RuApp
             SidebarSessionList.ItemsSource = Sessions;
             StatusText.Text = $"Đang khởi động {_backendProvider.DisplayName} Backend...";
             StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
+            WelcomeOverlay?.SetStatus($"Đang khởi động {_backendProvider.DisplayName}...", isReady: false);
 
             string? projectRoot = _composition.IsHarness
                 ? _composition.HarnessWorkspacePath ?? string.Empty
@@ -204,6 +205,7 @@ namespace RuApp
             {
                 StatusText.Text = "Không tìm thấy project root. Hãy đặt RuApp.exe trong hoặc dưới thư mục D:\\LLM.";
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                WelcomeOverlay?.SetStatus("Không tìm thấy project root. Nhấn để tiếp tục.", isReady: true, isError: true);
                 return;
             }
 
@@ -212,6 +214,7 @@ namespace RuApp
             {
                 StatusText.Text = $"{_backendProvider.DisplayName} Backend đã sẵn sàng (127.0.0.1:{backendSession.HttpBaseUri.Port})";
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
+                WelcomeOverlay?.NotifyReady();
                 _backendProvider.BackendExited += OnBackendExited;
 
                 _apiService = new ApiService(backendSession);
@@ -301,6 +304,8 @@ namespace RuApp
                 ContentFrame.Content = _chatView;
                 SetActiveNav(NavChat);
                 _providerCatalogController.SetPollingActive(true);
+                _groupedCatalogs?.SetPollingActive(true);
+                _ = _groupedCatalogs?.RefreshIfDueAsync();
                 _providerCatalogTimer.Start();
                 
                 _sessionsRefreshController = new RefreshController<SessionListResponse?>(
@@ -344,6 +349,11 @@ namespace RuApp
                     _observationTimer.Tick += OnObservationTimerTick;
                     _observationTimer.Start();
                 }
+
+                if (_composition.IsHarness && WelcomeOverlay != null && !WelcomeOverlay.IsDismissed)
+                {
+                    _ = WelcomeOverlay.DismissAsync();
+                }
             }
             else
             {
@@ -354,6 +364,7 @@ namespace RuApp
                 DotWorker.Fill = danger;
                 TextBackend.Text = ".NET Backend: Lỗi";
                 TextWorker.Text = "AI Worker: Lỗi";
+                WelcomeOverlay?.NotifyReady(isError: true);
             }
         }
 

@@ -410,7 +410,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Policy_asks_for_protected_and_outside_in_standard()
+    public void Policy_denies_protected_and_asks_for_ungranted_external_path()
     {
         var lease = CreateLease("standard", _root);
         var factory = new PolicyContextFactory(lease);
@@ -418,7 +418,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
 
         var protectedCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protectedCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
-        Assert.Equal("ask", protEval.Decision);
+        Assert.Equal("deny", protEval.Decision);
         Assert.Equal("protected_path", protEval.ReasonCode);
 
         var outsidePath = Path.Combine(Path.GetTempPath(), "outside-" + Guid.NewGuid().ToString("N") + ".txt");
@@ -434,16 +434,17 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Policy_full_access_allows_after_trust_but_malformed_denies_before_adapter()
+    public void Compatibility_full_access_cannot_bypass_protected_paths_or_malformed_input()
     {
         var lease = CreateLease("full_access", _root);
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        // Full access should allow protected/outside
+        // Compatibility presets cannot override protected paths.
         var protCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
-        Assert.Equal("allow", protEval.Decision);
+        Assert.Equal("deny", protEval.Decision);
+        Assert.Equal("protected_path", protEval.ReasonCode);
 
         // Malformed path should deny before adapter (invalid_path)
         Assert.Throws<PolicyContextException>(() => factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "" }));

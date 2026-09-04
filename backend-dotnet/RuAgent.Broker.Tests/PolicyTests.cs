@@ -150,6 +150,87 @@ public sealed class PolicyEvaluationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 24, 12, 0, 0, TimeSpan.Zero);
 
+    [Theory]
+    [InlineData("standard")]
+    [InlineData("full_access")]
+    public void Both_compatibility_presets_use_the_same_session_boundary_policy(string preset)
+    {
+        var external = Path.Combine(Path.GetTempPath(), "ru-policy-external-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        try
+        {
+            var snapshot = preset == "standard"
+                ? PolicyEvalSnapshots.Empty()
+                : PolicyEvalSnapshots.FullAccessEmpty();
+            var (lease, factory) = Bind(snapshot);
+            var grants = new SessionDirectoryGrantRegistry();
+            var evaluator = new PolicySnapshotEvaluator(grants);
+            var path = Path.Combine(external, "note.txt");
+
+            var before = evaluator.Evaluate(
+                lease.Snapshot,
+                FileCall(factory, "files.delete", path),
+                PolicyRequestInvariants.Valid,
+                Now);
+            Assert.Equal("ask", before.Decision);
+            Assert.Equal("external_directory_required", before.ReasonCode);
+
+            grants.Add(PolicyEvalSnapshots.SessionId, CanonicalDirectoryIdentity.CreateExisting(external));
+            var after = evaluator.Evaluate(
+                lease.Snapshot,
+                FileCall(factory, "files.delete", path),
+                PolicyRequestInvariants.Valid,
+                Now);
+            Assert.Equal("allow", after.Decision);
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("standard")]
+    [InlineData("full_access")]
+    public void Both_presets_ask_only_for_terminal_delete_or_unknown_executable(string preset)
+    {
+        var snapshot = preset == "standard"
+            ? PolicyEvalSnapshots.Empty()
+            : PolicyEvalSnapshots.FullAccessEmpty();
+        var (lease, factory) = Bind(snapshot);
+        var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry());
+
+        var git = evaluator.Evaluate(
+            lease.Snapshot, Terminal(factory, "git", "push"), PolicyRequestInvariants.Valid, Now);
+        var delete = evaluator.Evaluate(
+            lease.Snapshot, Terminal(factory, "rm", "old.txt"), PolicyRequestInvariants.Valid, Now);
+        var unknown = evaluator.Evaluate(
+            lease.Snapshot, Terminal(factory, "mystery-tool.exe"), PolicyRequestInvariants.Valid, Now);
+
+        Assert.Equal("allow", git.Decision);
+        Assert.Equal("ask", delete.Decision);
+        Assert.Equal("terminal_delete_requires_approval", delete.ReasonCode);
+        Assert.Equal("ask", unknown.Decision);
+        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("Get-Date", "allow", "recognized_safe_form")]
+    [InlineData("Remove-Item ./old.txt", "ask", "terminal_delete_requires_approval")]
+    [InlineData("& $tool", "ask", "terminal_unknown_executable")]
+    public void Shell_uses_ast_classification(string script, string decision, string reason)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluation = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry()).Evaluate(
+            lease.Snapshot,
+            Shell(factory, script),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reason, evaluation.ReasonCode);
+    }
+
     [Fact]
     public void Protocol_invariants_deny_before_any_rule_evaluation()
     {
@@ -230,36 +311,50 @@ public sealed class PolicyEvaluationTests
         }
     }
 
-    [Theory]
-    [InlineData("delete_requires_approval", "files.delete", "src/old.txt")]
-    [InlineData("restore_once", "files.restore", "src/old.txt")]
-    [InlineData("external_directory_required", "files.read", null)]
-    [InlineData("protected_path", "files.read", ".env.local")]
-    public void Standard_fallback_asks_for_risky_file_operations(string reasonCode, string toolId, string? path)
-    {
-        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
-        var arguments = path is null
-            ? Args(("path", @"C:\Windows\outside.txt"))
-            : Args(("path", path));
-
-        var evaluation = EvaluateDefault(lease, factory, toolId, arguments);
-
-        Assert.Equal("ask", evaluation.Decision);
-        Assert.Equal(reasonCode, evaluation.ReasonCode);
-    }
-
     [Fact]
-    public void Standard_fallback_asks_for_declared_network_intent()
+    public void External_file_operation_asks_without_a_session_directory_grant()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluation = EvaluateDefault(
             lease,
             factory,
+            "files.read",
+            Args(("path", @"C:\Windows\outside.txt")));
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal("external_directory_required", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Protected_path_denies_but_file_mutations_and_network_metadata_are_automatic()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var protectedPath = EvaluateDefault(
+            lease,
+            factory,
+            "files.read",
+            Args(("path", ".env.local")));
+        var delete = EvaluateDefault(
+            lease,
+            factory,
+            "files.delete",
+            Args(("path", "src/old.txt")));
+        var restore = EvaluateDefault(
+            lease,
+            factory,
+            "files.restore",
+            Args(("path", "src/old.txt")));
+        var networked = EvaluateDefault(
+            lease,
+            factory,
             "files.write",
             Args(("path", "out.txt"), ("network", true)));
 
-        Assert.Equal("ask", evaluation.Decision);
-        Assert.Equal("network_intent", evaluation.ReasonCode);
+        Assert.Equal("deny", protectedPath.Decision);
+        Assert.Equal("protected_path", protectedPath.ReasonCode);
+        Assert.Equal("allow", delete.Decision);
+        Assert.Equal("allow", restore.Decision);
+        Assert.Equal("allow", networked.Decision);
     }
 
     [Fact]
@@ -333,7 +428,7 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Full_access_allows_well_formed_terminal_calls_but_extended_timeouts_ask()
+    public void Effective_policy_allows_extended_terminal_timeout_below_the_hard_cap()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
         var evaluator = new PolicySnapshotEvaluator();
@@ -345,8 +440,7 @@ public sealed class PolicyEvaluationTests
 
         var extended = evaluator.Evaluate(
             lease.Snapshot, Terminal(factory, "dotnet", "test", 1_200_000), valid, Now);
-        Assert.Equal("ask", extended.Decision);
-        Assert.Equal("extended_timeout_approval", extended.ReasonCode);
+        Assert.Equal("allow", extended.Decision);
 
         var overCap = evaluator.Evaluate(
             lease.Snapshot, Terminal(factory, "dotnet", "test", 1_900_000), valid, Now);
@@ -357,12 +451,11 @@ public sealed class PolicyEvaluationTests
 
         var extendedShell = evaluator.Evaluate(
             lease.Snapshot, Shell(factory, "Get-Date", 1_200_000), valid, Now);
-        Assert.Equal("ask", extendedShell.Decision);
-        Assert.Equal("extended_timeout_approval", extendedShell.ReasonCode);
+        Assert.Equal("allow", extendedShell.Decision);
     }
 
     [Fact]
-    public void Standard_asks_for_every_terminal_shell_without_an_exact_reusable_rule()
+    public void Safe_terminal_shell_is_automatic_without_a_reusable_rule()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
@@ -371,8 +464,8 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
 
-        Assert.Equal("ask", evaluation.Decision);
-        Assert.Equal("terminal_requires_rule", evaluation.ReasonCode);
+        Assert.Equal("allow", evaluation.Decision);
+        Assert.Equal("recognized_safe_form", evaluation.ReasonCode);
 
         var withExactRule = PolicyEvalSnapshots.SnapshotWith(
             PolicyEvalSnapshots.Rule(
@@ -407,19 +500,19 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Full_access_fallback_allows_well_formed_calls_but_not_invariant_violations()
+    public void Compatibility_full_access_uses_the_effective_boundary_and_terminal_policy()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
         var evaluator = new PolicySnapshotEvaluator();
         var valid = PolicyRequestInvariants.Valid;
 
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.delete", "src/old.txt"), valid, Now).Decision);
-        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", @"C:\Windows\outside.txt"), valid, Now).Decision);
-        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now).Decision);
+        Assert.Equal("ask", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", @"C:\Windows\outside.txt"), valid, Now).Decision);
+        Assert.Equal("deny", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now).Decision);
         var networked = FileCall(factory, "files.write", "out.txt");
         networked = networked with { NetworkIntent = "declared", NetworkDeclared = true };
         Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, networked, valid, Now).Decision);
-        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, Shell(factory, "Remove-Item /"), valid, Now).Decision);
+        Assert.Equal("ask", evaluator.Evaluate(lease.Snapshot, Shell(factory, "Remove-Item /"), valid, Now).Decision);
 
         AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", "a.txt"), Inv(schemaValid: false), Now), "schema_invalid");
     }
@@ -439,7 +532,7 @@ public sealed class PolicyEvaluationTests
 
         Assert.Equal(plain.Decision, labelled.Decision);
         Assert.Equal(plain.ReasonCode, labelled.ReasonCode);
-        Assert.Equal("ask", labelled.Decision);
+        Assert.Equal("allow", labelled.Decision);
     }
 
     [Fact]

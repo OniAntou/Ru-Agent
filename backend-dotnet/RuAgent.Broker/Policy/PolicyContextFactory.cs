@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools.Paths;
 
@@ -13,11 +14,17 @@ namespace RuAgent.Broker.Policy;
 public sealed class PolicyContextFactory
 {
     private readonly string _canonicalRoot;
+    private readonly string _sessionId;
+    private readonly CommandAnalyzerRegistry _commandAnalyzers;
+    private readonly PowerShellScriptAnalyzer _powerShell;
 
-    public PolicyContextFactory(BrokerRunLease lease)
+    public PolicyContextFactory(BrokerRunLease lease, CommandAnalyzerRegistry? commandAnalyzers = null)
     {
         ArgumentNullException.ThrowIfNull(lease);
         _canonicalRoot = lease.CanonicalRoot;
+        _sessionId = lease.SessionId;
+        _commandAnalyzers = commandAnalyzers ?? new CommandAnalyzerRegistry();
+        _powerShell = new PowerShellScriptAnalyzer(_commandAnalyzers);
     }
 
     public PolicyContext Create(string toolId, string toolVersion, JsonObject arguments)
@@ -49,9 +56,11 @@ public sealed class PolicyContextFactory
         }
 
         ResolvedPath? target = null;
+        ResolvedPath? terminalWorkingDirectory = null;
         string? canonicalCwd = null;
         var argv = PolicyContext.EmptyArgv;
         string? resolvedExecutable = null;
+        CommandAnalysis? terminalAnalysis = null;
 
         if (IsTargetFreeTool(toolId))
         {
@@ -64,11 +73,12 @@ public sealed class PolicyContextFactory
             try
             {
                 var cwd = resolver.Resolve(workingDirectory);
-                if (cwd.Classification != PathClassification.InsideWorkspace)
+                if (!Path.IsPathRooted(workingDirectory) && cwd.IsOutsideWorkspace)
                 {
-                    throw new PolicyContextException("cwd_outside_workspace");
+                    throw new PolicyContextException("invalid_arguments");
                 }
 
+                terminalWorkingDirectory = cwd;
                 canonicalCwd = cwd.CanonicalPath;
             }
             catch (ArgumentException error)
@@ -83,9 +93,10 @@ public sealed class PolicyContextFactory
             }
             else
             {
-                _ = OptionalText(arguments, "script")
+                var script = OptionalText(arguments, "script")
                     ?? throw new PolicyContextException("malformed_call");
                 _ = OptionalText(arguments, "shell");
+                terminalAnalysis = _powerShell.Analyze(script);
             }
 
             if (arguments["arguments"] is JsonArray argvNode)
@@ -117,6 +128,11 @@ public sealed class PolicyContextFactory
             else if (arguments["arguments"] is not null || arguments.ContainsKey("arguments"))
             {
                 throw new PolicyContextException("malformed_call");
+            }
+
+            if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal))
+            {
+                terminalAnalysis = _commandAnalyzers.Analyze(resolvedExecutable, argv);
             }
         }
         else
@@ -189,7 +205,10 @@ public sealed class PolicyContextFactory
                 canonicalCwd,
                 operationClass,
                 arguments),
-            TimeoutMs: timeoutMs);
+            TimeoutMs: timeoutMs,
+            SessionId: _sessionId,
+            WorkingDirectory: terminalWorkingDirectory,
+            TerminalAnalysis: terminalAnalysis);
     }
 
     private ResolvedPath ResolveNonTerminalTarget(string pathInput)

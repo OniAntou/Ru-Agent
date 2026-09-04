@@ -1,3 +1,4 @@
+using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Policy;
@@ -55,7 +56,10 @@ public sealed record PolicyContext(
     string NetworkIntent,
     bool NetworkDeclared,
     string IntentHash,
-    int? TimeoutMs = null)
+    int? TimeoutMs = null,
+    string SessionId = "",
+    ResolvedPath? WorkingDirectory = null,
+    CommandAnalysis? TerminalAnalysis = null)
 {
     public static readonly IReadOnlyList<string> EmptyArgv = Array.Empty<string>();
 }

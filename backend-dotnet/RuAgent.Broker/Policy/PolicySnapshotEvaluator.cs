@@ -75,9 +75,13 @@ public sealed record PolicyEvaluation(
 public sealed class PolicySnapshotEvaluator
 {
     private readonly CommandAnalyzerRegistry _analyzers;
+    private readonly ISessionDirectoryGrantRegistry _directoryGrants;
 
-    public PolicySnapshotEvaluator(CommandAnalyzerRegistry? analyzers = null)
+    public PolicySnapshotEvaluator(
+        ISessionDirectoryGrantRegistry? directoryGrants = null,
+        CommandAnalyzerRegistry? analyzers = null)
     {
+        _directoryGrants = directoryGrants ?? new SessionDirectoryGrantRegistry();
         _analyzers = analyzers ?? new CommandAnalyzerRegistry();
     }
 
@@ -116,6 +120,18 @@ public sealed class PolicySnapshotEvaluator
             return Deny("matcher_invalid");
         }
 
+        var boundary = context.Target ?? context.WorkingDirectory;
+        if (boundary is { IsProtected: true })
+        {
+            return Deny("protected_path");
+        }
+
+        if (boundary is { IsOutsideWorkspace: true }
+            && !_directoryGrants.Contains(context.SessionId, boundary.CanonicalPath))
+        {
+            return Ask("external_directory_required");
+        }
+
         string? matchedDecision = null;
         string? matchedRuleId = null;
         foreach (var rule in snapshot.OrderedRules)
@@ -137,20 +153,10 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
-        return Fallback(snapshot.Preset, context);
+        return EffectiveFallback(context);
     }
 
-    private PolicyEvaluation Fallback(string preset, PolicyContext context)
-    {
-        if (string.Equals(preset, "full_access", StringComparison.Ordinal))
-        {
-            return FullAccessFallback(context);
-        }
-
-        return StandardFallback(context);
-    }
-
-    private static PolicyEvaluation FullAccessFallback(PolicyContext context)
+    private PolicyEvaluation EffectiveFallback(PolicyContext context)
     {
         if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
         {
@@ -160,73 +166,16 @@ public sealed class PolicySnapshotEvaluator
                 return Deny("timeout_exceeds_hard_max");
             }
 
-            if (timeoutMs > TerminalLimits.StandardApprovalThresholdMs)
-            {
-                return Ask("extended_timeout_approval");
-            }
-        }
-
-        return new PolicyEvaluation("allow", "full_access_fallback", MatchedRuleId: null);
-    }
-
-    private PolicyEvaluation StandardFallback(PolicyContext context)
-    {
-        if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
-        {
             return TerminalFallback(context);
         }
 
-        if (!string.Equals(context.NetworkIntent, PolicyNetworkIntents.None, StringComparison.Ordinal))
-        {
-            return Ask("network_intent");
-        }
-
-        if (context.Target is { } target)
-        {
-        if (target.IsProtected)
-        {
-        return Ask("protected_path");
-        }
-
-        if (target.IsOutsideWorkspace)
-        {
-        return Ask("external_directory_required");
-        }
-        }
-
-        switch (context.OperationClass)
-        {
-            case PolicyOperationClasses.Delete:
-                return Ask("delete_requires_approval");
-            case PolicyOperationClasses.Restore:
-                return Ask("restore_once");
-            case PolicyOperationClasses.Read:
-            case PolicyOperationClasses.List:
-            case PolicyOperationClasses.Glob:
-            case PolicyOperationClasses.Search:
-            case PolicyOperationClasses.Write:
-            case PolicyOperationClasses.Edit:
-            case PolicyOperationClasses.Patch:
-            case PolicyOperationClasses.Discovery:
-                if (context.Target is { } insideTarget && !insideTarget.IsInsideWorkspace)
-                {
-                    return Ask("external_directory_required");
-                }
-
-                return Allow("standard_workspace_allow");
-            default:
-                return Ask("unclassified_operation");
-        }
+        return Allow("standard_workspace_allow");
     }
 
     private PolicyEvaluation TerminalFallback(PolicyContext context)
     {
-        if (string.Equals(context.ToolId, "terminal.shell", StringComparison.Ordinal))
-        {
-            return Ask("terminal_requires_rule");
-        }
-
-        var analysis = _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
+        var analysis = context.TerminalAnalysis
+            ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
         return analysis.OperationClass switch
         {
             TerminalOperationClass.ReadOnly

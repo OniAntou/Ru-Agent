@@ -27,6 +27,46 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     }
 
     [Fact]
+    public async Task Broker_grants_are_revoked_before_the_session_file()
+    {
+        var trace = new List<string>();
+        var artifacts = new RecordingArtifactStore(trace);
+        var sessions = new RecordingSessionStore(trace, deleteResult: true);
+        var gateways = new StubGatewayFactory(trace, revokeResult: true);
+        var coordinator = new HarnessSessionDeletionCoordinator(
+            artifacts,
+            sessions,
+            TimeProvider.System,
+            gateways);
+
+        var outcome = await coordinator.DeleteAsync(
+            "11111111111111111111111111111111",
+            CancellationToken.None);
+
+        Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
+        Assert.Equal(["revoke:11111111111111111111111111111111", "harness", "session"], trace);
+    }
+
+    [Fact]
+    public async Task Broker_revoke_rejection_fails_the_delete_closed()
+    {
+        var trace = new List<string>();
+        var artifacts = new RecordingArtifactStore(trace);
+        var sessions = new RecordingSessionStore(trace, deleteResult: true);
+        var gateways = new StubGatewayFactory(trace, revokeResult: false);
+        var coordinator = new HarnessSessionDeletionCoordinator(
+            artifacts,
+            sessions,
+            TimeProvider.System,
+            gateways);
+
+        await Assert.ThrowsAsync<HarnessStoreException>(() => coordinator.DeleteAsync(
+            "11111111111111111111111111111111",
+            CancellationToken.None));
+        Assert.DoesNotContain("session", trace);
+    }
+
+    [Fact]
     public async Task Harness_cleanup_failure_still_deletes_the_session_file()
     {
         var trace = new List<string>();
@@ -46,6 +86,16 @@ public sealed class HarnessSessionDeletionCoordinatorTests
 
         Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
         Assert.Equal(["harness", "session"], trace);
+    }
+
+    private sealed class StubGatewayFactory(List<string> trace, bool revokeResult)
+        : RuBackend.Harness.Broker.BrokerToolGatewayFactory(null)
+    {
+        public override Task<bool> RevokeSessionGrantsAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            trace.Add("revoke:" + sessionId);
+            return Task.FromResult(revokeResult);
+        }
     }
 
     private sealed class RecordingArtifactStore(List<string> trace)

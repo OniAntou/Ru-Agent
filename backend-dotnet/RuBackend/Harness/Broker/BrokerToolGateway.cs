@@ -137,9 +137,13 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         return ToolProposalDecision.Ask(
             accessKind,
             hostApprovalId,
-            reasonCode == "external_directory_required"
-                ? "external_directory_required"
-                : "approval_required");
+            reasonCode switch
+            {
+                "external_directory_required" => "external_directory_required",
+                "terminal_delete_requires_approval" => "terminal_delete_requires_approval",
+                "terminal_unknown_executable" => "terminal_unknown_executable",
+                _ => "approval_required",
+            });
     }
 
     public async Task<PreparedToolExecution> PrepareAsync(
@@ -301,6 +305,25 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             token,
             DateTimeOffset.UtcNow.AddSeconds(60));
         return (true, token);
+    }
+
+    /// <summary>
+    /// Revokes one Agent session's directory grants in the Broker process.
+    /// Returns false only when a live Broker explicitly denies; transport
+    /// failures propagate so the caller can treat Broker-unavailable as safe.
+    /// </summary>
+    public async Task<bool> RevokeSessionGrantsAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var reply = await RpcAsync(
+            AgentMessageTypes.SessionGrantsRevoke,
+            new JsonObject { ["agent_session_id"] = sessionId },
+            cancellationToken).ConfigureAwait(false);
+        return reply.MessageType == AgentMessageTypes.SessionGrantsRevoked
+            && string.Equals(
+                reply.Payload["status"]?.GetValue<string>(),
+                ToolResultStatuses.Succeeded,
+                StringComparison.Ordinal);
     }
 
     private static string ApprovalArgsKey(string toolId, JsonElement arguments)

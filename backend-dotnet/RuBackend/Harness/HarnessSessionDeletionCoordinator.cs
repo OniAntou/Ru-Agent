@@ -21,21 +21,30 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
     private readonly IHarnessSessionArtifactStore _artifacts;
     private readonly ISessionStore _sessions;
     private readonly TimeProvider _clock;
+    private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
 
     public HarnessSessionDeletionCoordinator(
         IHarnessSessionArtifactStore artifacts,
         ISessionStore sessions,
-        TimeProvider clock)
+        TimeProvider clock,
+        Broker.BrokerToolGatewayFactory? brokerGateways = null)
     {
         _artifacts = artifacts ?? throw new ArgumentNullException(nameof(artifacts));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _brokerGateways = brokerGateways;
     }
 
     public async Task<HarnessSessionDeletionOutcome> DeleteAsync(
         string sessionId,
         CancellationToken cancellationToken)
     {
+        if (_brokerGateways is not null
+            && !await _brokerGateways.RevokeSessionGrantsAsync(sessionId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new HarnessStoreException("broker_revoke_rejected");
+        }
+
         try
         {
             await _artifacts.CloseAndDeleteAsync(

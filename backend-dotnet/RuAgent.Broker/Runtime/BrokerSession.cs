@@ -118,7 +118,8 @@ public sealed class BrokerSession
     {
         lock (_gate)
         {
-            return string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal);
+            return string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal)
+                || _runLeases.Values.Any(lease => string.Equals(lease.SessionId, sessionId, StringComparison.Ordinal));
         }
     }
 
@@ -148,14 +149,31 @@ public sealed class BrokerSession
     {
         lock (_gate)
         {
+            // Scope teardown to the named session so concurrent chats sharing
+            // this Broker process keep their own leases, decisions, and grants.
+            var ownedRuns = _runLeases.Values
+                .Where(lease => string.Equals(lease.SessionId, sessionId, StringComparison.Ordinal))
+                .Select(lease => lease.RunId)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var runId in ownedRuns)
+            {
+                _runLeases.Remove(runId);
+            }
+
+            foreach (var token in _pendingDecisions
+                         .Where(pair => ownedRuns.Contains(pair.Value.RunId))
+                         .Select(pair => pair.Key)
+                         .ToList())
+            {
+                _pendingDecisions.Remove(token);
+            }
+
+            DirectoryGrants.RevokeSession(sessionId);
             if (string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal))
             {
                 _activeSessionId = null;
                 _activeScopes = new HashSet<string>(StringComparer.Ordinal);
                 _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
-                _runLeases.Clear();
-                _pendingDecisions.Clear();
-                DirectoryGrants = new SessionDirectoryGrantRegistry();
             }
         }
     }
@@ -430,24 +448,11 @@ public sealed class BrokerSession
                 return false;
             }
 
-            // A connection may only attach a run to the session it opened. Without
-            // this check a caller that owns session A could submit a lease for
-            // session B and then address that run through A's socket.
-            if (_activeSessionId is not null
-                && !string.Equals(_activeSessionId, lease.SessionId, StringComparison.Ordinal))
-            {
-                errorCode = "session_conflict";
-                return false;
-            }
-
-            if (_runLeases.Count > 0
-                && !_runLeases.ContainsKey(lease.RunId)
-                && _runLeases.Values.Any(open => !string.Equals(open.SessionId, lease.SessionId, StringComparison.Ordinal)))
-            {
-                errorCode = "run_conflict";
-                return false;
-            }
-
+            // Run leases are multi-tenant: concurrent chats share this Broker
+            // process with one lease each. Per-message binding still holds —
+            // every envelope must carry the same session id as the lease it
+            // addresses (checked by callers), so a socket claiming session A
+            // can never consume session B's approvals, tokens, or grants.
             // Validate the connection's advertisement matches the host-configured
             // capability set; mismatch fails closed.
             var expectedCapabilities = _advertisedCapabilities;

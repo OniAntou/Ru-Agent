@@ -15,7 +15,7 @@ namespace RuBackend.Harness.Broker;
 /// policy snapshot onto the wire contract, and tracks open gateways so run
 /// teardown closes the Broker lease with them.
 /// </summary>
-public sealed class BrokerToolGatewayFactory : IAsyncDisposable
+public class BrokerToolGatewayFactory : IAsyncDisposable
 {
     private static readonly TimeSpan LeaseLifetime = TimeSpan.FromMinutes(60);
 
@@ -32,7 +32,7 @@ public sealed class BrokerToolGatewayFactory : IAsyncDisposable
     public bool IsConfigured =>
         _descriptorPath is not null && File.Exists(_descriptorPath);
 
-    public IToolGateway Create(string workspaceRoot, PolicySnapshot policySnapshot, RunId runId)
+    public IToolGateway Create(string workspaceRoot, PolicySnapshot policySnapshot, RunId runId, string? agentSessionId = null)
     {
         ArgumentNullException.ThrowIfNull(policySnapshot);
         if (policySnapshot.Sha256.Length != 64)
@@ -41,9 +41,22 @@ public sealed class BrokerToolGatewayFactory : IAsyncDisposable
                 "broker_gateway_requires_canonical_snapshot_hash");
         }
 
+        // The Broker session id is the Host Agent session id, stable across
+        // every drive and run of one chat. Session-scoped directory grants,
+        // approval tokens, and revoke all key on it. Random per-drive ids
+        // broke every approval resume with session_conflict and made revoke
+        // miss. Callers without an Agent session (history ack/fail paths)
+        // fall back to a run-stable id.
+        var sessionId = !string.IsNullOrWhiteSpace(agentSessionId)
+            ? agentSessionId.Trim()
+            : "session_" + runId.Value;
+        if (sessionId.Length > 128 || sessionId.Contains('\0'))
+        {
+            throw new InvalidOperationException("broker_gateway_requires_bounded_session_id");
+        }
+
         var descriptor = LoadDescriptor()
             ?? throw new InvalidOperationException("broker_descriptor_unavailable");
-        var sessionId = "session_" + Guid.NewGuid().ToString("N");
         var canonicalRoot = Path.GetFullPath(workspaceRoot);
         var gateway = new BrokerToolGateway(
             new Uri(descriptor.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
@@ -87,6 +100,46 @@ public sealed class BrokerToolGatewayFactory : IAsyncDisposable
         return await gateway
             .RespondApprovalAsync(brokerApprovalId, command, argsKey, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Revokes one Agent session's directory grants before durable session
+    /// deletion. True when revoked or when no Broker is reachable (grants
+    /// cannot execute without their Broker); false only on live-Broker
+    /// rejection, which must fail the delete closed.
+    /// </summary>
+    public virtual async Task<bool> RevokeSessionGrantsAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        if (!IsConfigured)
+        {
+            return true;
+        }
+
+        var gateways = _gateways.Values.ToArray();
+        if (gateways.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (var gateway in gateways)
+        {
+            try
+            {
+                if (await gateway.RevokeSessionGrantsAsync(sessionId, cancellationToken).ConfigureAwait(false))
+                {
+                    return true;
+                }
+
+                return false;
+            }
+            catch (ToolTransportException)
+            {
+                continue;
+            }
+        }
+
+        return true;
     }
 
     public void CloseRun(string runId)

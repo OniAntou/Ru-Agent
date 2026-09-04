@@ -17,7 +17,7 @@ namespace RuBackend.Tests.Harness;
 public sealed class HeadlessCodingLoopTests
 {
     [Fact]
-    public async Task Deterministic_headless_loop_inspects_edits_runs_and_stops_at_commit_approval()
+    public async Task Deterministic_headless_loop_inspects_edits_runs_and_stops_at_terminal_approval()
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
@@ -25,7 +25,7 @@ public sealed class HeadlessCodingLoopTests
         runner.Enqueue(ToolCall("files.edit", $$"""{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"rg","arguments":["--files"]}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["commit","-m","managed attempt"]}"""));
+        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--version"]}"""));
 
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
         using var client = factory.CreateAuthenticatedClient();
@@ -66,7 +66,7 @@ public sealed class HeadlessCodingLoopTests
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["commit","-m","contested"]}"""));
+        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--version"]}"""));
 
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
         using var desktopClient = factory.CreateAuthenticatedClient();

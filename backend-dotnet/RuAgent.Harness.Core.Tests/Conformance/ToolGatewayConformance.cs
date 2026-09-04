@@ -404,14 +404,13 @@ public abstract class ToolGatewayConformance : IDisposable
     }
 
     [Fact]
-    public async Task FilesDelete_requires_approval_in_standard()
+    public async Task FilesDelete_allows_inside_workspace_in_standard()
     {
         var decision = await Gateway.EvaluateAsync(
             Proposal("files.delete", new JsonObject { ["path"] = "notes/a.txt" }),
             CancellationToken.None);
 
-        Assert.Equal(PolicyDecision.Ask, decision.Decision);
-        Assert.Equal("approval_required", decision.SafeCode);
+        Assert.Equal(PolicyDecision.Allow, decision.Decision);
     }
 
     [Fact]
@@ -485,7 +484,7 @@ public abstract class ToolGatewayConformance : IDisposable
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Ask, decision.Decision);
-        Assert.Equal("approval_required", decision.SafeCode);
+        Assert.Equal("terminal_unknown_executable", decision.SafeCode);
     }
 
     // ---- helpers ----

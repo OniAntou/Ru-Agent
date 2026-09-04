@@ -62,9 +62,6 @@ public sealed class AgentV1Service
     private const int ApprovalCwdMaxLength = 4096;
     private const int ApprovalArgumentMaxLength = 4096;
     private const int ApprovalScriptMaxLength = 16_000;
-    private const int MaxCursorChars = 512;
-    private const int MaxCursorBytes = 384;
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public static bool IsVisionModel(string? model) => ModelImage.IsVisionModel(model);
 
@@ -378,26 +375,39 @@ public sealed class AgentV1Service
             return BoundedError(409, "workspace_changed", "Workspace identity changed during registration.");
         }
 
+        var now = _time.UtcNow;
         long effectiveVersion;
         var existingSelection = await _permissionStore.GetAsync(new SessionId(sessionIdRaw), cancellationToken).ConfigureAwait(false);
+        bool isProjectRoot = IsProjectRootWorkspace(canonicalWorkspacePath);
         if (existingSelection is null)
         {
             if (preset == AgentPermissionPreset.FullAccess)
             {
-                return BoundedError(409, "preset_mismatch", "Full Access requires preset selection.");
-            }
-
-            if (clientVersion is null)
-            {
-                effectiveVersion = 1;
-            }
-            else if (clientVersion == 1)
-            {
-                effectiveVersion = 1;
+                if (isProjectRoot)
+                {
+                    var setResult = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), AgentPermissionPreset.FullAccess, 0, now, cancellationToken).ConfigureAwait(false);
+                    existingSelection = setResult.Selection;
+                    effectiveVersion = existingSelection?.Version ?? 1;
+                }
+                else
+                {
+                    return BoundedError(409, "preset_mismatch", "Full Access requires preset selection.");
+                }
             }
             else
             {
-                return BoundedError(409, "preset_mismatch", "preset_selection_version mismatch.");
+                if (clientVersion is null)
+                {
+                    effectiveVersion = 1;
+                }
+                else if (clientVersion == 1)
+                {
+                    effectiveVersion = 1;
+                }
+                else
+                {
+                    return BoundedError(409, "preset_mismatch", "preset_selection_version mismatch.");
+                }
             }
         }
         else
@@ -410,9 +420,14 @@ public sealed class AgentV1Service
                 {
                     effectiveVersion = existingSelection.Version;
                 }
-                else if (preset == AgentPermissionPreset.Standard && existingSelection.Preset == AgentPermissionPreset.Standard)
+                else if (preset == existingSelection.Preset)
                 {
                     effectiveVersion = existingSelection.Version;
+                }
+                else if (isProjectRoot && preset == AgentPermissionPreset.FullAccess)
+                {
+                    var setResult = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), AgentPermissionPreset.FullAccess, existingSelection.Version, now, cancellationToken).ConfigureAwait(false);
+                    effectiveVersion = setResult.Selection?.Version ?? (existingSelection.Version + 1);
                 }
                 else
                 {
@@ -423,14 +438,44 @@ public sealed class AgentV1Service
             {
                 if (existingSelection.Preset != preset || existingSelection.Version != clientVersion.Value)
                 {
-                    return BoundedError(409, "preset_mismatch", "preset/version mismatch.");
+                    if (isProjectRoot && preset == AgentPermissionPreset.FullAccess)
+                    {
+                        var setResult = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), AgentPermissionPreset.FullAccess, existingSelection.Version, now, cancellationToken).ConfigureAwait(false);
+                        effectiveVersion = setResult.Selection?.Version ?? Math.Max(existingSelection.Version + 1, clientVersion.Value);
+                    }
+                    else
+                    {
+                        return BoundedError(409, "preset_mismatch", "preset/version mismatch.");
+                    }
                 }
-
-                effectiveVersion = existingSelection.Version;
+                else
+                {
+                    effectiveVersion = existingSelection.Version;
+                }
             }
         }
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
+        if (!isTrusted && isProjectRoot)
+        {
+            isTrusted = true;
+            if (pendingTrustRequest is not null)
+            {
+                var trustResponse = new WorkspaceTrustResponse(
+                    pendingTrustRequest.RequestId,
+                    workspaceIdentity,
+                    workspaceIdentity.DisplayIdentityHash,
+                    WorkspaceTrustDecision.Approve);
+                try
+                {
+                    await _trustStore.ApplyAsync(trustResponse, workspaceIdentity, now, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Ignore concurrency or persistence store errors if already applied
+                }
+            }
+        }
 
         // Materialize the durable coordinator before inserting the run. This
         // makes shared-mode policy visible to the event store for this very
@@ -450,7 +495,7 @@ public sealed class AgentV1Service
             }
         }
 
-        var now = _time.UtcNow;
+        now = _time.UtcNow;
         var runId = _ids.NewRunId();
         PolicySnapshot policySnapshot;
         try
@@ -2015,6 +2060,18 @@ public sealed class AgentV1Service
             return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
         }
 
+        // Session-scoped approvals (external directory + terminal risk) are
+        // authorized by the Broker only; run/project/global persistence scopes
+        // are rejected here instead of creating durable rules.
+        var isSessionScopedApproval = IsSessionScopedApprovalKind(pendingApprovalEvent?.SafeCode);
+        var scopeNorm = scopeRaw?.Trim().ToLowerInvariant();
+        if (isSessionScopedApproval
+            && (scopeNorm is "run" or "project" or "global"
+                || commandRaw is "allow_run" or "allowrun" or "allow_project" or "allowproject"))
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval scope is not supported for session-scoped approvals.");
+        }
+
         // One-time consumption: first writer wins. The durable checks above prevent
         // a replay after restart; this ledger only closes the concurrent HTTP race.
 
@@ -2097,7 +2154,12 @@ public sealed class AgentV1Service
         // failed bridge fails closed while the run is still waiting.
         if (_brokerGateways is { IsConfigured: true })
         {
-            var brokerCommand = isAllowRun ? "allow_run" : isAllowProject ? "allow_project" : "allow_once";
+            // The Broker command follows the pending kind, never the caller's
+            // scope: external folders become a session grant, terminal risk
+            // stays a one-time token.
+            var brokerCommand = string.Equals(pendingApprovalEvent?.SafeCode, "external_directory_required", StringComparison.Ordinal)
+                ? "allow_session_directory"
+                : isAllowRun ? "allow_run" : isAllowProject ? "allow_project" : "allow_once";
             bool bridged;
             try
             {
@@ -2120,7 +2182,9 @@ public sealed class AgentV1Service
             }
         }
 
-        if (isAllowRun || isAllowProject)
+        // Durable rule creation applies only to legacy policy-rule approvals.
+        // Session-scoped approvals reuse the Broker grant or one-time token.
+        if ((isAllowRun || isAllowProject) && !isSessionScopedApproval)
         {
             try
             {
@@ -2226,6 +2290,11 @@ public sealed class AgentV1Service
 
         return new AgentServiceResult(200, resultBody);
     }
+
+    private static bool IsSessionScopedApprovalKind(string? safeCode) => safeCode is
+        "external_directory_required"
+        or "terminal_delete_requires_approval"
+        or "terminal_unknown_executable";
 
     private IHarnessKeyStore GetKeyStore() => _keyStore;
 
@@ -2469,6 +2538,33 @@ public sealed class AgentV1Service
                 && normalizedCandidate.StartsWith(
                     normalizedRoot + Path.AltDirectorySeparatorChar,
                     StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsProjectRootWorkspace(string canonicalWorkspacePath)
+    {
+        var candidates = new List<string> { Directory.GetCurrentDirectory() };
+        var envRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+        {
+            candidates.Add(envRoot);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                if (IsWithinPath(canonicalWorkspacePath, candidate))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignore invalid paths
+            }
+        }
+
+        return false;
     }
 
     private static string? ReadString(JsonElement objectNode, string propertyName, int maxLength)
@@ -3146,46 +3242,17 @@ public sealed class AgentV1Service
         return result as string;
     }
 
-    // Helpers
-    private static AgentServiceResult BoundedError(int status, string code, string message) => new(status, new AgentErrorResponse(code, message));
+    // Helpers (slice 1: pure logic lives in AgentV1Shared; wrappers keep API stable)
+    private static AgentServiceResult BoundedError(int status, string code, string message) =>
+        AgentV1Shared.BoundedError(status, code, message);
 
     /// <summary>
     /// Explicit snake_case state names shared by every API surface; enum ToString would
     /// collapse word boundaries ("waiting_history" → "waitinghistory").
     /// </summary>
-    public static string MapHistoryWaitKind(HistoryWaitKind? kind) => kind switch
-    {
-        HistoryWaitKind.UserBeforeFirstStep => "user_before_first_step",
-        HistoryWaitKind.FinalBeforeCompletion => "final_before_completion",
-        null => "none",
-        _ => "unknown",
-    };
+    public static string MapHistoryWaitKind(HistoryWaitKind? kind) => AgentV1Shared.MapHistoryWaitKind(kind);
 
-    public static string MapRunState(HarnessRunStatus status)
-    {
-        if (status.HistoryWaitKind is not null)
-        {
-            return status.HistoryWaitKind == HistoryWaitKind.UserBeforeFirstStep
-                ? "waiting_history_user"
-                : "waiting_history_final";
-        }
-
-        return status.State switch
-        {
-            HarnessRunState.Created => "created",
-            HarnessRunState.WaitingWorkspaceTrust => "waiting_workspace_trust",
-            HarnessRunState.WaitingHistory => "waiting_history",
-            HarnessRunState.Running => "running",
-            HarnessRunState.WaitingApproval => "waiting_approval",
-            HarnessRunState.WaitingUser => "waiting_user",
-            HarnessRunState.ReconciliationRequired => "reconciliation_required",
-            HarnessRunState.Completed => "completed",
-            HarnessRunState.Failed => "failed",
-            HarnessRunState.Cancelled => "cancelled",
-            HarnessRunState.Interrupted => "interrupted",
-            _ => "unknown",
-        };
-    }
+    public static string MapRunState(HarnessRunStatus status) => AgentV1Shared.MapRunState(status);
 
     /// <summary>
     /// Registers the run's workspace root with the runtime loop so the headless driver
@@ -3216,11 +3283,7 @@ public sealed class AgentV1Service
         TrustRequestId: trustRequestId,
         DisplayIdentityHash: displayIdentityHash);
 
-    private static string ComputeSha256(string value)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+    private static string ComputeSha256(string value) => AgentV1Shared.ComputeSha256(value);
 
     private static string ComputePolicySnapshotSha(AgentPermissionPreset preset, WorkspaceIdentity identity)
     {
@@ -3228,185 +3291,41 @@ public sealed class AgentV1Service
         return ComputeSha256(input);
     }
 
-    private static bool IsSessionId(string value) => value.Length == 32 && IsLowerHex(value);
+    private static bool IsSessionId(string value) => AgentV1Shared.IsSessionId(value);
 
-    private static bool IsWorkspaceId(string value) => value.StartsWith("ws_", StringComparison.Ordinal)
-        && value.Length == 35
-        && IsLowerHex(value.AsSpan(3));
+    private static bool IsWorkspaceId(string value) => AgentV1Shared.IsWorkspaceId(value);
 
-    private static bool IsRunId(string value) => value.StartsWith("run_", StringComparison.Ordinal) && value.Length == 36 && IsLowerHex(value.AsSpan(4));
+    private static bool IsRunId(string value) => AgentV1Shared.IsRunId(value);
 
-    private static bool IsPayloadId(string value) => value.StartsWith("payload_", StringComparison.Ordinal) && value.Length == 40 && IsLowerHex(value.AsSpan(8));
+    private static bool IsPayloadId(string value) => AgentV1Shared.IsPayloadId(value);
 
-    private static bool IsTrustRequestId(string value) => value.StartsWith("trust_", StringComparison.Ordinal) && value.Length == 38 && IsLowerHex(value.AsSpan(6));
+    private static bool IsTrustRequestId(string value) => AgentV1Shared.IsTrustRequestId(value);
 
-    private static bool IsPolicyRuleId(string value) => value.StartsWith("rule_", StringComparison.Ordinal) && value.Length == 37 && IsLowerHex(value.AsSpan(5));
+    private static bool IsPolicyRuleId(string value) => AgentV1Shared.IsPolicyRuleId(value);
 
-    private static bool IsLowerHex(string value) => IsLowerHex(value.AsSpan());
+    private static bool IsLowerHex(string value) => AgentV1Shared.IsLowerHex(value);
 
-    private static bool IsLowerHex(ReadOnlySpan<char> value)
-    {
-        foreach (var c in value)
-        {
-            if (c is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
-            {
-                return false;
-            }
-        }
+    private static bool IsLowerHex(ReadOnlySpan<char> value) => AgentV1Shared.IsLowerHex(value);
 
-        return true;
-    }
+    private static string ResolveWorkspaceFile(string root, string relativePath) =>
+        AgentV1Shared.ResolveWorkspaceFile(root, relativePath);
 
-    private static string ResolveWorkspaceFile(string root, string relativePath)
-    {
-        var canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        var target = Path.GetFullPath(Path.Combine(canonicalRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        if (!target.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase)
-            && !target.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new HarnessStoreException("workspace_path_outside_root");
-        }
+    private static bool ContainsReparsePointBoundary(string root, string target) =>
+        AgentV1Shared.ContainsReparsePointBoundary(root, target);
 
-        return target;
-    }
+    private static bool TryReadRestoreContent(ReadOnlySpan<byte> plaintext, out byte[] content) =>
+        AgentV1Shared.TryReadRestoreContent(plaintext, out content);
 
-    private static bool ContainsReparsePointBoundary(string root, string target)
-    {
-        var canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        var current = Path.GetFullPath(target);
-        while (true)
-        {
-            if (File.Exists(current) || Directory.Exists(current))
-            {
-                var attributes = File.GetAttributes(current);
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    return true;
-                }
-            }
+    private static bool IsValidIsoTimestamp(string value) => AgentV1Shared.IsValidIsoTimestamp(value);
 
-            if (string.Equals(current, canonicalRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
+    private static bool TryReadPolicyString(JsonElement obj, string propertyName, int maxLength, out string? value) =>
+        AgentV1Shared.TryReadPolicyString(obj, propertyName, maxLength, out value);
 
-            var parent = Path.GetDirectoryName(current);
-            if (string.IsNullOrWhiteSpace(parent)
-                || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase)
-                || !parent.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
+    private static string EncodeCursor(string createdAt, string runId) =>
+        AgentV1Shared.EncodeCursor(createdAt, runId);
 
-            current = parent;
-        }
-    }
-
-    private static bool TryReadRestoreContent(ReadOnlySpan<byte> plaintext, out byte[] content)
-    {
-        content = Array.Empty<byte>();
-        try
-        {
-            using var document = JsonDocument.Parse(plaintext.ToArray());
-            if (!document.RootElement.TryGetProperty("content_base64", out var encoded)
-                || encoded.ValueKind != JsonValueKind.String)
-            {
-                return false;
-            }
-
-            var value = encoded.GetString();
-            if (string.IsNullOrWhiteSpace(value) || value.Length > 22_369_624)
-            {
-                return false;
-            }
-
-            content = Convert.FromBase64String(value);
-            return content.Length <= 16 * 1024 * 1024;
-        }
-        catch (Exception error) when (error is JsonException or FormatException)
-        {
-            return false;
-        }
-    }
-
-    private static bool IsValidIsoTimestamp(string value)
-    {
-        return DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _);
-    }
-
-    private static bool TryReadPolicyString(JsonElement obj, string propertyName, int maxLength, out string? value)
-    {
-        value = null;
-        if (!obj.TryGetProperty(propertyName, out var property))
-        {
-            return true;
-        }
-
-        if (property.ValueKind == JsonValueKind.Null)
-        {
-            return true;
-        }
-
-        if (property.ValueKind != JsonValueKind.String)
-        {
-            return false;
-        }
-
-        var raw = property.GetString();
-        if (raw is null
-            || raw.Length == 0
-            || raw.Length > maxLength
-            || string.IsNullOrWhiteSpace(raw)
-            || raw.Contains('\0'))
-        {
-            return false;
-        }
-
-        value = raw;
-        return true;
-    }
-
-    private static string EncodeCursor(string createdAt, string runId)
-    {
-        var raw = $"{createdAt}|{runId}";
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
-    }
-
-    private static (string CreatedAt, string RunId)? TryDecodeCursor(string cursor)
-    {
-        if (cursor.Length > MaxCursorChars)
-        {
-            return null;
-        }
-
-        try
-        {
-            var bytes = Convert.FromBase64String(cursor);
-            if (bytes.Length == 0 || bytes.Length > MaxCursorBytes)
-            {
-                return null;
-            }
-
-            var raw = StrictUtf8.GetString(bytes);
-            var parts = raw.Split('|');
-            if (parts.Length != 2
-                || parts[0].Length is 0 or > 64
-                || parts[1].Length is 0 or > 64
-                || parts[0].Contains('\0')
-                || parts[1].Contains('\0')
-                || !IsValidIsoTimestamp(parts[0])
-                || !IsRunId(parts[1]))
-            {
-                return null;
-            }
-
-            return (parts[0], parts[1]);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static (string CreatedAt, string RunId)? TryDecodeCursor(string cursor) =>
+        AgentV1Shared.TryDecodeCursor(cursor);
 }
 
 

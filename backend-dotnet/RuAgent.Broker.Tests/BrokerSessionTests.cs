@@ -52,7 +52,7 @@ public sealed class BrokerSessionTests
     }
 
     [Fact]
-    public void Closing_the_broker_owner_drops_all_ephemeral_directory_grants()
+    public void Closing_a_session_drops_only_its_own_grants()
     {
         using var fixture = DescriptorFixture.Create();
         var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
@@ -62,10 +62,15 @@ public sealed class BrokerSessionTests
         session.DirectoryGrants.Add(
             "agent-session",
             RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(grantedDirectory));
+        session.DirectoryGrants.Add(
+            "agent-other",
+            RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(grantedDirectory));
 
-        session.Close("broker-owner");
+        session.Close("agent-session");
 
         Assert.False(session.DirectoryGrants.Contains("agent-session", grantedDirectory));
+        Assert.True(session.DirectoryGrants.Contains("agent-other", grantedDirectory));
+        Assert.True(session.Owns("broker-owner"));
     }
 
     [Fact]
@@ -94,7 +99,7 @@ public sealed class BrokerSessionTests
     }
 
     [Fact]
-    public void V2_run_lease_cannot_attach_to_a_different_active_session()
+    public void V2_run_leases_coexist_across_sessions()
     {
         using var fixture = DescriptorFixture.Create();
         var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
@@ -108,9 +113,10 @@ public sealed class BrokerSessionTests
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
 
-        Assert.False(session.TryOpenRunLease(lease, out var error));
-        Assert.Equal("session_conflict", error);
-        Assert.Null(session.ActiveRunLease);
+        Assert.True(session.TryOpenRunLease(lease, out var error));
+        Assert.Null(error);
+        Assert.True(session.Owns("session-owner"));
+        Assert.True(session.Owns("session-foreign"));
     }
 
     [Fact]

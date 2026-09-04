@@ -113,14 +113,17 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         var gateway = Assert.IsType<global::RuBackend.Harness.Broker.BrokerToolGateway>(
             factory.Create(_workspaceRoot, snapshot, runId));
 
-        var deleteArgs = new System.Text.Json.Nodes.JsonObject
+        var externalPath = Path.Combine(Path.GetTempPath(), "ru-broker-factory-external-" + Guid.NewGuid().ToString("N") + ".txt");
+        await File.WriteAllTextAsync(externalPath, "factory-external");
+        var readArgs = new System.Text.Json.Nodes.JsonObject
         {
-            ["path"] = "notes/a.txt",
+            ["path"] = externalPath,
         };
         var decision = await gateway.EvaluateAsync(
-            Proposal(runId, "files.delete", deleteArgs),
+            Proposal(runId, "files.read", readArgs),
             CancellationToken.None);
         Assert.Equal(PolicyDecision.Ask, decision.Decision);
+        Assert.Equal("external_directory_required", decision.SafeCode);
         var hostApprovalId = decision.ApprovalId!.Value.Value;
 
         var (authorized, token) = await factory.RespondApprovalAsync(
@@ -131,7 +134,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         Assert.True(authorized);
         Assert.False(string.IsNullOrWhiteSpace(token));
 
-        var resumed = Proposal(runId, "files.delete", deleteArgs);
+        var resumed = Proposal(runId, "files.read", readArgs);
         var resumedDecision = await gateway.EvaluateAsync(resumed, CancellationToken.None);
         Assert.Equal(PolicyDecision.Allow, resumedDecision.Decision);
         var prepared = await gateway.PrepareAsync(
@@ -144,8 +147,11 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             prepared,
             _ => ValueTask.CompletedTask,
             CancellationToken.None);
-        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
-        Assert.False(File.Exists(Path.Combine(_workspaceRoot, "notes", "a.txt")));
+        // File adapters stay workspace-bounded: the one-time token resumes
+        // the flow, but execution outside the workspace still fails closed.
+        Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+        Assert.True(File.Exists(externalPath));
+        try { File.Delete(externalPath); } catch { }
 
         factory.CloseRun(runId.Value);
     }

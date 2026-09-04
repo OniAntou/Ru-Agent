@@ -30,7 +30,7 @@
 - Consumes: published `RuApp.exe`, project root, desktop directory, and repository shortcut path.
 - Produces: `scripts/install_gui_shortcuts.ps1 -ProjectRoot <string> -DesktopDirectory <string> -RepositoryShortcutPath <string>` with exit code `0` on complete update and nonzero before mutation when the executable is absent.
 
-- [ ] **Step 1: Write the failing success-path test**
+- [x] **Step 1: Write the failing success-path test**
 
 Create `tests/test_gui_shortcuts.py` with Windows-only helpers that invoke the real script using temporary paths and inspect shortcuts through `WScript.Shell`:
 
@@ -128,7 +128,7 @@ def test_installer_targets_published_gui_without_shell_launcher(tmp_path: Path) 
         assert actual["WindowStyle"] == 1
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -138,7 +138,7 @@ Run:
 
 Expected: FAIL because `scripts/install_gui_shortcuts.ps1` does not exist.
 
-- [ ] **Step 3: Write the failing fail-before-mutation test**
+- [x] **Step 3: Write the failing fail-before-mutation test**
 
 Add a test that creates one sentinel shortcut targeting `sentinel.exe`, omits the published GUI, invokes the installer, and asserts a nonzero exit plus the unchanged target:
 
@@ -161,7 +161,7 @@ def test_missing_publish_leaves_existing_shortcuts_unchanged(tmp_path: Path) -> 
     assert not (desktop / "Ru Desktop App.lnk").exists()
 ```
 
-- [ ] **Step 4: Implement the minimal installer**
+- [x] **Step 4: Implement the minimal installer**
 
 Create `scripts/install_gui_shortcuts.ps1` with explicit testable parameters, resolve all paths before mutation, fail if `RuApp.exe` is absent, and use a local `Set-RuShortcut` function:
 
@@ -208,7 +208,7 @@ if (Test-Path -LiteralPath $legacy -PathType Leaf) {
 }
 ```
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run:
 
@@ -218,7 +218,7 @@ Run:
 
 Expected: both shortcut tests pass and no GUI process starts.
 
-- [ ] **Step 6: Commit the installer slice**
+- [x] **Step 6: Commit the installer slice**
 
 ```powershell
 git add -- scripts/install_gui_shortcuts.ps1 tests/test_gui_shortcuts.py
@@ -241,7 +241,7 @@ git commit -m "fix(launcher): open GUI shortcuts without console flash"
 - Consumes: the installer from Task 1 and the current self-contained Release publish.
 - Produces: current operator docs and real shortcuts that consistently use direct GUI launch; `start_dev.bat` remains documented as the diagnostic launcher.
 
-- [ ] **Step 1: Update active operator documentation**
+- [x] **Step 1: Update active operator documentation**
 
 Replace current claims that shortcuts target `start_dev.bat` with this contract:
 
@@ -254,7 +254,7 @@ artifact checks and early-startup diagnostics are needed.
 Leave clearly historical evidence unchanged. Update the Phase 3 plan only if
 its statement is written as a current operator instruction.
 
-- [ ] **Step 2: Run documentation and launcher tests**
+- [x] **Step 2: Run documentation and launcher tests**
 
 Run:
 
@@ -264,7 +264,7 @@ Run:
 
 Expected: all selected tests pass.
 
-- [ ] **Step 3: Install the real shortcuts**
+- [x] **Step 3: Install the real shortcuts**
 
 Run:
 
@@ -275,7 +275,7 @@ Run:
 Expected: exit code `0`; canonical shortcuts exist and the legacy shortcut is
 updated only if it existed before the run.
 
-- [ ] **Step 4: Inspect exact real shortcut properties**
+- [x] **Step 4: Inspect exact real shortcut properties**
 
 Use `WScript.Shell.CreateShortcut` to read each supported existing shortcut and
 assert:
@@ -287,7 +287,7 @@ Arguments        =
 WindowStyle      = 1
 ```
 
-- [ ] **Step 5: Run live no-console smoke test**
+- [x] **Step 5: Run live no-console smoke test**
 
 Snapshot current `cmd`, `powershell`, and `pwsh` process IDs. Launch `Ru Desktop
 App.lnk`, wait up to 20 seconds for the `RuApp` main window, and compare process
@@ -296,7 +296,7 @@ main window, wait up to 15 seconds, and assert the GUI-owned `RuBackend`,
 `RuAgent.Runtime.Worker`, and `RuAgent.Broker` process tree exits. Do not kill
 pre-existing shell processes.
 
-- [ ] **Step 6: Run final verification sequentially**
+- [x] **Step 6: Run final verification sequentially**
 
 Run:
 
@@ -309,7 +309,7 @@ git diff --check
 
 Expected: every command exits `0`, no test failure, and no whitespace error.
 
-- [ ] **Step 7: Commit only this task's owned files**
+- [x] **Step 7: Commit only this task's owned files**
 
 ```powershell
 git add -- README.md docs/operations/verification.md docs/superpowers/plans/2026-08-30-python-runtime-phase-3-retirement.md

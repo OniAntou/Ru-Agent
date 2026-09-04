@@ -23,6 +23,7 @@ public enum ApprovalCommandV2
     AllowOnce,
     AllowRun,
     AllowProject,
+    AllowSessionDirectory,
     Deny,
 }
 
@@ -60,7 +61,9 @@ public sealed record V2ApprovalBinding
         string OperationClass,
         string NetworkIntent,
         long SnapshotVersion,
-        string IntentHash)
+        string IntentHash,
+        string ApprovalKind = "terminal_risk",
+        string? BoundaryDirectory = null)
     {
         if (string.IsNullOrWhiteSpace(RunId) || RunId.Length > 128) throw new ArgumentException("RunId bounded.", nameof(RunId));
         if (string.IsNullOrWhiteSpace(ToolCallId) || ToolCallId.Length > 128) throw new ArgumentException("ToolCallId bounded.", nameof(ToolCallId));
@@ -74,6 +77,8 @@ public sealed record V2ApprovalBinding
         if (!AllowedOperations.Contains(OperationClass, StringComparer.Ordinal)) throw new ArgumentOutOfRangeException(nameof(OperationClass));
         if (!AllowedNetworkIntents.Contains(NetworkIntent, StringComparer.Ordinal)) throw new ArgumentOutOfRangeException(nameof(NetworkIntent));
         if (string.IsNullOrWhiteSpace(IntentHash) || IntentHash.Length > 128) throw new ArgumentException("IntentHash bounded.", nameof(IntentHash));
+        if (ApprovalKind is not ("external_directory" or "terminal_risk")) throw new ArgumentOutOfRangeException(nameof(ApprovalKind));
+        if (BoundaryDirectory is { Length: > 4096 }) throw new ArgumentException("BoundaryDirectory bounded.", nameof(BoundaryDirectory));
 
         this.RunId = RunId;
         this.ToolCallId = ToolCallId;
@@ -87,6 +92,8 @@ public sealed record V2ApprovalBinding
         this.NetworkIntent = NetworkIntent;
         this.SnapshotVersion = SnapshotVersion;
         this.IntentHash = IntentHash;
+        this.ApprovalKind = ApprovalKind;
+        this.BoundaryDirectory = BoundaryDirectory;
     }
 
     public string RunId { get; init; }
@@ -101,6 +108,8 @@ public sealed record V2ApprovalBinding
     public string NetworkIntent { get; init; }
     public long SnapshotVersion { get; init; }
     public string IntentHash { get; init; }
+    public string ApprovalKind { get; init; } = "terminal_risk";
+    public string? BoundaryDirectory { get; init; }
 }
 
 public sealed record V2ReusableRuleCandidate(
@@ -278,6 +287,9 @@ public sealed class PendingApprovalStore
             ruleCandidate = BuildCandidateV2("project", candidate.Binding);
         }
 
+        // AllowSessionDirectory issues only the one-time token like AllowOnce;
+        // the reusable directory grant is recorded by the transport handler,
+        // never as a policy rule candidate.
         return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedApproved, ruleCandidate);
     }
 
@@ -305,7 +317,9 @@ public sealed class PendingApprovalStore
             && string.Equals(left.OperationClass, right.OperationClass, StringComparison.Ordinal)
             && string.Equals(left.NetworkIntent, right.NetworkIntent, StringComparison.Ordinal)
             && left.SnapshotVersion == right.SnapshotVersion
-            && string.Equals(left.IntentHash, right.IntentHash, StringComparison.Ordinal);
+            && string.Equals(left.IntentHash, right.IntentHash, StringComparison.Ordinal)
+            && string.Equals(left.ApprovalKind, right.ApprovalKind, StringComparison.Ordinal)
+            && string.Equals(left.BoundaryDirectory, right.BoundaryDirectory, StringComparison.Ordinal);
     }
 
     private static V2ReusableRuleCandidate BuildCandidateV2(string scope, V2ApprovalBinding binding)

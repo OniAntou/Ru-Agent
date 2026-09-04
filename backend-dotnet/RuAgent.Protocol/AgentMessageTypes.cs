@@ -32,6 +32,8 @@ public static class AgentMessageTypes
     public const string ToolOutputDelta = "tool.output.delta";
     public const string ApprovalRespond = "approval.respond";
     public const string ApprovalResult = "approval.result";
+    public const string SessionGrantsRevoke = "session.grants.revoke";
+    public const string SessionGrantsRevoked = "session.grants.revoked";
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [
@@ -65,6 +67,8 @@ public static class AgentMessageTypes
             ToolOutputDelta,
             ApprovalRespond,
             ApprovalResult,
+            SessionGrantsRevoke,
+            SessionGrantsRevoked,
         ],
         StringComparer.Ordinal);
 
@@ -85,6 +89,8 @@ public static class AgentMessageTypes
             ToolOutputDelta,
             ApprovalRespond,
             ApprovalResult,
+            SessionGrantsRevoke,
+            SessionGrantsRevoked,
         ],
         StringComparer.Ordinal);
 }

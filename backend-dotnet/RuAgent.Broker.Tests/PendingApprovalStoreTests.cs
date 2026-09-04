@@ -229,6 +229,34 @@ public sealed class PendingApprovalStoreTests
     }
 
     [Fact]
+    public void V2_allow_session_directory_approves_without_rule_candidate()
+    {
+        var store = new PendingApprovalStore();
+        var binding = V2Binding() with { ApprovalKind = "external_directory", BoundaryDirectory = @"C:\shared" };
+        var id = store.IssueV2(binding, DateTimeOffset.UtcNow.AddMinutes(5));
+        var res = store.TryConsumeV2(id, ApprovalCommandV2.AllowSessionDirectory, binding, DateTimeOffset.UtcNow);
+        Assert.Equal(V2ApprovalOutcome.ConsumedApproved, res.Outcome);
+        Assert.Null(res.Candidate);
+    }
+
+    [Theory]
+    [InlineData("approval_kind")]
+    [InlineData("boundary_directory")]
+    public void V2_changed_kind_or_boundary_returns_stale(string changedField)
+    {
+        var store = new PendingApprovalStore();
+        var baseBinding = V2Binding() with { ApprovalKind = "external_directory", BoundaryDirectory = @"C:\shared" };
+        var id = store.IssueV2(baseBinding, DateTimeOffset.UtcNow.AddMinutes(5));
+        var mutated = changedField switch
+        {
+            "approval_kind" => baseBinding with { ApprovalKind = "terminal_risk" },
+            _ => baseBinding with { BoundaryDirectory = @"C:\other" },
+        };
+        var res = store.TryConsumeV2(id, ApprovalCommandV2.AllowSessionDirectory, mutated, DateTimeOffset.UtcNow);
+        Assert.Equal(V2ApprovalOutcome.Stale, res.Outcome);
+    }
+
+    [Fact]
     public void V2_deny_consumes_as_denied()
     {
         var store = new PendingApprovalStore();

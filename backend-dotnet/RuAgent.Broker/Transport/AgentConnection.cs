@@ -207,6 +207,8 @@ public sealed class AgentConnection
                 }
 
                 return await HandleApprovalRespondAsync(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.SessionGrantsRevoke:
+                return HandleSessionGrantsRevoke(request);
             case AgentMessageTypes.Cancel:
                 return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
             {
@@ -694,7 +696,7 @@ public sealed class AgentConnection
             return Task.FromResult(DecisionReply(request, "deny", error.Code, null));
         }
 
-        var evaluation = new PolicySnapshotEvaluator()
+        var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
             .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
 
         string? decisionToken = null;
@@ -717,6 +719,9 @@ public sealed class AgentConnection
             // V2 two-phase approval: persist pending bound to snapshot + intent hash (30-min expiry, exact-by-default preview)
             var toolCallId = ReadOptionalPayloadString(payload, "tool_call_id") ?? request.RequestId;
             var snapshotVersion = lease.Snapshot.Version;
+            var approvalKind = string.Equals(evaluation.ReasonCode, "external_directory_required", StringComparison.Ordinal)
+                ? "external_directory"
+                : "terminal_risk";
             var binding = new V2ApprovalBinding(
                 RunId: runId,
                 ToolCallId: toolCallId,
@@ -729,7 +734,9 @@ public sealed class AgentConnection
                 OperationClass: context.OperationClass,
                 NetworkIntent: context.NetworkIntent,
                 SnapshotVersion: snapshotVersion,
-                IntentHash: context.IntentHash);
+                IntentHash: context.IntentHash,
+                ApprovalKind: approvalKind,
+                BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null);
             var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
             approvalId = _pendingV2.IssueV2(binding, expiresAt);
             approvalExpiresAt = expiresAt;
@@ -768,6 +775,15 @@ public sealed class AgentConnection
         if (approvalId is not null)
         {
             replyPayload["approval_id"] = approvalId;
+            replyPayload["approval_kind"] = string.Equals(evaluation.ReasonCode, "external_directory_required", StringComparison.Ordinal)
+                ? "external_directory"
+                : "terminal_risk";
+            var grantDirectory = DeriveGrantDirectory(context);
+            if (grantDirectory is not null)
+            {
+                replyPayload["boundary_directory"] = grantDirectory;
+            }
+
             replyPayload["expires_at"] = approvalExpiresAt!.Value.ToString("O");
             replyPayload["matcher_preview"] = matcherPreview!.DeepClone();
         }
@@ -840,7 +856,8 @@ public sealed class AgentConnection
         {
             var normalizedCommand = commandRaw.ToLowerInvariant();
             if (normalizedCommand is not ("allow_once" or "allowonce" or "allow_run" or "allowrun"
-                or "allow_project" or "allowproject" or "deny"))
+                or "allow_project" or "allowproject" or "allow_session_directory" or "allowsessiondirectory"
+                or "deny"))
             {
                 return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
                 {
@@ -855,6 +872,7 @@ public sealed class AgentConnection
                 "allow_once" or "allowonce" => ApprovalCommandV2.AllowOnce,
                 "allow_run" or "allowrun" => ApprovalCommandV2.AllowRun,
                 "allow_project" or "allowproject" => ApprovalCommandV2.AllowProject,
+                "allow_session_directory" or "allowsessiondirectory" => ApprovalCommandV2.AllowSessionDirectory,
                 "deny" => ApprovalCommandV2.Deny,
                 _ => throw new InvalidOperationException("invalid_command"),
             };
@@ -917,6 +935,32 @@ public sealed class AgentConnection
             }));
         }
 
+        if (command == ApprovalCommandV2.AllowSessionDirectory)
+        {
+            // Directory grants are only available for external-directory approvals.
+            // Terminal approvals stay one-time tokens and never create reusable grants.
+            if (!string.Equals(pending.Binding.ApprovalKind, "external_directory", StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(pending.Binding.BoundaryDirectory))
+            {
+                return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
+                {
+                    ["status"] = ToolResultStatuses.Denied,
+                    ["error_code"] = "invalid_command",
+                    ["safe_summary"] = "directory grant is not available for this approval",
+                }));
+            }
+
+            if (lease.Snapshot.Version != pending.Binding.SnapshotVersion)
+            {
+                return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
+                {
+                    ["status"] = ToolResultStatuses.Denied,
+                    ["error_code"] = "approval_stale",
+                    ["safe_summary"] = "approval is bound to an older snapshot",
+                }));
+            }
+        }
+
         // Build expected binding: by default use pending's binding, but if payload supplies overrides, use those to trigger stale.
         var expectedBinding = pending.Binding;
         // Optional overrides for testing stale paths: if payload contains matcher_preview overrides, we treat them as expected.
@@ -968,6 +1012,23 @@ public sealed class AgentConnection
                 resultPayload["safe_summary"] = "approval denied";
                 break;
             case V2ApprovalOutcome.ConsumedApproved:
+                if (command == ApprovalCommandV2.AllowSessionDirectory)
+                {
+                    try
+                    {
+                        _session.DirectoryGrants.Add(
+                            request.SessionId,
+                            CanonicalDirectoryIdentity.CreateExisting(pending.Binding.BoundaryDirectory!));
+                    }
+                    catch
+                    {
+                        resultPayload["status"] = ToolResultStatuses.Denied;
+                        resultPayload["error_code"] = "grant_invalid";
+                        resultPayload["safe_summary"] = "approved directory is no longer available";
+                        break;
+                    }
+                }
+
                 // Issue authorization token (60s) bound to snapshot + intent hash + tool identity
                 var authToken = _authTokens.Issue(
                     requestId: pending.Binding.RunId,
@@ -1127,6 +1188,70 @@ public sealed class AgentConnection
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
             ? result
             : null;
+
+    /// <summary>
+    /// Nearest existing ancestor directory of the evaluation boundary.
+    /// File targets grant their parent; external cwds grant themselves.
+    /// Returns null when nothing usable exists (fail closed, no grant).
+    /// </summary>
+    private static string? DeriveGrantDirectory(Policy.PolicyContext context)
+    {
+        var raw = context.Target?.CanonicalPath
+            ?? context.WorkingDirectory?.CanonicalPath
+            ?? context.CanonicalCwd;
+        if (string.IsNullOrWhiteSpace(raw) || raw.Length > 4096)
+        {
+            return null;
+        }
+
+        try
+        {
+            var current = Directory.Exists(raw)
+                ? Path.GetFullPath(raw)
+                : Path.GetDirectoryName(Path.GetFullPath(raw));
+            while (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
+            {
+                current = Path.GetDirectoryName(current);
+            }
+
+            if (string.IsNullOrEmpty(current) || current.Length > 4096)
+            {
+                return null;
+            }
+
+            return current;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private AgentEnvelope HandleSessionGrantsRevoke(AgentEnvelope request)
+    {
+        if (!_session.Owns(request.SessionId))
+        {
+            return ToolError(request, "broker_not_ready", "session is not open");
+        }
+
+        var targetSession = ReadOptionalPayloadString(request.Payload, "agent_session_id");
+        if (string.IsNullOrWhiteSpace(targetSession) || targetSession.Length > 128)
+        {
+            return Reply(request, AgentMessageTypes.SessionGrantsRevoked, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Denied,
+                ["error_code"] = "invalid_session_id",
+                ["safe_summary"] = "invalid agent session id",
+            });
+        }
+
+        _session.DirectoryGrants.RevokeSession(targetSession);
+        return Reply(request, AgentMessageTypes.SessionGrantsRevoked, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Succeeded,
+            ["safe_summary"] = "session grants revoked",
+        });
+    }
 
     private bool TryGetOwnedRunLease(
         AgentEnvelope request,

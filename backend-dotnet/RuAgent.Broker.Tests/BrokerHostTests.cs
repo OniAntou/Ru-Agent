@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Runtime;
 using RuAgent.Protocol;
@@ -897,6 +898,256 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task V2_external_directory_approval_is_reused_by_another_tool_in_the_same_session()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-broker-external-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "external");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-external";
+            const string runId = "run_external111111111111111111111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-external", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-external-read", sessionId, runId, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            var ask = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", ask.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("external_directory_required", ask.Payload["reason_code"]!.GetValue<string>());
+            var approvalId = ask.Payload["approval_id"]!.GetValue<string>();
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-external", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runId,
+                        ["approval_id"] = approvalId,
+                        ["command"] = "allow_session_directory",
+                    }),
+                cts.Token);
+            var approved = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("authorized", approved.Payload["status"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-external-write", sessionId, runId, "files.write",
+                    new JsonObject
+                    {
+                        ["path"] = Path.Combine(external, "next.txt"),
+                        ["content"] = "next",
+                    }),
+                cts.Token);
+            var allowed = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("allow", allowed.Payload["decision"]!.GetValue<string>());
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task V2_terminal_approval_creates_no_reusable_grant()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-terminal-grant";
+        const string runId = "run_terminal111111111111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-terminal-grant", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        static JsonObject TerminalDeleteArgs() => new()
+        {
+            ["executable"] = "rm.exe",
+            ["arguments"] = new JsonArray("target.txt"),
+            ["working_directory"] = ".",
+        };
+
+        await SendAsync(socket, Evaluate("evaluate-terminal-delete", sessionId, runId, "terminal.run", TerminalDeleteArgs()), cts.Token);
+        var ask = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("ask", ask.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("terminal_delete_requires_approval", ask.Payload["reason_code"]!.GetValue<string>());
+        var approvalId = ask.Payload["approval_id"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "approve-terminal-once", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["approval_id"] = approvalId,
+                    ["command"] = "allow_once",
+                }),
+            cts.Token);
+        Assert.Equal("authorized", (await ReceiveAsync(socket, cts.Token)).Payload["status"]!.GetValue<string>());
+
+        await SendAsync(socket, Evaluate("evaluate-terminal-again", sessionId, runId, "terminal.run", TerminalDeleteArgs()), cts.Token);
+        var again = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("ask", again.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("terminal_delete_requires_approval", again.Payload["reason_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_stale_approval_cannot_add_session_grant()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-broker-stale-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "external");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-stale-grant";
+            const string runId = "run_stale111111111111111111111111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-stale", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-stale-read", sessionId, runId, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            var ask = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("external_directory_required", ask.Payload["reason_code"]!.GetValue<string>());
+            var approvalId = ask.Payload["approval_id"]!.GetValue<string>();
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-stale", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runId,
+                        ["approval_id"] = approvalId,
+                        ["command"] = "allow_session_directory",
+                        ["expected_intent_hash"] = new string('1', 64),
+                    }),
+                cts.Token);
+            var stale = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("approval_stale", stale.Payload["error_code"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-stale-again", sessionId, runId, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            var again = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", again.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("external_directory_required", again.Payload["reason_code"]!.GetValue<string>());
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task V2_revoke_removes_only_the_named_session_grants()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-broker-revoke-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "external");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-revoke";
+            const string runId = "run_revoke111111111111111111111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-revoke", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-revoke-read", sessionId, runId, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            var ask = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("external_directory_required", ask.Payload["reason_code"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-revoke", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runId,
+                        ["approval_id"] = ask.Payload["approval_id"]!.GetValue<string>(),
+                        ["command"] = "allow_session_directory",
+                    }),
+                cts.Token);
+            Assert.Equal("authorized", (await ReceiveAsync(socket, cts.Token)).Payload["status"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "revoke-other", AgentMessageTypes.SessionGrantsRevoke, sessionId, null, 10_000,
+                    new JsonObject { ["agent_session_id"] = "session-other" }),
+                cts.Token);
+            var revokedOther = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.SessionGrantsRevoked, revokedOther.MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-revoke-still-allowed", sessionId, runId, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            Assert.Equal("allow", (await ReceiveAsync(socket, cts.Token)).Payload["decision"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "revoke-self", AgentMessageTypes.SessionGrantsRevoke, sessionId, null, 10_000,
+                    new JsonObject { ["agent_session_id"] = sessionId }),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.SessionGrantsRevoked, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-revoke-asks-again", sessionId, runId, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            var again = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", again.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("external_directory_required", again.Payload["reason_code"]!.GetValue<string>());
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task V2_evaluate_keeps_unadvertised_tools_unavailable()
     {
         await using var fixture = await HostFixture.StartAsync();
@@ -1193,6 +1444,26 @@ public sealed class BrokerHostTests
             }
         }
     }
+
+    private static AgentEnvelope Evaluate(
+        string requestId,
+        string sessionId,
+        string runId,
+        string toolId,
+        JsonObject arguments) => new(
+        2,
+        requestId,
+        AgentMessageTypes.ToolEvaluate,
+        sessionId,
+        null,
+        10_000,
+        new JsonObject
+        {
+            ["run_id"] = runId,
+            ["tool_id"] = toolId,
+            ["tool_version"] = "1.0.0",
+            ["arguments"] = arguments,
+        });
 
     private static async Task SendAsync(ClientWebSocket socket, AgentEnvelope envelope, CancellationToken cancellationToken)
     {

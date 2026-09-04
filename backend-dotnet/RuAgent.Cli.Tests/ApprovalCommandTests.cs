@@ -22,7 +22,7 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
-    public async Task Approve_WithScopeOnce_SucceedsAndShowsPreview()
+    public async Task Approve_DefaultOnce_SucceedsAndShowsPreview()
     {
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
@@ -62,20 +62,22 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
-    public async Task Approve_WithScopeRun_ShowsRuleSaved()
+    public async Task Approve_WithScopeRun_RoutesToOnceToken()
     {
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('c', 32);
+        string? observedScope = null;
         var handler = CreateFakeClient(req =>
         {
+            var body = req.Content!.ReadAsStringAsync().Result;
+            var doc = JsonDocument.Parse(body);
+            observedScope = doc.RootElement.GetProperty("scope").GetString();
             var respJson = JsonSerializer.Serialize(new
             {
                 approval_id = approvalId,
                 status = "authorized",
-                matcher_preview = new { tool_id = "files.read", scope = "run" },
-                rule_saved = true,
-                rule_id = "rule_" + new string('d', 32)
+                matcher_preview = new { tool_id = "files.read" },
             });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
         });
@@ -85,7 +87,7 @@ public sealed class ApprovalCommandTests
         var cmd = new ApproveCommand(runId, approvalId, ApprovalScope.Run, false);
         var exit = await commands.ApproveAsync(cmd, CancellationToken.None);
         Assert.Equal(0, exit);
-        Assert.Contains("rule_saved", outWriter.ToString());
+        Assert.Equal("once", observedScope);
     }
 
     [Fact]
@@ -142,13 +144,13 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
-    public void Parser_Approve_RequiresScope()
+    public void Parser_Approve_DefaultsToOnce()
     {
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('b', 32);
         var res = AgentCliParser.Parse(new[] { "agent", "approve", runId, approvalId });
-        Assert.False(res.Success);
-        Assert.Equal("missing_scope", res.ErrorCode);
+        Assert.True(res.Success);
+        Assert.Equal(ApprovalScope.Once, Assert.IsType<ApproveCommand>(res.Command).Scope);
     }
 
     [Fact]
@@ -162,17 +164,18 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
-    public async Task Approve_WithProjectScope_Succeeds()
+    public async Task Approve_WithProjectScope_RoutesToOnceToken()
     {
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('a', 32).Replace('a', '9');
+        string? observedScope = null;
         var handler = CreateFakeClient(req =>
         {
             var body = req.Content!.ReadAsStringAsync().Result;
             var doc = JsonDocument.Parse(body);
-            Assert.Equal("project", doc.RootElement.GetProperty("scope").GetString());
-            var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized", matcher_preview = new { tool_id = "files.read" }, rule_saved = true });
+            observedScope = doc.RootElement.GetProperty("scope").GetString();
+            var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized" });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
         });
 
@@ -180,6 +183,7 @@ public sealed class ApprovalCommandTests
         var cmd = new ApproveCommand(runId, approvalId, ApprovalScope.Project, false);
         var exit = await commands.ApproveAsync(cmd, CancellationToken.None);
         Assert.Equal(0, exit);
+        Assert.Equal("once", observedScope);
     }
 
     private sealed class FakeHandler : HttpMessageHandler

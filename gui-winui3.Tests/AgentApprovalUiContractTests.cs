@@ -11,13 +11,8 @@ public sealed class AgentApprovalUiContractTests
 
         foreach (string marker in new[]
         {
-            "x:Name=\"AgentTrustPanel\"",
-            "x:Name=\"AgentTrustApproveButton\"",
-            "x:Name=\"AgentTrustDenyButton\"",
             "x:Name=\"AgentApprovalPanel\"",
             "x:Name=\"AgentApprovalSummaryText\"",
-            "x:Name=\"AgentApprovalScopePanel\"",
-            "x:Name=\"AgentApprovalScopeBox\"",
             "x:Name=\"AgentApproveButton\"",
             "x:Name=\"AgentDenyButton\"",
             "AutomationProperties.LiveSetting=\"Polite\""
@@ -32,13 +27,37 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
+    public void Chat_has_no_trust_preset_or_scope_controls()
+    {
+        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+
+        Assert.DoesNotContain("AgentTrustPanel", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentPresetBox", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentApprovalScopeBox", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentApprovalScopePanel", xaml, StringComparison.Ordinal);
+        Assert.Contains("AgentApprovalPanel", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Approval_summary_renders_three_reason_specific_messages()
+    {
+        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        Assert.Contains("external_directory_required", code, StringComparison.Ordinal);
+        Assert.Contains("terminal_delete_requires_approval", code, StringComparison.Ordinal);
+        Assert.Contains("terminal_unknown_executable", code, StringComparison.Ordinal);
+        Assert.Contains("Ru cần dùng thư mục", code, StringComparison.Ordinal);
+        Assert.Contains("Lệnh terminal này sẽ xóa file", code, StringComparison.Ordinal);
+        Assert.Contains("Ru chưa nhận diện được executable", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Agent_actions_use_the_shared_api_controller_not_chat_websocket()
     {
         string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
 
         Assert.Contains("ApproveAsync()", code, StringComparison.Ordinal);
         Assert.Contains("DenyAsync()", code, StringComparison.Ordinal);
-        Assert.Contains("TrustAsync(approve:", code, StringComparison.Ordinal);
         Assert.Contains("CancelAsync()", code, StringComparison.Ordinal);
         Assert.DoesNotContain("SendAgentApprovalAsync", code, StringComparison.Ordinal);
         Assert.DoesNotContain("agent.approval.response", code, StringComparison.Ordinal);

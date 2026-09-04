@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Client;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
@@ -17,6 +19,8 @@ public sealed class AgentCommands
     private readonly SessionApiClient _sessionClient;
     private readonly AgentApiClient _agentClient;
     private readonly AgentSseClient _sseClient;
+    private readonly SettingsApiClient _settingsClient;
+    private readonly AgentSlashCommands _slashCommands;
 
     public AgentCommands(PublicHostSession session, HttpClient httpClient, TextWriter outWriter, TextWriter errWriter, TextReader? inReader = null)
     {
@@ -28,6 +32,8 @@ public sealed class AgentCommands
         _sessionClient = new SessionApiClient(session, httpClient);
         _agentClient = new AgentApiClient(session, httpClient);
         _sseClient = new AgentSseClient(session, httpClient);
+        _settingsClient = new SettingsApiClient(session, httpClient);
+        _slashCommands = new AgentSlashCommands(_settingsClient, outWriter, errWriter);
     }
 
     public static async Task<AgentCommands> CreateWithStarterAsync(
@@ -586,13 +592,7 @@ public sealed class AgentCommands
             return 1;
         }
 
-        var scopeStr = cmd.Scope switch
-        {
-            ApprovalScope.Once => "once",
-            ApprovalScope.Run => "run",
-            ApprovalScope.Project => "project",
-            _ => "once"
-        };
+        var scopeStr = "once";
 
         try
         {
@@ -831,22 +831,24 @@ public sealed class AgentCommands
             }
         }
 
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╔════════════════════════════════════════════════════════════════════════════╗")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("║   RuAgent Interactive Terminal (TUI Mode)                                  ║")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("║   Commands: /help, /fork [title], /rewind <idx>, /status, /clear, /exit    ║")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╚════════════════════════════════════════════════════════════════════════════╝")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"Session ID: {sessionId}")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"Workspace:  {canonicalWorkspace}")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╭────────────────────────────────────────────────────────────────────────────╮")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Bold("RuAgent v2.0") + Tui.AnsiTheme.Dim(" • Autonomous Coding Agent") + Tui.AnsiTheme.Cyan("                             │")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Dim("Session:   ") + Tui.AnsiTheme.Yellow(sessionId.Length > 24 ? sessionId.Substring(0, 24) + "..." : sessionId.PadRight(27)) + Tui.AnsiTheme.Cyan("                                │")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Dim("Workspace: ") + Tui.AnsiTheme.Dim(canonicalWorkspace.Length > 40 ? "..." + canonicalWorkspace.Substring(canonicalWorkspace.Length - 37) : canonicalWorkspace.PadRight(40)) + Tui.AnsiTheme.Cyan("          │")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Dim("Commands:  /model, /fork, /rewind, /status, /clear, /exit") + Tui.AnsiTheme.Cyan("                 │")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╰────────────────────────────────────────────────────────────────────────────╯")).ConfigureAwait(false);
         await _out.WriteLineAsync().ConfigureAwait(false);
         await _out.FlushAsync().ConfigureAwait(false);
 
+        var sessionRenderer = new Tui.TuiSessionRenderer(_out);
+
         while (!cancellationToken.IsCancellationRequested)
         {
-            await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Green("ruagent > "))).ConfigureAwait(false);
+            await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("ruagent ❯ "))).ConfigureAwait(false);
             await _out.FlushAsync().ConfigureAwait(false);
             var line = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
             if (line is null) break;
-            line = line.Trim();
+            line = line.Trim().Trim('"', '\'');
             if (string.IsNullOrEmpty(line)) continue;
 
             if (line.StartsWith("/", StringComparison.Ordinal))
@@ -864,6 +866,8 @@ public sealed class AgentCommands
                 if (slashCmd is "/help")
                 {
                     await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Available slash commands:")).ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /model [name]    - Display or set current LLM model").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  /backend <name>  - Switch backend provider (kilo, opencode, ollama, etc.)").ConfigureAwait(false);
                     await _out.WriteLineAsync("  /fork [title]    - Fork session into a new branch from current point").ConfigureAwait(false);
                     await _out.WriteLineAsync("  /rewind <index>  - Rewind session to specified message index").ConfigureAwait(false);
                     await _out.WriteLineAsync("  /status          - Display session details").ConfigureAwait(false);
@@ -875,6 +879,10 @@ public sealed class AgentCommands
                 if (slashCmd is "/clear")
                 {
                     try { Console.Clear(); } catch { }
+                    continue;
+                }
+                if (await _slashCommands.TryHandleAsync(slashCmd, arg, cancellationToken).ConfigureAwait(false))
+                {
                     continue;
                 }
                 if (slashCmd is "/fork")
@@ -891,6 +899,10 @@ public sealed class AgentCommands
                         {
                             await _err.WriteLineAsync("fork_failed: unable to create branch").ConfigureAwait(false);
                         }
+                    }
+                    catch (AgentApiException ex)
+                    {
+                        await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -910,6 +922,10 @@ public sealed class AgentCommands
                     {
                         await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
                         await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
+                    }
+                    catch (AgentApiException ex)
+                    {
+                        await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -940,6 +956,7 @@ public sealed class AgentCommands
 
             try
             {
+                sessionRenderer.Reset();
                 var resp = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
                 await foreach (var frame in _sseClient.ReadEventsAsync(resp.RunId, afterSequence: 0, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
@@ -950,10 +967,11 @@ public sealed class AgentCommands
                     }
                     else
                     {
-                        Tui.TuiEventRenderer.RenderFrame(frame, _out);
+                        sessionRenderer.RenderFrame(frame);
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }
+                await _out.WriteLineAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

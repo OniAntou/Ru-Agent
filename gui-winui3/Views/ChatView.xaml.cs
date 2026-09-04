@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using RuAgent.Client;
 using RuAgent.Harness.Core;
@@ -54,8 +55,8 @@ namespace RuApp.Views
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
         private const double ReadingColumnMaxWidth = 820;
-        private const int MaxImageAttachmentBytes = 10 * 1024 * 1024;
-        private const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
+        private const int MaxImageAttachmentBytes = Services.ChatAttachmentPolicy.MaxImageAttachmentBytes;
+        private const int MaxTextAttachmentBytes = Services.ChatAttachmentPolicy.MaxTextAttachmentBytes;
 
         private ApiService? _apiService;
         private VoicePlaybackService? _voicePlayback;
@@ -66,13 +67,8 @@ namespace RuApp.Views
         private string _activeSessionId = "default";
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
-        private CancellationTokenSource? _workspaceActivityCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentActivityVisible;
-        private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
-        private string? _agentPresetSessionId;
-        private long? _agentPresetVersion;
-        private string? _agentApprovalScopeApprovalId;
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
@@ -93,7 +89,6 @@ namespace RuApp.Views
         private ChatMessageItem? _activeAgentAssistantMessage;
         private string? _activeAgentRunId;
         private string? _activeWorkspaceId;
-        private WorkspaceChangeItemDto? _latestRestorableChange;
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
@@ -214,6 +209,7 @@ namespace RuApp.Views
         private GroupedProviderCatalogController? _groupedCatalogs;
         private bool _ownsGroupedCatalogs;
         private string _selectedModel = string.Empty;
+        private string _selectedReasoningEffort = "default";
         private DispatcherTimer? _modelSaveFailureTimer;
 
         public void Initialize(
@@ -306,6 +302,7 @@ namespace RuApp.Views
                 {
                     await _groupedCatalogs.RefreshAsync(force: false);
                 }
+                UpdateReasoningEffortUi();
             }
             catch (Exception ex)
             {
@@ -367,6 +364,7 @@ namespace RuApp.Views
                 state.SelectedModel,
                 state.SearchText));
             UpdateContextUsage();
+            UpdateReasoningEffortUi();
         }
 
         private async Task SelectChatModelAsync(string model, string backend)
@@ -392,6 +390,7 @@ namespace RuApp.Views
                         _providerCatalogController.SetBackend(backend);
                         _ = _providerCatalogController.RefreshAsync();
                     }
+                    UpdateReasoningEffortUi();
                 }
                 else
                 {
@@ -402,6 +401,140 @@ namespace RuApp.Views
             {
                 System.Diagnostics.Debug.WriteLine($"[ChatView] Error saving model: {ex.Message}");
                 ShowModelSaveFailure();
+            }
+        }
+
+        private void UpdateReasoningEffortUi()
+        {
+            var options = GetCurrentReasoningOptions();
+
+            if (!options.Any(o => string.Equals(o.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase)))
+            {
+                _selectedReasoningEffort = "default";
+            }
+
+            ChatReasoningLabel.Text = _selectedReasoningEffort;
+            AutomationProperties.SetName(ChatReasoningButton, $"Mức độ suy luận: {_selectedReasoningEffort}");
+        }
+
+        private IReadOnlyList<ProviderReasoningOption> GetCurrentReasoningOptions()
+        {
+            if (_groupedCatalogs is null)
+            {
+                return [new ProviderReasoningOption("default", "default")];
+            }
+
+            var groupedState = _groupedCatalogs.State;
+            if (string.IsNullOrWhiteSpace(groupedState.SelectedBackend))
+            {
+                return [new ProviderReasoningOption("default", "default")];
+            }
+
+            if (groupedState.Catalogs.TryGetValue(groupedState.SelectedBackend, out var catalogState))
+            {
+                if (!string.IsNullOrWhiteSpace(catalogState.SelectedEffort) &&
+                    string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+                {
+                    _selectedReasoningEffort = catalogState.SelectedEffort;
+                }
+                return ProviderReasoningOptions.For(catalogState);
+            }
+
+            return [new ProviderReasoningOption("default", "default")];
+        }
+
+        private void OnChatReasoningFlyoutOpened(object sender, object e)
+        {
+            ReasoningOptionsContainer.Children.Clear();
+            var options = GetCurrentReasoningOptions();
+
+            foreach (var option in options)
+            {
+                bool isSelected = string.Equals(option.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase);
+
+                var btn = new Button
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(10, 6, 10, 6),
+                    CornerRadius = new CornerRadius(5),
+                    MinHeight = 30
+                };
+                btn.Resources["ButtonBackgroundPointerOver"] = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+                btn.Resources["ButtonBackgroundPressed"] = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+                btn.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                btn.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var titleBlock = new TextBlock
+                {
+                    Text = option.Label ?? option.Value,
+                    FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    FontSize = 12,
+                    Foreground = (Brush)Application.Current.Resources["RuInkBrush"],
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(titleBlock, 0);
+                grid.Children.Add(titleBlock);
+
+                if (isSelected)
+                {
+                    var checkIcon = new FontIcon
+                    {
+                        Glyph = "\uE73E",
+                        FontSize = 12,
+                        Foreground = (Brush)Application.Current.Resources["RuAccentBrush"],
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(16, 0, 2, 0)
+                    };
+                    Grid.SetColumn(checkIcon, 1);
+                    grid.Children.Add(checkIcon);
+                }
+
+                btn.Content = grid;
+                string effort = option.Value;
+                btn.Click += async (s, args) =>
+                {
+                    ChatReasoningFlyout.Hide();
+                    await ApplyReasoningEffortAsync(effort);
+                };
+
+                ReasoningOptionsContainer.Children.Add(btn);
+            }
+        }
+
+        private async Task ApplyReasoningEffortAsync(string effort)
+        {
+            string previousEffort = _selectedReasoningEffort;
+            _selectedReasoningEffort = effort;
+            ChatReasoningLabel.Text = effort;
+            AutomationProperties.SetName(ChatReasoningButton, $"Mức độ suy luận: {effort}");
+
+            if (_apiService is null) return;
+
+            string backend = _groupedCatalogs?.State.SelectedBackend ?? string.Empty;
+            string model = _selectedModel ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(backend)) return;
+
+            string identity = backend;
+            if (_groupedCatalogs != null &&
+                _groupedCatalogs.State.Catalogs.TryGetValue(backend, out var catalogState) &&
+                !string.IsNullOrWhiteSpace(catalogState.Identity))
+            {
+                identity = catalogState.Identity;
+            }
+
+            bool ok = await _apiService.SaveReasoningSettingsAsync(effort, model, identity);
+            if (!ok)
+            {
+                _selectedReasoningEffort = previousEffort;
+                ChatReasoningLabel.Text = previousEffort;
+                AutomationProperties.SetName(ChatReasoningButton, $"Mức độ suy luận: {previousEffort} (Lưu thất bại)");
             }
         }
 
@@ -423,10 +556,28 @@ namespace RuApp.Views
             ChatModelSaveStatusText.Text = string.Empty;
         }
 
+        private int? GetCurrentModelContextLength()
+        {
+            if (_groupedCatalogs is null || string.IsNullOrWhiteSpace(_selectedModel)) return null;
+            var state = _groupedCatalogs.State;
+            if (string.IsNullOrWhiteSpace(state.SelectedBackend)) return null;
+
+            if (state.Catalogs.TryGetValue(state.SelectedBackend, out var catalogState))
+            {
+                var match = catalogState.Catalog.FirstOrDefault(m => string.Equals(m.Id, _selectedModel, StringComparison.OrdinalIgnoreCase));
+                if (match?.ContextLength is int len && len > 0)
+                {
+                    return len;
+                }
+            }
+            return null;
+        }
+
         public void UpdateContextUsage()
         {
             string currentModel = _selectedModel;
-            var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel);
+            int? catalogCtx = GetCurrentModelContextLength();
+            var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel, catalogCtx);
 
             int totalChars = 0;
             int totalImages = 0;
@@ -448,29 +599,37 @@ namespace RuApp.Views
                 totalImages++;
             }
 
-            int estimatedTokens = totalChars > 0 || totalImages > 0
-                ? ModelContextSpecs.EstimateTokens(new string('a', totalChars)) + (totalImages * 1000) + 300
-                : 0;
+            int estimatedTokens = ModelContextSpecs.EstimateTokens(totalChars, totalImages);
 
-            double percentage = maxTokens > 0 ? Math.Min(100.0, (estimatedTokens * 100.0) / maxTokens) : 0;
-            int remainingTokens = Math.Max(0, maxTokens - estimatedTokens);
+            if (maxTokens > 0)
+            {
+                double percentage = Math.Min(100.0, (estimatedTokens * 100.0) / maxTokens);
 
-            ContextProgressRing.Value = percentage;
-            ContextProgressBar.Value = percentage;
+                ContextProgressRing.Value = percentage;
+                ContextProgressBar.Value = percentage;
+                ContextProgressBar.Visibility = Visibility.Visible;
 
-            var brush = percentage > 90
-                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuDangerBrush"]
-                : percentage > 70
-                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuWarningBrush"]
-                    : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
+                var brush = percentage > 90
+                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuDangerBrush"]
+                    : percentage > 70
+                        ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuWarningBrush"]
+                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
 
-            ContextProgressRing.Foreground = brush;
-            ContextProgressBar.Foreground = brush;
+                ContextProgressRing.Foreground = brush;
+                ContextProgressBar.Foreground = brush;
 
-            ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} / {displayLimit}";
-            ContextPercentLabel.Text = $"{percentage:0.#}%";
-            ContextPercentLabel.Foreground = percentage > 70 ? brush : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
-            ContextModelDetailLabel.Text = currentModel;
+                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} / {displayLimit}";
+                ContextPercentLabel.Text = $"{percentage:0.#}%";
+                ContextPercentLabel.Foreground = percentage > 70 ? brush : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+            }
+            else
+            {
+                ContextProgressRing.Value = 0;
+                ContextProgressBar.Visibility = Visibility.Collapsed;
+                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} tokens";
+                ContextPercentLabel.Text = "Đã dùng";
+                ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+            }
         }
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
@@ -519,6 +678,20 @@ namespace RuApp.Views
                 return;
             }
 
+            if (activity.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking && activity.State == RuAgent.Protocol.Harness.AgentActivityState.Completed)
+            {
+                if (_agentActivityById.Remove(activity.ActivityId, out var thinkingItem))
+                {
+                    AgentActivities.Remove(thinkingItem);
+                }
+
+                if (AgentActivities.Count == 0 && AgentActivityFeed is not null)
+                {
+                    AgentActivityFeed.Visibility = Visibility.Collapsed;
+                }
+                return;
+            }
+
             if (_agentActivityById.TryGetValue(activity.ActivityId, out var existing))
             {
                 existing.UpdateFrom(activity);
@@ -530,8 +703,34 @@ namespace RuApp.Views
                 AgentActivities.Add(item);
             }
 
-            AgentActivityFeed.Visibility = Visibility.Visible;
+            if (AgentActivityFeed is not null)
+            {
+                AgentActivityFeed.Visibility = AgentActivities.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
             ScrollChatToBottom();
+        }
+
+        private void RemoveThinkingActivities()
+        {
+            if (AgentActivities.Count == 0)
+            {
+                return;
+            }
+
+            var thinkingItems = AgentActivities.Where(a => a.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking).ToList();
+            if (thinkingItems.Count > 0)
+            {
+                foreach (var item in thinkingItems)
+                {
+                    _agentActivityById.Remove(item.ActivityId);
+                    AgentActivities.Remove(item);
+                }
+
+                if (AgentActivities.Count == 0 && AgentActivityFeed is not null)
+                {
+                    AgentActivityFeed.Visibility = Visibility.Collapsed;
+                }
+            }
         }
 
         private void OnAgentSummaryReceived(object? sender, AgentRunSummaryModel summary)
@@ -635,6 +834,7 @@ namespace RuApp.Views
             }
 
             _activeAgentReplyReceived = true;
+            RemoveThinkingActivities();
             _replyRenderScheduler.Schedule();
         }
 
@@ -647,6 +847,12 @@ namespace RuApp.Views
                 return;
             }
 
+            if (!Messages.Contains(_activeAgentAssistantMessage))
+            {
+                Messages.Add(_activeAgentAssistantMessage);
+            }
+
+            RemoveThinkingActivities();
             _activeAgentAssistantMessage.Content = snapshot.Text;
             _activeAgentAssistantMessage.IsStreaming = true;
             ScrollChatToBottom();
@@ -654,11 +860,120 @@ namespace RuApp.Views
 
         private void ClearAgentActivities()
         {
+            _breathingStoryboards.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
             if (AgentActivityFeed is not null)
             {
                 AgentActivityFeed.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        // ── Activity text breathing animation ──────────────────────────────
+        private readonly Dictionary<TextBlock, Storyboard> _breathingStoryboards = new();
+
+        private void OnActivityItemLoaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Grid grid || grid.DataContext is not AgentActivityItem item)
+                return;
+
+            TextBlock? displayText = null;
+            foreach (var child in grid.Children)
+            {
+                if (child is TextBlock tb && Grid.GetColumn(tb) == 0)
+                {
+                    displayText = tb;
+                    break;
+                }
+            }
+            if (displayText == null) return;
+
+            ApplyActivityTextStyle(displayText, item);
+
+            PropertyChangedEventHandler handler = (s, args) =>
+            {
+                if (args.PropertyName == nameof(AgentActivityItem.State) && s is AgentActivityItem ai)
+                {
+                    DispatcherQueue?.TryEnqueue(() => ApplyActivityTextStyle(displayText, ai));
+                }
+            };
+            item.PropertyChanged += handler;
+            grid.Tag = handler;
+        }
+
+        private void OnActivityItemUnloaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Grid grid) return;
+
+            if (grid.Tag is PropertyChangedEventHandler handler && grid.DataContext is AgentActivityItem item)
+            {
+                item.PropertyChanged -= handler;
+            }
+
+            foreach (var child in grid.Children)
+            {
+                if (child is TextBlock tb && Grid.GetColumn(tb) == 0)
+                {
+                    StopTextBreathing(tb);
+                    break;
+                }
+            }
+            grid.Tag = null;
+        }
+
+        private void ApplyActivityTextStyle(TextBlock textBlock, AgentActivityItem item)
+        {
+            if (item.IsRunning)
+            {
+                StartTextBreathing(textBlock);
+            }
+            else
+            {
+                StopTextBreathing(textBlock);
+                if (item.IsFailed)
+                {
+                    textBlock.Foreground = (SolidColorBrush)Application.Current.Resources["RuDangerBrush"];
+                }
+                else
+                {
+                    textBlock.Foreground = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
+                }
+            }
+        }
+
+        private void StartTextBreathing(TextBlock textBlock)
+        {
+            if (_breathingStoryboards.ContainsKey(textBlock)) return;
+
+            var mutedColor = ((SolidColorBrush)Application.Current.Resources["RuMutedBrush"]).Color;
+            var inkColor = ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
+
+            var brush = new SolidColorBrush(mutedColor);
+            textBlock.Foreground = brush;
+
+            var colorAnim = new ColorAnimation
+            {
+                From = mutedColor,
+                To = inkColor,
+                Duration = new Duration(TimeSpan.FromMilliseconds(1400)),
+                AutoReverse = true,
+                RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+            };
+            Storyboard.SetTarget(colorAnim, brush);
+            Storyboard.SetTargetProperty(colorAnim, "Color");
+
+            var sb = new Storyboard();
+            sb.Children.Add(colorAnim);
+            _breathingStoryboards[textBlock] = sb;
+            sb.Begin();
+        }
+
+        private void StopTextBreathing(TextBlock textBlock)
+        {
+            if (_breathingStoryboards.Remove(textBlock, out var sb))
+            {
+                sb.Stop();
             }
         }
 
@@ -673,121 +988,9 @@ namespace RuApp.Views
             }
         }
 
-        private async void OnWorkspaceActivityRefreshClick(object sender, RoutedEventArgs e)
-        {
-            await RefreshWorkspaceActivityAsync();
-        }
-
-        private async void OnWorkspaceRestoreClick(object sender, RoutedEventArgs e)
-        {
-            var change = _latestRestorableChange;
-            var workspaceId = _activeWorkspaceId;
-            if (change is null || string.IsNullOrWhiteSpace(workspaceId) || _apiService is null || _agentController?.IsBusy == true)
-            {
-                return;
-            }
-
-            WorkspaceRestoreButton.IsEnabled = false;
-            try
-            {
-                var restored = await _apiService.RestoreWorkspaceChangeAsync(
-                    workspaceId,
-                    change.ChangeId,
-                    change.AfterSha256 ?? string.Empty);
-                WorkspaceActivityText.Text += restored is null
-                    ? "\nKhôi phục thất bại hoặc file đã thay đổi; cần làm mới lại."
-                    : "\nĐã khôi phục thay đổi cuối và ghi journal mới.";
-            }
-            finally
-            {
-                WorkspaceRestoreButton.IsEnabled = _agentController?.IsBusy != true;
-                await RefreshWorkspaceActivityAsync();
-            }
-        }
-
-        private async Task RefreshWorkspaceActivityAsync()
-        {
-            if (_apiService is null)
-            {
-                return;
-            }
-
-            var workspaceId = _agentController?.CurrentRun?.WorkspaceId ?? _activeWorkspaceId;
-            if (string.IsNullOrWhiteSpace(workspaceId))
-            {
-                return;
-            }
-
-            _workspaceActivityCts?.Cancel();
-            _workspaceActivityCts?.Dispose();
-            _workspaceActivityCts = new CancellationTokenSource();
-            var token = _workspaceActivityCts.Token;
-            try
-            {
-                var response = await _apiService.GetWorkspaceActivityAsync(workspaceId, 0, 8);
-                if (token.IsCancellationRequested || response is null)
-                {
-                    return;
-                }
-
-                var concurrency = await _apiService.GetWorkspaceConcurrencyAsync(workspaceId);
-                var changes = await _apiService.GetWorkspaceChangesAsync(workspaceId, 0, 8);
-                if (token.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                void Apply()
-                {
-                    var mode = concurrency?.Policy.Mode ?? "unknown";
-                    var header = concurrency is null
-                        ? $"Workspace: {mode}"
-                        : $"Workspace: {mode} · {concurrency.ActiveClaimCount} claim đang hoạt động";
-                    var entries = response.Items.Take(5).Select(item =>
-                    {
-                        var writer = item.WriterKind == "unknown_external" ? "external không xác định" : "Ru peer";
-                        var path = string.IsNullOrWhiteSpace(item.Path) ? "workspace" : item.Path;
-                        return $"{writer}: {path} · seq {item.Sequence}";
-                    });
-                    WorkspaceActivityText.Text = entries.Any()
-                        ? header + "\n" + string.Join("\n", entries)
-                        : header + "\nChưa có thay đổi đồng thời được ghi nhận.";
-                    _latestRestorableChange = changes?.Items
-                        .Where(item => item.Status is "committed" or "rejected"
-                            && item.AfterSha256 is not null
-                            && response.Items.Any(activity => activity.EventId == item.ChangeId
-                                && activity.WriterKind == "unknown_external"))
-                        .OrderByDescending(item => item.Sequence)
-                        .FirstOrDefault();
-                    WorkspaceRestoreButton.Visibility = _latestRestorableChange is not null
-                        && _agentController?.IsBusy != true
-                        ? Visibility.Visible
-                        : Visibility.Collapsed;
-                    WorkspaceActivityPanel.Visibility = Visibility.Visible;
-                }
-
-                if (DispatcherQueue.HasThreadAccess) Apply();
-                else DispatcherQueue.TryEnqueue(Apply);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Workspace activity refresh failed: {ex.Message}");
-            }
-        }
-
-        private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs e)
-        {
-            _agentPreset = SelectedAgentPreset();
-            UpdateAgentInlineState();
-        }
-
         private void ShowAgentInlineStatus(string status)
         {
-            _agentActivityVisible = true;
-            AgentInlinePanel.Visibility = Visibility.Visible;
+            _agentActivityVisible = false;
             AgentStatusText.Text = status;
         }
 
@@ -800,7 +1003,6 @@ namespace RuApp.Views
 
             AgentModeLabel.Text = "Agent";
             AgentModeIcon.Glyph = "\uEC25";
-            AgentPresetBox.Visibility = Visibility.Visible;
             AgentModeButton.Visibility = Visibility.Collapsed;
             AutomationProperties.SetName(
                 AgentModeButton,
@@ -858,7 +1060,6 @@ namespace RuApp.Views
                 }
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 AgentContinueButton.Visibility = Visibility.Collapsed;
-                AgentTrustPanel.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
@@ -874,7 +1075,22 @@ namespace RuApp.Views
                 }
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 AgentContinueButton.Visibility = Visibility.Collapsed;
-                AgentTrustPanel.Visibility = Visibility.Collapsed;
+                AgentApprovalPanel.Visibility = Visibility.Collapsed;
+                UpdateSendButtonMode(isAgentRunning: false);
+                return;
+            }
+
+            if (_agentController.IsBusy != true
+                && !_agentController.CanCancel
+                && !_agentController.HasPendingApproval
+                && !_agentController.NeedsWorkspaceTrust
+                && !_agentController.CanContinue)
+            {
+                _agentActivityVisible = false;
+                AgentInlinePanel.Visibility = Visibility.Collapsed;
+                AgentStatusText.Text = string.Empty;
+                AgentStopButton.Visibility = Visibility.Collapsed;
+                AgentContinueButton.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
@@ -883,84 +1099,74 @@ namespace RuApp.Views
             bool isRunning = _agentController.CanCancel || IsActiveAgentRunPending();
             UpdateSendButtonMode(isAgentRunning: isRunning);
 
-            bool hasRunState = _agentActivityVisible
-                || _agentController.IsBusy
-                || _agentController.CanCancel
-                || _agentController.HasPendingApproval
-                || _agentController.NeedsWorkspaceTrust
-                || _agentController.CanContinue;
-            AgentInlinePanel.Visibility = hasRunState ? Visibility.Visible : Visibility.Collapsed;
-            if (!hasRunState)
-            {
-                AgentStatusText.Text = string.Empty;
-                return;
-            }
-
-            AgentStatusText.Text = SafeAgentStatus(_agentController.StatusText);
+            string safeStatus = SafeAgentStatus(_agentController.StatusText);
+            AgentStatusText.Text = safeStatus;
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = _agentController.CanContinue
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-            bool trustPending = _agentController.NeedsWorkspaceTrust;
-            AgentTrustPanel.Visibility = trustPending ? Visibility.Visible : Visibility.Collapsed;
-            if (trustPending && _agentController.CurrentRun is { } run)
+            // Workspace trust is auto-granted: a project-root chat starts silently.
+            if (_agentController.NeedsWorkspaceTrust)
             {
-                string hash = run.DisplayIdentityHash ?? string.Empty;
-                string shortHash = hash.Length > 16 ? hash[..16] + "…" : hash;
-                AgentTrustText.Text = $"Đường dẫn: {BoundedDisplay(_agentWorkspace, 260)}\nMã nhận diện: {shortHash}";
+                _ = _agentController.TrustAsync(approve: true);
+                AgentApprovalPanel.Visibility = Visibility.Collapsed;
+                return;
             }
 
             bool approvalPending = _agentController.HasPendingApproval;
             AgentApprovalPanel.Visibility = approvalPending ? Visibility.Visible : Visibility.Collapsed;
             if (approvalPending)
             {
-                if (!string.Equals(
-                        _agentApprovalScopeApprovalId,
-                        _agentController.PendingApprovalId,
-                        StringComparison.Ordinal))
-                {
-                    _agentApprovalScopeApprovalId = _agentController.PendingApprovalId;
-                    AgentApprovalScopeBox.SelectedIndex = 0;
-                }
+                AgentApprovalSummaryText.Text = RenderApprovalSummary(
+                    _agentController.PendingApprovalSummary);
+            }
 
-                string summary = _agentController.PendingApprovalSummary
-                    ?? "Agent đang yêu cầu một hành động cần phê duyệt.";
-                bool externalDirectoryApproval = string.Equals(
-                    summary,
-                    "external_directory_required",
-                    StringComparison.Ordinal);
-                AgentApprovalSummaryText.Text = externalDirectoryApproval
-                    ? "Agent cần truy cập một thư mục ngoài project. Chọn phạm vi quyền trước khi duyệt."
-                    : BoundedDisplay(summary, 512);
-                AgentApprovalScopePanel.Visibility = externalDirectoryApproval
-                    ? Visibility.Visible
-                    : Visibility.Collapsed;
-                if (!externalDirectoryApproval)
-                {
-                    AgentApprovalScopeBox.SelectedIndex = 0;
-                }
-            }
-            else
-            {
-                _agentApprovalScopeApprovalId = null;
-                AgentApprovalScopePanel.Visibility = Visibility.Collapsed;
-            }
+            bool hasInlineAction = approvalPending || _agentController.CanContinue;
+            AgentInlinePanel.Visibility = hasInlineAction ? Visibility.Visible : Visibility.Collapsed;
 
             bool actionsEnabled = !_agentActionPending;
-            AgentTrustApproveButton.IsEnabled = actionsEnabled;
-            AgentTrustDenyButton.IsEnabled = actionsEnabled;
             AgentApproveButton.IsEnabled = actionsEnabled;
             AgentDenyButton.IsEnabled = actionsEnabled;
             AgentContinueButton.IsEnabled = actionsEnabled;
             AgentStopButton.IsEnabled = actionsEnabled;
         }
 
+        /// <summary>
+        /// Server-selected pending approval reason drives the bounded copy.
+        /// The Host is the only authority, so we never echo the raw argv, script,
+        /// working directory, or secrets. Reason codes come from the broker
+        /// (external_directory_required, terminal_delete_requires_approval,
+        /// terminal_unknown_executable); unknown values stay generic.
+        /// </summary>
+        private static string RenderApprovalSummary(string? summary)
+        {
+            string trimmed = BoundedDisplay(summary ?? string.Empty, 64);
+            if (string.Equals(trimmed, "external_directory_required", StringComparison.Ordinal))
+            {
+                return "Ru cần dùng thư mục ngoài project trong đoạn chat này, cho đến khi ứng dụng đóng.";
+            }
+            if (string.Equals(trimmed, "terminal_delete_requires_approval", StringComparison.Ordinal))
+            {
+                return "Lệnh terminal này sẽ xóa file.";
+            }
+            if (string.Equals(trimmed, "terminal_unknown_executable", StringComparison.Ordinal))
+            {
+                return "Ru chưa nhận diện được executable của lệnh terminal này.";
+            }
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                return "Agent đang yêu cầu một hành động cần phê duyệt.";
+            }
+            return trimmed;
+        }
+
         private static string SafeAgentStatus(string? status)
         {
-            if (string.IsNullOrWhiteSpace(status))
+            if (string.IsNullOrWhiteSpace(status)
+                || string.Equals(status.Trim(), "Phiên chạy đã kết thúc.", StringComparison.OrdinalIgnoreCase))
             {
-                return "Coding Agent sẵn sàng.";
+                return string.Empty;
             }
 
             string trimmed = status.Trim();
@@ -977,17 +1183,6 @@ namespace RuApp.Views
         {
             string normalized = (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
             return normalized.Length <= maxLength ? normalized : normalized[..maxLength] + "…";
-        }
-
-        private AgentPermissionPreset SelectedAgentPreset()
-        {
-            if (AgentPresetBox.SelectedItem is ComboBoxItem item
-                && string.Equals(item.Tag as string, "full_access", StringComparison.Ordinal))
-            {
-                return AgentPermissionPreset.FullAccess;
-            }
-
-            return AgentPermissionPreset.Standard;
         }
 
         private bool IsActiveAgentRunPending()
@@ -1015,20 +1210,11 @@ namespace RuApp.Views
             monitor?.Cancel();
             monitor?.Dispose();
             _agentActivityVisible = false;
-            _agentPreset = AgentPermissionPreset.Standard;
-            _agentPresetSessionId = null;
-            _agentPresetVersion = null;
-            _agentApprovalScopeApprovalId = null;
             _agentActionPending = false;
             AbandonActiveAgentReply(notifyVoice: true);
-            if (AgentPresetBox is not null)
-            {
-                AgentPresetBox.SelectedIndex = 0;
-            }
 
             UpdateAgentComposerVisuals();
             AgentInlinePanel.Visibility = Visibility.Collapsed;
-            AgentTrustPanel.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = Visibility.Collapsed;
@@ -1283,15 +1469,7 @@ namespace RuApp.Views
                         return;
                     }
 
-                    string ext = System.IO.Path.GetExtension(file.Name).ToLowerInvariant();
-                    string inputMime = ext switch
-                    {
-                        ".jpg" or ".jpeg" => "image/jpeg",
-                        ".png" => "image/png",
-                        ".webp" => "image/webp",
-                        ".bmp" => "image/bmp",
-                        _ => "image/png"
-                    };
+                    string inputMime = Services.ChatAttachmentPolicy.MimeForExtension(file.Name);
 
                     using var sourceStream = await file.OpenReadAsync();
                     if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
@@ -1381,43 +1559,12 @@ namespace RuApp.Views
             }
         }
 
-        private static async Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes)
-        {
-            using var output = new System.IO.MemoryStream(Math.Min(maximumBytes, 81920));
-            var buffer = new byte[Math.Min(maximumBytes, 81920)];
-            int read;
-            while ((read = await stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
-            {
-                if (output.Length > maximumBytes - read)
-                {
-                    return null;
-                }
+        private static Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes) =>
+            Services.ChatAttachmentPolicy.ReadBoundedBytesAsync(stream, maximumBytes);
 
-                await output.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
-            }
+        private static bool IsImageFile(string name) => Services.ChatAttachmentPolicy.IsImageFile(name);
 
-            return output.ToArray();
-        }
-
-        private static bool IsImageFile(string name)
-        {
-            string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
-            return ext is ".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp";
-        }
-
-        private static bool IsTextOrCodeFile(string name)
-        {
-            string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
-            return ext switch
-            {
-                ".txt" or ".md" or ".markdown" or ".json" or ".xml" or ".yaml" or ".yml" or ".csv" or ".tsv"
-                or ".cs" or ".py" or ".js" or ".ts" or ".jsx" or ".tsx" or ".html" or ".htm" or ".css" or ".scss"
-                or ".sql" or ".sh" or ".bat" or ".cmd" or ".ps1" or ".rs" or ".go" or ".cpp" or ".c" or ".h" or ".hpp"
-                or ".java" or ".kt" or ".swift" or ".dart" or ".php" or ".rb" or ".lua" or ".ini" or ".cfg" or ".conf"
-                or ".log" or ".env" or ".toml" or ".proto" or ".graphql" => true,
-                _ => false
-            };
-        }
+        private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
 
         private async Task SendCurrentMessageAsync()
         {
@@ -1432,22 +1579,6 @@ namespace RuApp.Views
                 if (imageCount > 4)
                 {
                     ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi gửi.");
-                    return;
-                }
-
-                if (string.Equals(text, "/full", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(text, "/fullaccess", StringComparison.OrdinalIgnoreCase))
-                {
-                    ChatInputTextBox.Text = string.Empty;
-                    AgentPresetBox.SelectedIndex = 1;
-                    return;
-                }
-
-                if (string.Equals(text, "/std", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(text, "/standard", StringComparison.OrdinalIgnoreCase))
-                {
-                    ChatInputTextBox.Text = string.Empty;
-                    AgentPresetBox.SelectedIndex = 0;
                     return;
                 }
 
@@ -1532,28 +1663,14 @@ namespace RuApp.Views
 
             _agentWorkspace = workspace;
 
-            AgentPermissionPreset preset = SelectedAgentPreset();
-            if (preset == AgentPermissionPreset.FullAccess && !await ConfirmFullAccessAsync())
-            {
-                AgentPresetBox.SelectedIndex = 0;
-                _agentPreset = AgentPermissionPreset.Standard;
-                UpdateAgentInlineState();
-                if (source == AgentTurnSource.Voice)
-                {
-                    throw new OperationCanceledException("Đã hủy lựa chọn Full Access.");
-                }
-
-                return;
-            }
-
-            _agentPreset = preset;
             try
             {
-                long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
-                string wirePreset = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
-
+                // The run starts with the broker's effective Standard profile.
+                // Session permissions are still decided server-side per request,
+                // so the preset value here is compatibility metadata only, not
+                // authority.
                 var imagePayloads = attachments?
-                    .Where(a => a.IsImage && (!string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
+                    .Where(a => a.IsImage && (!a.IsImage || !string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
                     .ToList();
 
@@ -1561,8 +1678,8 @@ namespace RuApp.Views
                     _activeSessionId,
                     workspace,
                     text,
-                    wirePreset,
-                    presetVersion,
+                    "standard",
+                    0,
                     Guid.NewGuid().ToString("N"),
                     imagePayloads);
 
@@ -1578,7 +1695,6 @@ namespace RuApp.Views
                 UpdateAgentInlineState();
                 await _agentController.CreateAndRunAsync(request, cancellationToken);
                 _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
-                _ = RefreshWorkspaceActivityAsync();
             }
             catch (AgentApiException error) when (
                 allowSessionRecovery
@@ -1637,7 +1753,6 @@ namespace RuApp.Views
                 IsStreaming = true,
                 SessionId = _activeSessionId,
             };
-            Messages.Add(_activeAgentAssistantMessage);
 
             if (source == AgentTurnSource.Voice)
             {
@@ -1662,6 +1777,10 @@ namespace RuApp.Views
             AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
             if (pending != null && _activeAgentAssistantMessage != null)
             {
+                if (!Messages.Contains(_activeAgentAssistantMessage))
+                {
+                    Messages.Add(_activeAgentAssistantMessage);
+                }
                 _activeAgentAssistantMessage.Content = pending.Text;
                 _activeAgentAssistantMessage.IsStreaming = false;
                 ScrollChatToBottom();
@@ -1695,6 +1814,8 @@ namespace RuApp.Views
             _activeAgentRunId = null;
             _agentDeltaKeys.Clear();
             _activeAgentTurnSource = AgentTurnSource.Typed;
+            _agentActivityVisible = false;
+            UpdateAgentInlineState();
         }
 
         private void FailActiveAgentReply(Exception exception)
@@ -1702,6 +1823,10 @@ namespace RuApp.Views
             _replyRenderScheduler.Invalidate();
             if (_activeAgentAssistantMessage is not null)
             {
+                if (!Messages.Contains(_activeAgentAssistantMessage))
+                {
+                    Messages.Add(_activeAgentAssistantMessage);
+                }
                 _activeAgentAssistantMessage.Content = string.IsNullOrWhiteSpace(
                     _activeAgentAssistantMessage.Content)
                     ? "Coding Agent không thể hoàn thành lượt này. Hãy thử lại sau."
@@ -1763,8 +1888,6 @@ namespace RuApp.Views
             }
 
             _activeSessionId = sessionId!;
-            _agentPresetSessionId = null;
-            _agentPresetVersion = null;
             ClearAgentActivities();
             ClearAgentRunSummary();
             Messages.Clear();
@@ -1800,8 +1923,6 @@ namespace RuApp.Views
 
             string validSessionId = sessionId!;
             _activeSessionId = validSessionId;
-            _agentPresetSessionId = null;
-            _agentPresetVersion = null;
             SessionOpened?.Invoke(
                 this,
                 new SessionOpenedEventArgs(
@@ -1809,64 +1930,35 @@ namespace RuApp.Views
                     created?.Title ?? "Cuộc trò chuyện mới"));
         }
 
-        private async Task<long> EnsureAgentPresetAsync(
-            AgentPermissionPreset preset,
-            CancellationToken cancellationToken)
+        private bool IsProjectRootWorkspace(string? workspace)
         {
-            if (_agentController is null)
+            if (string.IsNullOrWhiteSpace(workspace))
             {
-                throw new InvalidOperationException("Agent controller is unavailable.");
+                return true;
             }
 
-            if (string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
-                && _agentPreset == preset
-                && _agentPresetVersion is long knownVersion)
-            {
-                return knownVersion;
-            }
+            string normalizedWorkspace = workspace.Trim().TrimEnd('\\', '/');
 
-            string wirePreset = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
-            AgentApiException? lastConflict = null;
-            for (long expectedVersion = 0; expectedVersion <= 3; expectedVersion++)
+            if (!string.IsNullOrWhiteSpace(_defaultAgentWorkspace))
             {
-                try
+                string normDefault = _defaultAgentWorkspace.Trim().TrimEnd('\\', '/');
+                if (string.Equals(normalizedWorkspace, normDefault, StringComparison.OrdinalIgnoreCase)
+                    || normalizedWorkspace.StartsWith(normDefault + "\\", StringComparison.OrdinalIgnoreCase)
+                    || normalizedWorkspace.StartsWith(normDefault + "/", StringComparison.OrdinalIgnoreCase))
                 {
-                    long version = await _agentController.SetSessionPresetAsync(
-                        _activeSessionId,
-                        wirePreset,
-                        expectedVersion,
-                        preset == AgentPermissionPreset.FullAccess,
-                        cancellationToken);
-                    _agentPresetSessionId = _activeSessionId;
-                    _agentPresetVersion = version;
-                    return version;
-                }
-                catch (AgentApiException ex) when (ex.ErrorCode == "preset_version_conflict")
-                {
-                    lastConflict = ex;
+                    return true;
                 }
             }
 
-            if (lastConflict is not null)
+            string currentDir = Environment.CurrentDirectory.Trim().TrimEnd('\\', '/');
+            if (string.Equals(normalizedWorkspace, currentDir, StringComparison.OrdinalIgnoreCase)
+                || normalizedWorkspace.StartsWith(currentDir + "\\", StringComparison.OrdinalIgnoreCase)
+                || normalizedWorkspace.StartsWith(currentDir + "/", StringComparison.OrdinalIgnoreCase))
             {
-                throw lastConflict;
+                return true;
             }
 
-            throw new InvalidOperationException("Không cập nhật được preset quyền cho Agent.");
-        }
-
-        private async Task<bool> ConfirmFullAccessAsync()
-        {
-            var dialog = new ContentDialog
-            {
-                Title = "Xác nhận Full Access",
-                Content = "Full Access chạy dưới quyền người dùng Windows hiện tại và có thể yêu cầu terminal hoặc mạng theo chính sách của run. Đây không phải sandbox; các hành động rủi ro vẫn yêu cầu phê duyệt riêng.",
-                PrimaryButtonText = "Tiếp tục",
-                CloseButtonText = "Hủy",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = XamlRoot,
-            };
-            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+            return false;
         }
 
         private async void OnImageAttachmentTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
@@ -1922,7 +2014,6 @@ namespace RuApp.Views
             };
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentTrustPanel.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = Visibility.Collapsed;
         }
@@ -2172,39 +2263,11 @@ namespace RuApp.Views
                 "Đang tiếp tục Coding Agent…");
         }
 
-        private async void OnAgentTrustApproveClick(object sender, RoutedEventArgs e)
-        {
-            await RunAgentActionAsync(
-                () => _agentController?.TrustAsync(approve: true) ?? Task.CompletedTask,
-                "Đang xác nhận workspace…");
-        }
-
-        private async void OnAgentTrustDenyClick(object sender, RoutedEventArgs e)
-        {
-            await RunAgentActionAsync(
-                () => _agentController?.TrustAsync(approve: false) ?? Task.CompletedTask,
-                "Đang từ chối workspace…");
-        }
-
         private async void OnAgentApproveClick(object sender, RoutedEventArgs e)
         {
             await RunAgentActionAsync(
-                ApprovePendingAsync,
+                () => _agentController?.ApproveAsync() ?? Task.CompletedTask,
                 "Đang gửi phê duyệt…");
-        }
-
-        private Task ApprovePendingAsync()
-        {
-            var scope = (AgentApprovalScopeBox.SelectedItem as ComboBoxItem)?.Tag as string;
-            if (scope is "run" or "project")
-            {
-                return _agentController?.ApproveAsync(scope) ?? Task.CompletedTask;
-            }
-
-            // Keep the default one-time path explicit. Besides being the safest
-            // default, this preserves the controller's existing API contract for
-            // approval cards that do not need a reusable rule.
-            return _agentController?.ApproveAsync() ?? Task.CompletedTask;
         }
 
         private async void OnAgentDenyClick(object sender, RoutedEventArgs e)
@@ -2426,9 +2489,6 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
-            _workspaceActivityCts?.Cancel();
-            _workspaceActivityCts?.Dispose();
-            _workspaceActivityCts = null;
             _modelSaveFailureTimer?.Stop();
             if (_providerCatalogController != null)
             {
@@ -2456,13 +2516,6 @@ namespace RuApp.Views
             }
             ClearAgentActivities();
             ClearAgentRunSummary();
-            if (WorkspaceActivityPanel is not null)
-            {
-                WorkspaceActivityPanel.Visibility = Visibility.Collapsed;
-                WorkspaceActivityText.Text = string.Empty;
-                WorkspaceRestoreButton.Visibility = Visibility.Collapsed;
-                _latestRestorableChange = null;
-            }
             _typingDebounce?.Stop();
             _typingDebounce = null;
             MeteorShowerField?.Dispose();

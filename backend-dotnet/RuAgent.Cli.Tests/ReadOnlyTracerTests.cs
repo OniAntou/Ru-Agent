@@ -325,7 +325,7 @@ public sealed class ReadOnlyTracerTests
         Assert.False(trustJson.Success);
         Assert.Equal("interactive_required", trustJson.ErrorCode);
 
-        var approveJson = AgentCliParser.Parse(new[] { "agent", "approve", "run_" + new string('a', 32), "apr_" + new string('b', 32), "--scope", "once", "--json" });
+        var approveJson = AgentCliParser.Parse(new[] { "agent", "approve", "run_" + new string('a', 32), "apr_" + new string('b', 32), "--json" });
         Assert.False(approveJson.Success);
         Assert.Equal("interactive_required", approveJson.ErrorCode);
 

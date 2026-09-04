@@ -401,9 +401,9 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseApprove_SucceedsWithScopeOnce()
+    public void ParseApprove_SucceedsWithoutScope()
     {
-        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "once" };
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32) };
         var res = AgentCliParser.Parse(args);
         Assert.True(res.Success);
         var cmd = Assert.IsType<ApproveCommand>(res.Command);
@@ -411,36 +411,36 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseApprove_SucceedsWithScopeRun()
+    public void ParseApprove_RejectsRuntimeScope()
     {
         var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('b', 32), "--scope", "run" };
         var res = AgentCliParser.Parse(args);
-        Assert.True(res.Success);
-        Assert.Equal(ApprovalScope.Run, Assert.IsType<ApproveCommand>(res.Command).Scope);
+        Assert.False(res.Success);
+        Assert.Equal("invalid_scope", res.ErrorCode);
     }
 
     [Fact]
-    public void ParseApprove_SucceedsWithScopeProject()
+    public void ParseApprove_RejectsProjectScope()
     {
         var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('c', 32), "--scope", "project" };
         var res = AgentCliParser.Parse(args);
-        Assert.True(res.Success);
-        Assert.Equal(ApprovalScope.Project, Assert.IsType<ApproveCommand>(res.Command).Scope);
+        Assert.False(res.Success);
+        Assert.Equal("invalid_scope", res.ErrorCode);
     }
 
     [Fact]
-    public void ParseApprove_RejectsMissingScope()
+    public void ParseApprove_RejectsGlobalScope()
     {
-        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32) };
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "global" };
         var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
-        Assert.Equal("missing_scope", res.ErrorCode);
+        Assert.Equal("invalid_scope", res.ErrorCode);
     }
 
     [Fact]
     public void ParseApprove_RejectsJson_InteractiveRequired()
     {
-        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "once", "--json" };
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--json" };
         var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
         Assert.Equal("interactive_required", res.ErrorCode);
@@ -559,7 +559,7 @@ public sealed class AgentCliParserTests
         Assert.False(res.Success);
         Assert.Equal("interactive_required", res.ErrorCode);
 
-        var args2 = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "project", "--json" };
+        var args2 = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--json" };
         var res2 = AgentCliParser.Parse(args2);
         Assert.False(res2.Success);
         Assert.Equal("interactive_required", res2.ErrorCode);

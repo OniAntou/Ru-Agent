@@ -75,17 +75,10 @@
                 <StackPanel MaxWidth="760"
                             HorizontalAlignment="Left"
                             Spacing="6">
-                    <Rectangle x:Name="TypingCaret"
-                               Width="2"
-                               Height="18"
-                               HorizontalAlignment="Left"
-                               Fill="{StaticResource RuAccentBrush}"
-                               Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                     <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
                                             FontSize="15"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
-                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                            Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            FontFamily="{StaticResource RuUiFontFamily}" />
                 </StackPanel>
             </Grid>
         </DataTemplate>
@@ -264,6 +257,10 @@
                                   Grid.Row="1"
                                   Visibility="Collapsed"
                                   HorizontalAlignment="Stretch"
+                                  Margin="16,2,16,6"
+                                  Padding="0"
+                                  Background="Transparent"
+                                  BorderThickness="0"
                                   AutomationProperties.AutomationId="AgentActivityFeed"
                                   AutomationProperties.Name="Hoạt động Coding Agent"
                                   AutomationProperties.LiveSetting="Polite">
@@ -274,52 +271,32 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:AgentActivityItem">
-                                <Border Margin="16,3"
-                                        Padding="12,8"
-                                        Background="{StaticResource RuSurfaceBrush}"
-                                        BorderBrush="{StaticResource RuLineBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource RuControlCornerRadius}">
-                                    <Grid ColumnDefinitions="22,*"
-                                          AutomationProperties.LiveSetting="Polite">
-                                        <Grid Grid.Column="0"
-                                              Width="18"
-                                              HorizontalAlignment="Left"
-                                              VerticalAlignment="Center">
-                                            <ProgressRing IsActive="True"
-                                                          Width="13"
-                                                          Height="13"
-                                                          Foreground="{StaticResource RuAccentBrush}"
-                                                          Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                            <FontIcon Glyph="&#xE73E;"
-                                                      FontSize="13"
-                                                      Foreground="{StaticResource RuSuccessBrush}"
-                                                      Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                            <FontIcon Glyph="&#xEA39;"
-                                                      FontSize="13"
-                                                      Foreground="{StaticResource RuDangerBrush}"
-                                                      Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                            <FontIcon Glyph="&#xE823;"
-                                                      FontSize="13"
-                                                      Foreground="{StaticResource RuMutedBrush}"
-                                                      Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        </Grid>
-                                        <StackPanel Grid.Column="1"
-                                                    Spacing="1">
-                                            <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontSize="12.5"
-                                                       FontWeight="Medium"
-                                                       Foreground="{StaticResource RuInkBrush}"
-                                                       TextWrapping="Wrap" />
-                                            <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontSize="11"
-                                                       Foreground="{StaticResource RuMutedBrush}"
-                                                       TextWrapping="Wrap" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
+                                <Grid Margin="0,3"
+                                      Padding="0,2"
+                                      ColumnDefinitions="*,Auto"
+                                      Loaded="OnActivityItemLoaded"
+                                      Unloaded="OnActivityItemUnloaded"
+                                      AutomationProperties.LiveSetting="Polite">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{x:Bind DisplayText, Mode=OneWay}"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12.5"
+                                               Foreground="{StaticResource RuMutedBrush}"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{x:Bind MetadataText, Mode=OneWay}"
+                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource RuMutedBrush}"
+                                               VerticalAlignment="Center" />
+                                    <!-- State bindings (used by automation & contract tests) -->
+                                    <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                                    <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                                    <Border Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                                    <Border Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                                </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -327,30 +304,29 @@
                     <Border x:Name="AgentRunSummaryPanel"
                             Grid.Row="2"
                             Visibility="Collapsed"
-                            HorizontalAlignment="Left"
-                            MaxWidth="560"
-                            Margin="16,8,16,14"
-                            Padding="14,10"
-                            Background="{StaticResource RuCanvasBrush}"
+                            HorizontalAlignment="Stretch"
+                            Margin="16,2,16,10"
+                            Padding="10,6"
+                            Background="{StaticResource RuSurfaceBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
                             BorderThickness="1"
                             CornerRadius="8"
                             AutomationProperties.AutomationId="AgentRunSummary"
                             AutomationProperties.Name="Tóm tắt phiên Coding Agent"
                             AutomationProperties.LiveSetting="Polite">
-                        <Grid ColumnDefinitions="26,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="22,*"
+                              ColumnSpacing="8">
                             <Border Grid.Column="0"
-                                    Width="24"
-                                    Height="24"
-                                    CornerRadius="12"
-                                    Background="{StaticResource RuSurfaceBrush}"
+                                    Width="20"
+                                    Height="20"
+                                    CornerRadius="10"
+                                    Background="{StaticResource RuCanvasBrush}"
                                     BorderBrush="{StaticResource RuLineBrush}"
                                     BorderThickness="1"
-                                    VerticalAlignment="Top"
+                                    VerticalAlignment="Center"
                                     HorizontalAlignment="Center">
                                 <FontIcon x:Name="AgentRunSummaryGlyph"
-                                          FontSize="11"
+                                          FontSize="10"
                                           Foreground="{StaticResource RuAccentBrush}"
                                           HorizontalAlignment="Center"
                                           VerticalAlignment="Center" />
@@ -360,7 +336,7 @@
                                         VerticalAlignment="Center">
                                 <TextBlock x:Name="AgentRunSummaryText"
                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                           FontSize="13"
+                                           FontSize="12.5"
                                            FontWeight="SemiBold"
                                            Foreground="{StaticResource RuInkBrush}"
                                            TextWrapping="Wrap" />
@@ -378,7 +354,7 @@
 
         <Grid x:Name="InputContainer"
               Grid.Row="1"
-              RowDefinitions="Auto,Auto,Auto,Auto"
+              RowDefinitions="Auto,Auto,Auto"
               Width="820"
               MaxWidth="820"
               Background="Transparent"
@@ -399,65 +375,16 @@
                         Visibility="Collapsed"
                         Spacing="6"
                         Margin="8,0,8,6">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <Border Background="{StaticResource RuCanvasBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="10,4"
-                            HorizontalAlignment="Left">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <Ellipse Width="6" Height="6" Fill="{StaticResource RuMutedBrush}" VerticalAlignment="Center" />
-                            <TextBlock x:Name="AgentStatusText"
-                                       AutomationProperties.AutomationId="AgentStatusText"
-                                       AutomationProperties.LiveSetting="Polite"
-                                       FontSize="11.5"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
-                    <Button x:Name="AgentStopButton"
-                            Grid.Column="1"
-                            Content="Dừng"
-                            Click="OnAgentStopClick"
-                            Visibility="Collapsed"
-                            Padding="10,4"
-                            CornerRadius="6"
-                            FontSize="12"
-                            AutomationProperties.AutomationId="AgentStopButton"
-                            AutomationProperties.Name="Dừng Coding Agent" />
-                </Grid>
-
-                <Border x:Name="AgentTrustPanel"
+                <!-- Status pill removed per user directive; placeholders preserved for accessibility/automation -->
+                <TextBlock x:Name="AgentStatusText"
+                           Visibility="Collapsed"
+                           AutomationProperties.AutomationId="AgentStatusText"
+                           AutomationProperties.LiveSetting="Polite" />
+                <Button x:Name="AgentStopButton"
                         Visibility="Collapsed"
-                        Background="{StaticResource RuSurfaceBrush}"
-                        BorderBrush="{StaticResource RuAccentBrush}"
-                        BorderThickness="1"
-                        CornerRadius="{StaticResource RuControlCornerRadius}"
-                        Padding="10,8">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Workspace cần được xác nhận"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource RuAccentBrush}" />
-                        <TextBlock x:Name="AgentTrustText"
-                                   TextWrapping="Wrap"
-                                   Foreground="{StaticResource RuInkBrush}"
-                                   AutomationProperties.AutomationId="AgentTrustText" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="AgentTrustDenyButton"
-                                    Content="Từ chối"
-                                    Click="OnAgentTrustDenyClick"
-                                    AutomationProperties.AutomationId="AgentTrustDenyButton"
-                                    AutomationProperties.Name="Từ chối workspace" />
-                            <Button x:Name="AgentTrustApproveButton"
-                                    Content="Tin cậy workspace"
-                                    Click="OnAgentTrustApproveClick"
-                                    AutomationProperties.AutomationId="AgentTrustApproveButton"
-                                    AutomationProperties.Name="Tin cậy workspace" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+                        Click="OnAgentStopClick"
+                        AutomationProperties.AutomationId="AgentStopButton"
+                        AutomationProperties.Name="Dừng Coding Agent" />
 
                 <Border x:Name="AgentApprovalPanel"
                         Visibility="Collapsed"
@@ -474,23 +401,6 @@
                                    TextWrapping="Wrap"
                                    Foreground="{StaticResource RuInkBrush}"
                                    AutomationProperties.AutomationId="AgentApprovalSummaryText" />
-                        <StackPanel x:Name="AgentApprovalScopePanel"
-                                    Orientation="Horizontal"
-                                    Spacing="8"
-                                    Visibility="Collapsed">
-                            <TextBlock Text="Phạm vi"
-                                       VerticalAlignment="Center"
-                                       Foreground="{StaticResource RuMutedBrush}" />
-                            <ComboBox x:Name="AgentApprovalScopeBox"
-                                      SelectedIndex="0"
-                                      MinWidth="190"
-                                      AutomationProperties.AutomationId="AgentApprovalScopeBox"
-                                      AutomationProperties.Name="Phạm vi phê duyệt Agent">
-                                <ComboBoxItem Content="Chỉ lần này" Tag="once" />
-                                <ComboBoxItem Content="Cho phiên hiện tại" Tag="run" />
-                                <ComboBoxItem Content="Cho project này" Tag="project" />
-                            </ComboBox>
-                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="AgentDenyButton"
                                     Content="Từ chối"
@@ -498,10 +408,10 @@
                                     AutomationProperties.AutomationId="AgentDenyButton"
                                     AutomationProperties.Name="Từ chối hành động của Agent" />
                             <Button x:Name="AgentApproveButton"
-                                    Content="Duyệt theo phạm vi"
+                                    Content="Duyệt"
                                     Click="OnAgentApproveClick"
                                     AutomationProperties.AutomationId="AgentApproveButton"
-                                    AutomationProperties.Name="Duyệt theo phạm vi cho Agent" />
+                                    AutomationProperties.Name="Duyệt hành động của Agent" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -516,43 +426,8 @@
                         AutomationProperties.Name="Tiếp tục phiên Coding Agent" />
             </StackPanel>
 
-            <Border x:Name="WorkspaceActivityPanel"
-                    Grid.Row="2"
-                    Visibility="Collapsed"
-                    Margin="8,0,8,8"
-                    Padding="10,8"
-                    Background="{StaticResource RuSurfaceBrush}"
-                    BorderBrush="{StaticResource RuLineBrush}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                    AutomationProperties.AutomationId="WorkspaceActivityPanel"
-                    AutomationProperties.Name="Hoạt động workspace">
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                    <TextBlock x:Name="WorkspaceActivityText"
-                               TextWrapping="Wrap"
-                               Foreground="{StaticResource RuMutedBrush}"
-                               FontSize="12"
-                               AutomationProperties.LiveSetting="Polite" />
-                    <Button x:Name="WorkspaceActivityRefreshButton"
-                            Grid.Column="1"
-                            Content="Làm mới"
-                            Padding="8,3"
-                            Click="OnWorkspaceActivityRefreshClick"
-                            AutomationProperties.AutomationId="WorkspaceActivityRefreshButton"
-                            AutomationProperties.Name="Làm mới hoạt động workspace" />
-                    <Button x:Name="WorkspaceRestoreButton"
-                            Grid.Column="2"
-                            Content="Khôi phục cuối"
-                            Padding="8,3"
-                            Visibility="Collapsed"
-                            Click="OnWorkspaceRestoreClick"
-                            AutomationProperties.AutomationId="WorkspaceRestoreButton"
-                            AutomationProperties.Name="Khôi phục thay đổi workspace gần nhất" />
-                </Grid>
-            </Border>
-
             <Border x:Name="InputBorder"
-                    Grid.Row="3"
+                    Grid.Row="2"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="1"
@@ -697,194 +572,6 @@
                         </Button>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-                            <ComboBox x:Name="AgentPresetBox"
-                                      Grid.Column="2"
-                                      Visibility="Visible"
-                                      SelectedIndex="0"
-                                      SelectionChanged="OnAgentPresetChanged"
-                                      AutomationProperties.AutomationId="AgentPresetBox"
-                                      AutomationProperties.Name="Preset quyền của Agent"
-                                      Background="Transparent"
-                                      BorderThickness="0"
-                                      Padding="6,4"
-                                      Margin="2,0,0,0"
-                                      CornerRadius="{StaticResource RuControlCornerRadius}"
-                                      FontFamily="{StaticResource RuUiFontFamily}"
-                                      FontSize="12"
-                                      Foreground="{StaticResource RuMutedBrush}"
-                                      VerticalAlignment="Center">
-                                <ComboBox.Resources>
-                                    <Style TargetType="ToggleButton">
-                                        <Setter Property="Background" Value="Transparent" />
-                                        <Setter Property="BorderThickness" Value="0" />
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ToggleButton">
-                                                    <ContentPresenter Content="{TemplateBinding Content}"
-                                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                                      Padding="{TemplateBinding Padding}"
-                                                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                                                                      Background="Transparent" />
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                    <Style TargetType="ComboBox">
-                                        <Setter Property="Background" Value="Transparent" />
-                                        <Setter Property="BorderThickness" Value="0" />
-                                        <Setter Property="Padding" Value="6,4" />
-                                        <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
-                                        <Setter Property="FontSize" Value="12" />
-                                        <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ComboBox">
-                                                    <Grid x:Name="LayoutRoot">
-                                                        <ToggleButton x:Name="DropDownToggle"
-                                                                      Background="Transparent"
-                                                                      BorderThickness="0"
-                                                                      Padding="{TemplateBinding Padding}"
-                                                                      CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                                      HorizontalAlignment="Stretch"
-                                                                      HorizontalContentAlignment="Left"
-                                                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource Mode=TemplatedParent}}">
-                                                            <StackPanel Orientation="Horizontal" Spacing="4">
-                                                                <TextBlock Text="{Binding SelectedItem.Content, RelativeSource={RelativeSource Mode=TemplatedParent}}"
-                                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                                           FontSize="12"
-                                                                           Foreground="{StaticResource RuInkBrush}"
-                                                                           VerticalAlignment="Center" />
-                                                                <FontIcon Glyph="&#xE70D;"
-                                                                          FontSize="10"
-                                                                          Foreground="{StaticResource RuMutedBrush}"
-                                                                          VerticalAlignment="Center" />
-                                                            </StackPanel>
-                                                        </ToggleButton>
-                                                        <Popup x:Name="Popup"
-                                                               VerticalOffset="-84"
-                                                               HorizontalOffset="0"
-                                                               IsOpen="{TemplateBinding IsDropDownOpen}">
-                                                            <Border Background="{StaticResource RuSurfaceBrush}"
-                                                                    BorderBrush="{StaticResource RuLineBrush}"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                                    Padding="4"
-                                                                    MinWidth="140">
-                                                                <ItemsPresenter />
-                                                            </Border>
-                                                        </Popup>
-                                                    </Grid>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                    <Style TargetType="ComboBoxItem">
-                                        <Setter Property="MinHeight" Value="34" />
-                                        <Setter Property="Padding" Value="10,6" />
-                                        <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                                        <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
-                                        <Setter Property="FontSize" Value="12.5" />
-                                        <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ComboBoxItem">
-                                                    <Grid x:Name="RootGrid"
-                                                          Background="Transparent"
-                                                          CornerRadius="{TemplateBinding CornerRadius}"
-                                                          Padding="{TemplateBinding Padding}">
-                                                        <VisualStateManager.VisualStateGroups>
-                                                            <VisualStateGroup x:Name="CommonStates">
-                                                                <VisualState x:Name="Normal">
-                                                                    <Storyboard>
-                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
-                                                                        </ObjectAnimationUsingKeyFrames>
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="PointerOver">
-                                                                    <Storyboard>
-                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                                        </ObjectAnimationUsingKeyFrames>
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="Pressed">
-                                                                    <Storyboard>
-                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                                        </ObjectAnimationUsingKeyFrames>
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="Disabled" />
-                                                            </VisualStateGroup>
-                                                            <VisualStateGroup x:Name="SelectionStates">
-                                                                <VisualState x:Name="Selected">
-                                                                    <Storyboard>
-                                                                        <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="Unselected">
-                                                                    <Storyboard>
-                                                                        <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="0" Duration="0" />
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="SelectedUnfocused">
-                                                                    <Storyboard>
-                                                                        <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="SelectedDisabled" />
-                                                                <VisualState x:Name="SelectedPointerOver">
-                                                                    <Storyboard>
-                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                                        </ObjectAnimationUsingKeyFrames>
-                                                                        <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                                <VisualState x:Name="SelectedPressed">
-                                                                    <Storyboard>
-                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                                        </ObjectAnimationUsingKeyFrames>
-                                                                        <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
-                                                                    </Storyboard>
-                                                                </VisualState>
-                                                            </VisualStateGroup>
-                                                        </VisualStateManager.VisualStateGroups>
-                                                        <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                                                            <TextBlock Grid.Column="0"
-                                                                       Text="{TemplateBinding Content}"
-                                                                       FontFamily="{TemplateBinding FontFamily}"
-                                                                       FontSize="{TemplateBinding FontSize}"
-                                                                       Foreground="{TemplateBinding Foreground}"
-                                                                       HorizontalAlignment="Left"
-                                                                       VerticalAlignment="Center" />
-                                                            <FontIcon x:Name="CheckMark"
-                                                                      Grid.Column="1"
-                                                                      Glyph="&#xE73E;"
-                                                                      FontSize="12"
-                                                                      Foreground="{StaticResource RuAccentBrush}"
-                                                                      Opacity="0"
-                                                                      HorizontalAlignment="Right"
-                                                                      VerticalAlignment="Center"
-                                                                      Margin="16,0,2,0" />
-                                                        </Grid>
-                                                    </Grid>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ComboBox.Resources>
-                                <ComboBoxItem Content="Standard" Tag="standard" />
-                                <ComboBoxItem Content="Full Access" Tag="full_access" />
-                            </ComboBox>
-
-                            <Border Width="1" Height="14" Background="{StaticResource RuLineBrush}" Opacity="0.4" Margin="2,0" VerticalAlignment="Center"/>
-
                             <Button x:Name="ChatModelButton"
                                     Grid.Column="2"
                                     AutomationProperties.AutomationId="ChatModelButton"
@@ -985,6 +672,96 @@
                                     </Flyout>
                                 </Button.Flyout>
                             </Button>
+
+                            <Border x:Name="ChatReasoningDivider" Width="1" Height="14" Background="{StaticResource RuLineBrush}" Opacity="0.4" Margin="2,0" VerticalAlignment="Center"/>
+
+                            <Button x:Name="ChatReasoningButton"
+                                    AutomationProperties.AutomationId="ChatReasoningButton"
+                                    AutomationProperties.Name="Chọn mức Reasoning"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="6,4"
+                                    Margin="0"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}"
+                                    VerticalAlignment="Center">
+                                <Button.Resources>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="Padding" Value="6,4" />
+                                        <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="RootBorder"
+                                                            Background="Transparent"
+                                                            CornerRadius="{TemplateBinding CornerRadius}"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <VisualStateManager.VisualStateGroups>
+                                                            <VisualStateGroup x:Name="CommonStates">
+                                                                <VisualState x:Name="Normal" />
+                                                                <VisualState x:Name="PointerOver">
+                                                                    <Storyboard>
+                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource RuCanvasBrush}" />
+                                                                        </ObjectAnimationUsingKeyFrames>
+                                                                    </Storyboard>
+                                                                </VisualState>
+                                                                <VisualState x:Name="Pressed">
+                                                                    <Storyboard>
+                                                                        <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource RuAccentSoftBrush}" />
+                                                                        </ObjectAnimationUsingKeyFrames>
+                                                                    </Storyboard>
+                                                                </VisualState>
+                                                                <VisualState x:Name="Disabled" />
+                                                            </VisualStateGroup>
+                                                        </VisualStateManager.VisualStateGroups>
+                                                        <ContentPresenter Content="{TemplateBinding Content}"
+                                                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Resources>
+                                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                    <TextBlock x:Name="ChatReasoningLabel"
+                                               Text="default"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource RuInkBrush}"
+                                               MaxWidth="100"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                    <FontIcon Glyph="&#xE70D;"
+                                              FontSize="9"
+                                              Foreground="{StaticResource RuMutedBrush}"
+                                              VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Button.Flyout>
+                                    <Flyout x:Name="ChatReasoningFlyout" Placement="Top" Opened="OnChatReasoningFlyoutOpened">
+                                        <Flyout.FlyoutPresenterStyle>
+                                            <Style TargetType="FlyoutPresenter">
+                                                <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                                <Setter Property="CornerRadius" Value="8" />
+                                                <Setter Property="Padding" Value="4" />
+                                                <Setter Property="MinWidth" Value="140" />
+                                                <Setter Property="MaxWidth" Value="220" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
+                                            </Style>
+                                        </Flyout.FlyoutPresenterStyle>
+                                        <StackPanel x:Name="ReasoningOptionsContainer" Spacing="2" />
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
                         </StackPanel>
 
                         <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -1044,10 +821,10 @@
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
-                                                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                                                <Setter Property="Padding" Value="10,8" />
-                                                <Setter Property="MinWidth" Value="170" />
-                                                <Setter Property="MaxWidth" Value="230" />
+                                                <Setter Property="CornerRadius" Value="8" />
+                                                <Setter Property="Padding" Value="8,6" />
+                                                <Setter Property="MinWidth" Value="130" />
+                                                <Setter Property="MaxWidth" Value="180" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
                                         <StackPanel Spacing="6">
@@ -1064,7 +841,6 @@
                                                            Text="0%"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="11.5"
-                                                           FontWeight="Medium"
                                                            Foreground="{StaticResource RuMutedBrush}"
                                                            VerticalAlignment="Center" />
                                             </Grid>
@@ -1072,17 +848,11 @@
                                             <ProgressBar x:Name="ContextProgressBar"
                                                          Value="0"
                                                          Maximum="100"
-                                                         Height="3"
-                                                         CornerRadius="1.5"
+                                                         Height="2"
+                                                         CornerRadius="1"
                                                          Foreground="{StaticResource RuAccentBrush}"
-                                                         Background="{StaticResource RuAccentSoftBrush}" />
-
-                                            <TextBlock x:Name="ContextModelDetailLabel"
-                                                       Text="dots-3-note-preview:free"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontSize="10.5"
-                                                       Foreground="{StaticResource RuMutedBrush}"
-                                                       TextTrimming="CharacterEllipsis" />
+                                                         Background="{StaticResource RuLineBrush}"
+                                                         Opacity="0.6" />
                                         </StackPanel>
                                     </Flyout>
                                 </Button.Flyout>

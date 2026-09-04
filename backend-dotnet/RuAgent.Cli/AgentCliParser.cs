@@ -567,33 +567,15 @@ public static class AgentCliParser
 
     private static AgentCliParseResult ParseApprove(string[] args)
     {
-        // agent approve <run-id> <approval-id> --scope once|run|project [--json]
+        // agent approve <run-id> <approval-id> [--json]
         bool json = false;
         bool jsonSeen = false;
-        bool scopeSeen = false;
-        string? scopeRaw = null;
         string? runId = null;
         string? approvalId = null;
 
         for (int i = 2; i < args.Length; i++)
         {
             var token = args[i];
-            if (token == "--scope")
-            {
-                if (scopeSeen)
-                    return Fail("duplicate_switch", "Duplicate --scope.");
-                if (i + 1 >= args.Length)
-                    return Fail("missing_value", "Missing value for --scope.");
-                var val = args[i + 1];
-                if (val.StartsWith("-", StringComparison.Ordinal))
-                    return Fail("missing_value", "Missing value for --scope.");
-                if (val != "once" && val != "run" && val != "project")
-                    return Fail("invalid_scope", $"Unknown scope '{val}'. Expected once|run|project.");
-                scopeRaw = val;
-                scopeSeen = true;
-                i++;
-                continue;
-            }
             if (token == "--json")
             {
                 if (jsonSeen)
@@ -601,6 +583,12 @@ public static class AgentCliParser
                 json = true;
                 jsonSeen = true;
                 continue;
+            }
+            if (token == "--scope")
+            {
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --scope.");
+                return Fail("invalid_scope", "agent approve no longer takes --scope; the server selects the token from the pending binding.");
             }
             if (token.StartsWith("-", StringComparison.Ordinal))
                 return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent approve'.");
@@ -625,20 +613,11 @@ public static class AgentCliParser
             return Fail("missing_run_id", "Missing required <run-id> for 'agent approve'.");
         if (approvalId is null)
             return Fail("missing_approval_id", "Missing required <approval-id> for 'agent approve'.");
-        if (!scopeSeen || scopeRaw is null)
-            return Fail("missing_scope", "Missing required --scope for 'agent approve' (once|run|project).");
 
         if (json)
             return Fail("interactive_required", "--json cannot confirm approval; interactive required.");
 
-        var scope = scopeRaw switch
-        {
-            "once" => ApprovalScope.Once,
-            "run" => ApprovalScope.Run,
-            "project" => ApprovalScope.Project,
-            _ => ApprovalScope.Once
-        };
-        return Success(new ApproveCommand(runId, approvalId, scope, json));
+        return Success(new ApproveCommand(runId, approvalId, ApprovalScope.Once, json));
     }
 
     private static AgentCliParseResult ParseDeny(string[] args)

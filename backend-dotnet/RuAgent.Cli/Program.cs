@@ -7,6 +7,16 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        try
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+        }
+        catch
+        {
+            // Best effort when redirected
+        }
+
         var parseResult = AgentCliParser.Parse(args);
         if (!parseResult.Success || parseResult.Command is null)
         {
@@ -128,7 +138,7 @@ public static class Program
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");
-        Console.Error.WriteLine("  agent approve <run-id> <approval-id> --scope once|run|project");
+        Console.Error.WriteLine("  agent approve <run-id> <approval-id>");
         Console.Error.WriteLine("  agent deny <run-id> <approval-id>");
         Console.Error.WriteLine("  agent cancel <run-id>");
         Console.Error.WriteLine("  agent continue <run-id>");

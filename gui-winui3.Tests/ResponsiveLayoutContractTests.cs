@@ -15,9 +15,8 @@ public sealed class ResponsiveLayoutContractTests
     // Stable commands with explicit names; not a snapshot of translated labels.
     private static readonly string[] NamedCommandIds =
     [
-        "NewSessionButton", "MicButton", "AgentModeButton", "AgentStopButton",
-        "AgentTrustDenyButton", "AgentTrustApproveButton", "AgentDenyButton",
-        "AgentApproveButton", "AgentContinueButton",
+        "MicButton", "AgentModeButton", "AgentStopButton",
+        "AgentDenyButton", "AgentApproveButton", "AgentContinueButton",
     ];
 
     [Fact]

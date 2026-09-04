@@ -188,7 +188,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     PendingApprovalSummary = null;
                     if (!_isCancelRequested)
                     {
-                        StatusText = "Phiên chạy đã kết thúc.";
+                        StatusText = string.Empty;
                     }
                 }
                 else if (!_isCancelRequested)
@@ -342,9 +342,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task ApproveAsync(
-        string scope = "once",
-        CancellationToken cancellationToken = default)
+    public async Task ApproveAsync(CancellationToken cancellationToken = default)
     {
         var runId = CurrentRun?.RunId;
         var approvalId = PendingApprovalId;
@@ -354,7 +352,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
 
         RunOnUi(() => StatusText = "Đang gửi phê duyệt...");
-        await _client.ApproveAsync(runId, approvalId, scope, cancellationToken).ConfigureAwait(false);
+        // Session permission is decided server-side: Host picks the right
+        // one-time token (session directory grant or ephemeral terminal token)
+        // from the pending approval binding. The UI never selects a scope.
+        await _client.ApproveAsync(runId, approvalId, "once", cancellationToken).ConfigureAwait(false);
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 

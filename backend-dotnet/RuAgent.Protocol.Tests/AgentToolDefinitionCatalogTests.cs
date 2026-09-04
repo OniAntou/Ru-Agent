@@ -21,6 +21,10 @@ public sealed class AgentToolDefinitionCatalogTests
         "web.search",
         "web.fetch",
         "help.docs",
+    ];
+
+    private static readonly string[] RetiredIds =
+    [
         "system.time",
         "system.status",
         "app.list",
@@ -28,39 +32,15 @@ public sealed class AgentToolDefinitionCatalogTests
         "system.volume",
     ];
 
-    private static readonly string[] ExpectedModelOrder =
-    [
-        "files.list",
-        "files.glob",
-        "files.search",
-        "files.read",
-        "files.write",
-        "files.edit",
-        "files.delete",
-        "files.restore",
-        "terminal.run",
-        "terminal.shell",
-        "web.search",
-        "web.fetch",
-        "help.docs",
-    ];
-
     [Fact]
-    public void Get_returns_exact_stable_inventory_and_exposure_split()
+    public void Get_returns_exact_stable_inventory_and_retired_ids_are_absent()
     {
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(18, definitions.Count);
-        Assert.Equal(
-            13,
-            definitions.Count(item => item.Exposure.HasFlag(AgentToolExposure.ModelVisible)));
-        Assert.Equal(
-            5,
-            definitions.Count(item => !item.Exposure.HasFlag(AgentToolExposure.ModelVisible)));
-        Assert.Equal(
-            AgentToolExposure.BrokerInternal | AgentToolExposure.DeterministicHost,
-            AgentToolDefinitionCatalog.Find("system.volume", "1.0.0")!.Exposure);
+        Assert.Equal(13, definitions.Count);
+        Assert.All(RetiredIds, id => Assert.Null(
+            AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }
 
     [Fact]
@@ -124,8 +104,6 @@ public sealed class AgentToolDefinitionCatalogTests
             Assert.Matches("^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$", definition.ToolId);
             Assert.False(string.IsNullOrWhiteSpace(definition.Description));
             Assert.Contains(definition.Scope, AgentToolScopes.All);
-            Assert.NotEqual(AgentToolExposure.None, definition.Exposure);
-
             var schema = definition.InputSchema;
             Assert.Equal("object", schema["type"]!.GetValue<string>());
             Assert.False(schema["additionalProperties"]!.GetValue<bool>());
@@ -144,19 +122,19 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
-    public void Model_contract_catalog_projects_only_model_visible_definitions()
+    public void Model_contract_catalog_projects_the_entire_canonical_catalog()
     {
-        Assert.Equal(ExpectedModelOrder, AgentModelToolContractCatalog.ToolIds);
-        Assert.Equal(ExpectedModelOrder, AgentModelToolContractCatalog.Get().Select(item => item.ToolId));
+        Assert.Equal(ExpectedOrder, AgentModelToolContractCatalog.ToolIds);
+        Assert.Equal(ExpectedOrder, AgentModelToolContractCatalog.Get().Select(item => item.ToolId));
         Assert.Equal(
             ["web.search", "web.fetch"],
             AgentModelToolContractCatalog.WebToolIds.OrderBy(
                 id => Array.IndexOf(ExpectedOrder, id)));
 
-        foreach (var internalTool in new[] { "system.time", "system.status", "app.list", "notes.create", "system.volume" })
+        foreach (var retiredId in RetiredIds)
         {
-            Assert.Null(AgentModelToolContractCatalog.Find(internalTool, "1.0.0"));
-            Assert.Throws<KeyNotFoundException>(() => AgentModelToolContractCatalog.Get(internalTool, "1.0.0"));
+            Assert.Null(AgentModelToolContractCatalog.Find(retiredId, "1.0.0"));
+            Assert.Throws<KeyNotFoundException>(() => AgentModelToolContractCatalog.Get(retiredId, "1.0.0"));
         }
     }
 

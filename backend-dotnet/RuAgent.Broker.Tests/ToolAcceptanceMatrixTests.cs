@@ -42,9 +42,7 @@ public sealed class ToolAcceptanceMatrixTests
             Assert.Equal(
                 AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
                 AgentToolDefinitionCatalog.ComputeSchemaDigest(binding.Manifest.InputSchema));
-            Assert.Equal(
-                definition.Exposure.HasFlag(AgentToolExposure.ModelVisible),
-                binding.ModelEnabled);
+            Assert.True(binding.ModelEnabled);
         }
 
         var expectedIds = AgentToolDefinitionCatalog.Get()
@@ -58,7 +56,6 @@ public sealed class ToolAcceptanceMatrixTests
     public void Model_contracts_are_exactly_the_model_enabled_canonical_definitions()
     {
         var expected = AgentToolDefinitionCatalog.Get()
-            .Where(definition => definition.Exposure.HasFlag(AgentToolExposure.ModelVisible))
             .Select(definition => definition.ToolId)
             .ToArray();
 

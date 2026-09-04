@@ -721,7 +721,6 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     content,
                     Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant())],
                 AgentToolDefinitionCatalog.Get()
-                    .Where(definition => definition.Exposure.HasFlag(AgentToolExposure.ModelVisible))
                     .Select(definition => Capability(definition.ToolId))
                     .ToArray(),
                 new PromptRuntimeContext(

@@ -52,7 +52,7 @@ public sealed class ToolCatalog
             Registry.Register(new ToolBinding(
                 manifest,
                 executors[manifest.Id],
-                ModelEnabled: definition.Exposure.HasFlag(AgentToolExposure.ModelVisible),
+                ModelEnabled: true,
                 nativePending ? "native_pending" : "executable",
                 VerificationRequired: nativePending));
         }

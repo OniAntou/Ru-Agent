@@ -98,9 +98,7 @@ public sealed class ToolCatalogTests
         foreach (var binding in catalog.Registry.List())
         {
             var definition = AgentToolDefinitionCatalog.Find(binding.Manifest.Id, binding.Manifest.Version)!;
-            Assert.Equal(
-                definition.Exposure.HasFlag(AgentToolExposure.ModelVisible),
-                binding.ModelEnabled);
+            Assert.True(binding.ModelEnabled);
         }
 
         var fullModelIds = catalog.Registry.ModelCapabilities(CapabilityProfile.Full)

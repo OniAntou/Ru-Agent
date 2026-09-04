@@ -16,7 +16,7 @@ public static class AgentModelToolContractCatalog
     public const string CurrentVersion = AgentToolDefinitionCatalog.CurrentVersion;
 
     private static readonly IReadOnlyList<AgentToolDefinition> ModelDefinitions =
-        AgentToolDefinitionCatalog.Select(AgentToolExposure.ModelVisible);
+        AgentToolDefinitionCatalog.Get();
 
     public static IReadOnlyList<string> ToolIds { get; } =
         Array.AsReadOnly(ModelDefinitions.Select(item => item.ToolId).ToArray());
@@ -40,10 +40,7 @@ public static class AgentModelToolContractCatalog
             : null;
 
     private static AgentToolDefinition? FindDefinition(string toolId, string toolVersion) =>
-        AgentToolDefinitionCatalog.Find(toolId, toolVersion) is { } definition
-        && definition.Exposure.HasFlag(AgentToolExposure.ModelVisible)
-            ? definition
-            : null;
+        AgentToolDefinitionCatalog.Find(toolId, toolVersion);
 
     private static AgentModelToolContract ToContract(AgentToolDefinition definition) =>
         new(definition.ToolId, definition.ToolVersion, definition.InputSchema, definition.ExampleArguments);

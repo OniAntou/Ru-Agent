@@ -480,7 +480,6 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             var definition = AgentToolDefinitionCatalog.Find(capability.Id, capability.Version);
             var key = $"{capability.Id}@{capability.Version}";
             if (definition is null
-                || !definition.Exposure.HasFlag(AgentToolExposure.ModelVisible)
                 || !seen.Add(key)
                 || !string.Equals(definition.Scope, capability.Scope, StringComparison.Ordinal)
                 || !string.Equals(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest, StringComparison.Ordinal)

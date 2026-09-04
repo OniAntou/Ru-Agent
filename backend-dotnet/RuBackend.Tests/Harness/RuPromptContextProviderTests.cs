@@ -118,7 +118,7 @@ public sealed class RuPromptContextProviderTests
 
         Assert.Equal(expectedCount, promptIds.Length);
         Assert.Equal(promptIds, workerIds);
-        Assert.DoesNotContain(promptIds, id => !AgentToolDefinitionCatalog.Select(AgentToolExposure.ModelVisible).Any(definition => definition.ToolId == id));
+        Assert.DoesNotContain(promptIds, id => !AgentToolDefinitionCatalog.Get().Any(definition => definition.ToolId == id));
         foreach (var capability in context.Capabilities)
         {
             var definition = AgentToolDefinitionCatalog.Find(capability.Id, capability.Version)!;

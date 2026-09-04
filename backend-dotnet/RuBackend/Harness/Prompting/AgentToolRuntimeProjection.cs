@@ -9,7 +9,7 @@ public readonly record struct AgentToolRuntimeAvailability(
 public static class AgentToolRuntimeProjection
 {
     public static IReadOnlyList<AgentToolDefinition> Select(AgentToolRuntimeAvailability availability) =>
-        AgentToolDefinitionCatalog.Select(AgentToolExposure.ModelVisible)
+        AgentToolDefinitionCatalog.Get()
             .Where(definition => definition.ToolId switch
             {
                 "web.search" => availability.WebSearchEnabled,

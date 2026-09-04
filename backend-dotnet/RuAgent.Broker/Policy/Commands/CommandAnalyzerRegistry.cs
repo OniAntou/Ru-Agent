@@ -8,7 +8,7 @@ namespace RuAgent.Broker.Policy.Commands;
 /// </summary>
 public sealed class CommandAnalyzerRegistry
 {
-    public const string Version = "1";
+    public const string Version = "2";
 
     private readonly GitCommandAnalyzer _git = new();
     private readonly DotnetCommandAnalyzer _dotnet = new();
@@ -31,6 +31,11 @@ public sealed class CommandAnalyzerRegistry
         }
 
         var baseName = GitCommandAnalyzer.BaseName(resolvedExecutable);
+        if (baseName is "rm" or "del" or "erase")
+        {
+            return new(Version, TerminalOperationClass.DirectDelete, "none", "terminal_direct_delete");
+        }
+
         return baseName switch
         {
             "git" => _git.Analyze(resolvedExecutable, argv),

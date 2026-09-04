@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
+using RuAgent.Broker.Policy.Commands;
 using RuAgent.Protocol.Harness;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Terminal;
@@ -290,7 +291,7 @@ public sealed class PolicyEvaluationTests
 
         var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "frobnicate.exe"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("ask", unknown.Decision);
-        Assert.Equal("unknown_executable", unknown.ReasonCode);
+        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
     }
 
     [Fact]
@@ -300,27 +301,36 @@ public sealed class PolicyEvaluationTests
         var evaluator = new PolicySnapshotEvaluator();
 
         var gitPush = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "push"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", gitPush.Decision);
-        Assert.Equal("external_mutation", gitPush.ReasonCode);
+        Assert.Equal("allow", gitPush.Decision);
 
         var dotnetRestore = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "restore"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", dotnetRestore.Decision);
-        Assert.Equal("external_mutation", dotnetRestore.ReasonCode);
+        Assert.Equal("allow", dotnetRestore.Decision);
 
         var ruffCheck = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "ruff", "check", "."), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", ruffCheck.Decision);
         Assert.True(ruffCheck.AnalyzerRiskPending);
 
         var pipInstall = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pip", "install", "requests"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", pipInstall.Decision);
-        Assert.Equal("external_mutation", pipInstall.ReasonCode);
+        Assert.Equal("allow", pipInstall.Decision);
 
         var rgReplace = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "rg", "--replace", "x", "pattern"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", rgReplace.Decision);
-        Assert.Equal("ripgrep_replacement_requires_approval", rgReplace.ReasonCode);
+        Assert.Equal("allow", rgReplace.Decision);
 
         var pythonScript = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "script.py"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("ask", pythonScript.Decision);
+    }
+
+    [Theory]
+    [InlineData("rm")]
+    [InlineData("del")]
+    [InlineData("erase")]
+    public void Direct_delete_executables_have_a_dedicated_terminal_class(string executable)
+    {
+        var analysis = new CommandAnalyzerRegistry().Analyze(executable + ".exe", ["target.txt"]);
+
+        Assert.Equal(TerminalOperationClass.DirectDelete, analysis.OperationClass);
+        Assert.Equal("terminal_direct_delete", analysis.ReasonCode);
+        Assert.Equal("2", analysis.AnalyzerVersion);
     }
 
     [Fact]

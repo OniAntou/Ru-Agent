@@ -14,6 +14,7 @@ public enum TerminalOperationClass
     Lint = 4,
     GitMutation = 5,
     ExternalMutation = 6,
+    DirectDelete = 7,
 }
 
 /// <summary>

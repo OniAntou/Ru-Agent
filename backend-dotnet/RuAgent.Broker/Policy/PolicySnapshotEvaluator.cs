@@ -232,16 +232,15 @@ public sealed class PolicySnapshotEvaluator
             TerminalOperationClass.ReadOnly
                 or TerminalOperationClass.Test
                 or TerminalOperationClass.Build
-                or TerminalOperationClass.Lint => new PolicyEvaluation(
+                or TerminalOperationClass.Lint
+                or TerminalOperationClass.GitMutation
+                or TerminalOperationClass.ExternalMutation => new PolicyEvaluation(
                     "allow",
                     "recognized_safe_form",
                     MatchedRuleId: null,
                     AnalyzerRiskPending: true),
-            TerminalOperationClass.GitMutation => Ask("git_mutation"),
-            TerminalOperationClass.ExternalMutation => Ask("external_mutation"),
-            _ => Ask(analysis.ReasonCode is "unrecognized_executable" or "missing_executable"
-                ? "unknown_executable"
-                : analysis.ReasonCode),
+            TerminalOperationClass.DirectDelete => Ask("terminal_delete_requires_approval"),
+            _ => Ask("terminal_unknown_executable"),
         };
     }
 

@@ -60,8 +60,9 @@ public sealed class GitCommandAnalyzerTests
     [InlineData("merge")]
     [InlineData("rebase")]
     [InlineData("clean")]
+    [InlineData("rm")]
     [InlineData("tag")]
-    public void Local_git_mutations_ask(string verb)
+    public void Local_git_mutations_are_recognized(string verb)
     {
         var analysis = _analyzer.Analyze(@"C:\tools\git.exe", [verb]);
 

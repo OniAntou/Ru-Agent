@@ -201,13 +201,21 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
                 editDecision.ApprovalId!.Value.Value,
                 "allow_session_directory",
                 CancellationToken.None);
-            Assert.True(editAuthorized.authorized);
+            Assert.True(editAuthorized.Authorized);
 
+            var editResumed = Proposal(runId, "files.edit", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = editPath,
+                ["old_string"] = "factory-edit-pre",
+                ["new_string"] = "factory-edit-post",
+            });
+            var editResumedDecision = await gateway.EvaluateAsync(editResumed, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, editResumedDecision.Decision);
             var editPrepared = await gateway.PrepareAsync(
                 new ApprovedToolExecution(
-                    editProposal,
+                    editResumed,
                     new ExecutionId("exec_" + new string('1', 32)),
-                    editDecision.CanonicalIntentToken!),
+                    editResumedDecision.CanonicalIntentToken!),
                 CancellationToken.None);
             var editReceipt = await gateway.ExecuteAsync(
                 editPrepared,
@@ -221,13 +229,21 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
                 notesDecision.ApprovalId!.Value.Value,
                 "allow_session_directory",
                 CancellationToken.None);
-            Assert.True(notesAuthorized.authorized);
+            Assert.True(notesAuthorized.Authorized);
 
+            var notesResumed = Proposal(runId, "notes.create", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = Path.Combine(externalDir, "note.md"),
+                ["title"] = "External Note",
+                ["content"] = "external-note-content",
+            });
+            var notesResumedDecision = await gateway.EvaluateAsync(notesResumed, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, notesResumedDecision.Decision);
             var notesPrepared = await gateway.PrepareAsync(
                 new ApprovedToolExecution(
-                    notesProposal,
+                    notesResumed,
                     new ExecutionId("exec_" + new string('2', 32)),
-                    notesDecision.CanonicalIntentToken!),
+                    notesResumedDecision.CanonicalIntentToken!),
                 CancellationToken.None);
             var notesReceipt = await gateway.ExecuteAsync(
                 notesPrepared,

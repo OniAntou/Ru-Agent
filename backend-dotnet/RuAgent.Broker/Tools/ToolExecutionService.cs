@@ -1002,16 +1002,17 @@ public sealed class ToolExecutionService : IToolInvoker
     {
         try
         {
-            var fileTools = ResolveFileTools(context, TargetPathOf(arguments));
+            var tools = ResolveRootToolSet(context, TargetPathOf(arguments));
+            int occurrences = 1;
+            if (arguments["expected_occurrences"] is JsonValue value
+                && value.TryGetValue<int>(out var parsed))
+            {
+                occurrences = parsed;
+            }
+
             return Succeeded(
-                fileTools.Edit(
-                    ReadString(arguments, "path"),
-                    ReadOptionalString(arguments, "old_string"),
-                    ReadOptionalString(arguments, "new_string"),
-                    arguments["expected_occurrences"] is JsonValue value
-                        && value.TryGetValue<int>(out var occurrences)
-                            ? occurrences
-                            : 1),
+                tools.Edit.Execute(
+                    WithInternalExpectedHash(tools.MutationResolver, arguments)),
                 "Workspace file edited.");
         }
         catch (FileEditException error)
@@ -1036,9 +1037,26 @@ public sealed class ToolExecutionService : IToolInvoker
 
     private ValueTask<ToolExecutionOutcome> ExecuteNotesCreate(ToolExecutionContext context, JsonObject arguments)
     {
-        var notes = ResolveNotes(context, TargetPathOf(arguments));
-        var output = notes.Create(
-            ReadString(arguments, "path"),
+        var tools = ResolveRootToolSet(context, TargetPathOf(arguments));
+        var inputPath = ReadString(arguments, "path");
+        // NotesAdapter only accepts relative paths inside its workspace
+        // guard; convert absolute grant-targeted paths so notes.create can
+        // write inside a session-scoped directory grant.
+        string relativePath = inputPath;
+        if (Path.IsPathRooted(inputPath))
+        {
+            try
+            {
+                relativePath = Path.GetRelativePath(tools.MutationResolver.CanonicalRoot, inputPath);
+            }
+            catch
+            {
+                relativePath = inputPath;
+            }
+        }
+
+        var output = tools.Notes.Create(
+            relativePath,
             ReadString(arguments, "title"),
             ReadString(arguments, "content"),
             context.Approved);

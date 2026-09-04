@@ -2,15 +2,17 @@
 
 This document is the operating contract for Ru's action execution kernel v1
 plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces (2026-08-31).
+v2 surfaces (2026-09-05).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
-This checkpoint includes declarative Skills, Model Context Protocol (MCP stdio JSON-RPC 2.0),
-Interactive Windows ConPTY terminal sessions, session branching/fork/rewind,
-managed Git commit workflow, and dynamic model context compaction.
+This checkpoint includes declarative Skills, interactive Windows ConPTY
+terminal sessions, session branching/fork/rewind, managed Git commit workflow,
+and dynamic model context compaction. The MCP stdio bridge is tested
+infrastructure but is not production-composed; connector libraries are not
+advertised Agent tools.
 
-> **Current checkpoint (Agent-only generation, 2026-08-29):**
+> **Current checkpoint (Agent-only generation, 2026-09-05):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. Worker v1 is a device/runtime adapter only; Agent
@@ -46,6 +48,7 @@ managed Git commit workflow, and dynamic model context compaction.
 >   `/compact`, `/help`, `/skills`, and `/skill <id> {json}` use the shared
 >   Protocol parser and do not become model history. Declarative Skills are
 >   session-granted and execute through the Broker's existing scope/approval
+>   boundary.
 >   Managed startup enables `web.search` and `web.fetch` as read-only
 >   capabilities backed by the fixed DuckDuckGo HTML endpoint; results are
 >   bounded, sanitized, and explicitly untrusted.
@@ -71,43 +74,40 @@ managed Git commit workflow, and dynamic model context compaction.
 
 ## Current capability matrix
 
-The Worker v2 settings derive from the immutable Protocol tool-definition
-catalog. The model therefore receives the same eleven core bindings (including
-offline `help.docs`) plus each
-runtime-enabled read-only `web.search`/`web.fetch` binding in Standard and Full
-Access; the preset changes Broker policy decisions and fallbacks, not the
-advertised list. Managed startup constructs enabled WebOptions with the fixed
-DuckDuckGo endpoint `https://html.duckduckgo.com/html/`. The `network_intent` argument on a
+The immutable Protocol catalog contains 18 definitions. Its strict model
+projection contains 13 definitions: eleven always-available core bindings
+(including offline `help.docs`) plus runtime-enabled read-only
+`web.search`/`web.fetch`. Broker run leases additionally carry five
+internal/deterministic operations for execution authority; those operations
+have `model_enabled: false` and never enter Worker `model_tools`. Managed
+startup uses the fixed DuckDuckGo endpoint
+`https://html.duckduckgo.com/html/`. The `network_intent` argument on a
 terminal request is descriptive input metadata, not a security boundary.
 
-| Worker v2 model capability | Agent (Standard) | Agent (Full Access) |
+| Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic |
-| `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | `allow` for ordinary trusted-workspace create/edit; outside paths ask with `external_directory_required`; `workspace_changed` on preimage mismatch | `allow` fallback (never bypasses trust or invariants) |
-| `files.delete@1.0.0` (`workspace.write`, recoverable) | `ask` → approval card + preview; bounded recovery cap; opaque `recovery_id` | ordinary targets use the Full fallback; protected/root targets still ask or deny; recovery remains bounded |
-| `files.restore@1.0.0` (`workspace.write`, one-time) | advertised; requires a live recovery record; replay returns `recovery_consumed` | advertised; same one-time recovery constraint |
-| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | advertised; analyzer/rule/approval policy decides each request | advertised; well-formed calls normally use the Full fallback; extended timeouts still ask |
-| `system.volume@1.0.0` (`system.write`) | not a model-selection binding; deterministic parser with verified readback | same deterministic direct-action path |
-| `notes.create@1.0.0`, `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` | Broker-internal; not advertised | Broker-internal; not advertised |
-| `web.search@1.0.0` (`network.search`) | advertised read-only; fixed DuckDuckGo endpoint; at most ten bounded citations | same |
-| `web.fetch@1.0.0` (`network.fetch`) | advertised read-only; bounded sanitized text | same |
-| `help.docs@1.0.0` (`system.read`) | advertised read-only; searches five bundled Markdown sources offline; no workspace, network, or approval | same |
-| Connectors, `app.open` | Broker-internal; not advertised | Broker-internal; not advertised |
-| Declarative Skills (`skill.execute`) | only explicitly granted manifests; each step rechecks tool scope/approval | same explicit grant and checks |
+| `files.list`, `files.glob`, `files.search`, `files.read` | always advertised | automatic inside the trusted or session-granted root |
+| `files.write`, `files.edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
+| `files.delete`, `files.restore` | always advertised | delete remains recoverable and approval/policy controlled; restore is one-time |
+| `terminal.run`, `terminal.shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
+| `web.search`, `web.fetch` | advertised when managed Web is enabled | bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
+| `help.docs` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
+| `system.volume` | never model-advertised | deterministic parser and same-endpoint verified readback |
+| `notes.create`, `system.time`, `system.status`, `app.list` | never model-advertised | Broker-internal operations |
+| Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
+| MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
-Standard allows ordinary trusted-workspace reads/creates/edits. An explicit
+The effective Agent policy allows ordinary trusted-workspace
+reads/creates/edits. An explicit
 absolute path outside that root is not silently rejected: the first request
 asks for `external_directory_required`. The user can approve only that intent,
 the canonical external directory for the current run, or a project-scoped
 host-generated descendant rule (filesystem roots are never persisted as a
 directory grant); relative traversal still cannot escape the trusted root.
-Delete, protected paths, declared network, and unknown operations
-keep their own approval gates even after a directory grant;
-Full Access changes fallback but never bypasses workspace trust or protocol
-invariants and remains a current-Windows-user boundary. Full Access can allow
-well-formed terminal and ordinary file calls through its fallback; hard
-invariants, protected paths, and extended timeout thresholds still require the
-corresponding approval or denial. Durable approvals
+Delete, protected paths, declared network, and unknown operations keep their
+own approval gates even after a directory grant. Hard invariants, protected
+paths, and extended timeout thresholds still require the corresponding
+approval or denial. Durable approvals
 (`AllowOnce`/`AllowRun`/`AllowProject`/`Deny`) use first-writer-wins
 `approval_stale`, exact scope preview (the model cannot supply a broadening
 glob), 30-min expiry,
@@ -117,10 +117,9 @@ approval under snapshot N → persist reusable rule (or `reusable_rule_not_saved
 pending N decisions. `network_intent` is descriptive audit/approval metadata,
 not network isolation. On the headless Agent v2 path, `terminal.run` and
 `terminal.shell` execute as the current Windows user and can run arbitrary host
-code or open sockets. Standard usually asks for shell, mutations, unknown
-commands, network intent, or other analyzer-risk cases; Full Access normally
-allows a well-formed request but still asks for an extended timeout and still
-fails hard invariants. Filesystem mutations remain trust- and policy-gated: a
+code or open sockets. Direct deletion, unknown executables, extended timeouts,
+network intent, and other analyzer-risk cases remain approval- or policy-gated.
+Filesystem mutations remain trust- and policy-gated: a
 project/run external-directory grant covers only the canonical directory's
 read/create/edit operations; delete, protected paths, network, and unknown
 operations keep their own gates. The deterministic volume parser is the only
@@ -183,11 +182,11 @@ Agent turns continue through normal streamed generation. Ambiguous volume
 wording produces deterministic clarification instead of an inferred action;
 unrelated conversation is never forced through the action parser.
 
-The Public Host derives `model_tools` from the active capability profile,
-when a Broker session has been explicitly opened, and publishes the actual
+The Public Host derives `model_tools` from canonical model exposure and runtime
+availability, while the Broker session owns executable scopes and publishes the actual
 resulting grant as `agent.session`. Managed startup enables the Host web
-executor and the default headless model loop advertises both read-only web
-bindings through its in-process core gateway. Skill package roots and
+configuration and the default headless model loop advertises both read-only
+Web bindings through the Broker gateway. Skill package roots and
 `/skills`/`/skill` still require explicit session grants. WinUI renders a
 received grant; it does not infer workspace, terminal, Web, connector, or
 skill access.
@@ -227,20 +226,19 @@ For deterministic Vietnamese commands, `tăng âm lượng lên N` is an absolut
 shorthand is not promoted into an action from conversation history.
 
 File and terminal bindings are advertised by the Worker v2 settings as the
-matrix above shows. On the headless Agent v2 path (Phase 3), `terminal.run`/
+matrix above shows. On the headless Agent v2 path, `terminal.run` and
 `terminal.shell` execute as the current Windows user and can run arbitrary host
-code or open sockets; Standard applies analyzer/rule/approval decisions while
-Full Access uses its broader fallback for well-formed calls. The managed Git
-commit workflow (Phase 3 Task 6) is not shipped; Git commands are ordinary
-terminal requests rather than a separate managed capability. Full Access is
-intentionally not an OS-enforced filesystem/network sandbox; its `network`
+code or open sockets; analyzer/rule/approval decisions remain authoritative.
+The managed Git commit workflow is shipped inside terminal execution with
+temporary-index isolation, path attribution rollback, and refusal when the
+real index already contains staged user changes. The Agent permission model is
+not an OS-enforced filesystem/network sandbox; its `network`
 field and `network_intent` are descriptive input validation and audit/approval
 metadata, not an operating-system sandbox or network-isolation boundary. A
 zero exit is `succeeded`; non-zero exit and start failure are `failed`; timeout
-is `timed_out`. `files.write`/`files.edit` are `allow` for ordinary
-trusted-workspace create/edit in Standard and otherwise `ask`; Full Access
-uses its fallback for ordinary calls while protected paths and invariants stay
-gated. Every mutation binds the preimage hash captured by Host preparation and
+is `timed_out`. `files.write`/`files.edit` are allowed for ordinary
+trusted-workspace create/edit and otherwise ask; protected paths and invariants
+stay gated. Every mutation binds the preimage hash captured by Broker preparation and
 fails with `workspace_changed` on mismatch without writing; the hash is not a
 model argument. `files.delete` keeps its bounded, host-configurable recovery cap
 (default and hard maximum 4 MiB) and returns an opaque `recovery_id`.

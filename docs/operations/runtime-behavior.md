@@ -236,9 +236,8 @@ gentle twinkling starlight points and periodic shooting star streaks rendered di
 via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush` with
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
-native TextBox caret/focus behavior and contains one static Agent indicator plus
-a compact Agent preset selector with `Standard` and `Full Access`; there is no
-Chat mode switch or workspace editor in the composer.
+native TextBox caret/focus behavior and contains one static Agent indicator;
+there is no preset picker, Chat mode switch, or workspace editor in the composer.
 The UI uses the known project root as the initial Agent workspace and does not
 expose a workspace editor, while the authenticated API still validates the
 canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE path.
@@ -263,7 +262,7 @@ commit, so a non-critical effect failure cannot roll back a completed Agent run.
 Agent user/assistant activity records use the `agent` activity type and remain
 preview-sanitized at the activity-store boundary.
 When no session has been opened yet, the first Agent prompt creates a fresh
-session before the preset call.
+session before creating the run.
 If an Agent API call reports `session_not_found` or `invalid_session_id`, the
 desktop creates one replacement session and retries once only before a run is
 created. A second recovery failure is shown as a bounded error and is never
@@ -285,17 +284,14 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings currently advertise the same eleven core bindings
-(including offline `help.docs`) plus the
-managed read-only web bindings in both presets: `files.list`, `files.read`,
+The Worker v2 settings advertise eleven core bindings (including offline
+`help.docs`) plus the runtime-enabled read-only Web bindings: `files.list`, `files.read`,
 `files.glob`, `files.search`, `files.write`, `files.edit`, `files.delete`,
 `files.restore`, `terminal.run`, `terminal.shell`, `help.docs`, `web.search`, and
-`web.fetch`. Standard and Full Access differ in Broker policy, not in the
-model-visible list. Standard automatically allows ordinary trusted-workspace
+`web.fetch`. Broker policy automatically allows ordinary trusted-workspace
 file reads/creates/edits and applies analyzer/rule/approval decisions to
-terminal requests; Full Access uses a broader fallback for well-formed calls,
-while protected paths, hard invariants, and extended timeout thresholds remain
-gated. Terminal execution runs as the current Windows user and is intentionally
+terminal requests. Protected paths, hard invariants, and extended timeout
+thresholds remain gated. Terminal execution runs as the current Windows user and is intentionally
 not an OS-enforced filesystem/network sandbox. File tools may
 request an explicit absolute path outside the project; the user can grant that
 canonical directory for the current run or project. That grant covers the
@@ -303,7 +299,7 @@ directory's read/create/edit operations only; protected and destructive
 operations keep their own approval gates. `files.apply_patch`
 is not advertised or model-usable in the current runtime.
 Explicit, unambiguous volume commands use a deterministic parser before
-generation in Agent Standard and Full Access. The parser creates one typed
+generation. The parser creates one typed
 `system.volume@1.0.0` request and does not call the configured model for action
 selection; volume is not in the Worker v2 model-tool list. Ambiguous volume
 wording returns a bounded clarification.
@@ -332,8 +328,8 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 memory, reviewed examples, TTS, or VTS metadata.
 
-The eleven Worker v2 bindings above are the core model surface, and the managed
-Host also advertises read-only `web.search`/`web.fetch` bindings. Managed
+The eleven Worker v2 bindings above are the core model surface, and managed
+startup also advertises read-only `web.search`/`web.fetch` bindings. Managed
 startup constructs an enabled WebOptions instance with the fixed
 `https://html.duckduckgo.com/html/` endpoint; their bounded responses carry an
 explicit `untrusted` marker and never become instructions. `files.search`
@@ -344,13 +340,16 @@ Broker-internal.
 Declarative Skills are added only from validated manifests explicitly included
 in the session grant; each Skill step re-enters normal tool scope, schema,
 approval, timeout, and output limits. Skill package roots are not auto-loaded.
-The managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
-are ordinary terminal requests governed by the active preset and policy. The
+The managed Git commit workflow is shipped inside terminal execution, using a
+temporary index and refusing dirty user index state. Other Git commands remain
+ordinary terminal requests governed by Broker policy. The
 GUI renders the actual `agent.session` grant received from the Host. Managed
 startup enables the bounded WebOptions instance with the fixed DuckDuckGo
 endpoint, so `web.search` and `web.fetch` are advertised as read-only managed
-capabilities without a settings flag or separate deployment switch; normal
-Harness policy remains authoritative for each call.
+capabilities without a settings flag or separate deployment switch; Broker
+policy remains authoritative for each call. The tested MCP bridge and the
+mail/calendar/task connector libraries are not production-composed or
+advertised as Agent tools.
 
 ### Typed commands
 

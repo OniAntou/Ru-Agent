@@ -32,6 +32,24 @@ including the test that could open a real VTube Studio connection. Managed C#
 VTS tests and opt-in native acceptance remain separate. Build and launcher
 unit tests replace only their external process boundary and never open RuApp.
 
+### Ru Agent tool hardening evidence (2026-09-05)
+
+- The canonical inventory contains 18 definitions: 13 model-visible and five
+  Broker-internal/deterministic operations. A table-driven acceptance matrix
+  verifies every available definition has a schema-identical binding and that
+  `ModelEnabled` matches canonical exposure.
+- DuckDuckGo HTML result redirects are decoded to their final targets and then
+  revalidated by `WebPolicy`. A live read-only smoke returned 10 bounded
+  citations for each of `latest dotnet release official docs` and
+  `Vietnam weather today`; the first targets were Microsoft Learn and
+  EaseWeather respectively. The adapter has no fallback search provider.
+- Sequential Debug .NET matrix: `2,548 passed` across all 13 test projects;
+  Python suite: `417 passed`; route contract: `64 HTTP + 1 WebSocket`;
+  documentation checks: `4 passed`; release `build.bat`: 13/13 plus 2/2 native
+  overlay tests.
+- Live volume mutation was intentionally excluded. MCP and connector libraries
+  remain unadvertised and are not counted as shipped Agent tools.
+
 ### Multimodal image attachment evidence (2026-09-03)
 
 - End-to-end multimodal image attachment pipeline implemented across WinUI 3, ASP.NET Core Public Host, Worker v2, and LLM providers (OpenAI Responses, Anthropic Messages, and OpenAI-Compatible).

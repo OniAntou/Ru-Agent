@@ -80,6 +80,30 @@ public sealed class FileRestoreAdapter
             && !rec.IsConsumed;
     }
 
+    /// <summary>
+    /// Peeks the restore target without reserving or consuming the record, so
+    /// the dispatcher can select the session-granted adapter root for an
+    /// external restore. Returns false for unknown, consumed, or missing ids;
+    /// callers then fall back to the lease toolset, which raises the native
+    /// recovery error. Never throws.
+    /// </summary>
+    internal static bool TryGetCanonicalPath(string? recoveryId, out string? canonicalPath)
+    {
+        canonicalPath = null;
+        if (string.IsNullOrWhiteSpace(recoveryId))
+        {
+            return false;
+        }
+
+        if (_store.TryGetValue(recoveryId, out var record) && !record.IsConsumed)
+        {
+            canonicalPath = record.CanonicalPath;
+            return true;
+        }
+
+        return false;
+    }
+
     public JsonObject Prepare(JsonObject arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);

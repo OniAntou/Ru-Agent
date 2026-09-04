@@ -47,6 +47,7 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, FileTools> _fileToolsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly AppTools _apps = new();
     private readonly SystemTools _system = new();
     private readonly Lazy<VolumeTools> _volume;
@@ -96,6 +97,9 @@ public sealed class ToolExecutionService : IToolInvoker
             Restore = _fileRestore,
             MutationResolver = _mutationResolver,
             Terminal = _terminal,
+            CanonicalRoot = _workspace.Root,
+            Notes = _notes,
+            Edit = new FileEditAdapter(_workspace.Root),
         };
         _volume = new Lazy<VolumeTools>(
             () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
@@ -611,25 +615,17 @@ public sealed class ToolExecutionService : IToolInvoker
             ["files.read"] = (context, arguments, _) => Succeeded(
                 ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
                 "Workspace file read."),
-            ["files.edit"] = (_, arguments, _) => ExecuteFileEdit(arguments),
+            ["files.edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
             ["files.write"] = (context, arguments, _) => Succeeded(
                 ExecuteFileWrite(context, arguments),
                 "Workspace file written."),
             ["files.delete"] = (context, arguments, _) => Succeeded(
                 ExecuteDelete(context, arguments),
                 "Workspace file deleted."),
-            ["files.restore"] = (context, arguments, _) => Succeeded(
-                ToolsFor(context).Restore.Execute(arguments),
-                "Workspace file restored."),
+            ["files.restore"] = (context, arguments, _) => ExecuteRestore(context, arguments),
             ["terminal.run"] = ExecuteTerminalRunAsync,
             ["terminal.shell"] = ExecuteTerminalShellAsync,
-            ["notes.create"] = (context, arguments, _) => Succeeded(
-                _notes.Create(
-                    ReadString(arguments, "path"),
-                    ReadString(arguments, "title"),
-                    ReadString(arguments, "content"),
-                    context.Approved),
-                "Workspace note created."),
+            ["notes.create"] = (context, arguments, _) => ExecuteNotesCreate(context, arguments),
         };
 
         if (_webFetch is not null)
@@ -675,7 +671,8 @@ public sealed class ToolExecutionService : IToolInvoker
     /// matching session-granted directory; without a grant the adapters keep
     /// their own <c>outside_workspace</c> denial. Malformed inputs fall back
     /// to the lease toolset so adapters keep their native errors.
-    /// files.edit/restore/notes stay lease-rooted (follow-up).
+    /// files.edit/notes resolve via the input path; files.restore peeks the
+    /// stored recovery record's canonical path before dispatch.
     /// </summary>
     private RootToolSet ResolveTools(ToolExecutionContext context, string? pathInput)
     {
@@ -751,6 +748,12 @@ public sealed class ToolExecutionService : IToolInvoker
         return _toolSetsByRoot.GetOrAdd(root, static (_, resolvedRoot) => RootToolSet.Create(resolvedRoot), root);
     }
 
+    private FileTools FileToolsFor(string canonicalRoot)
+    {
+        var root = Path.GetFullPath(canonicalRoot);
+        return _fileToolsByRoot.GetOrAdd(root, static (_, resolvedRoot) => new FileTools(new WorkspacePathGuard(resolvedRoot)), root);
+    }
+
     private sealed class RootToolSet
     {
         public required FileListAdapter List { get; init; }
@@ -762,6 +765,9 @@ public sealed class ToolExecutionService : IToolInvoker
         public required FileRestoreAdapter Restore { get; init; }
         public required CanonicalPathResolver MutationResolver { get; init; }
         public required TerminalAdapter Terminal { get; init; }
+        public required string CanonicalRoot { get; init; }
+        public required NotesAdapter Notes { get; init; }
+        public required FileEditAdapter Edit { get; init; }
 
         public static RootToolSet Create(string canonicalRoot)
         {
@@ -774,10 +780,13 @@ public sealed class ToolExecutionService : IToolInvoker
                 Write = new FileWriteAdapter(canonicalRoot),
                 Delete = new FileDeleteAdapter(canonicalRoot),
                 Restore = new FileRestoreAdapter(canonicalRoot),
+                Edit = new FileEditAdapter(canonicalRoot),
                 MutationResolver = new CanonicalPathResolver(canonicalRoot),
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
                     new ShellRuntimeResolver()),
+                CanonicalRoot = canonicalRoot,
+                Notes = new NotesAdapter(new WorkspacePathGuard(canonicalRoot)),
             };
         }
     }
@@ -989,12 +998,13 @@ public sealed class ToolExecutionService : IToolInvoker
             : citation.Snippet.Length <= 512 ? citation.Snippet : citation.Snippet[..512],
     };
 
-    private ValueTask<ToolExecutionOutcome> ExecuteFileEdit(JsonObject arguments)
+    private ValueTask<ToolExecutionOutcome> ExecuteFileEdit(ToolExecutionContext context, JsonObject arguments)
     {
         try
         {
+            var fileTools = ResolveFileTools(context, TargetPathOf(arguments));
             return Succeeded(
-                _files.Edit(
+                fileTools.Edit(
                     ReadString(arguments, "path"),
                     ReadOptionalString(arguments, "old_string"),
                     ReadOptionalString(arguments, "new_string"),
@@ -1012,6 +1022,112 @@ public sealed class ToolExecutionService : IToolInvoker
                 error.Code,
                 "Workspace file was not edited.",
                 ToolVerificationStates.NotRequired));
+        }
+    }
+
+    private ValueTask<ToolExecutionOutcome> ExecuteRestore(ToolExecutionContext context, JsonObject arguments)
+    {
+        var tools = ResolveRestoreTools(context, arguments);
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            tools.Restore.Execute(arguments),
+            ToolVerificationStates.NotRequired,
+            "Workspace file restored."));
+    }
+
+    private ValueTask<ToolExecutionOutcome> ExecuteNotesCreate(ToolExecutionContext context, JsonObject arguments)
+    {
+        var notes = ResolveNotes(context, TargetPathOf(arguments));
+        var output = notes.Create(
+            ReadString(arguments, "path"),
+            ReadString(arguments, "title"),
+            ReadString(arguments, "content"),
+            context.Approved);
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            output,
+            ToolVerificationStates.NotRequired,
+            "Workspace note created."));
+    }
+
+    private FileTools ResolveFileTools(ToolExecutionContext context, string? pathInput)
+    {
+        var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
+        if (string.IsNullOrWhiteSpace(pathInput) || grants.Count == 0)
+        {
+            return _files;
+        }
+
+        try
+        {
+            var selected = FileToolRootSelector.SelectRoot(
+                _mutationResolver,
+                _mutationResolver.CanonicalRoot,
+                grants,
+                pathInput);
+            if (string.Equals(selected, _mutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return _files;
+            }
+
+            return FileToolsFor(selected);
+        }
+        catch (ArgumentException)
+        {
+            return _files;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return _files;
+        }
+    }
+
+    private RootToolSet ResolveRestoreTools(ToolExecutionContext context, JsonObject arguments)
+    {
+        if (!FileRestoreAdapter.TryGetCanonicalPath(
+                ReadOptionalString(arguments, "recovery_id"),
+                out var canonicalPath)
+            || string.IsNullOrWhiteSpace(canonicalPath))
+        {
+            return ToolsFor(context);
+        }
+
+        return ResolveRootToolSet(context, canonicalPath!);
+    }
+
+    private NotesAdapter ResolveNotes(ToolExecutionContext context, string? pathInput)
+    {
+        var tools = ResolveRootToolSet(context, pathInput);
+        return tools.Notes;
+    }
+
+    private RootToolSet ResolveRootToolSet(ToolExecutionContext context, string? pathInput)
+    {
+        var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
+        if (string.IsNullOrWhiteSpace(pathInput) || grants.Count == 0)
+        {
+            return ToolsFor(context);
+        }
+
+        try
+        {
+            var selected = FileToolRootSelector.SelectRoot(
+                _mutationResolver,
+                _mutationResolver.CanonicalRoot,
+                grants,
+                pathInput!);
+            if (string.Equals(selected, _mutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return ToolsFor(context);
+            }
+
+            return ToolsForRoot(selected);
+        }
+        catch (ArgumentException)
+        {
+            return ToolsFor(context);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ToolsFor(context);
         }
     }
 

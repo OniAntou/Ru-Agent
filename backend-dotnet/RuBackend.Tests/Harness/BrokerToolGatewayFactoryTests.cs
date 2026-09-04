@@ -159,6 +159,94 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ExecuteAsync_ResumesEditAndNotesInsideGrantedDirectory()
+    {
+        var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
+        var runId = new RunId("run_" + new string('1', 32));
+        var snapshot = PolicySnapshotCanonicalizer.Create(
+            1,
+            AgentPermissionPreset.Standard,
+            SnapshotWorkspace(),
+            [],
+            DateTimeOffset.UtcNow);
+        var gateway = Assert.IsType<global::RuBackend.Harness.Broker.BrokerToolGateway>(
+            factory.Create(_workspaceRoot, snapshot, runId));
+
+        var externalDir = Path.Combine(Path.GetTempPath(), "ru-broker-factory-grant-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(externalDir);
+        var editPath = Path.Combine(externalDir, "editable.txt");
+        await File.WriteAllTextAsync(editPath, "factory-edit-pre");
+        try
+        {
+            var editProposal = Proposal(runId, "files.edit", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = editPath,
+                ["old_string"] = "factory-edit-pre",
+                ["new_string"] = "factory-edit-post",
+            });
+            var editDecision = await gateway.EvaluateAsync(editProposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, editDecision.Decision);
+
+            var notesProposal = Proposal(runId, "notes.create", new System.Text.Json.Nodes.JsonObject
+            {
+                ["path"] = Path.Combine(externalDir, "note.md"),
+                ["title"] = "External Note",
+                ["content"] = "external-note-content",
+            });
+            var notesDecision = await gateway.EvaluateAsync(notesProposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, notesDecision.Decision);
+
+            var editAuthorized = await factory.RespondApprovalAsync(
+                runId.Value,
+                editDecision.ApprovalId!.Value.Value,
+                "allow_session_directory",
+                CancellationToken.None);
+            Assert.True(editAuthorized.authorized);
+
+            var editPrepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    editProposal,
+                    new ExecutionId("exec_" + new string('1', 32)),
+                    editDecision.CanonicalIntentToken!),
+                CancellationToken.None);
+            var editReceipt = await gateway.ExecuteAsync(
+                editPrepared,
+                _ => ValueTask.CompletedTask,
+                CancellationToken.None);
+            Assert.Equal(ToolExecutionOutcome.Succeeded, editReceipt.Outcome);
+            Assert.Equal("factory-edit-post", await File.ReadAllTextAsync(editPath));
+
+            var notesAuthorized = await factory.RespondApprovalAsync(
+                runId.Value,
+                notesDecision.ApprovalId!.Value.Value,
+                "allow_session_directory",
+                CancellationToken.None);
+            Assert.True(notesAuthorized.authorized);
+
+            var notesPrepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    notesProposal,
+                    new ExecutionId("exec_" + new string('2', 32)),
+                    notesDecision.CanonicalIntentToken!),
+                CancellationToken.None);
+            var notesReceipt = await gateway.ExecuteAsync(
+                notesPrepared,
+                _ => ValueTask.CompletedTask,
+                CancellationToken.None);
+            Assert.Equal(ToolExecutionOutcome.Succeeded, notesReceipt.Outcome);
+            var notePath = Path.Combine(externalDir, "note.md");
+            Assert.True(File.Exists(notePath));
+            var noteText = await File.ReadAllTextAsync(notePath);
+            Assert.Contains("external-note-content", noteText);
+        }
+        finally
+        {
+            TryDelete(externalDir);
+            factory.CloseRun(runId.Value);
+        }
+    }
+
+    [Fact]
     public async Task RespondApprovalAsync_ReturnsFalse_WhenApprovalUnknown()
     {
         var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);

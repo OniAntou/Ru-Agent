@@ -36,7 +36,7 @@ public sealed class CommandAnalyzerRegistry
             return new(Version, TerminalOperationClass.DirectDelete, "none", "terminal_direct_delete");
         }
 
-        return baseName switch
+        var analysis = baseName switch
         {
             "git" => _git.Analyze(resolvedExecutable, argv),
             "dotnet" => _dotnet.Analyze(resolvedExecutable, argv),
@@ -45,6 +45,16 @@ public sealed class CommandAnalyzerRegistry
             "rg" => _ripgrep.Analyze(resolvedExecutable, argv),
             _ => Unknown("unrecognized_executable"),
         };
+
+        return analysis.OperationClass == TerminalOperationClass.Unknown
+               && baseName is "git" or "dotnet" or "python" or "python3" or "py"
+                   or "pytest" or "ruff" or "mypy" or "pip" or "pip3" or "rg"
+            ? analysis with
+            {
+                OperationClass = TerminalOperationClass.ExternalMutation,
+                ReasonCode = "recognized_executable_unclassified_form",
+            }
+            : analysis;
     }
 
     private static CommandAnalysis Unknown(string reasonCode) =>

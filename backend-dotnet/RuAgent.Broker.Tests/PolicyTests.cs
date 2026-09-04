@@ -278,8 +278,7 @@ public sealed class PolicyEvaluationTests
         Assert.True(gitStatus.AnalyzerRiskPending);
 
         var gitCommit = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "commit"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", gitCommit.Decision);
-        Assert.Equal("git_mutation", gitCommit.ReasonCode);
+        Assert.Equal("allow", gitCommit.Decision);
 
         var dotnetTest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "test"), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("allow", dotnetTest.Decision);
@@ -317,7 +316,7 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("allow", rgReplace.Decision);
 
         var pythonScript = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "script.py"), PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", pythonScript.Decision);
+        Assert.Equal("allow", pythonScript.Decision);
     }
 
     [Theory]
@@ -391,16 +390,15 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Standard_asks_for_git_commit_but_full_access_allows_it_outside_the_managed_path()
+    public void Git_commit_is_automatic_for_both_compatibility_presets()
     {
         var evaluator = new PolicySnapshotEvaluator();
         var valid = PolicyRequestInvariants.Valid;
 
         var (standardLease, standardFactory) = Bind(PolicyEvalSnapshots.Empty());
-        var ask = evaluator.Evaluate(
+        var standard = evaluator.Evaluate(
             standardLease.Snapshot, Terminal(standardFactory, "git", "commit", "-m", "x"), valid, Now);
-        Assert.Equal("ask", ask.Decision);
-        Assert.Equal("git_mutation", ask.ReasonCode);
+        Assert.Equal("allow", standard.Decision);
 
         var (fullLease, fullFactory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
         var allow = evaluator.Evaluate(

@@ -22,7 +22,7 @@ public sealed class ToolCatalogTests
         Assert.Equal("desktop", manifest.Adapter);
         Assert.InRange(manifest.TimeoutMs, 1, 30_000);
         Assert.InRange(manifest.MaxOutputBytes, 1, 256 * 1024);
-        Assert.True(binding.ModelEnabled);
+        Assert.False(binding.ModelEnabled);
         Assert.True(binding.VerificationRequired);
         Assert.Equal("native_pending", binding.Availability);
     }
@@ -56,7 +56,7 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void Internal_terminal_bindings_are_approval_required_and_full_only()
+    public void Terminal_bindings_are_model_visible_in_agent_and_full_but_still_require_approval()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
         var run = catalog.Registry.Get("terminal.run", "1.0.0");
@@ -68,15 +68,16 @@ public sealed class ToolCatalogTests
         Assert.False(shell.VerificationRequired);
         Assert.Equal("executable", shell.Availability);
 
-        // Advertisement is derived from profile scopes; the destructive shell
-        // never surfaces in Chat or Agent and is offered only in Full Access.
+        // Advertisement is derived from profile scopes. The current Agent
+        // profile includes terminal execution; policy still decides whether
+        // each concrete command can run or needs one-time approval.
         var advertised = Enum.GetValues<CapabilityProfile>()
             .Where(profile => catalog.Registry.ModelCapabilities(profile)
                 .Any(item => item.Manifest.Id == "terminal.shell"))
             .ToArray();
         Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
-        Assert.DoesNotContain(CapabilityProfile.Agent, advertised);
-        Assert.Equal([CapabilityProfile.Full], advertised);
+        Assert.Contains(CapabilityProfile.Agent, advertised);
+        Assert.Contains(CapabilityProfile.Full, advertised);
     }
 
     [Fact]
@@ -91,8 +92,25 @@ public sealed class ToolCatalogTests
         Assert.Equal(new[] { "system.write" }, volume.Scopes);
         Assert.Equal("reversible", volume.Risk);
         Assert.Equal("native_pending", volume.Availability);
-        Assert.True(volume.ModelEnabled);
+        Assert.False(volume.ModelEnabled);
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
+
+        foreach (var binding in catalog.Registry.List())
+        {
+            var definition = AgentToolDefinitionCatalog.Find(binding.Manifest.Id, binding.Manifest.Version)!;
+            Assert.Equal(
+                definition.Exposure.HasFlag(AgentToolExposure.ModelVisible),
+                binding.ModelEnabled);
+        }
+
+        var fullModelIds = catalog.Registry.ModelCapabilities(CapabilityProfile.Full)
+            .Select(binding => binding.Manifest.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain("system.time", fullModelIds);
+        Assert.DoesNotContain("system.status", fullModelIds);
+        Assert.DoesNotContain("app.list", fullModelIds);
+        Assert.DoesNotContain("notes.create", fullModelIds);
+        Assert.DoesNotContain("system.volume", fullModelIds);
     }
 
     [Fact]

@@ -18,32 +18,32 @@ public sealed class ToolBindingRegistryTests
     }
 
     [Fact]
-    public void Agent_profile_adds_only_nonterminal_mutating_bindings()
+    public void Agent_profile_adds_model_visible_mutating_and_terminal_bindings()
     {
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
         Assert.Contains("files.write", ids);
         Assert.Contains("help.docs", ids);
-        Assert.DoesNotContain("terminal.run", ids);
-        Assert.DoesNotContain("terminal.shell", ids);
-        Assert.Contains("system.volume", ids);
+        Assert.Contains("terminal.run", ids);
+        Assert.Contains("terminal.shell", ids);
+        Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
     }
 
     [Fact]
-    public void Full_profile_adds_terminal_bindings_to_agent_advertisement()
+    public void Full_profile_keeps_the_same_nonweb_model_bindings_as_agent()
     {
         var agent = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
         var full = CatalogForTests().ModelCapabilities(CapabilityProfile.Full)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Subset(full, agent);
+        Assert.True(agent.SetEquals(full));
         Assert.Contains("terminal.run", full);
         Assert.Contains("terminal.shell", full);
-        Assert.DoesNotContain("terminal.run", agent);
-        Assert.DoesNotContain("terminal.shell", agent);
+        Assert.Contains("terminal.run", agent);
+        Assert.Contains("terminal.shell", agent);
     }
 
     [Fact]

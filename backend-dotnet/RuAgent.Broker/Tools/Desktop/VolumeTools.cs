@@ -59,7 +59,7 @@ public sealed class VolumeTools
         "desktop",
         RiskClass.Reversible,
         new HashSet<string>([ToolScope.SystemWrite], StringComparer.Ordinal),
-        AgentModelToolContractCatalog.Get("system.volume", "1.0.0").InputSchema,
+        AgentToolDefinitionCatalog.Find("system.volume", "1.0.0")!.InputSchema,
         new JsonObject
         {
             ["type"] = "object",

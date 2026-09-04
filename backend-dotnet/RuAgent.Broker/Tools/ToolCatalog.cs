@@ -10,7 +10,7 @@ namespace RuAgent.Broker.Tools;
 public sealed class ToolCatalog
 {
     private static readonly IReadOnlyList<string> BoundIds =
-        AgentModelToolContractCatalog.ToolIds;
+        AgentToolDefinitionCatalog.Get().Select(definition => definition.ToolId).ToArray();
 
     public ToolCatalog(
         IReadOnlyDictionary<string, ToolExecutor> executors,
@@ -46,11 +46,13 @@ public sealed class ToolCatalog
         Registry = new ToolBindingRegistry();
         foreach (var manifest in manifests)
         {
+            var definition = AgentToolDefinitionCatalog.Find(manifest.Id, manifest.Version)
+                ?? throw new AgentProtocolException("tool_contract_mismatch");
             var nativePending = manifest.Id == "system.volume";
             Registry.Register(new ToolBinding(
                 manifest,
                 executors[manifest.Id],
-                ModelEnabled: true,
+                ModelEnabled: definition.Exposure.HasFlag(AgentToolExposure.ModelVisible),
                 nativePending ? "native_pending" : "executable",
                 VerificationRequired: nativePending));
         }
@@ -108,7 +110,8 @@ public sealed class ToolCatalog
         adapter,
         risk,
         new HashSet<string>([scope], StringComparer.Ordinal),
-        AgentModelToolContractCatalog.Get(id, AgentModelToolContractCatalog.CurrentVersion).InputSchema,
+        AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)?.InputSchema
+            ?? throw new AgentProtocolException("tool_contract_not_found"),
         new JsonObject { ["type"] = "object" },
         30_000,
         maxOutputBytes,

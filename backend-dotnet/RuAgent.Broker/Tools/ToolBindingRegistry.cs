@@ -59,6 +59,7 @@ public sealed class ToolBindingRegistry
         lock (_gate)
         {
             return OrderedBindings()
+                .Where(binding => binding.ModelEnabled)
                 .Where(binding => binding.Manifest.Id == "help.docs"
                     ? profile is CapabilityProfile.Agent or CapabilityProfile.Full
                     : binding.Manifest.Scopes.All(scopes.Contains))
@@ -82,6 +83,7 @@ public sealed class ToolBindingRegistry
         {
             var scopes = EffectiveScopes(profile, additionalScopes);
             return OrderedBindings()
+                .Where(binding => binding.ModelEnabled)
                 .Where(binding => binding.Manifest.Id == "help.docs"
                     ? profile is CapabilityProfile.Agent or CapabilityProfile.Full
                     : binding.Manifest.Scopes.All(scopes.Contains))

@@ -28,6 +28,23 @@ public sealed class AgentToolDefinitionCatalogTests
         "system.volume",
     ];
 
+    private static readonly string[] ExpectedModelOrder =
+    [
+        "files.list",
+        "files.glob",
+        "files.search",
+        "files.read",
+        "files.write",
+        "files.edit",
+        "files.delete",
+        "files.restore",
+        "terminal.run",
+        "terminal.shell",
+        "web.search",
+        "web.fetch",
+        "help.docs",
+    ];
+
     [Fact]
     public void Get_returns_exact_stable_inventory_and_exposure_split()
     {
@@ -127,13 +144,20 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
-    public void Compatibility_catalog_projects_every_definition()
+    public void Model_contract_catalog_projects_only_model_visible_definitions()
     {
-        Assert.Equal(ExpectedOrder, AgentModelToolContractCatalog.ToolIds);
+        Assert.Equal(ExpectedModelOrder, AgentModelToolContractCatalog.ToolIds);
+        Assert.Equal(ExpectedModelOrder, AgentModelToolContractCatalog.Get().Select(item => item.ToolId));
         Assert.Equal(
             ["web.search", "web.fetch"],
             AgentModelToolContractCatalog.WebToolIds.OrderBy(
                 id => Array.IndexOf(ExpectedOrder, id)));
+
+        foreach (var internalTool in new[] { "system.time", "system.status", "app.list", "notes.create", "system.volume" })
+        {
+            Assert.Null(AgentModelToolContractCatalog.Find(internalTool, "1.0.0"));
+            Assert.Throws<KeyNotFoundException>(() => AgentModelToolContractCatalog.Get(internalTool, "1.0.0"));
+        }
     }
 
     private static JsonObject Properties(string toolId) =>

@@ -113,17 +113,11 @@ public sealed class BrokerHostTests
         var hello = await ReceiveAsync(socket, cancellation.Token);
 
         var tools = hello.Payload["tools"]!.AsArray();
-        var volume = Assert.Single(tools, node =>
-            node!["tool_id"]!.GetValue<string>() == "system.volume");
-        Assert.Equal("1.0.0", volume!["tool_version"]!.GetValue<string>());
-        Assert.Equal("native_pending", volume["availability"]!.GetValue<string>());
-        Assert.True(volume["model_enabled"]!.GetValue<bool>());
-        Assert.Equal("system.write", Assert.Single(volume["scopes"]!.AsArray())!.GetValue<string>());
-
         var ids = tools.Select(node => node!["tool_id"]!.GetValue<string>()).ToArray();
         Assert.Contains("files.write", ids);
-        Assert.DoesNotContain("terminal.run", ids);
-        Assert.DoesNotContain("terminal.shell", ids);
+        Assert.Contains("terminal.run", ids);
+        Assert.Contains("terminal.shell", ids);
+        Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
         Assert.DoesNotContain("app.open", ids);
         Assert.DoesNotContain("web.search", ids);
@@ -821,8 +815,7 @@ public sealed class BrokerHostTests
             {
                 "files.delete", "files.edit", "files.glob", "files.list",
                 "files.read", "files.restore", "files.search", "files.write",
-                "help.docs", "notes.create", "system.volume", "terminal.run",
-                "terminal.shell",
+                "help.docs", "terminal.run", "terminal.shell",
             },
             ids);
     }

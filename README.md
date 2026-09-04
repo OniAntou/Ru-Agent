@@ -136,17 +136,21 @@ Do not start either worker or the voice engine as independent public services.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - In the WinUI shell, conversation and Voice are the primary navigation surfaces.
   Log, Diagnostics, Policy, and Audit are grouped under `CÃ´ng cá»¥`; the composer
-  shows one static Agent indicator and one compact preset dropdown with
-  `Standard` and `Full Access`. Agent is the only generation mode. The UI always
-  uses the known project root as the initial Agent workspace; workspace selection
-  is not exposed in the composer, while the authenticated API still validates
-  the canonical path. If the app has not opened a session yet, the first Agent
-  prompt creates a fresh session before applying the selected preset. All
-  prompts use the authenticated `/agent/v1/*` API/SSE path. The composer shows
-  bounded Agent status, workspace trust, approval, Stop, and Continue controls;
-  the conversation transcript can show a transient safe activity feed for the
-  current run. The feed is separate from durable messages and never places raw
-  tool payloads in the transcript.
+  shows one static Agent indicator. Agent is the only generation mode and the
+  Agent session is **session-scoped** — no preset picker or scope picker is
+  exposed. The UI always uses the known project root as the initial Agent
+  workspace; workspace selection is not exposed in the composer, while the
+  authenticated API still validates the canonical path. If the app has not
+  opened a session yet, the first Agent prompt creates a fresh session
+  before applying the broker's effective profile. All prompts use the
+  authenticated `/agent/v1/*` API/SSE path. The composer shows bounded
+  Agent status, approval, Stop, and Continue controls; the conversation
+  transcript can show a transient safe activity feed for the current run.
+  The feed is separate from durable messages and never places raw tool
+  payloads in the transcript. The inline approval panel renders one
+  bounded message per reason code —
+  `external_directory_required`, `terminal_delete_requires_approval`,
+  or `terminal_unknown_executable` — and the user never picks a scope.
 - Multimodal image attachments: the composer accepts image pasting and file
   attachments (PNG, JPEG, WebP, max 4 images, auto-resized on client up to
   2048px / JPEG 0.85). ASP.NET Core validates payload bounds (4 MB per image,
@@ -179,12 +183,16 @@ Do not start either worker or the voice engine as independent public services.
   `system.volume` is a deterministic direct-action path with same-endpoint
   readback verification, not a model-selection binding. `notes.create`,
   read-only `system.*`, and `app.list` remain Broker-internal. CLI exposes
-  `agent approve --scope once|run|project`, `agent deny`, `agent policy
-  list`/`import --global FILE`/`remove`, and `agent run --preset full` with
-  interactive confirmation (`--json` cannot bypass). The preset resets to
-  Standard on every launch and Full Access needs one explicit confirmation per
-  run. WinUI displays typed activity from actual Host events, and a success is
-  visible only after a matching verified Broker receipt.
+  `agent approve <run-id> <approval-id>`, `agent deny`, `agent policy
+  list`/`import --global FILE`/`remove`, and `agent run --workspace PATH
+  "prompt"`. There is no `--scope` flag and no `--preset` flag in the
+  normal flow: the Host picks the right one-time token from the pending
+  binding — a session-scoped directory grant for
+  `external_directory_required`, an ephemeral terminal token for
+  `terminal_delete_requires_approval` or `terminal_unknown_executable`.
+  `--json` cannot confirm any approval. WinUI displays typed activity
+  from actual Host events, and a success is visible only after a matching
+  verified Broker receipt.
   The authenticated `POST /agent/v1/runs/{runId}/commands` route and CLI
   `agent command` adapter share one bounded parser for `/compact
   normal|aggressive`, `/help`, `/skills`, and `/skill <id> <json-object>`;

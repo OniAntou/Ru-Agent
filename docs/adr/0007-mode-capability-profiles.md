@@ -1,6 +1,10 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-29
+supersedes: superseded by session-scoped directory grants + terminal risk
+  classifications (2026-09-04 plan). The preset picker is no longer exposed
+  in ChatView or `agent run`; current permission model lives in
+  `docs/architecture.md` and `docs/operations/agent-tools.md`.
 ---
 
 # Agent capability profiles (Standard / Full Access)
@@ -16,7 +20,10 @@ Grants remain session-scoped. Every launch starts in Agent Standard, Full
 Access requires one explicit confirmation per run, and no grant survives
 session replacement or restart. There is no Chat compatibility transport or
 read-only generation profile. Elevation, admin, registry, and service
-installation stay out of scope with no adapters.
+installation stay out of scope with no adapters. The picker was
+retired in 2026-09-04; the current pending-approval model exposes
+`external_directory_required`, `terminal_delete_requires_approval`, and
+`terminal_unknown_executable` as the only ask reasons.
 
 ## Recorded limitations and decisions
 
@@ -32,3 +39,13 @@ installation stay out of scope with no adapters.
   approvals still gate mutations. The former Worker v1 conversational
   generation branch is retired; Worker v1 now carries only runtime/device
   adapters.
+
+## Superseded history
+
+The Standard / Full Access picker was a UI affordance that mapped to a
+reusable rule. Session-scoped agent permissions removed the picker; the
+chat composer now starts a run with the broker's effective Standard
+profile and lets the Broker decide each request from the active session
+grant plus terminal risk classification. Full Access is no longer a
+user-selectable preset. See the 2026-09-04 implementation plan for the
+new contract.

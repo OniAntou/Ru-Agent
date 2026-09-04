@@ -29,13 +29,16 @@ managed Git commit workflow, and dynamic model context compaction.
 >   `reusable_rule_not_saved` still permitting once-only execution) and a thin
 >   `RuAgent.Cli` tracer (safe envelope only, NDJSON `--json` `v:1`, no private
 >   payload auto-fetch, `policy list`/`import --global FILE`/`remove`,
->   `approve --scope once|run|project`/`deny`, `run --preset full` interactive
->   with `X-Interactive-Confirmed: true`; `--json` cannot bypass).
+>   `approve <run-id> <approval-id>`/`deny`, `run --workspace PATH "prompt"`,
+>   with no `--scope`/`--preset` flags exposed; the server picks the right
+>   one-time token from the pending binding — session-scoped directory grant
+>   for `external_directory_required`, ephemeral terminal token for
+>   `terminal_delete_requires_approval` or `terminal_unknown_executable`).
+>   `--json` cannot confirm any approval.
 >   Policy/approval/reconcile routes are active on the Agent v2 headless path.
 >   `POST /agent/v1/runs/{runId}/reconcile` resolves ambiguous dispatch and
->   reconciliation outcomes. `full` preset requires
->   interactive confirmation and `X-Interactive-Confirmed: true`; `--json`
->   cannot create global rules or confirm trust/approval.
+>   reconciliation outcomes. `--json` cannot create global rules or confirm
+>   trust/approval.
 >   Headless terminal requests and interactive Windows ConPTY sessions are available
 >   under the policy/approval boundary; the managed Git commit workflow is fully shipped
 >   with temporary index isolation and path attribution rollback.
@@ -284,13 +287,39 @@ the future OS-enforced filesystem/network sandbox.
 ## Agent activity shown in WinUI
 
 Agent is the only supported generation path. The desktop composer uses the
-known project root and exposes one static Agent indicator plus one compact
-preset selector with `Standard` and `Full Access`; it does not expose a Chat
-mode switch or workspace editor. The sidebar keeps only primary conversation
-surfaces; Log, Diagnostics, Policy, and Audit remain reachable from the
-`Công cụ` flyout. Agent prompts are created through the authenticated
-`/agent/v1/*` API and observed over SSE. The inline surface never displays raw
-commands, arguments, stdout, or private payload content.
+known project root and exposes one static Agent indicator; there is no
+preset selector or Chat mode switch and no workspace editor. The sidebar
+keeps only primary conversation surfaces; Log, Diagnostics, Policy, and
+Audit remain reachable from the `Công cụ` flyout. Agent prompts are
+created through the authenticated `/agent/v1/*` API and observed over
+SSE. The inline surface never displays raw commands, arguments, stdout,
+or private payload content.
+
+## Agent permission UX
+
+Every Agent run is session-scoped. The chat composer starts a run with
+the broker's effective profile and never asks the user to pick a
+permission scope. The Broker is the only authority; Host and the UI only
+display the server-selected pending approval kind with one bounded
+message per reason code:
+
+- `external_directory_required` — Ru cần dùng thư mục ngoài project
+  trong đoạn chat này, cho đến khi ứng dụng đóng. The approval opens a
+  session-scoped directory grant in the Broker; the same session
+  re-uses the grant on subsequent calls, and new sessions ask again.
+- `terminal_delete_requires_approval` — Lệnh terminal này sẽ xóa file.
+  The approval returns an ephemeral one-time terminal token, never a
+  reusable rule.
+- `terminal_unknown_executable` — Ru chưa nhận diện được executable của
+  lệnh terminal này. The approval returns an ephemeral one-time
+  terminal token.
+
+Recognized Git commands and recognized package install/restore
+commands are auto-allowed; direct terminal deletion and unrecognized
+executables require a single-use approval even inside the project
+root or an approved folder. The CLI exposes the same model with
+`agent approve <run-id> <approval-id>` and `agent deny`; there is no
+`--scope` flag and no `--preset` flag in the normal flow.
 
 The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only

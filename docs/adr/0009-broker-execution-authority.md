@@ -1,3 +1,8 @@
+---
+status: accepted
+date: 2026-08-29
+---
+
 # RuAgentBroker is the single tool execution authority
 
 Ru had two parallel tool implementations: the in-process `HarnessToolGateway`
@@ -7,6 +12,14 @@ model-visible tool call (`files.*`, `terminal.*`, `web.*`, `help.docs`)
 executes only in RuAgentBroker, reached through the existing `IToolGateway`
 seam (`Evaluate → Prepare → Execute → Cancel`); the Host keeps auth, policy
 projection, approvals, and recovery persistence only.
+
+The Broker is also the only authority for **session-scoped** Agent
+permissions. It owns the in-memory `SessionDirectoryGrantRegistry` and
+the typed pending-approval reasons (`external_directory_required`,
+`terminal_delete_requires_approval`, `terminal_unknown_executable`).
+Host and UI never persist or duplicate those grants; the GUI and CLI
+only render the server-selected reason and forward a parameterless
+approve.
 
 ## Considered options
 

@@ -1080,11 +1080,16 @@ namespace RuApp.Views
                 return;
             }
 
+            bool keepTerminalFailureVisible = AgentFailurePresentation.ShouldKeepVisible(
+                _agentController.CurrentRun?.Status,
+                _agentController.StatusText);
+
             if (_agentController.IsBusy != true
                 && !_agentController.CanCancel
                 && !_agentController.HasPendingApproval
                 && !_agentController.NeedsWorkspaceTrust
-                && !_agentController.CanContinue)
+                && !_agentController.CanContinue
+                && !keepTerminalFailureVisible)
             {
                 _agentActivityVisible = false;
                 AgentInlinePanel.Visibility = Visibility.Collapsed;
@@ -1099,7 +1104,7 @@ namespace RuApp.Views
             bool isRunning = _agentController.CanCancel || IsActiveAgentRunPending();
             UpdateSendButtonMode(isAgentRunning: isRunning);
 
-            string safeStatus = SafeAgentStatus(_agentController.StatusText);
+            string safeStatus = AgentFailurePresentation.Render(_agentController.StatusText);
             AgentStatusText.Text = safeStatus;
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = _agentController.CanContinue
@@ -1122,7 +1127,9 @@ namespace RuApp.Views
                     _agentController.PendingApprovalSummary);
             }
 
-            bool hasInlineAction = approvalPending || _agentController.CanContinue;
+            bool hasInlineAction = approvalPending
+                || _agentController.CanContinue
+                || keepTerminalFailureVisible;
             AgentInlinePanel.Visibility = hasInlineAction ? Visibility.Visible : Visibility.Collapsed;
 
             bool actionsEnabled = !_agentActionPending;
@@ -1159,24 +1166,6 @@ namespace RuApp.Views
                 return "Agent đang yêu cầu một hành động cần phê duyệt.";
             }
             return trimmed;
-        }
-
-        private static string SafeAgentStatus(string? status)
-        {
-            if (string.IsNullOrWhiteSpace(status)
-                || string.Equals(status.Trim(), "Phiên chạy đã kết thúc.", StringComparison.OrdinalIgnoreCase))
-            {
-                return string.Empty;
-            }
-
-            string trimmed = status.Trim();
-            if (trimmed.StartsWith("Lỗi", StringComparison.OrdinalIgnoreCase)
-                || trimmed.Contains("Exception", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Coding Agent gặp lỗi. Mở Công cụ → Nhật ký hoạt động để xem trạng thái.";
-            }
-
-            return BoundedDisplay(trimmed, 256);
         }
 
         private static string BoundedDisplay(string value, int maxLength)

@@ -344,4 +344,43 @@ public sealed class AgentRunControllerTests
         Assert.Equal("completed", controller.CurrentRun?.Status);
         Assert.False(controller.CanCancel);
     }
+
+    [Fact]
+    public async Task CreateAndRun_preserves_safe_failure_code_after_terminal_refresh()
+    {
+        var fake = new FakeClient
+        {
+            Run = AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
+                RunId,
+                "sess_1",
+                "ws_1",
+                "failed",
+                "standard",
+                "2026",
+                "2026")),
+        };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-failed",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "run.failed",
+            OccurredAt: "2026",
+            Status: "failed",
+            SafeSummary: "provider_rate_limited",
+            PayloadRef: null,
+            ApprovalId: null,
+            Sequence: 1,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-failed"));
+
+        Assert.Equal("failed", controller.CurrentRun?.Status);
+        Assert.Equal("provider_rate_limited", controller.StatusText);
+        Assert.False(controller.IsBusy);
+        Assert.False(controller.CanCancel);
+    }
 }

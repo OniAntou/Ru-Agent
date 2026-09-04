@@ -186,7 +186,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     _waitKind = null;
                     PendingApprovalId = null;
                     PendingApprovalSummary = null;
-                    if (!_isCancelRequested)
+                    if (!_isCancelRequested
+                        && !string.Equals(CurrentRun?.Status, "failed", StringComparison.Ordinal))
                     {
                         StatusText = string.Empty;
                     }

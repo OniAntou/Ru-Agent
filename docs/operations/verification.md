@@ -399,8 +399,10 @@ self-contained. `start_dev.bat` refuses to run when the Worker Release artifact
 is missing instead of silently selecting a stale Debug executable; it passes the
 workspace directory to a short startup probe so an immediate `RuApp.exe`
 failure remains visible. A clean exit code from a second launch is accepted when
-the existing single-instance GUI remains alive. Any Windows shortcut should
-target `start_dev.bat` so it uses the same release-path and startup checks.
+the existing single-instance GUI remains alive. Normal Windows shortcuts target
+the published `RuApp.exe` directly to avoid opening a console window;
+`start_dev.bat` remains the manual diagnostic launcher for visible artifact and
+early-startup checks.
 
 Phase 2 parity is deterministic and status-only. The shared fixture
 `tests/fixtures/python-csharp-phase2-device-baseline.json` is exercised by

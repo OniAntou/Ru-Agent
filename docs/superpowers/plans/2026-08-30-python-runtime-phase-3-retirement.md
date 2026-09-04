@@ -82,7 +82,8 @@ OmniVoice, VTube Studio, and Gemini acceptance table below.
 
 ## GUI publish and launcher follow-up (2026-08-31)
 
-The existing desktop shortcut correctly targets `start_dev.bat`, but the
+At this follow-up's 2026-08-31 checkpoint, the desktop shortcut targeted
+`start_dev.bat`, but the
 published GUI artifact had a framework-dependent runtimeconfig and failed before
 creating a window on a host where the x64 runtime was not resolved. The release
 build now explicitly selects `Platform=x64`, `RuntimeIdentifier=win-x64`, and
@@ -92,6 +93,10 @@ the repository workspace as the GUI working directory and uses
 `scripts/launch_gui.ps1` to keep immediate startup failures visible.
 The probe treats a clean exit as successful as well, which preserves normal
 single-instance handoff when the GUI is already open.
+
+Superseded on 2026-09-04: normal desktop shortcuts now target the published
+`RuApp.exe` directly to avoid a console flash. `start_dev.bat` remains available
+for manual startup diagnostics.
 
 Verification on 2026-08-31 passed: the Python suite completed 506/506, the
 13-project C# Release matrix completed 2,086/2,086, `build.bat` reached

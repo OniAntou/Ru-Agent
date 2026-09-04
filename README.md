@@ -102,8 +102,11 @@ it stops with an error if either artifact is missing or if the GUI runtimeconfig
 does not prove a self-contained publish. `start_dev.bat` launches only that
 Release GUI after confirming both artifacts exist, preserves `D:\LLM` as the
 working directory, and reports an immediate startup failure instead of closing
-silently. It never falls back to a Debug build, so a successful build must
-reach `[13/13] Build complete!` before using a shortcut. These commands produce and start `RuApp.exe` plus
+silently. Normal Windows shortcuts target the published `RuApp.exe` directly so
+launch does not open a console window; run `start_dev.bat` manually when visible
+artifact checks and early-startup diagnostics are needed. There is no Debug
+fallback, so a successful build must reach `[13/13] Build complete!` before
+using a shortcut. These commands produce and start `RuApp.exe` plus
 `RuBackend.exe`; the backend owns the managed C# Worker on both private ports.
 Do not start either worker or the voice engine as independent public services.
 

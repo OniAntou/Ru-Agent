@@ -162,8 +162,8 @@ temporary data/log root, three dynamically leased loopback ports, memory-only
 bearers, and one Worker, Broker, and ASP.NET Core edge child. While the port
 leases are still held, it prebuilds Broker and edge sequentially; both are then
 started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
-during a cold build. It classifies all 62 HTTP and 1 WebSocket contract entries
-(41 legacy plus 20 additive `/agent/v1/*` plus `POST /host/shutdown`), uses deterministic fixtures for safe
+during a cold build. It classifies all 64 HTTP and 1 WebSocket contract entries
+(43 non-Agent plus 20 additive `/agent/v1/*` plus `POST /host/shutdown`), uses deterministic fixtures for safe
 mutations and voice plus additive Agent v2 tracer fixtures (idempotency,
 workspace trust via `WindowsWorkspaceIdentityResolver` final-path/volume/file
 identity, policy snapshots, SSE cursor, payload binding, file discovery/read
@@ -193,7 +193,7 @@ as connected.
 | Owner | Responsibilities |
 | --- | --- |
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), playback, microphone capture, public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 62 HTTP and 1 WebSocket route (41 + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), settings transactions, credentials, sessions, history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 64 HTTP and 1 WebSocket route (43 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), settings transactions, credentials, sessions, history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
 | Managed C# Worker | Default private Worker v2 Agent generation and Worker v1 runtime/device orchestration on separate loopback ports. It receives the single-use DPAPI provider bootstrap for v2 plus a distinct device token for v1; the bootstrap path is cleared before the v1 graph is composed. |
 | Python Compatibility Workers | Retired production topology. No Python Agent/Device worker is started by managed or deterministic startup; the test-only fixture is owned under `scripts/harness`. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root, validates hash before capabilities, and advertises model-usable `files.*` (`list`/`glob`/`search`/`read`/`write`/`edit`/`delete`/`restore` one-time). Outside-root targets resolve through session-scoped directory grants: the Host/Broker registers a `CanonicalDirectoryIdentity` per Agent session ID and the dispatch routes `files.*` calls to the matching grant root, so a one-time approval opens the folder for the lifetime of the chat. The grant is in-memory only — it is lost on Broker/Host/UI restart and never shared with new or forked sessions — and it never bypasses protected paths or destructive gates. The Broker also exposes headless terminal bindings, `system.volume`, and `notes.create`. `files.apply_patch` is not advertised. It has no public HTTP contract. |
@@ -206,7 +206,7 @@ forwarding catch-all, route ownership selector, or alternate host mode.
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-62 HTTP method/path pairs and 1 WebSocket route (`/voice/stream`, plus 20
+64 HTTP method/path pairs and 1 WebSocket route (`/voice/stream`, plus 20
 `/agent/v1/*` and 1 `POST /host/shutdown`); REST, WebSocket and SSE clients
 authenticate with the desktop secret (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE

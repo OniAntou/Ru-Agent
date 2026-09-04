@@ -329,8 +329,8 @@ save with a simulated failure) remains a user-run manual gate.
   provider/audio/VTS acceptance was claimed. The old rebuildable GUI publish
   output was replaced; user settings, credentials and session data were untouched.
 
-The route checker must remain at 62 HTTP routes and 1 WebSocket
-route (`/voice/stream`; 41 legacy plus 20 additive `/agent/v1/*` plus
+The route checker must remain at 64 HTTP routes and 1 WebSocket
+route (`/voice/stream`; 43 non-Agent plus 20 additive `/agent/v1/*` plus
 `POST /host/shutdown`). The
 deterministic Harness is contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it

@@ -36,8 +36,8 @@ ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, Agent
 run ordering, public errors, durable Agent harness (Core + SQLite
 `agent_harness.db` + AES-GCM payloads, conversation outbox, workspace trust,
-session permissions, encrypted policy snapshots), and all 62 HTTP plus
-1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 20 additive
+session permissions, encrypted policy snapshots), and all 64 HTTP plus
+1 WebSocket route (`/voice/stream`; 43 non-Agent HTTP routes plus 20 additive
 `/agent/v1/*` plus 1 `POST /host/shutdown`).
 The public Agent path uses Worker v2 (`/worker/v2` one-step `AssistantStep` and
 `/agent/v1/*` 20-route API/SSE with bearer auth, `id:<sequence>`/
@@ -239,7 +239,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 62 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
+The backend artifact covers 64 HTTP routes and 1 WebSocket route (`/voice/stream`; 43 non-Agent
 plus 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), requires correct-bearer success plus
 wrong/missing-bearer rejection, and records observation routes as explicit
 hardware/external skips. It uses synthetic STT/TTS and records only statuses,

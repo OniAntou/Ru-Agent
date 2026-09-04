@@ -52,6 +52,23 @@ public sealed class BrokerSessionTests
     }
 
     [Fact]
+    public void Closing_the_broker_owner_drops_all_ephemeral_directory_grants()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        var grantedDirectory = Path.Combine(fixture.Root, "external");
+        Directory.CreateDirectory(grantedDirectory);
+        Assert.True(session.Open("broker-owner"));
+        session.DirectoryGrants.Add(
+            "agent-session",
+            RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(grantedDirectory));
+
+        session.Close("broker-owner");
+
+        Assert.False(session.DirectoryGrants.Contains("agent-session", grantedDirectory));
+    }
+
+    [Fact]
     public void V2_run_open_requires_valid_lease_before_advertising_capabilities()
     {
         using var fixture = DescriptorFixture.Create();

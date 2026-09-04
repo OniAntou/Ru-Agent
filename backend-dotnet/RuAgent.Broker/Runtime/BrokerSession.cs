@@ -29,6 +29,8 @@ public sealed class BrokerSession
         RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
     private long _decisionCounter;
 
+    public SessionDirectoryGrantRegistry DirectoryGrants { get; private set; } = new();
+
     private sealed record PendingDecision(
         string Token,
         string Kind,
@@ -153,6 +155,7 @@ public sealed class BrokerSession
                 _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
                 _runLeases.Clear();
                 _pendingDecisions.Clear();
+                DirectoryGrants = new SessionDirectoryGrantRegistry();
             }
         }
     }

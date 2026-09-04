@@ -11,6 +11,9 @@ public sealed class WebSearchAdapter
     private static readonly Regex LinkPattern = new(
         "<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex ResultLinkPattern = new(
+        "<a\\b(?=[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__a\\b[^\\\"']*[\\\"'])[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private readonly HttpClient _http;
     private readonly WebPolicy _policy;
     private readonly Uri _endpoint;
@@ -83,14 +86,16 @@ public sealed class WebSearchAdapter
             }
 
             var body = await ReadBoundedAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
-            var candidates = contentType.Contains("json", StringComparison.OrdinalIgnoreCase)
+            var isJson = contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
+            var htmlResultAnchorCount = isJson ? 0 : ResultLinkPattern.Matches(body).Count;
+            var candidates = isJson
                 ? ParseJsonCandidates(body)
                 : ParseHtmlCandidates(body);
             var results = new List<SourceCitation>();
             var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var candidate in candidates)
             {
-                if (!Uri.TryCreate(candidate.Url, UriKind.Absolute, out var url)
+                if (!TryResolveCandidateUrl(current, candidate.Url, out var url)
                     || !seenUrls.Add(url.AbsoluteUri))
                 {
                     continue;
@@ -121,6 +126,11 @@ public sealed class WebSearchAdapter
                 }
             }
 
+            if (htmlResultAnchorCount > 0 && results.Count == 0)
+            {
+                throw new InvalidDataException("web_search_parse_failed");
+            }
+
             return results;
         }
 
@@ -129,12 +139,58 @@ public sealed class WebSearchAdapter
 
     private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html)
     {
-        return LinkPattern.Matches(html)
+        var resultLinks = ResultLinkPattern.Matches(html);
+        var links = resultLinks.Count > 0 ? resultLinks : LinkPattern.Matches(html);
+        return links
             .Select(match => new SearchCandidate(
                 WebUtility.HtmlDecode(match.Groups["url"].Value),
                 match.Groups["title"].Value,
                 null))
             .ToArray();
+    }
+
+    private static bool TryResolveCandidateUrl(Uri responseUri, string rawUrl, out Uri url)
+    {
+        url = null!;
+        var decoded = WebUtility.HtmlDecode(rawUrl).Trim();
+        if (!Uri.TryCreate(responseUri, decoded, out var candidate)
+            || candidate.Scheme is not ("http" or "https"))
+        {
+            return false;
+        }
+
+        if (candidate.Host.EndsWith("duckduckgo.com", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(candidate.AbsolutePath, "/l/", StringComparison.Ordinal))
+        {
+            var target = ReadQueryValue(candidate.Query, "uddg");
+            if (target is null
+                || !Uri.TryCreate(target, UriKind.Absolute, out candidate)
+                || candidate.Scheme is not ("http" or "https"))
+            {
+                return false;
+            }
+        }
+
+        url = candidate;
+        return true;
+    }
+
+    private static string? ReadQueryValue(string query, string key)
+    {
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var separator = pair.IndexOf('=');
+            var encodedKey = separator < 0 ? pair : pair[..separator];
+            if (!string.Equals(Uri.UnescapeDataString(encodedKey), key, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var encodedValue = separator < 0 ? string.Empty : pair[(separator + 1)..];
+            return Uri.UnescapeDataString(encodedValue.Replace('+', ' '));
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<SearchCandidate> ParseJsonCandidates(string json)

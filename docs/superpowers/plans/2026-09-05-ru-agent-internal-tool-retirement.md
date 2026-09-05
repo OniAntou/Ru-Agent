@@ -69,7 +69,7 @@ Generic Broker, Harness, activity, diagnostic, and privacy tests remain and migr
 - Produces: `AgentModelToolContractCatalog.Get()` as a direct projection of all canonical definitions.
 - Removes: `AgentToolExposure`, `AgentToolDefinition.Exposure`, and `AgentToolDefinitionCatalog.Select(...)` because no internal exposure tier remains.
 
-- [ ] **Step 1: Write the failing Protocol inventory tests**
+- [x] **Step 1: Write the failing Protocol inventory tests**
 
 Replace the two expected arrays with one stable inventory and assert hard absence:
 
@@ -99,7 +99,7 @@ public void Get_returns_exact_stable_inventory_and_retired_ids_are_absent()
 
 Make `Model_contract_catalog_projects_the_entire_canonical_catalog` compare both catalogs directly and assert `Get(retiredId, "1.0.0")` throws `KeyNotFoundException`.
 
-- [ ] **Step 2: Run the Protocol tests and confirm RED**
+- [x] **Step 2: Run the Protocol tests and confirm RED**
 
 Run:
 
@@ -109,7 +109,7 @@ dotnet test backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj 
 
 Expected: FAIL because the canonical catalog still returns 18 definitions and finds all five retired IDs.
 
-- [ ] **Step 3: Remove the five definitions and the exposure split**
+- [x] **Step 3: Remove the five definitions and the exposure split**
 
 In `AgentToolDefinitionCatalog.cs`, remove the five entries, `EmptySchema`, `NotesCreateSchema`, and `VolumeSchema`. Remove exposure from `Entry`, `AgentToolDefinition`, validation, and construction so a canonical entry has this shape:
 
@@ -136,7 +136,7 @@ private static AgentToolDefinition? FindDefinition(string toolId, string toolVer
 
 Replace exposure filtering in runtime projections and tests with direct use of `AgentToolDefinitionCatalog.Get()` or `Find(...)`. In `LoopbackModelStepRunner`, retain the unknown ID/version rejection but remove only the exposure predicate.
 
-- [ ] **Step 4: Run affected Protocol and backend projection tests and confirm GREEN**
+- [x] **Step 4: Run affected Protocol and backend projection tests and confirm GREEN**
 
 Run sequentially:
 
@@ -147,7 +147,7 @@ dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore -
 
 Expected: both commands PASS; the runtime prompt and Worker projection still expose the same 13 tools.
 
-- [ ] **Step 5: Commit the Protocol collapse**
+- [x] **Step 5: Commit the Protocol collapse**
 
 ```powershell
 git add -- backend-dotnet/RuAgent.Protocol/AgentToolDefinitionCatalog.cs backend-dotnet/RuAgent.Protocol/AgentModelToolContractCatalog.cs backend-dotnet/RuAgent.Protocol.Tests/AgentToolDefinitionCatalogTests.cs backend-dotnet/RuBackend/Harness/Prompting/AgentToolRuntimeProjection.cs backend-dotnet/RuBackend/Harness/Worker/LoopbackModelStepRunner.cs backend-dotnet/RuBackend.Tests/Worker/WorkerV2ClientTests.cs backend-dotnet/RuBackend.Tests/Harness/RuPromptContextProviderTests.cs
@@ -187,7 +187,7 @@ git commit -m "refactor(agent): collapse tool catalog to model surface"
 - Removes: `system.write` from canonical and Broker scope sets because no surviving tool uses it.
 - Produces: retired calls rejected before adapter dispatch.
 
-- [ ] **Step 1: Change Broker tests to demand the reduced inventory**
+- [x] **Step 1: Change Broker tests to demand the reduced inventory**
 
 Update catalog, binding, lease, and Host expected IDs to:
 
@@ -219,7 +219,7 @@ public void Retired_tool_is_not_bound(string toolId)
 
 Remove volume-only and notes-only cases from `AdapterConformanceTests`, `PendingApprovalPreviewTests`, and `PendingApprovalStoreTests`; keep those generic tests using `files.write` or `terminal.shell` fixtures.
 
-- [ ] **Step 2: Run focused Broker tests and confirm RED**
+- [x] **Step 2: Run focused Broker tests and confirm RED**
 
 Run:
 
@@ -229,7 +229,7 @@ dotnet test backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no
 
 Expected: FAIL because the Broker still binds and leases the five retired IDs.
 
-- [ ] **Step 3: Remove Broker manifests and executors**
+- [x] **Step 3: Remove Broker manifests and executors**
 
 In `ToolCatalog.Manifests`, delete the five retired yields. Remove the `nativePending` branch and register every surviving binding as executable and model-enabled:
 
@@ -267,7 +267,7 @@ public ToolExecutionService(
     HttpClient? webHttpClient = null)
 ```
 
-- [ ] **Step 4: Delete dedicated adapters and native-volume tests**
+- [x] **Step 4: Delete dedicated adapters and native-volume tests**
 
 Delete exactly:
 
@@ -283,7 +283,7 @@ backend-dotnet/RuAgent.Broker.Tests/WindowsCoreAudioVolumeControllerTests.cs
 
 Remove volume fake classes and injected-controller setup from `BrokerHostTests`. Do not delete generic Host coverage around capability parsing, session ownership, or unknown-tool failure.
 
-- [ ] **Step 5: Remove obsolete policy and lease mappings**
+- [x] **Step 5: Remove obsolete policy and lease mappings**
 
 Change `BrokerPolicyContracts.AuthoritativeFallbackCapabilities()` to return only the 11 core IDs. In `BrokerSession.WorkspaceScopesFor`, keep only these branches:
 
@@ -300,7 +300,7 @@ Change `BrokerPolicyContracts.AuthoritativeFallbackCapabilities()` to return onl
 
 Remove `SystemWrite`/`system.write` from `AgentToolScopes`, `ToolScope.Known`, and Agent/Full `CapabilityProfile` sets. In `PolicyContextFactory`, keep `help.docs`, `web.search`, and `web.fetch` as target-free reads and remove the other retired cases.
 
-- [ ] **Step 6: Run the complete Protocol and Broker projects and confirm GREEN**
+- [x] **Step 6: Run the complete Protocol and Broker projects and confirm GREEN**
 
 Run sequentially:
 
@@ -311,7 +311,7 @@ dotnet test backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no
 
 Expected: both projects PASS; no test constructs a native volume controller or requests a retired binding.
 
-- [ ] **Step 7: Commit the Broker hard deletion**
+- [x] **Step 7: Commit the Broker hard deletion**
 
 Review `git diff --name-status` against the exact Task 2 manifest, then stage only those paths and commit:
 
@@ -349,7 +349,7 @@ git commit -m "refactor(agent): remove redundant internal tools"
 - Produces: Harness approval proof that writes only inside its fresh temporary workspace.
 - Removes: all active acceptance code that assumes native volume control exists.
 
-- [ ] **Step 1: Convert declarative skill fixtures to `files.list`**
+- [x] **Step 1: Convert declarative skill fixtures to `files.list`**
 
 Use this manifest shape in production-wiring and connection tests:
 
@@ -370,7 +370,7 @@ var skill = new SkillManifest(
 
 Change package-loader JSON to the same required tool, scope, step name, and bounded arguments. The skill behavior under test remains registration, grant enforcement, idempotency, and declarative loading—not clock access.
 
-- [ ] **Step 2: Convert approval and external-directory fixtures to `files.write`**
+- [x] **Step 2: Convert approval and external-directory fixtures to `files.write`**
 
 In `scripts/harness/session.py`, call:
 
@@ -390,7 +390,7 @@ summary = await probe_approval_lifecycle(
 
 In `BrokerToolGatewayFactoryTests`, replace the `notes.create` proposal/resume with `files.write` arguments containing an absolute temporary `notePath`, `content`, and `overwrite: false`. Preserve assertions that the first evaluation asks, directory approval is session-scoped, the resumed evaluation allows, execution succeeds, and the file contains the exact content.
 
-- [ ] **Step 3: Convert Broker-client and generic event fixtures**
+- [x] **Step 3: Convert Broker-client and generic event fixtures**
 
 Use one executable model capability in `AgentBrokerClientTests`:
 
@@ -409,17 +409,17 @@ private static JsonArray DefaultTools() =>
 ];
 ```
 
-Use `files.write`, capability class `workspace_mutation`, and a harmless fixture path/content for exact binding, missing-version, missing-scope, and malformed-receipt tests. Generic diagnostics, privacy, and activity tests should also replace the literal `system.volume` with `files.write` while retaining their original redaction, serialization, status-order, and dedup assertions.
+Use `files.write`, capability class `tool`, and a harmless fixture path/content for exact binding, missing-version, missing-scope, and malformed-receipt tests. Generic diagnostics, privacy, and activity tests should also replace the literal `system.volume` with `files.write` while retaining their original redaction, serialization, status-order, and dedup assertions.
 
 Replace generic grant fixtures using the retired `system.write` scope in
 `AgentEnvelopeTests` and `AgentStoreTests` with `workspace.write`; preserve the
 same round-trip, ordering, and persistence assertions.
 
-- [ ] **Step 4: Delete native-volume acceptance and remove source-contract assertions**
+- [x] **Step 4: Delete native-volume acceptance and remove source-contract assertions**
 
 Delete `scripts/native_volume_acceptance.py` and `tests/test_native_volume_acceptance.py`. In `tests/test_agent_harness.py`, remove assertions that `VolumeTools.cs`, `notes.create`, or a volume manifest exists; replace the inventory assertion with checks for the exact surviving core IDs and absence of the five retired IDs.
 
-- [ ] **Step 5: Run focused managed and Python tests**
+- [x] **Step 5: Run focused managed and Python tests**
 
 Run sequentially:
 
@@ -432,7 +432,7 @@ dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore -
 
 Expected: every command PASS; the approval probe remains deterministic and no native audio endpoint opens.
 
-- [ ] **Step 6: Commit fixture migration and acceptance retirement**
+- [x] **Step 6: Commit fixture migration and acceptance retirement**
 
 Stage only Task 3 paths, confirm both deleted files appear as `D`, and commit:
 
@@ -465,7 +465,7 @@ git commit -m "test(agent): retire internal tool fixtures"
 - Produces: replacement guidance—terminal for machine/app/time/volume operations and `files.write` for notes.
 - Preserves: historical implementation detail, explicitly labeled as superseded rather than rewritten.
 
-- [ ] **Step 1: Update current capability documentation**
+- [x] **Step 1: Update current capability documentation**
 
 Change the current matrix to state:
 
@@ -477,7 +477,7 @@ There are no Broker-internal or deterministic-host tool definitions.
 
 Remove the deterministic-volume execution diagram and native acceptance commands. State that time, host status, application discovery, and optional volume commands go through normal terminal analysis/policy; notes use `files.write`. Make clear that Ru does not automatically translate retired IDs to terminal commands.
 
-- [ ] **Step 2: Update roadmap and supersession markers**
+- [x] **Step 2: Update roadmap and supersession markers**
 
 Set `TODO.md`'s review date to `2026-09-05` and add a completed maintenance item recording the 13-tool collapse and removal of native-volume acceptance. Correct the older completed item that says the Protocol catalog contains 18 definitions.
 
@@ -492,18 +492,20 @@ add this notice below the title of the same-day tool-hardening spec and plan:
 
 Do not rewrite older dated plans/specs/ADRs as current implementation. Delete a document only if this audit finds it is linked as current instructions, contains no unique historical decision, and is wholly replaced by the retirement spec.
 
-- [ ] **Step 3: Run documentation/source truth checks**
+- [x] **Step 3: Run documentation/source truth checks**
 
 Run:
 
 ```powershell
 rg -n "system\.time|system\.status|system\.volume|app\.list|notes\.create|18 tool definitions|18 definitions" README.md CONTEXT.md TODO.md docs/README.md docs/architecture.md docs/operations docs/adr/0007-mode-capability-profiles.md backend-dotnet/README.md backend-dotnet/RuAgent.Cli/README.md
-rg -n --glob "*.cs" --glob "*.py" --glob "!docs/**" --glob "!**/bin/**" --glob "!**/obj/**" "system\.time|system\.status|system\.volume|app\.list|notes\.create|VolumeTools|WindowsCoreAudioVolumeController|NotesAdapter|SystemTools|AppTools" backend-dotnet scripts tests
+rg -n --glob "*.cs" --glob "*.py" --glob "!**/*.Tests/**" --glob "!**/bin/**" --glob "!**/obj/**" "system\.time|system\.status|system\.volume|app\.list|notes\.create|VolumeTools|WindowsCoreAudioVolumeController|NotesAdapter|SystemTools|AppTools" backend-dotnet scripts
 ```
 
-Expected: both commands return no matches. Dated plans, specs, and ADRs are intentionally outside these current-state checks.
+Expected: both commands return no matches. Dated plans, specs, ADRs, and
+negative regression assertions are intentionally outside these current-state
+checks.
 
-- [ ] **Step 4: Run documentation tests and commit**
+- [x] **Step 4: Run documentation tests and commit**
 
 Run:
 
@@ -530,7 +532,7 @@ git commit -m "docs: document Ru Agent tool retirement"
 - Consumes: all implementation tasks.
 - Produces: reproducible completion evidence without modifying live devices or unrelated working files.
 
-- [ ] **Step 1: Verify no retired production surface remains**
+- [x] **Step 1: Verify no retired production surface remains**
 
 Run the two zero-match searches from Task 4 again, then verify deleted paths:
 
@@ -540,7 +542,7 @@ git ls-files --error-unmatch backend-dotnet/RuAgent.Broker/Tools/Desktop/SystemT
 
 Expected: the search commands have no output; `git ls-files --error-unmatch` exits nonzero because every listed path is gone from the index.
 
-- [ ] **Step 2: Run all .NET test projects sequentially**
+- [x] **Step 2: Run all .NET test projects sequentially**
 
 Run:
 
@@ -550,7 +552,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test_dotnet.ps1 -NoR
 
 Expected: all recursively discovered .NET test projects PASS with zero failures.
 
-- [ ] **Step 3: Run the complete Python suite**
+- [x] **Step 3: Run the complete Python suite**
 
 Run:
 
@@ -560,7 +562,7 @@ Run:
 
 Expected: PASS with zero failures and no collection reference to `test_native_volume_acceptance.py`.
 
-- [ ] **Step 4: Verify routes and build distributable GUI/backend artifacts**
+- [x] **Step 4: Verify routes and build distributable GUI/backend artifacts**
 
 Run sequentially:
 
@@ -571,7 +573,7 @@ cmd /c build.bat
 
 Expected: route matrix PASS with the repository's current measured HTTP/WebSocket counts; `build.bat` completes every managed and native gate and produces the GUI package without opening it.
 
-- [ ] **Step 5: Check owned diff hygiene and unrelated-change preservation**
+- [x] **Step 5: Check owned diff hygiene and unrelated-change preservation**
 
 Run:
 
@@ -582,7 +584,7 @@ git status --short --branch
 
 Expected: no whitespace errors in owned changes. Pre-existing unrelated dirty paths remain unstaged and unmodified by this task.
 
-- [ ] **Step 6: Record measured evidence and commit plan closure**
+- [x] **Step 6: Record measured evidence and commit plan closure**
 
 Mark completed checkboxes and append exact test totals, route counts, build totals, and any explicitly unrun live acceptance to this plan. Then commit only the plan update:
 
@@ -592,3 +594,28 @@ git commit -m "docs: close Ru Agent internal tool retirement"
 ```
 
 Do not push unless the user asks for a push after reviewing the completed local commits.
+
+---
+
+## Completion evidence (2026-09-05)
+
+- Canonical inventory: 13 Protocol definitions; Broker exposes 11 core tools
+  without Web and 13 when both managed Web tools are enabled.
+- Hard deletion: all five production adapters plus the native-volume script and
+  test are absent from the Git index. Production source and current-document
+  searches returned zero matches; retired IDs remain only in negative
+  regression assertions and dated historical records.
+- Focused verification: Protocol `21/21`, Broker `547/547`, backend fixture
+  slice `58/58`, Python migration slice `70/70`, GUI descriptor `8/8`, and
+  documentation slice `16/16` passed.
+- Full verification: all 13 discovered .NET test projects passed, `2531/2531`;
+  the complete Python suite passed, `400/400`.
+- Route contract: `64 HTTP + 1 WebSocket (/voice/stream)`.
+- Release build: all `13/13` build stages completed; native overlay tests passed
+  `2/2`; GUI output is
+  `gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/RuApp.exe`.
+- No live audio/device acceptance was run. The dedicated native-volume path was
+  removed by design; the build did not open the GUI or mutate an audio device.
+- Documentation audit: current docs were updated, and the same-day superseded
+  hardening spec/plan were retained as historical evidence with explicit
+  supersession notices; no unique historical document was deleted.

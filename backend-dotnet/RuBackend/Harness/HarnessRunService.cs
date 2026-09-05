@@ -57,6 +57,10 @@ public sealed class HarnessRunService
 
         var workspaceIdentity = await _resolver.ResolveAsync(workspacePath, cancellationToken).ConfigureAwait(false);
         var isTrusted = await _trustService.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
+        if (!isTrusted && IsProjectRootWorkspace(workspacePath))
+        {
+            isTrusted = true;
+        }
 
         var now = _time.UtcNow;
         var version = _options.Version;
@@ -163,5 +167,36 @@ public sealed class HarnessRunService
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static bool IsProjectRootWorkspace(string workspacePath)
+    {
+        var candidates = new List<string> { Directory.GetCurrentDirectory() };
+        var envRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+        {
+            candidates.Add(envRoot);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var normalizedCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+                var normalizedWorkspace = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspacePath));
+                if (string.Equals(normalizedWorkspace, normalizedCandidate, StringComparison.OrdinalIgnoreCase)
+                    || normalizedWorkspace.StartsWith(normalizedCandidate + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    || (Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar && normalizedWorkspace.StartsWith(normalizedCandidate + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignore invalid paths
+            }
+        }
+
+        return false;
     }
 }

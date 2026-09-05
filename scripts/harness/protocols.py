@@ -144,6 +144,17 @@ def probe_http_routes(
         for entry in registry:
             if entry.transport == "websocket":
                 continue
+            if entry.path == "/host/shutdown":
+                results.append(
+                    CheckResult(
+                        entry.check_id,
+                        "skipped",
+                        0.0,
+                        reason="destructive_route_skipped",
+                        details={"safety": entry.safety.value},
+                    )
+                )
+                continue
             if entry.safety is RouteSafety.EXTERNAL_SKIP:
                 results.append(
                     CheckResult(

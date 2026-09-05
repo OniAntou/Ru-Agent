@@ -27,14 +27,23 @@ public static class ProviderCatalogParser
                 if (node is not JsonObject item || Text(item["id"]) is not { } id
                     || id.Length is 0 or > 256 || id.Any(char.IsControl)) throw new JsonException();
                 if (!seen.Add(id)) continue;
+                int? contextLength = null;
+                if (item["context_length"] is JsonValue ctxVal && ctxVal.TryGetValue<int>(out var cl) && cl > 0)
+                {
+                    contextLength = cl;
+                }
+                else if (item["top_provider"] is JsonObject topProv && topProv["context_length"] is JsonValue topCtx && topCtx.TryGetValue<int>(out var tcl) && tcl > 0)
+                {
+                    contextLength = tcl;
+                }
                 if (alias is not null && ProviderCapabilityRegistry.TryGet(alias, id, out var capability))
                 {
-                    result.Add(new(id, true, capability.Protocol, new("levels", capability.ReasoningOptions.Keys.ToArray())) { WireOptions = capability.ReasoningOptions });
+                    result.Add(new(id, true, capability.Protocol, new("levels", capability.ReasoningOptions.Keys.ToArray())) { WireOptions = capability.ReasoningOptions, ContextLength = contextLength });
                     continue;
                 }
                 if (alias is not null)
                 {
-                    result.Add(new(id, false, alias == "openai" ? "openai_responses" : "anthropic_messages", new("unsupported", [])));
+                    result.Add(new(id, false, alias == "openai" ? "openai_responses" : "anthropic_messages", new("unsupported", [])) { ContextLength = contextLength });
                     continue;
                 }
                 var protocol = Text(item["protocol"]) ?? "chat_completions";
@@ -72,7 +81,7 @@ public static class ProviderCatalogParser
                     options.Clear();
                 }
                 if (!supported) { options.Clear(); state = "unsupported"; }
-                result.Add(new(id, supported, protocol, new(state, options.Keys.ToArray())) { WireOptions = options });
+                result.Add(new(id, supported, protocol, new(state, options.Keys.ToArray())) { WireOptions = options, ContextLength = contextLength });
             }
             return result;
         }

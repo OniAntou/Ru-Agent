@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace RuAgent.Runtime.Adapters.Models;
@@ -31,7 +32,7 @@ public static class BoundedSseReader
             string line;
             try
             {
-                line = StrictUtf8.GetString(lineBytes.ToArray());
+                line = StrictUtf8.GetString(CollectionsMarshal.AsSpan(lineBytes));
             }
             catch (DecoderFallbackException error)
             {

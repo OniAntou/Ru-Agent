@@ -164,8 +164,9 @@ public sealed class PublicHostStarter : IDisposable
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
             };
-            // Pass bearer via environment for Host to pick up
+            // Pass bearer and project root via environment for Host to pick up
             psi.Environment["RU_DESKTOP_TOKEN"] = bearer;
+            psi.Environment["RU_PROJECT_ROOT"] = projectRoot;
             // Track GUI parent so Host can auto-exit if GUI is killed via Task Manager
             // (normal close uses POST /host/shutdown). Only set for RuApp, not CLI tracer.
             try

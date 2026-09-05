@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -144,7 +145,7 @@ def test_manifest_keeps_dirty_legacy_path_protected(tmp_path: Path, monkeypatch)
         lambda _root: frozenset({"configs/ru_llama3_1_v6_3.json"}),
     )
 
-    manifest = build_manifest(tmp_path)
+    manifest = cast(dict[str, Any], build_manifest(tmp_path))
     entry = next(
         value
         for value in manifest["entries"]
@@ -167,7 +168,7 @@ def test_manifest_has_stable_schema_and_sorted_entries(tmp_path: Path, monkeypat
         lambda _root: frozenset(),
     )
 
-    manifest = build_manifest(tmp_path)
+    manifest = cast(dict[str, Any], build_manifest(tmp_path))
     assert manifest["schema_version"] == 1
     assert manifest["workspace_root"] == str(tmp_path.resolve())
     assert manifest["scanned_git_commit"] == "fixture-commit"

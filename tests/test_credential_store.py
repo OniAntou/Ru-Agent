@@ -43,7 +43,7 @@ def test_delete_removes_key_without_returning_it():
     backend = FakeBackend({("Ru.OpenCode", "default"): "sk-live"})
     store = CredentialStore("Ru.OpenCode", "default", backend)
 
-    assert store.delete_key() is None
+    store.delete_key()
     assert store.get_key() is None
 
 

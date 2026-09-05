@@ -16,6 +16,7 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, cast
 
 _SCAN_ROOTS = ("src/ru_runtime", "scripts", "tools", "tests", "backend-dotnet")
 _IGNORED_PARTS = {"__pycache__", ".pytest_cache", "bin", "obj", ".git"}
@@ -113,8 +114,8 @@ def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
 
 
 def _reference_functions(root: Path) -> tuple[
-    Callable[..., object],
-    Callable[[object], object],
+    Callable[..., Any],
+    Callable[[object], Any],
     Callable[..., str],
     Callable[[str], str],
     int,
@@ -321,11 +322,12 @@ def _measurement_section(root: Path, cases: list[dict[str, object]]) -> dict[str
 
     prompt_input = next(case["input"] for case in cases if case["id"] == "prompt.basic")
     tool_case = next(case for case in cases if case["id"] == "tool_selection.valid")
+    tool_input = cast(dict[str, Any], tool_case["input"])
     records = measure_runtime(
         root,
         MIN_SAMPLES,
         prompt_input=prompt_input,
-        tool_selection_text=str(tool_case["input"]["text"]),
+        tool_selection_text=str(tool_input["text"]),
     )
     return {
         "min_samples": MIN_SAMPLES,

@@ -22,11 +22,13 @@ def test_voice_stream_coordinator_emits_ordered_audio_without_private_markers() 
     prepared: list[str] = []
     requested: list[str] = []
 
+    def fake_request_audio1(text: str, voice_label: str, speed: float, style_id: str) -> bytes:
+        requested.append(text)
+        return text.encode()
+
     coordinator = VoiceStreamCoordinator(
         prepare_speech=lambda selection: prepared.append(selection.profile_id),
-        request_audio=lambda text, voice_label, speed, style_id: (
-            requested.append(text) or text.encode()
-        ),
+        request_audio=fake_request_audio1,
         memory_lock=threading.Lock(),
     )
 
@@ -83,11 +85,13 @@ def test_voice_stream_coordinator_discards_future_chunks_after_cancel() -> None:
 
 def test_voice_stream_coordinator_forwards_original_style_to_every_chunk() -> None:
     received: list[tuple[str, str]] = []
+    def fake_request_audio2(text: str, voice_label: str, speed: float, style_id: str) -> bytes:
+        received.append((text, style_id))
+        return text.encode()
+
     coordinator = VoiceStreamCoordinator(
         prepare_speech=lambda selection: None,
-        request_audio=lambda text, voice_label, speed, style_id: (
-            received.append((text, style_id)) or text.encode()
-        ),
+        request_audio=fake_request_audio2,
         memory_lock=threading.Lock(),
     )
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from PIL import Image
@@ -125,7 +126,7 @@ def test_gemini_31_request_retains_supported_temperature():
         {"candidates": [{"content": {"parts": [{"text": '{"scene":"Desktop"}'}]}}]}
     ).encode("utf-8")
     mock_resp.__enter__.return_value = mock_resp
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def capture_request(request, timeout):
         captured["payload"] = json.loads(request.data.decode("utf-8"))

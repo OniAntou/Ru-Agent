@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from ru_runtime.memory.learning import extract_facts_with_llm
 from ru_runtime.memory.store import MemoryKind
@@ -109,7 +110,7 @@ def test_max_five_facts_and_content_truncated() -> None:
 
 
 def test_generator_called_with_extraction_settings() -> None:
-    captured = {}
+    captured: dict[str, Any] = {}
 
     def spy(fact_prompt, max_new_tokens, temperature, top_k, allow_web_search):
         captured.update(

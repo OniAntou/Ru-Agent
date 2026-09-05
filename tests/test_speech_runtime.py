@@ -19,6 +19,8 @@ from ru_runtime.speech.runtime import (
 
 
 class FakeGoogleRecognizer:
+    timeout: float | None = None
+
     def recognize_google(self, _audio: object, *, language: str) -> str:
         assert language == "vi-VN"
         return "  Chao   anh  "

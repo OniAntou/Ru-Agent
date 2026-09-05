@@ -78,6 +78,41 @@ public sealed class Phase1RemediationTests
     }
 
     [Fact]
+    public async Task Project_root_workspace_auto_trusts_and_allows_full_access_without_prior_selection()
+    {
+        using var tmp = TempWorkspace.Create();
+        var prevEnv = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", tmp.Path);
+        try
+        {
+            using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+            using var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+
+            var runPayload = new
+            {
+                session_id = sessionId,
+                workspace_path = tmp.Path,
+                prompt = "hello",
+                idempotency_key = "key-" + Guid.NewGuid().ToString("N"),
+                preset = "full_access"
+            };
+
+            using var resp = await client.PostAsJsonAsync("/agent/v1/runs", runPayload);
+            var body = await resp.Content.ReadAsStringAsync();
+            Assert.True(resp.IsSuccessStatusCode, $"Expected success, got {resp.StatusCode}: {body}");
+
+            var json = JsonDocument.Parse(body).RootElement;
+            Assert.Equal("waiting_history_user", json.GetProperty("status").GetString());
+            Assert.Equal("full_access", json.GetProperty("preset").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", prevEnv);
+        }
+    }
+
+    [Fact]
     public async Task Runtime_loop_delivers_prompt_and_drives_run_to_completed()
     {
         var steps = new Queue<RuAgent.Harness.Core.AssistantStep>();

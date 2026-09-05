@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 echo ============================================
 echo  Ru Desktop - Build + PRI Generation Script
 echo  .NET 10 + ASP.NET Core + WinUI 3 (Unpackaged Self-Contained)
-echo  Agent-only runtime (56 HTTP + 1 WS, managed C# Worker, CLI tracer)
+echo  Agent-only runtime (64 HTTP + 1 WS, managed C# Worker, CLI tracer)
 echo ============================================
 echo.
 

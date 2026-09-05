@@ -104,7 +104,9 @@ public sealed class SessionApiClient
 
         var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(content);
-        return doc.RootElement.Clone();
+        var listRoot = doc.RootElement.Clone();
+        EnsureOkEnvelope(listRoot, "session_list_failed");
+        return listRoot;
     }
 
     public async Task<JsonElement> ForkAsync(string sessionId, int upToMessageIndex, string? newTitle = null, CancellationToken cancellationToken = default)
@@ -131,7 +133,9 @@ public sealed class SessionApiClient
 
         var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(content);
-        return doc.RootElement.Clone();
+        var forkRoot = doc.RootElement.Clone();
+        EnsureOkEnvelope(forkRoot, "session_fork_failed");
+        return forkRoot;
     }
 
     public async Task<JsonElement> RewindAsync(string sessionId, int toMessageIndex, CancellationToken cancellationToken = default)
@@ -157,6 +161,31 @@ public sealed class SessionApiClient
 
         var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(content);
-        return doc.RootElement.Clone();
+        var rewindRoot = doc.RootElement.Clone();
+        EnsureOkEnvelope(rewindRoot, "session_rewind_failed");
+        return rewindRoot;
+    }
+
+    private static void EnsureOkEnvelope(JsonElement root, string operation)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("status", out var statusProp)
+            || statusProp.ValueKind != JsonValueKind.String
+            || !string.Equals(statusProp.GetString(), "ok", StringComparison.Ordinal))
+        {
+            string? message = null;
+            string? code = null;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String)
+                    message = msg.GetString();
+                if (root.TryGetProperty("error_code", out var ec) && ec.ValueKind == JsonValueKind.String)
+                    code = ec.GetString();
+            }
+
+            throw new AgentApiException(
+                code ?? operation,
+                message ?? $"Session operation rejected (status missing or not ok).");
+        }
     }
 }

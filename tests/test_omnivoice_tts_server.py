@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from ru_runtime.voice import omnivoice_server as server
+import ru_runtime.voice.omnivoice_server as server
 
 
 class FakeTemporaryOutput:

@@ -5,11 +5,11 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "6c35f35572665cc7d3ac66bb2f1d2bb334690ef8e2e2ec4d8cba625e781fb9aa"
+            "sha256": "7f713a02a029f8b74da5379984c0934d57d95b72789c3d4a9001738cb37b74a2"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "fdfb1858111879a7c46a2ba2025ee1e8de656e990dbfd04fa15cdc0512707616"
+            "sha256": "f14485bfc79e824aea7f6b09f46d72d646a814cb5f71d756d9813b04d10dc829"
           },
           {
             "block_id": "environment",
@@ -25,7 +25,7 @@
           },
           {
             "block_id": "capabilities",
-            "sha256": "2455f79d8bf0c8a166948f6b5255405193a73d5caf3fbadc734f3518152f6281"
+            "sha256": "0239cf6ba63ad294434a512b041e3977e807cf7e6aebba00146848ad9a69d466"
           },
           {
             "block_id": "runtime",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "1.0.0",
         "private_marker": "sk-PHASE1-PRIVATE-MARKER",
-        "prompt_sha256": "4d79c2d796c37d0660e0cba733241de6fbadba28f41d557984d416094fdfdd79"
+        "prompt_sha256": "d208787d71367f8c65c351c8f7ec741137c085752cfb6f6502df70f12e52b2e5"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -166,13 +166,13 @@
   "measurement": {
     "baseline": {
       "prompt.compose": {
-        "p50_ms": 0.04506015625,
-        "p95_ms": 0.05308296875,
-        "peak_bytes": 94508
+        "p50_ms": 0.040997070312499995,
+        "p95_ms": 0.04216978515625,
+        "peak_bytes": 101447
       },
       "tool_selection.parse": {
-        "p50_ms": 0.0042726562499999995,
-        "p95_ms": 0.006937734375,
+        "p50_ms": 0.0043181640625,
+        "p95_ms": 0.0054771484375,
         "peak_bytes": 1915
       }
     },

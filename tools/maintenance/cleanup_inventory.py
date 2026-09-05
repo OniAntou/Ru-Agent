@@ -6,6 +6,7 @@ import os
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from typing import Any, cast
 
 from .cleanup_policy import (
     CleanupCategory,
@@ -358,12 +359,12 @@ def _build_summary(entries: list[dict[str, object]]) -> dict[str, object]:
     for entry in entries:
         totals = by_classification[str(entry["classification"])]
         totals["entry_count"] += 1
-        totals["file_count"] += int(entry["file_count"])
-        totals["size_bytes"] += int(entry["size_bytes"])
+        totals["file_count"] += int(cast(Any, entry["file_count"]))
+        totals["size_bytes"] += int(cast(Any, entry["size_bytes"]))
     return {
         "entry_count": len(entries),
-        "file_count": sum(int(entry["file_count"]) for entry in entries),
-        "size_bytes": sum(int(entry["size_bytes"]) for entry in entries),
+        "file_count": sum(int(cast(Any, entry["file_count"])) for entry in entries),
+        "size_bytes": sum(int(cast(Any, entry["size_bytes"])) for entry in entries),
         "by_classification": by_classification,
     }
 

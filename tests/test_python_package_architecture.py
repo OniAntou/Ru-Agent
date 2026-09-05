@@ -42,7 +42,7 @@ def test_active_python_imports_do_not_cross_retired_runtime_boundaries() -> None
                     name == retired or name.startswith(retired + ".")
                     for name in names for retired in RETIRED_MODULES
                 ):
-                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+                    offenders.append(f"{path.relative_to(ROOT)}:{getattr(node, 'lineno', 0)}")
     assert offenders == []
 
 

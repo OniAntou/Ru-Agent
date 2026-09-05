@@ -140,35 +140,42 @@ public sealed class WorkerV2StepService
             IModelProvider provider;
             try { provider = _providers.Resolve(providerBootstrap.Protocol); }
             catch (ArgumentException ex) { throw new WorkerV2StepException("provider_bootstrap_invalid", false, ex); }
-            await foreach (var delta in provider.GenerateAsync(request, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (delta.Text is not null)
+                await foreach (var delta in provider.GenerateAsync(request, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
-                    text.Append(delta.Text);
-                    if (text.Length > 1_000_000)
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (delta.Text is not null)
+                    {
+                        text.Append(delta.Text);
+                        if (text.Length > 1_000_000)
+                        {
+                            throw new WorkerV2StepException("protocol_failure", retryable: false);
+                        }
+
+                        await holdback.ForwardAsync(delta.Text).ConfigureAwait(false);
+                    }
+
+                    toolFragments.AddRange(delta.ToolFragments);
+                    if (toolFragments.Count > 16)
                     {
                         throw new WorkerV2StepException("protocol_failure", retryable: false);
                     }
 
-                    await holdback.ForwardAsync(delta.Text).ConfigureAwait(false);
-                }
+                    if (delta.FinishReason is not null)
+                    {
+                        finishReason = delta.FinishReason;
+                    }
 
-                toolFragments.AddRange(delta.ToolFragments);
-                if (toolFragments.Count > 16)
-                {
-                    throw new WorkerV2StepException("protocol_failure", retryable: false);
+                    if (delta.Completed)
+                    {
+                        break;
+                    }
                 }
-
-                if (delta.FinishReason is not null)
-                {
-                    finishReason = delta.FinishReason;
-                }
-
-                if (delta.Completed)
-                {
-                    break;
-                }
+            }
+            catch (ModelProviderException mpe)
+            {
+                throw MapProviderException(mpe);
             }
 
             finishReason ??= toolFragments.Count > 0 ? "tool_calls" : "stop";
@@ -299,7 +306,7 @@ public sealed class WorkerV2StepService
 
     private static ModelToolCall? ParsePromptToolSelection(string text, JsonObject settings)
     {
-        var candidate = text.Trim();
+        var candidate = ModelToolSelectionParser.NormalizeCandidate(text);
         if (candidate.Length == 0 || candidate[0] is not ('{' or '['))
         {
             return null;
@@ -384,7 +391,9 @@ public sealed class WorkerV2StepService
     {
         "timeout" => new WorkerV2StepException("provider_timeout", retryable: true, error),
         "auth_failed" or "forbidden" => new WorkerV2StepException("provider_auth", retryable: false, error),
-        "rate_limited" or "server_error" or "transport_error" => new WorkerV2StepException("worker_unavailable", error.Retryable, error),
+        "rate_limited" => new WorkerV2StepException("provider_rate_limited", retryable: true, error),
+        "server_error" => new WorkerV2StepException("provider_server_error", retryable: true, error),
+        "transport_error" => new WorkerV2StepException("provider_transport_error", retryable: true, error),
         "malformed_payload" or "response_too_large" => new WorkerV2StepException("protocol_failure", retryable: false, error),
         _ => new WorkerV2StepException("generation_failed", error.Retryable, error),
     };

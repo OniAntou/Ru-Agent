@@ -1,12 +1,20 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = (Join-Path $PSScriptRoot ".."),
+    [string]$WorkspaceRoot = "",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
     [switch]$NoRestore
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+        $scriptDir = $PWD.Path
+    }
+    $WorkspaceRoot = (Join-Path $scriptDir "..")
+}
 
 $workspace = (Resolve-Path -LiteralPath $WorkspaceRoot -ErrorAction Stop).Path
 $projects = @(

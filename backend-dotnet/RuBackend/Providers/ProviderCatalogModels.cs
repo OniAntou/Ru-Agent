@@ -8,6 +8,7 @@ public sealed record CatalogModel(string Id, bool Supported, string Protocol, Ca
 {
     [JsonIgnore] public IReadOnlyDictionary<string, JsonObject> WireOptions { get; init; }
         = new Dictionary<string, JsonObject>();
+    public int? ContextLength { get; init; }
 }
 
 public sealed record ProviderCatalogSnapshot(
@@ -21,14 +22,24 @@ public sealed record ProviderCatalogSnapshot(
         ["status"] = Status, ["backend"] = Backend, ["identity"] = Identity,
         ["selected_model"] = SelectedModel, ["selected_effort"] = SelectedEffort,
         ["models"] = new JsonArray(Models.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray()),
-        ["catalog"] = new JsonArray(Catalog.Select(model => (JsonNode?)new JsonObject
+        ["catalog"] = new JsonArray(Catalog.Select(model =>
         {
-            ["id"] = model.Id, ["supported"] = model.Supported, ["protocol"] = model.Protocol,
-            ["reasoning"] = new JsonObject
+            var node = new JsonObject
             {
-                ["state"] = model.Reasoning.State,
-                ["options"] = new JsonArray(model.Reasoning.Options.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
-            },
+                ["id"] = model.Id,
+                ["supported"] = model.Supported,
+                ["protocol"] = model.Protocol,
+                ["reasoning"] = new JsonObject
+                {
+                    ["state"] = model.Reasoning.State,
+                    ["options"] = new JsonArray(model.Reasoning.Options.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+                },
+            };
+            if (model.ContextLength.HasValue)
+            {
+                node["context_length"] = model.ContextLength.Value;
+            }
+            return (JsonNode?)node;
         }).ToArray()),
         ["stale"] = Stale, ["error_code"] = ErrorCode,
         ["last_success_utc"] = LastSuccessUtc?.ToString("O"),

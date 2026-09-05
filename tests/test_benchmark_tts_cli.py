@@ -4,6 +4,7 @@ import json
 import os
 import wave
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -262,14 +263,17 @@ def test_run_benchmark_adds_profile_and_engine_metadata_to_every_record(tmp_path
     reference = tmp_path / "reference.wav"
     reference.write_bytes(b"reference")
 
-    report = run_benchmark(
-        ConfiguredReportEngine(),
-        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
-        reference_audio=reference,
-        reference_text="reference text",
-        output_dir=tmp_path / "audio",
-        voice_profile="ai_vy",
-        clock=lambda: 1.0,
+    report = cast(
+        dict[str, Any],
+        run_benchmark(
+            ConfiguredReportEngine(),
+            [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+            reference_audio=reference,
+            reference_text="reference text",
+            output_dir=tmp_path / "audio",
+            voice_profile="ai_vy",
+            clock=lambda: 1.0,
+        ),
     )
 
     assert report["voice_profile"] == "ai_vy"
@@ -287,13 +291,16 @@ def test_run_benchmark_records_privacy_safe_latency_fields(tmp_path: Path) -> No
     reference = tmp_path / "reference.wav"
     reference.write_bytes(b"reference")
 
-    report = run_benchmark(
-        ReportEngine(),
-        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
-        reference_audio=reference,
-        reference_text="reference text",
-        output_dir=tmp_path / "audio",
-        voice_profile="ru",
+    report = cast(
+        dict[str, Any],
+        run_benchmark(
+            ReportEngine(),
+            [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+            reference_audio=reference,
+            reference_text="reference text",
+            output_dir=tmp_path / "audio",
+            voice_profile="ru",
+        ),
     )
 
     record = report["records"][0]
@@ -304,14 +311,17 @@ def test_run_benchmark_records_privacy_safe_latency_fields(tmp_path: Path) -> No
 def test_run_benchmark_writes_a_load_timed_json_report(tmp_path: Path) -> None:
     reference = tmp_path / "reference.wav"
     reference.write_bytes(b"reference")
-    report = run_benchmark(
-        ReportEngine(),
-        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
-        reference_audio=reference,
-        reference_text="reference text",
-        output_dir=tmp_path / "audio",
-        load_clock=iter((5.0, 7.5)).__next__,
-        clock=lambda: 1.0,
+    report = cast(
+        dict[str, Any],
+        run_benchmark(
+            ReportEngine(),
+            [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+            reference_audio=reference,
+            reference_text="reference text",
+            output_dir=tmp_path / "audio",
+            load_clock=iter((5.0, 7.5)).__next__,
+            clock=lambda: 1.0,
+        ),
     )
     report_path = tmp_path / "report.json"
 

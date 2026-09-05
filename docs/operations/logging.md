@@ -56,8 +56,10 @@ launches a production Python Worker.
 The `/diagnostics/*` routes are intentionally excluded from HTTP boundary
 events so the diagnostics UI polling does not create a self-referential log
 stream or cause unnecessary UI refreshes.
-GUI crash handling writes only `gui_crash` with a safe exception category; it
-does not create a raw crash file. The WinUI microphone boundary may also write
+GUI crash handling writes `gui_crash` only for unhandled fatal failures, with a
+safe exception category; recoverable WinUI exceptions are handled without a
+false critical crash record, and no raw crash file is created. The WinUI
+microphone boundary may also write
 `gui_voice_capture` failure events with a bounded stage/status code and safe
 exception category, never exception text, raw audio, or transcript data.
 Activity Timeline data remains a separate privacy-safe outbox owned and

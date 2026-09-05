@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Any, cast
 
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
@@ -9,9 +10,9 @@ from packaging.version import Version
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _project_metadata() -> dict[str, object]:
+def _project_metadata() -> dict[str, Any]:
     with (PROJECT_ROOT / "pyproject.toml").open("rb") as project_file:
-        return tomllib.load(project_file)["project"]
+        return cast(dict[str, Any], tomllib.load(project_file)["project"])
 
 
 def test_voice_extra_declares_the_isolated_provider_consumers() -> None:

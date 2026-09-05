@@ -7,7 +7,8 @@ if (string.IsNullOrWhiteSpace(descriptorPath))
     return 2;
 }
 
-var webOptions = BuildWebOptions();await using var host = webOptions is null
+var webOptions = BuildWebOptions();
+await using var host = webOptions is null
     ? await BrokerHost.StartAsync(descriptorPath)
     : await BrokerHost.StartAsync(new BrokerOptions(descriptorPath, Web: webOptions));
 await host.Session.Descriptor.ExpiresAt.WaitUntilAsync();

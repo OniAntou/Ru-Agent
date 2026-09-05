@@ -170,6 +170,8 @@ def _classify(entry: Mapping[str, Any]) -> tuple[RouteSafety, str | None, bool]:
     path = str(entry["path"])
     method = str(entry["method"])
     transport = str(entry["transport"])
+    if path == "/host/shutdown":
+        return RouteSafety.EXTERNAL_SKIP, "destructive_route_skipped", False
     if path.startswith("/observation/"):
         return RouteSafety.EXTERNAL_SKIP, "hardware_or_external_observation_required", False
     if transport == "websocket" or method == "GET":

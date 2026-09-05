@@ -13,6 +13,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 
 from ru_runtime.voice.benchmark import (
     BenchmarkUtterance,
@@ -37,7 +38,7 @@ class GwenHttpBenchmarkEngine:
     def __init__(
         self,
         *,
-        http: object | None = None,
+        http: Any = None,
         base_url: str = "http://127.0.0.1:5051",
         voice_profile: str = "ru",
     ) -> None:
@@ -61,7 +62,7 @@ class GwenHttpBenchmarkEngine:
         return requests.post(f"{self._base_url}{path}", json=payload or {}, timeout=120)
 
     @staticmethod
-    def _json_response(response: object, operation: str) -> dict[str, object]:
+    def _json_response(response: Any, operation: str) -> dict[str, object]:
         status_code = getattr(response, "status_code", None)
         if status_code != 200:
             raise RuntimeError(f"Gwen {operation} failed with HTTP {status_code}.")
@@ -113,16 +114,16 @@ class OmniVoiceBenchmarkEngine:
         model_cache: Path,
         model_id: str = "k2-fsa/OmniVoice",
         settings: OmniVoiceGenerationSettings = BASELINE_SETTINGS,
-        importer: Callable[[str], object] = importlib.import_module,
+        importer: Callable[[str], Any] = importlib.import_module,
     ) -> None:
         self._model_cache = model_cache
         self._model_id = model_id
         self._settings = settings
         self._importer = importer
-        self._model: object | None = None
-        self._prompt: object | None = None
-        self._torch: object | None = None
-        self._soundfile: object | None = None
+        self._model: Any = None
+        self._prompt: Any = None
+        self._torch: Any = None
+        self._soundfile: Any = None
         self.process_id: int | None = None
 
     def load(self, reference_audio: Path, reference_text: str) -> None:
@@ -208,7 +209,7 @@ def _windows_process_ram_mib(pid: int) -> float | None:
         counters.cb = ctypes.sizeof(counters)
         if not ctypes.windll.psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb):
             return None
-        return round(counters.PrivateUsage / (1024 * 1024), 3)
+        return float(round(counters.PrivateUsage / (1024 * 1024), 3))
     finally:
         ctypes.windll.kernel32.CloseHandle(process)
 

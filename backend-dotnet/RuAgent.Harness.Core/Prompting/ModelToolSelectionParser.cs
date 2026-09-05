@@ -21,6 +21,50 @@ public static class ModelToolSelectionParser
 {
     private static readonly Regex SemVer = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    public static string NormalizeCandidate(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var candidate = text.Trim();
+
+        while (candidate.StartsWith("<think>", StringComparison.OrdinalIgnoreCase))
+        {
+            var endThink = candidate.IndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+            if (endThink < 0)
+            {
+                break;
+            }
+
+            candidate = candidate.Substring(endThink + "</think>".Length).Trim();
+        }
+
+        if (candidate.StartsWith("```", StringComparison.Ordinal))
+        {
+            var firstNewline = candidate.IndexOf('\n');
+            if (firstNewline >= 0)
+            {
+                var fenceHeader = candidate[..firstNewline].Trim();
+                if (fenceHeader is "```" or "```json" or "```JSON")
+                {
+                    var lastFence = candidate.LastIndexOf("```", StringComparison.Ordinal);
+                    if (lastFence > firstNewline)
+                    {
+                        var inner = candidate.Substring(firstNewline + 1, lastFence - firstNewline - 1).Trim();
+                        if (inner.Length > 0 && inner[0] is '{' or '[')
+                        {
+                            candidate = inner;
+                        }
+                    }
+                }
+            }
+        }
+
+        return candidate;
+    }
+
     public static ModelToolSelection Parse(string text, IReadOnlySet<string> advertisedToolIds)
     {
         if (string.IsNullOrWhiteSpace(text) || advertisedToolIds is null)
@@ -28,10 +72,16 @@ public static class ModelToolSelectionParser
             throw new ModelToolSelectionException("invalid_json");
         }
 
+        var candidate = NormalizeCandidate(text);
+        if (candidate.Length == 0)
+        {
+            throw new ModelToolSelectionException("invalid_json");
+        }
+
         byte[] utf8;
         try
         {
-            utf8 = Encoding.UTF8.GetBytes(text);
+            utf8 = Encoding.UTF8.GetBytes(candidate);
         }
         catch (EncoderFallbackException)
         {

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 _MMAP_SIZE_BYTES = 300_000_000  # 300 MB — đủ cho hàng trăm nghìn dòng memory; 30 GB là vô lý
 _USER_PREFIX = "User: "
 
-# retrieve() scoring weights (tổng = 1.0)
+# retrieve() scoring weights (tổng trọng số tối đa = 0.80, ngưỡng min = 0.18)
 _SCORE_WEIGHT_LEXICAL = 0.55
 _SCORE_WEIGHT_SCOPE_MATCH = 0.15
 _SCORE_WEIGHT_IMPORTANCE = 0.05

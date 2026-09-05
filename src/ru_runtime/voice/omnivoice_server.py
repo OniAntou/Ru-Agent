@@ -50,7 +50,8 @@ def _acquire_single_instance() -> bool:
         handle = kernel32.CreateMutexW(None, False, f"Local\\RuOmniVoice{port}")
         if not handle:
             raise OSError("CreateMutexW failed for OmniVoice singleton")
-        if kernel32.GetLastError() == 183:
+        ERROR_ALREADY_EXISTS = 183
+        if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
             kernel32.CloseHandle(handle)
             return False
         _SINGLETON_GUARD = handle

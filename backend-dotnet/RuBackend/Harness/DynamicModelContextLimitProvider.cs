@@ -39,11 +39,7 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
                 }
             }
 
-            var model = snapshot.Model;
-            if (string.IsNullOrWhiteSpace(model))
-            {
-                model = snapshot.OpenAiModel ?? snapshot.AnthropicModel ?? snapshot.OllamaModel ?? string.Empty;
-            }
+            var model = ResolveActiveModel(snapshot);
 
             return ResolveLimitForModel(model, snapshot.Backend);
         }
@@ -51,6 +47,53 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         {
             return 32_768;
         }
+    }
+
+    private static string ResolveActiveModel(SettingsSnapshot snapshot)
+    {
+        var backend = (snapshot.Backend ?? string.Empty).Trim().ToLowerInvariant();
+        var active = backend switch
+        {
+            "opencode zen" or "opencode" or "opencode zen api" or "opencode api" => snapshot.OpenCodeModel,
+            "kilo gateway" or "kilo" or "kilo gateway api" or "kilo api" => snapshot.KiloModel,
+            "ollama" or "ollama api" => snapshot.OllamaModel,
+            "lm studio" or "lmstudio" or "lm studio api" => snapshot.LmStudioModel,
+            "custom openai" or "custom" or "custom openai api" => snapshot.CustomModel,
+            "openai" or "openai api" => snapshot.OpenAiModel,
+            "anthropic" or "anthropic claude" or "claude" => snapshot.AnthropicModel,
+            _ => null,
+        };
+
+        if (!string.IsNullOrWhiteSpace(active))
+        {
+            return active;
+        }
+
+        // Legacy fallback: generic field first, then any provider-specific value.
+        // The active backend field above always wins when present, so a stale
+        // legacy Model cannot shadow a provider switch.
+        return FirstNonEmpty(
+            snapshot.Model,
+            snapshot.OpenCodeModel,
+            snapshot.KiloModel,
+            snapshot.OpenAiModel,
+            snapshot.AnthropicModel,
+            snapshot.OllamaModel,
+            snapshot.LmStudioModel,
+            snapshot.CustomModel);
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
     }
 
     public static long ResolveLimitForModel(string model, string? backend = null)

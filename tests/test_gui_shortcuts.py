@@ -7,9 +7,9 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "install_gui_shortcuts.ps1"
@@ -55,7 +55,7 @@ def _read_shortcut(path: Path) -> dict[str, object]:
     )
     result = _run_powershell(command)
     assert result.returncode == 0, result.stdout + result.stderr
-    return json.loads(result.stdout)
+    return cast(dict[str, object], json.loads(result.stdout))
 
 
 def _run_installer(

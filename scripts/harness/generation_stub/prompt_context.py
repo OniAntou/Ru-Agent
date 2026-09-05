@@ -111,10 +111,15 @@ class InstructionBlock:
 class Capability:
     id: str
     version: str
-    summary: str
+    description: str
+    scope: str
+    input_schema_json: str
     input_schema_digest: str
-    policy_summary: str
+    example_arguments_json: str | None
     availability: str
+    summary: str | None = None
+    policy_summary: str | None = None
+    is_legacy: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _require_identifier(self.id, 128))
@@ -122,10 +127,20 @@ class Capability:
         if _SEMVER.fullmatch(version) is None:
             raise PromptContextError()
         object.__setattr__(self, "version", version)
-        object.__setattr__(self, "summary", _require_string(self.summary, 2 * 1024))
+        object.__setattr__(self, "description", _require_string(self.description, 2 * 1024))
+        object.__setattr__(self, "scope", _require_identifier(self.scope, 128))
+        object.__setattr__(self, "input_schema_json", _require_json_object(self.input_schema_json, 32 * 1024))
         object.__setattr__(self, "input_schema_digest", _require_digest(self.input_schema_digest))
-        object.__setattr__(self, "policy_summary", _require_string(self.policy_summary, 2 * 1024))
+        object.__setattr__(
+            self,
+            "example_arguments_json",
+            _optional_json_object(self.example_arguments_json, 4 * 1024),
+        )
         object.__setattr__(self, "availability", _require_identifier(self.availability, 32))
+        if self.summary is not None:
+            object.__setattr__(self, "summary", _require_string(self.summary, 2 * 1024))
+        if self.policy_summary is not None:
+            object.__setattr__(self, "policy_summary", _require_string(self.policy_summary, 2 * 1024))
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,14 +231,27 @@ class SystemPromptContext:
                 for block in self.instruction_blocks
             ],
             "capabilities": [
-                {
-                    "id": capability.id,
-                    "version": capability.version,
-                    "summary": capability.summary,
-                    "input_schema_digest": capability.input_schema_digest,
-                    "policy_summary": capability.policy_summary,
-                    "availability": capability.availability,
-                }
+                (
+                    {
+                        "id": capability.id,
+                        "version": capability.version,
+                        "summary": capability.summary,
+                        "input_schema_digest": capability.input_schema_digest,
+                        "policy_summary": capability.policy_summary,
+                        "availability": capability.availability,
+                    }
+                    if capability.is_legacy
+                    else {
+                        "id": capability.id,
+                        "version": capability.version,
+                        "description": capability.description,
+                        "scope": capability.scope,
+                        "input_schema_json": capability.input_schema_json,
+                        "input_schema_digest": capability.input_schema_digest,
+                        "example_arguments_json": capability.example_arguments_json,
+                        "availability": capability.availability,
+                    }
+                )
                 for capability in self.capabilities
             ],
             "runtime_context": {
@@ -325,18 +353,44 @@ def _parse_instruction(value: object) -> InstructionBlock:
 def _parse_capability(value: object) -> Capability:
     if not isinstance(value, Mapping):
         raise PromptContextError()
-    _require_exact_fields(
-        value,
-        {"id", "version", "summary", "input_schema_digest", "policy_summary", "availability"},
-    )
-    return Capability(
-        id=value["id"],
-        version=value["version"],
-        summary=value["summary"],
-        input_schema_digest=value["input_schema_digest"],
-        policy_summary=value["policy_summary"],
-        availability=value["availability"],
-    )
+    modern_fields = {
+        "id", "version", "description", "scope", "input_schema_json",
+        "input_schema_digest", "example_arguments_json", "availability",
+    }
+    legacy_fields = {
+        "id", "version", "summary", "input_schema_digest", "policy_summary", "availability",
+    }
+    keys = set(value)
+    if keys == modern_fields:
+        return Capability(
+            id=value["id"],
+            version=value["version"],
+            description=value["description"],
+            scope=value["scope"],
+            input_schema_json=value["input_schema_json"],
+            input_schema_digest=value["input_schema_digest"],
+            example_arguments_json=value["example_arguments_json"],
+            availability=value["availability"],
+            summary=value["description"],
+            policy_summary=value["scope"],
+            is_legacy=False,
+        )
+    if keys == legacy_fields:
+        default_schema = '{"type":"object","additionalProperties":false,"properties":{}}'
+        return Capability(
+            id=value["id"],
+            version=value["version"],
+            description=value["summary"],
+            scope=value["policy_summary"],
+            input_schema_json=default_schema,
+            input_schema_digest=value["input_schema_digest"],
+            example_arguments_json=None,
+            availability=value["availability"],
+            summary=value["summary"],
+            policy_summary=value["policy_summary"],
+            is_legacy=True,
+        )
+    raise PromptContextError()
 
 
 def _parse_reference(value: object) -> PromptReference:
@@ -396,6 +450,23 @@ def _require_digest(value: object) -> str:
     ):
         raise PromptContextError()
     return value
+
+
+def _require_json_object(value: object, maximum_bytes: int) -> str:
+    text = _require_string(value, maximum_bytes)
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        raise PromptContextError() from None
+    if not isinstance(parsed, dict) or len(text.encode("utf-8")) > maximum_bytes:
+        raise PromptContextError()
+    return text
+
+
+def _optional_json_object(value: object, maximum_bytes: int) -> str | None:
+    if value is None:
+        return None
+    return _require_json_object(value, maximum_bytes)
 
 
 __all__ = [

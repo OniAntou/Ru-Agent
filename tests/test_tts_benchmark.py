@@ -80,9 +80,15 @@ class FailingEngine:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
+    def load(self, reference_audio: Path, reference_text: str) -> None:
+        self.calls.append("load")
+
     def synthesize(self, text: str, output_path: Path) -> None:
         self.calls.append("synthesize")
         raise RuntimeError("CUDA out of memory")
+
+    def release(self) -> None:
+        self.calls.append("release")
 
 
 def test_load_manifest_rejects_a_wrong_language_mix(tmp_path: Path) -> None:

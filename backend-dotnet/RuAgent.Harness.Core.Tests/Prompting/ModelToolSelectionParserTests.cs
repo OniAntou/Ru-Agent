@@ -42,4 +42,26 @@ public sealed class ModelToolSelectionParserTests
         var oversized = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"value\":\"" + new string('x', 70_000) + "\"}}";
         Assert.Equal("arguments_too_large", Assert.Throws<ModelToolSelectionException>(() => ModelToolSelectionParser.Parse(oversized, Advertised)).Code);
     }
+
+    [Fact]
+    public void Parse_accepts_markdown_code_fence_enclosed_json()
+    {
+        var raw = "```json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```";
+        var selection = ModelToolSelectionParser.Parse(raw, Advertised);
+
+        Assert.Equal("files.read", selection.ToolId);
+        Assert.Equal("1.0.0", selection.ToolVersion);
+        Assert.Equal("README.md", selection.Arguments.GetProperty("path").GetString());
+    }
+
+    [Fact]
+    public void Parse_accepts_reasoning_think_tags_before_json()
+    {
+        var raw = "<think>\nLet's read README.md to understand the setup.\n</think>\n```json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```";
+        var selection = ModelToolSelectionParser.Parse(raw, Advertised);
+
+        Assert.Equal("files.read", selection.ToolId);
+        Assert.Equal("1.0.0", selection.ToolVersion);
+        Assert.Equal("README.md", selection.Arguments.GetProperty("path").GetString());
+    }
 }

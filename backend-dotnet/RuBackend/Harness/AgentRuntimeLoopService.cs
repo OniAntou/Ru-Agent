@@ -143,7 +143,8 @@ public interface IAgentRuntimeCoordinatorFactory
     AgentRunCoordinator Create(
         string workspaceRoot,
         PolicySnapshot? policySnapshot = null,
-        RunId? runId = null);
+        RunId? runId = null,
+        string? agentSessionId = null);
 }
 
 public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFactory
@@ -211,7 +212,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     public AgentRunCoordinator Create(
         string workspaceRoot,
         PolicySnapshot? policySnapshot = null,
-        RunId? runId = null)
+        RunId? runId = null,
+        string? agentSessionId = null)
     {
         var availability = new AgentToolRuntimeAvailability(
             _webExecutor?.IsSearchEnabled == true,
@@ -224,7 +226,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 "broker_gateway_unavailable: every tool call must execute inside the Broker");
         }
 
-        IToolGateway gateway = _brokerGateways.Create(workspaceRoot, policySnapshot, brokerRunId);
+        IToolGateway gateway = _brokerGateways.Create(workspaceRoot, policySnapshot, brokerRunId, agentSessionId);
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
@@ -466,7 +468,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                     workspaceRoot,
                     change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
             }
-            coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot, runId);
+            coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot, runId, workspaceRun.SessionId.Value);
             _roots.RegisterCoordinator(runId, coordinator);
 
             if (policySnapshot is null)
@@ -522,7 +524,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
             try
             {
-                await coordinator.FailAsync(runId, "runtime_drive_failed", cancellationToken).ConfigureAwait(false);
+                var failureCode = NormalizeDriveFailureCode(error);
+                await coordinator.FailAsync(runId, failureCode, cancellationToken).ConfigureAwait(false);
                 await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception nested)
@@ -615,6 +618,132 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         {
             _logger.LogError(error, "failed to persist external workspace change for {WorkspaceId}/{Path}", workspaceId.Value, change.NormalizedPath);
         }
+    }
+
+    private static string NormalizeDriveFailureCode(Exception error)
+    {
+        // Terminal codes must satisfy AgentRun/HarnessEventIntent validation:
+        // 1..64 chars, starts [a-z], rest [a-z0-9_.]. Never embed raw messages.
+        if (error is RuBackend.Worker.WorkerUnavailableException)
+        {
+            return "worker_unavailable";
+        }
+
+        if (error is RuBackend.Worker.WorkerProtocolException wpe)
+        {
+            var candidate = string.IsNullOrWhiteSpace(wpe.Code) ? wpe.Message : wpe.Code;
+            if (IsStableTerminalCode(candidate))
+            {
+                return candidate;
+            }
+
+            var sanitized = SanitizeTerminalCodeSuffix(candidate);
+            if (sanitized is not null)
+            {
+                var prefixed = "worker_" + sanitized;
+                if (prefixed.Length <= 64)
+                {
+                    return prefixed;
+                }
+            }
+
+            return "worker_failed";
+        }
+
+        if (error is RuBackend.Providers.ProviderCatalogException pce)
+        {
+            var candidate = pce.Message;
+            if (IsStableTerminalCode(candidate))
+            {
+                return candidate.StartsWith("provider_", StringComparison.Ordinal)
+                    ? candidate
+                    : TryPrefix("provider_", candidate) ?? "provider_failed";
+            }
+
+            var sanitized = SanitizeTerminalCodeSuffix(candidate);
+            if (sanitized is not null)
+            {
+                var prefixed = "provider_" + sanitized;
+                if (prefixed.Length <= 64)
+                {
+                    return prefixed;
+                }
+            }
+
+            return "provider_failed";
+        }
+
+        return "runtime_drive_failed";
+    }
+
+    private static string? TryPrefix(string prefix, string candidate)
+    {
+        if (candidate.Length + prefix.Length <= 64)
+        {
+            return prefix + candidate;
+        }
+
+        return null;
+    }
+
+    private static bool IsStableTerminalCode(string? value)
+    {
+        if (value is not { Length: >= 1 and <= 64 }
+            || value[0] is not (>= 'a' and <= 'z'))
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            var ok = (character >= 'a' && character <= 'z')
+                || (character >= '0' && character <= '9')
+                || character == '_'
+                || character == '.';
+            if (!ok)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string? SanitizeTerminalCodeSuffix(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var builder = new System.Text.StringBuilder(value.Length);
+        foreach (var character in value.Trim().ToLowerInvariant())
+        {
+            if (character is (>= 'a' and <= 'z') or (>= '0' and <= '9'))
+            {
+                builder.Append(character);
+            }
+            else if (character is '_' or '.' or ' ' or '-' or ':' or '/' or '\\')
+            {
+                if (builder.Length > 0 && builder[^1] != '_')
+                {
+                    builder.Append('_');
+                }
+            }
+        }
+
+        var sanitized = builder.ToString().Trim('_', '.');
+        if (sanitized.Length == 0 || sanitized[0] is not (>= 'a' and <= 'z'))
+        {
+            return null;
+        }
+
+        if (sanitized.Length > 56)
+        {
+            sanitized = sanitized.Substring(0, 56).TrimEnd('_', '.');
+        }
+
+        return sanitized.Length == 0 ? null : sanitized;
     }
 
     private async Task PublishTerminalSummaryAsync(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -136,7 +137,7 @@ def test_serialize_diagnostic_event_emits_exact_bounded_action_proof_shape():
     ),
 )
 def test_sanitize_diagnostic_event_drops_invalid_action_proof(field: str, value: str):
-    values = {
+    values: dict[str, Any] = {
         "tool_id": "files.write",
         "tool_version": "1.0.0",
         "verification_state": "verified",
@@ -208,7 +209,7 @@ def test_sanitize_diagnostic_event_redacts_dangerous_or_unapproved_values():
     assert sanitized.level == "info"
     assert sanitized.component == "worker"
     assert sanitized.event_code == "diagnostic_unclassified"
-    assert sanitized.correlation_id.startswith("c_")
+    assert sanitized.correlation_id is not None and sanitized.correlation_id.startswith("c_")
     assert sanitized.duration_ms is None
     assert sanitized.status is None
     assert sanitized.error_code is None

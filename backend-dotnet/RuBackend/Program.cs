@@ -31,6 +31,8 @@ using System.Net;
 using System.Net.Sockets;
 
 var isManagedRuntime = args.Contains("--managed-runtime", StringComparer.Ordinal);
+var isDeterministicHarness = !isManagedRuntime
+    && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("RU_HARNESS_WORKER_TOKEN"));
 RuAgent.Hosting.PublicHostSingleInstance? managedSingleInstance = null;
 RuAgent.Hosting.WorkerBrokerProcessManager? managedWorkerBrokerManager = null;
 RuAgent.Hosting.RuntimeDescriptorWriter? managedDescriptorWriter = null;
@@ -246,7 +248,8 @@ builder.Services.AddSingleton<AgentWebToolExecutor>(services =>
             enabled: true,
             searchEndpoint: new Uri(BrokerWebSearchEndpoint),
             requireApproval: false),
-        services.GetRequiredService<HttpClient>()));builder.Services.AddSingleton<AgentReplyPolicy>();
+        services.GetRequiredService<HttpClient>()));
+builder.Services.AddSingleton<AgentReplyPolicy>();
 builder.Services.AddSingleton<IAgentReplyPolicy>(services =>
     services.GetRequiredService<AgentReplyPolicy>());
 builder.Services.AddSingleton<AgentReplyEffectSink>();
@@ -365,7 +368,9 @@ builder.Services.AddSingleton<AgentV1Service>();
 builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
     new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>())
     {
-        CreateProviderBootstrapAsync = services.GetRequiredService<AgentProviderSnapshotFactory>().CreateAsync,
+        CreateProviderBootstrapAsync = isDeterministicHarness
+            ? null
+            : services.GetRequiredService<AgentProviderSnapshotFactory>().CreateAsync,
         LoadRunImagesAsync = async (runId, ct) =>
         {
             var store = services.GetRequiredService<HarnessPayloadStore>();

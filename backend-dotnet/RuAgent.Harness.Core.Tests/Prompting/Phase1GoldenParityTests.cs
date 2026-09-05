@@ -25,6 +25,13 @@ public sealed class Phase1GoldenParityTests
         var second = SystemPromptComposer.Compose(context);
         Assert.Equal(snapshot.Text, second.Text);
         Assert.Equal(snapshot.Receipt.PromptSha256, Sha256(snapshot.Text));
+        Assert.Equal(
+            promptCase["expected"]!["prompt_sha256"]!.GetValue<string>(),
+            snapshot.Receipt.PromptSha256);
+        Assert.Equal(
+            ((JsonArray)promptCase["expected"]!["block_digests"]!).Select(item =>
+                (item!["block_id"]!.GetValue<string>(), item["sha256"]!.GetValue<string>())),
+            snapshot.Receipt.BlockDigests.Select(item => (item.BlockId, item.Sha256)));
         Assert.Contains("TOOL SELECTION CONTRACT:", snapshot.Text, StringComparison.Ordinal);
 
         // Instruction digests stay bound to the context that declared them.
@@ -132,11 +139,11 @@ public sealed class Phase1GoldenParityTests
             capabilities.Add(new PromptCapability(
                 capability!["id"]!.GetValue<string>(),
                 capability["version"]!.GetValue<string>(),
-                capability["summary"]!.GetValue<string>(),
-                capability["policy_summary"]!.GetValue<string>(),
-                "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}",
+                capability["description"]!.GetValue<string>(),
+                capability["scope"]!.GetValue<string>(),
+                capability["input_schema_json"]!.GetValue<string>(),
                 capability["input_schema_digest"]!.GetValue<string>(),
-                null,
+                OptionalString(capability["example_arguments_json"]),
                 capability["availability"]!.GetValue<string>()));
         }
 

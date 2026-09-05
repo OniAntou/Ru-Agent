@@ -164,6 +164,9 @@ def _reference_prompt_input(
 ) -> dict[str, object]:
     """Build the one golden prompt context shared by every Phase 1 consumer."""
 
+    files_read_schema = '{"type":"object","additionalProperties":false,"properties":{"path":{"type":"string"}},"required":["path"]}'
+    web_search_schema = '{"type":"object","additionalProperties":false,"properties":{"query":{"type":"string"}},"required":["query"]}'
+
     return {
         "schema_version": 1,
         "agent_profile": "ru-agent",
@@ -190,17 +193,21 @@ def _reference_prompt_input(
             {
                 "id": "files.read",
                 "version": "1.2.0",
-                "summary": "Read workspace files with bounded output",
-                "input_schema_digest": sha256_utf8("files.read schema"),
-                "policy_summary": "workspace.read",
+                "description": "Read workspace files with bounded output",
+                "scope": "workspace.read",
+                "input_schema_json": files_read_schema,
+                "input_schema_digest": sha256_utf8(files_read_schema),
+                "example_arguments_json": '{"path":"README.md"}',
                 "availability": "enabled",
             },
             {
                 "id": "web.search",
                 "version": "1.0.0",
-                "summary": "Search the hosted web boundary",
-                "input_schema_digest": sha256_utf8("web.search schema"),
-                "policy_summary": "web.search",
+                "description": "Search the hosted web boundary",
+                "scope": "network.search",
+                "input_schema_json": web_search_schema,
+                "input_schema_digest": sha256_utf8(web_search_schema),
+                "example_arguments_json": '{"query":"Ru Agent"}',
                 "availability": "disabled",
             },
         ],

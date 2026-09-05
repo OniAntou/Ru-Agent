@@ -5,11 +5,11 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "7f713a02a029f8b74da5379984c0934d57d95b72789c3d4a9001738cb37b74a2"
+            "sha256": "8eff727e804d066913748a0f2369240e6343b7b8002fae18db6db030e3c27bb1"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "f14485bfc79e824aea7f6b09f46d72d646a814cb5f71d756d9813b04d10dc829"
+            "sha256": "5493a32663fbf41ac0f1d23c61212c39be7f7559da5e9ff259a2270fb1fb0a66"
           },
           {
             "block_id": "environment",
@@ -25,7 +25,7 @@
           },
           {
             "block_id": "capabilities",
-            "sha256": "0239cf6ba63ad294434a512b041e3977e807cf7e6aebba00146848ad9a69d466"
+            "sha256": "15b530e69af9d8c49e2c9797397a529c3ab5f794899bf3a1fb59bf4d6700ba05"
           },
           {
             "block_id": "runtime",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "1.0.0",
         "private_marker": "sk-PHASE1-PRIVATE-MARKER",
-        "prompt_sha256": "d208787d71367f8c65c351c8f7ec741137c085752cfb6f6502df70f12e52b2e5"
+        "prompt_sha256": "fd08d301b57bfc19c307d8e62a8bc3c28d3410bc949b861d336267cbff451b33"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -43,18 +43,22 @@
         "capabilities": [
           {
             "availability": "enabled",
+            "description": "Read workspace files with bounded output",
+            "example_arguments_json": "{\"path\":\"README.md\"}",
             "id": "files.read",
-            "input_schema_digest": "850023b88abc964b674c7c576520a77bbadd2bb1b6a50913e2e54209f75b65ca",
-            "policy_summary": "workspace.read",
-            "summary": "Read workspace files with bounded output",
+            "input_schema_digest": "458459e3b6bf0875eceb522fd2a90ee657cb04479d4520e32b31823d5dc427ce",
+            "input_schema_json": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}",
+            "scope": "workspace.read",
             "version": "1.2.0"
           },
           {
             "availability": "disabled",
+            "description": "Search the hosted web boundary",
+            "example_arguments_json": "{\"query\":\"Ru Agent\"}",
             "id": "web.search",
-            "input_schema_digest": "285410df0fbae7a60bcbe6aaaae54f2e035884960f25d6d637fb9f394176bbbf",
-            "policy_summary": "web.search",
-            "summary": "Search the hosted web boundary",
+            "input_schema_digest": "b6359a2244784e0bc6715183176fc1955455d69baa98da148e451a4ed3cde6e7",
+            "input_schema_json": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"]}",
+            "scope": "network.search",
             "version": "1.0.0"
           }
         ],

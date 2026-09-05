@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-from harness.generation_stub.prompt_context import parse_system_prompt_context, sha256_utf8
+from harness.generation_stub.prompt_context import (
+    PromptContextError,
+    parse_system_prompt_context,
+    sha256_utf8,
+)
 from harness.generation_stub.system_prompt_composer import compose_system_prompt
 from harness.session import HarnessSession
 
@@ -18,50 +22,70 @@ AGENT_SCENARIOS = (
 )
 
 
+def _current_prompt_payload() -> dict[str, object]:
+    schema = '{"type":"object"}'
+    return {
+        "schema_version": 1,
+        "agent_profile": "ru-agent",
+        "preset": "standard",
+        "environment": {
+            "model": "fixture-model",
+            "platform": "Win32NT",
+            "locale": "en-US",
+            "timezone": "UTC",
+            "date": "2026-09-05",
+            "workspace_label": "workspace",
+        },
+        "instruction_blocks": [],
+        "capabilities": [
+            {
+                "id": "files.read",
+                "version": "1.0.0",
+                "description": "Read a bounded text file.",
+                "scope": "workspace.read",
+                "input_schema_json": schema,
+                "input_schema_digest": sha256_utf8(schema),
+                "example_arguments_json": '{"path":"README.md"}',
+                "availability": "enabled",
+            }
+        ],
+        "runtime_context": {
+            "memory": None,
+            "mood": None,
+            "voice": None,
+            "vts": None,
+            "hardware": None,
+            "references": [],
+        },
+    }
+
+
 def test_deterministic_prompt_fixture_accepts_current_capability_contract() -> None:
     schema = '{"type":"object"}'
-    context = parse_system_prompt_context(
-        {
-            "schema_version": 1,
-            "agent_profile": "ru-agent",
-            "preset": "standard",
-            "environment": {
-                "model": "fixture-model",
-                "platform": "Win32NT",
-                "locale": "en-US",
-                "timezone": "UTC",
-                "date": "2026-09-05",
-                "workspace_label": "workspace",
-            },
-            "instruction_blocks": [],
-            "capabilities": [
-                {
-                    "id": "files.read",
-                    "version": "1.0.0",
-                    "description": "Read a bounded text file.",
-                    "scope": "workspace.read",
-                    "input_schema_json": schema,
-                    "input_schema_digest": sha256_utf8(schema),
-                    "example_arguments_json": '{"path":"README.md"}',
-                    "availability": "enabled",
-                }
-            ],
-            "runtime_context": {
-                "memory": None,
-                "mood": None,
-                "voice": None,
-                "vts": None,
-                "hardware": None,
-                "references": [],
-            },
-        }
-    )
+    context = parse_system_prompt_context(_current_prompt_payload())
 
     snapshot = compose_system_prompt(context)
 
     assert "description: Read a bounded text file." in snapshot.text
     assert "scope: workspace.read; availability=enabled" in snapshot.text
     assert f"input_schema: {schema}" in snapshot.text
+
+
+def test_prompt_context_rejects_legacy_capability_contract() -> None:
+    payload = _current_prompt_payload()
+    payload["capabilities"] = [
+        {
+            "id": "files.read",
+            "version": "1.0.0",
+            "summary": "Read a bounded text file.",
+            "input_schema_digest": sha256_utf8("legacy schema label"),
+            "policy_summary": "workspace.read",
+            "availability": "enabled",
+        }
+    ]
+
+    with pytest.raises(PromptContextError):
+        parse_system_prompt_context(payload)
 
 
 @pytest.mark.parametrize("scenario", AGENT_SCENARIOS)

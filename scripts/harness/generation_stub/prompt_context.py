@@ -117,9 +117,6 @@ class Capability:
     input_schema_digest: str
     example_arguments_json: str | None
     availability: str
-    summary: str | None = None
-    policy_summary: str | None = None
-    is_legacy: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", _require_identifier(self.id, 128))
@@ -137,10 +134,6 @@ class Capability:
             _optional_json_object(self.example_arguments_json, 4 * 1024),
         )
         object.__setattr__(self, "availability", _require_identifier(self.availability, 32))
-        if self.summary is not None:
-            object.__setattr__(self, "summary", _require_string(self.summary, 2 * 1024))
-        if self.policy_summary is not None:
-            object.__setattr__(self, "policy_summary", _require_string(self.policy_summary, 2 * 1024))
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,17 +224,7 @@ class SystemPromptContext:
                 for block in self.instruction_blocks
             ],
             "capabilities": [
-                (
-                    {
-                        "id": capability.id,
-                        "version": capability.version,
-                        "summary": capability.summary,
-                        "input_schema_digest": capability.input_schema_digest,
-                        "policy_summary": capability.policy_summary,
-                        "availability": capability.availability,
-                    }
-                    if capability.is_legacy
-                    else {
+                {
                         "id": capability.id,
                         "version": capability.version,
                         "description": capability.description,
@@ -251,7 +234,6 @@ class SystemPromptContext:
                         "example_arguments_json": capability.example_arguments_json,
                         "availability": capability.availability,
                     }
-                )
                 for capability in self.capabilities
             ],
             "runtime_context": {
@@ -353,44 +335,21 @@ def _parse_instruction(value: object) -> InstructionBlock:
 def _parse_capability(value: object) -> Capability:
     if not isinstance(value, Mapping):
         raise PromptContextError()
-    modern_fields = {
+    fields = {
         "id", "version", "description", "scope", "input_schema_json",
         "input_schema_digest", "example_arguments_json", "availability",
     }
-    legacy_fields = {
-        "id", "version", "summary", "input_schema_digest", "policy_summary", "availability",
-    }
-    keys = set(value)
-    if keys == modern_fields:
-        return Capability(
-            id=value["id"],
-            version=value["version"],
-            description=value["description"],
-            scope=value["scope"],
-            input_schema_json=value["input_schema_json"],
-            input_schema_digest=value["input_schema_digest"],
-            example_arguments_json=value["example_arguments_json"],
-            availability=value["availability"],
-            summary=value["description"],
-            policy_summary=value["scope"],
-            is_legacy=False,
-        )
-    if keys == legacy_fields:
-        default_schema = '{"type":"object","additionalProperties":false,"properties":{}}'
-        return Capability(
-            id=value["id"],
-            version=value["version"],
-            description=value["summary"],
-            scope=value["policy_summary"],
-            input_schema_json=default_schema,
-            input_schema_digest=value["input_schema_digest"],
-            example_arguments_json=None,
-            availability=value["availability"],
-            summary=value["summary"],
-            policy_summary=value["policy_summary"],
-            is_legacy=True,
-        )
-    raise PromptContextError()
+    _require_exact_fields(value, fields)
+    return Capability(
+        id=value["id"],
+        version=value["version"],
+        description=value["description"],
+        scope=value["scope"],
+        input_schema_json=value["input_schema_json"],
+        input_schema_digest=value["input_schema_digest"],
+        example_arguments_json=value["example_arguments_json"],
+        availability=value["availability"],
+    )
 
 
 def _parse_reference(value: object) -> PromptReference:

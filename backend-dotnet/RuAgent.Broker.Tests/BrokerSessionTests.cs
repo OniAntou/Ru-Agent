@@ -40,7 +40,7 @@ public sealed class BrokerSessionTests
     {
         using var fixture = DescriptorFixture.Create();
         var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
-        var scopes = new HashSet<string>(["system.write"], StringComparer.Ordinal);
+        var scopes = new HashSet<string>(["workspace.write"], StringComparer.Ordinal);
         var skills = new HashSet<string>(StringComparer.Ordinal);
 
         Assert.True(session.Open("session-1", scopes, skills));
@@ -95,7 +95,7 @@ public sealed class BrokerSessionTests
         Assert.True(session.TryOpenRunLease(lease, out var error));
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
-        Assert.Equal(new[] { "app.list", "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "notes.create", "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
     [Fact]
@@ -174,7 +174,7 @@ public sealed class BrokerSessionTests
             new string('c', 64),
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
-        Assert.Equal(new[] { "app.list", "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "notes.create", "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
         Assert.DoesNotContain("web.search", lease.AdvertisedCapabilities);
     }
 

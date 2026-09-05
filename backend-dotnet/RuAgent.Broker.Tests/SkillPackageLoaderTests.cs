@@ -53,7 +53,7 @@ public sealed class SkillPackageLoaderTests
         var skill = new SkillPackageLoader().Load(package.Root);
         var tools = new ToolRegistry();
         tools.Register(new ToolManifest(
-            "system.time", "1.0.0", "builtin", RiskClass.Read,
+            "files.list", "1.0.0", "desktop", RiskClass.Read,
             new HashSet<string>([ToolScope.WorkspaceRead]),
             new JsonObject { ["type"] = "object" },
             new JsonObject { ["type"] = "object" },
@@ -81,13 +81,14 @@ public sealed class SkillPackageLoaderTests
                 ["version"] = "1.0.0",
                 ["input_schema"] = new JsonObject { ["type"] = "object" },
                 ["output_schema"] = new JsonObject { ["type"] = "object" },
-                ["required_tools"] = new JsonArray("system.time"),
+                ["required_tools"] = new JsonArray("files.list"),
                 ["required_scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
                 ["steps"] = new JsonArray(new JsonObject
                 {
                     ["kind"] = "call_tool",
-                    ["name"] = "time",
-                    ["tool_id"] = "system.time",
+                    ["name"] = "list",
+                    ["tool_id"] = "files.list",
+                    ["arguments"] = new JsonObject { ["path"] = ".", ["max_entries"] = 8 },
                 }),
                 ["requires_approval"] = false,
                 ["max_steps"] = 2,

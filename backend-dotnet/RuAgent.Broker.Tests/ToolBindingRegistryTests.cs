@@ -77,8 +77,7 @@ public sealed class ToolBindingRegistryTests
 
         Assert.Equal(new[]
         {
-            "app.list", "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "notes.create",
-            "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell",
+            "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell",
         }, ids);
         Assert.DoesNotContain("app.open", ids);
         Assert.DoesNotContain("workspace.search", ids);
@@ -91,11 +90,7 @@ public sealed class ToolBindingRegistryTests
 
     internal static Dictionary<string, ToolExecutor> ExecutableStubs() => new(StringComparer.Ordinal)
     {
-        ["system.time"] = Succeeded,
-        ["system.status"] = Succeeded,
         ["help.docs"] = Succeeded,
-        ["system.volume"] = Succeeded,
-        ["app.list"] = Succeeded,
         ["files.list"] = Succeeded,
         ["files.glob"] = Succeeded,
         ["files.search"] = Succeeded,
@@ -106,7 +101,6 @@ public sealed class ToolBindingRegistryTests
         ["files.restore"] = Succeeded,
         ["terminal.run"] = Succeeded,
         ["terminal.shell"] = Succeeded,
-        ["notes.create"] = Succeeded,
     };
 
     private static ValueTask<ToolExecutionOutcome> Succeeded(

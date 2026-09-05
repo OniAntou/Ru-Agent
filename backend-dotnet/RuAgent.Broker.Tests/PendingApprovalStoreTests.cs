@@ -67,10 +67,10 @@ public sealed class PendingApprovalStoreTests
         var store = new PendingApprovalStore();
         var request = Request("request-2", "session-2");
         var manifest = new ToolManifest(
-            "notes.create",
+            "files.write",
             "1.0.0",
             "builtin",
-            RiskClass.External,
+            RiskClass.Reversible,
             new HashSet<string>([ToolScope.WorkspaceWrite], StringComparer.Ordinal),
             new JsonObject { ["type"] = "object" },
             new JsonObject { ["type"] = "object" },
@@ -82,7 +82,7 @@ public sealed class PendingApprovalStoreTests
             request,
             manifest,
             new JsonObject { ["path"] = "notes/rejected.md" },
-            "Create a note in the workspace.",
+            "Write a file in the workspace.",
             DateTimeOffset.UtcNow.AddMinutes(1),
             null);
         Assert.True(store.TryConsume(
@@ -97,7 +97,7 @@ public sealed class PendingApprovalStoreTests
             request with { RequestId = "request-3" },
             manifest,
             new JsonObject { ["path"] = "notes/expired.md" },
-            "Create a note in the workspace.",
+            "Write a file in the workspace.",
             DateTimeOffset.UtcNow.AddSeconds(1),
             null);
         Assert.False(store.TryConsume(

@@ -81,14 +81,14 @@ public sealed class AgentEnvelopeTests
             new JsonObject
             {
                 ["status"] = "succeeded",
-                ["scopes"] = new JsonArray("system.write"),
+                ["scopes"] = new JsonArray("workspace.write"),
                 ["skill_ids"] = new JsonArray(),
             });
 
         var parsed = AgentEnvelopeCodec.Parse(AgentEnvelopeCodec.Serialize(envelope));
 
         Assert.Equal(AgentMessageTypes.SessionOpened, parsed.MessageType);
-        Assert.Equal(new[] { "system.write" }, parsed.Payload["scopes"]!.AsArray()
+        Assert.Equal(new[] { "workspace.write" }, parsed.Payload["scopes"]!.AsArray()
             .Select(item => item!.GetValue<string>()));
     }
 

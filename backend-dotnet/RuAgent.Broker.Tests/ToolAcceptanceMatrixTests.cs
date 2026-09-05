@@ -9,8 +9,8 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolAcceptanceMatrixTests
 {
     [Theory]
-    [InlineData(false, 16)]
-    [InlineData(true, 18)]
+    [InlineData(false, 11)]
+    [InlineData(true, 13)]
     public void Runtime_catalog_binds_every_available_canonical_definition(
         bool webEnabled,
         int expectedBindings)

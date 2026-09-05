@@ -3,7 +3,6 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Runtime;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
@@ -210,7 +209,7 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("system.write"),
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("workspace.write"),
                     ["skill_ids"] = new System.Text.Json.Nodes.JsonArray("research-note"),
                 }),
             cancellation.Token);
@@ -246,14 +245,14 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("system.write"),
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("workspace.write"),
                     ["skill_ids"] = new System.Text.Json.Nodes.JsonArray(),
                 }),
             cancellation.Token);
         var reply = await ReceiveAsync(socket, cancellation.Token);
 
         Assert.Equal(AgentMessageTypes.SessionOpened, reply.MessageType);
-        Assert.Equal(new[] { "system.write" }, reply.Payload["scopes"]!.AsArray()
+        Assert.Equal(new[] { "workspace.write" }, reply.Payload["scopes"]!.AsArray()
             .Select(item => item!.GetValue<string>()));
         Assert.Empty(reply.Payload["skill_ids"]!.AsArray());
 
@@ -326,71 +325,6 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.ToolResult, result.MessageType);
         Assert.Equal("succeeded", result.Payload["status"]!.GetValue<string>());
         Assert.NotNull(result.Payload["output"]!["entries"]);
-    }
-
-    [Fact]
-    public async Task Authenticated_session_can_execute_volume_with_a_fake_controller()
-    {
-        var controller = new FakeVolumeController(level: 40);
-        await using var fixture = await HostFixture.StartAsync(controller);
-        using var socket = new ClientWebSocket();
-        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await socket.ConnectAsync(
-            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
-            cancellation.Token);
-
-        await SendAsync(socket, new AgentEnvelope(1, "hello-volume", AgentMessageTypes.Hello, "session-volume", "corr-volume", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
-        _ = await ReceiveAsync(socket, cancellation.Token);
-        await SendAsync(
-            socket,
-            new AgentEnvelope(
-                1,
-                "session-volume",
-                AgentMessageTypes.SessionOpen,
-                "session-volume",
-                "corr-volume",
-                10_000,
-                new System.Text.Json.Nodes.JsonObject
-                {
-                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("system.write"),
-                }),
-            cancellation.Token);
-        var opened = await ReceiveAsync(socket, cancellation.Token);
-        Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
-
-        await SendAsync(
-            socket,
-            new AgentEnvelope(
-                1,
-                "volume-1",
-                AgentMessageTypes.ToolRequest,
-                "session-volume",
-                "corr-volume",
-                10_000,
-                new System.Text.Json.Nodes.JsonObject
-                {
-                    ["tool_id"] = "system.volume",
-                    ["tool_version"] = "1.0.0",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject
-                    {
-                        ["operation"] = "set",
-                        ["level"] = 2,
-                    },
-                }),
-            cancellation.Token);
-        var result = await ReceiveAsync(socket, cancellation.Token);
-
-        Assert.Equal("succeeded", result.Payload["status"]!.GetValue<string>());
-        Assert.Equal(2, result.Payload["output"]!["level"]!.GetValue<int>());
-        Assert.False(result.Payload["output"]!.AsObject().ContainsKey("verified"));
-        Assert.Equal("verified", result.Payload["verification_state"]!.GetValue<string>());
-        Assert.Equal("default_render_multimedia", result.Payload["endpoint_role"]!.GetValue<string>());
-        Assert.Matches("^[0-9a-f]{16}$", result.Payload["endpoint_hash"]!.GetValue<string>());
-        Assert.True(result.Payload["adapter_invoked"]!.GetValue<bool>());
-        Assert.Equal(1, controller.OpenCount);
-        Assert.Equal(1, controller.DisposeCount);
-        Assert.Equal([("level", 2)], controller.Writes);
     }
 
     [Fact]
@@ -726,7 +660,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "app.list", "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "notes.create", "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell" }, caps);
+        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell" }, caps);
     }
 
     [Fact]
@@ -766,10 +700,9 @@ public sealed class BrokerHostTests
         Assert.Equal(
             new[]
             {
-                "app.list", "files.delete", "files.edit", "files.glob", "files.list",
+                "files.delete", "files.edit", "files.glob", "files.list",
                 "files.read", "files.restore", "files.search", "files.write",
-                "help.docs", "notes.create", "system.status", "system.time",
-                "system.volume", "terminal.run", "terminal.shell", "web.fetch", "web.search",
+                "help.docs", "terminal.run", "terminal.shell", "web.fetch", "web.search",
             },
             caps);
     }
@@ -1341,7 +1274,6 @@ public sealed class BrokerHostTests
         public BrokerHost Host { get; }
 
         public static async Task<HostFixture> StartAsync(
-            IVolumeController? volumeController = null,
             Configuration.WebOptions? web = null)
         {
             var root = Path.Combine(Path.GetTempPath(), "ru-agent-host-" + Guid.NewGuid().ToString("N"));
@@ -1369,9 +1301,7 @@ public sealed class BrokerHostTests
 
             var host = web is not null
                 ? await BrokerHost.StartAsync(new Configuration.BrokerOptions(descriptorPath, Web: web))
-                : volumeController is null
-                    ? await BrokerHost.StartAsync(descriptorPath)
-                    : await BrokerHost.StartAsync(descriptorPath, volumeController);
+                : await BrokerHost.StartAsync(descriptorPath);
             return new HostFixture(root, token, host);
         }
 
@@ -1392,49 +1322,6 @@ public sealed class BrokerHostTests
             using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             return ((IPEndPoint)listener.LocalEndpoint).Port;
-        }
-    }
-
-    private sealed class FakeVolumeController(int level, bool muted = false) : IVolumeController
-    {
-        public VolumeState State { get; private set; } = new(level, muted);
-        public List<(string Kind, int Value)> Writes { get; } = [];
-        public int OpenCount { get; private set; }
-        public int DisposeCount { get; private set; }
-
-        public IVolumeEndpoint OpenDefaultRenderEndpoint()
-        {
-            OpenCount++;
-            return new FakeEndpoint(this);
-        }
-
-        private sealed class FakeEndpoint(FakeVolumeController owner) : IVolumeEndpoint
-        {
-            private bool _disposed;
-
-            public string EndpointRole => "default_render_multimedia";
-            public string EndpointHash => "0123456789abcdef";
-
-            public VolumeState GetState() => owner.State;
-
-            public void SetLevel(int value)
-            {
-                owner.Writes.Add(("level", value));
-                owner.State = owner.State with { Level = value };
-            }
-
-            public void SetMuted(bool value) => owner.State = owner.State with { Muted = value };
-
-            public void Dispose()
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
-                owner.DisposeCount++;
-            }
         }
     }
 

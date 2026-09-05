@@ -7,7 +7,6 @@ using RuAgent.Broker.Policy;
 using RuAgent.Broker.Skills;
 using RuAgent.Broker.Transport;
 using RuAgent.Broker.Tools;
-using RuAgent.Broker.Tools.Desktop;
 
 namespace RuAgent.Broker.Runtime;
 
@@ -25,7 +24,6 @@ public sealed class BrokerHost : IAsyncDisposable
     private BrokerHost(
         WebApplication application,
         BrokerSession session,
-        IVolumeController? volumeController,
         BrokerOptions? options)
     {
         _application = application;
@@ -34,7 +32,6 @@ public sealed class BrokerHost : IAsyncDisposable
         _tools = new ToolExecutionService(
             session,
             ResolveWorkspaceRoot(),
-            volumeController,
             options?.BuiltinSkills,
             options?.SkillPackageRoots,
             options?.Web);
@@ -54,16 +51,7 @@ public sealed class BrokerHost : IAsyncDisposable
         string descriptorPath,
         CancellationToken cancellationToken = default)
     {
-        return await StartCoreAsync(descriptorPath, null, null, cancellationToken).ConfigureAwait(false);
-    }
-
-    public static async Task<BrokerHost> StartAsync(
-        string descriptorPath,
-        IVolumeController volumeController,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(volumeController);
-        return await StartCoreAsync(descriptorPath, volumeController, null, cancellationToken).ConfigureAwait(false);
+        return await StartCoreAsync(descriptorPath, null, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<BrokerHost> StartAsync(
@@ -73,14 +61,12 @@ public sealed class BrokerHost : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(options);
         return await StartCoreAsync(
             options.DescriptorPath,
-            null,
             options,
             cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<BrokerHost> StartCoreAsync(
         string descriptorPath,
-        IVolumeController? volumeController,
         BrokerOptions? options,
         CancellationToken cancellationToken)
     {
@@ -99,7 +85,7 @@ public sealed class BrokerHost : IAsyncDisposable
             KeepAliveInterval = TimeSpan.FromSeconds(20),
         });
 
-        var host = new BrokerHost(application, session, volumeController, options);
+        var host = new BrokerHost(application, session, options);
         application.MapGet("/health", host.HandleHealthAsync);
         application.Map("/agent", host.HandleAgentAsync);
         await application.StartAsync(cancellationToken).ConfigureAwait(false);

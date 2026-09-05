@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Desktop;
-using RuAgent.Broker.Tools.Notes;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using Xunit;
@@ -19,15 +18,9 @@ public sealed class AdapterConformanceTests
         {
             var guard = new WorkspacePathGuard(root);
             var files = new FileTools(guard);
-            var notes = new NotesAdapter(guard);
             files.Write("data/value.txt", "bounded", overwrite: false);
 
             JsonObject read = files.Read("data/value.txt");
-            JsonObject note = notes.Create(
-                "notes/accepted.md",
-                "Accepted",
-                "Deterministic adapter fixture",
-                approved: true);
             var terminal = new TerminalAdapter(
                 guard,
                 new ShellRuntimeResolver());
@@ -38,7 +31,6 @@ public sealed class AdapterConformanceTests
                 CancellationToken.None);
 
             Assert.Equal("bounded", read["content"]!.GetValue<string>());
-            Assert.True(note["created"]!.GetValue<bool>());
             Assert.Equal("succeeded", result.Status);
         }
         finally
@@ -78,33 +70,6 @@ public sealed class AdapterConformanceTests
         }
     }
 
-    [Fact]
-    public void Invalid_volume_arguments_do_not_acquire_an_endpoint()
-    {
-        var controller = new ThrowIfOpenedController();
-
-        ToolExecutionOutcome outcome = new VolumeTools(controller).Execute(new JsonObject
-        {
-            ["operation"] = "set",
-            ["level"] = 101,
-        });
-
-        Assert.Equal(ToolResultStatuses.Failed, outcome.Status);
-        Assert.Equal("invalid_arguments", outcome.ErrorCode);
-        Assert.Equal(0, controller.OpenCount);
-    }
-
-    [Fact]
-    public void Volume_readback_mismatch_is_an_outer_failure()
-    {
-        ToolExecutionOutcome outcome = new VolumeTools(new MismatchController())
-            .Execute(new JsonObject { ["operation"] = "set", ["level"] = 2 });
-
-        Assert.Equal(ToolResultStatuses.Failed, outcome.Status);
-        Assert.Equal("readback_mismatch", outcome.ErrorCode);
-        Assert.Equal(ToolVerificationStates.Failed, outcome.VerificationState);
-    }
-
     private static string TemporaryRoot()
     {
         string root = Path.Combine(Path.GetTempPath(), "ru-adapter-conformance-" + Guid.NewGuid().ToString("N"));
@@ -134,29 +99,4 @@ public sealed class AdapterConformanceTests
             timeoutMs,
             4_096);
 
-    private sealed class ThrowIfOpenedController : IVolumeController
-    {
-        public int OpenCount { get; private set; }
-
-        public IVolumeEndpoint OpenDefaultRenderEndpoint()
-        {
-            OpenCount++;
-            throw new InvalidOperationException("endpoint must not open");
-        }
-    }
-
-    private sealed class MismatchController : IVolumeController
-    {
-        public IVolumeEndpoint OpenDefaultRenderEndpoint() => new MismatchEndpoint();
-
-        private sealed class MismatchEndpoint : IVolumeEndpoint
-        {
-            public string EndpointRole => "default_render_multimedia";
-            public string EndpointHash => "0123456789abcdef";
-            public VolumeState GetState() => new(40, false);
-            public void SetLevel(int level) { }
-            public void SetMuted(bool muted) { }
-            public void Dispose() { }
-        }
-    }
 }

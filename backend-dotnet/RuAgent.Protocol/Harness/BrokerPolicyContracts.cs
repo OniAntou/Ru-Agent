@@ -69,8 +69,7 @@ public static class BrokerPolicyContracts
     {
         return new[]
         {
-            "system.time", "system.status", "system.volume", "help.docs", "app.list",
-            "notes.create",
+            "help.docs",
             "files.list", "files.glob", "files.search", "files.read",
             "files.write", "files.edit", "files.delete", "files.restore",
             "terminal.run", "terminal.shell",

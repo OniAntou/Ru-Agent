@@ -8,35 +8,12 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class ToolCatalogTests
 {
-    [Fact]
-    public void Volume_tool_is_reversible_local_system_write()
-    {
-        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
-        var binding = catalog.Registry.Get("system.volume", "1.0.0");
-        var manifest = binding.Manifest;
-
-        Assert.Equal(RiskClass.Reversible, manifest.Risk);
-        Assert.Contains(ToolScope.SystemWrite, manifest.Scopes);
-        Assert.False(manifest.NetworkAllowed);
-        Assert.False(manifest.WorkspaceRequired);
-        Assert.Equal("desktop", manifest.Adapter);
-        Assert.InRange(manifest.TimeoutMs, 1, 30_000);
-        Assert.InRange(manifest.MaxOutputBytes, 1, 256 * 1024);
-        Assert.False(binding.ModelEnabled);
-        Assert.True(binding.VerificationRequired);
-        Assert.Equal("native_pending", binding.Availability);
-    }
-
     [Theory]
-    [InlineData("system.time", "system.read", RiskClass.Read, false, false)]
-    [InlineData("system.status", "system.read", RiskClass.Read, false, false)]
     [InlineData("help.docs", "system.read", RiskClass.Read, false, false)]
-    [InlineData("app.list", "system.read", RiskClass.Read, false, false)]
     [InlineData("files.list", "workspace.read", RiskClass.Read, false, true)]
     [InlineData("files.glob", "workspace.read", RiskClass.Read, false, true)]
     [InlineData("files.search", "workspace.read", RiskClass.Read, false, true)]
     [InlineData("files.read", "workspace.read", RiskClass.Read, false, true)]
-    [InlineData("system.volume", "system.write", RiskClass.Reversible, false, false)]
     public void First_usable_tool_set_has_explicit_policy(
         string toolId,
         string scope,
@@ -53,6 +30,20 @@ public sealed class ToolCatalogTests
         Assert.Equal(workspaceRequired, manifest.WorkspaceRequired);
         Assert.InRange(manifest.TimeoutMs, 1, 30_000);
         Assert.InRange(manifest.MaxOutputBytes, 1, 256 * 1024);
+    }
+
+    [Theory]
+    [InlineData("system.time")]
+    [InlineData("system.status")]
+    [InlineData("app.list")]
+    [InlineData("notes.create")]
+    [InlineData("system.volume")]
+    public void Retired_tool_is_not_bound(string toolId)
+    {
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+
+        Assert.Throws<KeyNotFoundException>(() =>
+            catalog.Registry.Get(toolId, AgentToolDefinitionCatalog.CurrentVersion));
     }
 
     [Fact]
@@ -86,13 +77,7 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        var volume = Assert.Single(capabilities, item => item.ToolId == "system.volume");
-
-        Assert.Equal("1.0.0", volume.ToolVersion);
-        Assert.Equal(new[] { "system.write" }, volume.Scopes);
-        Assert.Equal("reversible", volume.Risk);
-        Assert.Equal("native_pending", volume.Availability);
-        Assert.False(volume.ModelEnabled);
+        Assert.Equal(11, capabilities.Count);
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
 
         foreach (var binding in catalog.Registry.List())
@@ -104,11 +89,9 @@ public sealed class ToolCatalogTests
         var fullModelIds = catalog.Registry.ModelCapabilities(CapabilityProfile.Full)
             .Select(binding => binding.Manifest.Id)
             .ToHashSet(StringComparer.Ordinal);
-        Assert.DoesNotContain("system.time", fullModelIds);
-        Assert.DoesNotContain("system.status", fullModelIds);
-        Assert.DoesNotContain("app.list", fullModelIds);
-        Assert.DoesNotContain("notes.create", fullModelIds);
-        Assert.DoesNotContain("system.volume", fullModelIds);
+        Assert.All(
+            new[] { "system.time", "system.status", "app.list", "notes.create", "system.volume" },
+            retiredId => Assert.DoesNotContain(retiredId, fullModelIds));
     }
 
     [Fact]

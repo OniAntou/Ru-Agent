@@ -5,7 +5,6 @@ namespace RuAgent.Broker.Policy;
 public static class ToolScope
 {
     public const string SystemRead = AgentToolScopes.SystemRead;
-    public const string SystemWrite = AgentToolScopes.SystemWrite;
     public const string AppOpen = "app.open";
     public const string WorkspaceRead = AgentToolScopes.WorkspaceRead;
     public const string WorkspaceWrite = AgentToolScopes.WorkspaceWrite;
@@ -25,7 +24,6 @@ public static class ToolScope
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [
             SystemRead,
-            SystemWrite,
             AppOpen,
             WorkspaceRead,
             WorkspaceWrite,

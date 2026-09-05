@@ -27,16 +27,16 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
         {
-            ["scopes"] = new JsonArray(ToolScope.SystemRead, ToolScope.SkillExecute),
-            ["skill_ids"] = new JsonArray("system.time.skill"),
+            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
+            ["skill_ids"] = new JsonArray("workspace.list.skill"),
         }), cancellation.Token);
         var opened = await ReceiveAsync(socket, cancellation.Token);
         Assert.Equal(AgentMessageTypes.SessionOpened, opened.MessageType);
-        Assert.Equal("system.time.skill", opened.Payload["skill_ids"]![0]!.GetValue<string>());
+        Assert.Equal("workspace.list.skill", opened.Payload["skill_ids"]![0]!.GetValue<string>());
 
         await SendAsync(socket, Envelope("start", AgentMessageTypes.SkillStart, new JsonObject
         {
-            ["skill_id"] = "system.time.skill",
+            ["skill_id"] = "workspace.list.skill",
             ["version"] = "1.0.0",
             ["input"] = new JsonObject(),
         }), cancellation.Token);
@@ -62,20 +62,20 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
         {
-            ["scopes"] = new JsonArray(ToolScope.SystemRead, ToolScope.SkillExecute),
-            ["skill_ids"] = new JsonArray("system.time.skill"),
+            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
+            ["skill_ids"] = new JsonArray("workspace.list.skill"),
         }), cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);
 
         await SendAsync(socket, Envelope("same", AgentMessageTypes.SkillStart, new JsonObject
         {
-            ["skill_id"] = "system.time.skill", ["version"] = "1.0.0", ["input"] = new JsonObject(),
+            ["skill_id"] = "workspace.list.skill", ["version"] = "1.0.0", ["input"] = new JsonObject(),
         }), cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("same", AgentMessageTypes.SkillStart, new JsonObject
         {
-            ["skill_id"] = "system.time.skill", ["version"] = "1.0.0", ["input"] = new JsonObject { ["different"] = true },
+            ["skill_id"] = "workspace.list.skill", ["version"] = "1.0.0", ["input"] = new JsonObject { ["different"] = true },
         }), cancellation.Token);
         var conflict = await ReceiveAsync(socket, cancellation.Token);
 
@@ -96,21 +96,21 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
         {
-            ["scopes"] = new JsonArray(ToolScope.SystemRead, ToolScope.SkillExecute),
-            ["skill_ids"] = new JsonArray("system.time.skill"),
+            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
+            ["skill_ids"] = new JsonArray("workspace.list.skill"),
         }), cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);
 
         await SendAsync(socket, Envelope("bad-input", AgentMessageTypes.SkillStart, new JsonObject
         {
-            ["skill_id"] = "system.time.skill",
+            ["skill_id"] = "workspace.list.skill",
             ["version"] = "1.0.0",
         }), cancellation.Token);
         var result = await ReceiveAsync(socket, cancellation.Token);
 
         Assert.Equal(AgentMessageTypes.SkillResult, result.MessageType);
         Assert.Equal("schema_invalid", result.Payload["error_code"]!.GetValue<string>());
-        Assert.Equal("system.time.skill", result.Payload["skill_id"]!.GetValue<string>());
+        Assert.Equal("workspace.list.skill", result.Payload["skill_id"]!.GetValue<string>());
         Assert.Equal("1.0.0", result.Payload["version"]!.GetValue<string>());
         Assert.Equal("Failed", result.Payload["state"]!.GetValue<string>());
         Assert.Equal(0, result.Payload["step_count"]!.GetValue<int>());
@@ -130,7 +130,7 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("not-open", AgentMessageTypes.SkillStart, new JsonObject
         {
-            ["skill_id"] = "system.time.skill",
+            ["skill_id"] = "workspace.list.skill",
             ["version"] = "1.0.0",
             ["input"] = new JsonObject(),
         }), cancellation.Token);
@@ -139,7 +139,7 @@ public sealed class SkillConnectionTests
         Assert.Equal(AgentMessageTypes.SkillResult, result.MessageType);
         Assert.Equal(ToolResultStatuses.Denied, result.Payload["status"]!.GetValue<string>());
         Assert.Equal("broker_not_ready", result.Payload["error_code"]!.GetValue<string>());
-        Assert.Equal("system.time.skill", result.Payload["skill_id"]!.GetValue<string>());
+        Assert.Equal("workspace.list.skill", result.Payload["skill_id"]!.GetValue<string>());
         Assert.Equal("1.0.0", result.Payload["version"]!.GetValue<string>());
         Assert.Equal("Failed", result.Payload["state"]!.GetValue<string>());
         Assert.IsType<JsonObject>(result.Payload["output"]);
@@ -174,12 +174,12 @@ public sealed class SkillConnectionTests
                 "http://127.0.0.1:" + GetFreePort(), token, 1, sessionRoot, DateTimeOffset.UtcNow.AddMinutes(5));
             File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
             var skill = new SkillManifest(
-                "system.time.skill", "1.0.0",
+                "workspace.list.skill", "1.0.0",
                 new JsonObject { ["type"] = "object" },
                 new JsonObject { ["type"] = "object" },
-                new HashSet<string>(["system.time"]),
-                new HashSet<string>([ToolScope.SystemRead, ToolScope.SkillExecute]),
-                [new SkillStep(SkillStepKind.CallTool, "time", "system.time")],
+                new HashSet<string>(["files.list"]),
+                new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SkillExecute]),
+                [new SkillStep(SkillStepKind.CallTool, "list", "files.list", new JsonObject { ["path"] = ".", ["max_entries"] = 8 })],
                 false, 4, 30_000, "builtin", "Data only.");
             var host = await BrokerHost.StartAsync(new BrokerOptions(descriptorPath, BuiltinSkills: [skill]));
             return new Fixture(root, token, host);

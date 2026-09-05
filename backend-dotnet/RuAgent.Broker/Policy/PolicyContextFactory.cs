@@ -254,14 +254,12 @@ public sealed class PolicyContextFactory
         "files.restore" => PolicyOperationClasses.Restore,
         "terminal.run" => PolicyOperationClasses.Terminal,
         "terminal.shell" => PolicyOperationClasses.Terminal,
-        "help.docs" or "system.time" or "system.status" or "app.list"
-            or "web.search" or "web.fetch" => PolicyOperationClasses.Read,
+        "help.docs" or "web.search" or "web.fetch" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
 
     private static bool IsTargetFreeTool(string toolId) => toolId
-        is "help.docs" or "system.time" or "system.status" or "app.list"
-        or "web.search" or "web.fetch";
+        is "help.docs" or "web.search" or "web.fetch";
 
     private static string? OptionalText(JsonObject arguments, string key)
     {

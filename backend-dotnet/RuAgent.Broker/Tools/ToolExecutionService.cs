@@ -9,7 +9,6 @@ using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
-using RuAgent.Broker.Tools.Notes;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Broker.Tools.Web;
@@ -48,11 +47,7 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FileTools> _fileToolsByRoot = new(StringComparer.OrdinalIgnoreCase);
-    private readonly AppTools _apps = new();
-    private readonly SystemTools _system = new();
-    private readonly Lazy<VolumeTools> _volume;
     private readonly TerminalAdapter _terminal;
-    private readonly NotesAdapter _notes;
     private readonly HelpDocsTool _helpDocs;
     private readonly SkillRegistry _skills;
     private readonly SkillOrchestrator _skillOrchestrator;
@@ -63,7 +58,6 @@ public sealed class ToolExecutionService : IToolInvoker
     public ToolExecutionService(
         BrokerSession session,
         string workspaceRoot,
-        IVolumeController? volumeController = null,
         IEnumerable<SkillManifest>? builtinSkills = null,
         IEnumerable<string>? skillPackageRoots = null,
         WebOptions? webOptions = null,
@@ -80,7 +74,6 @@ public sealed class ToolExecutionService : IToolInvoker
         _fileDelete = new FileDeleteAdapter(_workspace.Root);
         _fileRestore = new FileRestoreAdapter(_workspace.Root);
         _mutationResolver = new CanonicalPathResolver(_workspace.Root);
-        _notes = new NotesAdapter(_workspace);
         _helpDocs = HelpDocsTool.CreateDefault();
         _terminal = new TerminalAdapter(
             _workspace,
@@ -98,11 +91,8 @@ public sealed class ToolExecutionService : IToolInvoker
             MutationResolver = _mutationResolver,
             Terminal = _terminal,
             CanonicalRoot = _workspace.Root,
-            Notes = _notes,
             Edit = new FileEditAdapter(_workspace.Root),
         };
-        _volume = new Lazy<VolumeTools>(
-            () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
         _webOptions = webOptions ?? new WebOptions();
         if (_webOptions.Enabled)
         {
@@ -596,13 +586,9 @@ public sealed class ToolExecutionService : IToolInvoker
     {
         var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
-            ["system.time"] = (_, _, _) => Succeeded(_system.Time(), "System time read."),
-            ["system.status"] = (_, _, _) => Succeeded(_system.Status(), "System status read."),
             ["help.docs"] = (_, arguments, cancellationToken) => Succeeded(
                 _helpDocs.Execute(arguments, cancellationToken),
                 "Bundled Ru documentation searched."),
-            ["system.volume"] = ExecuteVolumeAsync,
-            ["app.list"] = (_, _, _) => Succeeded(_apps.List(), "Application list read."),
             ["files.list"] = (context, arguments, _) => Succeeded(
                 ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
                 "Workspace entries listed."),
@@ -625,7 +611,6 @@ public sealed class ToolExecutionService : IToolInvoker
             ["files.restore"] = (context, arguments, _) => ExecuteRestore(context, arguments),
             ["terminal.run"] = ExecuteTerminalRunAsync,
             ["terminal.shell"] = ExecuteTerminalShellAsync,
-            ["notes.create"] = (context, arguments, _) => ExecuteNotesCreate(context, arguments),
         };
 
         if (_webFetch is not null)
@@ -766,7 +751,6 @@ public sealed class ToolExecutionService : IToolInvoker
         public required CanonicalPathResolver MutationResolver { get; init; }
         public required TerminalAdapter Terminal { get; init; }
         public required string CanonicalRoot { get; init; }
-        public required NotesAdapter Notes { get; init; }
         public required FileEditAdapter Edit { get; init; }
 
         public static RootToolSet Create(string canonicalRoot)
@@ -786,7 +770,6 @@ public sealed class ToolExecutionService : IToolInvoker
                     new WorkspacePathGuard(canonicalRoot),
                     new ShellRuntimeResolver()),
                 CanonicalRoot = canonicalRoot,
-                Notes = new NotesAdapter(new WorkspacePathGuard(canonicalRoot)),
             };
         }
     }
@@ -879,10 +862,6 @@ public sealed class ToolExecutionService : IToolInvoker
                 "Tool timed out.",
                 ToolVerificationStates.NotRequired);
         }
-        catch (VolumeToolException error)
-        {
-            outcome = ToolExecutionOutcome.Failed(error.Code, error.SafeSummary);
-        }
         catch (ToolSchemaException error)
         {
             outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
@@ -929,12 +908,6 @@ public sealed class ToolExecutionService : IToolInvoker
         };
         return Receipt(receiptRequest, outcome, adapterInvoked: true);
     }
-
-    private ValueTask<ToolExecutionOutcome> ExecuteVolumeAsync(
-        ToolExecutionContext context,
-        JsonObject arguments,
-        CancellationToken cancellationToken)
-        => ValueTask.FromResult(_volume.Value.Execute(arguments));
 
     private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(
         ToolExecutionContext context,
@@ -1035,37 +1008,6 @@ public sealed class ToolExecutionService : IToolInvoker
             "Workspace file restored."));
     }
 
-    private ValueTask<ToolExecutionOutcome> ExecuteNotesCreate(ToolExecutionContext context, JsonObject arguments)
-    {
-        var tools = ResolveRootToolSet(context, TargetPathOf(arguments));
-        var inputPath = ReadString(arguments, "path");
-        // NotesAdapter only accepts relative paths inside its workspace
-        // guard; convert absolute grant-targeted paths so notes.create can
-        // write inside a session-scoped directory grant.
-        string relativePath = inputPath;
-        if (Path.IsPathRooted(inputPath))
-        {
-            try
-            {
-                relativePath = Path.GetRelativePath(tools.MutationResolver.CanonicalRoot, inputPath);
-            }
-            catch
-            {
-                relativePath = inputPath;
-            }
-        }
-
-        var output = tools.Notes.Create(
-            relativePath,
-            ReadString(arguments, "title"),
-            ReadString(arguments, "content"),
-            context.Approved);
-        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-            output,
-            ToolVerificationStates.NotRequired,
-            "Workspace note created."));
-    }
-
     private FileTools ResolveFileTools(ToolExecutionContext context, string? pathInput)
     {
         var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
@@ -1109,12 +1051,6 @@ public sealed class ToolExecutionService : IToolInvoker
         }
 
         return ResolveRootToolSet(context, canonicalPath!);
-    }
-
-    private NotesAdapter ResolveNotes(ToolExecutionContext context, string? pathInput)
-    {
-        var tools = ResolveRootToolSet(context, pathInput);
-        return tools.Notes;
     }
 
     private RootToolSet ResolveRootToolSet(ToolExecutionContext context, string? pathInput)
@@ -1365,8 +1301,6 @@ public sealed class ToolExecutionService : IToolInvoker
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
         "terminal.shell" => "Run a terminal action in the workspace.",
-        "system.volume" => "Change the local system volume.",
-        "notes.create" => "Create a note in the workspace.",
         "files.edit" => "Chỉnh sửa file.",
         _ => "Run an external or destructive Agent action.",
     };

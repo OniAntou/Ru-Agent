@@ -124,8 +124,6 @@ public sealed class PendingApprovalPreviewTests
     }
 
     [Theory]
-    [InlineData("system.volume")]
-    [InlineData("notes.create")]
     [InlineData("unknown.tool")]
     [InlineData("")]
     public void Unknown_tools_get_an_empty_preview(string toolId)

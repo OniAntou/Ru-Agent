@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
-using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 
@@ -48,13 +47,12 @@ public sealed class ToolCatalog
         {
             var definition = AgentToolDefinitionCatalog.Find(manifest.Id, manifest.Version)
                 ?? throw new AgentProtocolException("tool_contract_mismatch");
-            var nativePending = manifest.Id == "system.volume";
             Registry.Register(new ToolBinding(
                 manifest,
                 executors[manifest.Id],
                 ModelEnabled: true,
-                nativePending ? "native_pending" : "executable",
-                VerificationRequired: nativePending));
+                Availability: "executable",
+                VerificationRequired: false));
         }
     }
 
@@ -70,11 +68,7 @@ public sealed class ToolCatalog
 
     private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
-        yield return Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin");
-        yield return Manifest("system.status", ToolScope.SystemRead, RiskClass.Read, "builtin");
         yield return Manifest("help.docs", ToolScope.SystemRead, RiskClass.Read, "builtin", maxOutputBytes: 64 * 1024);
-        yield return VolumeTools.Manifest;
-        yield return Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop");
         yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.glob", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.search", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
@@ -85,7 +79,6 @@ public sealed class ToolCatalog
         yield return Manifest("files.restore", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return TerminalManifests.Run;
         yield return TerminalManifests.Shell;
-        yield return Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true, requiresApproval: true);
         if (webOptions.FetchEnabled)
         {
             yield return Manifest("web.fetch", ToolScope.WebFetch, RiskClass.Read, "web", requiresApproval: webOptions.RequireApproval);

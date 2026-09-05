@@ -8,9 +8,8 @@ public static class AgentToolScopes
     public const string NetworkSearch = "network.search";
     public const string NetworkFetch = "network.fetch";
     public const string SystemRead = "system.read";
-    public const string SystemWrite = "system.write";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(
-        [WorkspaceRead, WorkspaceWrite, TerminalExecute, NetworkSearch, NetworkFetch, SystemRead, SystemWrite],
+        [WorkspaceRead, WorkspaceWrite, TerminalExecute, NetworkSearch, NetworkFetch, SystemRead],
         StringComparer.Ordinal);
 }

@@ -16,16 +16,16 @@ public sealed class SkillProductionWiringTests
     {
         using var fixture = SessionFixture.Create();
         var skill = new SkillManifest(
-            "system.time.skill", "1.0.0",
+            "workspace.list.skill", "1.0.0",
             new JsonObject { ["type"] = "object" },
             new JsonObject { ["type"] = "object" },
-            new HashSet<string>(["system.time"]),
-            new HashSet<string>([ToolScope.SystemRead, ToolScope.SkillExecute]),
-            [new SkillStep(SkillStepKind.CallTool, "time", "system.time")],
+            new HashSet<string>(["files.list"]),
+            new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SkillExecute]),
+            [new SkillStep(SkillStepKind.CallTool, "list", "files.list", new JsonObject { ["path"] = ".", ["max_entries"] = 8 })],
             false, 4, 30_000, "builtin", "Data only.");
         fixture.Session.Open(
             "skill-session",
-            new HashSet<string>([ToolScope.SystemRead, ToolScope.SkillExecute]),
+            new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SkillExecute]),
             new HashSet<string>([skill.Id]));
         var service = new ToolExecutionService(fixture.Session, fixture.Root, builtinSkills: [skill]);
 
@@ -42,16 +42,16 @@ public sealed class SkillProductionWiringTests
     {
         using var fixture = SessionFixture.Create();
         var skill = new SkillManifest(
-            "system.time.skill", "1.0.0",
+            "workspace.list.skill", "1.0.0",
             new JsonObject { ["type"] = "object" },
             new JsonObject { ["type"] = "object" },
-            new HashSet<string>(["system.time"]),
-            new HashSet<string>([ToolScope.SystemRead, ToolScope.SkillExecute]),
-            [new SkillStep(SkillStepKind.CallTool, "time", "system.time")],
+            new HashSet<string>(["files.list"]),
+            new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SkillExecute]),
+            [new SkillStep(SkillStepKind.CallTool, "list", "files.list", new JsonObject { ["path"] = ".", ["max_entries"] = 8 })],
             false, 4, 30_000, "builtin", "Data only.");
         fixture.Session.Open(
             "skill-session",
-            new HashSet<string>([ToolScope.SystemRead, ToolScope.SkillExecute]),
+            new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SkillExecute]),
             new HashSet<string>());
         var service = new ToolExecutionService(fixture.Session, fixture.Root, builtinSkills: [skill]);
 

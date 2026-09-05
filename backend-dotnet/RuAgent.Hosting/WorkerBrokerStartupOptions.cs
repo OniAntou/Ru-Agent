@@ -1,7 +1,6 @@
 namespace RuAgent.Hosting;
 
 public sealed record WorkerBrokerStartupOptions(
-    RuntimeMigrationMode Mode,
     string AgentWorkerToken,
     string DeviceWorkerToken,
     string ProviderBootstrapPath,
@@ -12,11 +11,6 @@ public sealed record WorkerBrokerStartupOptions(
 {
     public void Validate()
     {
-        if (!Enum.IsDefined(Mode))
-        {
-            throw new ArgumentOutOfRangeException(nameof(Mode));
-        }
-
         ValidateToken(AgentWorkerToken, nameof(AgentWorkerToken));
         ValidateToken(DeviceWorkerToken, nameof(DeviceWorkerToken));
         ValidatePort(AgentWorkerPort, nameof(AgentWorkerPort));

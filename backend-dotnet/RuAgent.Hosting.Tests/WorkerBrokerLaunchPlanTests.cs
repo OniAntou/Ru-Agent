@@ -141,7 +141,6 @@ public sealed class WorkerBrokerLaunchPlanTests
             var bootstrap = Path.Combine(sessionRoot, "provider-bootstrap.bin");
             File.WriteAllText(bootstrap, "protected");
             return new WorkerBrokerStartupOptions(
-                RuntimeMigrationMode.Dotnet,
                 "agent-token-" + Guid.NewGuid().ToString("N"),
                 "device-token-" + Guid.NewGuid().ToString("N"),
                 bootstrap,

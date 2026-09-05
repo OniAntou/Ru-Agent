@@ -45,8 +45,6 @@ var managedDeviceWorkerPort = PublicHostRuntimeOptions.DefaultDeviceWorkerPort;
 const string BrokerWebSearchEndpoint = "https://html.duckduckgo.com/html/";
 
 var builder = WebApplication.CreateBuilder(args);
-var migrationMode = ParseRuntimeMigrationMode(
-    builder.Configuration["RuBackend:RuntimeMigrationMode"]);
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
@@ -144,7 +142,6 @@ if (isManagedRuntime)
     // Start Worker and Broker in one Job
     managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
     var startup = new WorkerBrokerStartupOptions(
-        migrationMode,
         managedAgentWorkerToken,
         managedDeviceWorkerToken,
         providerBootstrapPath,
@@ -629,20 +626,6 @@ static int ReadConfiguredPort(string? raw, int fallback)
     }
 
     return int.TryParse(raw, out var parsed) ? parsed : fallback;
-}
-
-static RuntimeMigrationMode ParseRuntimeMigrationMode(string? raw)
-{
-    try
-    {
-        return RuntimeMigrationModeParser.Parse(raw);
-    }
-    catch (RuntimeMigrationModeSelectionException)
-    {
-        Console.Error.WriteLine($"{{\"error_code\":\"{RuntimeMigrationModeSelectionException.ErrorCode}\"}}");
-        Environment.Exit(5);
-        throw;
-    }
 }
 
 internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Privacy.IHarnessKeyStore

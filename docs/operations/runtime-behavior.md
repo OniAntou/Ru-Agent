@@ -71,7 +71,7 @@ startup path.
 Every accepted Agent model step—typed text, microphone/voice, coding, tool
 selection, and continuation—rebuilds a fresh prompt context before the Worker
 request. The private Generation Kernel emits exactly one `system` message from
-these ordered layers: Ru persona and safety, Agent execution contract,
+these ordered layers: a neutral Ru Agent runtime contract, Agent execution contract,
 environment, root-selected Ru instruction files, profile/preset, validated
 host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
@@ -91,9 +91,10 @@ The Host reads only `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
 selected run root. It applies final-path containment, strict UTF-8 decoding,
 NFC/newline normalization, a 64 KiB per-file limit, and a 256 KiB combined
 instruction limit. Context values remain bounded (100 KiB memory, 32 KiB per
-reference, and 512 KiB serialized context). Instruction text, memory, and
-tool/search results are model data marked untrusted; they cannot grant tools,
-permissions, approvals, paths, network access, or preset changes.
+reference, and 512 KiB serialized context). Root-selected instructions are
+followed for persona and workflow but cannot grant tools, permissions,
+approvals, paths, network access, or preset changes. Memory, runtime references,
+and tool/search results remain explicitly untrusted.
 
 The Worker returns only a versioned SHA-256 receipt. Core validates it against
 the exact context before committing model completion or dispatching tools, then
@@ -115,9 +116,10 @@ When Ru needs product knowledge about its own features, tools, configuration,
 providers, or operating boundaries, it selects `help.docs@1.0.0`. The tool
 searches only five explicitly embedded Markdown resources and returns bounded,
 stable document IDs and excerpts. It is offline, read-only, workspace-
-independent, and approval-free. Runtime context and system tools remain the
-source for live machine, process, device, and current workspace state; bundled
-help is untrusted reference data and cannot change instruction precedence.
+independent, and approval-free. Runtime context and advertised terminal tools
+remain the source for live machine, process, device, and current workspace
+state; bundled help is untrusted reference data and cannot change instruction
+precedence.
 
 ## Voice output
 
@@ -287,24 +289,22 @@ The Worker v2 settings advertise eleven core bindings (including offline
 `help.docs`) plus the runtime-enabled read-only Web bindings: `files.list`, `files.read`,
 `files.glob`, `files.search`, `files.write`, `files.edit`, `files.delete`,
 `files.restore`, `terminal.run`, `terminal.shell`, `help.docs`, `web.search`, and
-`web.fetch`. Broker policy automatically allows ordinary trusted-workspace
-file reads/creates/edits and applies analyzer/rule/approval decisions to
-terminal requests. Protected paths, hard invariants, and extended timeout
-thresholds remain gated. Terminal execution runs as the current Windows user and is intentionally
+`web.fetch`. Broker policy automatically allows file tools in the trusted root
+or a folder granted to the same live session and applies analyzer decisions to
+terminal requests. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
 not an OS-enforced filesystem/network sandbox. File tools may
 request an explicit absolute path outside the project; the user can grant that
-canonical directory for the current run or project. That grant covers the
-directory's read/create/edit operations only; protected and destructive
-operations keep their own approval gates. `files.apply_patch`
+canonical directory to all tools in the current live session. The grant is not
+shared with a new or forked session and disappears on restart. Only terminal
+deletion and unknown executable launch require terminal approval. `files.apply_patch`
 is not advertised or model-usable in the current runtime.
 The model selection channel is active for every Agent run: each step allows up
 to ten model-initiated tool calls through the Agent Broker pipeline. Selection
 JSON is never streamed into
 the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.
-Mutating tools (`files.write`, `files.edit`, `files.delete`, `files.restore`,
-and terminal requests that the active policy marks `ask`) use bounded approval
-cards. The Public Host opens
+External-folder requests and terminal deletion or unknown-executable requests
+use bounded approval cards. The Public Host opens
 one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
 verifies adapters. Tool-class successes require an invoked adapter. Python does
 not own desktop side effects.
@@ -406,7 +406,7 @@ ASP.NET ingestion path, with read-time re-sanitization for legacy records.
 
 Automated tests can establish routing, protocol ordering, bounds, cancellation,
 privacy filtering, persistence semantics, non-empty WAV structure, and process
-lifecycle. They cannot establish an audible Windows volume change, speaker
-quality, physical microphone accuracy, natural bilingual dialogue, or live
-VTube Studio behavior. Those remain explicit user-run checks and must be
-reported as pending until performed.
+lifecycle. They cannot establish the effect of an arbitrary terminal command
+on a live external application or device, speaker quality, physical microphone
+accuracy, natural bilingual dialogue, or live VTube Studio behavior. Those
+remain explicit user-run checks and must be reported as pending until performed.

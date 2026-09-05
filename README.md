@@ -169,20 +169,21 @@ Do not start either worker or the voice engine as independent public services.
   `terminal.shell`, and `help.docs`, plus the managed Agent's read-only `web.search` and
   `web.fetch` bindings. Standard automatically allows ordinary trusted-workspace
   file reads/creates/edits and applies analyzer/rule/approval decisions to
-  terminal calls. Full Access keeps the same advertised list but normally uses
-  its broader fallback for well-formed calls; protected paths, hard invariants,
-  and extended timeout thresholds remain gated. `files.apply_patch` is not
+  terminal calls. Full Access keeps the same advertised list; its broader
+  policy default for well-formed calls is not a provider, model, protocol, or
+  tool fallback. Protected paths and hard invariants remain gated. `files.apply_patch` is not
   advertised or model-usable in the current runtime.
   Explicit absolute paths outside the project ask with
-  `external_directory_required`; the user can grant only the canonical
-  directory for the run or project, and that grant covers read/create/edit
-  operations only. Every file mutation uses Host-captured preimage checks,
+  `external_directory_required`; approval grants the canonical directory to all
+  tools in that live session. It is not shared with another or forked session
+  and is lost on restart. Every file mutation uses Host-captured preimage checks,
   atomic same-volume replacement where supported, before/after hashes, bounded
   diff summary, run attribution, and recoverable delete/one-time restore
   semantics. Terminal calls run as the current Windows user and can execute
   host code or open sockets; `network_intent` is audit/approval metadata, not
-  network isolation. The managed Git commit workflow (Phase 3 Task 6) is not
-  shipped; Git commands are ordinary terminal requests.
+  network isolation. The managed Git commit workflow uses temporary-index
+  isolation and refuses to overwrite staged user work; other recognized Git
+  commands remain ordinary terminal requests.
   The Broker has no hidden convenience-tool tier: time, machine status, app
   discovery, and optional volume commands use the terminal; notes use
   `files.write`. CLI exposes
@@ -196,6 +197,10 @@ Do not start either worker or the voice engine as independent public services.
   `--json` cannot confirm any approval. WinUI displays typed activity
   from actual Host events, and a success is visible only after a matching
   verified Broker receipt.
+  The built-in Agent system prompt is persona-neutral. `Ru.md`, when present in
+  the trusted run root, is the sole persona/style source; without it the Agent
+  uses neutral language matching the user. Workspace instructions cannot add
+  capabilities or override Broker policy.
   The authenticated `POST /agent/v1/runs/{runId}/commands` route and CLI
   `agent command` adapter share one bounded parser for `/compact
   normal|aggressive`, `/help`, `/skills`, and `/skill <id> <json-object>`;

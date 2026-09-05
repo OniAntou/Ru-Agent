@@ -85,41 +85,30 @@ terminal request is descriptive input metadata, not a security boundary.
 | --- | --- | --- |
 | `files.list`, `files.glob`, `files.search`, `files.read` | always advertised | automatic inside the trusted or session-granted root |
 | `files.write`, `files.edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
-| `files.delete`, `files.restore` | always advertised | delete remains recoverable and approval/policy controlled; restore is one-time |
+| `files.delete`, `files.restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
 | `terminal.run`, `terminal.shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
 | `web.search`, `web.fetch` | advertised when managed Web is enabled | bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
 | `help.docs` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
-The effective Agent policy allows ordinary trusted-workspace
-reads/creates/edits. An explicit
-absolute path outside that root is not silently rejected: the first request
-asks for `external_directory_required`. The user can approve only that intent,
-the canonical external directory for the current run, or a project-scoped
-host-generated descendant rule (filesystem roots are never persisted as a
-directory grant); relative traversal still cannot escape the trusted root.
-Delete, protected paths, declared network, and unknown operations keep their
-own approval gates even after a directory grant. Hard invariants, protected
-paths, and extended timeout thresholds still require the corresponding
-approval or denial. Durable approvals
-(`AllowOnce`/`AllowRun`/`AllowProject`/`Deny`) use first-writer-wins
-`approval_stale`, exact scope preview (the model cannot supply a broadening
-glob), 30-min expiry,
-60-s execution token, and old-snapshot execution ordering: consume one-time
-approval under snapshot N → persist reusable rule (or `reusable_rule_not_saved`)
-→ execute already-authorized call under N → receipt → N+1 invalidates other
-pending N decisions. `network_intent` is descriptive audit/approval metadata,
-not network isolation. On the headless Agent v2 path, `terminal.run` and
-`terminal.shell` execute as the current Windows user and can run arbitrary host
-code or open sockets. Direct deletion, unknown executables, extended timeouts,
-network intent, and other analyzer-risk cases remain approval- or policy-gated.
-Filesystem mutations remain trust- and policy-gated: a
-project/run external-directory grant covers only the canonical directory's
-read/create/edit operations; delete, protected paths, network, and unknown
-operations keep their own gates. Time, machine status, app discovery, and
-optional volume operations use `terminal.run` or `terminal.shell`; note files
-use `files.write`.
+### Session folder grants and terminal approval
+
+Ordinary tools run automatically in the trusted root. An explicit absolute
+path outside that root asks once for `external_directory_required`; approval
+adds the canonical folder to the current live session and all tools may use it
+subject to schemas, protected paths, and hard invariants. The folder grant is
+not shared with another or forked session and is lost when the app restarts.
+Continuing the same live session reuses it. Relative traversal cannot escape a
+trusted root.
+
+Only terminal commands that perform destructive deletion or launch an unknown
+executable ask for a one-time terminal approval. Recognized Git and package
+management commands are not dangerous solely by command name. Terminal calls
+still run as the current Windows user and may execute host code or open sockets;
+`network_intent` is audit metadata, not network isolation. Current time,
+machine/process status, application discovery, and optional volume commands use
+an advertised terminal tool. Note-file creation uses `files.write`.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
 and is not model-usable at this checkpoint. Any internal adapter or test fixture
@@ -141,9 +130,9 @@ Use `help.docs` when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
 bounded excerpts from the five current bundled documents (`ru-overview`,
 `architecture`, `runtime`, `agent-tools`, and `provider-catalog`). Use runtime
-context or other system tools for live machine, process, device, and workspace
-state. `app.docs` is a product-language alias only; the model-visible contract
-contains exactly `help.docs@1.0.0`.
+context or an advertised terminal tool for live machine, process, device, and
+workspace state. There is no second docs alias or fallback tool; the only
+model-visible bundled-help contract is `help.docs@1.0.0`.
 
 ## One execution path
 
@@ -170,9 +159,8 @@ workspace-trust run that was abandoned past its ten-minute trust window is
 cancelled during startup recovery, so an interrupted prompt cannot keep the
 workspace's active-run lock indefinitely.
 
-Agent turns continue through normal streamed generation. Ambiguous volume
-wording produces deterministic clarification instead of an inferred action;
-unrelated conversation is never forced through the action parser.
+Agent turns continue through normal streamed generation. Unrelated
+conversation is never forced through a tool-selection path.
 
 The Public Host derives `model_tools` from canonical model exposure and runtime
 availability, while the Broker session owns executable scopes and publishes the actual
@@ -187,10 +175,9 @@ The Worker emits at most one tool request at a time and at most 10 sequential
 tool requests in one conversational turn. It receives only the bounded enabled
 capabilities and emits an exact ID/version plus typed arguments. No prose is
 execution. A visible success reply is legal only after a matching outer
-`succeeded` receipt; native volume additionally requires
-`verification_state: verified` and readback from the same endpoint. Timeout,
-cancellation, policy denial, malformed context, adapter failure, and failed
-readback all terminate that action with a deterministic failure receipt.
+`succeeded` receipt with `verification_state: verified`. Timeout, cancellation,
+policy denial, malformed context, or adapter failure terminates that action
+with a deterministic failure receipt.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
@@ -200,22 +187,10 @@ examples, TTS, or VTS metadata. This lets Ru answer an immediate “why?” from
 the verified reason without asking the model to reconstruct or invent the
 previous action state.
 
-Legacy `[VOLUME: ...]`, `[SEARCH: ...]`, and app-open markers are stripped
-from visible output and never translated into desktop side effects; structured
-selection is the only action channel. Marker prose cannot launch an app,
-mutate Core Audio, or become a success claim.
+Legacy action-marker prose is stripped from visible output and never translated
+into desktop side effects; structured selection is the only action channel.
 
-## Volume and adapter boundaries
-
-The bounded volume operations are `get`, `set` from 0 through 100,
-`increase`/`decrease` from 1 through 50, `mute`, and `unmute`. The Broker owns
-default-render-endpoint acquisition and uses one disposable endpoint per
-operation. A mutation succeeds only when readback matches on the same fixed
-endpoint role and ephemeral endpoint hash.
-
-For deterministic Vietnamese commands, `tăng âm lượng lên N` is an absolute
-`set` target, while `tăng âm lượng thêm N` is a relative `increase`. Topic-free
-shorthand is not promoted into an action from conversation history.
+## File and terminal boundaries
 
 File and terminal bindings are advertised by the Worker v2 settings as the
 matrix above shows. On the headless Agent v2 path, `terminal.run` and
@@ -228,9 +203,9 @@ not an OS-enforced filesystem/network sandbox; its `network`
 field and `network_intent` are descriptive input validation and audit/approval
 metadata, not an operating-system sandbox or network-isolation boundary. A
 zero exit is `succeeded`; non-zero exit and start failure are `failed`; timeout
-is `timed_out`. `files.write`/`files.edit` are allowed for ordinary
-trusted-workspace create/edit and otherwise ask; protected paths and invariants
-stay gated. Every mutation binds the preimage hash captured by Broker preparation and
+is `timed_out`. File tools run automatically in the trusted root or a folder
+granted to the same live session; protected paths and hard invariants stay
+gated. Every mutation binds the preimage hash captured by Broker preparation and
 fails with `workspace_changed` on mismatch without writing; the hash is not a
 model argument. `files.delete` keeps its bounded, host-configurable recovery cap
 (default and hard maximum 4 MiB) and returns an opaque `recovery_id`.
@@ -365,7 +340,7 @@ by creating a replacement session and retrying at most once before a run exists.
 
 ## Approval, privacy, and diagnostics
 
-External or destructive Broker requests use a short-lived approval bound to
+External-folder and dangerous-terminal requests use a short-lived approval bound to
 session, request, tool version, canonical path/executable/argv/cwd/operation/
 network, snapshot version, and intent hash with 30-min expiry. Consumption is
 first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
@@ -400,5 +375,6 @@ reason metadata. They never record prompt text, parsed arguments, requested or
 observed levels, output, device identity, or exception details.
 
 See [Verification](verification.md) for the separate contract, adapter, and
-explicit opt-in native evidence classes. Deterministic evidence never proves
-that the user's Windows volume or audible output changed.
+explicit opt-in native evidence classes. Deterministic evidence does not prove
+that an arbitrary terminal command changed a live external application or
+device.

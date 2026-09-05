@@ -95,8 +95,16 @@ _Avoid_: global allowlist
 The session-scoped Agent preset that controls Broker policy. The model-visible
 Worker v2 list is the runtime projection of eleven core Protocol definitions
 (including offline `help.docs`) plus independently enabled `web.search`/`web.fetch`; Standard and Full Access receive
-the same enabled list, while Full Access only loosens policy fallbacks.
+the same enabled list, while Full Access only changes Broker policy defaults;
+it does not introduce provider, model, protocol, or tool fallback.
 _Avoid_: permanent permission
+
+**Agent Persona Source**:
+The root-selected `Ru.md` instruction is the sole Agent persona/style source.
+The built-in prompt is a neutral execution contract. Root instructions may
+guide persona and workflow but cannot grant tools, folders, network access, or
+override Broker policy.
+_Avoid_: embedded fallback persona
 
 **Approval Token**:
 A short-lived, one-time value bound to the exact request identity and

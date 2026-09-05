@@ -11,6 +11,12 @@ Last reviewed: 2026-09-05.
   for live machine operations and `files.write` for notes.
 - [x] Migrated approval probes, Skills, deterministic Harness fixtures, and GUI
   scenario naming to the reduced catalog; removed native-volume acceptance.
+- [x] Refresh bundled `help.docs` and the Agent system prompt using the
+  [approved design](docs/superpowers/specs/2026-09-05-help-docs-system-prompt-refresh-design.md)
+  and [implementation plan](docs/superpowers/plans/2026-09-05-help-docs-system-prompt-refresh.md):
+  `Ru.md` is the sole persona source, guidance is capability-derived, folder
+  grants are live-session-only, and legacy capability-schema translation is
+  removed rather than retained as fallback.
 
 ## Completed hardening (2026-09-02)
 

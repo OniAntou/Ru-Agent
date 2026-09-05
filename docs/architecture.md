@@ -127,7 +127,7 @@ tool-selection steps all use the same Agent run and Worker v2 path.
 
 For every accepted model step, the Host rebuilds a bounded context and the
 private Worker composes exactly one `system` message. The seven ordered layers
-are Ru persona/safety, Agent execution contract, environment, root-selected Ru
+are a neutral Ru Agent runtime contract, Agent execution contract, environment, root-selected Ru
 instructions, profile/preset, host-derived capabilities, and runtime context.
 The Host persists only the receipt digest metadata in an `InternalOnly`
 `PromptReceipt` payload referenced by `model.prompt_composed`; the raw prompt,
@@ -140,6 +140,9 @@ The instruction loader considers only `Ru.md`, `.ru/AGENTS.md`, and
 strict UTF-8 decoding, NFC and newline normalization, a 64 KiB per-file cap,
 and a 256 KiB combined instruction cap. The typed context has bounded memory
 (100 KiB), references (32 KiB each), and a 512 KiB serialized-context cap.
+`Ru.md` is the sole persona/style source. Root-selected instructions are
+followed for persona and workflow but cannot add capabilities, grants, or
+override Broker policy; runtime references and tool results stay untrusted.
 Invalid context or receipt metadata fails closed with the bounded
 `prompt_contract_invalid` path; there is no static-prompt fallback or reduced-
 context retry. Managed runtime wiring advertises `web.search` and `web.fetch`

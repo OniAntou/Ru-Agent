@@ -3,7 +3,11 @@
 Current implementation: 2026-09-01. Design and deterministic acceptance are
 tracked in [the implementation plan](../superpowers/plans/2026-09-01-provider-catalog-refresh.md).
 
-## Refresh and selection
+## Provider fallback and refresh
+
+Provider model and reasoning metadata refresh independently. There is no fallback:
+a failed request never switches API, provider, key, model, protocol, or
+reasoning effort.
 
 The Host serves `GET /models` for every provider whose credential is
 configured, active or not; unknown aliases fail closed as
@@ -32,7 +36,7 @@ catalog and an available, supported selected model.
 The Chat selector shows every provider group from a fixed presentation list
 (OpenCode Zen, Kilo Gateway, OpenAI, Anthropic, Ollama, LM Studio, Custom
 OpenAI) in that stable order, but only when the group has at least one
-selectable model. Each catalog is refreshed independently, so one failed or
+selectable conversational/Agent model. Each catalog is refreshed independently, so one failed or
 slow provider never hides another provider's group. A failed group without
 retained data is hidden; same-identity stale data is kept and labeled
 `Dữ liệu cũ`. Search spans provider names and model IDs, is case-insensitive,

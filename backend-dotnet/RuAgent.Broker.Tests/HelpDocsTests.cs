@@ -6,6 +6,18 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class HelpDocsTests
 {
+    private static readonly string[] CurrentToolIds =
+    [
+        "files.list", "files.glob", "files.search", "files.read",
+        "files.write", "files.edit", "files.delete", "files.restore",
+        "terminal.run", "terminal.shell", "web.search", "web.fetch", "help.docs",
+    ];
+
+    private static readonly string[] RetiredToolIds =
+    [
+        "system.time", "system.status", "app.list", "notes.create", "system.volume",
+    ];
+
     [Fact]
     public void Default_catalog_loads_only_the_allowlisted_embedded_documents()
     {
@@ -50,6 +62,39 @@ public sealed class HelpDocsTests
         var results = output["results"]!.AsArray();
         Assert.InRange(results.Count, 0, 3);
         Assert.True(output["truncated"]!.GetValue<bool>());
+    }
+
+    [Theory]
+    [InlineData("session folder grant", "not shared")]
+    [InlineData("terminal unknown executable", "approval")]
+    [InlineData("provider model reasoning refresh", "reasoning")]
+    [InlineData("provider fallback", "no fallback")]
+    public void Default_help_answers_current_operating_questions(string query, string expected)
+    {
+        var output = HelpDocsTool.CreateDefault().Execute(new JsonObject
+        {
+            ["query"] = query,
+            ["max_results"] = 5,
+        });
+
+        var excerpts = string.Join("\n", output["results"]!.AsArray()
+            .Select(item => item!["excerpt"]!.GetValue<string>()));
+        Assert.Contains(expected, excerpts, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Default_help_exposes_only_the_current_tool_inventory()
+    {
+        var output = HelpDocsTool.CreateDefault().Execute(new JsonObject
+        {
+            ["query"] = "current capability matrix",
+            ["max_results"] = 5,
+        });
+
+        var excerpts = string.Join("\n", output["results"]!.AsArray()
+            .Select(item => item!["excerpt"]!.GetValue<string>()));
+        Assert.All(CurrentToolIds, toolId => Assert.Contains(toolId, excerpts, StringComparison.Ordinal));
+        Assert.All(RetiredToolIds, toolId => Assert.DoesNotContain(toolId, excerpts, StringComparison.Ordinal));
     }
 
     [Fact]

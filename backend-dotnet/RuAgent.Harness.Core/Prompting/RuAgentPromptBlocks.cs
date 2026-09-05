@@ -1,6 +1,6 @@
 namespace RuAgent.Harness.Core.Prompting;
 
-/// <summary>Canonical Ru persona and Agent execution contracts.</summary>
+/// <summary>Canonical persona-neutral Ru Agent runtime and execution contracts.</summary>
 public static class RuAgentPromptBlocks
 {
     private const string CoreContract = """

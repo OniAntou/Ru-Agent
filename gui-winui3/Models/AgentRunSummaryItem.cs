@@ -41,14 +41,14 @@ public sealed class AgentRunSummaryItem
                 : "\uE895";
 
     public string DisplayText => IsVerifiedSuccess
-        ? "Đã hoàn thành Coding Agent"
+        ? "Coding Agent completed"
         : Status switch
         {
-            "succeeded" => "Coding Agent đã chạy xong nhưng chưa xác minh đầy đủ",
-            "cancelled" => "Đã dừng Coding Agent",
-            "interrupted" => "Coding Agent bị gián đoạn",
-            "failed" => "Coding Agent không hoàn thành",
-            _ => "Coding Agent đã kết thúc",
+            "succeeded" => "Coding Agent finished but unverified",
+            "cancelled" => "Coding Agent stopped",
+            "interrupted" => "Coding Agent interrupted",
+            "failed" => "Coding Agent failed",
+            _ => "Coding Agent finished",
         };
 
     public string MetadataText
@@ -63,27 +63,27 @@ public sealed class AgentRunSummaryItem
 
             if (FilesScanned is { } scanned)
             {
-                parts.Add($"{scanned} file đã quét");
+                parts.Add(scanned == 1 ? "1 file scanned" : $"{scanned} files scanned");
             }
 
             if (FilesChanged is { } changed)
             {
-                parts.Add($"{changed} file thay đổi");
+                parts.Add(changed == 1 ? "1 file changed" : $"{changed} files changed");
             }
 
             if (FilesCreated is { } created && created > 0)
             {
-                parts.Add($"{created} file tạo mới");
+                parts.Add(created == 1 ? "1 file created" : $"{created} files created");
             }
 
             if (FilesDeleted is { } deleted && deleted > 0)
             {
-                parts.Add($"{deleted} file đã xóa");
+                parts.Add(deleted == 1 ? "1 file deleted" : $"{deleted} files deleted");
             }
 
             if (!IsVerifiedSuccess && VerificationState != "not_applicable")
             {
-                parts.Add(VerificationState == "unverified" ? "chưa xác minh" : VerificationState);
+                parts.Add(VerificationState == "unverified" ? "unverified" : VerificationState);
             }
 
             return string.Join(" · ", parts);

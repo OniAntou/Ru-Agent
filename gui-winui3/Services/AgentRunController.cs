@@ -19,7 +19,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private readonly HashSet<string> _assistantDeltaKeys = new(StringComparer.Ordinal);
 
     private AgentRunModel? _currentRun;
-    private string _statusText = "Sẵn sàng";
+    private string _statusText = "Ready";
     private bool _isBusy;
     private string? _currentRunId;
     private string? _waitKind;
@@ -158,7 +158,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 CurrentRun = run;
                 _currentRunId = run.RunId;
                 _waitKind = run.HistoryWaitKind;
-                StatusText = $"Đang chạy: {run.RunId}";
+                StatusText = $"Running: {run.RunId}";
                 RefreshCommands();
             });
 
@@ -194,7 +194,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 }
                 else if (!_isCancelRequested)
                 {
-                    StatusText = "Luồng sự kiện đã kết thúc trước khi phiên chạy hoàn tất.";
+                    StatusText = "Event stream ended before run completed.";
                 }
 
                 IsBusy = false;
@@ -205,7 +205,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = "Đã dừng theo dõi sự kiện.";
+                StatusText = "Event monitoring stopped.";
                 IsBusy = false;
                 RefreshCommands();
             });
@@ -214,7 +214,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = $"Lỗi: {ex.Message}";
+                StatusText = $"Error: {ex.Message}";
                 IsBusy = false;
                 RefreshCommands();
             });
@@ -254,7 +254,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
         RunOnUi(() =>
         {
-            StatusText = "Đang hủy phiên chạy...";
+            StatusText = "Cancelling run...";
             RefreshCommands();
         });
 
@@ -272,7 +272,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     CurrentRun = null;
                 }
 
-                StatusText = "Đã gửi yêu cầu hủy.";
+                StatusText = "Cancellation request sent.";
                 IsBusy = false;
                 RefreshCommands();
             });
@@ -281,7 +281,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = $"Lỗi hủy: {ex.Message}";
+                StatusText = $"Cancel error: {ex.Message}";
                 IsBusy = false;
                 RefreshCommands();
             });
@@ -307,7 +307,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             RunOnUi(() =>
             {
                 _waitKind = null;
-                StatusText = "Đã gửi yêu cầu tiếp tục.";
+                StatusText = "Resume request sent.";
                 RefreshCommands();
             });
         }
@@ -315,7 +315,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = $"Lỗi tiếp tục: {ex.Message}";
+                StatusText = $"Resume error: {ex.Message}";
                 RefreshCommands();
             });
         }
@@ -331,8 +331,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
 
         RunOnUi(() => StatusText = approve
-            ? "Đang xác nhận workspace..."
-            : "Đang từ chối workspace...");
+            ? "Confirming workspace..."
+            : "Rejecting workspace...");
         await _client.TrustAsync(
             run.RunId,
             new TrustAgentRunRequest(
@@ -352,7 +352,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             throw new InvalidOperationException("No Agent approval is pending.");
         }
 
-        RunOnUi(() => StatusText = "Đang gửi phê duyệt...");
+        RunOnUi(() => StatusText = "Submitting approval...");
         // Session permission is decided server-side: Host picks the right
         // one-time token (session directory grant or ephemeral terminal token)
         // from the pending approval binding. The UI never selects a scope.
@@ -369,7 +369,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             throw new InvalidOperationException("No Agent approval is pending.");
         }
 
-        RunOnUi(() => StatusText = "Đang từ chối phê duyệt...");
+        RunOnUi(() => StatusText = "Denying approval...");
         await _client.DenyAsync(runId, approvalId, cancellationToken).ConfigureAwait(false);
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }

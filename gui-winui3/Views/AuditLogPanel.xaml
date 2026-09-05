@@ -15,17 +15,17 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
-                   Text="Nhật ký kiểm toán tác nhân"
+                   Text="Agent Audit Log"
                    FontSize="18"
                    FontWeight="SemiBold"
                    Foreground="{StaticResource RuInkBrush}" />
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
             <TextBlock x:Name="AuditStatus" VerticalAlignment="Center" Foreground="{StaticResource RuMutedBrush}" />
-            <Button x:Name="ClearButton" Content="Xóa nhật ký" Click="OnClearClick" />
+            <Button x:Name="ClearButton" Content="Clear Log" Click="OnClearClick" />
         </StackPanel>
 
-        <ListView Grid.Row="2" x:Name="AuditList" Header="Sự kiện đã kiểm toán">
+        <ListView Grid.Row="2" x:Name="AuditList" Header="Audited Events">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="services:AgentEventModel">
                     <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">

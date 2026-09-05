@@ -94,7 +94,7 @@ namespace RuApp.Views
                 }
 
                 SubtitleDurationSlider.Value = settings.SubtitleDuration;
-                SubtitleDurationLabel.Text = $"Thời gian hiển thị sau khi đọc xong: {settings.SubtitleDuration:F1}s";
+                SubtitleDurationLabel.Text = $"Display duration after speech: {settings.SubtitleDuration:F1}s";
 
                 _subtitlePosMode = settings.SubtitlePosMode ?? "auto";
                 _subtitlePosX = settings.SubtitlePosX;
@@ -125,11 +125,11 @@ namespace RuApp.Views
             if (SubtitlePositionStatusLabel == null) return;
             if (_subtitlePosMode == "custom" && _subtitlePosX >= 0 && _subtitlePosY >= 0)
             {
-                SubtitlePositionStatusLabel.Text = $"Trạng thái: Vị trí tùy chỉnh (X: {_subtitlePosX}, Y: {_subtitlePosY})";
+                SubtitlePositionStatusLabel.Text = $"Status: Custom position (X: {_subtitlePosX}, Y: {_subtitlePosY})";
             }
             else
             {
-                SubtitlePositionStatusLabel.Text = "Trạng thái: Tự động bám theo Avatar Live2D";
+                SubtitlePositionStatusLabel.Text = "Status: Automatically following Live2D Avatar";
             }
         }
 
@@ -150,7 +150,7 @@ namespace RuApp.Views
             _isDraggingMode = !_isDraggingMode;
             if (_isDraggingMode)
             {
-                SubtitleDragButtonText.Text = "Lưu & Khóa vị trí";
+                SubtitleDragButtonText.Text = "Save & Lock Position";
                 SubtitleDragIcon.Glyph = "\uE73E";
                 if (!SubtitleToggle.IsOn)
                 {
@@ -159,11 +159,11 @@ namespace RuApp.Views
                     ApplySubtitleToggle(true);
                 }
                 _overlayService?.SetDragMode(true);
-                SubtitlePositionStatusLabel.Text = "Đang chỉnh vị trí: Hãy nhấn giữ chuột trái vào phụ đề trên màn hình để kéo thả.";
+                SubtitlePositionStatusLabel.Text = "Adjusting position: Hold left mouse button on the screen subtitle to drag.";
             }
             else
             {
-                SubtitleDragButtonText.Text = "Kéo thả vị trí";
+                SubtitleDragButtonText.Text = "Drag to position";
                 SubtitleDragIcon.Glyph = "\uE7C2";
                 _overlayService?.SetDragMode(false);
                 UpdatePositionStatusUi();
@@ -174,7 +174,7 @@ namespace RuApp.Views
         private async void OnSubtitleResetPosClicked(object sender, RoutedEventArgs e)
         {
             _isDraggingMode = false;
-            SubtitleDragButtonText.Text = "Kéo thả vị trí";
+            SubtitleDragButtonText.Text = "Drag to position";
             SubtitleDragIcon.Glyph = "\uE7C2";
             _subtitlePosMode = "auto";
             _subtitlePosX = -1;
@@ -222,7 +222,7 @@ namespace RuApp.Views
             if (!isOn && _isDraggingMode)
             {
                 _isDraggingMode = false;
-                SubtitleDragButtonText.Text = "Kéo thả vị trí";
+                SubtitleDragButtonText.Text = "Drag to position";
                 SubtitleDragIcon.Glyph = "\uE7C2";
                 _overlayService?.SetDragMode(false);
             }
@@ -246,7 +246,7 @@ namespace RuApp.Views
         {
             if (SubtitleDurationLabel != null)
             {
-                SubtitleDurationLabel.Text = $"Thời gian hiển thị sau khi đọc xong: {e.NewValue:F1}s";
+                SubtitleDurationLabel.Text = $"Display duration after speech: {e.NewValue:F1}s";
             }
             if (_isUpdatingUi || _apiService == null) return;
             _speedDebounceTimer?.Stop();

@@ -109,7 +109,7 @@ namespace RuApp
             ShellRoot.RequestedTheme = theme == UiTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
 
             bool isDark = theme == UiTheme.Dark;
-            var label = isDark ? "Chuyển sang sáng" : "Chuyển sang tối";
+            var label = isDark ? "Switch to light mode" : "Switch to dark mode";
             LabelThemeToggle.Text = label;
             ThemeToggleIcon.Glyph = isDark ? "\uE793" : "\uE706";
             AutomationProperties.SetName(ThemeToggleButton, label);
@@ -187,32 +187,32 @@ namespace RuApp
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.WriteCrashEvent(ex);
-                if (!_closed) StatusText.Text = "Không thể khởi động Ru. Hãy kiểm tra nhật ký.";
+                if (!_closed) StatusText.Text = "Could not start Ru. Please check the logs.";
             }
         }
 
         private async Task InitializeAppAsync()
         {
             SidebarSessionList.ItemsSource = Sessions;
-            StatusText.Text = $"Đang khởi động {_backendProvider.DisplayName} Backend...";
+            StatusText.Text = $"Starting {_backendProvider.DisplayName} Backend...";
             StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
-            WelcomeOverlay?.SetStatus($"Đang khởi động {_backendProvider.DisplayName}...", isReady: false);
+            WelcomeOverlay?.SetStatus($"Starting {_backendProvider.DisplayName}...", isReady: false);
 
             string? projectRoot = _composition.IsHarness
                 ? _composition.HarnessWorkspacePath ?? string.Empty
                 : ResolveProjectRoot();
             if (projectRoot == null)
             {
-                StatusText.Text = "Không tìm thấy project root. Hãy đặt RuApp.exe trong hoặc dưới thư mục D:\\LLM.";
+                StatusText.Text = "Project root not found. Please place RuApp.exe inside or under D:\\LLM.";
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                WelcomeOverlay?.SetStatus("Không tìm thấy project root. Nhấn để tiếp tục.", isReady: true, isError: true);
+                WelcomeOverlay?.SetStatus("Project root not found. Click to continue.", isReady: true, isError: true);
                 return;
             }
 
             BackendSession? backendSession = await _startup.RunAsync(token => _backendProvider.StartAsync(projectRoot, token));
             if (backendSession != null)
             {
-                StatusText.Text = $"{_backendProvider.DisplayName} Backend đã sẵn sàng (127.0.0.1:{backendSession.HttpBaseUri.Port})";
+                StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
                 WelcomeOverlay?.NotifyReady();
                 _backendProvider.BackendExited += OnBackendExited;
@@ -357,13 +357,13 @@ namespace RuApp
             }
             else
             {
-                StatusText.Text = $"Không thể kết nối {_backendProvider.DisplayName} Backend!";
+                StatusText.Text = $"Could not connect to {_backendProvider.DisplayName} Backend!";
                 var danger = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 StatusDot.Fill = danger;
                 DotBackend.Fill = danger;
                 DotWorker.Fill = danger;
-                TextBackend.Text = ".NET Backend: Lỗi";
-                TextWorker.Text = "AI Worker: Lỗi";
+                TextBackend.Text = ".NET Backend: Error";
+                TextWorker.Text = "AI Worker: Error";
                 WelcomeOverlay?.NotifyReady(isError: true);
             }
         }
@@ -566,14 +566,14 @@ namespace RuApp
             {
                 var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
-                StatusText.Text = $"{_backendProvider.DisplayName} Backend đã dừng.";
+                StatusText.Text = $"{_backendProvider.DisplayName} Backend stopped.";
                 StatusDot.Fill = dangerBrush;
                 DotBackend.Fill = dangerBrush;
                 DotWorker.Fill = dangerBrush;
                 DotVts.Fill = mutedBrush;
-                TextBackend.Text = ".NET Backend: Đã dừng";
-                TextWorker.Text = "AI Worker: Đã dừng";
-                TextVts.Text = "VTS: Đã ngắt";
+                TextBackend.Text = ".NET Backend: Stopped";
+                TextWorker.Text = "AI Worker: Stopped";
+                TextVts.Text = "VTS: Disconnected";
                 UpdateShellStatusTooltip();
             });
         }
@@ -804,44 +804,44 @@ namespace RuApp
             // 1. .NET Backend status
             bool backendRunning = snapshot.BackendRunning;
             DotBackend.Fill = backendRunning ? successBrush : dangerBrush;
-            TextBackend.Text = backendRunning ? ".NET Backend: OK" : ".NET Backend: Lỗi";
+            TextBackend.Text = backendRunning ? ".NET Backend: OK" : ".NET Backend: Error";
 
             // 2. Python Worker status
             bool workerOk = snapshot.WorkerOk;
             string? workerError = snapshot.WorkerError;
             DotWorker.Fill = workerOk ? successBrush : (backendRunning ? warningBrush : dangerBrush);
             TextWorker.Text = workerOk
-                ? "AI Worker: Sẵn sàng"
+                ? "AI Worker: Ready"
                 : backendRunning && workerError != null
-                    ? $"AI Worker: Lỗi ({workerError})"
+                    ? $"AI Worker: Error ({workerError})"
                     : backendRunning
-                        ? "AI Worker: Đang đợi..."
-                        : "AI Worker: Tắt";
+                        ? "AI Worker: Waiting..."
+                        : "AI Worker: Off";
 
             // 3. VTube Studio status
             bool vtsConnected = snapshot.VtsConnected;
             DotVts.Fill = vtsConnected ? successBrush : mutedBrush;
             TextVts.Text = _composition.IsHarness
-                ? "VTS: Bỏ qua trong Harness"
-                : vtsConnected ? "VTS: Đã kết nối" : "VTS: Chưa mở";
+                ? "VTS: Skipped in Harness"
+                : vtsConnected ? "VTS: Connected" : "VTS: Not open";
 
             // Overall summary text
             if (!backendRunning)
             {
                 StatusDot.Fill = dangerBrush;
-                StatusText.Text = "Không thể kết nối .NET Backend!";
+                StatusText.Text = "Could not connect to .NET Backend!";
             }
             else if (!workerOk)
             {
                 StatusDot.Fill = warningBrush;
-                StatusText.Text = "AI Worker đang khởi động hoặc chưa sẵn sàng";
+                StatusText.Text = "AI Worker starting or not ready yet";
             }
             else
             {
                 StatusDot.Fill = successBrush;
                 StatusText.Text = _composition.IsHarness
-                    ? "Harness đã sẵn sàng"
-                    : vtsConnected ? "Hệ thống sẵn sàng (Đã kết nối Live2D)" : "Hệ thống đã sẵn sàng";
+                    ? "Harness ready"
+                    : vtsConnected ? "System ready (Live2D connected)" : "System ready";
             }
 
             UpdateShellStatusTooltip();
@@ -910,10 +910,10 @@ namespace RuApp
                 {
                     var dialog = new ContentDialog
                     {
-                        Title = "Xác nhận xoá đoạn chat",
-                        Content = "Bạn có chắc chắn muốn xoá vĩnh viễn đoạn chat này không?",
-                        PrimaryButtonText = "Xoá",
-                        CloseButtonText = "Huỷ",
+                        Title = "Confirm delete chat",
+                        Content = "Are you sure you want to permanently delete this chat?",
+                        PrimaryButtonText = "Delete",
+                        CloseButtonText = "Cancel",
                         DefaultButton = ContentDialogButton.Close,
                         XamlRoot = ShellRoot.XamlRoot
                     };
@@ -932,9 +932,9 @@ namespace RuApp
                     {
                         var errorDialog = new ContentDialog
                         {
-                            Title = "Không thể xoá đoạn chat",
-                            Content = "Backend chưa xoá được đoạn chat này. Hãy thử lại sau.",
-                            CloseButtonText = "Đóng",
+                            Title = "Could not delete chat",
+                            Content = "Backend failed to delete this chat. Please try again later.",
+                            CloseButtonText = "Close",
                             DefaultButton = ContentDialogButton.Close,
                             XamlRoot = ShellRoot.XamlRoot
                         };
@@ -946,7 +946,7 @@ namespace RuApp
 
                 await LoadSessionsAsync();
 
-                // Nếu xóa hết session thì tạo mới
+                // Create new session if all sessions deleted
                 if (Sessions.Count == 0)
                 {
                     OnNewChatClick(this, new RoutedEventArgs());

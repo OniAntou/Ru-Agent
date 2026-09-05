@@ -35,7 +35,7 @@ namespace RuApp.Views
         {
             _apiService = apiService;
             Rows.Clear();
-            Rows.Add(new LogRow("--:--:--", "…", LogRowKind.Info, "Đang tải nhật ký...", ""));
+            Rows.Add(new LogRow("--:--:--", "…", LogRowKind.Info, "Loading logs...", ""));
             _ = RefreshAsync();
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             _refreshTimer.Tick += async (_, __) => await RefreshAsync();
@@ -54,7 +54,7 @@ namespace RuApp.Views
             }
             catch (Exception)
             {
-                // Giữ nguyên danh sách hiện tại nếu lỗi mạng/API.
+                // Keep current list if network/API error.
             }
         }
 
@@ -82,7 +82,7 @@ namespace RuApp.Views
                     TimeVietnam(DateTimeOffset.UtcNow),
                     "…",
                     LogRowKind.Info,
-                    "Chưa có hoạt động nào.",
+                    "No activity yet.",
                     ""));
             }
             else
@@ -117,10 +117,10 @@ namespace RuApp.Views
             };
 
             string detail =
-                $"Loại: {e.Type ?? "-"}\n" +
-                $"Thời gian (UTC): {e.Iso ?? "-"}\n" +
-                $"Phiên: {e.SessionId ?? "-"}\n" +
-                $"Nội dung: {summary}";
+                $"Type: {e.Type ?? "-"}\n" +
+                $"Time (UTC): {e.Iso ?? "-"}\n" +
+                $"Session: {e.SessionId ?? "-"}\n" +
+                $"Content: {summary}";
 
             return e.Type switch
             {
@@ -137,9 +137,9 @@ namespace RuApp.Views
             return type switch
             {
                 "chat" => "CHAT",
-                "emotion" => "CẢM XÚC",
+                "emotion" => "EMOTION",
                 "vts_action" => "VTS",
-                "observation_reaction" => "QUAN SÁT",
+                "observation_reaction" => "OBSERVATION",
                 _ => type ?? "?",
             };
         }
@@ -160,7 +160,7 @@ namespace RuApp.Views
                 {
                     preview = c.GetString() ?? "";
                 }
-                return role == "user" ? $"Anh: {preview}" : $"Ru: {preview}";
+                return role == "user" ? $"You: {preview}" : $"Ru: {preview}";
             }
             catch
             {
@@ -172,12 +172,12 @@ namespace RuApp.Views
         {
             try
             {
-                string emotion = data.TryGetProperty("emotion", out var em) ? (em.GetString() ?? "không xác định") : "không xác định";
-                return $"Cảm xúc: {emotion}";
+                string emotion = data.TryGetProperty("emotion", out var em) ? (em.GetString() ?? "unknown") : "unknown";
+                return $"Emotion: {emotion}";
             }
             catch
             {
-                return "Cảm xúc: không xác định";
+                return "Emotion: unknown";
             }
         }
 
@@ -190,11 +190,11 @@ namespace RuApp.Views
 
                 if (!string.IsNullOrEmpty(category))
                     return $"VTS: {category} ({status})";
-                return "Hành động VTS";
+                return "VTS Action";
             }
             catch
             {
-                return "Hành động VTS";
+                return "VTS Action";
             }
         }
 
@@ -207,7 +207,7 @@ namespace RuApp.Views
                     : "";
                 if (!string.IsNullOrWhiteSpace(preview))
                 {
-                    return $"Quan sát: {preview}";
+                    return $"Observation: {preview}";
                 }
 
                 string scene = data.TryGetProperty("scene", out var sceneValue)
@@ -218,13 +218,13 @@ namespace RuApp.Views
                     : "";
                 if (!string.IsNullOrWhiteSpace(scene) && !string.IsNullOrWhiteSpace(observedEvent))
                 {
-                    return $"Quan sát: {scene} ({observedEvent})";
+                    return $"Observation: {scene} ({observedEvent})";
                 }
-                return "Phản ứng quan sát";
+                return "Observation Reaction";
             }
             catch
             {
-                return "Phản ứng quan sát";
+                return "Observation Reaction";
             }
         }
 
@@ -251,10 +251,10 @@ namespace RuApp.Views
 
             var dialog = new ContentDialog
             {
-                Title = "Xoá nhật ký",
-                Content = "Xoá toàn bộ nhật ký hoạt động hiện tại?",
-                PrimaryButtonText = "Xoá",
-                CloseButtonText = "Huỷ",
+                Title = "Clear Logs",
+                Content = "Clear all current activity logs?",
+                PrimaryButtonText = "Clear",
+                CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = this.XamlRoot,
             };

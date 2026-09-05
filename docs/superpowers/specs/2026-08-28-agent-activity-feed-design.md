@@ -87,19 +87,15 @@ Feed không dùng card nặng. Mỗi row có icon trạng thái, summary chính 
 chọn metadata ngắn:
 
 ```text
-Đã khám phá 5 file, 1 kết quả tìm kiếm       ✓
-Đã suy nghĩ 5 giây                          ✓
-Đã phân tích ChatView.xaml.cs · L150–200    ✓
-Đã tìm OnChatInputPreviewKeyDown · 2 kết quả ✓
-Đang sửa ChatView.xaml · +0 −0              ◌
-Đang làm…                                   ◌
+Explored 5 items, 1 search result           ✓
+Thought for 5 seconds                       ✓
+Analyzed ChatView.xaml.cs · L150–200        ✓
+Searched for OnChatInputPreviewKeyDown · 2 results ✓
+Editing ChatView.xaml · +0 −0               ◌
+Working…                                    ◌
 ```
 
-Text giữ ngôn ngữ và font của Ru. Basename, symbol và line range được bounded
-và hiển thị theo style hiện tại; đường dẫn tuyệt đối không xuất hiện. Row
-không mở rộng thành raw payload. Live-region chỉ thông báo thay đổi bounded,
-không tự giành focus và không làm dịch chuyển Welcome hero khi Agent đang
-idle.
+Text của Agent Activity hiển thị bằng tiếng Anh chuẩn developer UI (Thinking, Exploring, Searching, Analyzing, Editing, Terminal, Waiting, Failed). Basename, symbol và line range được bounded và hiển thị theo style hiện tại; đường dẫn tuyệt đối không xuất hiện. Row không mở rộng thành raw payload. Live-region chỉ thông báo thay đổi bounded, không tự giành focus và không làm dịch chuyển Welcome hero khi Agent đang idle.
 
 ### State mapping
 

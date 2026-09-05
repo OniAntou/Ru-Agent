@@ -46,9 +46,9 @@ public sealed class AgentApprovalUiContractTests
         Assert.Contains("external_directory_required", code, StringComparison.Ordinal);
         Assert.Contains("terminal_delete_requires_approval", code, StringComparison.Ordinal);
         Assert.Contains("terminal_unknown_executable", code, StringComparison.Ordinal);
-        Assert.Contains("Ru cần dùng thư mục", code, StringComparison.Ordinal);
-        Assert.Contains("Lệnh terminal này sẽ xóa file", code, StringComparison.Ordinal);
-        Assert.Contains("Ru chưa nhận diện được executable", code, StringComparison.Ordinal);
+        Assert.Contains("Ru needs to access a directory", code, StringComparison.Ordinal);
+        Assert.Contains("This terminal command will delete files", code, StringComparison.Ordinal);
+        Assert.Contains("Ru has not recognized the executable", code, StringComparison.Ordinal);
     }
 
     [Fact]

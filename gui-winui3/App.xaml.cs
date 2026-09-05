@@ -16,20 +16,11 @@ public partial class App : Application
         InitializeComponent();
         this.UnhandledException += (s, e) =>
         {
-            Services.GuiDiagnosticWriter.WriteCrashEvent(e.Exception);
-
             // Only swallow exceptions that are recoverable; let truly fatal
             // failures crash so bugs are not hidden behind an empty UI.
-            var ex = e.Exception;
-            e.Handled = ex is System.IO.IOException
-                or System.Net.WebSockets.WebSocketException
-                or System.Net.Http.HttpRequestException
-                or System.Threading.Tasks.TaskCanceledException
-                or System.ObjectDisposedException
-                or System.ArgumentException
-                or System.InvalidOperationException
-                or System.Runtime.InteropServices.COMException
-                or Microsoft.UI.Xaml.Markup.XamlParseException;
+            e.Handled = AppUnhandledExceptionPolicy.Handle(
+                e.Exception,
+                exception => Services.GuiDiagnosticWriter.WriteCrashEvent(exception));
         };
     }
 

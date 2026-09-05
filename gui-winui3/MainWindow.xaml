@@ -99,10 +99,10 @@
                                     BorderThickness="1" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
                                     CornerRadius="{StaticResource RuControlCornerRadius}" HorizontalContentAlignment="Stretch"
                                     AutomationProperties.AutomationId="NewSessionButton"
-                                    AutomationProperties.Name="Đoạn chat mới">
+                                    AutomationProperties.Name="New Chat">
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconNewChat" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="LabelNewChat" Text="Đoạn chat mới" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LabelNewChat" Text="New Chat" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
 
@@ -110,27 +110,27 @@
                             <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                    AutomationProperties.Name="Trò chuyện">
+                                    AutomationProperties.Name="Chat">
                                 <StackPanel x:Name="ContentChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconChat" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="LabelChat" Text="Trò chuyện" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LabelChat" Text="Chat" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
 
                             <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                    AutomationProperties.Name="Giọng nói và VTS">
+                                    AutomationProperties.Name="Voice &amp; VTS">
                                 <StackPanel x:Name="ContentVoice" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconVoice" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LabelVoice" Text="Voice &amp; VTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
 
                         <!-- Recent Chats Header -->
                         <Grid Grid.Row="1" Margin="14,20,14,6" ColumnDefinitions="*,Auto">
-                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="HỘI THOẠI" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
+                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="CONVERSATIONS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
                                        Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                         </Grid>
                         
@@ -185,7 +185,7 @@
                                      VerticalAlignment="Center" />
                             <TextBlock x:Name="StatusText"
                                        AutomationProperties.AutomationId="BackendStatus"
-                                       Text="Hệ thống đã sẵn sàng"
+                                       Text="System ready"
                                        FontFamily="{StaticResource RuUiFontFamily}"
                                        FontSize="12"
                                        Foreground="{StaticResource RuMutedBrush}"
@@ -213,7 +213,7 @@
                                 BorderBrush="Transparent"
                                 BorderThickness="0"
                                 HorizontalContentAlignment="Stretch"
-                                AutomationProperties.Name="Chuyển sang tối">
+                                AutomationProperties.Name="Switch to dark mode">
                             <StackPanel x:Name="ContentThemeToggle" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                 <FontIcon x:Name="ThemeToggleIcon"
                                           Glyph="&#xE706;"
@@ -221,7 +221,7 @@
                                           Margin="0,0,12,0"
                                           VerticalAlignment="Center"/>
                                 <TextBlock x:Name="LabelThemeToggle"
-                                           Text="Chuyển sang tối"
+                                           Text="Switch to dark mode"
                                            FontFamily="{StaticResource RuUiFontFamily}"
                                            FontSize="13.5"
                                            FontWeight="Medium"
@@ -232,10 +232,10 @@
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
                                 Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                 Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                AutomationProperties.Name="Cài đặt hệ thống">
+                                AutomationProperties.Name="Settings">
                             <StackPanel x:Name="ContentSettings" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                 <FontIcon x:Name="IconSettings" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="LabelSettings" Text="Cài đặt hệ thống" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="LabelSettings" Text="Settings" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>

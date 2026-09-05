@@ -169,13 +169,41 @@ namespace RuApp.Views
 
             if (ContextMeterButton != null)
             {
+                DispatcherTimer? contextHoverTimer = null;
+
                 ContextMeterButton.PointerEntered += (s, e) =>
                 {
                     ContextMeterButton.Background = canvas;
+                    contextHoverTimer?.Stop();
+                    contextHoverTimer = new DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromMilliseconds(120)
+                    };
+                    contextHoverTimer.Tick += (_, _) =>
+                    {
+                        contextHoverTimer?.Stop();
+                        if (ContextWindowFlyout != null && !ContextWindowFlyout.IsOpen && ContextMeterButton != null)
+                        {
+                            try
+                            {
+                                ContextWindowFlyout.ShowAt(ContextMeterButton, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+                                {
+                                    ShowMode = Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway
+                                });
+                            }
+                            catch
+                            {
+                                ContextWindowFlyout.ShowAt(ContextMeterButton);
+                            }
+                        }
+                    };
+                    contextHoverTimer.Start();
                 };
+
                 ContextMeterButton.PointerExited += (s, e) =>
                 {
                     ContextMeterButton.Background = transparent;
+                    contextHoverTimer?.Stop();
                 };
             }
         }
@@ -414,7 +442,7 @@ namespace RuApp.Views
             }
 
             ChatReasoningLabel.Text = _selectedReasoningEffort;
-            AutomationProperties.SetName(ChatReasoningButton, $"Mức độ suy luận: {_selectedReasoningEffort}");
+            AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {_selectedReasoningEffort}");
         }
 
         private IReadOnlyList<ProviderReasoningOption> GetCurrentReasoningOptions()
@@ -513,7 +541,7 @@ namespace RuApp.Views
             string previousEffort = _selectedReasoningEffort;
             _selectedReasoningEffort = effort;
             ChatReasoningLabel.Text = effort;
-            AutomationProperties.SetName(ChatReasoningButton, $"Mức độ suy luận: {effort}");
+            AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {effort}");
 
             if (_apiService is null) return;
 
@@ -534,13 +562,13 @@ namespace RuApp.Views
             {
                 _selectedReasoningEffort = previousEffort;
                 ChatReasoningLabel.Text = previousEffort;
-                AutomationProperties.SetName(ChatReasoningButton, $"Mức độ suy luận: {previousEffort} (Lưu thất bại)");
+                AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {previousEffort} (Save failed)");
             }
         }
 
         private void ShowModelSaveFailure()
         {
-            ChatModelSaveStatusText.Text = "Không thể lưu model đã chọn.";
+            ChatModelSaveStatusText.Text = "Could not save selected model.";
             ChatModelSaveStatusText.Visibility = Visibility.Visible;
             _modelSaveFailureTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             _modelSaveFailureTimer.Stop();
@@ -627,7 +655,7 @@ namespace RuApp.Views
                 ContextProgressRing.Value = 0;
                 ContextProgressBar.Visibility = Visibility.Collapsed;
                 ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} tokens";
-                ContextPercentLabel.Text = "Đã dùng";
+                ContextPercentLabel.Text = "Used";
                 ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
             }
         }
@@ -877,6 +905,36 @@ namespace RuApp.Views
             if (sender is not Grid grid || grid.DataContext is not AgentActivityItem item)
                 return;
 
+            // Micro-animation: smooth fade-in and subtle slide-up on entrance
+            grid.Opacity = 0;
+            var translate = new TranslateTransform { Y = 4 };
+            grid.RenderTransform = translate;
+
+            var fadeIn = new DoubleAnimation
+            {
+                From = 0.0,
+                To = 1.0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(240)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            Storyboard.SetTarget(fadeIn, grid);
+            Storyboard.SetTargetProperty(fadeIn, "Opacity");
+
+            var slideIn = new DoubleAnimation
+            {
+                From = 4.0,
+                To = 0.0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(240)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            Storyboard.SetTarget(slideIn, translate);
+            Storyboard.SetTargetProperty(slideIn, "Y");
+
+            var entranceSb = new Storyboard();
+            entranceSb.Children.Add(fadeIn);
+            entranceSb.Children.Add(slideIn);
+            entranceSb.Begin();
+
             TextBlock? displayText = null;
             foreach (var child in grid.Children)
             {
@@ -930,13 +988,27 @@ namespace RuApp.Views
             else
             {
                 StopTextBreathing(textBlock);
-                if (item.IsFailed)
+                var targetColor = item.IsFailed
+                    ? ((SolidColorBrush)Application.Current.Resources["RuDangerBrush"]).Color
+                    : ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
+
+                if (textBlock.Foreground is SolidColorBrush currentBrush)
                 {
-                    textBlock.Foreground = (SolidColorBrush)Application.Current.Resources["RuDangerBrush"];
+                    var settleAnim = new ColorAnimation
+                    {
+                        To = targetColor,
+                        Duration = new Duration(TimeSpan.FromMilliseconds(220)),
+                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
+                    };
+                    Storyboard.SetTarget(settleAnim, currentBrush);
+                    Storyboard.SetTargetProperty(settleAnim, "Color");
+                    var settleSb = new Storyboard();
+                    settleSb.Children.Add(settleAnim);
+                    settleSb.Begin();
                 }
                 else
                 {
-                    textBlock.Foreground = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
+                    textBlock.Foreground = new SolidColorBrush(targetColor);
                 }
             }
         }
@@ -955,10 +1027,10 @@ namespace RuApp.Views
             {
                 From = mutedColor,
                 To = inkColor,
-                Duration = new Duration(TimeSpan.FromMilliseconds(1400)),
+                Duration = new Duration(TimeSpan.FromMilliseconds(850)),
                 AutoReverse = true,
                 RepeatBehavior = RepeatBehavior.Forever,
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
             };
             Storyboard.SetTarget(colorAnim, brush);
             Storyboard.SetTargetProperty(colorAnim, "Color");
@@ -1010,7 +1082,7 @@ namespace RuApp.Views
             MicButton.IsEnabled = true;
             AutomationProperties.SetName(
                 MicButton,
-                "Bắt đầu trò chuyện bằng giọng nói");
+                "Start voice conversation");
         }
 
         private bool _isSendButtonInStopMode;
@@ -1032,7 +1104,7 @@ namespace RuApp.Views
                         SendButtonIcon.Foreground = danger;
                     }
                 }
-                AutomationProperties.SetName(SendButton, "Dừng Coding Agent");
+                AutomationProperties.SetName(SendButton, "Stop Coding Agent");
             }
             else
             {
@@ -1045,7 +1117,7 @@ namespace RuApp.Views
                         SendButtonIcon.Foreground = ink;
                     }
                 }
-                AutomationProperties.SetName(SendButton, "Gửi tin nhắn");
+                AutomationProperties.SetName(SendButton, "Send message");
             }
         }
 
@@ -1151,19 +1223,19 @@ namespace RuApp.Views
             string trimmed = BoundedDisplay(summary ?? string.Empty, 64);
             if (string.Equals(trimmed, "external_directory_required", StringComparison.Ordinal))
             {
-                return "Ru cần dùng thư mục ngoài project trong đoạn chat này, cho đến khi ứng dụng đóng.";
+                return "Ru needs to access a directory outside the project in this chat until the app closes.";
             }
             if (string.Equals(trimmed, "terminal_delete_requires_approval", StringComparison.Ordinal))
             {
-                return "Lệnh terminal này sẽ xóa file.";
+                return "This terminal command will delete files.";
             }
             if (string.Equals(trimmed, "terminal_unknown_executable", StringComparison.Ordinal))
             {
-                return "Ru chưa nhận diện được executable của lệnh terminal này.";
+                return "Ru has not recognized the executable for this terminal command.";
             }
             if (string.IsNullOrEmpty(trimmed))
             {
-                return "Agent đang yêu cầu một hành động cần phê duyệt.";
+                return "Agent is requesting an action that requires approval.";
             }
             return trimmed;
         }
@@ -1344,7 +1416,7 @@ namespace RuApp.Views
             if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
             {
                 e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
-                e.DragUIOverride.Caption = "Thả để đính kèm tệp tin / hình ảnh";
+                e.DragUIOverride.Caption = "Drop to attach files / images";
                 e.DragUIOverride.IsContentVisible = true;
             }
         }
@@ -1373,7 +1445,7 @@ namespace RuApp.Views
                 {
                     if (PendingAttachments.Count(static a => a.IsImage) >= 4)
                     {
-                        ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi thêm.");
+                        ShowAgentInlineStatus("Maximum 4 images per turn; please remove some images before adding.");
                         return;
                     }
 
@@ -1381,7 +1453,7 @@ namespace RuApp.Views
                     using var sourceStream = await streamRef.OpenReadAsync();
                     if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
                     {
-                        ShowAgentInlineStatus("Ảnh clipboard vượt quá kích thước 10MB cho phép.");
+                        ShowAgentInlineStatus("Clipboard image exceeds the allowed 10MB limit.");
                         return;
                     }
 
@@ -1440,7 +1512,7 @@ namespace RuApp.Views
                 bool isImage = IsImageFile(file.Name);
                 if (!isImage && !IsTextOrCodeFile(file.Name))
                 {
-                    ShowAgentInlineStatus($"Tệp '{file.Name}' chưa được hỗ trợ. Chỉ nhận ảnh và tệp văn bản/mã nguồn.");
+                    ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images and text/code files are accepted.");
                     return;
                 }
 
@@ -1448,13 +1520,13 @@ namespace RuApp.Views
                 {
                     if (PendingAttachments.Count(static a => a.IsImage) >= 4)
                     {
-                        ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi thêm.");
+                        ShowAgentInlineStatus("Maximum 4 images per turn; please remove some images before adding.");
                         return;
                     }
 
                     if (props.Size > MaxImageAttachmentBytes)
                     {
-                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
+                        ShowAgentInlineStatus($"Image '{file.Name}' exceeds the allowed 10MB limit.");
                         return;
                     }
 
@@ -1463,7 +1535,7 @@ namespace RuApp.Views
                     using var sourceStream = await file.OpenReadAsync();
                     if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
                     {
-                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
+                        ShowAgentInlineStatus($"Image '{file.Name}' exceeds the allowed 10MB limit.");
                         return;
                     }
 
@@ -1500,7 +1572,7 @@ namespace RuApp.Views
                 {
                     if (props.Size > MaxTextAttachmentBytes)
                     {
-                        ShowAgentInlineStatus($"Tệp '{file.Name}' vượt quá kích thước 5MB cho phép.");
+                        ShowAgentInlineStatus($"File '{file.Name}' exceeds the allowed 5MB limit.");
                         return;
                     }
 
@@ -1513,7 +1585,7 @@ namespace RuApp.Views
                             var bytes = await ReadBoundedBytesAsync(readStream, MaxTextAttachmentBytes);
                             if (bytes is null)
                             {
-                                ShowAgentInlineStatus($"Tệp '{file.Name}' vượt quá kích thước 5MB cho phép.");
+                                ShowAgentInlineStatus($"File '{file.Name}' exceeds the allowed 5MB limit.");
                                 return;
                             }
 
@@ -1567,7 +1639,7 @@ namespace RuApp.Views
                 int imageCount = attachments.Count(static attachment => attachment.IsImage);
                 if (imageCount > 4)
                 {
-                    ShowAgentInlineStatus("Tối đa 4 ảnh cho mỗi lượt gửi; hãy xoá bớt ảnh trước khi gửi.");
+                    ShowAgentInlineStatus("Maximum 4 images per turn; please remove some images before sending.");
                     return;
                 }
 
@@ -1589,7 +1661,7 @@ namespace RuApp.Views
                     foreach (var doc in textAttachments)
                     {
                         string lang = doc.FileExtension.TrimStart('.');
-                        sb.AppendLine($"[Đính kèm tệp: {doc.FileName} ({doc.FormattedSize})]");
+                        sb.AppendLine($"[Attached file: {doc.FileName} ({doc.FormattedSize})]");
                         sb.AppendLine($"```{lang}");
                         sb.AppendLine(doc.TextContent);
                         sb.AppendLine("```");
@@ -1631,10 +1703,10 @@ namespace RuApp.Views
 
             if (IsActiveAgentRunPending())
             {
-                ShowAgentInlineStatus("Coding Agent đang có phiên chạy. Hãy hoàn tất phiên hiện tại trước.");
+                ShowAgentInlineStatus("Coding Agent is already running. Please complete or stop the current turn first.");
                 if (source == AgentTurnSource.Voice)
                 {
-                    throw new InvalidOperationException("Coding Agent đang xử lý lượt trước.");
+                    throw new InvalidOperationException("Coding Agent is already processing a turn.");
                 }
 
                 return;
@@ -1668,7 +1740,7 @@ namespace RuApp.Views
                     workspace,
                     text,
                     "standard",
-                    0,
+                    null,
                     Guid.NewGuid().ToString("N"),
                     imagePayloads);
 
@@ -1678,7 +1750,7 @@ namespace RuApp.Views
                 ClearAgentRunSummary();
                 BeginAgentReply(source, text, attachments, displayUserText);
                 ScrollChatToBottom();
-                ShowAgentInlineStatus("Đang chuẩn bị thao tác…");
+                ShowAgentInlineStatus("Preparing action…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: true);
                 UpdateAgentInlineState();
@@ -1818,8 +1890,8 @@ namespace RuApp.Views
                 }
                 _activeAgentAssistantMessage.Content = string.IsNullOrWhiteSpace(
                     _activeAgentAssistantMessage.Content)
-                    ? "Coding Agent không thể hoàn thành lượt này. Hãy thử lại sau."
-                    : $"{_activeAgentAssistantMessage.Content}\n\nCoding Agent không thể hoàn thành lượt này.";
+                    ? "Coding Agent could not complete this turn. Please try again later."
+                    : $"{_activeAgentAssistantMessage.Content}\n\nCoding Agent could not complete this turn.";
                 _activeAgentAssistantMessage.IsStreaming = false;
                 _activeAgentAssistantMessage.IsError = true;
             }
@@ -1873,7 +1945,7 @@ namespace RuApp.Views
             {
                 throw new AgentApiException(
                     "session_create_failed",
-                    "Không tạo được session mới cho Coding Agent.");
+                    "Could not create a new session for Coding Agent.");
             }
 
             _activeSessionId = sessionId!;
@@ -1885,7 +1957,7 @@ namespace RuApp.Views
                 this,
                 new SessionOpenedEventArgs(
                     sessionId!,
-                    created?.Title ?? "Cuộc trò chuyện mới"));
+                    created?.Title ?? "New Conversation"));
         }
 
         private async Task EnsureAgentSessionAsync(CancellationToken cancellationToken)
@@ -1907,7 +1979,7 @@ namespace RuApp.Views
             {
                 throw new AgentApiException(
                     "session_create_failed",
-                    "Không tạo được session cho Coding Agent.");
+                    "Could not create a session for Coding Agent.");
             }
 
             string validSessionId = sessionId!;
@@ -1916,7 +1988,7 @@ namespace RuApp.Views
                 this,
                 new SessionOpenedEventArgs(
                     validSessionId,
-                    created?.Title ?? "Cuộc trò chuyện mới"));
+                    created?.Title ?? "New Conversation"));
         }
 
         private bool IsProjectRootWorkspace(string? workspace)
@@ -1963,14 +2035,14 @@ namespace RuApp.Views
                 };
                 var dialog = new ContentDialog
                 {
-                    Title = string.IsNullOrWhiteSpace(item.FileName) ? "Hình ảnh đính kèm" : item.FileName,
+                    Title = string.IsNullOrWhiteSpace(item.FileName) ? "Attached image" : item.FileName,
                     Content = new ScrollViewer
                     {
                         Content = image,
                         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
                         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     },
-                    CloseButtonText = "Đóng",
+                    CloseButtonText = "Close",
                     XamlRoot = XamlRoot,
                 };
                 await dialog.ShowAsync();
@@ -1988,18 +2060,18 @@ namespace RuApp.Views
             {
                 AgentApiException api => api.ErrorCode switch
                 {
-                    "invalid_workspace" => "Thư mục làm việc không hợp lệ hoặc không tồn tại.",
-                    "workspace_busy" => "Thư mục đang được một phiên Agent khác sử dụng.",
-                    "preset_mismatch" or "preset_version_conflict" => "Preset quyền đã thay đổi. Hãy chọn lại preset rồi thử lại.",
-                    "session_create_failed" => "Không tạo được phiên trò chuyện cho Coding Agent. Kiểm tra backend rồi thử lại.",
-                    "session_not_found" or "invalid_session_id" => "Phiên trò chuyện không còn hợp lệ. Hãy gửi lại để Ru tạo phiên mới.",
-                    "unauthorized" => "Phiên đăng nhập Agent không còn hợp lệ. Hãy khởi động lại backend.",
-                    "agent_store_unavailable" or "harness_store_unavailable" => "Cơ sở dữ liệu Agent Harness tạm thời không khả dụng. Kiểm tra quyền ghi hoặc khởi động lại.",
+                    "invalid_workspace" => "Invalid or non-existent workspace folder.",
+                    "workspace_busy" => "Workspace is currently in use by another Agent session.",
+                    "preset_mismatch" or "preset_version_conflict" => "Permission preset has changed. Please select a preset and try again.",
+                    "session_create_failed" => "Failed to create a session for Coding Agent. Check backend and try again.",
+                    "session_not_found" or "invalid_session_id" => "Chat session is no longer valid. Send a message to create a new session.",
+                    "unauthorized" => "Agent session credentials are no longer valid. Please restart backend.",
+                    "agent_store_unavailable" or "harness_store_unavailable" => "Agent database is temporarily unavailable. Check permissions or restart.",
                     _ => !string.IsNullOrWhiteSpace(api.Message) && !string.Equals(api.Message, api.ErrorCode, StringComparison.OrdinalIgnoreCase)
-                        ? $"Coding Agent không thể bắt đầu ({api.ErrorCode}: {api.Message}). Mở Công cụ → Nhật ký hoạt động để kiểm tra."
-                        : $"Coding Agent không thể bắt đầu ({api.ErrorCode}). Mở Công cụ → Nhật ký hoạt động để kiểm tra."
+                        ? $"Coding Agent could not start ({api.ErrorCode}: {api.Message}). Open Tools → Activity Log to check."
+                        : $"Coding Agent could not start ({api.ErrorCode}). Open Tools → Activity Log to check."
                 },
-                _ => $"Coding Agent không thể bắt đầu: {exception.Message}"
+                _ => $"Coding Agent could not start: {exception.Message}"
             };
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
@@ -2140,7 +2212,7 @@ namespace RuApp.Views
                 }
             }))
             {
-                throw new InvalidOperationException("Không thể chuyển lượt nói sang UI thread.");
+                throw new InvalidOperationException("Could not switch speech turn to UI thread.");
             }
 
             await completion.Task.ConfigureAwait(false);
@@ -2232,7 +2304,7 @@ namespace RuApp.Views
             {
                 await RunAgentActionAsync(
                     () => _agentController?.CancelAsync() ?? Task.CompletedTask,
-                    "Đang dừng Coding Agent…");
+                    "Stopping Coding Agent…");
             }
             AbandonActiveAgentReply(notifyVoice: true);
             ClearAgentActivities();
@@ -2249,21 +2321,21 @@ namespace RuApp.Views
         {
             await RunAgentActionAsync(
                 () => _agentController?.ContinueAsync() ?? Task.CompletedTask,
-                "Đang tiếp tục Coding Agent…");
+                "Resuming Coding Agent…");
         }
 
         private async void OnAgentApproveClick(object sender, RoutedEventArgs e)
         {
             await RunAgentActionAsync(
                 () => _agentController?.ApproveAsync() ?? Task.CompletedTask,
-                "Đang gửi phê duyệt…");
+                "Submitting approval…");
         }
 
         private async void OnAgentDenyClick(object sender, RoutedEventArgs e)
         {
             await RunAgentActionAsync(
                 () => _agentController?.DenyAsync() ?? Task.CompletedTask,
-                "Đang từ chối phê duyệt…");
+                "Denying approval…");
         }
 
         private async Task RunAgentActionAsync(Func<Task> action, string status)
@@ -2331,7 +2403,7 @@ namespace RuApp.Views
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "assistant",
-                    Content = "**LỖI MỞ SESSION:** Không thể tải cuộc trò chuyện. Hãy kiểm tra backend rồi thử lại.",
+                    Content = "**SESSION LOAD ERROR:** Could not load chat session. Please check backend and try again.",
                     IsError = true
                 });
             }
@@ -2359,7 +2431,7 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 SetVoiceButtonState(false);
-                ChatInputTextBox.PlaceholderText = "Không truy cập được micro. Kiểm tra quyền mic.";
+                ChatInputTextBox.PlaceholderText = "Could not access microphone. Check microphone permissions.";
                 System.Diagnostics.Debug.WriteLine($"Error starting voice conversation: {ex.Message}");
             }
         }
@@ -2398,13 +2470,13 @@ namespace RuApp.Views
         {
             if (_apiService == null)
             {
-                throw new InvalidOperationException("Voice API chưa sẵn sàng.");
+                throw new InvalidOperationException("Voice API is not ready.");
             }
 
             string? text = await _apiService.TranscribeAudioAsync(wavBytes, cancellationToken);
             if (text == null)
             {
-                throw new InvalidOperationException("Dịch vụ nhận dạng giọng nói không khả dụng.");
+                throw new InvalidOperationException("Speech recognition service is unavailable.");
             }
 
             _harnessEvents?.Write("voice.transcribe.completed");
@@ -2418,7 +2490,7 @@ namespace RuApp.Views
                 if (status.State == VoiceConversationState.Stopped)
                 {
                     SetVoiceButtonState(false);
-                    VoiceConversationStatusText.Text = "Đã dừng";
+                    VoiceConversationStatusText.Text = "Stopped";
                     VoiceConversationStatusText.Visibility = Visibility.Visible;
                     return;
                 }
@@ -2427,8 +2499,8 @@ namespace RuApp.Views
                 {
                     SetVoiceButtonState(false);
                     ChatInputTextBox.PlaceholderText = status.Message
-                        ?? "Cuộc trò chuyện bằng giọng nói đã dừng.";
-                    VoiceConversationStatusText.Text = status.Message ?? "Không truy cập được micro.";
+                        ?? "Voice conversation stopped.";
+                    VoiceConversationStatusText.Text = status.Message ?? "Could not access microphone.";
                     VoiceConversationStatusText.Visibility = Visibility.Visible;
                     return;
                 }
@@ -2436,9 +2508,9 @@ namespace RuApp.Views
                 SetVoiceButtonState(true);
                 VoiceConversationStatusText.Text = status.State switch
                 {
-                    VoiceConversationState.Listening => "Đang nghe...",
-                    VoiceConversationState.Transcribing => "Đang xử lý...",
-                    VoiceConversationState.Sending or VoiceConversationState.WaitingForReply => "Đang chờ Ru trả lời...",
+                    VoiceConversationState.Listening => "Listening...",
+                    VoiceConversationState.Transcribing => "Processing...",
+                    VoiceConversationState.Sending or VoiceConversationState.WaitingForReply => "Waiting for Ru to reply...",
                     _ => status.Message ?? string.Empty,
                 };
                 VoiceConversationStatusText.Visibility = Visibility.Visible;
@@ -2470,7 +2542,7 @@ namespace RuApp.Views
                 : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             AutomationProperties.SetName(
                 MicButton,
-                active ? "Dừng trò chuyện bằng giọng nói" : "Bắt đầu trò chuyện bằng giọng nói");
+                active ? "Stop voice conversation" : "Start voice conversation");
         }
 
         public void Dispose()

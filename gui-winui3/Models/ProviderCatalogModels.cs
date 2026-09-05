@@ -34,6 +34,9 @@ public sealed class ProviderCatalogModel
     [JsonPropertyName("protocol")]
     public string Protocol { get; init; } = string.Empty;
 
+    [JsonPropertyName("context_length")]
+    public int? ContextLength { get; init; }
+
     private ProviderReasoningCapabilities? _reasoning;
 
     [JsonPropertyName("reasoning")]
@@ -158,7 +161,7 @@ public static class ProviderReasoningOptions
     {
         var options = new List<ProviderReasoningOption>
         {
-            new("default", "Provider default")
+            new("default", "default")
         };
 
         if (!state.IsSuccess || state.Stale) return options;

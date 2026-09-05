@@ -143,7 +143,7 @@ public sealed partial class ControlPanel : UserControl
         {
             string displayHash = run.DisplayIdentityHash ?? string.Empty;
             string shortHash = displayHash.Length > 16 ? displayHash[..16] + "…" : displayHash;
-            TrustText.Text = $"Đường dẫn: {WorkspaceBox.Text}\nMã nhận diện: {shortHash}";
+            TrustText.Text = $"Path: {WorkspaceBox.Text}\nIdentity: {shortHash}";
             TrustApproveButton.IsEnabled = true;
             TrustDenyButton.IsEnabled = true;
         }
@@ -153,7 +153,7 @@ public sealed partial class ControlPanel : UserControl
         if (approvalPending)
         {
             ApprovalText.Text = string.IsNullOrWhiteSpace(_controller.PendingApprovalSummary)
-                ? "Agent đang yêu cầu một hành động cần phê duyệt."
+                ? "Agent is requesting an action that requires approval."
                 : _controller.PendingApprovalSummary;
             ApprovalApproveButton.IsEnabled = true;
             ApprovalDenyButton.IsEnabled = true;
@@ -171,7 +171,7 @@ public sealed partial class ControlPanel : UserControl
         string prompt = InstructionBox.Text?.Trim() ?? string.Empty;
         if (workspace.Length == 0 || prompt.Length == 0)
         {
-            StatusText.Text = "Cần nhập thư mục làm việc và chỉ thị.";
+            StatusText.Text = "Workspace directory and instruction are required.";
             return;
         }
 
@@ -199,7 +199,7 @@ public sealed partial class ControlPanel : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Lỗi: {ex.Message}";
+            StatusText.Text = $"Error: {ex.Message}";
         }
         finally
         {
@@ -217,13 +217,13 @@ public sealed partial class ControlPanel : UserControl
 
         if (_apiService is null)
         {
-            throw new InvalidOperationException("Session API chưa sẵn sàng.");
+            throw new InvalidOperationException("Session API is not ready.");
         }
 
         var session = await _apiService.CreateSessionAsync();
         if (session is null || string.IsNullOrWhiteSpace(session.Id))
         {
-            throw new InvalidOperationException("Không tạo được Agent session.");
+            throw new InvalidOperationException("Could not create Agent session.");
         }
 
         _sessionId = session.Id;
@@ -255,19 +255,19 @@ public sealed partial class ControlPanel : UserControl
         {
             throw lastConflict;
         }
-        throw new InvalidOperationException("Không cập nhật được preset quyền cho session.");
+        throw new InvalidOperationException("Could not update permission preset for session.");
     }
 
     private async Task<bool> ConfirmFullAccessAsync()
     {
         var dialog = new ContentDialog
         {
-            Title = "Xác nhận Full Access",
-            Content = "Full Access cho phép Agent dùng terminal và mạng theo chính sách của run "
-                + "với quyền của người dùng Windows hiện tại. Đây không phải sandbox; các hành động "
-                + "rủi ro vẫn yêu cầu phê duyệt riêng.",
-            PrimaryButtonText = "Tiếp tục",
-            CloseButtonText = "Hủy",
+            Title = "Confirm Full Access",
+            Content = "Full Access allows the Agent to use the terminal and network under the run policy "
+                + "with the permissions of the current Windows user. This is not a sandbox; high-risk actions "
+                + "still require explicit approval.",
+            PrimaryButtonText = "Continue",
+            CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
         };
@@ -312,7 +312,7 @@ public sealed partial class ControlPanel : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Lỗi xác nhận workspace: {ex.Message}";
+            StatusText.Text = $"Workspace confirmation error: {ex.Message}";
         }
         finally
         {
@@ -335,7 +335,7 @@ public sealed partial class ControlPanel : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Lỗi phê duyệt: {ex.Message}";
+            StatusText.Text = $"Approval error: {ex.Message}";
         }
         finally
         {
@@ -358,7 +358,7 @@ public sealed partial class ControlPanel : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Lỗi từ chối: {ex.Message}";
+            StatusText.Text = $"Denial error: {ex.Message}";
         }
         finally
         {
@@ -379,7 +379,7 @@ public sealed partial class ControlPanel : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Lỗi hủy: {ex.Message}";
+            StatusText.Text = $"Cancel error: {ex.Message}";
         }
     }
 
@@ -396,7 +396,7 @@ public sealed partial class ControlPanel : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Lỗi tiếp tục: {ex.Message}";
+            StatusText.Text = $"Resume error: {ex.Message}";
         }
     }
 }

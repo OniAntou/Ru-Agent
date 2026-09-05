@@ -56,8 +56,8 @@
         <!-- Header & Filters Bar -->
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,16" VerticalAlignment="Center">
             <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
-                <TextBlock Text="Chẩn đoán kỹ thuật (Technical Diagnostics)" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                <TextBlock Text="Theo dõi các chỉ số vận hành, mã sự kiện và mã tương quan (Correlation ID) theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="Technical Diagnostics" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Monitor operational metrics, event codes, and correlation IDs in real time" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 
             <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -75,17 +75,17 @@
 
             <ComboBox x:Name="LevelFilterCombo" SelectionChanged="OnLevelSelectionChanged" SelectedIndex="0" Margin="4,0" Width="105"
                       CornerRadius="{StaticResource AppControlCornerRadius}">
-                <ComboBoxItem Content="Tất cả Level"/>
+                <ComboBoxItem Content="All Levels"/>
                 <ComboBoxItem Content="info"/>
                 <ComboBoxItem Content="warning"/>
                 <ComboBoxItem Content="error"/>
             </ComboBox>
 
-            <Button x:Name="PauseButton" Content="Tạm dừng" FontSize="12.5" Padding="12,6" Margin="4,0"
+            <Button x:Name="PauseButton" Content="Pause" FontSize="12.5" Padding="12,6" Margin="4,0"
                     Click="OnPauseClicked" Foreground="{StaticResource AppTextPrimaryBrush}" Background="{StaticResource AppCardBackgroundBrush}"
                     BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}"/>
 
-            <Button x:Name="ExportButton" Content="Xuất NDJSON" FontSize="12.5" Padding="14,6" Margin="4,0,0,0"
+            <Button x:Name="ExportButton" Content="Export NDJSON" FontSize="12.5" Padding="14,6" Margin="4,0,0,0"
                     Click="OnExportClicked" Foreground="{StaticResource AppAccentHoverBrush}" Background="{StaticResource AppAccentSubtleBrush}"
                     BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
                     HorizontalAlignment="Right"/>
@@ -98,7 +98,7 @@
                 CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,10" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE783;" FontSize="16" Foreground="#EF4444"/>
-                <TextBlock x:Name="WarningBannerText" Text="Cảnh báo: Phát hiện lỗi ghi nhật ký hoặc rớt gói tin log." FontSize="12.5" FontWeight="SemiBold" Foreground="#EF4444"/>
+                <TextBlock x:Name="WarningBannerText" Text="Warning: Detected log write errors or dropped entries." FontSize="12.5" FontWeight="SemiBold" Foreground="#EF4444"/>
             </StackPanel>
         </Border>
 
@@ -107,19 +107,19 @@
                 BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,10" Margin="0,0,0,16">
             <Grid x:Name="StatusMetricsGrid" RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,*,*,*">
                 <StackPanel x:Name="QueueMetricPanel" Grid.Column="0" Grid.Row="0" Spacing="2">
-                    <TextBlock Text="HÀNG ĐỢI (QUEUE)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
-                    <TextBlock x:Name="QueueDepthText" Text="Độ sâu: 0" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="QUEUE" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="QueueDepthText" Text="Depth: 0" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 </StackPanel>
                 <StackPanel x:Name="DroppedMetricPanel" Grid.Column="1" Grid.Row="0" Spacing="2">
-                    <TextBlock Text="BẢN GHI ĐÃ BỎ (DROPPED)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
-                    <TextBlock x:Name="DroppedCountText" Text="0 bản ghi" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="DROPPED ENTRIES" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="DroppedCountText" Text="0 entries" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 </StackPanel>
                 <StackPanel x:Name="FailuresMetricPanel" Grid.Column="2" Grid.Row="0" Spacing="2">
-                    <TextBlock Text="LỖI GHI (FAILURES)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
-                    <TextBlock x:Name="WriteFailuresText" Text="0 lỗi" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                    <TextBlock Text="WRITE FAILURES" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="WriteFailuresText" Text="0 errors" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 </StackPanel>
                 <StackPanel x:Name="FilesMetricPanel" Grid.Column="3" Grid.Row="0" Spacing="2">
-                    <TextBlock Text="DUNG LƯỢNG NHẬT KÝ" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock Text="LOG STORAGE" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
                     <TextBlock x:Name="TotalFilesText" Text="0 files (0 KB)" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 </StackPanel>
             </Grid>
@@ -180,7 +180,7 @@
                                             CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
                                             Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
                                         <StackPanel Spacing="4">
-                                            <TextBlock Text="CHI TIẾT CHẨN ĐOÁN" FontSize="10" Foreground="{StaticResource AppAccentHoverBrush}" FontWeight="Bold"/>
+                                            <TextBlock Text="DIAGNOSTIC DETAILS" FontSize="10" Foreground="{StaticResource AppAccentHoverBrush}" FontWeight="Bold"/>
                                             <TextBlock Text="{Binding Detail}" FontFamily="Consolas, Cascadia Code, Courier New"
                                                        FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>

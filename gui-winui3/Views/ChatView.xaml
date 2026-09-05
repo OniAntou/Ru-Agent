@@ -38,7 +38,7 @@
                                                 Background="{StaticResource RuCanvasBrush}"
                                                 BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
                                                 Tapped="OnImageAttachmentTapped" Tag="{x:Bind}"
-                                                ToolTipService.ToolTip="Nhấn để phóng to ảnh">
+                                                ToolTipService.ToolTip="Click to view full image">
                                             <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
                                         </Border>
 
@@ -152,7 +152,7 @@
                            FontSize="14"
                            Foreground="{StaticResource RuAccentBrush}" />
                 <TextBlock x:Name="WelcomeIntro"
-                           Text="Chào anh. Hôm nay mình bắt đầu từ đâu?"
+                           Text="Hello. Where should we start today?"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
                            FontSize="28"
                            Foreground="{StaticResource RuInkBrush}"
@@ -162,7 +162,7 @@
                             Orientation="Horizontal"
                             HorizontalAlignment="Left"
                             Spacing="12">
-                    <Button Tag="Hỏi về một việc đang làm"
+                    <Button Tag="Ask about a task in progress"
                             Click="OnSuggestionClick"
                             Background="{StaticResource RuSurfaceBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
@@ -174,13 +174,13 @@
                             FontFamily="{StaticResource RuUiFontFamily}">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE8BD;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                            <TextBlock Text="Hỏi về một việc đang làm"
+                            <TextBlock Text="Ask about a task in progress"
                                        FontFamily="{StaticResource RuUiFontFamily}"
                                        FontSize="13"
                                        Foreground="{StaticResource RuInkBrush}" />
                         </StackPanel>
                     </Button>
-                    <Button Tag="Nói cho Ru nghe"
+                    <Button Tag="Talk with Ru"
                             Click="OnSuggestionClick"
                             Background="{StaticResource RuSurfaceBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
@@ -192,7 +192,7 @@
                             FontFamily="{StaticResource RuUiFontFamily}">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE720;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                            <TextBlock Text="Nói cho Ru nghe"
+                            <TextBlock Text="Talk with Ru"
                                        FontFamily="{StaticResource RuUiFontFamily}"
                                        FontSize="13"
                                        Foreground="{StaticResource RuInkBrush}" />
@@ -261,9 +261,9 @@
                                   Padding="0"
                                   Background="Transparent"
                                   BorderThickness="0"
-                                  AutomationProperties.AutomationId="AgentActivityFeed"
-                                  AutomationProperties.Name="Hoạt động Coding Agent"
-                                  AutomationProperties.LiveSetting="Polite">
+                                   AutomationProperties.AutomationId="AgentActivityFeed"
+                                   AutomationProperties.Name="Agent Activity Feed"
+                                   AutomationProperties.LiveSetting="Polite">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ItemsStackPanel Orientation="Vertical" />
@@ -281,15 +281,17 @@
                                                Text="{x:Bind DisplayText, Mode=OneWay}"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="12.5"
-                                               Foreground="{StaticResource RuMutedBrush}"
+                                               FontWeight="Medium"
+                                               Foreground="{StaticResource RuInkBrush}"
                                                TextWrapping="Wrap"
                                                VerticalAlignment="Center"
-                                               Margin="0,0,8,0" />
+                                               Margin="0,0,12,0" />
                                     <TextBlock Grid.Column="1"
                                                Text="{x:Bind MetadataText, Mode=OneWay}"
                                                FontFamily="{StaticResource RuMonoFontFamily}"
                                                FontSize="11"
                                                Foreground="{StaticResource RuMutedBrush}"
+                                               Opacity="0.85"
                                                VerticalAlignment="Center" />
                                     <!-- State bindings (used by automation & contract tests) -->
                                     <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
@@ -312,7 +314,7 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             AutomationProperties.AutomationId="AgentRunSummary"
-                            AutomationProperties.Name="Tóm tắt phiên Coding Agent"
+                            AutomationProperties.Name="Coding Agent Summary"
                             AutomationProperties.LiveSetting="Polite">
                         <Grid ColumnDefinitions="22,*"
                               ColumnSpacing="8">
@@ -384,7 +386,7 @@
                         Visibility="Collapsed"
                         Click="OnAgentStopClick"
                         AutomationProperties.AutomationId="AgentStopButton"
-                        AutomationProperties.Name="Dừng Coding Agent" />
+                        AutomationProperties.Name="Stop Coding Agent" />
 
                 <Border x:Name="AgentApprovalPanel"
                         Visibility="Collapsed"
@@ -394,7 +396,7 @@
                         CornerRadius="{StaticResource RuControlCornerRadius}"
                         Padding="10,8">
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Agent cần anh phê duyệt một hành động"
+                        <TextBlock Text="Agent needs your approval for an action"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource RuAccentBrush}" />
                         <TextBlock x:Name="AgentApprovalSummaryText"
@@ -403,27 +405,27 @@
                                    AutomationProperties.AutomationId="AgentApprovalSummaryText" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="AgentDenyButton"
-                                    Content="Từ chối"
+                                    Content="Deny"
                                     Click="OnAgentDenyClick"
                                     AutomationProperties.AutomationId="AgentDenyButton"
-                                    AutomationProperties.Name="Từ chối hành động của Agent" />
+                                    AutomationProperties.Name="Deny agent action" />
                             <Button x:Name="AgentApproveButton"
-                                    Content="Duyệt"
+                                    Content="Approve"
                                     Click="OnAgentApproveClick"
                                     AutomationProperties.AutomationId="AgentApproveButton"
-                                    AutomationProperties.Name="Duyệt hành động của Agent" />
+                                    AutomationProperties.Name="Approve agent action" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <Button x:Name="AgentContinueButton"
-                        Content="Tiếp tục"
+                        Content="Continue"
                         Click="OnAgentContinueClick"
                         Visibility="Collapsed"
                         HorizontalAlignment="Left"
                         Padding="10,4"
                         AutomationProperties.AutomationId="AgentContinueButton"
-                        AutomationProperties.Name="Tiếp tục phiên Coding Agent" />
+                        AutomationProperties.Name="Continue Coding Agent session" />
             </StackPanel>
 
             <Border x:Name="InputBorder"
@@ -498,7 +500,7 @@
                     <TextBox x:Name="ChatInputTextBox"
                              Grid.Row="1"
                              AutomationProperties.AutomationId="ChatInput"
-                             PlaceholderText="Viết cho Ru..."
+                             PlaceholderText="Message Ru..."
                              PreviewKeyDown="OnChatInputPreviewKeyDown"
                              AcceptsReturn="True"
                              MinHeight="44"
@@ -539,7 +541,7 @@
                                 VerticalAlignment="Center"
                                 Margin="0"
                                 AutomationProperties.AutomationId="AttachImageButton"
-                                AutomationProperties.Name="Đính kèm tập tin hoặc hình ảnh">
+                                AutomationProperties.Name="Attach files or images">
                             <FontIcon x:Name="AttachImageIcon"
                                       Glyph="&#xE710;"
                                       FontSize="14"
@@ -575,7 +577,7 @@
                             <Button x:Name="ChatModelButton"
                                     Grid.Column="2"
                                     AutomationProperties.AutomationId="ChatModelButton"
-                                    AutomationProperties.Name="Chọn Model AI"
+                                    AutomationProperties.Name="Select AI Model"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Padding="6,4"
@@ -677,7 +679,7 @@
 
                             <Button x:Name="ChatReasoningButton"
                                     AutomationProperties.AutomationId="ChatReasoningButton"
-                                    AutomationProperties.Name="Chọn mức Reasoning"
+                                    AutomationProperties.Name="Select Reasoning Effort"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Padding="6,4"
@@ -767,7 +769,7 @@
                         <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <Button x:Name="ContextMeterButton"
                                     AutomationProperties.AutomationId="ContextMeterButton"
-                                    AutomationProperties.Name="Xem dung lượng Context Window"
+                                    AutomationProperties.Name="View Context Window capacity"
                                     Width="26"
                                     Height="26"
                                     Padding="0"
@@ -871,7 +873,7 @@
                                     VerticalAlignment="Center"
                                     Margin="0"
                                     AutomationProperties.AutomationId="MicButton"
-                                    AutomationProperties.Name="Nói chuyện với Ru bằng giọng nói">
+                                    AutomationProperties.Name="Talk with Ru by voice">
                                 <FontIcon x:Name="MicIcon"
                                           Glyph="&#xE720;"
                                           FontSize="14"
@@ -880,7 +882,7 @@
 
                             <Button x:Name="SendButton"
                                     AutomationProperties.AutomationId="SendButton"
-                                    AutomationProperties.Name="Gửi tin nhắn"
+                                    AutomationProperties.Name="Send message"
                                     Click="OnSendClick"
                                     Width="32"
                                     Height="32"

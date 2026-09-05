@@ -12,7 +12,7 @@ public sealed class AgentFailurePresentationTests
             "failed",
             "provider_rate_limited"));
         Assert.Equal(
-            "Model đang bị giới hạn lượt dùng. Hãy chọn model khác rồi thử lại.",
+            "Model is rate-limited. Please select another model and try again.",
             AgentFailurePresentation.Render("provider_rate_limited"));
     }
 

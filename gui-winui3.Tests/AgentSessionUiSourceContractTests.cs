@@ -131,6 +131,8 @@ public sealed class AgentSessionUiSourceContractTests
         string sendBody = codeBehind[sendStart..sendEnd];
         Assert.Contains("ShowAgentInlineStatus(", sendBody, StringComparison.Ordinal);
         Assert.DoesNotContain("SetAgentMode", sendBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"standard\",\n                    0,", sendBody.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Contains("\"standard\",\n                    null,", sendBody.Replace("\r\n", "\n"), StringComparison.Ordinal);
     }
 
     [Fact]

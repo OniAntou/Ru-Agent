@@ -136,6 +136,22 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Fact]
+    public void ModelContextSpecs_prioritizes_catalog_context_length()
+    {
+        var (maxTokens, displayText) = ModelContextSpecs.GetContextSpec("poolside/laguna-s-2.1:free", 262_144);
+        Assert.Equal(262_144, maxTokens);
+        Assert.Equal("262.1K", displayText);
+    }
+
+    [Fact]
+    public void ModelContextSpecs_extracts_tokens_from_model_name_dynamically()
+    {
+        var (maxTokens, displayText) = ModelContextSpecs.GetContextSpec("custom-model-256k");
+        Assert.Equal(256 * 1024, maxTokens);
+        Assert.Equal("256K", displayText);
+    }
+
+    [Fact]
     public void EstimateTokens_returns_proportional_estimates()
     {
         Assert.Equal(0, ModelContextSpecs.EstimateTokens(""));
@@ -180,7 +196,7 @@ public sealed class ChatMessageAttachmentTests
             string pickerXaml = File.ReadAllText(pickerPath);
             Assert.Contains("ModelSearchBox", pickerXaml, StringComparison.Ordinal);
             Assert.Contains("PickerListContainer", pickerXaml, StringComparison.Ordinal);
-            Assert.Contains("PlaceholderText=\"Tìm model...\"", pickerXaml, StringComparison.Ordinal);
+            Assert.Contains("PlaceholderText=\"Search models...\"", pickerXaml, StringComparison.Ordinal);
             Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", pickerXaml, StringComparison.Ordinal);
         }
     }

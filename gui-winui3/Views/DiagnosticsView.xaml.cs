@@ -149,15 +149,15 @@ namespace RuApp.Views
         {
             if (status != null)
             {
-                QueueDepthText.Text = $"Độ sâu: {status.Writer?.QueueDepth ?? 0}";
-                DroppedCountText.Text = $"{status.Writer?.DroppedCount ?? 0} bản ghi";
-                WriteFailuresText.Text = $"{status.Writer?.WriteFailureCount ?? 0} lỗi";
+                QueueDepthText.Text = $"Depth: {status.Writer?.QueueDepth ?? 0}";
+                DroppedCountText.Text = $"{status.Writer?.DroppedCount ?? 0} entries";
+                WriteFailuresText.Text = $"{status.Writer?.WriteFailureCount ?? 0} errors";
                 double kb = (status.TotalSizeBytes) / 1024.0;
                 TotalFilesText.Text = $"{status.TotalLogFiles} files ({kb:F1} KB)";
                 if (status.Writer != null && (status.Writer.DroppedCount > 0 || status.Writer.WriteFailureCount > 0))
                 {
                     WarningBanner.Visibility = Visibility.Visible;
-                    WarningBannerText.Text = $"Cảnh báo: Phát hiện {status.Writer.WriteFailureCount} lỗi ghi và {status.Writer.DroppedCount} bản ghi log bị bỏ!";
+                    WarningBannerText.Text = $"Warning: Detected {status.Writer.WriteFailureCount} write errors and {status.Writer.DroppedCount} dropped log entries!";
                 }
                 else
                 {
@@ -167,7 +167,7 @@ namespace RuApp.Views
             else
             {
                 WarningBanner.Visibility = Visibility.Visible;
-                WarningBannerText.Text = "Không thể đọc trạng thái bộ ghi chẩn đoán backend.";
+                WarningBannerText.Text = "Could not read backend diagnostic writer status.";
             }
 
             if (_isPaused) return;
@@ -176,7 +176,7 @@ namespace RuApp.Views
                 if (status == null)
                 {
                     WarningBanner.Visibility = Visibility.Visible;
-                    WarningBannerText.Text = "Không thể đọc nhật ký chẩn đoán backend.";
+                    WarningBannerText.Text = "Could not read backend diagnostic logs.";
                 }
                 return;
             }
@@ -225,9 +225,9 @@ namespace RuApp.Views
                 var status = await _apiService.GetDiagnosticStatusAsync();
                 if (status != null)
                 {
-                    QueueDepthText.Text = $"Độ sâu: {status.Writer?.QueueDepth ?? 0}";
-                    DroppedCountText.Text = $"{status.Writer?.DroppedCount ?? 0} bản ghi";
-                    WriteFailuresText.Text = $"{status.Writer?.WriteFailureCount ?? 0} lỗi";
+                    QueueDepthText.Text = $"Depth: {status.Writer?.QueueDepth ?? 0}";
+                    DroppedCountText.Text = $"{status.Writer?.DroppedCount ?? 0} entries";
+                    WriteFailuresText.Text = $"{status.Writer?.WriteFailureCount ?? 0} errors";
 
                     double kb = (status.TotalSizeBytes) / 1024.0;
                     TotalFilesText.Text = $"{status.TotalLogFiles} files ({kb:F1} KB)";
@@ -235,7 +235,7 @@ namespace RuApp.Views
                     if (status.Writer != null && (status.Writer.DroppedCount > 0 || status.Writer.WriteFailureCount > 0))
                     {
                         WarningBanner.Visibility = Visibility.Visible;
-                        WarningBannerText.Text = $"Cảnh báo: Phát hiện {status.Writer.WriteFailureCount} lỗi ghi và {status.Writer.DroppedCount} bản ghi log bị bỏ!";
+                        WarningBannerText.Text = $"Warning: Detected {status.Writer.WriteFailureCount} write errors and {status.Writer.DroppedCount} dropped log entries!";
                     }
                     else
                     {
@@ -245,7 +245,7 @@ namespace RuApp.Views
                 else
                 {
                     WarningBanner.Visibility = Visibility.Visible;
-                    WarningBannerText.Text = "Không thể đọc trạng thái bộ ghi chẩn đoán backend.";
+                    WarningBannerText.Text = "Could not read backend diagnostic writer status.";
                 }
 
                 // 2. Incremental log fetch
@@ -255,7 +255,7 @@ namespace RuApp.Views
                 if (result == null)
                 {
                     WarningBanner.Visibility = Visibility.Visible;
-                    WarningBannerText.Text = "Không thể đọc nhật ký chẩn đoán backend.";
+                    WarningBannerText.Text = "Could not read backend diagnostic logs.";
                     return;
                 }
 
@@ -293,14 +293,14 @@ namespace RuApp.Views
             catch (Exception)
             {
                 WarningBanner.Visibility = Visibility.Visible;
-                WarningBannerText.Text = "Không thể kết nối đến máy chủ chẩn đoán backend.";
+                WarningBannerText.Text = "Could not connect to backend diagnostics service.";
             }
         }
 
         private void OnPauseClicked(object sender, RoutedEventArgs e)
         {
             _isPaused = !_isPaused;
-            PauseButton.Content = _isPaused ? "Tiếp tục" : "Tạm dừng";
+            PauseButton.Content = _isPaused ? "Resume" : "Pause";
             PauseButton.Foreground = _isPaused
                 ? (SolidColorBrush)Application.Current.Resources["AppAccentHoverBrush"]
                 : (SolidColorBrush)Application.Current.Resources["AppTextPrimaryBrush"];
@@ -348,7 +348,7 @@ namespace RuApp.Views
                     TimeVietnam(DateTimeOffset.UtcNow),
                     "INFO",
                     "host",
-                    "Chưa có sự kiện chẩn đoán nào phù hợp.",
+                    "No matching diagnostic events found.",
                     ""));
             }
 
@@ -499,7 +499,7 @@ namespace RuApp.Views
                 if (ndjson == null)
                 {
                     WarningBanner.Visibility = Visibility.Visible;
-                    WarningBannerText.Text = "Không thể xuất nhật ký chẩn đoán backend.";
+                    WarningBannerText.Text = "Could not export backend diagnostic logs.";
                     return;
                 }
 
@@ -523,12 +523,12 @@ namespace RuApp.Views
             catch (Exception)
             {
                 WarningBanner.Visibility = Visibility.Visible;
-                WarningBannerText.Text = "Xuất nhật ký chẩn đoán không thành công.";
+                WarningBannerText.Text = "Exporting diagnostic logs failed.";
             }
             finally
             {
                 ExportButton.IsEnabled = true;
-                ExportButton.Content = "Xuat NDJSON";
+                ExportButton.Content = "Export NDJSON";
             }
         }
 

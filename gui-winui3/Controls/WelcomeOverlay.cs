@@ -12,15 +12,14 @@ namespace RuApp.Controls;
 
 /// <summary>
 /// Native WinUI 3 1:1 pixel-level reproduction of BackgroundPaths hero screen.
-/// Displays two-line bold typography ("Background Paths"), radiant sweeping Bézier streams,
+/// Displays bold typography ("Ru Agent"), radiant sweeping Bézier streams,
 /// and a high-end pill capsule button ("Discover Excellence →") revealed once ready.
 /// </summary>
 public sealed class WelcomeOverlay : Grid, IDisposable
 {
     private readonly BackgroundPathsControl _backgroundPaths;
     private readonly StackPanel _titleContainer;
-    private readonly TextBlock _titleWord1;
-    private readonly TextBlock _titleWord2;
+    private readonly TextBlock _titleText;
     private readonly TranslateTransform _titleTransform = new();
 
     private readonly Border _loadingBadge;
@@ -62,7 +61,7 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             MaxWidth = 800
         };
 
-        // 3. Two-Line Grand Title: "Background" / "Paths"
+        // 3. Grand Title: "Ru Agent"
         _titleContainer = new StackPanel
         {
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -71,32 +70,20 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             Opacity = 0.0
         };
 
-        _titleWord1 = new TextBlock
+        _titleText = new TextBlock
         {
-            Text = "Background",
+            Text = "Ru Agent",
             FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-            FontSize = 88,
-            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-            CharacterSpacing = -45,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center
-        };
-
-        _titleWord2 = new TextBlock
-        {
-            Text = "Paths",
-            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-            FontSize = 88,
+            FontSize = 90,
             FontWeight = Microsoft.UI.Text.FontWeights.Bold,
             CharacterSpacing = -45,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, -16, 0, 0)
+            TextWrapping = TextWrapping.Wrap
         };
 
         ApplyTitleBrush();
-        _titleContainer.Children.Add(_titleWord1);
-        _titleContainer.Children.Add(_titleWord2);
+        _titleContainer.Children.Add(_titleText);
         centerContainer.Children.Add(_titleContainer);
 
         // 4. Subtle Loading Status Pill (Active during backend boot)
@@ -120,7 +107,7 @@ public sealed class WelcomeOverlay : Grid, IDisposable
 
         _statusLabel = new TextBlock
         {
-            Text = "Đang khởi động hệ thống...",
+            Text = "Starting system...",
             FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
             FontSize = 13.5,
             FontWeight = Microsoft.UI.Text.FontWeights.Medium,
@@ -307,8 +294,7 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             gradient.GradientStops.Add(new GradientStop { Color = Color.FromArgb(220, 71, 85, 105), Offset = 1.0 });
         }
 
-        _titleWord1.Foreground = gradient;
-        _titleWord2.Foreground = gradient;
+        _titleText.Foreground = gradient;
     }
 
     private void ApplyButtonTheme()
@@ -408,7 +394,7 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             _loadingBadge.Visibility = Visibility.Collapsed;
 
             // 2. Prepare button
-            _buttonLabel.Text = isError ? "Vào ứng dụng (Offline)" : "Discover Excellence";
+            _buttonLabel.Text = isError ? "Enter Application (Offline)" : "Discover Excellence";
             _buttonContainer.Visibility = Visibility.Visible;
             _buttonContainer.Opacity = 0.0;
             _buttonScale.ScaleX = 0.82;

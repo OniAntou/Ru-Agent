@@ -56,10 +56,10 @@ namespace RuApp.Views
 
             var dialog = new ContentDialog
             {
-                Title = "Xác nhận xóa bộ nhớ",
-                Content = "Bạn có chắc chắn muốn xóa toàn bộ bộ nhớ cục bộ đã lưu? Thao tác này không thể hoàn tác.",
-                PrimaryButtonText = "Xóa toàn bộ",
-                CloseButtonText = "Hủy",
+                Title = "Confirm Memory Clear",
+                Content = "Are you sure you want to clear all saved local memories? This action cannot be undone.",
+                PrimaryButtonText = "Clear all",
+                CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = this.XamlRoot
             };

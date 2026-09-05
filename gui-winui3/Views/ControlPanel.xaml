@@ -18,28 +18,28 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
-                   Text="Bảng điều khiển Coding Agent"
+                   Text="Coding Agent Control Panel"
                    FontSize="18"
                    FontWeight="SemiBold"
                    Foreground="{StaticResource RuInkBrush}" />
 
         <StackPanel Grid.Row="1" Orientation="Vertical" Spacing="8">
             <TextBox x:Name="InstructionBox"
-                     Header="Chỉ thị"
-                     PlaceholderText="Mô tả tác vụ cho tác nhân..." />
+                     Header="Instruction"
+                     PlaceholderText="Describe tasks for the agent..." />
             <TextBox x:Name="WorkspaceBox"
-                     Header="Thư mục làm việc"
+                     Header="Workspace"
                      Text="{x:Bind DefaultWorkspace, Mode=OneTime}" />
             <ComboBox x:Name="PresetBox"
-                      Header="Preset quyền"
+                      Header="Permission Preset"
                       SelectedIndex="0">
                 <ComboBoxItem Content="Standard" Tag="standard" />
                 <ComboBoxItem Content="Full Access" Tag="full_access" />
             </ComboBox>
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button x:Name="StartButton" Content="Tạo &amp; Chạy" Click="OnStartClick" />
-                <Button x:Name="CancelButton" Content="Hủy" Click="OnCancelClick" />
-                <Button x:Name="ContinueButton" Content="Tiếp tục" Click="OnContinueClick" />
+                <Button x:Name="StartButton" Content="Create &amp; Run" Click="OnStartClick" />
+                <Button x:Name="CancelButton" Content="Cancel" Click="OnCancelClick" />
+                <Button x:Name="ContinueButton" Content="Continue" Click="OnContinueClick" />
             </StackPanel>
         </StackPanel>
 
@@ -57,7 +57,7 @@
                 CornerRadius="8"
                 Padding="12">
             <StackPanel Spacing="8">
-                <TextBlock Text="Workspace cần được xác nhận"
+                <TextBlock Text="Workspace requires confirmation"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource RuAccentBrush}" />
                 <TextBlock x:Name="TrustText"
@@ -65,10 +65,10 @@
                            Foreground="{StaticResource RuInkBrush}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button x:Name="TrustDenyButton"
-                            Content="Từ chối workspace"
+                            Content="Deny workspace"
                             Click="OnTrustDenyClick" />
                     <Button x:Name="TrustApproveButton"
-                            Content="Tin cậy workspace"
+                            Content="Trust workspace"
                             Click="OnTrustApproveClick" />
                 </StackPanel>
             </StackPanel>
@@ -83,7 +83,7 @@
                 CornerRadius="8"
                 Padding="12">
             <StackPanel Spacing="8">
-                <TextBlock Text="Agent cần anh phê duyệt một hành động"
+                <TextBlock Text="Agent requires approval for an action"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource RuAccentBrush}" />
                 <TextBlock x:Name="ApprovalText"
@@ -91,10 +91,10 @@
                            Foreground="{StaticResource RuInkBrush}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button x:Name="ApprovalDenyButton"
-                            Content="Từ chối"
+                            Content="Deny"
                             Click="OnApprovalDenyClick" />
                     <Button x:Name="ApprovalApproveButton"
-                            Content="Duyệt một lần"
+                            Content="Approve once"
                             Click="OnApprovalApproveClick" />
                 </StackPanel>
             </StackPanel>
@@ -102,7 +102,7 @@
 
         <ListView Grid.Row="5"
                   x:Name="EventList"
-                  Header="Sự kiện an toàn">
+                  Header="Security Events">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="services:AgentEventModel">
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">

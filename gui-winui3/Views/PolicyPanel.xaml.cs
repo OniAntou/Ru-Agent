@@ -100,7 +100,7 @@ public sealed partial class PolicyPanel : UserControl
         }
         catch (Exception ex)
         {
-            PolicyStatus.Text = $"Lỗi: {ex.Message}";
+            PolicyStatus.Text = $"Error: {ex.Message}";
         }
     }
 
@@ -124,7 +124,7 @@ public sealed partial class PolicyPanel : UserControl
         }
         catch (Exception ex)
         {
-            PolicyStatus.Text = $"Lỗi: {ex.Message}";
+            PolicyStatus.Text = $"Error: {ex.Message}";
         }
     }
 
@@ -147,7 +147,7 @@ public sealed partial class PolicyPanel : UserControl
         }
         catch (Exception ex)
         {
-            PolicyStatus.Text = $"Lỗi: {ex.Message}";
+            PolicyStatus.Text = $"Error: {ex.Message}";
         }
     }
 }

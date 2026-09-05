@@ -173,7 +173,7 @@ namespace RuApp.Views
             Grid.SetColumn(textBlock, 0);
             itemGrid.Children.Add(textBlock);
 
-            var (_, specDisplay) = ModelContextSpecs.GetContextSpec(row.ModelId);
+            var (_, specDisplay) = ModelContextSpecs.GetContextSpec(row.ModelId, row.ContextLength);
             if (!string.IsNullOrWhiteSpace(specDisplay))
             {
                 var specBadge = new Border

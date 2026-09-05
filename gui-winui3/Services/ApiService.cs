@@ -12,6 +12,19 @@ using RuApp.Models;
 
 namespace RuApp.Services
 {
+    public sealed record ApiErrorSnapshot(
+        string Method,
+        int? StatusCode,
+        string ErrorType,
+        string Message,
+        DateTimeOffset OccurredAt);
+
+    public sealed class ApiErrorEventArgs : EventArgs
+    {
+        public ApiErrorEventArgs(ApiErrorSnapshot error) => Error = error;
+        public ApiErrorSnapshot Error { get; }
+    }
+
     public class ApiService : IDisposable
     {
         private readonly HttpClient _httpClient;
@@ -37,17 +50,47 @@ namespace RuApp.Services
         }
 
         public event EventHandler? SettingsSaved;
+        public event EventHandler<ApiErrorEventArgs>? RequestFailed;
 
-        private static void LogApiError(string method, Exception ex)
+        public ApiErrorSnapshot? LastError { get; private set; }
+
+        private void LogApiError(string method, Exception ex)
         {
-            var status = ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue
-                ? $" status={(int)httpEx.StatusCode.Value} "
+            if (IsCancellation(ex))
+            {
+                return;
+            }
+
+            int? statusCode = (ex as HttpRequestException)?.StatusCode.HasValue == true
+                ? (int)(ex as HttpRequestException)!.StatusCode!.Value
+                : null;
+
+            var snapshot = new ApiErrorSnapshot(
+                method,
+                statusCode,
+                ex.GetType().Name,
+                ex.Message,
+                DateTimeOffset.UtcNow);
+
+            LastError = snapshot;
+
+            var status = statusCode.HasValue
+                ? $" status={statusCode.Value} "
                 : string.Empty;
             Debug.WriteLine(
                 $"[ApiService] {method} failed: {ex.GetType().Name}{status}: {ex.Message}");
             if (ex.InnerException != null)
             {
                 Debug.WriteLine($"[ApiService] {method} inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            }
+
+            try
+            {
+                RequestFailed?.Invoke(this, new ApiErrorEventArgs(snapshot));
+            }
+            catch
+            {
+                // Prevent subscriber exceptions from breaking caller
             }
         }
 

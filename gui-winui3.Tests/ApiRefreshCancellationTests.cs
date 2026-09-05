@@ -66,6 +66,41 @@ public sealed class ApiRefreshCancellationTests
         Assert.True(handler.CancellationObserved);
     }
 
+    [Fact]
+    public async Task ApiService_records_LastError_and_fires_RequestFailed_on_http_failure()
+    {
+        using var handler = new FailingHandler(HttpStatusCode.InternalServerError);
+        var session = new BackendSession(new Uri("http://127.0.0.1:59999/"), "test-secret");
+        using var api = new ApiService(session, handler);
+
+        ApiErrorEventArgs? capturedEvent = null;
+        api.RequestFailed += (_, args) => capturedEvent = args;
+
+        var result = await api.GetSettingsAsync();
+
+        Assert.Null(result);
+        Assert.NotNull(api.LastError);
+        Assert.Equal("GetSettingsAsync", api.LastError.Method);
+        Assert.Equal(500, api.LastError.StatusCode);
+        Assert.NotNull(capturedEvent);
+        Assert.Same(api.LastError, capturedEvent.Error);
+    }
+
+    private sealed class FailingHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _statusCode;
+        public FailingHandler(HttpStatusCode statusCode) => _statusCode = statusCode;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var response = new HttpResponseMessage(_statusCode);
+            response.RequestMessage = request;
+            return Task.FromResult(response);
+        }
+    }
+
     private sealed class BlockingHandler : HttpMessageHandler
     {
         public bool CancellationObserved { get; private set; }

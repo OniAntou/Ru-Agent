@@ -17,23 +17,23 @@
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
-                   Text="Chính sách tác nhân"
+                   Text="Agent Policies"
                    FontSize="18"
                    FontWeight="SemiBold"
                    Foreground="{StaticResource RuInkBrush}" />
 
-        <Button Grid.Row="1" x:Name="LoadButton" Content="Tải chính sách" Click="OnLoadClick" />
+        <Button Grid.Row="1" x:Name="LoadButton" Content="Load Policies" Click="OnLoadClick" />
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
             <TextBox x:Name="IdBox" Header="ID" Width="160" />
             <TextBox x:Name="ScopeBox" Header="Scope" Width="120" />
             <TextBox x:Name="KindBox" Header="Kind" Width="120" />
-            <TextBox x:Name="DescBox" Header="Mô tả" Width="200" />
-            <CheckBox x:Name="EnabledBox" Content="Bật" IsChecked="True" VerticalAlignment="Bottom" />
-            <Button x:Name="CreateButton" Content="Tạo" Click="OnCreateClick" VerticalAlignment="Bottom" />
+            <TextBox x:Name="DescBox" Header="Description" Width="200" />
+            <CheckBox x:Name="EnabledBox" Content="Enabled" IsChecked="True" VerticalAlignment="Bottom" />
+            <Button x:Name="CreateButton" Content="Create" Click="OnCreateClick" VerticalAlignment="Bottom" />
         </StackPanel>
 
-        <ListView Grid.Row="3" x:Name="PolicyList" Header="Quy tắc">
+        <ListView Grid.Row="3" x:Name="PolicyList" Header="Rules">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="services:AgentPolicyModel">
                     <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
@@ -41,7 +41,7 @@
                         <TextBlock Grid.Column="1" Text="{x:Bind Scope}" Foreground="{StaticResource RuMutedBrush}" />
                         <TextBlock Grid.Column="2" Text="{x:Bind Kind}" Foreground="{StaticResource RuMutedBrush}" />
                         <TextBlock Grid.Column="3" Text="{x:Bind Description}" />
-                        <Button Grid.Column="4" Content="Xóa" Click="OnDeleteClick" Tag="{x:Bind Id}" />
+                        <Button Grid.Column="4" Content="Delete" Click="OnDeleteClick" Tag="{x:Bind Id}" />
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>

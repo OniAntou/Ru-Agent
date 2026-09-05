@@ -288,13 +288,13 @@ public sealed class ProviderModelPickerProjectionTests
     }
 
     [Fact]
-    public void Trigger_display_shows_provider_model_pair_or_placeholder()
+    public void Trigger_display_shows_model_or_placeholder()
     {
         Assert.Equal(
-            "Kilo · kilo-auto/frontier",
+            "kilo-auto/frontier",
             ProviderModelPickerProjection.TriggerDisplay("kilo", "kilo-auto/frontier"));
         Assert.Equal(
-            "OpenCode · opencode/free",
+            "opencode/free",
             ProviderModelPickerProjection.TriggerDisplay("opencode", "opencode/free"));
         Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("kilo", string.Empty));
         Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay(string.Empty, string.Empty));

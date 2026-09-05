@@ -292,7 +292,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
         string displayText = _text;
         if (_isDraggable && string.IsNullOrWhiteSpace(displayText))
         {
-            displayText = "✨ [Nhấn giữ chuột trái để kéo thả vị trí phụ đề] ✨";
+            displayText = "✨ [Hold left mouse button to drag subtitle position] ✨";
         }
 
         int effectiveFontSize = Math.Max(12, (int)Math.Round(_fontSize * _sizeScale));

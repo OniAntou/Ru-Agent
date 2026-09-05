@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 
 namespace RuApp.Services
 {
-    public sealed class VoicePlaybackService : IDisposable
+    public sealed class VoicePlaybackService : IDisposable, IAsyncDisposable
     {
         private readonly ApiService _apiService;
         private readonly IVoicePlaybackDevice _playbackDevice;
@@ -911,6 +911,11 @@ namespace RuApp.Services
             _subtitleEvents?.Dispose();
             _subtitleEvents = null;
             _playbackDevice.Dispose();
+            if (_vtsSpeaking)
+            {
+                _vtsSpeaking = false;
+                _ = ResetVtsSpeakingAsync();
+            }
         }
 
         public async ValueTask DisposeAsync()

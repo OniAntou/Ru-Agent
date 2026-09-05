@@ -54,7 +54,7 @@
                 <TextBox x:Name="PickerSearchBox"
                          Grid.Column="1"
                          AutomationProperties.AutomationId="ModelSearchBox"
-                         PlaceholderText="Tìm model..."
+                         PlaceholderText="Search models..."
                          TextChanged="OnPickerSearchTextChanged"
                          FontFamily="{StaticResource RuUiFontFamily}"
                          FontSize="12.5"

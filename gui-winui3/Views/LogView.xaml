@@ -54,8 +54,8 @@
         <!-- Header & Filters Bar -->
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,20" VerticalAlignment="Center">
             <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
-                <TextBlock Text="Nhật ký hoạt động (Activity Timeline)" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                <TextBlock Text="Theo dõi các sự kiện chat, phân tích cảm xúc và điều khiển VTube Studio theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                <TextBlock Text="Activity Timeline" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Track chat events, emotion analysis, and VTube Studio actions in real time" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 
             <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -64,7 +64,7 @@
                           Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="#60A5FA" BorderThickness="1" 
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
             
-            <ToggleButton x:Name="FilterEmotion" Content="Cảm xúc" FontSize="12.5" Padding="14,6" Margin="6,0"
+            <ToggleButton x:Name="FilterEmotion" Content="Emotion" FontSize="12.5" Padding="14,6" Margin="6,0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#C084FC"
                           Background="#20C084FC" BorderBrush="#C084FC" BorderThickness="1" 
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
@@ -74,7 +74,7 @@
                           Background="#20F472B6" BorderBrush="#F472B6" BorderThickness="1" 
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
             
-            <Button x:Name="ClearButton" Content="Xóa nhật ký" FontSize="12.5" Padding="14,6" Margin="10,0,0,0"
+            <Button x:Name="ClearButton" Content="Clear Logs" FontSize="12.5" Padding="14,6" Margin="10,0,0,0"
                     Click="OnClearClicked" Foreground="{StaticResource AppDangerBrush}" Background="{StaticResource AppDangerSubtleBrush}"
                     BorderBrush="{StaticResource AppDangerBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
                     HorizontalAlignment="Right"/>
@@ -131,7 +131,7 @@
                                             CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
                                             Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
                                         <StackPanel Spacing="4">
-                                            <TextBlock Text="CHI TIẾT DỮ LIỆU" FontSize="10" Foreground="{StaticResource AppAccentHoverBrush}" FontWeight="Bold"/>
+                                            <TextBlock Text="DATA DETAILS" FontSize="10" Foreground="{StaticResource AppAccentHoverBrush}" FontWeight="Bold"/>
                                             <TextBlock Text="{Binding Detail}" FontFamily="Consolas, Cascadia Code, Courier New"
                                                        FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>

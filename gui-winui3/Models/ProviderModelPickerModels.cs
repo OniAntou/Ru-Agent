@@ -20,7 +20,8 @@ public sealed record ProviderModelPickerRow(
     bool IsSelected,
     bool IsEnabled,
     bool IsStale,
-    string Annotation);
+    string Annotation,
+    int? ContextLength = null);
 
 public sealed record ProviderModelPickerGroup(
     ProviderGroupDefinition Provider,
@@ -31,9 +32,9 @@ public sealed record ProviderModelPickerProjection(
     IReadOnlyList<ProviderModelPickerGroup> Groups,
     string EmptyStateText)
 {
-    public const string StaleAnnotation = "Dữ liệu cũ";
-    public const string UnavailableAnnotation = "Không còn khả dụng";
-    public const string NoUsableModelsText = "Không có model khả dụng";
+    public const string StaleAnnotation = "Stale data";
+    public const string UnavailableAnnotation = "Unavailable";
+    public const string NoUsableModelsText = "No available models";
     public const string TriggerPlaceholderText = "Model...";
 
     public static string RowAutomationText(ProviderModelPickerRow row)
@@ -49,15 +50,12 @@ public sealed record ProviderModelPickerProjection(
 
     public static string TriggerDisplay(string backend, string model)
     {
-        if (string.IsNullOrWhiteSpace(backend) || string.IsNullOrWhiteSpace(model))
+        if (string.IsNullOrWhiteSpace(model))
         {
             return TriggerPlaceholderText;
         }
 
-        var providerName = ProviderGroupDefinitions.ByAlias.TryGetValue(backend, out var definition)
-            ? definition.DisplayName
-            : backend;
-        return $"{providerName} · {model}";
+        return model;
     }
 
     public static ProviderModelPickerProjection Create(
@@ -164,5 +162,6 @@ public sealed record ProviderModelPickerProjection(
                 string.Equals(model.Id, selectedModel, StringComparison.Ordinal),
             IsEnabled: true,
             isStale,
-            isStale ? StaleAnnotation : string.Empty);
+            isStale ? StaleAnnotation : string.Empty,
+            ContextLength: model.ContextLength);
 }

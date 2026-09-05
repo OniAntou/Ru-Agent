@@ -12,6 +12,7 @@ namespace RuApp.Views
     public sealed partial class SettingsView : UserControl, IDisposable
     {
         private ApiService? _apiService;
+        private ProviderCatalogController? _providerCatalogController;
         private bool _ownsProviderCatalogController;
         private bool _loading = false;
         private DispatcherTimer? _autoSaveTimer;
@@ -35,7 +36,6 @@ namespace RuApp.Views
             _apiService = apiService;
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
-            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
             MemoryControl.Initialize(apiService);
             _ = LoadSettingsAsync();
             SetupAutoSave();
@@ -90,7 +90,7 @@ namespace RuApp.Views
         private void ScheduleAutoSave()
         {
             if (_loading) return;
-            AutoSaveStatusText.Text = "Đang lưu...";
+            AutoSaveStatusText.Text = "Saving...";
             _autoSaveTimer?.Stop();
             _autoSaveTimer?.Start();
         }
@@ -117,28 +117,28 @@ namespace RuApp.Views
 
                 OpenCodeApiKeyBox.Password = string.Empty;
                 OpenCodeApiKeyBox.PlaceholderText = settings.HasOpenCodeKey
-                    ? "Đã lưu (để trống để giữ nguyên)"
+                    ? "Saved (leave blank to keep unchanged)"
                     : "sk-opencode-...";
                 KiloApiKeyBox.Password = string.Empty;
                 KiloApiKeyBox.PlaceholderText = settings.HasKiloKey
-                    ? "Đã lưu (để trống để giữ nguyên)"
+                    ? "Saved (leave blank to keep unchanged)"
                     : "sk-kilo-...";
                 OpenAiApiKeyBox.Password = string.Empty;
                 OpenAiApiKeyBox.PlaceholderText = settings.HasOpenAiKey
-                    ? "Đã lưu (để trống để giữ nguyên)"
+                    ? "Saved (leave blank to keep unchanged)"
                     : "sk-...";
                 AnthropicApiKeyBox.Password = string.Empty;
                 AnthropicApiKeyBox.PlaceholderText = settings.HasAnthropicKey
-                    ? "Đã lưu (để trống để giữ nguyên)"
+                    ? "Saved (leave blank to keep unchanged)"
                     : "sk-ant-...";
                 GeminiVisionKeyBox.Password = string.Empty;
                 GeminiVisionKeyBox.PlaceholderText = settings.HasGeminiVisionKey
-                    ? "Đã lưu (để trống để giữ nguyên)"
+                    ? "Saved (leave blank to keep unchanged)"
                     : "AIza...";
                 CustomEndpointUrlBox.Text = settings.CustomUrl;
                 CustomApiKeyBox.Password = string.Empty;
                 CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
-                    ? "Đã lưu (để trống để giữ nguyên)"
+                    ? "Saved (leave blank to keep unchanged)"
                     : "sk-...";
 
                 SelfLearningToggle.IsOn = settings.SelfLearningEnabled;
@@ -149,8 +149,8 @@ namespace RuApp.Views
                 {
                     ScreenObserverToggle.IsOn = obsStatus.Active;
                     ScreenObserverStatusText.Text = obsStatus.Active
-                        ? "Trạng thái: Đang hoạt động (Mỗi 1s · Real-time)"
-                        : "Trạng thái: Đang tắt";
+                        ? "Status: Active (Every 1s · Real-time)"
+                        : "Status: Disabled";
                 }
 
                 UpdateVisibilityForBackend(settings.BackendChoice);
@@ -185,6 +185,14 @@ namespace RuApp.Views
             _ = _providerCatalogController?.RefreshAsync(force: true);
         }
 
+        public async Task RefreshProviderCatalogAsync()
+        {
+            if (_providerCatalogController is not null)
+            {
+                await _providerCatalogController.RefreshAsync(force: true);
+            }
+        }
+
         private async Task SaveSettingsAsync()
         {
             if (_apiService == null) return;
@@ -214,7 +222,7 @@ namespace RuApp.Views
                 };
 
                 bool ok = await _apiService.SaveProviderSettingsAsync(dto);
-                AutoSaveStatusText.Text = ok ? "Đã lưu" : "Lưu thất bại";
+                AutoSaveStatusText.Text = ok ? "Saved" : "Save failed";
                 if (!ok)
                 {
                     System.Diagnostics.Debug.WriteLine("[Settings] Auto-save failed");
@@ -222,7 +230,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                AutoSaveStatusText.Text = "Lỗi lưu";
+                AutoSaveStatusText.Text = "Save error";
                 System.Diagnostics.Debug.WriteLine($"[Settings] Auto-save error: {ex.Message}");
             }
             finally
@@ -242,10 +250,8 @@ namespace RuApp.Views
             _autoSaveTimer?.Stop();
             _vtsConfigDebounce?.Stop();
             _vtsControlDebounce?.Stop();
-            _reasoningSaveFailureTimer?.Stop();
             if (_providerCatalogController is not null)
             {
-                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
                 if (_ownsProviderCatalogController)
                 {
                     _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -368,13 +374,13 @@ namespace RuApp.Views
                 if (status.Connected)
                 {
                     VtsStatusText.Text = string.IsNullOrEmpty(status.ModelName)
-                        ? "Trạng thái: Đã kết nối"
-                        : $"Trạng thái: Đã kết nối · {status.ModelName}";
+                        ? "Status: Connected"
+                        : $"Status: Connected · {status.ModelName}";
                     VtsStateText.Text = string.IsNullOrEmpty(status.State) ? "" : "Motion: " + status.State;
                 }
                 else
                 {
-                    VtsStatusText.Text = "Trạng thái: Chưa kết nối";
+                    VtsStatusText.Text = "Status: Disconnected";
                     VtsStateText.Text = string.IsNullOrEmpty(status.ConnectError) ? "" : status.ConnectError;
                 }
 
@@ -386,7 +392,7 @@ namespace RuApp.Views
                 MouseSensitivityText.Text = $"{status.MouseLookSensitivity * 100:0}%";
 
                 bool overlayBroken = status.OverlayEnabled && !status.OverlayRunning;
-                VtsOverlayErrorText.Text = "Overlay đang bật nhưng tiến trình không chạy (thiếu RuDesktopOverlay.exe?).";
+                VtsOverlayErrorText.Text = "Overlay is enabled but process is not running (missing RuDesktopOverlay.exe?).";
                 VtsOverlayErrorText.Visibility = overlayBroken ? Visibility.Visible : Visibility.Collapsed;
             }
             finally
@@ -446,15 +452,15 @@ namespace RuApp.Views
             if (_loading || _apiService == null) return;
             bool isOn = ScreenObserverToggle.IsOn;
             ScreenObserverStatusText.Text = isOn
-                ? "Đang khởi động..."
-                : "Đang tạm dừng...";
+                ? "Starting..."
+                : "Pausing...";
 
             if (isOn)
             {
                 bool success = await _apiService.StartObservationAsync(1.0);
                 ScreenObserverStatusText.Text = success
-                    ? "Trạng thái: Đang hoạt động (Mỗi 1s · Real-time)"
-                    : "Trạng thái: Lỗi khởi động (Kiểm tra API Key)";
+                    ? "Status: Active (Every 1s · Real-time)"
+                    : "Status: Startup error (Check API Key)";
                 if (!success)
                 {
                     ScreenObserverToggle.IsOn = false;
@@ -463,7 +469,7 @@ namespace RuApp.Views
             else
             {
                 await _apiService.StopObservationAsync();
-                ScreenObserverStatusText.Text = "Trạng thái: Đang tắt";
+                ScreenObserverStatusText.Text = "Status: Disabled";
             }
         }
 

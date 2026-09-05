@@ -110,35 +110,35 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     public string StartedText => Kind switch
     {
-        AgentActivityKind.Thinking => "Đang suy nghĩ",
-        AgentActivityKind.Explore => Count is { } count ? $"Đang khám phá {count} mục" : "Đang khám phá",
-        AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"Đang tìm {symbol}" : "Đang tìm kiếm",
-        AgentActivityKind.Analyze => "Đang phân tích",
-        AgentActivityKind.Edit => "Đang sửa",
-        AgentActivityKind.Terminal => "Đang thực hiện tác vụ terminal",
-        AgentActivityKind.Status when SafeCode == "frames_dropped" => "Một số bước tạm thời đã bị bỏ qua",
-        _ => "Đang làm…",
+        AgentActivityKind.Thinking => "Thinking",
+        AgentActivityKind.Explore => Count is { } count ? (count == 1 ? "Exploring 1 item" : $"Exploring {count} items") : "Exploring",
+        AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"Searching for {symbol}" : "Searching",
+        AgentActivityKind.Analyze => "Analyzing",
+        AgentActivityKind.Edit => "Editing",
+        AgentActivityKind.Terminal => "Running terminal task",
+        AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
+        _ => "Working…",
     };
 
     public string CompletedText => Kind switch
     {
         AgentActivityKind.Thinking => DurationText(),
-        AgentActivityKind.Explore => Count is { } count ? $"Đã khám phá {count} mục" : "Đã khám phá",
-        AgentActivityKind.Search => FormatSearch("Đã tìm"),
-        AgentActivityKind.Analyze => "Đã phân tích",
-        AgentActivityKind.Edit => "Đã sửa",
-        AgentActivityKind.Terminal => "Đã hoàn thành tác vụ terminal",
-        AgentActivityKind.Status when SafeCode == "frames_dropped" => "Một số bước tạm thời đã bị bỏ qua",
-        _ => "Đã hoàn tất",
+        AgentActivityKind.Explore => Count is { } count ? (count == 1 ? "Explored 1 item" : $"Explored {count} items") : "Explored",
+        AgentActivityKind.Search => FormatSearch("Searched"),
+        AgentActivityKind.Analyze => "Analyzed",
+        AgentActivityKind.Edit => "Edited",
+        AgentActivityKind.Terminal => "Completed terminal task",
+        AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
+        _ => "Completed",
     };
 
     public string WaitingText => Kind == AgentActivityKind.Status
-        ? "Đang chờ anh xác nhận"
-        : $"Đang chờ tiếp tục · {SafeCode}";
+        ? "Waiting for confirmation"
+        : $"Waiting to continue · {SafeCode}";
 
     public string FailedText => SafeCode is { Length: > 0 }
-        ? $"Không thể hoàn tất · {SafeCode}"
-        : "Không thể hoàn tất";
+        ? $"Failed · {SafeCode}"
+        : "Failed";
 
     public string MetadataText
     {
@@ -162,7 +162,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
             if (Count is { } count && Kind == AgentActivityKind.Search)
             {
-                parts.Add($"{count} kết quả");
+                parts.Add(count == 1 ? "1 result" : $"{count} results");
             }
 
             if (Kind == AgentActivityKind.Edit && (Added is not null || Removed is not null))
@@ -180,7 +180,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         AgentActivityState.Completed => CompletedText,
         AgentActivityState.Waiting => WaitingText,
         AgentActivityState.Failed => FailedText,
-        _ => "Đang làm…",
+        _ => "Working…",
     };
 
     public void UpdateFrom(AgentActivityModel activity)
@@ -226,22 +226,29 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     {
         if (Symbol is { Length: > 0 } symbol && Count is { } count)
         {
-            return $"{prefix} {symbol} · {count} kết quả";
+            var resultSuffix = count == 1 ? "1 result" : $"{count} results";
+            return $"{prefix} for {symbol} · {resultSuffix}";
         }
 
-        return Symbol is { Length: > 0 } ? $"{prefix} {Symbol}" : $"{prefix} kiếm";
+        return Symbol is { Length: > 0 } ? $"{prefix} for {Symbol}" : prefix;
     }
 
     private string DurationText()
     {
         if (DurationMs is not { } duration)
         {
-            return "Đã suy nghĩ";
+            return "Thought";
         }
 
-        return duration < 1000
-            ? "Đã suy nghĩ dưới 1 giây"
-            : $"Đã suy nghĩ {Math.Round(duration / 1000d):0} giây";
+        if (duration < 1000)
+        {
+            return "Thought for under 1 second";
+        }
+
+        var seconds = Math.Round(duration / 1000d);
+        return seconds == 1
+            ? "Thought for 1 second"
+            : $"Thought for {seconds:0} seconds";
     }
 
     private bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)

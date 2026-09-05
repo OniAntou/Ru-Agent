@@ -27,10 +27,10 @@ public sealed class ActivityLogPresentationTests
         Assert.NotNull(formatter);
         var content = (string)formatter!.Invoke(null, new object[] { activity.Data })!;
 
-        Assert.Equal("Quan sát: Anh thấy một chuyển động mới", content);
+        Assert.Equal("Observation: Anh thấy một chuyển động mới", content);
 
         var badgeFormatter = typeof(LogView).GetMethod("GetActivityBadge", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(badgeFormatter);
-        Assert.Equal("QUAN SÁT", badgeFormatter!.Invoke(null, new object[] { activity.Type }));
+        Assert.Equal("OBSERVATION", badgeFormatter!.Invoke(null, new object[] { activity.Type }));
     }
 }

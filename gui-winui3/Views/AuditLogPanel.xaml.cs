@@ -51,7 +51,7 @@ public sealed partial class AuditLogPanel : UserControl
             return;
         }
 
-        AuditStatus.Text = $"{_log.Entries.Count} sự kiện (seq {_log.LastSequence})";
+        AuditStatus.Text = $"{_log.Entries.Count} events (seq {_log.LastSequence})";
     }
 
     private void OnLogChanged(object? sender, PropertyChangedEventArgs e)

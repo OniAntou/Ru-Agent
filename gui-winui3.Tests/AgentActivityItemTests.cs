@@ -19,7 +19,7 @@ public sealed class AgentActivityItemTests
         var item = new AgentActivityItem(started);
 
         Assert.True(item.IsRunning);
-        Assert.Equal("Đang phân tích", item.DisplayText);
+        Assert.Equal("Analyzing", item.DisplayText);
         Assert.Equal("ChatView.xaml.cs · L150–200", item.MetadataText);
 
         item.UpdateFrom(Activity(
@@ -30,7 +30,7 @@ public sealed class AgentActivityItemTests
             durationMs: 1200));
 
         Assert.True(item.IsCompleted);
-        Assert.Equal("Đã phân tích", item.DisplayText);
+        Assert.Equal("Analyzed", item.DisplayText);
         Assert.Equal("\uE73E", item.StatusGlyph);
     }
 
@@ -42,27 +42,100 @@ public sealed class AgentActivityItemTests
             safeCode: "policy_denied"));
 
         Assert.True(item.IsFailed);
-        Assert.Equal("Không thể hoàn tất · policy_denied", item.DisplayText);
+        Assert.Equal("Failed · policy_denied", item.DisplayText);
+    }
+
+    [Fact]
+    public void Item_renders_all_activity_kinds_in_english()
+    {
+        // Thinking
+        var thinkingStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Thinking));
+        Assert.Equal("Thinking", thinkingStarted.DisplayText);
+
+        var thinkingCompletedSubSecond = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking, durationMs: 450));
+        Assert.Equal("Thought for under 1 second", thinkingCompletedSubSecond.DisplayText);
+
+        var thinkingCompletedSeconds = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking, durationMs: 3000));
+        Assert.Equal("Thought for 3 seconds", thinkingCompletedSeconds.DisplayText);
+
+        var thinkingCompletedOneSecond = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking, durationMs: 1000));
+        Assert.Equal("Thought for 1 second", thinkingCompletedOneSecond.DisplayText);
+
+        var thinkingCompletedNoDuration = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking));
+        Assert.Equal("Thought", thinkingCompletedNoDuration.DisplayText);
+
+        // Explore
+        var exploreStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Explore, count: 5));
+        Assert.Equal("Exploring 5 items", exploreStarted.DisplayText);
+
+        var exploreStartedSingle = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Explore, count: 1));
+        Assert.Equal("Exploring 1 item", exploreStartedSingle.DisplayText);
+
+        var exploreCompleted = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Explore, count: 5));
+        Assert.Equal("Explored 5 items", exploreCompleted.DisplayText);
+
+        // Search
+        var searchStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Search, symbol: "OnSearch"));
+        Assert.Equal("Searching for OnSearch", searchStarted.DisplayText);
+
+        var searchCompleted = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Search, symbol: "OnSearch", count: 3));
+        Assert.Equal("Searched for OnSearch · 3 results", searchCompleted.DisplayText);
+        Assert.Equal("3 results", searchCompleted.MetadataText);
+
+        var searchSingleResult = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Search, symbol: "OnSearch", count: 1));
+        Assert.Equal("Searched for OnSearch · 1 result", searchSingleResult.DisplayText);
+        Assert.Equal("1 result", searchSingleResult.MetadataText);
+
+        // Edit
+        var editStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, fileName: "App.xaml", added: 2, removed: 1));
+        Assert.Equal("Editing", editStarted.DisplayText);
+        Assert.Equal("App.xaml · +2 −1", editStarted.MetadataText);
+
+        var editCompleted = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit));
+        Assert.Equal("Edited", editCompleted.DisplayText);
+
+        // Terminal
+        var termStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Terminal));
+        Assert.Equal("Running terminal task", termStarted.DisplayText);
+
+        var termCompleted = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Terminal));
+        Assert.Equal("Completed terminal task", termCompleted.DisplayText);
+
+        // Status / frames_dropped
+        var statusDropped = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Status, safeCode: "frames_dropped"));
+        Assert.Equal("Some steps were temporarily skipped", statusDropped.DisplayText);
+
+        // Waiting
+        var waitingStatus = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Status));
+        Assert.Equal("Waiting for confirmation", waitingStatus.DisplayText);
+
+        var waitingTool = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Edit, safeCode: "approval_required"));
+        Assert.Equal("Waiting to continue · approval_required", waitingTool.DisplayText);
     }
 
     private static AgentActivityModel Activity(
         AgentActivityState state,
+        AgentActivityKind kind = AgentActivityKind.Analyze,
         string? fileName = null,
         int? lineStart = null,
         int? lineEnd = null,
+        string? symbol = null,
+        int? count = null,
+        int? added = null,
+        int? removed = null,
         int? durationMs = null,
         string safeCode = "succeeded") =>
         new(
             "act_11111111111111111111111111111111",
-            AgentActivityKind.Analyze,
+            kind,
             state,
             fileName,
             lineStart,
             lineEnd,
-            null,
-            null,
-            null,
-            null,
+            symbol,
+            count,
+            added,
+            removed,
             durationMs,
             safeCode,
             null,

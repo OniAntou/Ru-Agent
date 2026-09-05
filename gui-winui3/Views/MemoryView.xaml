@@ -17,18 +17,18 @@
                         BorderBrush="{StaticResource RuAccentBrush}"
                         BorderThickness="1"
                         CornerRadius="{StaticResource RuControlCornerRadius}">
-                    <TextBlock Text="KÝ ỨC &amp; SỞ THÍCH"
+                    <TextBlock Text="MEMORIES &amp; PREFERENCES"
                                FontSize="10.5"
                                FontWeight="Bold"
                                FontFamily="{StaticResource RuUiFontFamily}"
                                Foreground="{StaticResource RuAccentBrush}"/>
                 </Border>
-                <TextBlock Text="Bộ nhớ dài hạn đã lưu"
+                <TextBlock Text="Saved Long-Term Memory"
                            FontSize="23"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
                            FontWeight="Bold"
                            Foreground="{StaticResource RuInkBrush}"/>
-                <TextBlock Text="Ru tự động trích xuất các thông tin cá nhân và sở thích từ cuộc trò chuyện để cá nhân hóa phản hồi"
+                <TextBlock Text="Ru automatically extracts personal preferences and facts from conversations to personalize replies"
                            Foreground="{StaticResource RuMutedBrush}"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            FontSize="12.5"/>
@@ -40,7 +40,7 @@
                     VerticalAlignment="Center" Padding="14,8">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE74D;" FontSize="13" Foreground="{StaticResource RuDangerBrush}"/>
-                    <TextBlock Text="Xóa toàn bộ bộ nhớ"
+                    <TextBlock Text="Clear all memories"
                                Foreground="{StaticResource RuDangerBrush}"
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontWeight="SemiBold"
@@ -60,13 +60,13 @@
                     <FontIcon Glyph="&#xE968;" FontSize="20" Foreground="{StaticResource RuAccentBrush}"
                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
-                <TextBlock Text="Chưa có dữ liệu ghi nhớ nào"
+                <TextBlock Text="No saved memory entries yet"
                            FontSize="15"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            FontWeight="SemiBold" 
                            Foreground="{StaticResource RuInkBrush}"
                            HorizontalAlignment="Center"/>
-                <TextBlock Text="Ru sẽ tự động học và lưu lại sở thích cũng như thông tin của anh trong lúc trò chuyện nha!" 
+                <TextBlock Text="Ru will automatically learn and save your preferences and details during chat!" 
                            FontSize="12.5"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            Foreground="{StaticResource RuMutedBrush}"

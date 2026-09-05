@@ -152,7 +152,7 @@ public sealed class VoiceConversationService : IDisposable
     {
         try
         {
-            RaiseStatus(VoiceConversationState.Listening, "Đang nghe...");
+            RaiseStatus(VoiceConversationState.Listening, "Listening...");
             while (!cancellationToken.IsCancellationRequested)
             {
                 VoiceTurnCaptureResult turn = await _capture
@@ -166,7 +166,7 @@ public sealed class VoiceConversationService : IDisposable
 
                 if (turn.Reason == VoiceTurnStopReason.NoSpeech)
                 {
-                    RaiseStatus(VoiceConversationState.Listening, "Đang nghe...");
+                    RaiseStatus(VoiceConversationState.Listening, "Listening...");
                     continue;
                 }
 
@@ -174,7 +174,7 @@ public sealed class VoiceConversationService : IDisposable
                 {
                     RaiseStatus(
                         VoiceConversationState.Error,
-                        "Micro đang phát tín hiệu bất thường. Anh kiểm tra hoặc cắm lại micro rồi thử lại nha.",
+                        "Microphone signal is abnormal. Please check or reconnect your microphone and try again.",
                         turn.Error);
                     break;
                 }
@@ -183,12 +183,12 @@ public sealed class VoiceConversationService : IDisposable
                 {
                     RaiseStatus(
                         VoiceConversationState.Error,
-                        "Không truy cập được micro.",
+                        "Could not access microphone.",
                         turn.Error);
                     break;
                 }
 
-                RaiseStatus(VoiceConversationState.Transcribing, "Đang hiểu lời anh...");
+                RaiseStatus(VoiceConversationState.Transcribing, "Processing your speech...");
                 string? text = await _transcribe(turn.WavBytes, cancellationToken)
                     .WaitAsync(cancellationToken)
                     .ConfigureAwait(false);
@@ -199,7 +199,7 @@ public sealed class VoiceConversationService : IDisposable
 
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    RaiseStatus(VoiceConversationState.Listening, "Không nghe rõ, anh nói lại nha.");
+                    RaiseStatus(VoiceConversationState.Listening, "Could not hear clearly, please speak again.");
                     continue;
                 }
 
@@ -212,9 +212,9 @@ public sealed class VoiceConversationService : IDisposable
 
                 try
                 {
-                    RaiseStatus(VoiceConversationState.Sending, "Đang gửi cho Ru...");
+                    RaiseStatus(VoiceConversationState.Sending, "Sending to Ru...");
                     await _sendText(text.Trim(), cancellationToken).ConfigureAwait(false);
-                    RaiseStatus(VoiceConversationState.WaitingForReply, "Ru đang trả lời...");
+                    RaiseStatus(VoiceConversationState.WaitingForReply, "Ru is replying...");
                     await replyCompletion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 finally
@@ -228,7 +228,7 @@ public sealed class VoiceConversationService : IDisposable
                     }
                 }
 
-                RaiseStatus(VoiceConversationState.Listening, "Đang nghe...");
+                RaiseStatus(VoiceConversationState.Listening, "Listening...");
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -236,7 +236,7 @@ public sealed class VoiceConversationService : IDisposable
         }
         catch (Exception ex)
         {
-            RaiseStatus(VoiceConversationState.Error, "Cuộc trò chuyện bằng giọng nói đã dừng.", ex);
+            RaiseStatus(VoiceConversationState.Error, "Voice conversation stopped.", ex);
         }
         finally
         {

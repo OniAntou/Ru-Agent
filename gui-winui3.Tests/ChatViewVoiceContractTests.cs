@@ -22,7 +22,7 @@ public sealed class ChatViewVoiceContractTests
         Assert.DoesNotContain("ChatWebSocketClient", code, StringComparison.Ordinal);
         Assert.DoesNotContain("_voiceTurnPending", code, StringComparison.Ordinal);
         Assert.DoesNotContain("/chat", code, StringComparison.Ordinal);
-        Assert.Contains("Nói chuyện với Ru bằng giọng nói", xaml, StringComparison.Ordinal);
+        Assert.Contains("Talk with Ru by voice", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("MicRecorderService", code, StringComparison.Ordinal);
         Assert.DoesNotContain("ChatInputTextBox.Text = text", code, StringComparison.Ordinal);

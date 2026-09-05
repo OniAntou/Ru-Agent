@@ -17,7 +17,7 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
     private readonly object _gate = new();
 
     private bool _isBusy;
-    private string _statusText = "Chưa tải chính sách.";
+    private string _statusText = "Policies not loaded.";
 
     public AgentPolicyController(IAgentPolicyClient client, Action<Action>? synchronize = null)
     {
@@ -41,7 +41,7 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        RunOnUi(() => { IsBusy = true; StatusText = "Đang tải chính sách..."; });
+        RunOnUi(() => { IsBusy = true; StatusText = "Loading policies..."; });
         try
         {
             var items = await _client.ListPoliciesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -62,12 +62,12 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
                     Policies.Add(model);
                 }
 
-                StatusText = $"Đã tải {models.Count} quy tắc.";
+                StatusText = $"Loaded {models.Count} rules.";
             });
         }
         catch (Exception ex)
         {
-            RunOnUi(() => { StatusText = $"Lỗi tải: {ex.Message}"; });
+            RunOnUi(() => { StatusText = $"Load error: {ex.Message}"; });
             throw;
         }
         finally
@@ -78,7 +78,7 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
 
     public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
-        RunOnUi(() => { IsBusy = true; StatusText = $"Đang xóa {id}..."; });
+        RunOnUi(() => { IsBusy = true; StatusText = $"Deleting {id}..."; });
         try
         {
             // A button click is an explicit interactive confirmation. Global policy
@@ -95,12 +95,12 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
                     }
                 }
 
-                StatusText = "Đã xóa quy tắc.";
+                StatusText = "Rule deleted.";
             });
         }
         catch (Exception ex)
         {
-            RunOnUi(() => { StatusText = $"Lỗi xóa: {ex.Message}"; });
+            RunOnUi(() => { StatusText = $"Delete error: {ex.Message}"; });
             throw;
         }
         finally
@@ -130,7 +130,7 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
             ["matcher"] = matcher,
         };
 
-        RunOnUi(() => { IsBusy = true; StatusText = $"Đang tạo {model.Id}..."; });
+        RunOnUi(() => { IsBusy = true; StatusText = $"Creating {model.Id}..."; });
         try
         {
             // Creating a rule is an explicit action in the policy panel. This is
@@ -139,12 +139,12 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
             RunOnUi(() =>
             {
                 Policies.Add(model);
-                StatusText = "Đã tạo quy tắc.";
+                StatusText = "Rule created.";
             });
         }
         catch (Exception ex)
         {
-            RunOnUi(() => { StatusText = $"Lỗi tạo: {ex.Message}"; });
+            RunOnUi(() => { StatusText = $"Create error: {ex.Message}"; });
             throw;
         }
         finally

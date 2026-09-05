@@ -35,10 +35,10 @@ public sealed class AgentRunSummaryUiContractTests
         var cancelled = new AgentRunSummaryItem(Model("cancelled", "not_applicable"));
 
         Assert.True(verified.IsVerifiedSuccess);
-        Assert.Contains("Đã hoàn thành", verified.DisplayText, StringComparison.Ordinal);
-        Assert.DoesNotContain("Đã hoàn thành", unverified.DisplayText, StringComparison.Ordinal);
-        Assert.Contains("chưa xác minh", unverified.DisplayText, StringComparison.Ordinal);
-        Assert.Contains("dừng", cancelled.DisplayText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("completed", verified.DisplayText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("completed", unverified.DisplayText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unverified", unverified.DisplayText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("stopped", cancelled.DisplayText, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

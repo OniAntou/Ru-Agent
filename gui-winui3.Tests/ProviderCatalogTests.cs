@@ -434,6 +434,77 @@ public sealed class ProviderCatalogTests
         }
     }
 
+    [Fact]
+    public void ProviderReasoningOptions_returns_default_label_and_no_fabricated_options()
+    {
+        // When model has no reasoning capability or no info
+        var unsupportedState = new ProviderCatalogState
+        {
+            Status = "ok",
+            SelectedModel = "model-no-reasoning",
+            Catalog = new[]
+            {
+                new ProviderCatalogModel
+                {
+                    Id = "model-no-reasoning",
+                    Supported = true,
+                    Reasoning = new ProviderReasoningCapabilities { State = "unsupported" }
+                }
+            }
+        };
+
+        var noReasoningOptions = ProviderReasoningOptions.For(unsupportedState);
+        Assert.Single(noReasoningOptions);
+        Assert.Equal("default", noReasoningOptions[0].Value);
+        Assert.Equal("default", noReasoningOptions[0].Label);
+
+        // When provider explicitly returns levels
+        var supportedState = new ProviderCatalogState
+        {
+            Status = "ok",
+            SelectedModel = "model-with-reasoning",
+            Catalog = new[]
+            {
+                new ProviderCatalogModel
+                {
+                    Id = "model-with-reasoning",
+                    Supported = true,
+                    Reasoning = new ProviderReasoningCapabilities
+                    {
+                        State = ProviderReasoningCapabilities.Levels,
+                        Options = new[] { "low", "medium", "high" }
+                    }
+                }
+            }
+        };
+
+        var supportedOptions = ProviderReasoningOptions.For(supportedState);
+        Assert.Equal(4, supportedOptions.Count);
+        Assert.Equal(new[] { "default", "low", "medium", "high" }, supportedOptions.Select(o => o.Value));
+        Assert.Equal(new[] { "default", "low", "medium", "high" }, supportedOptions.Select(o => o.Label));
+    }
+
+    [Fact]
+    public void SettingsView_does_not_contain_reasoning_and_ChatView_contains_chat_reasoning()
+    {
+        var settingsXamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml");
+        if (File.Exists(settingsXamlPath))
+        {
+            var settingsXaml = File.ReadAllText(settingsXamlPath);
+            Assert.DoesNotContain("ReasoningEffortComboBox", settingsXaml);
+            Assert.DoesNotContain("x:Name=\"ReasoningRow\"", settingsXaml);
+        }
+
+        var chatXamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
+        if (File.Exists(chatXamlPath))
+        {
+            var chatXaml = File.ReadAllText(chatXamlPath);
+            Assert.Contains("ChatReasoningButton", chatXaml);
+            Assert.Contains("ChatReasoningLabel", chatXaml);
+            Assert.Contains("ChatReasoningFlyout", chatXaml);
+        }
+    }
+
     private sealed class SaveHandler : HttpMessageHandler
     {
         private readonly Queue<string> _responses;

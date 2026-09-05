@@ -30,7 +30,7 @@ from .protocols import probe_auth_ownership, probe_http_routes
 from .routes import RouteSafety, build_route_registry, load_contract
 from .voice_fixtures import build_synthetic_wav, is_valid_wav
 
-HarnessMode = Literal["backend-deterministic", "gui-deterministic", "runtime-live"]
+HarnessMode = Literal["backend-deterministic", "gui-deterministic"]
 _DOTNET_BUILD_TIMEOUT_SECONDS = 120
 _DOTNET_CONFIGURATION = "Debug"
 GuiScenario = Literal[
@@ -681,18 +681,6 @@ class HarnessSession:
 
     def _run_backend(self, mode: HarnessMode) -> list[CheckResult]:
         checks: list[CheckResult] = []
-        if mode == "runtime-live":
-            return [
-                CheckResult(
-                    "startup.readiness",
-                    "blocked_by_startup",
-                    0.0,
-                    reason="python_compatibility_retired",
-                    details={
-                        "next_gate": "managed_runtime_native",
-                    },
-                )
-            ]
         self._start_children()
         ready = self._wait_for_readiness()
         checks.append(

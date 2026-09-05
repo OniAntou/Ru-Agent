@@ -53,7 +53,7 @@ try {
     foreach ($scenario in $scenarios) {
         $scenarioOutput = Join-Path $runRoot "$scenario.json"
         $pythonArgs = @(
-            (Join-Path $projectRoot "scripts\aspnetcore_compatibility_harness.py"),
+            (Join-Path $projectRoot "scripts\ru_harness.py"),
             "--project-root", $projectRoot,
             "--mode", "gui-deterministic",
             "--app-path", $resolvedApp,

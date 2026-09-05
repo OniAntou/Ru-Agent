@@ -42,7 +42,7 @@ def test_registry_exposes_only_the_voice_websocket_and_no_chat_route() -> None:
     assert websocket_paths == ["/voice/stream"]
     assert all(entry.path != "/chat" for entry in registry)
 
-    benchmark = (repo_root / "scripts" / "benchmark_aspnetcore_compat.py").read_text(
+    benchmark = (repo_root / "scripts" / "benchmark_backend.py").read_text(
         encoding="utf-8"
     )
     session = (repo_root / "scripts" / "harness" / "session.py").read_text(encoding="utf-8")

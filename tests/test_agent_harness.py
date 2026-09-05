@@ -186,7 +186,7 @@ def test_deterministic_worker_does_not_reach_retired_production_modules() -> Non
 
 def test_retired_gui_agent_scenarios_are_absent_from_all_harness_entrypoints() -> None:
     sources = [
-        (ROOT / "scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts/ru_harness.py").read_text(encoding="utf-8"),
         (ROOT / "scripts/harness/session.py").read_text(encoding="utf-8"),
         (ROOT / "gui-winui3.Harness/Program.cs").read_text(encoding="utf-8"),
         (ROOT / "gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8"),
@@ -200,7 +200,7 @@ def test_retired_gui_agent_scenarios_are_absent_from_all_harness_entrypoints() -
 
 
 def test_gui_agent_scenario_catalog_is_exact() -> None:
-    python_cli = (ROOT / "scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8")
+    python_cli = (ROOT / "scripts/ru_harness.py").read_text(encoding="utf-8")
     csharp_cli = (ROOT / "gui-winui3.Harness/Program.cs").read_text(encoding="utf-8")
 
     for scenario in AGENT_SCENARIOS:

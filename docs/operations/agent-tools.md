@@ -74,12 +74,9 @@ advertised Agent tools.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 18 definitions. Its strict model
-projection contains 13 definitions: eleven always-available core bindings
-(including offline `help.docs`) plus runtime-enabled read-only
-`web.search`/`web.fetch`. Broker run leases additionally carry five
-internal/deterministic operations for execution authority; those operations
-have `model_enabled: false` and never enter Worker `model_tools`. Managed
+The immutable Protocol catalog contains 13 model-visible definitions: eleven
+always-available core bindings (including offline `help.docs`) plus
+runtime-enabled read-only `web.search`/`web.fetch`. Managed
 startup uses the fixed DuckDuckGo endpoint
 `https://html.duckduckgo.com/html/`. The `network_intent` argument on a
 terminal request is descriptive input metadata, not a security boundary.
@@ -92,8 +89,6 @@ terminal request is descriptive input metadata, not a security boundary.
 | `terminal.run`, `terminal.shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
 | `web.search`, `web.fetch` | advertised when managed Web is enabled | bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
 | `help.docs` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
-| `system.volume` | never model-advertised | deterministic parser and same-endpoint verified readback |
-| `notes.create`, `system.time`, `system.status`, `app.list` | never model-advertised | Broker-internal operations |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
@@ -122,9 +117,9 @@ network intent, and other analyzer-risk cases remain approval- or policy-gated.
 Filesystem mutations remain trust- and policy-gated: a
 project/run external-directory grant covers only the canonical directory's
 read/create/edit operations; delete, protected paths, network, and unknown
-operations keep their own gates. The deterministic volume parser is the only
-current path that creates a `system.volume` request; it reads back the same
-endpoint before reporting success.
+operations keep their own gates. Time, machine status, app discovery, and
+optional volume operations use `terminal.run` or `terminal.shell`; note files
+use `files.write`.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
 and is not model-usable at this checkpoint. Any internal adapter or test fixture
@@ -152,15 +147,12 @@ contains exactly `help.docs@1.0.0`.
 
 ## One execution path
 
-An explicit, unambiguous volume command uses the deterministic volume parser
-before conversational generation. That parser creates the typed
-`system.volume@1.0.0` request directly and does not invoke model selection.
 Agent text and voice turns share the same execution ownership chain:
 
 ```text
 WinUI authenticated Agent composer
         -> ASP.NET Core Public Host and session grant
-        -> managed C# Worker deterministic volume parser
+        -> managed C# Worker model and tool selection
         -> private RuAgentBroker policy and canonical binding
         -> bounded adapter plus readback verification
         -> typed receipt back to Worker
@@ -391,7 +383,7 @@ invalidates ephemeral decision and causes safe re-evaluation, never adapter
 invocation. File tools follow the same ordering with `tool.execution_requested`
 persisted before dispatch and `FileRecoveryStore`/`RunChangeSetStore` for
 recoverable deletes. The deterministic Broker approval probe uses
-`notes.create` (and file delete/restore) only inside a fresh temporary
+`files.write` (and file delete/restore) only inside a fresh temporary
 workspace, approves once, expects the replay to be denied as `approval_stale`,
 closes the private session, and removes the workspace. Production WinUI
 approval-card behavior remains covered independently by its UI contract tests.

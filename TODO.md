@@ -1,6 +1,16 @@
 # Ru Roadmap
 
-Last reviewed: 2026-09-02.
+Last reviewed: 2026-09-05.
+
+## Completed Agent tool retirement (2026-09-05)
+
+- [x] Reduced the canonical Agent catalog from 18 mixed-exposure definitions
+  to 13 model-visible tools and removed the separate internal-tool tier.
+- [x] Hard-deleted the redundant time, machine-status, app-list, note, and
+  native-volume tools with no aliases or fallback API. Use terminal commands
+  for live machine operations and `files.write` for notes.
+- [x] Migrated approval probes, Skills, deterministic Harness fixtures, and GUI
+  scenario naming to the reduced catalog; removed native-volume acceptance.
 
 ## Completed hardening (2026-09-02)
 
@@ -205,8 +215,8 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
   local vision model until a new product decision explicitly reopens that scope.
 - [ ] Keep the structured `/observation/*` cloud-reaction boundary available so
   a future model can be connected without changing the reaction coordinator.
-- [x] Establish one Protocol-owned catalog for Ru's 18 tool definitions and
-  derive the runtime prompt/Worker projection from it. The exact selection
+- [x] Establish one Protocol-owned catalog for Ru's 13 model-visible tool
+  definitions and derive the runtime prompt/Worker projection from it. The exact selection
   envelope, strict schemas, examples, scopes, and schema digests now prevent
   model-contract drift; Broker manifest validation remains in place while the
   later Broker-authority migration stays open.

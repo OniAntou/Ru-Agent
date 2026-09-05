@@ -98,12 +98,6 @@ Worker v2 list is the runtime projection of eleven core Protocol definitions
 the same enabled list, while Full Access only loosens policy fallbacks.
 _Avoid_: permanent permission
 
-**Deterministic Device Action**:
-A host-owned action resolved before model selection, such as
-`system.volume`, with typed arguments and verified readback. It is not a
-model-visible Worker v2 tool binding.
-_Avoid_: model-invented side effect
-
 **Approval Token**:
 A short-lived, one-time value bound to the exact request identity and
 canonical arguments for an external or destructive action.

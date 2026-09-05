@@ -1,5 +1,9 @@
 # Ru Agent Tool Hardening Design
 
+> Superseded on 2026-09-05 by the hard-retirement design and plan for the five
+> former internal/deterministic tools. The verification record below remains
+> historical evidence for its checkpoint.
+
 **Date:** 2026-09-05
 
 ## Goal

@@ -183,9 +183,9 @@ Do not start either worker or the voice engine as independent public services.
   host code or open sockets; `network_intent` is audit/approval metadata, not
   network isolation. The managed Git commit workflow (Phase 3 Task 6) is not
   shipped; Git commands are ordinary terminal requests.
-  `system.volume` is a deterministic direct-action path with same-endpoint
-  readback verification, not a model-selection binding. `notes.create`,
-  read-only `system.*`, and `app.list` remain Broker-internal. CLI exposes
+  The Broker has no hidden convenience-tool tier: time, machine status, app
+  discovery, and optional volume commands use the terminal; notes use
+  `files.write`. CLI exposes
   `agent approve <run-id> <approval-id>`, `agent deny`, `agent policy
   list`/`import --global FILE`/`remove`, and `agent run --workspace PATH
   "prompt"`. There is no `--scope` flag and no `--preset` flag in the
@@ -248,7 +248,7 @@ wrong/missing-bearer rejection, and records observation routes as explicit
 hardware/external skips. It uses synthetic STT/TTS and records only statuses,
 timings, counts, event types, and cleanup state. In deterministic mode it also
 exercises one read-only `files.read` Agent tool loop. Broker approval/replay is
-checked separately with a temporary `notes.create` fixture. At this
+checked separately with a temporary `files.write` fixture. At this
 checkpoint the harness also covers the additive Agent v2 tracer
 (HTTP 201/200/409 idempotency, `workspace_busy`, `preset_mismatch`,
 unsupported capabilities return bounded `phase_not_available` errors, while
@@ -274,7 +274,7 @@ dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
 
 It refuses an existing RuApp instance and never opens physical microphone,
 speaker, or VTube Studio devices. The driver accepts `--scenario` values
-`agent-volume-contract`, `agent-cancel`, `agent-stale-result`, and
+`agent-tool-contract`, `agent-cancel`, `agent-stale-result`, and
 `agent-private-metadata` in addition to the voice scenarios. Broker approval
 replay and the production approval-card UI are separate deterministic tests;
 they are not model-visible GUI Harness tools. Deterministic GUI success does

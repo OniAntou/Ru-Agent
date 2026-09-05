@@ -106,10 +106,9 @@ asks with `external_directory_required`; the approval UI can grant only that
 canonical directory for the current run or project, and the grant covers
 read/create/edit operations only. Terminal calls run as the current Windows
 user and may execute host code or open sockets; `network_intent` is
-audit/approval metadata, not network isolation. `system.volume` is a
-deterministic direct-action path with same-endpoint readback, not a model
-binding. `notes.create`, read-only `system.*`, and `app.list` remain
-Broker-internal. `files.apply_patch` is not advertised or model-usable. The
+audit/approval metadata, not network isolation. Time, machine status, app
+discovery, and optional volume commands use the terminal; notes use
+`files.write`. `files.apply_patch` is not advertised or model-usable. The
 managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
 remain ordinary terminal requests.
 

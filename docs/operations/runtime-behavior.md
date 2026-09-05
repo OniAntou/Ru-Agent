@@ -77,10 +77,9 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
 references are not appended as separate system messages.
 
-Host capabilities are the runtime projection of the 18 Protocol-owned tool
+Host capabilities are the runtime projection of the 13 Protocol-owned tool
 definitions: eleven core model tools (including offline `help.docs`) plus
-independently gated `web.search` and `web.fetch`; five internal/deterministic definitions never enter this model
-projection. Each capability includes its ID/version, description, canonical
+independently gated `web.search` and `web.fetch`. Each capability includes its ID/version, description, canonical
 scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
 emits exactly one JSON object of the form
 `{"tool_id":"files.read","tool_version":"1.0.0","arguments":{"path":"README.md"}}`
@@ -298,12 +297,6 @@ canonical directory for the current run or project. That grant covers the
 directory's read/create/edit operations only; protected and destructive
 operations keep their own approval gates. `files.apply_patch`
 is not advertised or model-usable in the current runtime.
-Explicit, unambiguous volume commands use a deterministic parser before
-generation. The parser creates one typed
-`system.volume@1.0.0` request and does not call the configured model for action
-selection; volume is not in the Worker v2 model-tool list. Ambiguous volume
-wording returns a bounded clarification.
-
 The model selection channel is active for every Agent run: each step allows up
 to ten model-initiated tool calls through the Agent Broker pipeline. Selection
 JSON is never streamed into
@@ -311,13 +304,9 @@ the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.
 Mutating tools (`files.write`, `files.edit`, `files.delete`, `files.restore`,
 and terminal requests that the active policy marks `ask`) use bounded approval
-cards; reads and verified volume operations do not. `notes.create` is Broker-
-internal and is not model-selectable. The Public Host opens
+cards. The Public Host opens
 one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
-verifies adapters. The Worker may render native-volume success only from a
-matching `succeeded` receipt whose verification state is `verified` and whose
-readback matches;
-tool-class successes require an invoked adapter without readback. Python does
+verifies adapters. Tool-class successes require an invoked adapter. Python does
 not own desktop side effects.
 
 The Host serializes one active Broker grant: a matching valid session is reused;
@@ -334,9 +323,8 @@ startup constructs an enabled WebOptions instance with the fixed
 `https://html.duckduckgo.com/html/` endpoint; their bounded responses carry an
 explicit `untrusted` marker and never become instructions. `files.search`
 searches the workspace, while `web.search` searches the public web. `help.docs`
-searches only bundled Ru documentation. `notes.create`,
-read-only system bindings, unbound connectors, and `app.open` remain
-Broker-internal.
+searches only bundled Ru documentation. Unbound connectors and `app.open`
+remain outside the model-visible catalog.
 Declarative Skills are added only from validated manifests explicitly included
 in the session grant; each Skill step re-enters normal tool scope, schema,
 approval, timeout, and output limits. Skill package roots are not auto-loaded.

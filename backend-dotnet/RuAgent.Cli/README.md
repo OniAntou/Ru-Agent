@@ -53,9 +53,8 @@ read-only web bindings in both Standard and Full Access: `files.list`, `files.re
 analyzer/rule/approval policy; Full Access normally uses its broader fallback
 for well-formed calls, but neither preset is an OS-enforced sandbox. Terminal
 calls run as the current Windows user and can execute host code or open
-sockets. `system.volume` is handled by a deterministic direct-action parser,
-not model selection; `notes.create`, read-only `system.*`, and `app.list` are
-Broker-internal. `files.apply_patch`, connectors, and `app.open` are not
+sockets. Time, machine status, app discovery, and optional volume commands use
+the terminal; notes use `files.write`. `files.apply_patch`, connectors, and `app.open` are not
 model-usable. Managed startup enables `web.search` (`network.search`) and
 `web.fetch` (`network.fetch`) with the fixed DuckDuckGo HTML endpoint
 `https://html.duckduckgo.com/html/`; results are bounded and marked untrusted.

@@ -32,9 +32,6 @@ retired in 2026-09-04; the current pending-approval model exposes
   scope before a process starts, but nothing at the operating-system layer
   prevents a spawned process from reaching the network. OS-level enforcement
   is deferred to the separate sandbox project.
-- Deterministic volume intent is available in Agent Standard and Full Access;
-  explicit commands produce a typed, readback-verified `system.volume` request
-  before model selection. `system.volume` is not a Worker v2 model binding.
 - The bounded model selection loop allows at most ten sequential tool calls;
   approvals still gate mutations. The former Worker v1 conversational
   generation branch is retired; Worker v1 now carries only runtime/device

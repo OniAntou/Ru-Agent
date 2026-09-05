@@ -34,8 +34,8 @@ unit tests replace only their external process boundary and never open RuApp.
 
 ### Ru Agent tool hardening evidence (2026-09-05)
 
-- The canonical inventory contains 18 definitions: 13 model-visible and five
-  Broker-internal/deterministic operations. A table-driven acceptance matrix
+- The canonical inventory contains exactly 13 model-visible definitions. A
+  table-driven acceptance matrix
   verifies every available definition has a schema-identical binding and that
   `ModelEnabled` matches canonical exposure.
 - DuckDuckGo HTML result redirects are decoded to their final targets and then
@@ -378,9 +378,9 @@ The Worker v2 model inventory is deterministic and should stay aligned with
 `files.read`, `files.glob`, `files.search`, `files.write`, `files.edit`,
 `files.delete`, `files.restore`, `terminal.run`, and `terminal.shell`. Standard
 and Full Access receive the same advertised list; policy fallback behavior is
-verified separately. `system.volume` is a direct deterministic action and is
-not a model-selection binding. `notes.create`, read-only `system.*`, and
-`app.list` remain Broker-internal. `files.apply_patch` remains unadvertised.
+verified separately. `files.apply_patch` remains unadvertised. Time, machine
+status, app discovery, and optional volume operations use terminal tools;
+notes use `files.write`.
 Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
 Protocol parser and are covered by CLI/Host tests. Web search/fetch are
 enabled read-only managed capabilities backed by the fixed DuckDuckGo HTML
@@ -600,7 +600,7 @@ open a native device endpoint. The artifact contains statuses and safe reason
 codes only; raw tool arguments, receipts, prompts, and replies remain absent.
 
 A separate authenticated private-Broker probe opens only `workspace.write`,
-requests `notes.create` in the temporary workspace, approves once, expects the
+requests `files.write` in the temporary workspace, approves once, expects the
 replay to be denied as `approval_stale`, closes the session, and removes the
 fixture. The schema-v2 artifact contains bounded statuses and cleanup
 booleans, not request arguments, note content, workspace paths, tokens, or
@@ -620,17 +620,14 @@ Adapter evidence proves result semantics with fake endpoints, temporary files,
 and bounded child processes. It does not open the real Windows audio endpoint.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_harness_artifacts.py tests/test_harness_session.py tests/test_agent_harness.py tests/test_native_volume_acceptance.py
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AdapterConformanceTests|FullyQualifiedName~VolumeToolsTests|FullyQualifiedName~TerminalAdapterTests|FullyQualifiedName~ProcessTreeRunnerTests"
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_harness_artifacts.py tests/test_harness_session.py tests/test_agent_harness.py
+dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AdapterConformanceTests|FullyQualifiedName~TerminalAdapterTests|FullyQualifiedName~ProcessTreeRunnerTests"
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AgentApprovalTests|FullyQualifiedName~AgentApprovalUiContractTests"
 ```
 
-These tests establish file write/readback and cleanup, notes approval,
-terminal zero/non-zero/timeout/start-failure outer statuses, volume argument
-validation before endpoint acquisition, verified fake-endpoint success, and
-readback-mismatch failure. They also establish restoration logic and artifact
-privacy for the opt-in native runner through injected process, HTTP,
-WebSocket, and artifact-writer seams.
+These tests establish file write/readback and cleanup, file-write approval,
+terminal zero/non-zero/timeout/start-failure outer statuses, restoration logic,
+and artifact privacy.
 
 Host tests cover cross-session rotation with a stateful single-owner fake and
 prove close-before-open, same-session reuse, and no dispatch after close failure.
@@ -639,46 +636,13 @@ External-directory tests prove canonical descendant grants for read/list and
 create/edit, sibling isolation, absolute-path output, project-scope reuse across
 runs, and delete/root-directory approval gates.
 
-## evidence_class: native
-
-Native evidence is an explicit user-owned smoke against a freshly published
-`RuAgent.Broker.exe`. It is not part of CI, the default build, or the
-deterministic Harness. Do not run it without the confirmation flag:
-
-```powershell
-$broker = 'D:\LLM\backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish\RuAgent.Broker.exe'
-$artifact = Join-Path $env:TEMP 'ru-native-volume.json'
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\native_volume_acceptance.py --broker-exe $broker --output $artifact --confirm-native-volume-change
-```
-
-The runner proves the correct bearer and a fresh wrong bearer before opening
-the private WebSocket, captures the original state, changes volume by one
-point, verifies the same endpoint role/hash, and restores level and mute state
-in `finally`. Restoration failure forces exit 1 and a failed native artifact.
-Both CLI paths must be absolute, the output must be a `.json` file distinct
-from the published Broker, and the child Broker receives only the required
-descriptor/workspace variables plus a small Windows process environment
-allowlist; unrelated Ru and provider credentials are not inherited.
-The artifact excludes levels, mute values, credentials, paths, arguments,
-outputs, device names, and native exception text.
-
-The authorized native volume acceptance on 2026-08-30 passed both the one-point
-change/readback and the restoration check, with all owned Broker artifacts and
-processes cleaned up. The runner opens the Broker with the `agent` capability
-profile so `system.volume` is visible after the Agent-only cutover; it does not
-record the endpoint level, mute state, device identity, or request values.
-
-Even a passing native artifact does not prove audible quality or that the user
-observed the GUI behave correctly. The user must separately inspect the
-Windows playback level and confirm the restored state.
-
 ## Deterministic GUI Harness
 
 The GUI Harness is manual and interactive because it launches WinUI. It uses
 synthetic microphone/speaker boundaries and refuses to start while another
 RuApp instance exists. The supported Agent scenarios are exactly:
 
-- `agent-volume-contract`
+- `agent-tool-contract`
 - `agent-cancel`
 - `agent-stale-result`
 - `agent-private-metadata`
@@ -691,9 +655,8 @@ back into the replacement session.
 Each Agent GUI run receives a fresh temporary workspace through the Harness
 descriptor, creates the bounded `harness-agent.txt` fixture, and approves the
 workspace-trust card through UI Automation before the model step starts. The
-`agent-volume-contract` identifier is retained for catalog compatibility; its
-Agent-only fixture now exercises the read-only `files.read` loop and checks the
-bounded terminal reply. It never opens or changes the Windows volume endpoint.
+`agent-tool-contract` fixture exercises the read-only `files.read` loop and
+checks the bounded terminal reply. It never opens a native device endpoint.
 
 HTTP route probes use schema-valid VTS fixtures: the complete `MotionConfig`
 shape for `/vts/config`, a `typing` boolean for `/vts/activity`, and a bounded
@@ -727,14 +690,12 @@ sits at the far-right edge; horizontal scrolling must remain disabled. These
 remain manual release checks; deterministic tests cover the source and layout
 contract but do not replace visual inspection.
 
-A passing deterministic GUI result does not claim an audible Windows volume
-change and does not accept live microphone capture, audible OmniVoice,
-subtitles, or VTube Studio. The legacy runtime-live compatibility probe is
+A passing deterministic GUI result does not accept live microphone capture,
+audible OmniVoice, subtitles, or VTube Studio. The legacy runtime-live compatibility probe is
 blocked until a managed-native live path is available; physical microphone
 accuracy, speaker quality, natural bilingual conversation, and VTube Studio
-behavior remain explicit user-run checks. Real volume mutation remains the
-opt-in `native_volume_acceptance.py` path with
-`--confirm-native-volume-change` and separate user confirmation.
+behavior remain explicit user-run checks. There is no dedicated native volume
+acceptance path.
 
 See [Agent tools and truthful execution](agent-tools.md) for the current
 capability matrix and ownership boundary.

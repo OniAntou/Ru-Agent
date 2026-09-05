@@ -607,9 +607,15 @@ Do not push unless the user asks for a push after reviewing the completed local 
   regression assertions and dated historical records.
 - Focused verification: Protocol `21/21`, Broker `547/547`, backend fixture
   slice `58/58`, Python migration slice `70/70`, GUI descriptor `8/8`, and
-  documentation slice `16/16` passed.
-- Full verification: all 13 discovered .NET test projects passed, `2531/2531`;
-  the complete Python suite passed, `400/400`.
+  documentation slice `17/17` passed.
+- Full verification after the integrated runtime/prompt update: all 13
+  discovered .NET test projects passed, `2538/2538`; the complete Python suite
+  passed, `401/401`.
+- Deterministic backend compatibility Harness passed with zero failed checks,
+  including approval dispatch/replay, Broker session close, the synthetic tool
+  loop, and private-metadata validation. The Harness now bypasses live provider
+  bootstrap only when its deterministic worker token is present, and its Python
+  prompt fixture consumes the current capability schema.
 - Route contract: `64 HTTP + 1 WebSocket (/voice/stream)`.
 - Release build: all `13/13` build stages completed; native overlay tests passed
   `2/2`; GUI output is

@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "input_schema": { "type": "object", "required": ["query"] },
   "output_schema": { "type": "object", "required": ["summary", "sources"] },
-  "required_tools": ["web.search", "web.fetch", "notes.create"],
+  "required_tools": ["web.search", "web.fetch", "files.write"],
   "required_scopes": ["web.search", "web.fetch", "workspace.write", "skill.execute"],
   "steps": [
     { "kind": "call_tool", "name": "search", "tool_id": "web.search", "arguments": {} },
     { "kind": "call_tool", "name": "fetch", "tool_id": "web.fetch", "arguments": {} },
     { "kind": "named_transform", "name": "summarize_with_citations" },
-    { "kind": "call_tool", "name": "save_note", "tool_id": "notes.create", "arguments": {} }
+    { "kind": "call_tool", "name": "save_note", "tool_id": "files.write", "arguments": {} }
   ],
   "requires_approval": true,
   "max_steps": 8,

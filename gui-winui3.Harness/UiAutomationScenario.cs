@@ -270,14 +270,10 @@ public sealed class UiAutomationScenario : IDisposable
             bool messages = activity
                 && await WaitUntilAsync(
                     () => HasUserAndAssistantMessages()
-                        && (scenario != "agent-volume-contract"
+                        && (scenario != "agent-tool-contract"
                             || VisibleMessagesContain("Harness agent tool loop completed.")),
                     timeout);
-            // Keep the legacy scenario id for catalog compatibility. The Agent-only
-            // deterministic fixture now exercises the read-only files.read tool, so
-            // validate its bounded terminal reply instead of the deleted Chat/volume
-            // fixture that used to be rendered here.
-            bool truthfulAgentReply = scenario != "agent-volume-contract"
+            bool truthfulAgentReply = scenario != "agent-tool-contract"
                 || VisibleMessagesContain("Harness agent tool loop completed.");
             bool privateAbsent = !VisibleMessageContainsPrivateMarker()
                 && !AgentSurfaceContainsPrivateMarker();

@@ -25,20 +25,20 @@ public sealed class AgentBrokerClientTests
         var capabilities = await client.GetCapabilitiesAsync(
             CapabilityProfile.Agent,
             CancellationToken.None);
-        var volume = Assert.Single(capabilities);
-        Assert.Equal("system.volume", volume.ToolId);
-        Assert.Equal("1.0.0", volume.ToolVersion);
-        Assert.Equal(new[] { "system.write" }, volume.Scopes);
-        Assert.True(volume.ModelEnabled);
+        var fileWrite = Assert.Single(capabilities);
+        Assert.Equal("files.write", fileWrite.ToolId);
+        Assert.Equal("1.0.0", fileWrite.ToolVersion);
+        Assert.Equal(new[] { "workspace.write" }, fileWrite.Scopes);
+        Assert.True(fileWrite.ModelEnabled);
 
         var grant = await client.OpenSessionAsync(
             "session-1",
-            new HashSet<string>(StringComparer.Ordinal) { "system.write", "workspace.read" },
+            new HashSet<string>(StringComparer.Ordinal) { "workspace.write", "workspace.read" },
             new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
             CancellationToken.None);
-        Assert.Equal(new[] { "system.write" }, grant.Scopes);
+        Assert.Equal(new[] { "workspace.write" }, grant.Scopes);
         Assert.Empty(grant.SkillIds);
 
         var result = await client.ExecuteToolAsync(
@@ -46,10 +46,10 @@ public sealed class AgentBrokerClientTests
                 "request-1",
                 "session-1",
                 "corr-1",
-                "system.volume",
+                "files.write",
                 "1.0.0",
-                "native_mutation",
-                new Dictionary<string, object?> { ["operation"] = "mute" },
+                "tool",
+                new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                 2_000),
             CapabilityProfile.Agent,
             CancellationToken.None);
@@ -61,7 +61,7 @@ public sealed class AgentBrokerClientTests
         Assert.Equal(12, result.DurationMs);
         Assert.True(result.AdapterInvoked);
         var request = Assert.Single(fixture.Server.Requests, item => item.MessageType == AgentMessageTypes.ToolRequest);
-        Assert.Equal("native_mutation", request.Payload["capability_class"]!.GetValue<string>());
+        Assert.Equal("tool", request.Payload["capability_class"]!.GetValue<string>());
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class AgentBrokerClientTests
         _ = await client.GetCapabilitiesAsync(CapabilityProfile.Agent, CancellationToken.None);
         _ = await client.OpenSessionAsync(
             "session-1",
-            new HashSet<string>(["system.write"], StringComparer.Ordinal),
+            new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
@@ -84,10 +84,10 @@ public sealed class AgentBrokerClientTests
                 "request-missing",
                 "session-1",
                 "corr-1",
-                "system.volume",
+                "files.write",
                 "2.0.0",
-                "native_mutation",
-                new Dictionary<string, object?> { ["operation"] = "mute" },
+                "tool",
+                new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                 2_000),
             CapabilityProfile.Agent,
             CancellationToken.None);
@@ -106,7 +106,7 @@ public sealed class AgentBrokerClientTests
         await using var client = fixture.Client;
         _ = await client.OpenSessionAsync(
             "session-1",
-            new HashSet<string>(["system.write"], StringComparer.Ordinal),
+            new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
@@ -118,10 +118,10 @@ public sealed class AgentBrokerClientTests
                 "request-scope",
                 "session-1",
                 "corr-1",
-                "system.volume",
+                "files.write",
                 "1.0.0",
-                "native_mutation",
-                new Dictionary<string, object?> { ["operation"] = "mute" },
+                "tool",
+                new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                 2_000),
             CapabilityProfile.Agent,
             CancellationToken.None);
@@ -187,7 +187,7 @@ public sealed class AgentBrokerClientTests
         await using var client = fixture.Client;
         _ = await client.OpenSessionAsync(
             "session-1",
-            new HashSet<string>(["system.write"], StringComparer.Ordinal),
+            new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
@@ -199,10 +199,10 @@ public sealed class AgentBrokerClientTests
                     "request-invalid",
                     "session-1",
                     "corr-1",
-                    "system.volume",
+                    "files.write",
                     "1.0.0",
-                    "native_mutation",
-                    new Dictionary<string, object?> { ["operation"] = "mute" },
+                    "tool",
+                    new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                     2_000),
                 CapabilityProfile.Agent,
                 CancellationToken.None));
@@ -264,11 +264,11 @@ public sealed class AgentBrokerClientTests
     {
         new JsonObject
         {
-            ["tool_id"] = "system.volume",
+            ["tool_id"] = "files.write",
             ["tool_version"] = "1.0.0",
-            ["scopes"] = new JsonArray("system.write"),
+            ["scopes"] = new JsonArray("workspace.write"),
             ["risk"] = "reversible",
-            ["availability"] = "native_pending",
+            ["availability"] = "executable",
             ["model_enabled"] = true,
         },
     };
@@ -276,9 +276,9 @@ public sealed class AgentBrokerClientTests
     private static JsonObject DefaultToolResult() => new()
     {
         ["status"] = ToolResultStatuses.Succeeded,
-        ["output"] = new JsonObject { ["operation"] = "mute" },
+        ["output"] = new JsonObject { ["path"] = "notes.txt" },
         ["error_code"] = null,
-        ["safe_summary"] = "Volume change verified.",
+        ["safe_summary"] = "Workspace file written.",
         ["duration_ms"] = 12,
         ["verification_state"] = "verified",
         ["endpoint_role"] = "default_render_multimedia",
@@ -349,7 +349,7 @@ public sealed class AgentBrokerClientTests
     private sealed record FakeBrokerOptions
     {
         public JsonArray Tools { get; init; } = DefaultTools();
-        public JsonArray SessionScopes { get; init; } = new("system.write");
+        public JsonArray SessionScopes { get; init; } = new("workspace.write");
         public JsonObject ToolResult { get; init; } = DefaultToolResult();
     }
 

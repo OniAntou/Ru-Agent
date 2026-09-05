@@ -25,7 +25,7 @@ public sealed class AgentStoreTests
     [Fact]
     public void Grant_store_requires_every_scope_and_exposes_immutable_copies()
     {
-        var scopes = new HashSet<string>(["workspace.read", "system.write"], StringComparer.Ordinal);
+        var scopes = new HashSet<string>(["workspace.read", "workspace.write"], StringComparer.Ordinal);
         var store = new AgentSessionGrantStore();
         store.Put(new AgentSessionGrant(
             "session-all",
@@ -36,13 +36,13 @@ public sealed class AgentStoreTests
 
         Assert.True(store.TryGet(
             "session-all",
-            new HashSet<string>(["workspace.read", "system.write"], StringComparer.Ordinal),
+            new HashSet<string>(["workspace.read", "workspace.write"], StringComparer.Ordinal),
             out var grant));
         Assert.False(store.TryGet(
             "session-all",
             new HashSet<string>(["workspace.read", "terminal.execute"], StringComparer.Ordinal),
             out _));
-        Assert.Equal(new[] { "system.write", "workspace.read" }, grant!.Scopes.Order(StringComparer.Ordinal));
+        Assert.Equal(new[] { "workspace.read", "workspace.write" }, grant!.Scopes.Order(StringComparer.Ordinal));
         Assert.False(grant.Scopes is HashSet<string>);
         Assert.True(store.Remove("session-all"));
         Assert.False(store.TryGet("session-all", "workspace.read", out _));

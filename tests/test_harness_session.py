@@ -45,10 +45,10 @@ def test_deterministic_agent_requires_tool_loop_privacy_and_voice_checks() -> No
 
 def test_agent_tool_loop_requires_one_matching_terminal_activity_before_done() -> None:
     events = [
-        {"type": "agent.activity", "tool_id": "system.volume", "status": "requested"},
+        {"type": "agent.activity", "tool_id": "files.read", "status": "requested"},
         {
             "type": "agent.activity",
-            "tool_id": "system.volume",
+            "tool_id": "files.read",
             "status": "failed",
             "error_code": "invalid_arguments",
         },
@@ -63,12 +63,12 @@ def test_agent_tool_loop_requires_one_matching_terminal_activity_before_done() -
     "events",
     [
         [
-            {"type": "agent.activity", "tool_id": "system.volume", "status": "requested"},
+            {"type": "agent.activity", "tool_id": "files.read", "status": "requested"},
             {"type": "done"},
         ],
         [
-            {"type": "agent.activity", "tool_id": "system.volume", "status": "requested"},
-            {"type": "agent.activity", "tool_id": "system.volume", "status": "mystery"},
+            {"type": "agent.activity", "tool_id": "files.read", "status": "requested"},
+            {"type": "agent.activity", "tool_id": "files.read", "status": "mystery"},
             {"type": "done"},
         ],
         [
@@ -77,14 +77,15 @@ def test_agent_tool_loop_requires_one_matching_terminal_activity_before_done() -
         ],
         [
             {"type": "done"},
-            {"type": "agent.activity", "tool_id": "system.volume", "status": "failed"},
+            {"type": "agent.activity", "tool_id": "files.read", "status": "failed"},
         ],
         [
-            {"type": "agent.activity", "tool_id": "system.volume", "status": "failed"},
-            {"type": "agent.activity", "tool_id": "system.volume", "status": "failed"},
+            {"type": "agent.activity", "tool_id": "files.read", "status": "failed"},
+            {"type": "agent.activity", "tool_id": "files.read", "status": "failed"},
             {"type": "done"},
         ],
         [
+            {"type": "agent.activity", "tool_id": "files.read", "status": "requested"},
             {"type": "agent.activity", "tool_id": "files.list", "status": "failed"},
             {"type": "done"},
         ],

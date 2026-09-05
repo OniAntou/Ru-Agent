@@ -89,7 +89,7 @@ def test_privacy_scan_intent_events_have_only_bounded_metadata(event_code: str) 
         event_code=event_code,
         correlation_id="correlation-1",
         status="succeeded",
-        tool_id="system.volume",
+        tool_id="files.write",
         tool_version="1.0.0",
     )
 

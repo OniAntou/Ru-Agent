@@ -16,7 +16,7 @@ internal static class Program
         "stop",
         "cancel",
         "stale-session",
-        "agent-volume-contract",
+        "agent-tool-contract",
         "agent-cancel",
         "agent-stale-result",
         "agent-private-metadata",

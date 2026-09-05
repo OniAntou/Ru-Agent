@@ -81,7 +81,7 @@ public sealed class DiagnosticEmitterTests : IDisposable
             "c_abcdef1234567890",
             durationMs: 12,
             status: "succeeded",
-            toolId: "system.volume",
+            toolId: "files.write",
             toolVersion: "1.0.0",
             verificationState: "verified",
             endpointRole: "default_render_multimedia",
@@ -92,7 +92,7 @@ public sealed class DiagnosticEmitterTests : IDisposable
         var parsed = DiagnosticEventPolicy.Deserialize((await File.ReadAllLinesAsync(file))[0]);
 
         Assert.NotNull(parsed);
-        Assert.Equal("system.volume", parsed.ToolId);
+        Assert.Equal("files.write", parsed.ToolId);
         Assert.Equal("1.0.0", parsed.ToolVersion);
         Assert.Equal("verified", parsed.VerificationState);
         Assert.Equal("default_render_multimedia", parsed.EndpointRole);

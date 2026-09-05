@@ -35,12 +35,7 @@ public abstract class ToolGatewayConformance : IDisposable
 
     protected virtual IReadOnlyList<string> AdvertisedCapabilities { get; } =
     [
-        "system.time",
-        "system.status",
-        "system.volume",
         "help.docs",
-        "app.list",
-        "notes.create",
         "files.list",
         "files.glob",
         "files.search",

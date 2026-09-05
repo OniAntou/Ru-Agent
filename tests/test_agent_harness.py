@@ -9,7 +9,7 @@ from harness.session import HarnessSession
 ROOT = Path(__file__).resolve().parents[1]
 
 AGENT_SCENARIOS = (
-    "agent-volume-contract",
+    "agent-tool-contract",
     "agent-cancel",
     "agent-stale-result",
     "agent-private-metadata",
@@ -69,7 +69,7 @@ def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
     assert "_probe_agent_api" in session_source
     assert '"tool.proposed"' in session_source
     assert '"tool.execution_completed"' in session_source
-    assert '"notes.create"' in session_source
+    assert 'tool_id="files.write"' in session_source
     assert '"web.search"' not in worker_source
     assert '"RU_WORKSPACE_ROOT": str(workspace_root)' in session_source
     workspace_assignment = next(
@@ -80,7 +80,6 @@ def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
     assert "private_agent_metadata_visible" in session_source
     assert "Harness agent tool loop completed." in worker_source
     assert "Harness agent tool loop completed." in ui_driver_source
-    assert "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows." not in ui_driver_source
     assert '"workspace_path": str(workspace_path.resolve())' in session_source
     assert '"harness-agent.txt"' in session_source
 
@@ -147,19 +146,21 @@ def test_gui_agent_cancel_and_stale_scenarios_replace_in_flight_session() -> Non
     assert "noLateAgentUpdate" in driver
 
 
-def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
+def test_deterministic_agent_harness_uses_reduced_tool_catalog() -> None:
     catalog = (ROOT / "backend-dotnet/RuAgent.Broker/Tools/ToolCatalog.cs").read_text(encoding="utf-8")
     binding_registry = (
         ROOT / "backend-dotnet/RuAgent.Broker/Tools/ToolBindingRegistry.cs"
     ).read_text(encoding="utf-8")
-    volume_tool = (
-        ROOT / "backend-dotnet/RuAgent.Broker/Tools/Desktop/VolumeTools.cs"
-    ).read_text(encoding="utf-8")
     deterministic_worker = (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
-    assert "yield return VolumeTools.Manifest;" in catalog
+    for retired_tool_id in (
+        "system.time",
+        "system.status",
+        "app.list",
+        "notes.create",
+        "system.volume",
+    ):
+        assert retired_tool_id not in catalog
     assert "ModelCapabilities(" in binding_registry
-    assert 'new HashSet<string>([ToolScope.SystemWrite]' in volume_tool
-    assert 'RiskClass.Reversible' in volume_tool
     assert '"files.read"' in deterministic_worker
     assert "keybd_event" not in deterministic_worker

@@ -38,7 +38,7 @@ GuiScenario = Literal[
     "stop",
     "cancel",
     "stale-session",
-    "agent-volume-contract",
+    "agent-tool-contract",
     "agent-cancel",
     "agent-stale-result",
     "agent-private-metadata",
@@ -67,9 +67,14 @@ def agent_tool_loop_completed(
         for index, event in enumerate(events)
         if event.get("type") == "agent.activity"
     ]
+    tool_ids = [event.get("tool_id") for _, event in activities]
     if not activities or any(
-        event.get("tool_id") != "system.volume"
-        or event.get("status") not in terminal_statuses | {"requested"}
+        not isinstance(tool_id, str) or not tool_id
+        for tool_id in tool_ids
+    ) or any(
+        tool_id != tool_ids[0] for tool_id in tool_ids
+    ) or any(
+        event.get("status") not in terminal_statuses | {"requested"}
         for _, event in activities
     ):
         return False
@@ -279,7 +284,7 @@ class HarnessSession:
             "stop",
             "cancel",
             "stale-session",
-            "agent-volume-contract",
+            "agent-tool-contract",
             "agent-cancel",
             "agent-stale-result",
             "agent-private-metadata",
@@ -887,12 +892,12 @@ class HarnessSession:
         summary = await probe_approval_lifecycle(
             base_url=self.broker_base_url,
             token=self._broker_token,
-            tool_id="notes.create",
+            tool_id="files.write",
             tool_version="1.0.0",
             arguments={
                 "path": "notes/harness-approval.md",
-                "title": "Harness approval fixture",
                 "content": "bounded deterministic fixture",
+                "overwrite": False,
             },
         )
 

@@ -91,7 +91,7 @@ def test_serialize_diagnostic_event_emits_exact_bounded_action_proof_shape():
         correlation_id="c_abcdef1234567890",
         duration_ms=12.0,
         status="succeeded",
-        tool_id="system.volume",
+        tool_id="files.write",
         tool_version="1.0.0",
         verification_state="verified",
         endpoint_role="default_render_multimedia",
@@ -105,7 +105,7 @@ def test_serialize_diagnostic_event_emits_exact_bounded_action_proof_shape():
         "correlation_id", "duration_ms", "status", "tool_id", "tool_version",
         "verification_state", "endpoint_role", "endpoint_hash",
     }
-    assert data["tool_id"] == "system.volume"
+    assert data["tool_id"] == "files.write"
     assert data["tool_version"] == "1.0.0"
     assert data["verification_state"] == "verified"
     assert data["endpoint_role"] == "default_render_multimedia"
@@ -137,7 +137,7 @@ def test_serialize_diagnostic_event_emits_exact_bounded_action_proof_shape():
 )
 def test_sanitize_diagnostic_event_drops_invalid_action_proof(field: str, value: str):
     values = {
-        "tool_id": "system.volume",
+        "tool_id": "files.write",
         "tool_version": "1.0.0",
         "verification_state": "verified",
         "endpoint_role": "default_render_multimedia",

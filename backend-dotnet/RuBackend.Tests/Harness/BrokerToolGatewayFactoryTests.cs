@@ -159,7 +159,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ExecuteAsync_ResumesEditAndNotesInsideGrantedDirectory()
+    public async Task ExecuteAsync_ResumesEditAndWriteInsideGrantedDirectory()
     {
         var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
         var runId = new RunId("run_" + new string('1', 32));
@@ -187,14 +187,15 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             var editDecision = await gateway.EvaluateAsync(editProposal, CancellationToken.None);
             Assert.Equal(PolicyDecision.Ask, editDecision.Decision);
 
-            var notesProposal = Proposal(runId, "notes.create", new System.Text.Json.Nodes.JsonObject
+            var notePath = Path.Combine(externalDir, "note.md");
+            var writeProposal = Proposal(runId, "files.write", new System.Text.Json.Nodes.JsonObject
             {
-                ["path"] = Path.Combine(externalDir, "note.md"),
-                ["title"] = "External Note",
+                ["path"] = notePath,
                 ["content"] = "external-note-content",
+                ["overwrite"] = false,
             });
-            var notesDecision = await gateway.EvaluateAsync(notesProposal, CancellationToken.None);
-            Assert.Equal(PolicyDecision.Ask, notesDecision.Decision);
+            var writeDecision = await gateway.EvaluateAsync(writeProposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, writeDecision.Decision);
 
             var editAuthorized = await factory.RespondApprovalAsync(
                 runId.Value,
@@ -224,33 +225,32 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             Assert.Equal(ToolExecutionOutcome.Succeeded, editReceipt.Outcome);
             Assert.Equal("factory-edit-post", await File.ReadAllTextAsync(editPath));
 
-            var notesAuthorized = await factory.RespondApprovalAsync(
+            var writeAuthorized = await factory.RespondApprovalAsync(
                 runId.Value,
-                notesDecision.ApprovalId!.Value.Value,
+                writeDecision.ApprovalId!.Value.Value,
                 "allow_session_directory",
                 CancellationToken.None);
-            Assert.True(notesAuthorized.Authorized);
+            Assert.True(writeAuthorized.Authorized);
 
-            var notesResumed = Proposal(runId, "notes.create", new System.Text.Json.Nodes.JsonObject
+            var writeResumed = Proposal(runId, "files.write", new System.Text.Json.Nodes.JsonObject
             {
-                ["path"] = Path.Combine(externalDir, "note.md"),
-                ["title"] = "External Note",
+                ["path"] = notePath,
                 ["content"] = "external-note-content",
+                ["overwrite"] = false,
             });
-            var notesResumedDecision = await gateway.EvaluateAsync(notesResumed, CancellationToken.None);
-            Assert.Equal(PolicyDecision.Allow, notesResumedDecision.Decision);
-            var notesPrepared = await gateway.PrepareAsync(
+            var writeResumedDecision = await gateway.EvaluateAsync(writeResumed, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, writeResumedDecision.Decision);
+            var writePrepared = await gateway.PrepareAsync(
                 new ApprovedToolExecution(
-                    notesResumed,
+                    writeResumed,
                     new ExecutionId("exec_" + new string('2', 32)),
-                    notesResumedDecision.CanonicalIntentToken!),
+                    writeResumedDecision.CanonicalIntentToken!),
                 CancellationToken.None);
-            var notesReceipt = await gateway.ExecuteAsync(
-                notesPrepared,
+            var writeReceipt = await gateway.ExecuteAsync(
+                writePrepared,
                 _ => ValueTask.CompletedTask,
                 CancellationToken.None);
-            Assert.Equal(ToolExecutionOutcome.Succeeded, notesReceipt.Outcome);
-            var notePath = Path.Combine(externalDir, "note.md");
+            Assert.Equal(ToolExecutionOutcome.Succeeded, writeReceipt.Outcome);
             Assert.True(File.Exists(notePath));
             var noteText = await File.ReadAllTextAsync(notePath);
             Assert.Contains("external-note-content", noteText);

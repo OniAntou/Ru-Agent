@@ -6,7 +6,7 @@ namespace RuApp.Tests;
 public sealed class HarnessSessionDescriptorTests
 {
     [Theory]
-    [InlineData("agent-volume-contract")]
+    [InlineData("agent-tool-contract")]
     [InlineData("agent-cancel")]
     [InlineData("agent-stale-result")]
     [InlineData("agent-private-metadata")]
@@ -46,7 +46,7 @@ public sealed class HarnessSessionDescriptorTests
             var descriptor = HarnessSessionDescriptor.Create(
                 "http://127.0.0.1:8000",
                 "secret",
-                "agent-volume-contract",
+                "agent-tool-contract",
                 eventsPath,
                 workspacePath: workspacePath);
             descriptor.WriteTo(descriptorPath);
@@ -81,7 +81,7 @@ public sealed class HarnessSessionDescriptorTests
             var descriptor = HarnessSessionDescriptor.Create(
                 "http://127.0.0.1:8000",
                 "secret",
-                "agent-volume-contract",
+                "agent-tool-contract",
                 Path.Combine(root, "events.jsonl"),
                 workspacePath: externalWorkspace);
             descriptor.WriteTo(descriptorPath);

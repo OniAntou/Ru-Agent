@@ -95,7 +95,7 @@ public sealed class DiagnosticEventTests
             CorrelationId: "c_abcdef1234567890",
             DurationMs: 12.0,
             Status: "succeeded",
-            ToolId: "system.volume",
+            ToolId: "files.write",
             ToolVersion: "1.0.0",
             VerificationState: "verified",
             EndpointRole: "default_render_multimedia",
@@ -113,7 +113,7 @@ public sealed class DiagnosticEventTests
                 "verification_state", "endpoint_role", "endpoint_hash",
             },
             names);
-        Assert.Equal("system.volume", root.GetProperty("tool_id").GetString());
+        Assert.Equal("files.write", root.GetProperty("tool_id").GetString());
         Assert.Equal("1.0.0", root.GetProperty("tool_version").GetString());
         Assert.Equal("verified", root.GetProperty("verification_state").GetString());
         Assert.Equal("default_render_multimedia", root.GetProperty("endpoint_role").GetString());
@@ -346,7 +346,7 @@ public sealed class DiagnosticEventTests
     }
 
     private static DiagnosticEvent ActionEvent(
-        string ToolId = "system.volume",
+        string ToolId = "files.write",
         string ToolVersion = "1.0.0",
         string VerificationState = "verified",
         string EndpointRole = "default_render_multimedia",

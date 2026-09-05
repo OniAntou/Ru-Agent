@@ -5,9 +5,8 @@ supported production startup. The production Python generation and Worker
 v1/v2 modules are retired. The 2026-08-31 test cleanup also removed the unused
 Python VTS/overlay package and its nine test files; managed VTS, its canonical
 token file, and native overlay assets are unchanged.
-The deterministic Harness uses a test-only fixture under
-`scripts/harness`; the retired `PythonCompatibility` selector fails closed with
-`python_compatibility_retired` and is not a supported configuration.
+The deterministic Harness uses a test-only fixture under `scripts/harness`.
+Managed startup is unconditional and exposes no runtime selector.
 
 The deterministic inventory is generated with:
 
@@ -52,9 +51,8 @@ settings, voice/STT/VTS/observation adapters, one shared lease coordinator,
 and OmniVoice process shutdown. The bootstrap is read only for the v2 model
 provider and its environment path is cleared before the v1 graph is composed;
 v1 never receives the provider credential. The old Python Agent + Device
-topology is retired; `runtime-live` reports `python_compatibility_retired`
-without launching a child topology. This inventory is classification evidence,
-not evidence that the separate
+topology and its retirement-only probe are deleted. This inventory is
+classification evidence, not evidence that the separate
 OS-enforced filesystem/network sandbox project is complete.
 
 ## Managed speech adapter boundary (Phase 2)

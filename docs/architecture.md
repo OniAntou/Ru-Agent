@@ -17,10 +17,9 @@ Host creates per-run desktop and separate Agent/device worker secrets, starts
 one managed C# Worker serving Agent v2 on loopback port 8005 and Device v1
 on loopback port 8006, starts the isolated `RuAgentBroker` on a dynamic
 loopback port, binds ASP.NET Core on port 8000, waits for public readiness,
-and assigns the Worker/Broker to one Job Object. The retired
-`PythonCompatibility` selector fails closed with
-`python_compatibility_retired`; `runtime-live` is a bounded diagnostic and
-never starts Python or a partial topology.
+and assigns the Worker/Broker to one Job Object. Managed startup is
+unconditional; the retired Python selector and no-op live probe have been
+deleted.
 The Host remains running until explicitly stopped (or an owned child exits
 unexpectedly) and does not auto-exit on idle. Both owned children enter one Job
 Object, but ownership is Public Host, not WinUI. Startup succeeds only after

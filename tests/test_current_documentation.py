@@ -92,3 +92,40 @@ def test_current_docs_do_not_claim_durable_external_grants_or_full_access_author
         text = _read(path).lower()
         for phrase in banned:
             assert phrase.lower() not in text, f"{path.relative_to(ROOT)} still contains '{phrase}'"
+
+
+def test_retired_runtime_scaffolding_is_absent_from_current_sources() -> None:
+    forbidden = (
+        "Runtime" + "MigrationMode",
+        "python_" + "compatibility_retired",
+        "runtime-" + "live",
+        "aspnetcore_" + "compatibility_harness",
+        "benchmark_aspnetcore_" + "compat",
+    )
+    roots = (
+        ROOT / "backend-dotnet",
+        ROOT / "gui-winui3",
+        ROOT / "scripts",
+        ROOT / "src",
+        ROOT / "tests",
+        ROOT / "docs/operations",
+    )
+    files = [ROOT / name for name in ("README.md", "CONTEXT.md", "TODO.md")]
+    for root in roots:
+        files.extend(
+            path
+            for path in root.rglob("*")
+            if path.is_file()
+            and not {"bin", "obj", "__pycache__"}.intersection(path.parts)
+            and path.suffix.lower() in {".cs", ".csproj", ".md", ".py", ".ps1", ".bat"}
+        )
+
+    matches = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        matches.extend(
+            f"{path.relative_to(ROOT)}: {token}"
+            for token in forbidden
+            if token in text
+        )
+    assert matches == []

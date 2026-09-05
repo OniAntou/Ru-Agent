@@ -29,10 +29,9 @@ Public Host descriptor lease and long-lived WebSocket/SSE client leases.
 ```
 
 There is no public Python HTTP server, forwarding catch-all, WebSocket relay, or
-automatic fallback. The retired `PythonCompatibility` selector fails closed
-with `python_compatibility_retired`; the current Harness uses a dependency-free
-test fixture and `runtime-live` is only a bounded diagnostic, never a Worker
-startup path. Git commit
+automatic fallback. Managed startup is unconditional; the retired runtime
+selector and its diagnostic were hard-deleted. The current Harness uses a
+dependency-free test fixture. Git commit
 `e023fd3` remains a historical recovery checkpoint, not a supported runtime.
 
 ## Ownership
@@ -145,13 +144,10 @@ validates its schema/source ownership, and `PublicRouteContractTests` compares
 it with ASP.NET's live `EndpointDataSource` so a missing route cannot be hidden
 by a forwarder.
 
-The retired `runtime-live` command is a bounded diagnostic. It returns
-`python_compatibility_retired` without starting any child topology. A
-managed-native live gate is outside this retirement phase. For the current
-deterministic contract gate use:
+The deterministic Harness is a contract gate, not a managed-native voice gate:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\aspnetcore_compatibility_harness.py `
+& D:\LLM\.venv\Scripts\python.exe scripts\ru_harness.py `
   --mode backend-deterministic --output "$env:TEMP\\ru-backend-harness.json"
 ```
 

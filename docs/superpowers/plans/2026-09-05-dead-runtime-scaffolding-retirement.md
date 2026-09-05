@@ -204,4 +204,3 @@
   Run `build.bat`, `git diff --check`, the forbidden-symbol scan, and
   `git status --short --branch`. Confirm unrelated dirty files remain unstaged
   and unchanged by this plan.
-

@@ -61,10 +61,8 @@ reasoning options, and for Anthropic the bounded `max_tokens`; changes to
 settings apply to the next run, not a continuation of the active run.
 Each handoff is deleted after consumption. The Worker dispatches exactly the
 pinned protocol through one of three focused adapters; unknown or mismatched
-protocols fail closed before HTTP. The retired `PythonCompatibility` selector
-fails closed with `python_compatibility_retired`; `runtime-live` is a bounded
-diagnostic without starting a child topology. There is no Python compatibility
-startup path.
+protocols fail closed before HTTP. Managed startup is unconditional. There is
+no Python compatibility startup path or retirement-only diagnostic.
 
 ### Agent system-prompt composition
 

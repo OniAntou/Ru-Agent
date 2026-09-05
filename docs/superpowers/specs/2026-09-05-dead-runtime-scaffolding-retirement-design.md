@@ -1,7 +1,9 @@
 # Dead Runtime Scaffolding Retirement Design
 
-**Date:** 2026-09-05  
-**Status:** Approved for implementation  
+**Date:** 2026-09-05
+
+**Status:** Approved for implementation
+
 **Scope:** First legacy-removal wave only
 
 ## Problem
@@ -62,4 +64,3 @@ bootstrap, and Broker executable inputs.
 - Current documentation and `TODO.md` describe the managed-only topology.
 - Run the full Python suite, full .NET test matrix, route matrix, deterministic
   backend Harness, release build, and `git diff --check` sequentially.
-

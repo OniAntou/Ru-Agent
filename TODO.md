@@ -2,6 +2,17 @@
 
 Last reviewed: 2026-09-05.
 
+## Completed dead runtime scaffolding retirement (2026-09-05)
+
+- [x] Removed the one-value runtime migration selector, its configuration read,
+  and the special error retained solely for the retired Python topology.
+- [x] Removed the no-op live retirement Harness mode and compatibility-only CLI
+  arguments/helpers; deterministic backend and GUI modes remain.
+- [x] Renamed active tooling to `scripts/ru_harness.py` and
+  `scripts/benchmark_backend.py` without aliases or fallback entry points.
+- [x] Kept Worker v1 device/voice routes, OmniVoice, and persisted-data
+  migrations because they still have live responsibilities.
+
 ## Completed Agent tool retirement (2026-09-05)
 
 - [x] Reduced the canonical Agent catalog from 18 mixed-exposure definitions

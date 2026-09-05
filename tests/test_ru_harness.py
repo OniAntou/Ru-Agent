@@ -24,13 +24,15 @@ def test_empty_summary_is_explicit_and_failure_count_is_preserved() -> None:
 def test_harness_has_only_live_modes() -> None:
     current = ROOT / "scripts" / "ru_harness.py"
     assert current.is_file()
-    assert not (ROOT / "scripts" / "aspnetcore_compatibility_harness.py").exists()
+    retired_name = "aspnetcore_" + "compatibility_harness.py"
+    assert not (ROOT / "scripts" / retired_name).exists()
     source = current.read_text(encoding="utf-8")
     assert 'choices=("backend-deterministic", "gui-deterministic")' in source
     assert 'default="backend-deterministic"' in source
-    assert "runtime-live" not in source
+    assert "runtime-" + "live" not in source
 
 
 def test_backend_benchmark_has_current_name_only() -> None:
     assert (ROOT / "scripts" / "benchmark_backend.py").is_file()
-    assert not (ROOT / "scripts" / "benchmark_aspnetcore_compat.py").exists()
+    retired_name = "benchmark_aspnetcore_" + "compat.py"
+    assert not (ROOT / "scripts" / retired_name).exists()

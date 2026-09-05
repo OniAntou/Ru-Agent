@@ -13,7 +13,7 @@ dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\measure_phase1_runtime.py --root D:\LLM
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\ru_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
 & D:\LLM\.venv\Scripts\python.exe -m pip check
 & D:\LLM\scripts\test_dotnet.ps1 -Configuration Release
 dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
@@ -363,8 +363,7 @@ single-use DPAPI handoffs, never by the device graph,
 legacy Python configuration, descriptors, logs, or public responses. The
 production Python generation/worker modules and compatibility launch branch
 are retired; the test-only fixture under `scripts/harness` is not a production
-fallback. The retired `runtime-live` command is a bounded diagnostic and does
-not start a child topology.
+fallback. Retirement-only selectors and probes have been deleted.
 
 The Phase 1 measurement command times deterministic prompt/tool operations in
 small batches to amortize sub-millisecond scheduler noise, then measures their
@@ -448,9 +447,8 @@ retirement changes:
 | Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Release build | `build.bat` `13/13`; GUI and managed Worker published |
 
-Managed startup now rejects an explicit legacy `PythonCompatibility` setting
-before acquiring a mutex, writing a descriptor, or starting child processes;
-the stable code is `python_compatibility_retired`.
+Managed startup is now unconditional. The legacy runtime setting, parser, and
+special retirement error were removed in the first legacy cleanup wave.
 
 The logging benchmark remains an optional latency probe. Its percentile tail
 is scheduler-sensitive on this Windows host; a noisy run is recorded as an
@@ -472,11 +470,9 @@ volume endpoint, VTube Studio, or provider process:
 | VTube Studio catalog, action, and reconnect | pending user-run | not collected |
 | Opt-in Gemini observation | pending user-run | not collected |
 
-The authorized 2026-08-30 run passed all four deterministic Agent GUI
-scenarios and the backend contract Harness. The retired `runtime-live` command
-returns `startup.readiness=blocked_by_startup` with reason
-`python_compatibility_retired` and points to `managed_runtime_native`; it does
-not start a child topology. No native microphone, audio, VTube Studio, or
+The authorized 2026-08-30 run passed all four deterministic Agent GUI scenarios
+and the backend contract Harness. Its historical retirement probe was deleted
+in the first legacy cleanup wave. No native microphone, audio, VTube Studio, or
 Gemini quality claim is made here.
 
 When these checks are run, record only pass/fail, duration, and bounded reason
@@ -500,16 +496,13 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 | Backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
 | Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
-| Retired selector smoke | exit `5`; `python_compatibility_retired`; no child topology |
 | Release build | `build.bat` `13/13`; GUI, managed Worker/Core, Broker, and backend published |
 | `git diff --check` | passed |
 
-The `runtime-live` command is intentionally retained only as a bounded
-retirement diagnostic; it returns `startup.readiness=blocked_by_startup` with
-`python_compatibility_retired` and does not launch any child. The GUI voice
-runner and native microphone, speaker, OmniVoice, VTube Studio, and Gemini
-checks remain separate acceptance boundaries; the Agent GUI scenarios above
-exercise the deterministic Agent path only.
+The retired selector and no-op live diagnostic were subsequently hard-deleted.
+The GUI voice runner and native microphone, speaker, OmniVoice, VTube Studio,
+and Gemini checks remain separate acceptance boundaries; the Agent GUI
+scenarios above exercise the deterministic Agent path only.
 
 ## Prompt composer contract checks
 
@@ -586,7 +579,7 @@ privacy, and cleanup without performing a valid native mutation.
 
 ```powershell
 $artifact = Join-Path $env:TEMP 'ru-action-kernel-contract.json'
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output $artifact
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\ru_harness.py --mode backend-deterministic --output $artifact
 $report = Get-Content -Raw -LiteralPath $artifact | ConvertFrom-Json
 if ($report.evidence_class -ne 'contract') { throw 'wrong evidence class' }
 if ($report.summary.status -ne 'passed') { throw 'contract Harness failed' }
@@ -691,10 +684,10 @@ remain manual release checks; deterministic tests cover the source and layout
 contract but do not replace visual inspection.
 
 A passing deterministic GUI result does not accept live microphone capture,
-audible OmniVoice, subtitles, or VTube Studio. The legacy runtime-live compatibility probe is
-blocked until a managed-native live path is available; physical microphone
-accuracy, speaker quality, natural bilingual conversation, and VTube Studio
-behavior remain explicit user-run checks. There is no dedicated native volume
+audible OmniVoice, subtitles, or VTube Studio. There is no automated
+managed-native live gate; physical microphone accuracy, speaker quality,
+natural bilingual conversation, and VTube Studio behavior remain explicit
+user-run checks. There is no dedicated native volume
 acceptance path.
 
 See [Agent tools and truthful execution](agent-tools.md) for the current

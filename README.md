@@ -62,11 +62,9 @@ HTTP/SSE.
 
 The canonical route inventory is
 [`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
-There is no public Python HTTP fallback or public backend mode switch;
-the retired `PythonCompatibility` selector fails closed with the stable
-`python_compatibility_retired` code. The retired `runtime-live` diagnostic
-reports the same bounded gate and never starts a Python or partial Worker
-topology.
+There is no public Python HTTP fallback or public backend mode switch. Managed
+C# startup is unconditional; the retired selector and live-retirement probe
+have been deleted rather than retained as compatibility surfaces.
 
 ## Setup
 
@@ -243,7 +241,7 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.cspr
 dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\ru_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
 cmd /c D:\LLM\build.bat
 ```
 
@@ -287,14 +285,9 @@ not replace the separate live hardware acceptance gate. Cancel and stale-result
 replace an in-flight Agent session and reject any delayed visible update into
 the replacement session.
 
-The retired `runtime-live` command is a bounded diagnostic; it reports
-`python_compatibility_retired` without starting any child topology. A
-managed-native live voice Harness is outside this retirement phase. Native
-audio/VTube acceptance remains user-owned:
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode runtime-live
-```
+The deterministic Harness does not claim managed-native voice acceptance.
+Native microphone, audio, OmniVoice, subtitle, and VTube acceptance remains a
+separate user-run gate.
 
 The logging latency gate can be run independently; it uses temporary activity
 and diagnostic roots and requires p95 and p99 overhead to stay within both

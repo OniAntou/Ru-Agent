@@ -38,7 +38,7 @@
 - Preserves: `ExecutionContractBlock()` and `SystemPromptComposer.Compose(SystemPromptContext)` signatures.
 - Preserves: receipt block ID `ru.persona` as a wire-compatible legacy ID although its body becomes neutral.
 
-- [ ] **Step 1: Write failing persona-delegation tests**
+- [x] **Step 1: Write failing persona-delegation tests**
 
 Add to `SystemPromptComposerTests.cs`:
 
@@ -64,7 +64,7 @@ Extend one fixture with a runtime reference and assert it still renders
 this test pass is replacing the built-in persona and changing only the trusted
 instruction-block label.
 
-- [ ] **Step 2: Run the new test and verify RED**
+- [x] **Step 2: Run the new test and verify RED**
 
 ~~~powershell
 dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj --no-restore --nologo --filter "FullyQualifiedName~Compose_delegates_persona_to_trusted_root_instructions"
@@ -72,7 +72,7 @@ dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests
 
 Expected: FAIL because the old persona exists and `Ru.md` is labeled as data not to follow.
 
-- [ ] **Step 3: Write failing conditional-tool tests**
+- [x] **Step 3: Write failing conditional-tool tests**
 
 Add fixture helper `PromptFixtures.Capability(string id, string scope)` and:
 
@@ -113,7 +113,7 @@ public void Compose_renders_current_session_and_tool_rules()
 Add one theory with the five retired IDs and assert none occurs in rendered
 text. Those literals stay in tests only.
 
-- [ ] **Step 4: Run all composer tests and verify RED**
+- [x] **Step 4: Run all composer tests and verify RED**
 
 ~~~powershell
 dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj --no-restore --nologo --filter "FullyQualifiedName~SystemPromptComposerTests"
@@ -121,7 +121,7 @@ dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests
 
 Expected: FAIL for old persona, unconditional tool-family guidance, and missing session rules.
 
-- [ ] **Step 5: Implement the compact neutral core contract**
+- [x] **Step 5: Implement the compact neutral core contract**
 
 Replace `BasePrompt` and `CloudAddendum` in `RuAgentPromptBlocks.cs` with:
 
@@ -141,7 +141,7 @@ Reduce `ExecutionContractBlock` to inspect-before-edit, targeted edits,
 verification, and result-grounded reporting. Remove built-in address style,
 profanity, emoji, fixed response length, and other persona choices.
 
-- [ ] **Step 6: Separate trusted instructions from untrusted references**
+- [x] **Step 6: Separate trusted instructions from untrusted references**
 
 In `SystemPromptComposer.cs` call `CoreContractBlock()` while retaining block ID
 `ru.persona`. Add:
@@ -156,7 +156,7 @@ Use that constant only in `InstructionBlock`. Keep
 references. Do not change `RuInstructionLoader` containment, symlink, UTF-8,
 size, allowlist, or digest checks.
 
-- [ ] **Step 7: Make guidance capability-derived**
+- [x] **Step 7: Make guidance capability-derived**
 
 In `CapabilitiesBlock` construct the exact available ID set:
 
@@ -189,7 +189,7 @@ lines.Add("Do not invent aliases or fallback tools. Select only an advertised ca
 Remove the unconditional per-tool list and generic “system tools” wording. Do
 not emit retired IDs in production prompt text.
 
-- [ ] **Step 8: Verify GREEN and commit**
+- [x] **Step 8: Verify GREEN and commit**
 
 ~~~powershell
 dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj --no-restore --nologo --filter "FullyQualifiedName~Prompting"
@@ -223,7 +223,7 @@ git commit -m "refactor(agent): make system prompt persona-neutral"
   `Capability`, and byte-identical C#/Python prompt output.
 - Preserves: `COMPOSER_VERSION = "1.0.0"`, block IDs/order, normalization, digest algorithm, and fixture schema.
 
-- [ ] **Step 1: Verify parity is RED after Task 1**
+- [x] **Step 1: Verify parity is RED after Task 1**
 
 ~~~powershell
 .venv\Scripts\python.exe -m pytest tests\test_python_runtime_boundary.py -q
@@ -232,7 +232,7 @@ dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests
 
 Expected: reference parity FAILS because Python still renders the old persona and guidance.
 
-- [ ] **Step 2: Write and verify a failing legacy-capability rejection test**
+- [x] **Step 2: Write and verify a failing legacy-capability rejection test**
 
 Add to `tests/test_agent_harness.py` a payload using only `summary` and
 `policy_summary`, then assert `parse_system_prompt_context(payload)` raises
@@ -245,7 +245,7 @@ Add to `tests/test_agent_harness.py` a payload using only `summary` and
 Expected: FAIL because the Python compatibility fixture currently accepts and
 translates the stale capability shape.
 
-- [ ] **Step 3: Mirror the C# prompt blocks and hard-remove legacy capability translation**
+- [x] **Step 3: Mirror the C# prompt blocks and hard-remove legacy capability translation**
 
 In `style.py` replace the Agent base persona/addendum with the exact normalized
 C# core contract and expose:
@@ -267,7 +267,7 @@ branch. Accept exactly the current fields: `id`, `version`, `description`,
 `example_arguments_json`, and `availability`. This is a hard rejection, not a
 translation or fallback.
 
-- [ ] **Step 4: Mirror composer boundaries and conditions**
+- [x] **Step 4: Mirror composer boundaries and conditions**
 
 In `system_prompt_composer.py`:
 
@@ -278,7 +278,7 @@ In `system_prompt_composer.py`:
 - append exactly the same conditional guidance strings in the same order;
 - preserve capability input order and runtime untrusted-data warnings.
 
-- [ ] **Step 5: Update the checked-in reference case surgically**
+- [x] **Step 5: Update the checked-in reference case surgically**
 
 Generate `_reference_cases()` to stdout or a temporary path. Use `apply_patch`
 to update only the prompt input/expected hashes needed in
@@ -287,7 +287,7 @@ to update only the prompt input/expected hashes needed in
 rather than `summary`/`policy_summary`. Do not overwrite benchmark measurements
 or unrelated cases. The baseline must pass from clean `HEAD`.
 
-- [ ] **Step 6: Verify GREEN and commit**
+- [x] **Step 6: Verify GREEN and commit**
 
 ~~~powershell
 .venv\Scripts\python.exe -m pytest tests\test_python_runtime_boundary.py tests\test_agent_harness.py -q
@@ -323,7 +323,7 @@ git commit -m "test(agent): align persona-neutral prompt parity"
 - Produces: current answers through `HelpDocsTool.CreateDefault()`.
 - Preserves: offline `system.read` execution, no approval, `max_results` 1–5, resource caps, stable document IDs, and ranking.
 
-- [ ] **Step 1: Write failing real-catalog searches**
+- [x] **Step 1: Write failing real-catalog searches**
 
 Add to `HelpDocsTests.cs`:
 
@@ -352,7 +352,7 @@ Add negative assertions for the five retired IDs. The production change that
 makes these tests pass is updating the embedded current documents, not special
 search logic.
 
-- [ ] **Step 2: Run HelpDocs tests and verify RED**
+- [x] **Step 2: Run HelpDocs tests and verify RED**
 
 ~~~powershell
 dotnet test backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no-restore --nologo --filter "FullyQualifiedName~HelpDocsTests"
@@ -360,7 +360,7 @@ dotnet test backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no
 
 Expected: at least one new search FAILS due to missing compact current guidance.
 
-- [ ] **Step 3: Update embedded current documents**
+- [x] **Step 3: Update embedded current documents**
 
 Use `docs/operations/agent-tools.md` for detail and keep other docs concise:
 
@@ -374,7 +374,7 @@ Use `docs/operations/agent-tools.md` for detail and keep other docs concise:
 
 Do not change dated plans/specs or the embedded-resource allowlist.
 
-- [ ] **Step 4: Update TODO and audit all current docs**
+- [x] **Step 4: Update TODO and audit all current docs**
 
 Add a completed 2026-09-05 TODO item linking the approved spec and plan. Inspect
 every Task 3 current document and edit only stale/duplicated passages.
@@ -387,7 +387,7 @@ rg -n "fallback provider|fallback model|switch.*fallback" README.md CONTEXT.md d
 Expected: the first search returns no current-doc matches. The second may return
 only explicit no-fallback statements; inspect every match.
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 ~~~powershell
 dotnet test backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no-restore --nologo --filter "FullyQualifiedName~HelpDocsTests"
@@ -410,17 +410,18 @@ git commit -m "docs: refresh bundled Ru Agent help"
 
 - Modify: `docs/superpowers/plans/2026-09-05-help-docs-system-prompt-refresh.md` for checkboxes and measured evidence only.
 
-- [ ] **Step 1: Verify production prompt and docs truth**
+- [x] **Step 1: Verify production prompt and docs truth**
 
 ~~~powershell
-rg -n --glob "*.cs" --glob "*.py" --glob "!**/*Tests*/**" --glob "!tests/**" --glob "!docs/superpowers/**" "system\.time|system\.status|app\.list|notes\.create|system\.volume|Bạn là Ru Agent — trợ lý AI|NO EMOJIS|profanity" backend-dotnet scripts README.md CONTEXT.md TODO.md docs\architecture.md docs\operations
+rg -n --glob "*.cs" --glob "*.py" --glob "!**/*Tests*/**" --glob "!tests/**" "system\.time|system\.status|app\.list|notes\.create|system\.volume" backend-dotnet scripts
+rg -n "Bạn là Ru Agent — trợ lý AI|NO EMOJIS|profanity|ru_agent_persona_block|summary|policy_summary|is_legacy" backend-dotnet\RuAgent.Harness.Core\Prompting scripts\harness\generation_stub\system_prompt_composer.py scripts\harness\generation_stub\prompt_context.py
 rg -n "Use help\.docs for Ru product behavior|A folder grant applies only to this live session|Do not invent aliases or fallback tools" backend-dotnet\RuAgent.Harness.Core scripts\harness\generation_stub
 ~~~
 
 Expected: first command has no production/current-doc matches; second finds
 byte-equivalent C# and Python guidance.
 
-- [ ] **Step 2: Run all .NET tests sequentially**
+- [x] **Step 2: Run all .NET tests sequentially**
 
 ~~~powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test_dotnet.ps1 -NoRestore
@@ -428,7 +429,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test_dotnet.ps1 -NoR
 
 Expected: all discovered projects PASS with zero failures.
 
-- [ ] **Step 3: Run the complete Python suite**
+- [x] **Step 3: Run the complete Python suite**
 
 ~~~powershell
 .venv\Scripts\python.exe -m pytest -q
@@ -436,7 +437,7 @@ Expected: all discovered projects PASS with zero failures.
 
 Expected: PASS with zero failures.
 
-- [ ] **Step 4: Run deterministic integration gates**
+- [x] **Step 4: Run deterministic integration gates**
 
 ~~~powershell
 .venv\Scripts\python.exe scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-help-prompt-refresh-harness.json"
@@ -446,7 +447,7 @@ Expected: PASS with zero failures.
 Expected: Harness summary `passed` with `failed_checks: 0`; route matrix reports
 the current HTTP/WebSocket count.
 
-- [ ] **Step 5: Build distributable artifacts**
+- [x] **Step 5: Build distributable artifacts**
 
 ~~~powershell
 .\build.bat
@@ -460,7 +461,7 @@ D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.
 
 Do not open GUI or mutate live audio/device state for this text-only change.
 
-- [ ] **Step 6: Verify hygiene and preserve unrelated work**
+- [x] **Step 6: Verify hygiene and preserve unrelated work**
 
 ~~~powershell
 git diff --check
@@ -470,7 +471,7 @@ git status --short --branch
 Expected: no owned whitespace errors; pre-existing CLI/GUI work remains
 unstaged unless its owner committed it independently.
 
-- [ ] **Step 7: Record evidence and commit closure**
+- [x] **Step 7: Record evidence and commit closure**
 
 Mark completed checkboxes and append exact .NET/Python totals, Harness status,
 route counts, build totals, artifact path, and unrun live acceptance. Commit only
@@ -482,3 +483,31 @@ git commit -m "docs: close help docs and prompt refresh"
 ~~~
 
 Do not push unless the user explicitly asks after reviewing local commits.
+
+---
+
+## Completion evidence (2026-09-05)
+
+- TDD RED evidence: managed composer tests initially failed 3 cases for the
+  embedded persona, unconditional tool-family guidance, and missing session
+  rules. The legacy Python capability payload did not raise, and the corrected
+  C# golden assertion rejected the stale prompt digest. Default `help.docs`
+  searches initially failed session-grant and provider-fallback answers.
+- Focused GREEN evidence: managed Prompting `29/29`, Python boundary/Harness
+  `17/17`, C# golden parity `3/3`, bundled HelpDocs `10/10`, and current docs
+  plus Harness `18/18` passed.
+- Full verification: all 13 discovered .NET test projects passed,
+  `2552/2552`; the complete Python suite passed, `402/402`.
+- Deterministic backend Harness completed with summary `passed`,
+  `failed_checks: 0`, and an empty errors list.
+- Public route contract remained `64 HTTP + 1 WebSocket (/voice/stream)`.
+- Release build completed all `13/13` stages; native overlay tests passed
+  `2/2`. The packaged GUI is
+  `D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`
+  with publish time `2026-09-05 23:18` local.
+- Production/current prompt checks found no retired tool IDs or embedded Agent
+  persona. The broader Python `style.py` still contains persona text for
+  separate non-Agent chat and screen-reaction surfaces, intentionally outside
+  this design.
+- No GUI window, live provider call, audio device mutation, or external
+  terminal/device acceptance was run.

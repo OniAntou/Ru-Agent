@@ -14,7 +14,8 @@ public sealed record TerminalRunRequest(
     string RequestId = "",
     string SessionId = "",
     bool ReadOnly = false,
-    IReadOnlyList<string>? WriteSet = null);
+    IReadOnlyList<string>? WriteSet = null,
+    bool Approved = false);
 
 public sealed record TerminalShellRequest(
     string Shell,
@@ -26,7 +27,8 @@ public sealed record TerminalShellRequest(
     string SessionId = "",
     string ArgumentsHash = "",
     bool ReadOnly = false,
-    IReadOnlyList<string>? WriteSet = null);
+    IReadOnlyList<string>? WriteSet = null,
+    bool Approved = false);
 
 public static class TerminalManifests
 {

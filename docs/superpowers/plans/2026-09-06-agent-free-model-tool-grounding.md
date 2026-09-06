@@ -120,7 +120,7 @@ Add a paired new-session assertion showing the same terminal request returns `ex
 - [ ] **Step 2: Run the focused Broker tests and verify RED**
 
 ```powershell
-dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --filter "FullyQualifiedName~BrokerHostTests&Name~external_directory"
+dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --filter "FullyQualifiedName~BrokerHostTests&FullyQualifiedName~external_directory"
 ```
 
 Expected: policy allows the same-session terminal request, but execution fails with `workspace_path_outside_root`.

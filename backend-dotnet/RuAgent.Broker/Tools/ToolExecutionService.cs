@@ -320,7 +320,7 @@ public sealed class ToolExecutionService : IToolInvoker
             // (AgentConnection consumes it before dispatch), so the v1 approval
             // prompt must not re-gate them; approval already happened at evaluate.
             var isV2Authorized = ReadOptionalString(request.Payload, "preparation_token") is not null
-                || ReadOptionalString(request.Payload, "authorization_token") is not null;
+                || ReadAuthorizationToken(request.Payload) is not null;
             if (decision.RequiresApproval && !isV2Authorized)
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
@@ -369,9 +369,9 @@ public sealed class ToolExecutionService : IToolInvoker
                 contextRequest: request,
                 binding,
                 arguments,
-                approved: ReadOptionalString(request.Payload, "authorization_token") is not null
+                approved: ReadAuthorizationToken(request.Payload) is not null
                     || ReadOptionalString(request.Payload, "preparation_token") is not null,
-                approvalToken: ReadOptionalString(request.Payload, "authorization_token")
+                approvalToken: ReadAuthorizationToken(request.Payload)
                     ?? ReadOptionalString(request.Payload, "preparation_token"),
                 ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
                 cancellationToken).ConfigureAwait(false);
@@ -491,7 +491,7 @@ public sealed class ToolExecutionService : IToolInvoker
                 contextRequest: pending.Request,
                 binding,
                 pending.Arguments,
-                approved: true,
+                approved: pending.TerminalApprovalToken is null,
                 pending.TerminalApprovalToken,
                 ReadOptionalString(pending.Request.Payload, "run_id") ?? pending.Request.SessionId,
                 cancellationToken).ConfigureAwait(false);
@@ -730,7 +730,10 @@ public sealed class ToolExecutionService : IToolInvoker
     private RootToolSet ToolsForRoot(string canonicalRoot)
     {
         var root = Path.GetFullPath(canonicalRoot);
-        return _toolSetsByRoot.GetOrAdd(root, static (_, resolvedRoot) => RootToolSet.Create(resolvedRoot), root);
+        return _toolSetsByRoot.GetOrAdd(
+            root,
+            static (resolvedRoot, approvalTokens) => RootToolSet.Create(resolvedRoot, approvalTokens),
+            _approvalTokens);
     }
 
     private FileTools FileToolsFor(string canonicalRoot)
@@ -753,7 +756,7 @@ public sealed class ToolExecutionService : IToolInvoker
         public required string CanonicalRoot { get; init; }
         public required FileEditAdapter Edit { get; init; }
 
-        public static RootToolSet Create(string canonicalRoot)
+        public static RootToolSet Create(string canonicalRoot, ApprovalTokenService approvalTokens)
         {
             return new RootToolSet
             {
@@ -768,7 +771,8 @@ public sealed class ToolExecutionService : IToolInvoker
                 MutationResolver = new CanonicalPathResolver(canonicalRoot),
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
-                    new ShellRuntimeResolver()),
+                    new ShellRuntimeResolver(),
+                    approvalTokens),
                 CanonicalRoot = canonicalRoot,
             };
         }
@@ -833,7 +837,7 @@ public sealed class ToolExecutionService : IToolInvoker
             contextRequest.DeadlineMs,
             approved,
             approvalToken,
-            !sessionScopes.Contains(ToolScope.TerminalNetwork),
+            ConfinementRequired: true,
             sessionScopes,
             runId);
         ToolExecutionOutcome outcome;
@@ -1090,15 +1094,17 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
+        var workingDirectory = ReadOptionalString(arguments, "working_directory") ?? ".";
+        var tools = ResolveRootToolSet(context, workingDirectory);
         var grant = new PolicyGrant(
             context.SessionId,
             context.SessionScopes ?? _session.Scopes,
             _session.Descriptor.ExpiresAt);
-        var result = await ToolsFor(context).Terminal.RunAsync(
+        var result = await tools.Terminal.RunAsync(
             grant,
             new TerminalRunRequest(
                 ReadOptionalString(arguments, "shell") ?? "powershell",
-                ReadOptionalString(arguments, "working_directory") ?? ".",
+                workingDirectory,
                 ReadString(arguments, "executable"),
                 ReadArguments(arguments["arguments"]),
                 ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
@@ -1107,10 +1113,11 @@ public sealed class ToolExecutionService : IToolInvoker
                 context.RequestId,
                 context.SessionId,
                 IsTrue(arguments, "read_only"),
-                ReadWriteSet(arguments)),
+                ReadWriteSet(arguments),
+                Approved: context.Approved),
             context.ConfinementRequired,
             cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result, context.ConfinementRequired);
+        return ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot);
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalShellAsync(
@@ -1119,31 +1126,31 @@ public sealed class ToolExecutionService : IToolInvoker
         CancellationToken cancellationToken)
     {
         var confineWorkspace = context.ConfinementRequired;
-        if (confineWorkspace && context.ApprovalToken is null)
+        if (confineWorkspace && !context.Approved && context.ApprovalToken is null)
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }
 
+        var workingDirectory = ReadOptionalString(arguments, "working_directory") ?? ".";
+        var tools = ResolveRootToolSet(context, workingDirectory);
         var shellRequest = new TerminalShellRequest(
             ReadOptionalString(arguments, "shell") ?? "powershell",
-            ReadOptionalString(arguments, "working_directory") ?? ".",
+            workingDirectory,
             ReadString(arguments, "script"),
             ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
             context.ApprovalToken ?? string.Empty,
             context.RequestId,
             context.SessionId,
-            TryComputeTerminalIntentHash(ToolsFor(context), "terminal.shell", arguments)
-                ?? PendingApprovalStore.ComputeArgumentsHash("terminal.shell", "1.0.0", arguments));
-        shellRequest = shellRequest with
-        {
-            ReadOnly = IsTrue(arguments, "read_only"),
-            WriteSet = ReadWriteSet(arguments),
-        };
-        var result = await _terminal.RunApprovedShellAsync(
+            TryComputeTerminalIntentHash(tools, "terminal.shell", arguments)
+                ?? PendingApprovalStore.ComputeArgumentsHash("terminal.shell", "1.0.0", arguments),
+            IsTrue(arguments, "read_only"),
+            ReadWriteSet(arguments),
+            Approved: context.Approved);
+        var result = await tools.Terminal.RunApprovedShellAsync(
             shellRequest,
             confineWorkspace,
             cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result, confineWorkspace);
+        return ProcessOutcome(result, confineWorkspace, tools.CanonicalRoot);
     }
 
     /// <summary>
@@ -1170,7 +1177,7 @@ public sealed class ToolExecutionService : IToolInvoker
             }
 
             return toolId == "terminal.run"
-                ? _terminal.CanonicalizeRun(new TerminalRunRequest(
+                ? tools.Terminal.CanonicalizeRun(new TerminalRunRequest(
                     "powershell",
                     ReadOptionalString(arguments, "working_directory") ?? ".",
                     ReadString(arguments, "executable"),
@@ -1187,7 +1194,10 @@ public sealed class ToolExecutionService : IToolInvoker
         }
     }
 
-    private ToolExecutionOutcome ProcessOutcome(StreamingProcessResult result, bool confineWorkspace)
+    private ToolExecutionOutcome ProcessOutcome(
+        StreamingProcessResult result,
+        bool confineWorkspace,
+        string canonicalRoot)
     {
         var output = new JsonObject
         {
@@ -1204,7 +1214,7 @@ public sealed class ToolExecutionService : IToolInvoker
             ["frames_emitted"] = result.FramesEmitted,
             ["frames_dropped"] = result.FramesDropped,
             ["working_directory"] = confineWorkspace
-                ? _workspace.ToRelative(result.WorkingDirectory)
+                ? new WorkspacePathGuard(canonicalRoot).ToRelative(result.WorkingDirectory)
                 : BoundWorkingDirectory(result.WorkingDirectory),
         };
         return result.Status switch
@@ -1556,6 +1566,11 @@ public sealed class ToolExecutionService : IToolInvoker
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
             ? result
             : null;
+
+    private static string? ReadAuthorizationToken(JsonObject payload) =>
+        ReadOptionalString(payload, "authorization_token")
+        ?? ReadOptionalString(payload, "authorizationToken")
+        ?? ReadOptionalString(payload, "approval_token");
 
     private static IReadOnlyList<string> ReadArguments(JsonNode? node)
     {

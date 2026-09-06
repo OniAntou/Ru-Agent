@@ -124,29 +124,36 @@ public sealed class TerminalAdapter
 
         if (!RecognizedSafeClasses.Contains(intent.OperationClass.ToString()))
         {
-            // Unrecognized forms execute only with a one-time token bound to this exact intent.
-            // A missing token keeps the legacy unregistered-command rejection; a present-but-
-            // invalid token means the authorization was stale, replayed, or bound to a
-            // different canonical intent.
-            if (_approvalTokens is null || string.IsNullOrWhiteSpace(request.ApprovalToken))
+            if (request.Approved)
             {
-                throw new UnauthorizedAccessException("terminal_command_not_allowed");
+                // V2 authorization was already validated and consumed by the Broker connection.
             }
-
-            if (string.IsNullOrWhiteSpace(request.RequestId)
-                || string.IsNullOrWhiteSpace(request.SessionId)
-                || !_approvalTokens.TryConsume(
-                    request.ApprovalToken,
-                    new ApprovalBinding(
-                        request.RequestId,
-                        request.SessionId,
-                        "terminal.run",
-                        "1.0.0",
-                        intent.IntentHash,
-                        DateTimeOffset.UtcNow),
-                    out _))
+            else
             {
-                throw new UnauthorizedAccessException("terminal_approval_invalid");
+                // Unrecognized forms execute only with a one-time token bound to this exact intent.
+                // A missing token keeps the legacy unregistered-command rejection; a present-but-
+                // invalid token means the authorization was stale, replayed, or bound to a
+                // different canonical intent.
+                if (_approvalTokens is null || string.IsNullOrWhiteSpace(request.ApprovalToken))
+                {
+                    throw new UnauthorizedAccessException("terminal_command_not_allowed");
+                }
+
+                if (string.IsNullOrWhiteSpace(request.RequestId)
+                    || string.IsNullOrWhiteSpace(request.SessionId)
+                    || !_approvalTokens.TryConsume(
+                        request.ApprovalToken,
+                        new ApprovalBinding(
+                            request.RequestId,
+                            request.SessionId,
+                            "terminal.run",
+                            "1.0.0",
+                            intent.IntentHash,
+                            DateTimeOffset.UtcNow),
+                        out _))
+                {
+                    throw new UnauthorizedAccessException("terminal_approval_invalid");
+                }
             }
         }
 
@@ -323,6 +330,11 @@ public sealed class TerminalAdapter
 
     private void EnsureShellApprovalTokenValid(TerminalShellRequest request)
     {
+        if (request.Approved)
+        {
+            return;
+        }
+
         if (_approvalTokens is null
             || string.IsNullOrWhiteSpace(request.RequestId)
             || string.IsNullOrWhiteSpace(request.SessionId)

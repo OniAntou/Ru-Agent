@@ -887,6 +887,385 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task V2_external_directory_grant_executes_terminal_in_next_run_only_for_same_session()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-broker-terminal-external-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "external");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-external-terminal";
+            const string runA = "run_external_a111111111111111111111111";
+            const string runB = "run_external_b111111111111111111111111";
+            const string runC = "run_external_c111111111111111111111111";
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-external-a", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runA, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-external-terminal-read", sessionId, runA, "files.read",
+                    new JsonObject { ["path"] = Path.Combine(external, "probe.txt") }),
+                cts.Token);
+            var directoryAsk = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", directoryAsk.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("external_directory_required", directoryAsk.Payload["reason_code"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-external-terminal-directory", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runA,
+                        ["approval_id"] = directoryAsk.Payload["approval_id"]!.GetValue<string>(),
+                        ["command"] = "allow_session_directory",
+                    }),
+                cts.Token);
+            var authorized = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("authorized", authorized.Payload["status"]!.GetValue<string>());
+            Assert.False(string.IsNullOrWhiteSpace(authorized.Payload["authorization_token"]!.GetValue<string>()));
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-external-b", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runB, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            var terminalArguments = new JsonObject
+            {
+                ["working_directory"] = external,
+                ["executable"] = "dotnet",
+                ["arguments"] = new JsonArray("--version"),
+                ["read_only"] = true,
+            };
+            await SendAsync(socket, Evaluate("evaluate-external-terminal-run", sessionId, runB, "terminal.run", terminalArguments.DeepClone().AsObject()), cts.Token);
+            var decision = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+            var decisionToken = decision.Payload["decision_token"]!.GetValue<string>();
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "prepare-external-terminal-run", AgentMessageTypes.ToolPrepare, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runB,
+                        ["tool_id"] = "terminal.run",
+                        ["decision_token"] = decisionToken,
+                    }),
+                cts.Token);
+            var prepared = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolPrepared, prepared.MessageType);
+            Assert.Equal("succeeded", prepared.Payload["status"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "execute-external-terminal-run", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runB,
+                        ["tool_id"] = "terminal.run",
+                        ["tool_version"] = "1.0.0",
+                        ["preparation_token"] = prepared.Payload["preparation_token"]!.GetValue<string>(),
+                        ["arguments"] = terminalArguments.DeepClone().AsObject(),
+                    }),
+                cts.Token);
+            var execution = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+            Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+            Assert.True(execution.Payload["adapter_invoked"]!.GetValue<bool>());
+            Assert.Equal(0, execution.Payload["output"]!["exit_code"]!.GetValue<int>());
+            Assert.DoesNotContain("workspace_path_outside_root", execution.Payload.ToJsonString(), StringComparison.Ordinal);
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-external-c", AgentMessageTypes.RunOpen, "session-external-terminal-new", null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runC, "session-external-terminal-new", fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-external-terminal-new-session", "session-external-terminal-new", runC, "terminal.run", terminalArguments.DeepClone().AsObject()),
+                cts.Token);
+            var newSessionDecision = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", newSessionDecision.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("external_directory_required", newSessionDecision.Payload["reason_code"]!.GetValue<string>());
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task V2_terminal_run_authorized_risky_command_executes_successfully()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-terminal-risky";
+        const string runId = "run_terminal_risky11111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-terminal-risky", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        var riskyArgs = new JsonObject
+        {
+            ["executable"] = "where.exe",
+            ["arguments"] = new JsonArray("dotnet"),
+            ["working_directory"] = ".",
+        };
+
+        await SendAsync(socket, Evaluate("evaluate-terminal-risky", sessionId, runId, "terminal.run", riskyArgs.DeepClone().AsObject()), cts.Token);
+        var ask = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("ask", ask.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("terminal_unknown_executable", ask.Payload["reason_code"]!.GetValue<string>());
+        var approvalId = ask.Payload["approval_id"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "approve-terminal-risky", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["approval_id"] = approvalId,
+                    ["command"] = "allow_once",
+                }),
+            cts.Token);
+        var authorized = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("authorized", authorized.Payload["status"]!.GetValue<string>());
+        var authToken = authorized.Payload["authorization_token"]!.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(authToken));
+
+        // Execute using the authorization token
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "execute-terminal-risky", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "terminal.run",
+                    ["tool_version"] = "1.0.0",
+                    ["authorization_token"] = authToken,
+                    ["arguments"] = riskyArgs.DeepClone().AsObject(),
+                }),
+            cts.Token);
+
+        var execution = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+        Assert.True(execution.Payload["adapter_invoked"]!.GetValue<bool>());
+        Assert.Equal(0, execution.Payload["output"]!["exit_code"]!.GetValue<int>());
+        Assert.Contains("dotnet", execution.Payload["output"]!["stdout_head"]!.GetValue<string>(), StringComparison.OrdinalIgnoreCase);
+
+        // Replay must be rejected because token was consumed
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "execute-terminal-replay", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "terminal.run",
+                    ["tool_version"] = "1.0.0",
+                    ["authorization_token"] = authToken,
+                    ["arguments"] = riskyArgs.DeepClone().AsObject(),
+                }),
+            cts.Token);
+
+        var replay = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("decision_stale", replay.Payload["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_external_directory_grant_executes_terminal_shell()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-broker-shell-external-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        var targetFile = Path.Combine(external, "shell_target.txt");
+        File.WriteAllText(targetFile, "delete me via terminal.shell");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-external-shell";
+            const string runA = "run_external_shell_a111111111111";
+            const string runB = "run_external_shell_b111111111111";
+
+            // Run A: grant external directory
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-shell-a", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runA, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-shell-external-read", sessionId, runA, "files.read",
+                    new JsonObject { ["path"] = targetFile }),
+                cts.Token);
+            var dirAsk = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("external_directory_required", dirAsk.Payload["reason_code"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-shell-external-dir", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runA,
+                        ["approval_id"] = dirAsk.Payload["approval_id"]!.GetValue<string>(),
+                        ["command"] = "allow_session_directory",
+                    }),
+                cts.Token);
+            var authorizedDir = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("authorized", authorizedDir.Payload["status"]!.GetValue<string>());
+
+            // Run B: run terminal.shell inside granted external directory
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-shell-b", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runB, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            var shellArgs = new JsonObject
+            {
+                ["working_directory"] = external,
+                ["script"] = "Remove-Item ./shell_target.txt",
+            };
+
+            await SendAsync(socket, Evaluate("evaluate-shell-delete", sessionId, runB, "terminal.shell", shellArgs.DeepClone().AsObject()), cts.Token);
+            var shellAsk = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", shellAsk.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("terminal_delete_requires_approval", shellAsk.Payload["reason_code"]!.GetValue<string>());
+            var shellApprovalId = shellAsk.Payload["approval_id"]!.GetValue<string>();
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-shell-delete", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runB,
+                        ["approval_id"] = shellApprovalId,
+                        ["command"] = "allow_once",
+                    }),
+                cts.Token);
+            var authorizedShell = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("authorized", authorizedShell.Payload["status"]!.GetValue<string>());
+            var shellAuthToken = authorizedShell.Payload["authorization_token"]!.GetValue<string>();
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "execute-shell-delete", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runB,
+                        ["tool_id"] = "terminal.shell",
+                        ["tool_version"] = "1.0.0",
+                        ["authorization_token"] = shellAuthToken,
+                        ["arguments"] = shellArgs.DeepClone().AsObject(),
+                    }),
+                cts.Token);
+
+            var shellExec = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolExecuteResult, shellExec.MessageType);
+            Assert.Equal(ToolResultStatuses.Succeeded, shellExec.Payload["status"]!.GetValue<string>());
+            Assert.True(shellExec.Payload["adapter_invoked"]!.GetValue<bool>());
+            Assert.Equal(0, shellExec.Payload["output"]!["exit_code"]!.GetValue<int>());
+            Assert.False(File.Exists(targetFile), "targetFile should have been deleted by terminal.shell!");
+            Assert.DoesNotContain("workspace_path_outside_root", shellExec.Payload.ToJsonString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task V2_terminal_shell_safe_command_with_preparation_token_executes_successfully()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-shell-safe";
+        const string runId = "run_shell_safe1111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-shell-safe", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        var shellArgs = new JsonObject
+        {
+            ["script"] = "Get-Date",
+            ["working_directory"] = ".",
+        };
+
+        await SendAsync(socket, Evaluate("evaluate-shell-safe", sessionId, runId, "terminal.shell", shellArgs.DeepClone().AsObject()), cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        var decisionToken = decision.Payload["decision_token"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "prepare-shell-safe", AgentMessageTypes.ToolPrepare, sessionId, null, 10_000,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "terminal.shell",
+                    ["decision_token"] = decisionToken,
+                }),
+            cts.Token);
+        var prepared = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolPrepared, prepared.MessageType);
+        Assert.Equal("succeeded", prepared.Payload["status"]!.GetValue<string>());
+        var preparationToken = prepared.Payload["preparation_token"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "execute-shell-safe", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "terminal.shell",
+                    ["tool_version"] = "1.0.0",
+                    ["preparation_token"] = preparationToken,
+                    ["arguments"] = shellArgs.DeepClone().AsObject(),
+                }),
+            cts.Token);
+
+        var execution = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+        Assert.True(execution.Payload["adapter_invoked"]!.GetValue<bool>());
+        Assert.Equal(0, execution.Payload["output"]!["exit_code"]!.GetValue<int>());
+    }
+
+    [Fact]
     public async Task V2_terminal_approval_creates_no_reusable_grant()
     {
         await using var fixture = await HostFixture.StartAsync();

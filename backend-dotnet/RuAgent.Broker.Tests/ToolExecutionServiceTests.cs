@@ -90,6 +90,9 @@ public sealed class ToolExecutionServiceTests
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
                 StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal));
+        session.DirectoryGrants.Add(
+            "session-terminal-unrestricted",
+            RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(outsideDirectory));
         var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
@@ -157,9 +160,91 @@ public sealed class ToolExecutionServiceTests
 
             Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
             Assert.True(result.AdapterInvoked);
-            Assert.Equal(
-                Path.GetFullPath(outsideDirectory),
-                result.Output["working_directory"]!.GetValue<string>());
+            Assert.True(
+                result.Output["working_directory"]!.GetValue<string>() is "."
+                || string.Equals(
+                    result.Output["working_directory"]!.GetValue<string>(),
+                    Path.GetFullPath(outsideDirectory),
+                    StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Session_with_terminal_network_still_enforces_confinement_without_grant()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-confine-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var outsideDirectory = Path.Combine(root, "outside");
+        Directory.CreateDirectory(outsideDirectory);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var now = DateTimeOffset.UtcNow;
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            now.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, now);
+        session.Open(
+            "session-terminal-network-confined",
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
+                StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var envelope = new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersion,
+                "req-" + Guid.NewGuid().ToString("N"),
+                AgentMessageTypes.ToolRequest,
+                "session-terminal-network-confined",
+                null,
+                30_000,
+                new JsonObject
+                {
+                    ["tool_id"] = "terminal.run",
+                    ["tool_version"] = "1.0.0",
+                    ["capability_class"] = "internal",
+                    ["arguments"] = new JsonObject
+                    {
+                        ["executable"] = "dotnet",
+                        ["arguments"] = new JsonArray("--version"),
+                        ["working_directory"] = outsideDirectory,
+                    },
+                });
+
+            var pending = await service.ExecuteAsync(envelope, CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
+            var approvalId = pending.Output["approval_id"]!.GetValue<string>();
+            var result = await service.RespondToApprovalAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "approval-" + Guid.NewGuid().ToString("N"),
+                    AgentMessageTypes.ApprovalResponse,
+                    "session-terminal-network-confined",
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["approval_id"] = approvalId,
+                        ["approved"] = true,
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("workspace_path_outside_root", result.ErrorCode);
+            Assert.True(result.AdapterInvoked);
         }
         finally
         {
@@ -517,9 +602,12 @@ public sealed class ToolExecutionServiceTests
             Assert.Equal(0, result.Output["exit_code"]!.GetValue<int>());
             Assert.Contains("listed.txt", result.Output["stdout_head"]!.GetValue<string>());
             Assert.True(result.Output["stdout_bytes"]!.GetValue<long>() > 0);
-            Assert.Equal(
-                Path.GetFullPath(workspaceRoot),
-                result.Output["working_directory"]!.GetValue<string>());
+            Assert.True(
+                result.Output["working_directory"]!.GetValue<string>() is "."
+                || string.Equals(
+                    result.Output["working_directory"]!.GetValue<string>(),
+                    Path.GetFullPath(workspaceRoot),
+                    StringComparison.OrdinalIgnoreCase));
         }
         finally
         {

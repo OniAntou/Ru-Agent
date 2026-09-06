@@ -31,15 +31,34 @@ namespace RuApp.Views
             FilterVts.IsChecked = true;
         }
 
+        private bool _isActive = true;
+
         public void Initialize(ApiService apiService)
         {
             _apiService = apiService;
             Rows.Clear();
             Rows.Add(new LogRow("--:--:--", "…", LogRowKind.Info, "Loading logs...", ""));
-            _ = RefreshAsync();
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             _refreshTimer.Tick += async (_, __) => await RefreshAsync();
-            _refreshTimer.Start();
+            if (_isActive)
+            {
+                _ = RefreshAsync();
+                _refreshTimer.Start();
+            }
+        }
+
+        public void SetActive(bool active)
+        {
+            _isActive = active;
+            if (active)
+            {
+                _ = RefreshAsync();
+                _refreshTimer?.Start();
+            }
+            else
+            {
+                _refreshTimer?.Stop();
+            }
         }
 
         private async Task RefreshAsync()
@@ -58,7 +77,10 @@ namespace RuApp.Views
             }
         }
 
-        private void ApplyFilter()
+        private string? _lastFilterSignature;
+        private bool _isFirstLoad = true;
+
+        private void ApplyFilter(bool isUserAction = false)
         {
             bool showChat = FilterChat.IsChecked == true;
             bool showEmotion = FilterEmotion.IsChecked == true;
@@ -74,6 +96,13 @@ namespace RuApp.Views
                 })
                 .Select(ToRow)
                 .ToList();
+
+            string signature = $"{showChat}_{showEmotion}_{showVts}_{rows.Count}_{(rows.Count > 0 ? rows[^1].Time + rows[^1].Content : string.Empty)}";
+            if (!isUserAction && !_isFirstLoad && string.Equals(signature, _lastFilterSignature, StringComparison.Ordinal))
+            {
+                return;
+            }
+            _lastFilterSignature = signature;
 
             Rows.Clear();
             if (rows.Count == 0)
@@ -91,8 +120,13 @@ namespace RuApp.Views
                 {
                     Rows.Add(row);
                 }
-                TimelineList.ScrollIntoView(rows[rows.Count - 1]);
+                if (isUserAction || _isFirstLoad)
+                {
+                    TimelineList.ScrollIntoView(rows[rows.Count - 1]);
+                }
             }
+
+            _isFirstLoad = false;
         }
 
         private static LogRow ToRow(ActivityLogEventDto e)
@@ -230,7 +264,7 @@ namespace RuApp.Views
 
         private void OnFilterToggled(object sender, RoutedEventArgs e)
         {
-            ApplyFilter();
+            ApplyFilter(isUserAction: true);
         }
 
         private void OnRowClicked(object sender, ItemClickEventArgs e)
@@ -267,14 +301,18 @@ namespace RuApp.Views
             if (ok)
             {
                 _allEvents = new List<ActivityLogEventDto>();
-                ApplyFilter();
+                ApplyFilter(isUserAction: true);
             }
         }
 
         public void Dispose()
         {
+            _isActive = false;
             _refreshTimer?.Stop();
             _refreshTimer = null;
+            _apiService = null;
+            _allEvents.Clear();
+            Rows.Clear();
         }
     }
 

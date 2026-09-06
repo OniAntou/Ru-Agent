@@ -290,6 +290,7 @@ namespace RuApp
 
                 _logView = new LogView();
                 _logView.Initialize(_apiService);
+                _logView.SetActive(false);
 
                 _diagnosticsView = new DiagnosticsView();
                 _diagnosticsView.Initialize(_apiService);
@@ -524,6 +525,7 @@ namespace RuApp
                     _ = _settingsView?.RefreshProviderCatalogAsync();
                 }
                 _diagnosticsView?.SetActive(tag == "diagnostics");
+                _logView?.SetActive(tag == "log");
             }
         }
 
@@ -543,11 +545,14 @@ namespace RuApp
                 _ => _chatView
             };
             _diagnosticsView?.SetActive(tag == "diagnostics");
+            _logView?.SetActive(tag == "log");
         }
 
         public void NavigateToDiagnostics(string? correlationId = null)
         {
             ContentFrame.Content = _diagnosticsView;
+            _diagnosticsView?.SetActive(true);
+            _logView?.SetActive(false);
             if (!string.IsNullOrWhiteSpace(correlationId))
             {
                 _diagnosticsView?.FilterByCorrelation(correlationId);

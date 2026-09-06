@@ -248,17 +248,22 @@ namespace RuApp.Views
         public void Dispose()
         {
             _autoSaveTimer?.Stop();
+            _autoSaveTimer = null;
             _vtsConfigDebounce?.Stop();
+            _vtsConfigDebounce = null;
             _vtsControlDebounce?.Stop();
+            _vtsControlDebounce = null;
             if (_providerCatalogController is not null)
             {
                 if (_ownsProviderCatalogController)
                 {
-                    _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    _ = _providerCatalogController.DisposeAsync().AsTask();
                 }
                 _providerCatalogController = null;
                 _ownsProviderCatalogController = false;
             }
+            MemoryControl?.Dispose();
+            _apiService = null;
         }
 
         private async void OnConnectVtsClick(object sender, RoutedEventArgs e)

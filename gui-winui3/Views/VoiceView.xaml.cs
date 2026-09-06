@@ -44,6 +44,9 @@ namespace RuApp.Views
         {
             _speedDebounceTimer?.Stop();
             _speedDebounceTimer = null;
+            _apiService = null;
+            _voicePlayback = null;
+            _overlayService = null;
         }
 
         private async Task LoadVoiceSettingsAsync()

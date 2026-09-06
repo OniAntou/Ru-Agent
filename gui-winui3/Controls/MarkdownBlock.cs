@@ -53,13 +53,25 @@ namespace RuApp.Controls
             ((MarkdownBlock)d).RenderMarkdown();
         }
 
+        private string? _lastRenderedText;
+        private double _lastRenderedSize;
+
         private void RenderMarkdown()
         {
-            _richTextBlock.Blocks.Clear();
             string source = (MarkdownText ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+            double bodySize = FontSize > 0 ? FontSize : 14;
+
+            if (string.Equals(source, _lastRenderedText, StringComparison.Ordinal) && Math.Abs(bodySize - _lastRenderedSize) < 0.01)
+            {
+                return;
+            }
+            _lastRenderedText = source;
+            _lastRenderedSize = bodySize;
+
+            _richTextBlock.Blocks.Clear();
             string[] lines = source.Split('\n');
             bool inCode = false;
-            double bodySize = FontSize > 0 ? FontSize : 14;
+            var codeBuilder = new System.Text.StringBuilder();
             _richTextBlock.FontFamily = UiFont;
             _richTextBlock.FontSize = bodySize;
 
@@ -70,19 +82,36 @@ namespace RuApp.Controls
 
                 if (trimmed.StartsWith("```"))
                 {
-                    inCode = !inCode;
+                    if (inCode)
+                    {
+                        var codePara = new Paragraph
+                        {
+                            Margin = new Thickness(10, 4, 10, 8)
+                        };
+                        codePara.Inlines.Add(new Run
+                        {
+                            Text = codeBuilder.ToString().TrimEnd('\r', '\n'),
+                            FontFamily = MonoFont,
+                            FontSize = 13
+                        });
+                        _richTextBlock.Blocks.Add(codePara);
+                        codeBuilder.Clear();
+                        inCode = false;
+                    }
+                    else
+                    {
+                        inCode = true;
+                        codeBuilder.Clear();
+                    }
                     continue;
                 }
+
                 if (inCode)
                 {
-                    var codePara = new Paragraph
-                    {
-                        Margin = new Thickness(8, 2, 8, 6)
-                    };
-                    codePara.Inlines.Add(new Run { Text = line, FontFamily = MonoFont, FontSize = 13 });
-                    _richTextBlock.Blocks.Add(codePara);
+                    codeBuilder.AppendLine(rawLine);
                     continue;
                 }
+
                 if (trimmed == string.Empty)
                 {
                     continue;
@@ -91,6 +120,21 @@ namespace RuApp.Controls
                 Paragraph paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 6) };
                 RenderLine(trimmed, paragraph, bodySize);
                 _richTextBlock.Blocks.Add(paragraph);
+            }
+
+            if (inCode && codeBuilder.Length > 0)
+            {
+                var codePara = new Paragraph
+                {
+                    Margin = new Thickness(10, 4, 10, 8)
+                };
+                codePara.Inlines.Add(new Run
+                {
+                    Text = codeBuilder.ToString().TrimEnd('\r', '\n'),
+                    FontFamily = MonoFont,
+                    FontSize = 13
+                });
+                _richTextBlock.Blocks.Add(codePara);
             }
         }
 

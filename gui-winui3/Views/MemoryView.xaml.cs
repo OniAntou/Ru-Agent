@@ -74,5 +74,11 @@ namespace RuApp.Views
                 }
             }
         }
+
+        public void Dispose()
+        {
+            _apiService = null;
+            Memories.Clear();
+        }
     }
 }

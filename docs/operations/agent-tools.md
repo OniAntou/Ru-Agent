@@ -102,7 +102,14 @@ not shared with another or forked session and is lost when the app restarts.
 Continuing the same live session reuses it. Relative traversal cannot escape a
 trusted root. When the user supplies an absolute path inside a granted folder,
 the model must preserve that exact path instead of rewriting it relative to the
-trusted workspace.
+trusted workspace. When executing `terminal.run` or `terminal.shell` with a
+working directory inside a session-granted directory, the Broker selects an
+effective root toolset (`RootToolSet`) rooted at that granted directory.
+Confinement remains enabled against that root toolset so child commands cannot
+escape the granted root, path formatting uses the selected root, and
+external-root terminal adapters share the Broker's approval-token authority for
+unknown or destructive commands. The implementation never disables confinement
+globally.
 
 Only terminal commands that perform destructive deletion or launch an unknown
 executable ask for a one-time terminal approval. Recognized Git and package
@@ -123,9 +130,10 @@ rendered by System Prompt Composer. Each capability includes ID/version,
 description, scope, strict proposal schema, example, and digest; selection is
 one JSON object with `tool_id`, `tool_version`, and `arguments`, with no prose
 success claim. The Worker also accepts that exact object inside one
-attribute-free `<tool_call>...</tool_call>` wrapper for compatibility with
-providers that emit textual tool markup; malformed, nested, prefixed, or
-suffixed wrappers remain prose and never execute. Both presets receive the same runtime-enabled definitions. Each
+attribute-free `<tool_call>...</tool_call>` wrapper or an attribute-free leading
+`<tool_call>` followed by a complete JSON object through the end of the response
+for compatibility with providers that emit textual tool markup; malformed, nested,
+prefixed, or suffixed wrappers remain prose and never execute. Both presets receive the same runtime-enabled definitions. Each
 step allows at most 10 sequential tool selections; exhausting that budget
 forces one final wrap-up answer without tools. Approvals still gate mutating
 tools — a card with a bounded preview and an explicit user decision precede
@@ -193,6 +201,14 @@ execution. A visible success reply is legal only after a matching outer
 `succeeded` receipt with `verification_state: verified`. Timeout, cancellation,
 policy denial, malformed context, or adapter failure terminates that action
 with a deterministic failure receipt.
+
+If the model produces ordinary assistant prose immediately following a committed
+tool batch that contains any failed or unverified receipt, the coordinator suppresses
+the prose from the conversation outbox, retains the assistant step internally for audit
+as an `InternalOnly` payload, and fails the run with the receipt error code (falling
+back to `tool_failed`). An unverified success claim is never displayed to the user as a
+completed answer. A subsequent different tool call remains eligible for normal execution
+to allow recovery.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the

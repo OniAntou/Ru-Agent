@@ -19,6 +19,8 @@ public sealed class ModelToolSelectionException : Exception
 
 public static class ModelToolSelectionParser
 {
+    private const string ToolCallOpenTag = "<tool_call>";
+    private const string ToolCallCloseTag = "</tool_call>";
     private static readonly Regex SemVer = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static string NormalizeCandidate(string text)
@@ -39,6 +41,21 @@ public static class ModelToolSelectionParser
             }
 
             candidate = candidate.Substring(endThink + "</think>".Length).Trim();
+        }
+
+        if (candidate.StartsWith(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase)
+            && candidate.EndsWith(ToolCallCloseTag, StringComparison.OrdinalIgnoreCase))
+        {
+            var inner = candidate.Substring(
+                    ToolCallOpenTag.Length,
+                    candidate.Length - ToolCallOpenTag.Length - ToolCallCloseTag.Length)
+                .Trim();
+            if (inner.StartsWith('{')
+                && !inner.Contains(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase)
+                && !inner.Contains(ToolCallCloseTag, StringComparison.OrdinalIgnoreCase))
+            {
+                candidate = inner;
+            }
         }
 
         if (candidate.StartsWith("```", StringComparison.Ordinal))

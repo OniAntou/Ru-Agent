@@ -526,14 +526,14 @@ public sealed class WorkerV2StepService
                 return;
             }
 
-            _decided = true;
-            var first = combined.TrimStart()[0];
-            if (first is '{' or '[')
+            var trimmed = combined.TrimStart();
+            if (CouldBeStructuredSelection(trimmed))
             {
                 _structured = true;
                 return;
             }
 
+            _decided = true;
             foreach (var held in _held)
             {
                 await _sink(held).ConfigureAwait(false);
@@ -555,6 +555,19 @@ public sealed class WorkerV2StepService
             _held.Clear();
             _decided = true;
             _structured = false;
+        }
+
+        private static bool CouldBeStructuredSelection(string candidate)
+        {
+            if (candidate[0] is '{' or '[')
+            {
+                return true;
+            }
+
+            const string toolCallTag = "<tool_call>";
+            return candidate[0] == '<'
+                && (toolCallTag.StartsWith(candidate, StringComparison.OrdinalIgnoreCase)
+                    || candidate.StartsWith(toolCallTag, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

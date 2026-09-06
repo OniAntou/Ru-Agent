@@ -64,4 +64,24 @@ public sealed class ModelToolSelectionParserTests
         Assert.Equal("1.0.0", selection.ToolVersion);
         Assert.Equal("README.md", selection.Arguments.GetProperty("path").GetString());
     }
+
+    [Fact]
+    public void NormalizeCandidate_unwraps_one_exact_tool_call_element()
+    {
+        const string json = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}";
+
+        Assert.Equal(json, ModelToolSelectionParser.NormalizeCandidate($"<tool_call> {json} </tool_call>"));
+        Assert.Equal(json, ModelToolSelectionParser.NormalizeCandidate($"<TOOL_CALL>\n{json}\n</TOOL_CALL>"));
+    }
+
+    [Theory]
+    [InlineData("prefix <tool_call>{}</tool_call>")]
+    [InlineData("<tool_call kind=\"x\">{}</tool_call>")]
+    [InlineData("<tool_call><tool_call>{}</tool_call></tool_call>")]
+    [InlineData("<tool_call>{}</tool_call> suffix")]
+    [InlineData("<tool_call>{}")]
+    public void NormalizeCandidate_does_not_unwrap_ambiguous_tool_call_markup(string text)
+    {
+        Assert.Equal(text, ModelToolSelectionParser.NormalizeCandidate(text));
+    }
 }

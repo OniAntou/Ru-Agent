@@ -158,9 +158,11 @@ public sealed class AgentApprovalEndpointTests
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("denied", json.GetProperty("status").GetString());
+            Assert.Equal("approval_denied", json.GetProperty("error_code").GetString());
+            Assert.Equal("failed", json.GetProperty("run_state").GetString());
             Assert.False(json.TryGetProperty("rule_saved", out var rs) && rs.GetBoolean());
 
-            // Denial resumes the run; a stale reuse of the same ID is rejected.
+            // Denial terminates the run; a stale reuse of the same ID is rejected.
             using var dup = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { decision = "deny", scope = "once" });
             Assert.Equal((HttpStatusCode)409, dup.StatusCode);
         }

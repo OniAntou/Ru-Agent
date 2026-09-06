@@ -2085,7 +2085,7 @@ public sealed class AgentV1Service
 
         if (isDeny)
         {
-            var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
+            var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Fail);
             if (!denyTransition.Accepted)
             {
                 HostApprovalLedger.TryRemove(key, out _);
@@ -2093,8 +2093,19 @@ public sealed class AgentV1Service
             }
 
             var denyNow = _time.UtcNow;
-            var deniedRun = AdvanceRun(run, denyTransition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, denyNow);
-            var denyEvt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved");
+            var deniedRun = AdvanceRun(
+                run,
+                denyTransition.Next,
+                run.BudgetWindow,
+                run.ModelStepsInWindow,
+                run.ToolCallsInWindow,
+                1,
+                denyNow,
+                terminalErrorCode: "approval_denied");
+            var denyEvt = new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.RunFailed,
+                safeCode: "approval_denied");
             var denyCommit = new HarnessCommit(runId, run.Version, deniedRun, new[] { denyEvt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
             HarnessCommitResult denyResult;
             try

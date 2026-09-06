@@ -121,7 +121,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Explore => Count is { } count ? (count == 1 ? "Exploring 1 item" : $"Exploring {count} items") : "Exploring",
         AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"Searching for {symbol}" : "Searching",
         AgentActivityKind.Analyze => "Analyzing",
-        AgentActivityKind.Edit => "Editing",
+        AgentActivityKind.Edit => ToolDisplay switch
+        {
+            "Delete" => "Deleting",
+            "Restore" => "Restoring",
+            _ => "Editing",
+        },
         AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Running {ToolDisplay} task" : "Running terminal task",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         _ => "Working…",
@@ -133,7 +138,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Explore => Count is { } count ? (count == 1 ? "Explored 1 item" : $"Explored {count} items") : "Explored",
         AgentActivityKind.Search => FormatSearch("Searched"),
         AgentActivityKind.Analyze => "Analyzed",
-        AgentActivityKind.Edit => "Edited",
+        AgentActivityKind.Edit => ToolDisplay switch
+        {
+            "Delete" => "Deleted",
+            "Restore" => "Restored",
+            _ => "Edited",
+        },
         AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Completed {ToolDisplay} task" : "Completed terminal task",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         _ => "Completed",

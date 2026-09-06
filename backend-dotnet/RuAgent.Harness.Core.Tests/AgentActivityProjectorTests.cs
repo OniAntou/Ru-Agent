@@ -125,6 +125,59 @@ public sealed class AgentActivityProjectorTests
         Assert.DoesNotContain("D:\\", activity.ToString(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("files.delete", "Delete")]
+    [InlineData("files.restore", "Restore")]
+    public void Delete_and_restore_project_basename_with_label(string toolId, string label)
+    {
+        var proposal = Proposal(
+            toolId,
+            "{\"path\":\"D:\\\\LLM\\\\obsolete.txt\"}");
+
+        var activity = AgentActivityProjector.ProjectTool(
+            proposal,
+            AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Edit, activity.Kind);
+        Assert.Equal(label, activity.ToolDisplay);
+        Assert.Equal("obsolete.txt", activity.FileName);
+        Assert.DoesNotContain("D:\\", activity.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Web_search_projects_query_symbol_without_url()
+    {
+        var proposal = Proposal(
+            "web.search",
+            "{\"query\":\"latest_release\"}");
+
+        var activity = AgentActivityProjector.ProjectTool(
+            proposal,
+            AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Search, activity.Kind);
+        Assert.Equal("Search", activity.ToolDisplay);
+        Assert.Equal("latest_release", activity.Symbol);
+    }
+
+    [Fact]
+    public void Web_fetch_stays_generic_without_url_metadata()
+    {
+        var proposal = Proposal(
+            "web.fetch",
+            "{\"url\":\"https://example.com/secret\"}");
+
+        var activity = AgentActivityProjector.ProjectTool(
+            proposal,
+            AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Status, activity.Kind);
+        Assert.Equal("Fetch", activity.ToolDisplay);
+        Assert.Null(activity.Symbol);
+        Assert.Null(activity.FileName);
+        Assert.DoesNotContain("example.com", activity.ToString(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Unknown_tool_falls_back_to_generic_status()
     {
@@ -196,8 +249,9 @@ public sealed class AgentActivityProjectorTests
     [Fact]
     public void ProjectTool_Maps_Unknown_Tool_To_Null_Label()
     {
-        var proposal = Proposal("web.search", "{\"query\":\"x\"}");
+        var proposal = Proposal("unknown.tool", "{\"query\":\"x\"}");
         var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+        Assert.Equal(AgentActivityKind.Status, activity.Kind);
         Assert.Null(activity.ToolDisplay);
     }
 

@@ -40,9 +40,9 @@ public static class AgentActivityProjector
         var kind = proposal.ToolId switch
         {
             "files.list" or "files.glob" => AgentActivityKind.Explore,
-            "files.search" => AgentActivityKind.Search,
+            "files.search" or "web.search" => AgentActivityKind.Search,
             "files.read" => AgentActivityKind.Analyze,
-            "files.write" or "files.edit" => AgentActivityKind.Edit,
+            "files.write" or "files.edit" or "files.delete" or "files.restore" => AgentActivityKind.Edit,
             "terminal.run" or "terminal.shell" => AgentActivityKind.Terminal,
             _ => AgentActivityKind.Status,
         };
@@ -55,10 +55,13 @@ public static class AgentActivityProjector
         var toolDisplay = proposal.ToolId switch
         {
             "files.list" or "files.glob" => "Explore",
-            "files.search" => "Search",
+            "files.search" or "web.search" => "Search",
             "files.read" => "View",
             "files.write" or "files.edit" => "Edit",
+            "files.delete" => "Delete",
+            "files.restore" => "Restore",
             "terminal.run" or "terminal.shell" => "Terminal",
+            "web.fetch" => "Fetch",
             "help.docs" => "Docs",
             _ => null,
         };
@@ -185,11 +188,11 @@ public static class AgentActivityProjector
             try
             {
                 var arguments = proposal.Arguments;
-                var fileName = proposal.ToolId is "files.read" or "files.write" or "files.edit"
+                var fileName = proposal.ToolId is "files.read" or "files.write" or "files.edit" or "files.delete" or "files.restore"
                     ? ReadSafeFileName(arguments, "path")
                     : null;
                 var (lineStart, lineEnd) = ReadLineRange(arguments);
-                var symbol = proposal.ToolId == "files.search"
+                var symbol = proposal.ToolId is "files.search" or "web.search"
                     ? ReadSafeSymbol(arguments, "query")
                     : null;
                 var count = ReadReceiptInt(receipt, "count");

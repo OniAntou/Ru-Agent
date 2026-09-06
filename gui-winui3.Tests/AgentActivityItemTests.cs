@@ -120,6 +120,17 @@ public sealed class AgentActivityItemTests
         Assert.Contains("Terminal", item.DisplayText, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("Delete", "Deleting", "Deleted")]
+    [InlineData("Restore", "Restoring", "Restored")]
+    public void DisplayText_Uses_Delete_Restore_Verbs(string label, string started, string completed)
+    {
+        var running = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, fileName: "obsolete.txt", toolDisplay: label));
+        Assert.Equal(started, running.DisplayText);
+        var done = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit, fileName: "obsolete.txt", toolDisplay: label));
+        Assert.Equal(completed, done.DisplayText);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,

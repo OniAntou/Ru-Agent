@@ -831,22 +831,58 @@ public sealed class AgentCommands
             }
         }
 
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╭────────────────────────────────────────────────────────────────────────────╮")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Bold("RuAgent v2.0") + Tui.AnsiTheme.Dim(" • Autonomous Coding Agent") + Tui.AnsiTheme.Cyan("                             │")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Dim("Session:   ") + Tui.AnsiTheme.Yellow(sessionId.Length > 24 ? sessionId.Substring(0, 24) + "..." : sessionId.PadRight(27)) + Tui.AnsiTheme.Cyan("                                │")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Dim("Workspace: ") + Tui.AnsiTheme.Dim(canonicalWorkspace.Length > 40 ? "..." + canonicalWorkspace.Substring(canonicalWorkspace.Length - 37) : canonicalWorkspace.PadRight(40)) + Tui.AnsiTheme.Cyan("          │")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("│  ") + Tui.AnsiTheme.Dim("Commands:  /model, /fork, /rewind, /status, /clear, /exit") + Tui.AnsiTheme.Cyan("                 │")).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan("╰────────────────────────────────────────────────────────────────────────────╯")).ConfigureAwait(false);
+        int bannerWidth = 76;
+        try
+        {
+            if (!Console.IsOutputRedirected && Console.WindowWidth > 20)
+            {
+                bannerWidth = Math.Clamp(Console.WindowWidth - 2, 48, 76);
+            }
+        }
+        catch { }
+
+        int innerWidth = bannerWidth - 2;
+        string topBorder = "╭" + new string('─', innerWidth) + "╮";
+        string botBorder = "╰" + new string('─', innerWidth) + "╯";
+
+        string PadBoxLine(string visibleContent, string renderedContent)
+        {
+            int pad = Math.Max(0, innerWidth - visibleContent.Length);
+            return Tui.AnsiTheme.Cyan("│") + renderedContent + new string(' ', pad) + Tui.AnsiTheme.Cyan("│");
+        }
+
+        string titleVis = "  RuAgent v2.0 • Autonomous Coding Agent";
+        string titleRen = "  " + Tui.AnsiTheme.Bold("RuAgent v2.0") + Tui.AnsiTheme.Dim(" • Autonomous Coding Agent");
+
+        string shortSession = sessionId.Length > Math.Max(10, innerWidth - 16) ? (sessionId[..Math.Max(0, innerWidth - 19)] + "...") : sessionId;
+        string sessVis = $"  Session:   {shortSession}";
+        string sessRen = $"  {Tui.AnsiTheme.Dim("Session:   ")}{Tui.AnsiTheme.Yellow(shortSession)}";
+
+        string shortWs = canonicalWorkspace.Length > Math.Max(10, innerWidth - 16) ? ("..." + canonicalWorkspace[^Math.Max(0, innerWidth - 19)..]) : canonicalWorkspace;
+        string wsVis = $"  Workspace: {shortWs}";
+        string wsRen = $"  {Tui.AnsiTheme.Dim("Workspace: ")}{Tui.AnsiTheme.Dim(shortWs)}";
+
+        string cmdVis = "  Commands:  /model, /fork, /rewind, /history, /status, /exit";
+        if (cmdVis.Length > innerWidth) cmdVis = "  Commands:  /model, /history, /exit";
+        string cmdRen = $"  {Tui.AnsiTheme.Dim(cmdVis[2..])}";
+
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan(topBorder)).ConfigureAwait(false);
+        await _out.WriteLineAsync(PadBoxLine(titleVis, titleRen)).ConfigureAwait(false);
+        await _out.WriteLineAsync(PadBoxLine(sessVis, sessRen)).ConfigureAwait(false);
+        await _out.WriteLineAsync(PadBoxLine(wsVis, wsRen)).ConfigureAwait(false);
+        await _out.WriteLineAsync(PadBoxLine(cmdVis, cmdRen)).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan(botBorder)).ConfigureAwait(false);
         await _out.WriteLineAsync().ConfigureAwait(false);
         await _out.FlushAsync().ConfigureAwait(false);
 
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
+        var lineReader = new Tui.InteractiveLineReader();
+        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("ruagent ❯ "));
+        string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("ruagent ❯ "))).ConfigureAwait(false);
-            await _out.FlushAsync().ConfigureAwait(false);
-            var line = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var line = await lineReader.ReadLineWithContinuationAsync(_in, _out, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
             if (line is null) break;
             line = line.Trim().Trim('"', '\'');
             if (string.IsNullOrEmpty(line)) continue;
@@ -865,14 +901,42 @@ public sealed class AgentCommands
                 }
                 if (slashCmd is "/help")
                 {
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Available slash commands:")).ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /model [name]    - Display or set current LLM model").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /backend <name>  - Switch backend provider (kilo, opencode, ollama, etc.)").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /fork [title]    - Fork session into a new branch from current point").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /rewind <index>  - Rewind session to specified message index").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /status          - Display session details").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /clear           - Clear terminal screen").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  /exit, /quit     - Exit interactive mode").ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("RuAgent Interactive Console Commands:"))).ConfigureAwait(false);
+                    await _out.WriteLineAsync().ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Session & Branching:")).ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/status") + "          - Display session details & preset").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/fork [title]") + "    - Fork session into a new branch").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/rewind <index>") + "  - Rewind session to specified message index").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/history") + "         - Show prompt history in current session").ConfigureAwait(false);
+                    await _out.WriteLineAsync().ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Model & Backend:")).ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/model [name]") + "    - Display or switch current LLM model").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/backend <name>") + "  - Switch backend provider (kilo, opencode, etc.)").ConfigureAwait(false);
+                    await _out.WriteLineAsync().ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Terminal & Controls:")).ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/clear") + "           - Clear terminal screen").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/help") + "            - Show this command reference").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/exit, /quit") + "     - Exit interactive terminal session").ConfigureAwait(false);
+                    await _out.WriteLineAsync().ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.AnsiTheme.Dim("Tips: Press Tab to autocomplete • Up/Down arrows for history • End with '\\' for multiline.")).ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
+                    continue;
+                }
+                if (slashCmd is "/history")
+                {
+                    var history = lineReader.History;
+                    if (history.Count == 0)
+                    {
+                        await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  (No prompt history yet)")).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Prompt History:")).ConfigureAwait(false);
+                        for (int i = 0; i < history.Count; i++)
+                        {
+                            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
+                        }
+                    }
                     await _out.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
@@ -968,6 +1032,43 @@ public sealed class AgentCommands
                     else
                     {
                         sessionRenderer.RenderFrame(frame);
+
+                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"approval.requested\"", StringComparison.Ordinal))
+                        {
+                            try
+                            {
+                                var envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                                if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
+                                {
+                                    var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : resp.RunId;
+                                    await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Yellow("\n  ❯ Approve this action? [y: once / r: run / N: deny] (default: n): "))).ConfigureAwait(false);
+                                    await _out.FlushAsync().ConfigureAwait(false);
+                                    var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                                    var normalized = string.IsNullOrWhiteSpace(answer) ? "n" : answer.Trim().ToLowerInvariant();
+
+                                    if (normalized is "y" or "yes" or "once")
+                                    {
+                                        await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, "once", cancellationToken).ConfigureAwait(false);
+                                        await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Approved (scope: once). Resuming execution...")).ConfigureAwait(false);
+                                    }
+                                    else if (normalized is "r" or "run")
+                                    {
+                                        await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, "run", cancellationToken).ConfigureAwait(false);
+                                        await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Approved (scope: run). Resuming execution...")).ConfigureAwait(false);
+                                    }
+                                    else
+                                    {
+                                        await _agentClient.DenyAsync(targetRunId, envelope.ApprovalId, cancellationToken).ConfigureAwait(false);
+                                        await _out.WriteLineAsync(Tui.AnsiTheme.Red("  ✗ Denied. Execution will abort this tool.")).ConfigureAwait(false);
+                                    }
+                                    await _out.FlushAsync().ConfigureAwait(false);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                await _err.WriteLineAsync($"inline_approval_error: {ex.Message}").ConfigureAwait(false);
+                            }
+                        }
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }

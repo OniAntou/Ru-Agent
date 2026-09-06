@@ -9,6 +9,11 @@ public sealed class TuiSessionRenderer
     private readonly TextWriter _writer;
     private bool _hasStreamedDelta;
     private bool _isThinking;
+    private System.Diagnostics.Stopwatch? _thinkingWatch;
+
+    private CancellationTokenSource? _spinnerCts;
+    private Task? _spinnerTask;
+    private static readonly string[] SpinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
     public TuiSessionRenderer(TextWriter writer)
     {
@@ -17,8 +22,76 @@ public sealed class TuiSessionRenderer
 
     public void Reset()
     {
+        StopThinkingSpinner(showSummary: false);
         _hasStreamedDelta = false;
         _isThinking = false;
+        _thinkingWatch?.Reset();
+    }
+
+    private void StartThinkingSpinner()
+    {
+        _isThinking = true;
+        _thinkingWatch = System.Diagnostics.Stopwatch.StartNew();
+
+        if (Console.IsOutputRedirected || _writer != Console.Out)
+        {
+            _writer.WriteLine(AnsiTheme.Dim("  • Thinking..."));
+            _writer.Flush();
+            return;
+        }
+
+        _spinnerCts?.Cancel();
+        _spinnerCts?.Dispose();
+        _spinnerCts = new CancellationTokenSource();
+        var ct = _spinnerCts.Token;
+
+        _spinnerTask = Task.Run(async () =>
+        {
+            int frameIdx = 0;
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    var elapsed = _thinkingWatch?.Elapsed.TotalSeconds ?? 0;
+                    var frameChar = SpinnerFrames[frameIdx++ % SpinnerFrames.Length];
+                    _writer.Write($"\r  {AnsiTheme.Cyan(frameChar)} {AnsiTheme.Dim($"Thinking... ({elapsed:F1}s)")}  ");
+                    _writer.Flush();
+                    await Task.Delay(80, ct).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) { }
+        }, ct);
+    }
+
+    private void StopThinkingSpinner(bool showSummary = true)
+    {
+        if (!_isThinking) return;
+        _isThinking = false;
+
+        if (_spinnerCts != null)
+        {
+            _spinnerCts.Cancel();
+            try { _spinnerTask?.Wait(200); } catch { }
+            _spinnerCts.Dispose();
+            _spinnerCts = null;
+            _spinnerTask = null;
+
+            if (!Console.IsOutputRedirected && _writer == Console.Out)
+            {
+                _writer.Write("\r                                        \r");
+                _writer.Flush();
+            }
+        }
+
+        if (showSummary)
+        {
+            var elapsed = _thinkingWatch?.Elapsed.TotalSeconds ?? 0;
+            if (elapsed >= 0.4)
+            {
+                _writer.WriteLine(AnsiTheme.Dim($"  • Thought for {elapsed:F1}s"));
+                _writer.Flush();
+            }
+        }
     }
 
     public void RenderFrame(SseFrame frame)
@@ -55,10 +128,7 @@ public sealed class TuiSessionRenderer
         {
             if (!_hasStreamedDelta)
             {
-                if (_isThinking)
-                {
-                    _isThinking = false;
-                }
+                StopThinkingSpinner(showSummary: true);
                 _writer.WriteLine();
                 _writer.Write(AnsiTheme.Bold(AnsiTheme.Cyan("✦ RuAgent: ")));
                 _hasStreamedDelta = true;
@@ -76,17 +146,15 @@ public sealed class TuiSessionRenderer
             {
                 if (activity.State == AgentActivityState.Started && !_isThinking && !_hasStreamedDelta)
                 {
-                    _isThinking = true;
-                    _writer.WriteLine(AnsiTheme.Dim("  • Thinking..."));
-                    _writer.Flush();
+                    StartThinkingSpinner();
                 }
                 else if (activity.State == AgentActivityState.Completed)
                 {
-                    _isThinking = false;
+                    StopThinkingSpinner(showSummary: true);
                 }
                 else if (activity.State == AgentActivityState.Failed)
                 {
-                    _isThinking = false;
+                    StopThinkingSpinner(showSummary: false);
                     _writer.WriteLine(AnsiTheme.Red("  • Model thinking failed."));
                     _writer.Flush();
                 }
@@ -135,14 +203,33 @@ public sealed class TuiSessionRenderer
 
             case "approval.requested":
                 _writer.WriteLine();
-                _writer.WriteLine(AnsiTheme.Yellow("╔══════════════════════════ ⚠️  APPROVAL REQUIRED ══════════════════════════╗"));
-                _writer.WriteLine(AnsiTheme.Yellow($"║  {summary.PadRight(70)}║"));
-                _writer.WriteLine(AnsiTheme.Yellow($"║  Run ID: {envelope.RunId.PadRight(65)}║"));
-                _writer.WriteLine(AnsiTheme.Yellow($"║  Approval ID: {(envelope.ApprovalId ?? "").PadRight(60)}║"));
-                _writer.WriteLine(AnsiTheme.Yellow("║  Commands:                                                               ║"));
-                _writer.WriteLine(AnsiTheme.Yellow("║    agent approve <run-id> <approval-id>                                 ║"));
-                _writer.WriteLine(AnsiTheme.Yellow("║    agent deny <run-id> <approval-id>                                     ║"));
-                _writer.WriteLine(AnsiTheme.Yellow("╚═══════════════════════════════════════════════════════════════════════════╝"));
+                int boxWidth = 76;
+                try
+                {
+                    if (!Console.IsOutputRedirected && Console.WindowWidth > 20)
+                    {
+                        boxWidth = Math.Clamp(Console.WindowWidth - 2, 48, 76);
+                    }
+                }
+                catch { }
+                int inner = boxWidth - 2;
+                string top = "╔" + new string('═', Math.Max(0, inner - 24)) + " ⚠️  APPROVAL REQUIRED " + new string('═', 2) + "╗";
+                if (top.Length > boxWidth) top = "╔" + new string('═', inner) + "╗";
+                string bot = "╚" + new string('═', inner) + "╝";
+
+                string BoxLine(string text)
+                {
+                    var vis = text.Length > inner - 2 ? text[..(inner - 5)] + "..." : text;
+                    int pad = Math.Max(0, inner - 2 - vis.Length);
+                    return AnsiTheme.Yellow("║ ") + vis + new string(' ', pad) + AnsiTheme.Yellow(" ║");
+                }
+
+                _writer.WriteLine(AnsiTheme.Yellow(top));
+                _writer.WriteLine(BoxLine(summary));
+                _writer.WriteLine(BoxLine($"Run ID: {envelope.RunId}"));
+                _writer.WriteLine(BoxLine($"Approval ID: {envelope.ApprovalId ?? ""}"));
+                _writer.WriteLine(BoxLine("Actions: [y] Approve once  [r] Approve for run  [n] Deny"));
+                _writer.WriteLine(AnsiTheme.Yellow(bot));
                 break;
 
             case "reconciliation.required":

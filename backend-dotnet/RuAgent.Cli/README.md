@@ -25,7 +25,7 @@ agent policy import --global FILE
 agent policy remove <rule-id>
 ```
 
-- `chat` (or `repl`) launches an interactive Terminal User Interface (TUI) with real-time ANSI-styled streaming, diff syntax highlighting, and inline slash commands (`/model`, `/backend`, `/fork`, `/rewind`, `/status`, `/clear`, `/help`, `/exit`).
+- `chat` (or `repl`) launches an interactive Terminal User Interface (TUI) with real-time ANSI-styled streaming, command history (Up/Down arrow navigation), Tab autocompletion for slash commands, live animated thinking spinner, multiline prompt continuation (`\`), inline tool approvals (`approval.requested`), and slash commands (`/model`, `/backend`, `/fork`, `/rewind`, `/status`, `/history`, `/clear`, `/help`, `/exit`).
 - `session list`, `session fork`, and `session rewind` provide explicit command-line controls for managing session branch trees and time-travel rewinds.
 - `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
 - `--preset full_access` (alias `full`) shows an interactive warning and requires confirmation; it changes the session's stored preset via `POST /agent/v1/policies` with `kind=session_preset` and requires header `X-Interactive-Confirmed: true`. `--json` cannot be used with `full_access`; the preset change affects the next run only and is not sticky across new sessions.

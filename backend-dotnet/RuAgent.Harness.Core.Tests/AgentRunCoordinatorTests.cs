@@ -247,6 +247,69 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Repeated_completed_tool_call_fails_before_second_execution()
+    {
+        var prior = ToolStep();
+        var source = new FixedContextSource(
+            ModelContextEntry.Assistant("assistant-prior", 1, prior),
+            ModelContextEntry.ToolResult(
+                "tool-prior",
+                2,
+                new ToolExecutionReceipt(
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    new ToolCallId("call_11111111111111111111111111111111"),
+                    ToolExecutionOutcome.Succeeded,
+                    "ok",
+                    null,
+                    false),
+                "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store, contextSource: source);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal("repeated_tool_call", result.ErrorCode);
+        Assert.Equal("repeated_tool_call", result.Run.TerminalErrorCode);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
+            item.Kind == HarnessEventKind.ModelStepCompleted && item.SafeCode == "repeated_tool_call");
+    }
+
+    [Fact]
+    public async Task Changed_tool_arguments_execute_after_a_completed_call()
+    {
+        var source = new FixedContextSource(
+            ModelContextEntry.Assistant("assistant-prior", 1, ToolStep()),
+            ModelContextEntry.ToolResult(
+                "tool-prior",
+                2,
+                new ToolExecutionReceipt(
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    new ToolCallId("call_11111111111111111111111111111111"),
+                    ToolExecutionOutcome.Succeeded,
+                    "ok",
+                    null,
+                    false),
+                "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(path: "docs/README.md"));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store, contextSource: source);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Single(gateway.ExecuteAttempts);
+    }
+
+    [Fact]
     public async Task Denied_tool_is_returned_to_the_model_without_execution()
     {
         var model = new FakeModelStepRunner();
@@ -526,12 +589,13 @@ public sealed class AgentRunCoordinatorTests
         TransientFrameBuffer? frames = null,
         ITransientContentRedactor? redactor = null,
         IAgentReplyPolicy? replyPolicy = null,
-        IAgentReplyEffectSink? replyEffects = null) =>
+        IAgentReplyEffectSink? replyEffects = null,
+        IModelContextSource? contextSource = null) =>
         new(
             model,
             gateway,
             store,
-            new AgentContextAssembler(new EmptyContextSource()),
+            new AgentContextAssembler(contextSource ?? new EmptyContextSource()),
             new SequenceIdGenerator(),
             new IncrementingTimeProvider(Epoch),
             new ToolCallScheduler(),
@@ -553,7 +617,7 @@ public sealed class AgentRunCoordinatorTests
     private static AssistantStep FinalStep(string text) =>
         new(text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 16);
 
-    private static AssistantStep ToolStep(int callCount = 1) =>
+    private static AssistantStep ToolStep(int callCount = 1, string? path = null) =>
         new(
             "checking",
             Enumerable.Range(1, callCount)
@@ -564,7 +628,7 @@ public sealed class AgentRunCoordinatorTests
                     "1",
                     JsonDocument.Parse(
                         callCount == 1
-                            ? "{\"path\":\"README.md\"}"
+                            ? JsonSerializer.Serialize(new { path = path ?? "README.md" })
                             : $"{{\"path\":\"README-{index}.md\"}}")
                         .RootElement.Clone()))
                 .ToArray(),
@@ -599,6 +663,16 @@ public sealed class AgentRunCoordinatorTests
             Task.FromResult(new ModelContextSourceSnapshot(
                 Array.Empty<ModelContextEntry>(),
                 Array.Empty<ModelContextEntry>()));
+    }
+
+    private sealed class FixedContextSource(params ModelContextEntry[] entries) : IModelContextSource
+    {
+        public Task<ModelContextSourceSnapshot> LoadAsync(
+            RunId runId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ModelContextSourceSnapshot(
+                Array.Empty<ModelContextEntry>(),
+                entries));
     }
 
     private sealed class IncrementingTimeProvider : ITimeProvider

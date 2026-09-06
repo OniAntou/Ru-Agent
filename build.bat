@@ -131,7 +131,7 @@ if exist "%PUBLISH_DIR%" (
         exit /b 1
     )
 )
-call dotnet publish "%CSPROJ%" -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true
+call dotnet publish "%CSPROJ%" -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -o "%PUBLISH_DIR%"
 if errorlevel 1 (
     echo.
     echo BUILD FAILED!

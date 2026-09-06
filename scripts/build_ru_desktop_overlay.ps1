@@ -23,6 +23,10 @@ if (-not (Test-Path -LiteralPath $cmake)) {
 
 $vcpkgRoot = if ($env:VCPKG_ROOT) {
     $env:VCPKG_ROOT
+} elseif (Test-Path -LiteralPath (Join-Path $PSScriptRoot '..\.tmp\vcpkg\vcpkg.exe')) {
+    Join-Path $PSScriptRoot '..\.tmp\vcpkg'
+} elseif (Test-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\..\.tmp\vcpkg\vcpkg.exe')) {
+    Join-Path $PSScriptRoot '..\..\..\.tmp\vcpkg'
 } else {
     Join-Path $PSScriptRoot '..\.tmp\vcpkg'
 }

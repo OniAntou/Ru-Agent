@@ -34,15 +34,16 @@ Current boundary classes are:
 - `managed-startup`: the configured C# entrypoint files;
 - `production-to-port`: historical generation/Worker candidates, when scanning
   older trees;
-- `provider-only`: retained Python voice, speech and observation sources; this
+- `provider-only`: retained Python voice and speech sources; this
   directory classification does not establish production use;
 - `tooling`: scripts, tests, and build/verification helpers;
 - `legacy`: other files outside the classified source groups.
 
 The active Python provider is `voice/omnivoice_server.py` plus its chunks,
 pacing, style, tuning and Vietnamese-normalization helpers. Their 48 cases
-remain. Memory and speech Python code also retain tooling consumers; Python
-tests for those modules are not evidence for managed C# runtime behavior.
+remain. Speech Python code also retains tooling consumers; Python tests for it
+are not evidence for managed C# runtime behavior. The Python memory and
+observation mirrors are retired.
 
 The managed default starts one C# Worker process that serves `/worker/v2` and
 `/worker/v1` on distinct loopback endpoints, with separate tokens and a
@@ -91,6 +92,6 @@ provider with an empty-key default and an explicit control handler, so missing
 credentials produce a stable disabled/skipped result and no network call; the
 managed default does not claim to capture a screen or emit a reaction. A
 trusted credential channel and a managed capture/reaction loop are separate
-rollout work. The legacy Python observation path is not reachable from managed
-startup. This section records the managed C# boundary, not live Gemini or
-Python-retirement evidence.
+rollout work. The legacy Python observation implementation and its mirror tests
+were removed on 2026-09-06. This section records the managed C# seam, not live
+Gemini acceptance.

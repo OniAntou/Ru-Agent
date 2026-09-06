@@ -224,8 +224,8 @@ See [runtime behavior](docs/operations/runtime-behavior.md) for invariants and
 manual acceptance boundaries.
 See [Agent tools and truthful execution](docs/operations/agent-tools.md) for
 the exact current capability matrix.
-See the [Phase 3 Python runtime retirement plan](docs/superpowers/plans/2026-08-30-python-runtime-phase-3-retirement.md)
-for the completed retirement record and its remaining native acceptance boundary.
+See Git history for the completed Phase 3 retirement record; current operations
+documentation owns the remaining native acceptance boundary.
 
 ## Verification
 

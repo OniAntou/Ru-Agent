@@ -2,6 +2,18 @@
 
 Last reviewed: 2026-09-06.
 
+## Completed legacy mirror and document retirement (2026-09-06)
+
+- [x] Removed the Python structured-memory mirror, evaluator, and mirror tests;
+  managed C# remains the only current structured-memory implementation.
+- [x] Removed the unreachable Python observation implementation and tests;
+  managed Runtime Worker observation routes and adapters remain unchanged.
+- [x] Removed the per-startup activity-log migration module after confirming
+  all 198 current rows use the current schema; the log itself remains intact
+  and bounded read-time sanitization remains active.
+- [x] Removed 117 completed dated plans/specifications (about 29,889 lines and
+  2 MB) from the checkout; current docs and ADRs remain, with Git as history.
+
 ## Completed legacy data-import retirement (2026-09-06)
 
 - [x] Removed the unused `GET /history` endpoint, `HistoryStore`, and the
@@ -34,9 +46,7 @@ Last reviewed: 2026-09-06.
   for live machine operations and `files.write` for notes.
 - [x] Migrated approval probes, Skills, deterministic Harness fixtures, and GUI
   scenario naming to the reduced catalog; removed native-volume acceptance.
-- [x] Refresh bundled `help.docs` and the Agent system prompt using the
-  [approved design](docs/superpowers/specs/2026-09-05-help-docs-system-prompt-refresh-design.md)
-  and [implementation plan](docs/superpowers/plans/2026-09-05-help-docs-system-prompt-refresh.md):
+- [x] Refresh bundled `help.docs` and the Agent system prompt:
   `Ru.md` is the sole persona source, guidance is capability-derived, folder
   grants are live-session-only, and legacy capability-schema translation is
   removed rather than retained as fallback.
@@ -127,8 +137,7 @@ Last reviewed: 2026-09-06.
   classification; added behavioral build/launcher/CI runner checks and scoped
   XAML resource/accessibility integrity checks.
 
-See [verification](docs/operations/verification.md) for measured results and
-[the completed plan](docs/superpowers/plans/2026-08-31-test-suite-cleanup.md).
+See [verification](docs/operations/verification.md) for measured results.
 
 ## Completed optimization (2026-08-31 codex/e6fa40c)
 
@@ -141,11 +150,9 @@ See [verification](docs/operations/verification.md) for measured results and
 
 ## Optimization handoff and acceptance follow-up (2026-08-31)
 
-The handoff entry point is
-[the optimization plan](docs/superpowers/plans/2026-08-31-codebase-optimization.md),
-which links six scoped plans and their verification gates. Concurrent work in
-`e6fa40c` already implements multiple slices, as recorded above; begin with the
-plan's resume gate and verify gaps instead of duplicating those changes.
+The previous optimization work in `e6fa40c` implemented the slices recorded
+above. Current verification gaps remain listed below; completed planning detail
+is available from Git history.
 
 - [x] Add deterministic behavior coverage for logger/refresh lifetime, production reply scheduling, native status suppression, outbox and bounded file search.
 - [ ] Collect the optimization plan's missing before/after work counters,
@@ -174,8 +181,6 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
   rejection (`vision_unsupported`); Worker v2 integration feeding `UserImage` payloads into
   `ModelRequest`; WinUI 3 client image resizer (max 2048px / JPEG 0.85 quality) with 4-image
   guard and attachment preview/bubble zoom dialog. See
-  [the design](docs/superpowers/specs/2026-09-03-image-multimodal-design.md),
-  [the plan](docs/superpowers/plans/2026-09-03-image-multimodal.md), and
   [verification](docs/verification/2026-09-03-image-multimodal-verification.md).
 - [x] Make oversized Agent payload responses fail explicitly instead of
   silently truncating client-visible JSON/base64 content.
@@ -219,9 +224,9 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
 - [x] Bound Gemini Vision image requests and response bodies before decoding or
   JSON parsing, including responses without a usable `Content-Length`.
 
-- [x] Implement the grouped provider model picker per [the design](docs/superpowers/specs/2026-09-01-grouped-provider-model-picker-design.md) and [the plan](docs/superpowers/plans/2026-09-01-grouped-provider-model-picker.md): Chat shows all usable provider catalogs in stable groups with global provider/model search; one selection saves a strict two-field payload (`backend_choice` + `selected_model`) through the existing atomic `POST /settings` transaction (the Host expands `selected_model` onto the mapped provider model field); `GroupedProviderCatalogController` composes seven per-provider controllers with isolated failures, stale same-identity labeling, coalesced refreshes and late-result rejection; `ProviderModelPicker` renders grouped rows with deterministic automation names. The Host serves `GET /models` for every provider whose credential is configured, active or not, so the dropdown shows exactly the providers the user has keys for; unknown aliases fail closed as `provider_not_active` and no provider/model/key/protocol fallback exists. Deterministic backend/GUI gates (backend 706, GUI 354, Python 409) passed against the then-current 56+1 route contract; the WinUI Release build and a non-secret live-API spot check passed; live GUI acceptance remains separate.
-- [x] Implement provider model-catalog auto-refresh (on demand plus five-minute active-Chat polling) and model-aware reasoning-effort selection per [the combined design](docs/superpowers/specs/2026-09-01-provider-catalog-refresh-design.md) and [the provider catalog plan](docs/superpowers/plans/2026-09-01-provider-catalog-refresh.md). Host owns discovery/cache (`ProviderCatalogService`, `ProviderCatalogParser`) with 5-min cache, 30-s throttle, single-flight, credential-revision identity, and bounded HTTP semantics; `GET /models` returns the typed additive snapshot (`catalog`, `stale`, `error_code`, `last_success_utc`) without credentials. GUI polls only while Chat is active and throttles manual refresh; Worker transport pins model/endpoint/key/reasoning per run through a protected DPAPI handoff. Deterministic gates and the visible Kilo catalog startup smoke passed; commit/publish, live generation and manual control acceptance remain separate; see [verification](docs/operations/verification.md).
-- [x] Implement native OpenAI Responses and Anthropic Messages providers per [the native provider design](docs/superpowers/specs/2026-09-01-native-openai-anthropic-providers-design.md) and [plan](docs/superpowers/plans/2026-09-01-native-openai-anthropic-providers.md): fixed official endpoints (`https://api.openai.com/v1` / `https://api.anthropic.com/v1`), isolated Credential Manager accounts (`openai_api_key`/`anthropic_api_key`), source-dated `2026-09-01` capability registry, `ProviderCatalogRequestFactory` with `Authorization: Bearer` / `x-api-key`+`anthropic-version: 2023-06-01`, `store:false` and internal 8192 `max_tokens`, protected per-step `Protocol`+`MaximumOutputTokens` pinning, `BoundedSseReader` (raw-byte bounded, strict UTF-8, BOM-aware), `OpenAiResponsesModelProvider`/`AnthropicMessagesModelProvider` with strict protocol-ordered parsing and exact dispatch via `IModelProviderResolver`; malformed persisted providers remain unselected instead of falling back to OpenCode, unsupported native turn roles fail before HTTP, contradictory event/type pairs, malformed nested JSON containers, and duplicate OpenAI terminals fail closed; the internal `per-step` bootstrap starts without selecting a fallback provider; `ChatView` allows `openai_responses`/`anthropic_messages`; `.gitignore` `models/`→`/models/` so `RuAgent.Runtime.Adapters/Models` is tracked. Focused coverage is `BoundedSseReaderTests` 16, `OpenAiResponsesModelProviderTests` 24, `AnthropicMessagesModelProviderTests` 31 and `OfficialProviderTests` 5. Deterministic gates passed against the then-current 56+1 route contract (`RuBackend.Tests` 683, `gui-winui3.Tests` 330, `RuAgent.Runtime.Worker.Tests` 55, `RuAgent.Runtime.Adapters.Tests` 169, Python 409); local managed-host startup returned HTTP 200, and no live provider key/catalog/generation/push was performed.
+- [x] Implement the grouped provider model picker: Chat shows all usable provider catalogs in stable groups with global provider/model search; one selection saves a strict two-field payload (`backend_choice` + `selected_model`) through the existing atomic `POST /settings` transaction (the Host expands `selected_model` onto the mapped provider model field); `GroupedProviderCatalogController` composes seven per-provider controllers with isolated failures, stale same-identity labeling, coalesced refreshes and late-result rejection; `ProviderModelPicker` renders grouped rows with deterministic automation names. The Host serves `GET /models` for every provider whose credential is configured, active or not, so the dropdown shows exactly the providers the user has keys for; unknown aliases fail closed as `provider_not_active` and no provider/model/key/protocol fallback exists. Deterministic backend/GUI gates (backend 706, GUI 354, Python 409) passed against the then-current 56+1 route contract; the WinUI Release build and a non-secret live-API spot check passed; live GUI acceptance remains separate.
+- [x] Implement provider model-catalog auto-refresh (on demand plus five-minute active-Chat polling) and model-aware reasoning-effort selection. Host owns discovery/cache (`ProviderCatalogService`, `ProviderCatalogParser`) with 5-min cache, 30-s throttle, single-flight, credential-revision identity, and bounded HTTP semantics; `GET /models` returns the typed additive snapshot (`catalog`, `stale`, `error_code`, `last_success_utc`) without credentials. GUI polls only while Chat is active and throttles manual refresh; Worker transport pins model/endpoint/key/reasoning per run through a protected DPAPI handoff. Deterministic gates and the visible Kilo catalog startup smoke passed; commit/publish, live generation and manual control acceptance remain separate; see [verification](docs/operations/verification.md).
+- [x] Implement native OpenAI Responses and Anthropic Messages providers: fixed official endpoints (`https://api.openai.com/v1` / `https://api.anthropic.com/v1`), isolated Credential Manager accounts (`openai_api_key`/`anthropic_api_key`), source-dated `2026-09-01` capability registry, `ProviderCatalogRequestFactory` with `Authorization: Bearer` / `x-api-key`+`anthropic-version: 2023-06-01`, `store:false` and internal 8192 `max_tokens`, protected per-step `Protocol`+`MaximumOutputTokens` pinning, `BoundedSseReader` (raw-byte bounded, strict UTF-8, BOM-aware), `OpenAiResponsesModelProvider`/`AnthropicMessagesModelProvider` with strict protocol-ordered parsing and exact dispatch via `IModelProviderResolver`; malformed persisted providers remain unselected instead of falling back to OpenCode, unsupported native turn roles fail before HTTP, contradictory event/type pairs, malformed nested JSON containers, and duplicate OpenAI terminals fail closed; the internal `per-step` bootstrap starts without selecting a fallback provider; `ChatView` allows `openai_responses`/`anthropic_messages`; `.gitignore` `models/`→`/models/` so `RuAgent.Runtime.Adapters/Models` is tracked. Focused coverage is `BoundedSseReaderTests` 16, `OpenAiResponsesModelProviderTests` 24, `AnthropicMessagesModelProviderTests` 31 and `OfficialProviderTests` 5. Deterministic gates passed against the then-current 56+1 route contract (`RuBackend.Tests` 683, `gui-winui3.Tests` 330, `RuAgent.Runtime.Worker.Tests` 55, `RuAgent.Runtime.Adapters.Tests` 169, Python 409); local managed-host startup returned HTTP 200, and no live provider key/catalog/generation/push was performed.
 - [x] Investigate diagnostic-writer shutdown under concurrent host teardown:
   `StructuredDiagnosticLogWriter.Dispose` waits via `StopAsync(2s)` and only disposes gates after `Completion` proves writer quiescence. Ten writer shutdown cases and one actual Host shutdown case cover the lifecycle. Business endpoint fixtures still use a discarding emitter for isolation.
 - [x] Remove all credential alias/cross-provider fallback from generation;
@@ -249,8 +254,8 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
   envelope, strict schemas, examples, scopes, and schema digests now prevent
   model-contract drift; Broker manifest validation remains in place while the
   later Broker-authority migration stays open.
-- [x] Implement bundled internal documentation & docs lookup tool (`help.docs`; `app.docs` is not a second model tool) in `RuAgentBroker` and System Prompt Composer. The offline, read-only search is backed by five explicitly embedded current documents and works from any workspace. See `docs/superpowers/specs/2026-09-02-bundled-help-docs-design.md` and `docs/superpowers/plans/2026-09-02-bundled-help-docs.md`.
-- [x] Harden Agent Broker file and terminal tools against edge-case failures: `files.edit` now preserves CRLF while accepting LF markers; `files.search` uses clamped concurrent reads, cancellation, and ordinal result ordering; terminal child stdin is redirected and closed immediately; delete/restore recovery caps are configurable but bounded by the 4 MiB hard maximum. See `docs/superpowers/specs/2026-09-02-agent-tool-hardening-design.md` and `docs/superpowers/plans/2026-09-02-agent-tool-hardening.md`.
+- [x] Implement bundled internal documentation & docs lookup tool (`help.docs`; `app.docs` is not a second model tool) in `RuAgentBroker` and System Prompt Composer. The offline, read-only search is backed by five explicitly embedded current documents and works from any workspace.
+- [x] Harden Agent Broker file and terminal tools against edge-case failures: `files.edit` now preserves CRLF while accepting LF markers; `files.search` uses clamped concurrent reads, cancellation, and ordinal result ordering; terminal child stdin is redirected and closed immediately; delete/restore recovery caps are configurable but bounded by the 4 MiB hard maximum.
 
 ## Deferred capabilities
 

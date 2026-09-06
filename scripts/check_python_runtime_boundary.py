@@ -52,7 +52,6 @@ def classify(path: str) -> tuple[str, str]:
         "src/ru_runtime/worker/v1/",
         "src/ru_runtime/voice/",
         "src/ru_runtime/speech/",
-        "src/ru_runtime/observation/",
     )):
         return "provider-only", "phase-two-device-boundary"
     if path.startswith(("scripts/", "tools/", "tests/")):

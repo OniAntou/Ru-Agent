@@ -4,6 +4,20 @@ Run heavyweight gates sequentially on Windows. Restore each .NET test project
 before using `--no-restore`; concurrent Python, frontend, and .NET builds can
 exhaust the page file on this workspace.
 
+## Legacy mirror and document retirement (2026-09-06)
+
+Python structured-memory and observation mirrors, the startup activity-log
+migration, and 117 dated plan/specification files were removed. Current C#
+memory and observation modules remain active. The canonical activity log was
+not modified; its 198 rows were inspected by key shape only and all use the
+current schema. Git history is the archive for completed planning records.
+
+Fresh gates: Ruff passed; Mypy passed for 29 source files; `pip check` found no
+broken requirements; Python passed 344/344; the sequential .NET matrix passed
+2,538/2,538 across all 13 test projects, including `RuBackend.Tests` 758/758
+and GUI 381/381. The route contract passed at 63 HTTP + 1 WebSocket. The
+Release build completed 13/13 and its native overlay tests passed 2/2.
+
 ## Dead runtime scaffolding retirement (2026-09-06)
 
 The first legacy-removal wave hard-deleted the one-value runtime selector,
@@ -25,8 +39,7 @@ Fresh sequential evidence:
   checks. The driver now follows the current English ready text, Agent-only UI,
   and approval-free root-workspace policy.
 - Release build: `build.bat` completed 13/13; native overlay passed 2/2.
-- Current-source scan found no retired symbol or entry-point name outside dated
-  historical plans/specifications.
+- Current-source scan found no retired symbol or entry-point name.
 
 ## Legacy data-import retirement (2026-09-06)
 
@@ -289,9 +302,8 @@ Performance acceptance remains open in TODO, independently of bug-fix tests.
 
 ### Provider catalog refresh evidence (2026-09-01)
 
-Design and plan are in
-[the provider catalog design](../superpowers/specs/2026-09-01-provider-catalog-refresh-design.md)
-and [the implementation plan](../superpowers/plans/2026-09-01-provider-catalog-refresh.md).
+The provider catalog operating contract is current; completed design and
+implementation details remain in Git history.
 Host discovery (`ProviderCatalogService` with bounded 15 s timeout, 4 MiB cap, 5000-item cap),
 capability parsing (`ProviderCatalogParser` for Kilo `opencode.variants` allowlist vs bare-ID unknown),
 per-model reasoning persistence (`ProviderReasoningPreferences`), typed additive `GET /models` snapshot,
@@ -323,9 +335,8 @@ or reasoning-setting mutation was performed, so those live paths remain pending.
 
 ### Grouped provider model picker evidence (2026-09-01)
 
-Design and plan are in
-[the grouped picker design](../superpowers/specs/2026-09-01-grouped-provider-model-picker-design.md)
-and [the implementation plan](../superpowers/plans/2026-09-01-grouped-provider-model-picker.md).
+The grouped picker operating contract is current; completed design and
+implementation details remain in Git history.
 
 Sequential deterministic gates on this working tree:
 

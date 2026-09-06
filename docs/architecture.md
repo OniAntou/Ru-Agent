@@ -117,8 +117,7 @@ managed C# Worker -> model adapter and typed runtime/device adapters -> Voice En
 
 The typed Worker protocol v2 is the active Agent execution path. The framed
 Voice Engine remains an accepted future target, not a claim about the current
-Flask-backed implementation. The shipped [OpenCode-style system-prompt
-composer](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md)
+Flask-backed implementation. The shipped OpenCode-style system-prompt composer
 does not introduce a second conversation transport: text, voice, coding, and
 tool-selection steps all use the same Agent run and Worker v2 path.
 

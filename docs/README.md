@@ -1,11 +1,10 @@
 # Ru documentation
 
-This index separates current system documentation from dated implementation
-records. Current documents describe what operators and maintainers should rely
-on now; historical records explain how earlier changes were reached and are not
-an operating contract.
+This directory contains only current operating documentation and accepted
+architecture decisions. Completed implementation plans and design drafts are
+kept in Git history instead of the working tree.
 
-## Current
+## Current system
 
 - [Architecture](architecture.md)
 - [Domain language](../CONTEXT.md)
@@ -14,62 +13,24 @@ an operating contract.
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
-- [Architecture decisions](adr/)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
+
+## Decisions
+
+- [Architecture decision records](adr/)
+- [ASP.NET Core Public Host](adr/0001-aspnet-core-public-host.md)
+- [Typed Worker protocol v2](adr/0002-typed-worker-protocol-v2.md)
+- [OmniVoice process isolation](adr/0003-omnivoice-process-isolation.md)
+- [Canonical Ru data location](adr/0004-canonical-ru-data-location.md)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
+- [Structured logging and activity](adr/0006-structured-logging-and-activity-boundaries.md)
+- [Capability profiles](adr/0007-mode-capability-profiles.md)
+- [Shared workspace coordination](adr/0008-shared-workspace-coordination.md)
+- [Broker execution authority](adr/0009-broker-execution-authority.md)
 
-## Active optimization handoff
+Git history is the recovery source for removed dated plans and specifications.
 
-- [Codebase optimization](superpowers/plans/2026-08-31-codebase-optimization.md)
-  — approved 2026-08-31; six scoped handoff plans across four rollout phases.
-  Concurrent implementation exists in `e6fa40c`; start at the plan's resume
-  gate to verify existing diagnostic/native/GUI/I/O work and remaining evidence.
-  Preserve the recorded Broker/Worker rejection; dependency/docs closure and
-  unverified performance acceptance require reconciliation, not a blind rerun.
-
-## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-31)
-
-- [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 56 HTTP + 1 WebSocket (`/voice/stream`; 15 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer. Text and microphone turns now use the same authenticated Agent API/SSE path.
-- [Phase 2: Policy Authority and File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard and Full Access receive the same Worker v2 file/terminal advertisement; Standard applies ordinary-workspace and analyzer/rule decisions while Full Access broadens fallbacks without bypassing trust or invariants. Immutable encrypted-at-rest policy/workspace snapshots, hash-guarded mutations, recoverable delete/restore, and CLI policy controls are active. `files.apply_patch` is not advertised or model-usable.
-- [Phase 3: Terminal and reconciliation](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-03-terminal-git.md) — `terminal.run`/`terminal.shell`, bounded output, process-tree cancellation, reconciliation, and the managed Git commit workflow are active on the headless Agent v2 path. Managed commits use temporary index isolation, path attribution rollback, and refuse dirty user index state.
-- [Session-scoped Agent permissions](superpowers/plans/2026-09-04-session-scoped-agent-permissions.md) — every Agent run is session-scoped: the chat composer no longer exposes a preset picker or scope picker. The Broker is the only authority and the inline approval panel renders one bounded message per reason code (`external_directory_required`, `terminal_delete_requires_approval`, `terminal_unknown_executable`). Outside-root calls execute against a session-scoped directory grant that lives in memory and is lost on restart; CLI uses `agent approve <run-id> <approval-id>` (no `--scope`, no `--preset`).
-- Desktop entry point — WinUI exposes no mode selector in the composer; Agent is the only generation mode and there is no preset selector or workspace editor. The transient activity feed is safe-summary-only and separate from durable history.
-- Agent-only transport retirement — [design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md) are implemented through deterministic release gates: `/voice/stream` is the only public WebSocket, Worker v1 is runtime/device-only, and every text/voice turn uses Agent API/SSE.
-- OpenCode-style prompt composition — the [focused contract](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-opencode-system-prompt-composer.md) are shipped. Each Agent step receives one freshly composed system message, root-bound instruction context, and a digest-only internal receipt.
-- Managed runtime Phase 2 — one published C# Worker now owns both private Worker v2 (Agent) and Worker v1 (runtime/device) ports with separate tokens and a single-use DPAPI provider bootstrap. Runtime settings, voice orchestration, STT/VTS/observation boundaries, leases, and OmniVoice process lifetime are managed in C#. The deterministic Harness uses a test-only fixture, while managed STT/Gemini credentials remain opt-in.
-- Python runtime Phase 3 retirement — the production Python Agent/Worker modules, compatibility launch branch, selector, and retired live probe are deleted. Managed C# startup is the only production topology; native device acceptance remains user-owned.
-- Phase 2 deterministic evidence — the shared `python-csharp-phase2-device-baseline.json` fixture and managed C# parity tests cover v1 sequence/type contracts, settings, voice ordering, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and privacy redaction. Release build publication also requires `RuAgent.Runtime.Core.dll` beside the managed Worker executable.
-- Typed Agent commands and bounded web tools — `/compact`, `/help`, `/skills`,
-  and `/skill` share one Protocol parser and Public Host route. Managed startup
-  enables read-only `web.search` and `web.fetch` through the fixed
-  `https://html.duckduckgo.com/html/` endpoint; results are bounded, sanitized,
-  and marked untrusted, with fetched text wrapped in
-  `[untrusted_web_reference]`.
-
-## Completed implementation plans
-
-- [Test-suite cleanup](superpowers/plans/2026-08-31-test-suite-cleanup.md) — obsolete Python VTS/overlay source and synthetic tests retired; documentation/UI checks reduced to integrity contracts; CI and local testing share automatic .NET project discovery.
-- [Python-to-C# Runtime Phase 2 implementation plan](superpowers/plans/2026-08-30-python-to-csharp-runtime-phase-2.md) — managed Worker v1/device ownership, parity/privacy gates, and release/manual acceptance evidence.
-- [Python runtime Phase 3 retirement plan](superpowers/plans/2026-08-30-python-runtime-phase-3-retirement.md) — production Python Agent/Worker retirement and the bounded native-acceptance boundary.
-- [Multimodal Image Attachment](superpowers/plans/2026-09-03-image-multimodal.md) — real end-to-end multimodal image attachment path: GUI client resize (max 2048px, JPEG 0.85/PNG), `POST /agent/v1/runs` validation (max 4 images, 4MB decoded per image, 20MB total, PNG/JPEG/WebP strict base64, vision model compatibility), encrypted SQLite `agent_payloads` of kind `UserImage` (11), Worker v2 loopback integration with `ModelRequest.Images`, provider projection (OpenAI Responses `input_image`, Anthropic Messages `image`, OpenAI-Compatible `image_url`), fail-closed non-vision rejection (`vision_unsupported`), and chat bubble rendering with zoom dialog. See [design](superpowers/specs/2026-09-03-image-multimodal-design.md) and [verification](verification/2026-09-03-image-multimodal-verification.md).
-
-## Approved future work
-
-- [Python-to-C# runtime migration design](superpowers/specs/2026-08-29-python-to-csharp-runtime-migration-design.md) — the staged replacement record; Phase 1 through the managed Phase 3 production cleanup are shipped while native acceptance remains a separate gate.
-- [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md) and [implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md) — retained as implementation history; real-model acceptance and separately designed extension milestones remain future work.
-- OS-enforced filesystem/network sandbox — a separate security project. Policy rules, path checks, and `network_intent` are not a sandbox and must not be relabeled as one.
-
-## Historical implementation records
-
-- [FastAPI decommission validation](aspnetcore-cutover-validation.md)
-- [2026-08-24 codebase security and reliability remediation](superpowers/specs/2026-08-24-codebase-security-reliability-remediation-design.md)
-- [Action execution kernel v1](superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md) and its [implementation plan](superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md)
-- [Agent tools and skills roadmap](superpowers/plans/2026-08-22-ru-agent-tools-skills.md)
-
-The remaining dated UI, voice, logging, policy, and harness plans/specs remain
-in the tree only as implementation history. They are not operating contracts;
-the current documents above are authoritative. Each retained record is
-bannered as historical or future work so an old checklist is not mistaken for
-an active task. Superseded records, when present in a working tree, follow the
-same historical-only rule. Git history remains the recovery source for those
-records.
+Agent permissions are session-scoped. The current approval reasons are
+`external_directory_required`, `terminal_delete_requires_approval`, and
+`terminal_unknown_executable`; no folder grant survives a restarted or new
+session.

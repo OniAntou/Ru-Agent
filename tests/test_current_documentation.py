@@ -56,6 +56,11 @@ def test_adrs_have_status_date_and_a_title_without_freezing_their_count() -> Non
         assert re.search(r"(?m)^#\s+\S", text[metadata.end():]), document
 
 
+def test_completed_implementation_archives_are_not_kept_in_the_checkout() -> None:
+    assert not tuple((ROOT / "docs/superpowers/plans").glob("*.md"))
+    assert not tuple((ROOT / "docs/superpowers/specs").glob("*.md"))
+
+
 def test_current_docs_describe_session_scoped_agent_permissions() -> None:
     """Current docs must mention the new permission vocabulary.
 
@@ -63,7 +68,7 @@ def test_current_docs_describe_session_scoped_agent_permissions() -> None:
     permissions, the three reason-specific approval codes, and do not claim
     external grants are durable or that Full Access allows every well-formed
     call. Marking the previous preset model superseded without rewriting
-    historical plans/specs is part of the same contract.
+    completed implementation archives are not part of the current contract.
     """
     missing: list[str] = []
     for path in CURRENT_DOCS:

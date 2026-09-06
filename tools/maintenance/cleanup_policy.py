@@ -44,7 +44,6 @@ _PROTECTED_ROOTS = (
     "reference_text.txt",
     "tyc_talk.wav",
     "vts_token.txt",
-    "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
 )
 
 _REBUILDABLE_ROOTS = (
@@ -179,13 +178,6 @@ def classify_path(
         return CleanupDecision(
             CleanupCategory.REVIEW_REQUIRED,
             "runtime_logs_may_contain_private_data",
-            "review",
-        )
-
-    if relative.startswith(("docs/superpowers/plans/", "docs/superpowers/specs/")):
-        return CleanupDecision(
-            CleanupCategory.REVIEW_REQUIRED,
-            "dated_implementation_record",
             "review",
         )
 

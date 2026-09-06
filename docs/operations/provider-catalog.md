@@ -1,7 +1,7 @@
 # Provider catalogs and reasoning
 
-Current implementation: 2026-09-01. Design and deterministic acceptance are
-tracked in [the implementation plan](../superpowers/plans/2026-09-01-provider-catalog-refresh.md).
+Current implementation: 2026-09-01. This document is the operating contract;
+completed implementation details remain available in Git history.
 
 ## Provider fallback and refresh
 

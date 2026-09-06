@@ -420,7 +420,6 @@ builder.Services.AddSingleton<HarnessStoreHealth>(services =>
     }
 });
 builder.Services.AddSingleton<IActivityLogStore, ActivityLogStore>();
-builder.Services.AddSingleton<ActivityLogMigrationService>();
 builder.Services.AddHostedService<ActivityOutboxIngestionService>();
 builder.Services.AddSingleton(services =>
     new StructuredDiagnosticLogWriter(services.GetRequiredService<DataPaths>().LogRoot, "aspnetcore-"));
@@ -453,12 +452,6 @@ if (isManagedRuntime)
         try { managedWorkerBrokerManager?.Dispose(); } catch { }
         try { managedSingleInstance?.Dispose(); } catch { }
     });
-}
-
-using (var scope = app.Services.CreateScope())
-{
-    var migration = scope.ServiceProvider.GetRequiredService<ActivityLogMigrationService>();
-    await migration.MigrateAsync();
 }
 
 app.UseWebSockets();

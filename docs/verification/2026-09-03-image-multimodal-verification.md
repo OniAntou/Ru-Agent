@@ -2,8 +2,7 @@
 
 Date: 2026-09-03  
 Feature: Real End-to-End Multimodal Image Attachment Path  
-Plan: `docs/superpowers/plans/2026-09-03-image-multimodal.md`  
-Design: `docs/superpowers/specs/2026-09-03-image-multimodal-design.md`  
+Completed implementation details are retained in Git history.
 
 ---
 

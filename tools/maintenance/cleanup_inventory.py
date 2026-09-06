@@ -231,7 +231,6 @@ def discover_candidate_paths(
         if (
             decision.category is CleanupCategory.LEGACY_LLAMA
             or decision.reason in {
-                "dated_implementation_record",
                 "one_off_runtime_probe",
                 "duplicate_reference_text",
             }

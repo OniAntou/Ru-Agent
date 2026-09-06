@@ -166,6 +166,7 @@ public sealed class AgentRunControllerTests
             5000,
             "succeeded",
             null,
+            null,
             1));
         var received = new List<AgentActivityModel>();
         var controller = new AgentRunController(fake);

@@ -84,6 +84,14 @@ public sealed class AgentActivityModelTests
         Assert.Null(activity);
     }
 
+    [Fact]
+    public void TryParse_Preserves_ToolDisplay()
+    {
+        var frame = Frame("agent.activity", new { activity_id = "act_11111111111111111111111111111111", kind = "analyze", state = "completed", tool_display = "View", safe_code = "succeeded" }, transientSequence: 7);
+        Assert.True(AgentActivityModel.TryParse(frame, out var model));
+        Assert.Equal("View", model!.ToolDisplay);
+    }
+
     private static SseFrame Frame(string kind, object data, long transientSequence)
     {
         var innerJson = JsonSerializer.Serialize(data);

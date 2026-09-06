@@ -124,7 +124,8 @@ public sealed class AgentActivityItemTests
         int? added = null,
         int? removed = null,
         int? durationMs = null,
-        string safeCode = "succeeded") =>
+        string safeCode = "succeeded",
+        string? toolDisplay = null) =>
         new(
             "act_11111111111111111111111111111111",
             kind,
@@ -138,6 +139,7 @@ public sealed class AgentActivityItemTests
             removed,
             durationMs,
             safeCode,
+            toolDisplay,
             null,
             1);
 }

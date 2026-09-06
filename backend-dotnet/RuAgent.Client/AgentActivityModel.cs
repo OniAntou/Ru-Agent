@@ -20,6 +20,7 @@ public sealed record AgentActivityModel(
     int? Removed,
     int? DurationMs,
     string SafeCode,
+    string? ToolDisplay,
     long? DurableSequence,
     long? TransientSequence)
 {
@@ -82,6 +83,7 @@ public sealed record AgentActivityModel(
                 wire.Removed,
                 wire.DurationMs,
                 wire.SafeCode,
+                wire.ToolDisplay,
                 frame.DurableSequence,
                 frame.TransientSequence);
             return true;

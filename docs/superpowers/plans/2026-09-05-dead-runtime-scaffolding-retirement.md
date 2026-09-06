@@ -206,3 +206,14 @@
   Run `build.bat`, `git diff --check`, the forbidden-symbol scan, and
   `git status --short --branch`. Confirm unrelated dirty files remain unstaged
   and unchanged by this plan.
+
+### Task 5: Retire proven legacy data importers
+
+- [x] Inventory canonical `history.json`, migration manifest/backups, and
+  `memory_texts.json`; confirm that no runtime data file requires deletion.
+- [x] Remove `HistoryStore`, `GET /history`, and history path plumbing while
+  retaining current session storage and CLI session-history behavior.
+- [x] Remove C# and Python `memory_texts.json` imports and migration markers
+  while retaining current SQLite memory repositories and APIs.
+- [x] Update the route contract and current documentation to 63 HTTP routes
+  plus one WebSocket, then run focused .NET/Python regression gates.

@@ -209,9 +209,7 @@ public sealed class ActivityLogStoreTests
         var root = Path.Combine(Path.GetTempPath(), "ru-activity-tests", Guid.NewGuid().ToString("N"));
         var paths = new DataPaths(
             Path.Combine(root, "memory.db"),
-            Path.Combine(root, "memory_texts.json"),
             Path.Combine(root, "settings.json"),
-            Path.Combine(root, "history.json"),
             Path.Combine(root, "sessions"),
             Path.Combine(root, "activity.jsonl"));
         return (new ActivityLogStore(paths, clock), paths);

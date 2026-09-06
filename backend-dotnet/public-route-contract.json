@@ -7,7 +7,6 @@
   {"method":"GET","path":"/activity-log","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetActivityLogAsync"]},
   {"method":"DELETE","path":"/activity-log","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ClearActivityLogAsync"]},
   {"method":"GET","path":"/models","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.GetModelsAsync"]},
-  {"method":"GET","path":"/history","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/memory","transport":"http","source":"backend-dotnet/RuBackend/Memory/MemoryEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetMemoryAsync"]},
   {"method":"DELETE","path":"/memory","transport":"http","source":"backend-dotnet/RuBackend/Memory/MemoryEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ClearMemoryAsync"]},
   {"method":"GET","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSettingsAsync"]},

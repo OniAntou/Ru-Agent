@@ -1,4 +1,3 @@
-import json
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -92,25 +91,6 @@ def test_expired_unpinned_record_is_not_active(shared_store):
     )
 
     assert shared_store.count_active() == 0
-
-
-def test_migration_imports_only_safe_legacy_blocks(tmp_path, shared_store):
-    shared_store.clear()
-    legacy_path = tmp_path / "memory_texts.json"
-    legacy_path.write_text(
-        json.dumps(
-            [
-                "User: Anh thích Ru tự động hoá.\nAssistant: Em nhớ rồi.",
-                "User: API key là sk-secret.\nAssistant: Đã nhận.",
-            ],
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    assert shared_store.migrate_legacy_transcripts(legacy_path) == {"imported": 1, "rejected": 1}
-    assert shared_store.count_active() == 1
-    assert legacy_path.exists()
 
 
 def test_retrieve_prefers_exact_project_scope_and_obeys_context_budget(shared_store):

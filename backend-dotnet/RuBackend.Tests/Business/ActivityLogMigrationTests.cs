@@ -17,9 +17,7 @@ public sealed class ActivityLogMigrationTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         _paths = new DataPaths(
             Path.Combine(_tempDir, "memory.db"),
-            Path.Combine(_tempDir, "memory_texts.json"),
             Path.Combine(_tempDir, "settings.json"),
-            Path.Combine(_tempDir, "history.json"),
             Path.Combine(_tempDir, "sessions"),
             Path.Combine(_tempDir, "activity_log.jsonl"),
             Path.Combine(_tempDir, "logs"),

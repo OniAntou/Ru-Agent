@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using RuBackend.Memory;
 using Xunit;
 
@@ -86,124 +85,6 @@ public sealed class MemoryServiceTests
         await Task.WhenAll(first, second);
 
         Assert.Equal(2, repository.Upserted.Count);
-    }
-
-    [Fact]
-    public async Task Legacy_import_is_idempotent_by_source_hash()
-    {
-        var directory = CreateTempDirectory();
-        try
-        {
-            var legacyPath = Path.Combine(directory, "memory_texts.json");
-            var blocks = new[] { "User: I prefer concise replies.\nAssistant: Noted." };
-            await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(blocks));
-
-            var repository = new FakeMemoryRepository();
-            var policy = new FakeMemoryPolicy
-            {
-                ExtractHandler = (prompt, _) => [Candidate(prompt)],
-            };
-            await using var service = CreateService(
-                repository,
-                policy,
-                new MemorySqliteOptions { LegacyTextsPath = legacyPath });
-
-            var first = await service.InitializeAsync(CancellationToken.None);
-            var second = await service.InitializeAsync(CancellationToken.None);
-
-            Assert.Equal(1, first.Imported);
-            Assert.Equal(0, first.Rejected);
-            Assert.Equal(first, second);
-            Assert.Single(repository.Upserted);
-            Assert.Single(repository.MigrationHashes);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Malformed_legacy_source_is_rejected_without_recording_a_migration()
-    {
-        var directory = CreateTempDirectory();
-        try
-        {
-            var legacyPath = Path.Combine(directory, "memory_texts.json");
-            await File.WriteAllTextAsync(legacyPath, "{not-json");
-
-            var repository = new FakeMemoryRepository();
-            await using var service = CreateService(
-                repository,
-                new FakeMemoryPolicy(),
-                new MemorySqliteOptions { LegacyTextsPath = legacyPath });
-
-            var result = await service.InitializeAsync(CancellationToken.None);
-
-            Assert.Equal(new MemoryLegacyImportResult(0, 1), result);
-            Assert.Empty(repository.Upserted);
-            Assert.Empty(repository.MigrationHashes);
-            Assert.True(File.Exists(legacyPath));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Oversized_legacy_source_is_rejected_before_loading_into_memory()
-    {
-        var directory = CreateTempDirectory();
-        try
-        {
-            var legacyPath = Path.Combine(directory, "memory_texts.json");
-            await using (var stream = new FileStream(legacyPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
-            {
-                stream.SetLength(16 * 1024 * 1024 + 1);
-            }
-
-            await using var service = CreateService(
-                new FakeMemoryRepository(),
-                new FakeMemoryPolicy(),
-                new MemorySqliteOptions { LegacyTextsPath = legacyPath });
-
-            Assert.Equal(new MemoryLegacyImportResult(0, 1), await service.InitializeAsync(CancellationToken.None));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task Read_only_service_skips_legacy_import_and_write_side_effects()
-    {
-        var directory = CreateTempDirectory();
-        try
-        {
-            var legacyPath = Path.Combine(directory, "memory_texts.json");
-            await File.WriteAllTextAsync(
-                legacyPath,
-                JsonSerializer.Serialize(new[] { "User: Anh thích cà phê.\nAssistant: Đã nhớ." }));
-
-            var repository = new FakeMemoryRepository();
-            await using var service = CreateService(
-                repository,
-                new FakeMemoryPolicy { ExtractHandler = (prompt, _) => [Candidate(prompt)] },
-                new MemorySqliteOptions { LegacyTextsPath = legacyPath, ReadOnly = true });
-
-            var result = await service.InitializeAsync(CancellationToken.None);
-
-            Assert.Equal(new MemoryLegacyImportResult(0, 0), result);
-            Assert.Empty(repository.Upserted);
-            Assert.Empty(repository.MigrationHashes);
-            Assert.True(File.Exists(legacyPath));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
     }
 
     [Fact]
@@ -320,7 +201,6 @@ public sealed class MemoryServiceTests
         private readonly object _sync = new();
 
         public List<MemoryCandidate> Upserted { get; } = [];
-        public HashSet<string> MigrationHashes { get; } = [];
         public int ClearCount { get; private set; }
         public bool IsDisposed { get; private set; }
         public Func<MemoryCandidate, CancellationToken, Task>? UpsertHook { get; set; }
@@ -361,24 +241,6 @@ public sealed class MemoryServiceTests
                 candidate.ExpiresAt,
                 "active",
                 false);
-        }
-
-        public Task<bool> IsLegacyMigrationRecordedAsync(string sourceHash, CancellationToken cancellationToken)
-        {
-            lock (_sync)
-            {
-                return Task.FromResult(MigrationHashes.Contains(sourceHash));
-            }
-        }
-
-        public Task RecordLegacyMigrationAsync(string sourceHash, CancellationToken cancellationToken)
-        {
-            lock (_sync)
-            {
-                MigrationHashes.Add(sourceHash);
-            }
-
-            return Task.CompletedTask;
         }
 
         public Task ClearAsync(CancellationToken cancellationToken)

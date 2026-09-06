@@ -232,13 +232,10 @@ public sealed class AgentRunIdempotencyTests
             Directory.CreateDirectory(dataRoot);
             var dataPaths = new RuBackend.Business.DataPaths(
                 System.IO.Path.Combine(dataRoot, "memory.db"),
-                System.IO.Path.Combine(dataRoot, "memory_texts.json"),
                 System.IO.Path.Combine(dataRoot, "settings.json"),
-                System.IO.Path.Combine(dataRoot, "history.json"),
                 System.IO.Path.Combine(dataRoot, "sessions"),
                 System.IO.Path.Combine(dataRoot, "activity.jsonl")
             );
-            // Ensure DataPaths has AgentHarnessDatabase computed via its constructor? The 6-arg ctor sets those?
             // Actually DataPaths ctor used for tests is 6 args, but AgentHarnessDatabase derived from BusinessDataRoot
             // We need to create via DataPaths.Resolve
             var resolved = RuBackend.Business.DataPaths.Resolve(root, root, root, dataRoot, System.IO.Path.Combine(root, "logs"));

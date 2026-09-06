@@ -59,7 +59,7 @@ advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **64 HTTP plus 1 WebSocket** (43 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
+> - Public Contract is now **63 HTTP plus 1 WebSocket** (42 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,

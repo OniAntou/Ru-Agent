@@ -18,14 +18,8 @@ public sealed class DataPathsTests
             Path.GetFullPath(Path.Combine(projectRoot, "data", "conversations", "memory.db")),
             paths.MemoryDatabase);
         Assert.Equal(
-            Path.GetFullPath(Path.Combine(projectRoot, "data", "conversations", "memory_texts.json")),
-            paths.LegacyMemoryTexts);
-        Assert.Equal(
             Path.GetFullPath(Path.Combine(localAppData, "Ru", "settings.json")),
             paths.SettingsFile);
-        Assert.Equal(
-            Path.GetFullPath(Path.Combine(localAppData, "Ru", "history.json")),
-            paths.HistoryFile);
         Assert.Equal(
             Path.GetFullPath(Path.Combine(localAppData, "Ru", "sessions")),
             paths.SessionDirectory);
@@ -57,9 +51,7 @@ public sealed class DataPathsTests
 
         var expectedRoot = Path.GetFullPath(dataRoot);
         Assert.Equal(Path.Combine(expectedRoot, "memory.db"), paths.MemoryDatabase);
-        Assert.Equal(Path.Combine(expectedRoot, "memory_texts.json"), paths.LegacyMemoryTexts);
         Assert.Equal(Path.Combine(expectedRoot, "settings.json"), paths.SettingsFile);
-        Assert.Equal(Path.Combine(expectedRoot, "history.json"), paths.HistoryFile);
         Assert.Equal(Path.Combine(expectedRoot, "sessions"), paths.SessionDirectory);
         Assert.Equal(Path.Combine(expectedRoot, "activity_log.jsonl"), paths.ActivityLogFile);
         Assert.Equal(expectedRoot, paths.BusinessDataRoot);

@@ -231,9 +231,7 @@ public sealed class AgentOutboxDeliveryTests
     {
         var paths = new DataPaths(
             Path.Combine(fixture.RootPath, "memory.db"),
-            Path.Combine(fixture.RootPath, "memory.json"),
             Path.Combine(fixture.RootPath, "settings.json"),
-            Path.Combine(fixture.RootPath, "history.json"),
             Path.Combine(fixture.RootPath, "sessions"),
             Path.Combine(fixture.RootPath, "activity.jsonl"));
         var store = new SessionStore(paths, new MutableTimeProvider(

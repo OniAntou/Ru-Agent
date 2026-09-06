@@ -91,7 +91,6 @@ public sealed class DiagnosticRequestMiddleware
 
         if (value.StartsWith("/settings", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/sessions", StringComparison.OrdinalIgnoreCase) ||
-            value.StartsWith("/history", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/activity-log", StringComparison.OrdinalIgnoreCase))
         {
             return "http.business";

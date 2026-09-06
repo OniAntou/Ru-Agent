@@ -1,6 +1,18 @@
 # Ru Roadmap
 
-Last reviewed: 2026-09-05.
+Last reviewed: 2026-09-06.
+
+## Completed legacy data-import retirement (2026-09-06)
+
+- [x] Removed the unused `GET /history` endpoint, `HistoryStore`, and the
+  `history.json` migration/manifest path; current per-session JSON persistence
+  remains unchanged.
+- [x] Removed the C# and Python `memory_texts.json` importers and migration
+  markers; current structured `memory.db` repositories, APIs, and UI remain.
+- [x] Verified that no legacy source file, manifest, or backup existed at the
+  canonical runtime paths, so no user data was deleted.
+- [x] Reduced the public contract to 63 HTTP routes plus the existing
+  `/voice/stream` WebSocket and updated current operating documentation.
 
 ## Completed dead runtime scaffolding retirement (2026-09-05)
 
@@ -10,8 +22,8 @@ Last reviewed: 2026-09-05.
   arguments/helpers; deterministic backend and GUI modes remain.
 - [x] Renamed active tooling to `scripts/ru_harness.py` and
   `scripts/benchmark_backend.py` without aliases or fallback entry points.
-- [x] Kept Worker v1 device/voice routes, OmniVoice, and persisted-data
-  migrations because they still have live responsibilities.
+- [x] Kept Worker v1 device/voice routes and OmniVoice because they still have
+  live responsibilities; persisted-data importers were handled separately.
 
 ## Completed Agent tool retirement (2026-09-05)
 

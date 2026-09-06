@@ -22,7 +22,6 @@ public static class BusinessEndpoints
         app.MapPost("/sessions/{sessionId}/fork", ForkSessionAsync);
         app.MapPost("/sessions/{sessionId}/rewind", RewindSessionAsync);
         app.MapDelete("/sessions/{sessionId}", DeleteSessionAsync);
-        app.MapGet("/history", GetHistoryAsync);
         app.MapGet("/activity-log", GetActivityAsync);
         app.MapDelete("/activity-log", ClearActivityAsync);
     }
@@ -288,27 +287,6 @@ public static class BusinessEndpoints
         {
             LogFailure(loggers, "session rewind", error);
             return Results.Ok(new { status = "error", message = "Lỗi khi rewind session." });
-        }
-    }
-
-    private static async Task<IResult> GetHistoryAsync(
-        IHistoryStore history,
-        ILoggerFactory loggers,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return Results.Ok(
-                await history.ReadLegacyAsync(cancellationToken).ConfigureAwait(false));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception error)
-        {
-            LogFailure(loggers, "history read", error);
-            return Results.Ok(Array.Empty<SessionMessage>());
         }
     }
 

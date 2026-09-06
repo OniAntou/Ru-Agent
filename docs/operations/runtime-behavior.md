@@ -381,7 +381,7 @@ width or composer alignment.
 
 ## Persistence and privacy
 
-ASP.NET Core owns settings, credentials, sessions/history, activity, structured
+ASP.NET Core owns settings, credentials, sessions (including message history), activity, structured
 memory, and reviewed-example policy. Business records live in the canonical
 `%LOCALAPPDATA%\Ru` location; the transactional migration from the legacy
 location completed on 2026-08-17 (see

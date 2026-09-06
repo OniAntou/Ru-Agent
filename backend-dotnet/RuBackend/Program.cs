@@ -419,7 +419,6 @@ builder.Services.AddSingleton<HarnessStoreHealth>(services =>
         return new HarnessStoreHealth(false, 0, "agent_store_unavailable");
     }
 });
-builder.Services.AddSingleton<IHistoryStore, HistoryStore>();
 builder.Services.AddSingleton<IActivityLogStore, ActivityLogStore>();
 builder.Services.AddSingleton<ActivityLogMigrationService>();
 builder.Services.AddHostedService<ActivityOutboxIngestionService>();
@@ -537,8 +536,6 @@ static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration
     {
         DatabasePath = configuration["RuBackend:Memory:DatabasePath"]
             ?? Path.Combine(root, "memory.db"),
-        LegacyTextsPath = configuration["RuBackend:Memory:LegacyTextsPath"]
-            ?? Path.Combine(root, "memory_texts.json"),
         ReadOnly = false,
     };
 }

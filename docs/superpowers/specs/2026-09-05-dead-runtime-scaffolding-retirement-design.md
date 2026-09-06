@@ -64,3 +64,11 @@ bootstrap, and Broker executable inputs.
 - Current documentation and `TODO.md` describe the managed-only topology.
 - Run the full Python suite, full .NET test matrix, route matrix, deterministic
   backend Harness, release build, and `git diff --check` sequentially.
+
+## Follow-up (2026-09-06)
+
+After a separate inventory confirmed that the canonical `history.json`, its
+migration manifest/backups, and `memory_texts.json` were absent, the user
+approved legacy-only cleanup. The history and memory-text import surfaces were
+removed while current sessions, structured memory, Agent durable state,
+credential/settings compatibility, and policy compatibility were retained.

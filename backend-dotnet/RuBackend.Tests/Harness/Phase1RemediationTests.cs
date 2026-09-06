@@ -274,9 +274,7 @@ public sealed class Phase1RemediationTests
             Directory.CreateDirectory(dataRoot);
             var dataPaths = new RuBackend.Business.DataPaths(
                 System.IO.Path.Combine(dataRoot, "memory.db"),
-                System.IO.Path.Combine(dataRoot, "memory_texts.json"),
                 System.IO.Path.Combine(dataRoot, "settings.json"),
-                System.IO.Path.Combine(dataRoot, "history.json"),
                 System.IO.Path.Combine(dataRoot, "sessions"),
                 System.IO.Path.Combine(dataRoot, "activity.jsonl"));
             return new TempWorkspace(root, ws, dataPaths);

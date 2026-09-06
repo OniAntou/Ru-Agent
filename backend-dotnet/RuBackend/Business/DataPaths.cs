@@ -2,9 +2,7 @@ namespace RuBackend.Business;
 
 public sealed record DataPaths(
     string MemoryDatabase,
-    string LegacyMemoryTexts,
     string SettingsFile,
-    string HistoryFile,
     string SessionDirectory,
     string ActivityLogFile,
     string LogRoot,
@@ -18,16 +16,12 @@ public sealed record DataPaths(
 
     public DataPaths(
         string memoryDatabase,
-        string legacyMemoryTexts,
         string settingsFile,
-        string historyFile,
         string sessionDirectory,
         string activityLogFile)
         : this(
             memoryDatabase,
-            legacyMemoryTexts,
             settingsFile,
-            historyFile,
             sessionDirectory,
             activityLogFile,
             Path.Combine(Path.GetDirectoryName(settingsFile) ?? string.Empty, "logs"),
@@ -83,9 +77,7 @@ public sealed record DataPaths(
 
         return new DataPaths(
             Path.Combine(memoryRoot, "memory.db"),
-            Path.Combine(memoryRoot, "memory_texts.json"),
             Path.Combine(businessRoot, "settings.json"),
-            Path.Combine(businessRoot, "history.json"),
             Path.Combine(businessRoot, "sessions"),
             Path.Combine(businessRoot, "activity_log.jsonl"),
             resolvedLogRoot,

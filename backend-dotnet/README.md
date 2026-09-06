@@ -1,8 +1,8 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 62 HTTP routes
-plus the single `/voice/stream` WebSocket (41 legacy routes plus 20 additive
+when started as `RuBackend.exe --managed-runtime` and owns all 63 HTTP routes
+plus the single `/voice/stream` WebSocket (42 non-Agent routes plus 20 additive
 `/agent/v1/*` plus 1 `POST /host/shutdown`). Text turns use the current Worker v2-backed Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
@@ -37,7 +37,7 @@ dependency-free test fixture. Git commit
 ## Ownership
 
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
-credentials, sessions, history, activity, structured memory, Agent run ordering,
+credentials, sessions and their message history, activity, structured memory, Agent run ordering,
 metadata filtering, and every public endpoint contract. Agent generation uses
 the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
 work uses the same managed process at `ws://127.0.0.1:8006/worker/v1`:

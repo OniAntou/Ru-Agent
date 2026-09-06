@@ -54,7 +54,6 @@ public sealed class SqliteMemoryRepositoryTests
         var readOnlyOptions = new MemorySqliteOptions
         {
             DatabasePath = options.DatabasePath,
-            LegacyTextsPath = options.LegacyTextsPath,
             ReadOnly = true,
         };
         await using var readOnly = new SqliteMemoryRepository(readOnlyOptions);
@@ -87,20 +86,6 @@ public sealed class SqliteMemoryRepositoryTests
 
         Assert.Null(await reopened.GetAsync("expired-on-open", CancellationToken.None));
         Assert.NotNull(await reopened.GetAsync("pinned-expired-on-open", CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Legacy_migration_marker_is_idempotent()
-    {
-        var (repository, _) = CreateRepository();
-        await using (repository)
-        {
-            Assert.False(await repository.IsLegacyMigrationRecordedAsync("source-1", CancellationToken.None));
-            await repository.RecordLegacyMigrationAsync("source-1", CancellationToken.None);
-            await repository.RecordLegacyMigrationAsync("source-1", CancellationToken.None);
-
-            Assert.True(await repository.IsLegacyMigrationRecordedAsync("source-1", CancellationToken.None));
-        }
     }
 
     [Fact]
@@ -399,25 +384,19 @@ public sealed class SqliteMemoryRepositoryTests
     }
 
     [Fact]
-    public async Task Clear_removes_database_rows_migration_markers_and_registered_legacy_artifact()
+    public async Task Clear_removes_database_rows()
     {
         var options = new MemorySqliteOptions
         {
             DatabasePath = Path.Combine(Path.GetTempPath(), "ru-memory-tests", Guid.NewGuid().ToString("N"), "memory.db"),
-            LegacyTextsPath = Path.Combine(Path.GetTempPath(), "ru-memory-tests", Guid.NewGuid().ToString("N"), "memory_texts.json"),
         };
-        Directory.CreateDirectory(Path.GetDirectoryName(options.LegacyTextsPath)!);
-        await File.WriteAllTextAsync(options.LegacyTextsPath, "legacy");
 
         await using var repository = new SqliteMemoryRepository(options);
         await repository.UpsertAsync(new MemoryCandidate(MemoryKind.Profile, "clear me", null, "test", 1, 1), CancellationToken.None);
-        await repository.RecordLegacyMigrationAsync("clear-source", CancellationToken.None);
 
         await repository.ClearAsync(CancellationToken.None);
 
         Assert.Empty(await repository.ListActiveAsync(CancellationToken.None));
-        Assert.False(await repository.IsLegacyMigrationRecordedAsync("clear-source", CancellationToken.None));
-        Assert.False(File.Exists(options.LegacyTextsPath));
     }
 
     private static (SqliteMemoryRepository Repository, MemorySqliteOptions Options) CreateRepository()

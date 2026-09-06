@@ -53,9 +53,7 @@ public sealed class HarnessModelContextBootstrapperTests
         var root = Path.Combine(Path.GetTempPath(), "ru-context-bootstrap", Guid.NewGuid().ToString("N"));
         var paths = new DataPaths(
             Path.Combine(root, "memory.db"),
-            Path.Combine(root, "memory.json"),
             Path.Combine(root, "settings.json"),
-            Path.Combine(root, "history.json"),
             Path.Combine(root, "sessions"),
             Path.Combine(root, "activity.jsonl"));
         var sessions = new SessionStore(paths);

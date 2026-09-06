@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -10,13 +9,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from hashlib import sha256
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _MMAP_SIZE_BYTES = 300_000_000  # 300 MB — đủ cho hàng trăm nghìn dòng memory; 30 GB là vô lý
-_USER_PREFIX = "User: "
 
 # retrieve() scoring weights (tổng trọng số tối đa = 0.80, ngưỡng min = 0.18)
 _SCORE_WEIGHT_LEXICAL = 0.55
@@ -159,9 +156,6 @@ class StructuredMemoryStore:
                     pinned INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS idx_memories_status_expires ON memories (status, expires_at);
-                CREATE TABLE IF NOT EXISTS legacy_memory_migrations (
-                    source_hash TEXT PRIMARY KEY
-                );
                 """
             )
 
@@ -480,66 +474,9 @@ class StructuredMemoryStore:
         connection = self._connection
         with self._database_lock, connection:
             connection.execute("DELETE FROM memories")
-            connection.execute("DELETE FROM legacy_memory_migrations")
 
     def close(self) -> None:
         with self._database_lock:
             if self._db_conn is not None:
                 self._db_conn.close()
                 self._db_conn = None
-
-    def migrate_legacy_transcripts(self, legacy_texts_path: str | Path) -> dict[str, int]:
-        from ru_runtime.memory.extraction import extract_candidates
-
-        legacy_path = Path(legacy_texts_path)
-        connection = self._connection
-        if not legacy_path.is_file():
-            return {"imported": 0, "rejected": 0}
-        source = legacy_path.read_bytes()
-        source_hash = sha256(source).hexdigest()
-        try:
-            blocks = json.loads(source.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return {"imported": 0, "rejected": 1}
-
-        imported = 0
-        rejected = 0
-        now = _utc_now()
-        with self._database_lock, connection:
-            already_imported = connection.execute(
-                "SELECT 1 FROM legacy_memory_migrations WHERE source_hash = ?", (source_hash,)
-            ).fetchone()
-            if already_imported is not None:
-                return {"imported": 0, "rejected": 0}
-            for block in blocks if isinstance(blocks, list) else []:
-                if (
-                    not isinstance(block, str)
-                    or "\nAssistant:" not in block
-                    or not block.startswith(_USER_PREFIX)
-                ):
-                    rejected += 1
-                    continue
-                prompt, response = block[len(_USER_PREFIX) :].split("\nAssistant:", 1)
-                candidates = extract_candidates(prompt, response)
-                if not candidates:
-                    rejected += 1
-                    continue
-                for candidate in candidates:
-                    record = self._build_record(
-                        candidate.kind,
-                        candidate.content,
-                        candidate.scope,
-                        candidate.evidence,
-                        candidate.confidence,
-                        candidate.importance,
-                        None,
-                        now,
-                    )
-                    stored_id = self._upsert_locked(record, None, now)
-                    if stored_id == record.id:
-                        imported += 1
-            connection.execute(
-                "INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES (?)",
-                (source_hash,),
-            )
-        return {"imported": imported, "rejected": rejected}

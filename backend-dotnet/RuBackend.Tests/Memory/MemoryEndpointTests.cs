@@ -115,7 +115,6 @@ public sealed class MemoryEndpointTests
             new MemorySqliteOptions
             {
                 DatabasePath = Path.Combine(directory, "memory.db"),
-                LegacyTextsPath = Path.Combine(directory, "memory_texts.json"),
             });
     }
 
@@ -169,12 +168,6 @@ public sealed class MemoryEndpointTests
                 Guid.NewGuid().ToString("D"),
                 candidate.Kind,
                 candidate.Content));
-
-        public Task<bool> IsLegacyMigrationRecordedAsync(string sourceHash, CancellationToken cancellationToken) =>
-            Task.FromResult(false);
-
-        public Task RecordLegacyMigrationAsync(string sourceHash, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
 
         public Task ClearAsync(CancellationToken cancellationToken)
         {

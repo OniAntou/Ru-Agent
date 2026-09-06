@@ -9,7 +9,7 @@ exhaust the page file on this workspace.
 The first legacy-removal wave hard-deleted the one-value runtime selector,
 special retired-Python error, no-op live Harness mode, and compatibility-named
 Harness/benchmark entry points. Managed startup is unconditional. Worker v1
-device/voice routes, OmniVoice, and persisted-data migrations remain active.
+device/voice routes and OmniVoice remain active.
 
 Fresh sequential evidence:
 
@@ -27,6 +27,19 @@ Fresh sequential evidence:
 - Release build: `build.bat` completed 13/13; native overlay passed 2/2.
 - Current-source scan found no retired symbol or entry-point name outside dated
   historical plans/specifications.
+
+## Legacy data-import retirement (2026-09-06)
+
+The second legacy-removal wave removed only obsolete one-time import surfaces:
+the `history.json` endpoint/store/migration and both C# and Python
+`memory_texts.json` importers. Current session JSON, structured `memory.db`,
+Agent `agent_harness.db`, session-history UI, and CLI `/history` remain active.
+No legacy files, migration manifests, or backups existed at the canonical
+runtime paths, so this change did not delete user data.
+
+Evidence: all 759 `RuBackend.Tests` tests and all 396 Python tests passed.
+The public route checker reports
+63 HTTP routes plus one `/voice/stream` WebSocket.
 
 ## Deterministic release matrix
 
@@ -101,13 +114,12 @@ unit tests replace only their external process boundary and never open RuApp.
   processing and clamps caller-provided preview lengths (including tiny limits),
   preventing oversized malformed activity payloads from causing avoidable
   allocations.
-- Legacy `memory_texts.json`, `history.json`, broker session descriptors, and
-  harness/runtime descriptors are rejected before parsing when they exceed
+- Legacy broker session descriptors and harness/runtime descriptors are
+  rejected before parsing when they exceed
   their bounded input caps; bounded streaming also closes the metadata-check
   race. Oversized fixtures pass without allocating the full payload.
-- History migration manifests, session files, settings, and legacy memory
-  imports use the same bounded streaming discipline; oversized or concurrently
-  growing local state falls back to the existing safe-empty/failed-import path.
+- Session files and settings use bounded streaming reads; oversized or
+  concurrently growing local state falls back to the existing safe-empty path.
 - SQLite workspace roots, policy documents, model-context payloads, and journal
   envelopes now validate BLOB lengths before allocation/decryption. Workspace
   restore hashes the current file in a streaming pass instead of loading it
@@ -371,8 +383,8 @@ save with a simulated failure) remains a user-run manual gate.
   provider/audio/VTS acceptance was claimed. The old rebuildable GUI publish
   output was replaced; user settings, credentials and session data were untouched.
 
-The route checker must remain at 64 HTTP routes and 1 WebSocket
-route (`/voice/stream`; 43 non-Agent plus 20 additive `/agent/v1/*` plus
+The route checker must remain at 63 HTTP routes and 1 WebSocket
+route (`/voice/stream`; 42 non-Agent plus 20 additive `/agent/v1/*` plus
 `POST /host/shutdown`). The
 deterministic Harness is contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it

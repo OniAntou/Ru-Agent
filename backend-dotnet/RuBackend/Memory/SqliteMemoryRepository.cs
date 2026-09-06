@@ -11,7 +11,6 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
     private static readonly string[] ValidStatuses = ["active", "superseded", "deleted"];
     private SqliteConnection? _connection;
     private readonly string _databasePath;
-    private readonly string _legacyTextsPath;
     private readonly int _retrieveScanLimit;
     private readonly double _retrieveMinScore;
     private readonly int _retrieveLookbackDays;
@@ -27,7 +26,6 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
             throw new ArgumentException("DatabasePath is required.", nameof(options));
         }
 
-        _legacyTextsPath = Path.GetFullPath(options.LegacyTextsPath);
         _retrieveScanLimit = options.RetrieveScanLimit;
         _retrieveMinScore = options.RetrieveMinScore;
         _retrieveLookbackDays = options.RetrieveLookbackDays;
@@ -114,41 +112,6 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         finally
         {
             CloseReadOnlyConnection();
-            _gate.Release();
-        }
-    }
-
-    public async Task<bool> IsLegacyMigrationRecordedAsync(string sourceHash, CancellationToken cancellationToken)
-    {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            EnsureOpen();
-            OpenReadOnlyConnectionIfNeeded();
-            await using var command = CreateCommand("SELECT 1 FROM legacy_memory_migrations WHERE source_hash = $source_hash LIMIT 1");
-            command.Parameters.AddWithValue("$source_hash", sourceHash);
-            return await command.ExecuteScalarAsync(cancellationToken) is not null;
-        }
-        finally
-        {
-            CloseReadOnlyConnection();
-            _gate.Release();
-        }
-    }
-
-    public async Task RecordLegacyMigrationAsync(string sourceHash, CancellationToken cancellationToken)
-    {
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            EnsureOpen();
-            EnsureWritable();
-            await using var command = CreateCommand("INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES ($source_hash)");
-            command.Parameters.AddWithValue("$source_hash", sourceHash);
-            await command.ExecuteNonQueryAsync(cancellationToken);
-        }
-        finally
-        {
             _gate.Release();
         }
     }
@@ -294,13 +257,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
             EnsureWritable();
             await using var transaction = (SqliteTransaction)await _connection!.BeginTransactionAsync(cancellationToken);
             await ExecuteTransactionalAsync("DELETE FROM memories", transaction, cancellationToken);
-            await ExecuteTransactionalAsync("DELETE FROM legacy_memory_migrations", transaction, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(_legacyTextsPath) && File.Exists(_legacyTextsPath))
-            {
-                File.Delete(_legacyTextsPath);
-            }
         }
         finally
         {
@@ -586,9 +543,6 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
                 pinned INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_memories_status_expires ON memories (status, expires_at);
-            CREATE TABLE IF NOT EXISTS legacy_memory_migrations (
-                source_hash TEXT PRIMARY KEY
-            );
             """);
         command.ExecuteNonQuery();
     }

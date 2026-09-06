@@ -3,7 +3,6 @@ namespace RuBackend.Memory;
 public sealed class MemorySqliteOptions
 {
     public string DatabasePath { get; init; } = "memory.db";
-    public string LegacyTextsPath { get; init; } = "memory_texts.json";
     public bool ReadOnly { get; init; }
     public int RetrieveScanLimit { get; init; } = 2000;
     public double RetrieveMinScore { get; init; } = 0.18;

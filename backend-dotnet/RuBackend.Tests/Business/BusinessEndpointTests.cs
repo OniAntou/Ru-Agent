@@ -493,25 +493,18 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task History_and_activity_routes_preserve_existing_response_shapes()
+    public async Task Activity_routes_preserve_existing_response_shapes()
     {
         using var data = TemporaryBusinessData.Create();
-        Directory.CreateDirectory(Path.GetDirectoryName(data.Paths.HistoryFile)!);
-        await File.WriteAllTextAsync(
-            data.Paths.HistoryFile,
-            "[{\"role\":\"user\",\"content\":\"Legacy prompt\"}]");
         await File.WriteAllTextAsync(
             data.Paths.ActivityLogFile,
             "{\"ts\":1,\"iso\":\"1970-01-01T00:00:01+00:00\",\"type\":\"synthetic\",\"session_id\":null,\"data\":{\"count\":1}}\n");
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
-        var history = await client.GetFromJsonAsync<JsonElement>("/history");
         var activity = await client.GetFromJsonAsync<JsonElement>("/activity-log?limit=200");
         using var cleared = await client.DeleteAsync("/activity-log");
 
-        Assert.Equal(JsonValueKind.Array, history.ValueKind);
-        Assert.Equal("Legacy prompt", history[0].GetProperty("content").GetString());
         Assert.Equal("ok", activity.GetProperty("status").GetString());
         Assert.Equal("synthetic", activity.GetProperty("events")[0].GetProperty("type").GetString());
         Assert.Equal("ok", (await cleared.Content.ReadFromJsonAsync<JsonElement>())
@@ -601,9 +594,7 @@ public sealed class BusinessEndpointTests
                 root,
                 new DataPaths(
                     Path.Combine(root, "memory.db"),
-                    Path.Combine(root, "memory_texts.json"),
                     Path.Combine(root, "settings.json"),
-                    Path.Combine(root, "history.json"),
                     Path.Combine(root, "sessions"),
                     Path.Combine(root, "activity.jsonl")));
         }

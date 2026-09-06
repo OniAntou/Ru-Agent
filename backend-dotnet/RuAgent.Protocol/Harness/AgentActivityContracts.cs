@@ -34,7 +34,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("added")] int? Added = null,
     [property: JsonPropertyName("removed")] int? Removed = null,
     [property: JsonPropertyName("duration_ms")] int? DurationMs = null,
-    [property: JsonPropertyName("safe_code")] string SafeCode = "succeeded");
+    [property: JsonPropertyName("safe_code")] string SafeCode = "succeeded",
+    [property: JsonPropertyName("tool_display")] string? ToolDisplay = null);
 
 public static class AgentActivityWireCodec
 {
@@ -94,6 +95,7 @@ public static class AgentActivityWireValidator
     public const int MaximumCount = 1_000_000;
     public const int MaximumDurationMilliseconds = 86_400_000;
     public const int MaximumSafeCodeLength = 64;
+    public const int MaximumToolDisplayLength = 32;
 
     private static readonly HashSet<string> AllowedProperties = new(StringComparer.Ordinal)
     {
@@ -109,6 +111,7 @@ public static class AgentActivityWireValidator
         "removed",
         "duration_ms",
         "safe_code",
+        "tool_display",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -253,6 +256,8 @@ public static class AgentActivityWireValidator
         {
             throw new JsonException("Safe code is invalid.");
         }
+
+        ValidateToolDisplay(activity.ToolDisplay);
     }
 
     private static void ValidateFileName(string? fileName)
@@ -293,6 +298,28 @@ public static class AgentActivityWireValidator
             || !IsSafeSymbol(symbol.AsSpan()))
         {
             throw new JsonException("Symbol is invalid.");
+        }
+    }
+
+    private static void ValidateToolDisplay(string? toolDisplay)
+    {
+        if (toolDisplay is null)
+        {
+            return;
+        }
+
+        if (toolDisplay.Length is < 1 or > MaximumToolDisplayLength)
+        {
+            throw new JsonException("Tool display is invalid.");
+        }
+
+        foreach (var c in toolDisplay)
+        {
+            var ok = (c is >= 'A' and <= 'Z') || (c is >= 'a' and <= 'z') || (c is >= '0' and <= '9') || c is ' ' or '_' or '-' or '.';
+            if (!ok)
+            {
+                throw new JsonException("Tool display is invalid.");
+            }
         }
     }
 

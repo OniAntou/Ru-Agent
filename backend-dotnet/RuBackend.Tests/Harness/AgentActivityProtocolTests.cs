@@ -208,4 +208,27 @@ public sealed class AgentActivityProtocolTests
 
         Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(json));
     }
+
+    [Fact]
+    public void Serialize_Includes_ToolDisplay_When_Set()
+    {
+        var activity = new AgentActivityWire("act_abc123", AgentActivityKind.Analyze, AgentActivityState.Completed, ToolDisplay: "View");
+        var json = AgentActivityWireCodec.Serialize(activity);
+        Assert.Contains("tool_display", json, StringComparison.Ordinal);
+        var parsed = AgentActivityWireCodec.Parse(json);
+        Assert.Equal("View", parsed.ToolDisplay);
+    }
+
+    [Fact]
+    public void Parse_Old_Payload_Without_ToolDisplay_Succeeds()
+    {
+        var parsed = AgentActivityWireCodec.Parse("{\"activity_id\":\"act_abc123\",\"kind\":\"analyze\",\"state\":\"completed\",\"safe_code\":\"succeeded\"}");
+        Assert.Null(parsed.ToolDisplay);
+    }
+
+    [Fact]
+    public void Parse_Rejects_ToolDisplay_With_Slash()
+    {
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse("{\"activity_id\":\"act_abc123\",\"kind\":\"analyze\",\"state\":\"completed\",\"tool_display\":\"a/b\",\"safe_code\":\"succeeded\"}"));
+    }
 }

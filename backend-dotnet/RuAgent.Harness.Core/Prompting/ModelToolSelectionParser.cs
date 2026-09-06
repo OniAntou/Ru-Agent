@@ -57,6 +57,17 @@ public static class ModelToolSelectionParser
                 candidate = inner;
             }
         }
+        else if (candidate.StartsWith(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase))
+        {
+            var body = candidate[ToolCallOpenTag.Length..].Trim();
+            if (body.StartsWith('{')
+                && !body.Contains(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase)
+                && !body.Contains(ToolCallCloseTag, StringComparison.OrdinalIgnoreCase)
+                && IsCompleteJsonObject(body))
+            {
+                candidate = body;
+            }
+        }
 
         if (candidate.StartsWith("```", StringComparison.Ordinal))
         {
@@ -80,6 +91,19 @@ public static class ModelToolSelectionParser
         }
 
         return candidate;
+    }
+
+    private static bool IsCompleteJsonObject(string candidate)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(candidate);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     public static ModelToolSelection Parse(string text, IReadOnlySet<string> advertisedToolIds)

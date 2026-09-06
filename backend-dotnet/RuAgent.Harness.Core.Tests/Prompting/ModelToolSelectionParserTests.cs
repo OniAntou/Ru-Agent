@@ -79,9 +79,22 @@ public sealed class ModelToolSelectionParserTests
     [InlineData("<tool_call kind=\"x\">{}</tool_call>")]
     [InlineData("<tool_call><tool_call>{}</tool_call></tool_call>")]
     [InlineData("<tool_call>{}</tool_call> suffix")]
-    [InlineData("<tool_call>{}")]
-    public void NormalizeCandidate_does_not_unwrap_ambiguous_tool_call_markup(string text)
-    {
+    public void NormalizeCandidate_does_not_unwrap_ambiguous_tool_call_markup(string text) =>
         Assert.Equal(text, ModelToolSelectionParser.NormalizeCandidate(text));
+
+    [Fact]
+    public void NormalizeCandidate_unwraps_complete_json_after_one_open_tool_call_tag()
+    {
+        const string json = "{\"tool_id\":\"terminal.run\",\"tool_version\":\"1.0.0\",\"arguments\":{\"executable\":\"python\"}}";
+        Assert.Equal(json, ModelToolSelectionParser.NormalizeCandidate($"<tool_call> {json}"));
     }
+
+    [Theory]
+    [InlineData("prefix <tool_call>{}")]
+    [InlineData("<tool_call kind=\"x\">{}")]
+    [InlineData("<tool_call><tool_call>{}")]
+    [InlineData("<tool_call>{} suffix")]
+    [InlineData("<tool_call>{")]
+    public void NormalizeCandidate_rejects_ambiguous_unclosed_markup(string text) =>
+        Assert.Equal(text, ModelToolSelectionParser.NormalizeCandidate(text));
 }

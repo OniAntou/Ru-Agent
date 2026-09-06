@@ -169,6 +169,29 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_converts_split_unclosed_tool_call_wrapper_without_leaking_markup()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("<tool_", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("call> {\"tool_id\":\"terminal.run\",\"tool_version\":\"1.0.0\",\"arguments\":{\"executable\":\"python\"}}", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true, toolId: "terminal.run"),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("terminal.run", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
     public async Task Step_service_keeps_ordinary_prose_visible_when_tools_are_advertised()
     {
         var provider = new FakeModelProvider(
@@ -406,7 +429,7 @@ public sealed class WorkerV2StepServiceTests
         }
     }
 
-    private static JsonObject StartPayload(bool includeTool = false, string? providerBootstrapPath = null)
+    private static JsonObject StartPayload(bool includeTool = false, string? providerBootstrapPath = null, string toolId = "files.read")
     {
         var context = WorkerV2PromptCodec.WriteContext(SystemPromptContext.Empty);
         var settings = new JsonObject();
@@ -416,7 +439,7 @@ public sealed class WorkerV2StepServiceTests
             {
                 new JsonObject
                 {
-                    ["tool_id"] = "files.read",
+                    ["tool_id"] = toolId,
                     ["tool_version"] = "1.0.0",
                     ["scopes"] = new JsonArray("workspace.read"),
                     ["availability"] = "executable",

@@ -56,7 +56,9 @@ public sealed class AgentActivityUiSourceContractTests
         var sendEnd = codeBehind.IndexOf("private void BeginAgentReply", sendStart, StringComparison.Ordinal);
         Assert.True(sendStart >= 0 && sendEnd > sendStart, "SendAgentTurnAsync is missing.");
         var sendBlock = codeBehind[sendStart..sendEnd];
-        Assert.Contains("ClearAgentActivities()", sendBlock, StringComparison.Ordinal);
+        Assert.True(
+            sendBlock.Contains("ClearAgentActivities()", StringComparison.Ordinal) || sendBlock.Contains("StartNewAgentActivityRun()", StringComparison.Ordinal),
+            "SendAgentTurnAsync must reset per-run activities via ClearAgentActivities or StartNewAgentActivityRun.");
 
         var replyEnd = codeBehind.IndexOf("private async Task CompleteActiveAgentTurnAsync", sendEnd, StringComparison.Ordinal);
         Assert.True(replyEnd > sendEnd, "BeginAgentReply must remain a separate helper.");
@@ -69,7 +71,14 @@ public sealed class AgentActivityUiSourceContractTests
             Assert.True(start >= 0, $"Missing {method}.");
             var next = codeBehind.IndexOf("\n        private", start + method.Length, StringComparison.Ordinal);
             var body = next > start ? codeBehind[start..next] : codeBehind[start..];
-            Assert.Contains("ClearAgentActivities()", body, StringComparison.Ordinal);
+            if (method.Contains("ResetAgentState", StringComparison.Ordinal))
+            {
+                Assert.Contains("ClearAgentActivities()", body, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.DoesNotContain("ClearAgentActivities()", body, StringComparison.Ordinal);
+            }
         }
 
         var clearStart = codeBehind.IndexOf("private void ClearAgentActivities", StringComparison.Ordinal);

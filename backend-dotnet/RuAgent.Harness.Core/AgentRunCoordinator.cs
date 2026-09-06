@@ -336,6 +336,20 @@ public sealed class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
+        if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode))
+        {
+            return await HandleUnverifiedFailureStepAsync(
+                    run,
+                    modelStepId,
+                    step,
+                    failureCode,
+                    modelDroppedCount,
+                    promptReceiptPayload,
+                    promptComposedEvent,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return await HandleFinalStepAsync(
                 run,
                 modelStepId,
@@ -345,6 +359,76 @@ public sealed class AgentRunCoordinator
                 promptComposedEvent,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<AgentRunStepResult> HandleUnverifiedFailureStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        string errorCode,
+        int droppedCount,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken)
+    {
+        const string stepErrorCode = "unverified_after_tool_failure";
+        var transition = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.Fail);
+        if (!transition.Accepted)
+        {
+            throw new InvalidOperationException(transition.ErrorCode);
+        }
+
+        var assistantPayloadId = _ids.NewPayloadId();
+        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
+        var assistantPayload = new HarnessPayloadIntent(
+            assistantPayloadId,
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            Math.Max(assistantBytes.Length, 1),
+            assistantBytes);
+        var events = new List<HarnessEventIntent>
+        {
+            promptComposedEvent,
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                payloadId: assistantPayloadId,
+                safeCode: stepErrorCode),
+        };
+        if (droppedCount > 0)
+        {
+            events.Add(new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.TransientFramesDropped,
+                modelStepId: modelStepId,
+                safeCount: droppedCount));
+        }
+        events.Add(new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.RunFailed,
+            safeCode: errorCode));
+
+        var next = run.Advance(
+            transition.Next,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Count,
+            _time.UtcNow,
+            errorCode);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                [promptReceiptPayload, assistantPayload],
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
     private async Task<AgentRunStepResult> HandleRepeatedToolStepAsync(

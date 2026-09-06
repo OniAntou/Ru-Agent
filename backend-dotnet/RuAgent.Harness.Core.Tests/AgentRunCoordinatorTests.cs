@@ -310,6 +310,85 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Final_prose_after_failed_tool_is_suppressed_and_fails_run()
+    {
+        var prior = ToolStep();
+        const string toolErrorCode = "workspace_path_outside_root";
+        var source = new FixedContextSource(
+            ModelContextEntry.Assistant("assistant-prior", 1, prior),
+            ModelContextEntry.ToolResult(
+                "tool-prior",
+                2,
+                new ToolExecutionReceipt(
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    new ToolCallId("call_11111111111111111111111111111111"),
+                    ToolExecutionOutcome.Failed,
+                    toolErrorCode,
+                    null,
+                    false),
+                "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("I succeeded in running the command!"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store, contextSource: source);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal(toolErrorCode, result.ErrorCode);
+        Assert.Equal(toolErrorCode, result.Run.TerminalErrorCode);
+
+        Assert.Empty(store.Commits.SelectMany(commit => commit.ConversationOutbox));
+
+        var commit = store.Commits.Last();
+        var assistantPayload = Assert.Single(
+            commit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.AssistantStep);
+        Assert.Equal(HarnessPayloadAudience.InternalOnly, assistantPayload.Audience);
+
+        var stepCompleted = Assert.Single(
+            commit.Events,
+            e => e.Kind == HarnessEventKind.ModelStepCompleted);
+        Assert.Equal("unverified_after_tool_failure", stepCompleted.SafeCode);
+
+        var runFailed = Assert.Single(
+            commit.Events,
+            e => e.Kind == HarnessEventKind.RunFailed);
+        Assert.Equal(toolErrorCode, runFailed.SafeCode);
+    }
+
+    [Fact]
+    public async Task Recovery_tool_call_after_failed_tool_executes_normally()
+    {
+        var prior = ToolStep();
+        var source = new FixedContextSource(
+            ModelContextEntry.Assistant("assistant-prior", 1, prior),
+            ModelContextEntry.ToolResult(
+                "tool-prior",
+                2,
+                new ToolExecutionReceipt(
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    new ToolCallId("call_11111111111111111111111111111111"),
+                    ToolExecutionOutcome.Failed,
+                    "workspace_path_outside_root",
+                    null,
+                    false),
+                "{}"));
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(path: "recovery.txt"));
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store, contextSource: source);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Single(gateway.ExecuteAttempts);
+    }
+
+    [Fact]
     public async Task Denied_tool_is_returned_to_the_model_without_execution()
     {
         var model = new FakeModelStepRunner();

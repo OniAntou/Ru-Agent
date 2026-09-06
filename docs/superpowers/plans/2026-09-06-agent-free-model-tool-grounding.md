@@ -205,7 +205,7 @@ Add a second test where the next model step proposes a different recovery tool a
 - [ ] **Step 5: Run coordinator tests and verify RED**
 
 ```powershell
-dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj --filter "FullyQualifiedName~AgentRunCoordinatorTests&Name~failed_tool"
+dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj --filter "FullyQualifiedName~AgentRunCoordinatorTests&FullyQualifiedName~failed_tool"
 ```
 
 Expected: the prose step currently completes the run and creates a visible outbox entry.

@@ -1,0 +1,53 @@
+using RuAgent.Harness.Core.Context;
+
+namespace RuAgent.Harness.Core.Prompting;
+
+public static class FailedToolCompletionGuard
+{
+    public static bool TryGetFailure(ModelContextSnapshot context, out string errorCode)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        errorCode = string.Empty;
+        if (context.Entries.Count == 0)
+        {
+            return false;
+        }
+
+        var lastIndex = context.Entries.Count - 1;
+        if (context.Entries[lastIndex].Kind != ModelContextEntryKind.ToolResult)
+        {
+            return false;
+        }
+
+        var startIndex = lastIndex;
+        while (startIndex >= 0 && context.Entries[startIndex].Kind == ModelContextEntryKind.ToolResult)
+        {
+            startIndex--;
+        }
+
+        for (var i = startIndex + 1; i <= lastIndex; i++)
+        {
+            var receipt = context.Entries[i].ToolReceipt;
+            if (receipt is null || receipt.Outcome != ToolExecutionOutcome.Succeeded)
+            {
+                var code = receipt?.Code;
+                errorCode = !string.IsNullOrWhiteSpace(code) && IsSafeCode(code)
+                    ? code
+                    : "tool_failed";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsSafeCode(string value) =>
+        value is { Length: >= 1 and <= 64 }
+        && value[0] is >= 'a' and <= 'z'
+        && value.All(character =>
+            character is (>= 'a' and <= 'z')
+                or (>= '0' and <= '9')
+                or '_'
+                or '.');
+}

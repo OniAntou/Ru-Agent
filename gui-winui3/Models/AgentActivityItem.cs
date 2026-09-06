@@ -18,6 +18,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     private int? _removed;
     private int? _durationMs;
     private string _safeCode = "succeeded";
+    private string? _toolDisplay;
 
     public AgentActivityItem(AgentActivityModel activity)
     {
@@ -94,6 +95,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _safeCode, value);
     }
 
+    public string? ToolDisplay
+    {
+        get => _toolDisplay;
+        private set => SetProperty(ref _toolDisplay, value);
+    }
+
     public bool IsRunning => State == AgentActivityState.Started;
     public bool IsCompleted => State == AgentActivityState.Completed;
     public bool IsFailed => State == AgentActivityState.Failed;
@@ -115,7 +122,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"Searching for {symbol}" : "Searching",
         AgentActivityKind.Analyze => "Analyzing",
         AgentActivityKind.Edit => "Editing",
-        AgentActivityKind.Terminal => "Running terminal task",
+        AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Running {ToolDisplay} task" : "Running terminal task",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         _ => "Working…",
     };
@@ -127,7 +134,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Search => FormatSearch("Searched"),
         AgentActivityKind.Analyze => "Analyzed",
         AgentActivityKind.Edit => "Edited",
-        AgentActivityKind.Terminal => "Completed terminal task",
+        AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Completed {ToolDisplay} task" : "Completed terminal task",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         _ => "Completed",
     };
@@ -145,6 +152,11 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         get
         {
             var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ToolDisplay))
+            {
+                parts.Add(ToolDisplay!);
+            }
+
             if (!string.IsNullOrWhiteSpace(FileName))
             {
                 parts.Add(FileName!);
@@ -209,6 +221,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         Removed = activity.Removed;
         DurationMs = activity.DurationMs;
         SafeCode = activity.SafeCode;
+        ToolDisplay = activity.ToolDisplay;
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));

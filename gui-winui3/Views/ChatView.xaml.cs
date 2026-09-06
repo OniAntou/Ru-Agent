@@ -706,20 +706,6 @@ namespace RuApp.Views
                 return;
             }
 
-            if (activity.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking && activity.State == RuAgent.Protocol.Harness.AgentActivityState.Completed)
-            {
-                if (_agentActivityById.Remove(activity.ActivityId, out var thinkingItem))
-                {
-                    AgentActivities.Remove(thinkingItem);
-                }
-
-                if (AgentActivities.Count == 0 && AgentActivityFeed is not null)
-                {
-                    AgentActivityFeed.Visibility = Visibility.Collapsed;
-                }
-                return;
-            }
-
             if (_agentActivityById.TryGetValue(activity.ActivityId, out var existing))
             {
                 existing.UpdateFrom(activity);
@@ -888,6 +874,10 @@ namespace RuApp.Views
 
         private void ClearAgentActivities()
         {
+            foreach (var sb in _breathingStoryboards.Values)
+            {
+                sb.Stop();
+            }
             _breathingStoryboards.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
@@ -895,6 +885,11 @@ namespace RuApp.Views
             {
                 AgentActivityFeed.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private void StartNewAgentActivityRun()
+        {
+            ClearAgentActivities();
         }
 
         // ── Activity text breathing animation ──────────────────────────────
@@ -1746,7 +1741,7 @@ namespace RuApp.Views
 
                 _activeWorkspaceId = null;
 
-                ClearAgentActivities();
+                StartNewAgentActivityRun();
                 ClearAgentRunSummary();
                 BeginAgentReply(source, text, attachments, displayUserText);
                 ScrollChatToBottom();
@@ -1778,7 +1773,6 @@ namespace RuApp.Views
 
             if (IsTerminalStatus(_agentController.CurrentRun?.Status))
             {
-                ClearAgentActivities();
                 await CompleteActiveAgentTurnAsync(cancellationToken);
             }
             else
@@ -2054,7 +2048,6 @@ namespace RuApp.Views
 
         private void ShowAgentError(Exception exception)
         {
-            ClearAgentActivities();
             ClearAgentRunSummary();
             string status = exception switch
             {
@@ -2102,7 +2095,6 @@ namespace RuApp.Views
 
                     if (IsTerminalStatus(_agentController.CurrentRun.Status))
                     {
-                        ClearAgentActivities();
                         await CompleteActiveAgentTurnAsync(cancellationToken);
                         return;
                     }
@@ -2140,7 +2132,6 @@ namespace RuApp.Views
 
             void Apply()
             {
-                ClearAgentActivities();
                 Messages.Clear();
                 foreach (var (role, content) in history)
                 {
@@ -2307,7 +2298,6 @@ namespace RuApp.Views
                     "Stopping Coding Agent…");
             }
             AbandonActiveAgentReply(notifyVoice: true);
-            ClearAgentActivities();
             ClearAgentRunSummary();
             UpdateSendButtonMode(isAgentRunning: false);
         }
@@ -2555,7 +2545,7 @@ namespace RuApp.Views
             {
                 if (_ownsProviderCatalogController)
                 {
-                    _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    _ = _providerCatalogController.DisposeAsync().AsTask();
                 }
                 _providerCatalogController = null;
             }
@@ -2564,7 +2554,7 @@ namespace RuApp.Views
                 _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
                 if (_ownsGroupedCatalogs)
                 {
-                    _groupedCatalogs.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    _ = _groupedCatalogs.DisposeAsync().AsTask();
                 }
                 _groupedCatalogs = null;
             }

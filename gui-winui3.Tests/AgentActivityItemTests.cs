@@ -113,6 +113,13 @@ public sealed class AgentActivityItemTests
         Assert.Equal("Waiting to continue · approval_required", waitingTool.DisplayText);
     }
 
+    [Fact]
+    public void DisplayText_Prefers_ToolDisplay_For_Started_Terminal()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Terminal, toolDisplay: "Terminal", durationMs: 2500));
+        Assert.Contains("Terminal", item.DisplayText, StringComparison.Ordinal);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,
@@ -124,7 +131,8 @@ public sealed class AgentActivityItemTests
         int? added = null,
         int? removed = null,
         int? durationMs = null,
-        string safeCode = "succeeded") =>
+        string safeCode = "succeeded",
+        string? toolDisplay = null) =>
         new(
             "act_11111111111111111111111111111111",
             kind,
@@ -138,7 +146,7 @@ public sealed class AgentActivityItemTests
             removed,
             durationMs,
             safeCode,
-            null,
+            toolDisplay,
             null,
             1);
 }

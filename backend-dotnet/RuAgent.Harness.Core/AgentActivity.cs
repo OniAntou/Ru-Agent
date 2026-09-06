@@ -35,4 +35,5 @@ public sealed record AgentActivity(
     int? Added = null,
     int? Removed = null,
     int? DurationMs = null,
-    string SafeCode = "succeeded");
+    string SafeCode = "succeeded",
+    string? ToolDisplay = null);

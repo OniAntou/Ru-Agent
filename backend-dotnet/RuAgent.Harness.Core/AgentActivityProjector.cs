@@ -24,7 +24,8 @@ public static class AgentActivityProjector
             AgentActivityKind.Thinking,
             state,
             DurationMs: ClampDuration(durationMs),
-            SafeCode: SafeCodeFor(state, safeCode));
+            SafeCode: SafeCodeFor(state, safeCode),
+            ToolDisplay: null);
 
     public static AgentActivity ProjectTool(
         ToolProposal proposal,
@@ -51,6 +52,17 @@ public static class AgentActivityProjector
             metadata = ToolActivityMetadata.Empty;
         }
 
+        var toolDisplay = proposal.ToolId switch
+        {
+            "files.list" or "files.glob" => "Explore",
+            "files.search" => "Search",
+            "files.read" => "View",
+            "files.write" or "files.edit" => "Edit",
+            "terminal.run" or "terminal.shell" => "Terminal",
+            "help.docs" => "Docs",
+            _ => null,
+        };
+
         return new AgentActivity(
             ActivityId(proposal.ToolCallId.Value),
             kind,
@@ -63,7 +75,8 @@ public static class AgentActivityProjector
             metadata.Added,
             metadata.Removed,
             ClampDuration(durationMs),
-            SafeCodeFor(state, safeCode ?? receipt?.Code));
+            SafeCodeFor(state, safeCode ?? receipt?.Code),
+            ToolDisplay: toolDisplay);
     }
 
     public static AgentActivity ProjectStatus(
@@ -74,7 +87,8 @@ public static class AgentActivityProjector
             activityId,
             AgentActivityKind.Status,
             state,
-            SafeCode: SafeCodeFor(state, safeCode));
+            SafeCode: SafeCodeFor(state, safeCode),
+            ToolDisplay: null);
 
     public static AgentActivity ProjectDropped(
         ModelStepId modelStepId,
@@ -90,7 +104,8 @@ public static class AgentActivityProjector
             AgentActivityKind.Status,
             AgentActivityState.Completed,
             Count: boundedCount,
-            SafeCode: "frames_dropped");
+            SafeCode: "frames_dropped",
+            ToolDisplay: null);
     }
 
     /// <summary>

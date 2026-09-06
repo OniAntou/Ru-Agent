@@ -184,6 +184,23 @@ public sealed class AgentActivityProjectorTests
         Assert.DoesNotContain("D:\\", activity.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ProjectTool_Maps_FilesRead_To_View_Label()
+    {
+        var proposal = Proposal("files.read", "{\"path\":\"D:\\\\LLM\\\\a.txt\"}");
+        var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+        Assert.Equal(AgentActivityKind.Analyze, activity.Kind);
+        Assert.Equal("View", activity.ToolDisplay);
+    }
+
+    [Fact]
+    public void ProjectTool_Maps_Unknown_Tool_To_Null_Label()
+    {
+        var proposal = Proposal("web.search", "{\"query\":\"x\"}");
+        var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+        Assert.Null(activity.ToolDisplay);
+    }
+
     private static ToolProposal Proposal(string toolId, string arguments)
     {
         using var document = JsonDocument.Parse(arguments);

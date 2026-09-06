@@ -165,7 +165,7 @@ public sealed class AgentRunControllerTests
             null,
             5000,
             "succeeded",
-            null,
+            ToolDisplay: null,
             null,
             1));
         var received = new List<AgentActivityModel>();

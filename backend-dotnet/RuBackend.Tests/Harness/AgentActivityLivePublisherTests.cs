@@ -43,6 +43,27 @@ public sealed class AgentActivityLivePublisherTests
     }
 
     [Fact]
+    public async Task Publish_forwards_tool_display_to_transient_frame()
+    {
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(hub);
+        var activity = new AgentActivity(
+            "act_dddddddddddddddddddddddddddddddd",
+            AgentActivityKind.Analyze,
+            AgentActivityState.Completed,
+            SafeCode: "succeeded",
+            ToolDisplay: "View");
+
+        publisher.Publish(Run, activity);
+
+        var frame = await lease.Reader.ReadAsync(CancellationToken.None);
+        Assert.Equal("agent.activity", frame.Kind);
+        var parsed = RuAgent.Protocol.Harness.AgentActivityWireCodec.Parse(frame.Data);
+        Assert.Equal("View", parsed.ToolDisplay);
+    }
+
+    [Fact]
     public void Invalid_activity_is_dropped_by_failure_isolated_core_publish()
     {
         var hub = new HarnessLiveEventHub();

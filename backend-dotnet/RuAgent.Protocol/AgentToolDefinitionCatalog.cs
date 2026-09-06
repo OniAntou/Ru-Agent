@@ -32,18 +32,19 @@ public sealed class AgentToolDefinition
 public static class AgentToolDefinitionCatalog
 {
     public const string CurrentVersion = "1.0.0";
+    private const string FilePathGuidance = " Use a workspace-relative path, or preserve an exact absolute path supplied by the user inside a directory granted for this session.";
 
     private sealed record Entry(string Id, string Description, string Scope, Func<JsonObject> Schema, Func<JsonObject>? Example = null);
 
     private static readonly IReadOnlyList<Entry> Entries =
     [
-        new("files.list", "List entries in the trusted workspace; keep the path workspace-relative.", AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "workspace", ["max_entries"] = 32 }),
-        new("files.glob", "Find workspace files by a bounded glob pattern.", AgentToolScopes.WorkspaceRead, FileGlobSchema, () => new JsonObject { ["path"] = "workspace", ["pattern"] = "*.txt" }),
-        new("files.search", "Search workspace file contents; set is_regex only when the query is a valid regular expression.", AgentToolScopes.WorkspaceRead, FileSearchSchema, () => new JsonObject { ["query"] = "search text", ["is_regex"] = false }),
-        new("files.read", "Read bounded UTF-8 content from a workspace-relative file.", AgentToolScopes.WorkspaceRead, FileReadSchema, () => new JsonObject { ["path"] = "README.md", ["offset"] = 0, ["limit"] = 1024 }),
-        new("files.write", "Write workspace content; policy still controls mutation and overwrite.", AgentToolScopes.WorkspaceWrite, FileWriteSchema, () => new JsonObject { ["path"] = "notes.txt", ["content"] = "new content" }),
-        new("files.edit", "Replace an exact non-empty string in a workspace file.", AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
-        new("files.delete", "Delete one workspace-relative file after policy and approval checks.", AgentToolScopes.WorkspaceWrite, FileDeleteSchema, () => new JsonObject { ["path"] = "obsolete.txt" }),
+        new("files.list", "List entries in a bounded directory." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "workspace", ["max_entries"] = 32 }),
+        new("files.glob", "Find files by a bounded glob pattern." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileGlobSchema, () => new JsonObject { ["path"] = "workspace", ["pattern"] = "*.txt" }),
+        new("files.search", "Search file contents; set is_regex only when the query is a valid regular expression." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileSearchSchema, () => new JsonObject { ["query"] = "search text", ["is_regex"] = false }),
+        new("files.read", "Read bounded UTF-8 file content." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileReadSchema, () => new JsonObject { ["path"] = "README.md", ["offset"] = 0, ["limit"] = 1024 }),
+        new("files.write", "Write file content; policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileWriteSchema, () => new JsonObject { ["path"] = "notes.txt", ["content"] = "new content" }),
+        new("files.edit", "Replace an exact non-empty string in a file." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
+        new("files.delete", "Delete one file after policy checks." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileDeleteSchema, () => new JsonObject { ["path"] = "obsolete.txt" }),
         new("files.restore", "Restore a previously prepared file mutation by recovery ID.", AgentToolScopes.WorkspaceWrite, FileRestoreSchema, () => new JsonObject { ["recovery_id"] = "recovery-123" }),
         new("terminal.run", "Run one bounded executable with an argument vector and explicit network intent.", AgentToolScopes.TerminalExecute, TerminalRunSchema, () => new JsonObject { ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = ".", ["network_intent"] = false }),
         new("terminal.shell", "Run bounded shell script text after terminal policy and approval checks.", AgentToolScopes.TerminalExecute, TerminalShellSchema, () => new JsonObject { ["script"] = "Get-Date", ["working_directory"] = ".", ["network_intent"] = false }),

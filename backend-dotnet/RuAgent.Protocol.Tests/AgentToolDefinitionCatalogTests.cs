@@ -138,6 +138,22 @@ public sealed class AgentToolDefinitionCatalogTests
         }
     }
 
+    [Fact]
+    public void File_tool_descriptions_preserve_user_supplied_absolute_paths()
+    {
+        var definitions = AgentToolDefinitionCatalog.Get()
+            .Where(definition =>
+                definition.ToolId.StartsWith("files.", StringComparison.Ordinal)
+                && definition.ToolId != "files.restore");
+
+        foreach (var definition in definitions)
+        {
+            Assert.Contains("absolute", definition.Description, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("preserve", definition.Description, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("session", definition.Description, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static JsonObject Properties(string toolId) =>
         AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!
             .InputSchema["properties"]!

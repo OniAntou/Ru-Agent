@@ -8,6 +8,8 @@
 
 **Tech Stack:** .NET 10/C#, Python 3.12+, pytest, PowerShell, WinUI 3 release build
 
+**Status:** Completed 2026-09-06
+
 ## Global Constraints
 
 - Preserve all unrelated dirty files and stage only files owned by this plan.
@@ -31,7 +33,7 @@
 - Consumes: existing `WorkerBrokerStartupOptions` startup contract
 - Produces: mode-free constructor beginning with `AgentWorkerToken`
 
-- [ ] **Step 1: Change the constructor test call first**
+- [x] **Step 1: Change the constructor test call first**
 
   Replace the test construction with:
 
@@ -46,20 +48,20 @@
       Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
   ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
   Run: `dotnet test backend-dotnet/RuAgent.Hosting.Tests/RuAgent.Hosting.Tests.csproj -c Release --no-restore`
 
   Expected: compilation fails because the production record still requires `RuntimeMigrationMode`.
 
-- [ ] **Step 3: Remove the production selector**
+- [x] **Step 3: Remove the production selector**
 
   Delete the mode parameter and `Enum.IsDefined` check from
   `WorkerBrokerStartupOptions`; remove the configuration read/parser and mode
   constructor argument from `RuBackend/Program.cs`; delete
   `RuntimeMigrationMode.cs` and its selector-only test file.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
   Run: `dotnet test backend-dotnet/RuAgent.Hosting.Tests/RuAgent.Hosting.Tests.csproj -c Release --no-restore`
 
@@ -84,7 +86,7 @@
 - Consumes: `HarnessSession.run`, the deterministic worker server, and the existing GUI scenarios
 - Produces: `ru_harness.main(argv)` supporting only `backend-deterministic` and `gui-deterministic`
 
-- [ ] **Step 1: Write renamed-entry-point and removed-mode tests**
+- [x] **Step 1: Write renamed-entry-point and removed-mode tests**
 
   Add assertions equivalent to:
 
@@ -100,13 +102,13 @@
   Update benchmark imports to `benchmark_backend` and Harness references to
   `ru_harness.py` before creating those entry points.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
   Run: `D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_harness.py tests/test_agent_harness.py tests/test_harness_routes.py tests/test_harness_session.py`
 
   Expected: collection/assertion failures because renamed files do not exist and `runtime-live` is still accepted.
 
-- [ ] **Step 3: Implement the deterministic-only Harness**
+- [x] **Step 3: Implement the deterministic-only Harness**
 
   Move the active CLI behavior to `ru_harness.py`; default to
   `backend-deterministic`; remove `runtime-live`, `--deterministic-agent`,
@@ -115,7 +117,7 @@
   Rename the backend benchmark without an alias. Restrict `HarnessMode` and
   delete the retired branch in `HarnessSession._run_backend`.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
   Run the focused pytest command from Step 2.
 
@@ -139,7 +141,7 @@
 - Consumes: current managed topology and renamed commands
 - Produces: current docs with no runnable retired interface and a source-level removal guard
 
-- [ ] **Step 1: Add a removal guard before updating code/docs**
+- [x] **Step 1: Add a removal guard before updating code/docs**
 
   Assert that non-historical source contains none of:
 
@@ -153,20 +155,20 @@
   )
   ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
   Run: `D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_current_documentation.py tests/test_python_runtime_boundary.py`
 
   Expected: failure listing the still-present retirement scaffolding.
 
-- [ ] **Step 3: Update current docs**
+- [x] **Step 3: Update current docs**
 
   Remove instructions for retired selectors and `runtime-live`; replace active
   command examples with `scripts/ru_harness.py` and
   `scripts/benchmark_backend.py`; record Wave 1 completion in `TODO.md`.
   Do not rewrite historical dated plans/specs.
 
-- [ ] **Step 4: Run focused verification**
+- [x] **Step 4: Run focused verification**
 
   Run the focused pytest command from Step 2 and:
 
@@ -185,21 +187,21 @@
 - Consumes: completed Tasks 1-3
 - Produces: fresh verification evidence for the current checkout
 
-- [ ] **Step 1: Run Python gates**
+- [x] **Step 1: Run Python gates**
 
   Run Ruff, Mypy, `pip check`, compileall, and the full pytest suite using
   `D:\LLM\.venv\Scripts\python.exe`.
 
-- [ ] **Step 2: Run the full .NET Release matrix**
+- [x] **Step 2: Run the full .NET Release matrix**
 
   Discover every `*Tests.csproj` recursively and execute them sequentially.
 
-- [ ] **Step 3: Run contract and Harness gates**
+- [x] **Step 3: Run contract and Harness gates**
 
   Run the route matrix, `ru_harness.py --mode backend-deterministic`, and the
   existing Agent GUI Harness scenarios sequentially.
 
-- [ ] **Step 4: Build and inspect the workspace**
+- [x] **Step 4: Build and inspect the workspace**
 
   Run `build.bat`, `git diff --check`, the forbidden-symbol scan, and
   `git status --short --branch`. Confirm unrelated dirty files remain unstaged

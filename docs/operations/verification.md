@@ -4,6 +4,30 @@ Run heavyweight gates sequentially on Windows. Restore each .NET test project
 before using `--no-restore`; concurrent Python, frontend, and .NET builds can
 exhaust the page file on this workspace.
 
+## Dead runtime scaffolding retirement (2026-09-06)
+
+The first legacy-removal wave hard-deleted the one-value runtime selector,
+special retired-Python error, no-op live Harness mode, and compatibility-named
+Harness/benchmark entry points. Managed startup is unconditional. Worker v1
+device/voice routes, OmniVoice, and persisted-data migrations remain active.
+
+Fresh sequential evidence:
+
+- Python: Ruff passed; Mypy passed for 38 source files; `pip check` and
+  compileall passed; pytest passed 397/397.
+- .NET Release: all 13 discovered test projects passed, 2,549/2,549 tests.
+- Public route matrix: 64 HTTP + 1 WebSocket (`/voice/stream`).
+- Backend deterministic Harness: `status=passed`, `failed_checks=0`; every
+  child, port, descriptor, fixture, workspace, and temporary-root cleanup check
+  passed.
+- Agent GUI Harness: `agent-tool-contract`, `agent-cancel`,
+  `agent-stale-result`, and `agent-private-metadata` passed with zero failed
+  checks. The driver now follows the current English ready text, Agent-only UI,
+  and approval-free root-workspace policy.
+- Release build: `build.bat` completed 13/13; native overlay passed 2/2.
+- Current-source scan found no retired symbol or entry-point name outside dated
+  historical plans/specifications.
+
 ## Deterministic release matrix
 
 ```powershell

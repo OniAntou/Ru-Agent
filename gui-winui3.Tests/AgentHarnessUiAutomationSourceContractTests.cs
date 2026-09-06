@@ -5,13 +5,15 @@ namespace RuApp.Tests;
 public sealed class AgentHarnessUiAutomationSourceContractTests
 {
     [Fact]
-    public void Agent_scenarios_use_the_static_agent_indicator_without_mode_selection()
+    public void Agent_scenarios_do_not_depend_on_retired_mode_or_root_approval_controls()
     {
         string source = File.ReadAllText(FindHarnessSource("UiAutomationScenario.cs"));
 
-        Assert.Contains("AgentModeAutomationId", source, StringComparison.Ordinal);
-        Assert.Contains("IsAgentModeActive(mode)", source, StringComparison.Ordinal);
         Assert.Contains("RunAgentScenarioAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentModeAutomationId", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsAgentModeActive", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentTrustApproveAutomationId", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApproveWorkspaceTrustAsync", source, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentModeAgentOptionAutomationId", source, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentModeChatOptionAutomationId", source, StringComparison.Ordinal);
         Assert.DoesNotContain("SelectModeAsync(", source, StringComparison.Ordinal);

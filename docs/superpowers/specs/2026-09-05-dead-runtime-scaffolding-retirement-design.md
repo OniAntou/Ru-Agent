@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-05
 
-**Status:** Approved for implementation
+**Status:** Completed 2026-09-06
 
 **Scope:** First legacy-removal wave only
 

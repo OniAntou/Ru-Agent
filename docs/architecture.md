@@ -18,8 +18,7 @@ one managed C# Worker serving Agent v2 on loopback port 8005 and Device v1
 on loopback port 8006, starts the isolated `RuAgentBroker` on a dynamic
 loopback port, binds ASP.NET Core on port 8000, waits for public readiness,
 and assigns the Worker/Broker to one Job Object. Managed startup is
-unconditional; the retired Python selector and no-op live probe have been
-deleted.
+unconditional.
 The Host remains running until explicitly stopped (or an owned child exits
 unexpectedly) and does not auto-exit on idle. Both owned children enter one Job
 Object, but ownership is Public Host, not WinUI. Startup succeeds only after
@@ -195,12 +194,11 @@ as connected.
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), playback, microphone capture, public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
 | ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 63 HTTP and 1 WebSocket route (42 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), settings transactions, credentials, sessions and their message history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
 | Managed C# Worker | Default private Worker v2 Agent generation and Worker v1 runtime/device orchestration on separate loopback ports. It receives the single-use DPAPI provider bootstrap for v2 plus a distinct device token for v1; the bootstrap path is cleared before the v1 graph is composed. |
-| Python Compatibility Workers | Retired production topology. No Python Agent/Device worker is started by managed or deterministic startup; the test-only fixture is owned under `scripts/harness`. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root, validates hash before capabilities, and advertises model-usable `files.*` (`list`/`glob`/`search`/`read`/`write`/`edit`/`delete`/`restore` one-time) plus terminal and runtime-enabled Web bindings. Outside-root targets resolve through session-scoped directory grants: the Host/Broker registers a `CanonicalDirectoryIdentity` per Agent session ID and dispatch routes `files.*` calls to the matching grant root, so a one-time approval opens the folder for the lifetime of the chat. The grant is in-memory only — it is lost on Broker/Host/UI restart and never shared with new or forked sessions — and it never bypasses protected paths or destructive gates. `files.apply_patch` is not advertised. The Broker has no public HTTP contract. |
 | Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated `omnivoice_env`; the managed Worker currently reaches the retained Flask provider over loopback HTTP. A framed process transport is a future design, not the current contract. |
 
-Unknown public paths stop in ASP.NET Core. Python has no public HTTP fallback,
-forwarding catch-all, route ownership selector, or alternate host mode.
+Unknown public paths stop in ASP.NET Core. There is no forwarding catch-all,
+route ownership selector, or alternate host mode.
 
 ## Contracts and transport
 
@@ -215,7 +213,7 @@ with durable `id: <sequence>` and reconnect via `Last-Event-ID` or
 
 Worker contracts are versioned typed WebSockets:
 
-- Protocol v1 (`/worker/v1`) is the private managed C# Worker device adapter by default: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages. The deleted Python implementation is not a supported compatibility path.
+- Protocol v1 (`/worker/v1`) is the private managed C# Worker device adapter by default: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages.
 - Protocol v2 (`/worker/v2`) is the private C# Agent Worker contract: `agent.step.start` → `agent.step.delta`* → `agent.step.done`/`error`, with `agent.step.cancel`, bounded schemas, `AssistantStep(text, tool_calls, finish_reason)` (one `generate_reply` per step), and stable `worker.*` error codes; it never accepts `chat.tool.result`.
 
 Protocol v2 removes HTTP-shaped fields in favor of typed domain commands,
@@ -232,8 +230,7 @@ Text turns are authenticated Agent runs consumed through the durable Agent SSE
 stream. The only public WebSocket is `/voice/stream`; it carries binary WAV
 frames and does not open a second text-generation transport. In the managed
 default, observation control is an explicit disabled/unavailable surface until
-the C# screen-capture/reaction loop is delivered; the retired Python observer is
-not reachable from managed startup.
+the C# screen-capture/reaction loop is delivered.
 
 ### Multimodal image attachments
 
@@ -263,9 +260,7 @@ even with HTTP 200. WinUI refreshes the sidebar only after application-level
 success and creates a replacement session only after successfully deleting the
 last one.
 
-The transactional migration from `~\.minigpt` completed on 2026-08-17 with
-copy, validation, hashing, atomic activation, readability checks, and
-credential migration performed before legacy records were retired; see
+The canonical data-location contract is documented in
 [ADR 0004](adr/0004-canonical-ru-data-location.md).
 
 ## Privacy boundary

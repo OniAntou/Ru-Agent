@@ -2,9 +2,8 @@
 
 Ru is a Vietnamese-English conversational companion built around a WinUI 3
 desktop app, an ASP.NET Core public backend, and one managed C# Worker serving
-Agent and runtime/device boundaries. Conversational generation is cloud-first;
-repository no longer ships an in-process conversational model or training
-pipeline.
+Agent and runtime/device boundaries. Conversational generation uses configured
+cloud providers.
 
 Current maintainer documentation:
 
@@ -53,18 +52,16 @@ is active on the headless Agent v2 path and resolves an ambiguous dispatch
 outcome before the run continues.
 The managed C# Worker owns authenticated Agent model steps (Worker v2) and the
 v1 runtime/device boundary for settings, voice orchestration, STT, VTube Studio,
-observation, and lifecycle coordination. The production Python Agent + Device
-topology has been retired; the deterministic Harness uses a dependency-free
-test fixture instead.
+observation, and lifecycle coordination. The deterministic Harness uses a
+dependency-free test fixture.
 The CLI tracer `RuAgent.Cli` is a thin headless client: it delegates
 start/attach to `RuAgent.Client` and all run behavior to authenticated
 HTTP/SSE.
 
 The canonical route inventory is
 [`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
-There is no public Python HTTP fallback or public backend mode switch. Managed
-C# startup is unconditional; the retired selector and live-retirement probe
-have been deleted rather than retained as compatibility surfaces.
+There is no forwarding catch-all or public backend mode switch. Managed C#
+startup is unconditional.
 
 ## Setup
 
@@ -215,8 +212,7 @@ Do not start either worker or the voice engine as independent public services.
 - Screen observation remains opt-in from Settings. The managed Worker exposes
   bounded observation status/control and the Gemini analysis adapter, but its
   default control path is explicitly disabled until a managed screen-capture /
-  reaction loop and trusted credential channel are shipped. The legacy observer
-  is not reachable from the managed startup. When events are available, WinUI
+  reaction loop and trusted credential channel are shipped. When events are available, WinUI
   consumes them through the normal voice, subtitle,
   and VTS playback pipeline; the worker never plays observation audio directly.
 
@@ -224,15 +220,12 @@ See [runtime behavior](docs/operations/runtime-behavior.md) for invariants and
 manual acceptance boundaries.
 See [Agent tools and truthful execution](docs/operations/agent-tools.md) for
 the exact current capability matrix.
-See Git history for the completed Phase 3 retirement record; current operations
-documentation owns the remaining native acceptance boundary.
 
 ## Verification
 
 Run heavyweight gates sequentially. The deterministic backend Harness owns a
 temporary test-fixture worker/Broker/edge session with dynamic loopback ports
-and emits a safe schema-v2 artifact; it does not launch a production Python
-worker:
+and emits a safe schema-v2 artifact:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
@@ -306,8 +299,7 @@ subtitle, and VTube Studio checks remain user-run hardware acceptance.
 Business persistence lives in the canonical `%LOCALAPPDATA%\Ru` location
 (settings, sessions, activity, and the VTS token). Structured memory
 stays project-owned under `data/conversations`. `RU_DATA_ROOT` isolates both
-for tests and staging. The transactional migration from the legacy
-application-data location completed on 2026-08-17; see
+for tests and staging; see
 [ADR 0004](docs/adr/0004-canonical-ru-data-location.md).
 Existing data is protected and must not be manually moved or deleted.
 

@@ -44,9 +44,8 @@ retryable connection error; Ru does not automatically replay an ambiguous
 request and risk duplicate history.
 
 The managed C# Worker v1 protocol is the default runtime/device adapter
-boundary for runtime load/request, voice/STT, VTS, observation, and health. It
-rejects the retired conversation message types as `unknown_type`; Agent
-generation uses the same process through the managed v2 step protocol. The two
+boundary for runtime load/request, voice/STT, VTS, observation, and health.
+Agent generation uses the same process through the managed v2 step protocol. The two
 private ports and tokens remain distinct even though the process is shared. The
 v1 graph receives typed settings and adapters, never the provider credential.
 
@@ -61,8 +60,7 @@ reasoning options, and for Anthropic the bounded `max_tokens`; changes to
 settings apply to the next run, not a continuation of the active run.
 Each handoff is deleted after consumption. The Worker dispatches exactly the
 pinned protocol through one of three focused adapters; unknown or mismatched
-protocols fail closed before HTTP. Managed startup is unconditional. There is
-no Python compatibility startup path or retirement-only diagnostic.
+protocols fail closed before HTTP. Managed startup is unconditional.
 
 ### Agent system-prompt composition
 
@@ -184,8 +182,7 @@ Screen observation is opt-in. The managed Worker owns the bounded observation
 analysis adapter, but its default v1 control handler is fail-closed: status is
 `disabled`, start/react report a stable unavailable result, and no screen frame,
 credential, or reaction is fabricated. A managed Windows capture/reaction loop
-with a trusted Gemini credential channel is still pending; the legacy Python
-observer is not reachable from managed startup.
+with a trusted Gemini credential channel is still pending.
 When that loop exists, WinUI will poll the bounded status contract and pass each
 event through `VoicePlaybackService`, so MediaPlayer playback, subtitles, VTS
 speaking state, and acknowledgement share the normal voice path. Missing
@@ -383,8 +380,7 @@ width or composer alignment.
 
 ASP.NET Core owns settings, credentials, sessions (including message history), activity, structured
 memory, and reviewed-example policy. Business records live in the canonical
-`%LOCALAPPDATA%\Ru` location; the transactional migration from the legacy
-location completed on 2026-08-17 (see
+`%LOCALAPPDATA%\Ru` location (see
 `docs/adr/0004-canonical-ru-data-location.md`). Windows Credential
 Manager remains the secret store.
 
@@ -398,7 +394,7 @@ Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
 and WinUI writers. The HTTP boundary records fixed route categories and durations; the
 diagnostics API rejects invalid/oversized queries and caps exports at 2 MB.
 Activity Timeline writes continue through the private worker outbox and
-ASP.NET ingestion path, with read-time re-sanitization for legacy records.
+ASP.NET ingestion path, with read-time re-sanitization for older records.
 
 ## Acceptance boundary
 

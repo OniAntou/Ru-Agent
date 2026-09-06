@@ -1,7 +1,6 @@
 # Provider catalogs and reasoning
 
-Current implementation: 2026-09-01. This document is the operating contract;
-completed implementation details remain available in Git history.
+This document is the current operating contract.
 
 ## Provider fallback and refresh
 

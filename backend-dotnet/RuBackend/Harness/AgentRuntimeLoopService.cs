@@ -10,6 +10,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
+using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness;
 
@@ -432,6 +433,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         AgentRunCoordinator? coordinator = null;
         IDisposable? workspaceWatcher = null;
         WorkspaceRunMembershipRecord? membership = null;
+        WorkspaceMembershipHeartbeat? membershipHeartbeat = null;
         try
         {
             _summaryPublisher?.RegisterWorkspace(runId, workspaceRoot);
@@ -444,6 +446,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
             if (_workspaceCoordinatorStore is not null)
             {
                 var workspace = await _workspaceCoordinatorStore.GetOrCreateAsync(workspaceRun.WorkspaceId, cancellationToken).ConfigureAwait(false);
+                var leaseDuration = TimeSpan.FromSeconds(workspace.LeaseTtlSeconds);
                 try
                 {
                     membership = await _workspaceCoordinatorStore.AcquireRunMembershipAsync(
@@ -451,7 +454,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                         runId,
                         "ru_peer",
                         DateTimeOffset.UtcNow,
-                        TimeSpan.FromSeconds(workspace.LeaseTtlSeconds),
+                        leaseDuration,
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (HarnessStoreException exception) when (exception.Code == "workspace_busy")
@@ -459,6 +462,16 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                     _logger.LogInformation("run {RunId} is waiting for a workspace membership lease", runIdValue);
                     return;
                 }
+
+                membershipHeartbeat = WorkspaceMembershipHeartbeat.Start(
+                    token => _workspaceCoordinatorStore.RenewRunMembershipAsync(
+                        workspaceRun.WorkspaceId,
+                        runId,
+                        DateTimeOffset.UtcNow,
+                        leaseDuration,
+                        token),
+                    leaseDuration,
+                    cancellationToken);
             }
 
             if (_workspaceChangeMonitor is not null)
@@ -480,22 +493,37 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                if (membership is not null && _workspaceCoordinatorStore is not null)
+                using var stepCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken);
+                var stepTask = coordinator.RunOneStepAsync(
+                    runId,
+                    stepCancellation.Token);
+                if (membershipHeartbeat is not null)
                 {
-                    var renewed = await _workspaceCoordinatorStore.RenewRunMembershipAsync(
-                        workspaceRun.WorkspaceId,
-                        runId,
-                        DateTimeOffset.UtcNow,
-                        membership.LeaseExpiresAtUtc - membership.HeartbeatAtUtc,
-                        cancellationToken).ConfigureAwait(false);
-                    if (!renewed)
+                    var completed = await Task.WhenAny(
+                            stepTask,
+                            membershipHeartbeat.Lost)
+                        .ConfigureAwait(false);
+                    if (completed == membershipHeartbeat.Lost
+                        || membershipHeartbeat.Lost.IsCompleted)
                     {
+                        await stepCancellation.CancelAsync().ConfigureAwait(false);
+                        try
+                        {
+                            await stepTask.ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (stepCancellation.IsCancellationRequested)
+                        {
+                        }
+
                         await coordinator.FailAsync(runId, "workspace_membership_expired", cancellationToken).ConfigureAwait(false);
+                        await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+                        RemoveRunRegistration(runId);
                         break;
                     }
                 }
 
-                var result = await coordinator.RunOneStepAsync(runId, cancellationToken).ConfigureAwait(false);
+                var result = await stepTask.ConfigureAwait(false);
                 if (result.Run.State == HarnessRunState.Running && result.ErrorCode is null)
                 {
                     continue;
@@ -535,6 +563,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         }
         finally
         {
+            if (membershipHeartbeat is not null)
+            {
+                await membershipHeartbeat.DisposeAsync().ConfigureAwait(false);
+            }
+
             workspaceWatcher?.Dispose();
             _workspaceChangeMonitor?.ClearExpectedHashes(workspaceRoot);
             if (membership is not null && _workspaceCoordinatorStore is not null)

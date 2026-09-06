@@ -14,8 +14,6 @@ public sealed class UiAutomationScenario : IDisposable
     private const string VoiceStatusAutomationId = "VoiceConversationStatus";
     private const string ChatMessagesAutomationId = "ChatMessages";
     private const string NewSessionAutomationId = "NewSessionButton";
-    private const string AgentModeAutomationId = "AgentModeButton";
-    private const string AgentTrustApproveAutomationId = "AgentTrustApproveButton";
     private const string AgentActivityAutomationId = "AgentStatusText";
     private const string ChatInputAutomationId = "ChatInput";
     private const string SendButtonAutomationId = "SendButton";
@@ -36,7 +34,7 @@ public sealed class UiAutomationScenario : IDisposable
             "gui.backend_ready",
             timeout,
             () => FindByAutomationId("BackendStatus") is { } status
-                && ContainsIgnoreCase(GetName(status), "sẵn sàng"));
+                && ContainsIgnoreCase(GetName(status), "ready"));
     }
 
     public async Task<HarnessGuiCheck> StartVoiceAsync(TimeSpan timeout)
@@ -213,23 +211,9 @@ public sealed class UiAutomationScenario : IDisposable
         TimeSpan timeout)
     {
         DateTimeOffset started = DateTimeOffset.UtcNow;
-        string stage = "find_agent_indicator";
+        string stage = "find_chat_input";
         try
         {
-            AutomationElement mode = await WaitForElementAsync(AgentModeAutomationId, timeout);
-            stage = $"verify_agent_indicator_"
-                + $"{(mode.Current.IsEnabled ? "enabled" : "disabled")}_"
-                + $"{(mode.Current.IsOffscreen ? "offscreen" : "onscreen")}";
-            stage = "wait_agent_indicator";
-            bool enabled = await WaitUntilAsync(
-                () => IsAgentModeActive(mode),
-                timeout);
-            if (!enabled)
-            {
-                return Check("gui.agent_enable", false, started, "Agent indicator did not show the active session mode");
-            }
-
-            stage = "find_chat_input";
             AutomationElement input = await WaitForElementAsync(ChatInputAutomationId, timeout);
             stage = "set_chat_input";
             SetValue(input, "Harness agent turn");
@@ -237,9 +221,6 @@ public sealed class UiAutomationScenario : IDisposable
             AutomationElement send = await WaitForElementAsync(SendButtonAutomationId, timeout);
             stage = "invoke_send";
             Invoke(send);
-
-            stage = "approve_workspace_trust";
-            await ApproveWorkspaceTrustAsync(timeout);
 
             stage = "wait_agent_activity";
             bool activity = await WaitUntilAsync(
@@ -252,13 +233,8 @@ public sealed class UiAutomationScenario : IDisposable
                 bool noLateAgentUpdate = !HasUserAndAssistantMessages()
                     && !VisibleMessageContainsPrivateMarker()
                     && !AgentSurfaceContainsPrivateMarker();
-                stage = "verify_agent_indicator_after_replacement";
-                bool agentStillVisible = await WaitUntilAsync(
-                    () => IsAgentModeActive(mode),
-                    timeout);
                 bool lifecyclePassed = replaced.Status == "passed"
-                    && noLateAgentUpdate
-                    && agentStillVisible;
+                    && noLateAgentUpdate;
                 return Check(
                     "gui." + scenario,
                     lifecyclePassed,
@@ -445,22 +421,6 @@ public sealed class UiAutomationScenario : IDisposable
     private bool HasUserAndAssistantMessages()
         => CountVisibleMessageItems() >= 2;
 
-    private async Task ApproveWorkspaceTrustAsync(TimeSpan timeout)
-    {
-        AutomationElement approve = await WaitForElementAsync(
-            AgentTrustApproveAutomationId,
-            timeout);
-        Invoke(approve);
-
-        bool dismissed = await WaitUntilAsync(
-            () => FindByAutomationId(AgentTrustApproveAutomationId) is null,
-            timeout);
-        if (!dismissed)
-        {
-            throw new TimeoutException("Workspace trust prompt did not close.");
-        }
-    }
-
     private int CountVisibleMessageItems()
     {
         AutomationElement? messages = FindByAutomationId(ChatMessagesAutomationId);
@@ -511,9 +471,6 @@ public sealed class UiAutomationScenario : IDisposable
         string[] forbidden = ["token", "secret", "arguments", "request_body", "transcript"];
         return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
-
-    private static bool IsAgentModeActive(AutomationElement element)
-        => ContainsIgnoreCase(GetName(element), "Coding Agent");
 
     private static void SetValue(AutomationElement element, string value)
     {

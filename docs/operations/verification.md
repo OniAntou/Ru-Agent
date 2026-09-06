@@ -642,12 +642,12 @@ RuApp instance exists. The supported Agent scenarios are exactly:
 
 The cancel and stale-result scenarios replace the Agent session while its
 synthetic tool request is still in flight, wait beyond the delayed result, and
-fail if a user/assistant message, private marker, or enabled Agent mode leaks
-back into the replacement session.
+fail if a user/assistant message or private marker leaks back into the
+replacement session.
 
-Each Agent GUI run receives a fresh temporary workspace through the Harness
-descriptor, creates the bounded `harness-agent.txt` fixture, and approves the
-workspace-trust card through UI Automation before the model step starts. The
+Each Agent GUI run receives a fresh temporary root workspace through the
+Harness descriptor and creates the bounded `harness-agent.txt` fixture. Root
+workspace tools are accepted without an approval card. The
 `agent-tool-contract` fixture exercises the read-only `files.read` loop and
 checks the bounded terminal reply. It never opens a native device endpoint.
 
@@ -657,9 +657,10 @@ codes string for `/vts/action`. This keeps compatibility probes aligned with
 the typed route contract; live VTube Studio reconnect/action behavior remains
 a separate user-run acceptance gate.
 
-The UI driver verifies the static Agent indicator without requiring an idle status row;
-`AgentStatusText` is expected only after an Agent request or another activity
-that needs user interaction. Typed requested, granted, verified, and failed
+The UI driver verifies Agent behavior through the chat submission and activity
+stream; there is no mode-selector control to probe. `AgentStatusText` is
+expected only after an Agent request or another activity that needs user
+interaction. Typed requested, granted, verified, and failed
 copy is covered by WinUI contract tests. Agent artifacts and event-sink records
 contain only bounded states, counts, tool IDs, durations, and safe reason
 codes—not arguments, output, levels, amounts, mute state, prompts, replies,
@@ -675,8 +676,8 @@ the visible approval card remains covered by `AgentApprovalTests` and
 terminal, files, Web, connectors, or skills are model-usable.
 
 Agent-only visual acceptance covers the GUI cleanup in Task 7 of the approved
-plan. The composer leaves one static Agent indicator and one compact preset
-selector (`Standard`/`Full Access`), keeps the welcome layout fixed, and uses
+plan. The composer exposes no mode or preset selector, keeps the welcome layout
+fixed, and uses
 the Agent HTTP/SSE path for every prompt. Grow a transcript until scrolling is
 needed and verify messages stay centered while the native vertical scrollbar
 sits at the far-right edge; horizontal scrolling must remain disabled. These

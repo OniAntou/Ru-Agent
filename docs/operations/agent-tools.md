@@ -252,7 +252,7 @@ the future OS-enforced filesystem/network sandbox.
 ## Agent activity shown in WinUI
 
 Agent is the only supported generation path. The desktop composer uses the
-known project root and exposes one static Agent indicator; there is no
+known project root and exposes no mode selector; there is no
 preset selector or Chat mode switch and no workspace editor. The sidebar
 keeps only primary conversation surfaces; Log, Diagnostics, Policy, and
 Audit remain reachable from the `Công cụ` flyout. Agent prompts are

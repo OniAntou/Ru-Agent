@@ -137,7 +137,7 @@ Do not start either worker or the voice engine as independent public services.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - In the WinUI shell, conversation and Voice are the primary navigation surfaces.
   Log, Diagnostics, Policy, and Audit are grouped under `CÃ´ng cá»¥`; the composer
-  shows one static Agent indicator. Agent is the only generation mode and the
+  exposes no mode selector. Agent is the only generation mode and the
   Agent session is **session-scoped** — no preset picker or scope picker is
   exposed. The UI always uses the known project root as the initial Agent
   workspace; workspace selection is not exposed in the composer, while the

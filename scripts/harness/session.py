@@ -954,7 +954,6 @@ class HarnessSession:
         for key in tuple(environment):
             if key.casefold() in {
                 "ru_worker_token",
-                "ru_backend__runtimemigrationmode",
                 "ru_backend__workerurl",
             }:
                 environment.pop(key, None)

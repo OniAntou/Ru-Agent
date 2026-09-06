@@ -273,7 +273,9 @@
                             <DataTemplate x:DataType="models:AgentActivityItem">
                                 <Grid Margin="0,3"
                                       Padding="0,2"
-                                      ColumnDefinitions="*,Auto"
+                                      ColumnDefinitions="Auto,Auto"
+                                      ColumnSpacing="8"
+                                      HorizontalAlignment="Left"
                                       Loaded="OnActivityItemLoaded"
                                       Unloaded="OnActivityItemUnloaded"
                                       AutomationProperties.LiveSetting="Polite">
@@ -285,13 +287,13 @@
                                                Foreground="{StaticResource RuInkBrush}"
                                                TextWrapping="Wrap"
                                                VerticalAlignment="Center"
-                                               Margin="0,0,12,0" />
+                                               Margin="0" />
                                     <TextBlock Grid.Column="1"
                                                Text="{x:Bind MetadataText, Mode=OneWay}"
                                                FontFamily="{StaticResource RuMonoFontFamily}"
-                                               FontSize="11"
+                                               FontSize="11.5"
                                                Foreground="{StaticResource RuMutedBrush}"
-                                               Opacity="0.85"
+                                               Opacity="1.0"
                                                VerticalAlignment="Center" />
                                     <!-- State bindings (used by automation & contract tests) -->
                                     <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />

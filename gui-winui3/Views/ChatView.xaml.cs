@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
+using Windows.Foundation;
 using RuAgent.Client;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol.Harness;
@@ -849,7 +850,7 @@ namespace RuApp.Views
 
         private void ClearAgentActivities()
         {
-            _breathingStoryboards.Clear();
+            _sweepStoryboards.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
             if (AgentActivityFeed is not null)
@@ -863,8 +864,8 @@ namespace RuApp.Views
             ClearAgentActivities();
         }
 
-        // ── Activity text breathing animation ──────────────────────────────
-        private readonly Dictionary<TextBlock, Storyboard> _breathingStoryboards = new();
+        // ── Activity text sweep animation ──────────────────────────────
+        private readonly Dictionary<TextBlock, Storyboard> _sweepStoryboards = new();
 
         private void OnActivityItemLoaded(object sender, RoutedEventArgs e)
         {
@@ -938,7 +939,7 @@ namespace RuApp.Views
             {
                 if (child is TextBlock tb && Grid.GetColumn(tb) == 0)
                 {
-                    StopTextBreathing(tb);
+                    StopTextSweep(tb);
                     break;
                 }
             }
@@ -949,11 +950,11 @@ namespace RuApp.Views
         {
             if (item.IsRunning)
             {
-                StartTextBreathing(textBlock);
+                StartTextSweep(textBlock);
             }
             else
             {
-                StopTextBreathing(textBlock);
+                StopTextSweep(textBlock);
                 var targetColor = item.IsFailed
                     ? ((SolidColorBrush)Application.Current.Resources["RuDangerBrush"]).Color
                     : ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
@@ -979,37 +980,56 @@ namespace RuApp.Views
             }
         }
 
-        private void StartTextBreathing(TextBlock textBlock)
+        private void StartTextSweep(TextBlock textBlock)
         {
-            if (_breathingStoryboards.ContainsKey(textBlock)) return;
+            if (_sweepStoryboards.ContainsKey(textBlock)) return;
 
             var mutedColor = ((SolidColorBrush)Application.Current.Resources["RuMutedBrush"]).Color;
             var inkColor = ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
 
-            var brush = new SolidColorBrush(mutedColor);
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0.5),
+                EndPoint = new Point(1, 0.5),
+            };
+            var inkStop = new GradientStop { Color = inkColor, Offset = 0 };
+            var mutedStop = new GradientStop { Color = mutedColor, Offset = 0 };
+            brush.GradientStops.Add(inkStop);
+            brush.GradientStops.Add(mutedStop);
             textBlock.Foreground = brush;
 
-            var colorAnim = new ColorAnimation
+            var easing = new CubicEase { EasingMode = EasingMode.EaseInOut };
+            var inkAnim = new DoubleAnimation
             {
-                From = mutedColor,
-                To = inkColor,
-                Duration = new Duration(TimeSpan.FromMilliseconds(850)),
-                AutoReverse = true,
+                From = -0.2,
+                To = 1.2,
+                Duration = new Duration(TimeSpan.FromMilliseconds(1200)),
                 RepeatBehavior = RepeatBehavior.Forever,
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+                EasingFunction = easing,
             };
-            Storyboard.SetTarget(colorAnim, brush);
-            Storyboard.SetTargetProperty(colorAnim, "Color");
+            var mutedAnim = new DoubleAnimation
+            {
+                From = -0.2,
+                To = 1.2,
+                Duration = new Duration(TimeSpan.FromMilliseconds(1200)),
+                RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = easing,
+            };
+            Storyboard.SetTarget(inkAnim, inkStop);
+            Storyboard.SetTargetProperty(inkAnim, "Offset");
+            Storyboard.SetTarget(mutedAnim, mutedStop);
+            Storyboard.SetTargetProperty(mutedAnim, "Offset");
 
             var sb = new Storyboard();
-            sb.Children.Add(colorAnim);
-            _breathingStoryboards[textBlock] = sb;
+            sb.Children.Add(inkAnim);
+            sb.Children.Add(mutedAnim);
+            _sweepStoryboards[textBlock] = sb;
             sb.Begin();
         }
 
-        private void StopTextBreathing(TextBlock textBlock)
+        private void StopTextSweep(TextBlock textBlock)
         {
-            if (_breathingStoryboards.Remove(textBlock, out var sb))
+            if (_sweepStoryboards.Remove(textBlock, out var sb))
             {
                 sb.Stop();
             }

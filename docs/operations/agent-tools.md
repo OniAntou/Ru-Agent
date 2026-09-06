@@ -100,7 +100,9 @@ adds the canonical folder to the current live session and all tools may use it
 subject to schemas, protected paths, and hard invariants. The folder grant is
 not shared with another or forked session and is lost when the app restarts.
 Continuing the same live session reuses it. Relative traversal cannot escape a
-trusted root.
+trusted root. When the user supplies an absolute path inside a granted folder,
+the model must preserve that exact path instead of rewriting it relative to the
+trusted workspace.
 
 Only terminal commands that perform destructive deletion or launch an unknown
 executable ask for a one-time terminal approval. Recognized Git and package
@@ -120,11 +122,19 @@ The model invokes its advertised bindings through the exact selection contract
 rendered by System Prompt Composer. Each capability includes ID/version,
 description, scope, strict proposal schema, example, and digest; selection is
 one JSON object with `tool_id`, `tool_version`, and `arguments`, with no prose
-success claim. Both presets receive the same runtime-enabled definitions. Each
+success claim. The Worker also accepts that exact object inside one
+attribute-free `<tool_call>...</tool_call>` wrapper for compatibility with
+providers that emit textual tool markup; malformed, nested, prefixed, or
+suffixed wrappers remain prose and never execute. Both presets receive the same runtime-enabled definitions. Each
 step allows at most 10 sequential tool selections; exhausting that budget
 forces one final wrap-up answer without tools. Approvals still gate mutating
 tools — a card with a bounded preview and an explicit user decision precede
 every side effect, in every profile.
+
+An exact consecutive repeat of the same tool ID, version, and canonical
+arguments terminates the run with `repeated_tool_call` before a second Broker
+dispatch. This applies to read-only calls as well as mutations and terminal
+commands, preventing model loops from duplicating side effects.
 
 Use `help.docs` when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
@@ -158,6 +168,11 @@ cancellation commit before creating a run for the replacement session. A
 workspace-trust run that was abandoned past its ten-minute trust window is
 cancelled during startup recovery, so an interrupted prompt cannot keep the
 workspace's active-run lock indefinitely.
+
+While a run is actively driven, a dedicated heartbeat renews its workspace
+membership independently of model and tool step duration. A failed renewal
+cancels the active step and fails closed with `workspace_membership_expired`;
+slow provider responses alone do not let a healthy membership expire.
 
 Agent turns continue through normal streamed generation. Unrelated
 conversation is never forced through a tool-selection path.

@@ -104,6 +104,20 @@ public sealed class AgentReplyPolicyTests
     }
 
     [Fact]
+    public async Task Assistant_activity_projector_is_idempotent_and_uses_safe_agent_shape()
+    {
+        var activity = new FakeActivityLogStore();
+        var projector = new AgentConversationActivityProjector(activity);
+        var intent = new EventId("evt_22222222222222222222222222222222");
+        var run = Run();
+        await projector.ProjectAssistantAsync(intent, run.RunId, run.SessionId.Value, "Done", CancellationToken.None);
+        await projector.ProjectAssistantAsync(intent, run.RunId, run.SessionId.Value, "different replay", CancellationToken.None);
+        var evt = Assert.Single(activity.Events);
+        Assert.Equal("agent", evt.Type);
+        Assert.Equal("assistant", evt.Data["role"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void Transient_redactor_holds_private_markers_and_redacts_split_secrets()
     {
         var redactor = new AgentReplyTransientRedactor(

@@ -71,4 +71,50 @@ public sealed class AgentConversationActivityProjector
             _logger?.LogWarning("agent_user_activity_projection_failed");
         }
     }
+
+    public async Task ProjectAssistantAsync(
+        HarnessEventId intentId,
+        RunId runId,
+        string sessionId,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        _ = intentId.Value;
+        _ = runId.Value;
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentNullException.ThrowIfNull(content);
+        var key = intentId.Value + ":assistant";
+        if (!_projected.TryAdd(key, 0))
+        {
+            return;
+        }
+
+        try
+        {
+            await _activity.AppendAsync(
+                    new ActivityEvent(
+                        $"agent:{runId.Value}:{intentId.Value}:assistant",
+                        0,
+                        string.Empty,
+                        "agent",
+                        sessionId,
+                        new JsonObject
+                        {
+                            ["role"] = "assistant",
+                            ["content"] = content,
+                            ["run_id"] = runId.Value,
+                        }),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _projected.TryRemove(key, out _);
+            throw;
+        }
+        catch
+        {
+            _logger?.LogWarning("agent_assistant_activity_projection_failed");
+        }
+    }
 }

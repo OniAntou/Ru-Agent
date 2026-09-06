@@ -269,7 +269,7 @@ Close the live published GUI/backend processes first so publish files are not lo
 
 - [ ] **Step 4: Repeat live GUI acceptance with a free model**
 
-Create a new session and target a fresh subdirectory under `D:\Test Agent`. Verify: exact wrapped tool selection executes without visible XML; one external-directory approval; same-session reuse; new-session re-approval; write/edit/read/list/glob/search; safe `git status`; `help.docs`; `web.fetch`; deliberate duplicate call is blocked before a second execution; Stop cancels; no file appears in `D:\LLM`.
+Create a new session and target a fresh subdirectory under `D:\Test Agent`. Verify: exact wrapped tool selection executes without visible XML; one external-directory approval; same-session reuse; new-session re-approval; Deny terminates the run without prompting again; write/edit/read/list/glob/search; safe `git status`; `help.docs`; `web.fetch`; deliberate duplicate call is blocked before a second execution; Stop cancels; no file appears in `D:\LLM`.
 
 - [ ] **Step 5: Inspect documentation and repository state**
 

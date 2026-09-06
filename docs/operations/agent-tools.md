@@ -359,9 +359,10 @@ External-folder and dangerous-terminal requests use a short-lived approval bound
 session, request, tool version, canonical path/executable/argv/cwd/operation/
 network, snapshot version, and intent hash with 30-min expiry. Consumption is
 first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
-`HostApprovalLedger`); graceful `approval_rejected` on Deny; `approval_stale`
-on any changed field or expired/moved-workspace replay. The Broker returns the
-normalized candidate matcher for `AllowRun`/`AllowProject`; the UI/CLI shows
+`HostApprovalLedger`). Deny terminates the current run with `approval_denied`,
+so the model cannot immediately request the same permission again. Changed
+fields and expired or moved-workspace replays return `approval_stale`. The
+Broker returns the normalized candidate matcher for `AllowRun`/`AllowProject`; the UI/CLI shows
 that exact scope before confirmation. The model cannot broaden a rule with a
 glob; for an external-directory approval the Host itself generates a bounded
 descendant matcher only after the user chooses run/project scope. Ordering is

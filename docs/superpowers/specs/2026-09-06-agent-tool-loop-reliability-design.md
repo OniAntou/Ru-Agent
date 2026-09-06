@@ -47,6 +47,7 @@ The generated model-tool descriptions will say that file paths may be relative t
 - Malformed, attributed, nested, prefixed, or suffixed `<tool_call>` wrappers are never unwrapped and remain ordinary assistant text. A normalized candidate that begins with raw JSON continues through the existing strict selection validation.
 - A repeated call fails closed before execution with `repeated_tool_call`.
 - A lost membership cancels in-flight work and fails closed with `workspace_membership_expired`.
+- A denied approval terminates the current run with `approval_denied`; it never resumes the model loop or prompts again in that run.
 - Provider errors retain their original stable codes. No provider/model fallback is introduced.
 
 ## Verification
@@ -59,6 +60,7 @@ Regression tests will prove:
 - changed arguments and non-consecutive calls are not suppressed;
 - a model step longer than the membership TTL remains leased through heartbeat renewal;
 - failed renewal cancels and fails closed;
+- denying a pending approval fails the run once without issuing another approval request;
 - file-tool prompt metadata describes both trusted-relative and granted-absolute paths;
 - existing Broker containment, session isolation, terminal approval, and provider error tests remain green.
 

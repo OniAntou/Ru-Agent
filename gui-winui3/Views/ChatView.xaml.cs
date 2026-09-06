@@ -724,29 +724,6 @@ namespace RuApp.Views
             ScrollChatToBottom();
         }
 
-        private void RemoveThinkingActivities()
-        {
-            if (AgentActivities.Count == 0)
-            {
-                return;
-            }
-
-            var thinkingItems = AgentActivities.Where(a => a.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking).ToList();
-            if (thinkingItems.Count > 0)
-            {
-                foreach (var item in thinkingItems)
-                {
-                    _agentActivityById.Remove(item.ActivityId);
-                    AgentActivities.Remove(item);
-                }
-
-                if (AgentActivities.Count == 0 && AgentActivityFeed is not null)
-                {
-                    AgentActivityFeed.Visibility = Visibility.Collapsed;
-                }
-            }
-        }
-
         private void OnAgentSummaryReceived(object? sender, AgentRunSummaryModel summary)
         {
             if (DispatcherQueue.HasThreadAccess)
@@ -848,7 +825,6 @@ namespace RuApp.Views
             }
 
             _activeAgentReplyReceived = true;
-            RemoveThinkingActivities();
             _replyRenderScheduler.Schedule();
         }
 
@@ -866,7 +842,6 @@ namespace RuApp.Views
                 Messages.Add(_activeAgentAssistantMessage);
             }
 
-            RemoveThinkingActivities();
             _activeAgentAssistantMessage.Content = snapshot.Text;
             _activeAgentAssistantMessage.IsStreaming = true;
             ScrollChatToBottom();
@@ -874,10 +849,6 @@ namespace RuApp.Views
 
         private void ClearAgentActivities()
         {
-            foreach (var sb in _breathingStoryboards.Values)
-            {
-                sb.Stop();
-            }
             _breathingStoryboards.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
@@ -2545,7 +2516,7 @@ namespace RuApp.Views
             {
                 if (_ownsProviderCatalogController)
                 {
-                    _ = _providerCatalogController.DisposeAsync().AsTask();
+                    _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
                 _providerCatalogController = null;
             }
@@ -2554,7 +2525,7 @@ namespace RuApp.Views
                 _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
                 if (_ownsGroupedCatalogs)
                 {
-                    _ = _groupedCatalogs.DisposeAsync().AsTask();
+                    _groupedCatalogs.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
                 _groupedCatalogs = null;
             }

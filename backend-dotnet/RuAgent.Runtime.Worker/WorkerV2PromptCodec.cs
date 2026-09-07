@@ -93,6 +93,7 @@ public static class WorkerV2PromptCodec
                 ["display_name"] = instruction.DisplayName,
                 ["content"] = instruction.Content,
                 ["content_sha256"] = instruction.ContentSha256,
+                ["origin"] = instruction.Origin.ToString(),
             });
         }
 
@@ -245,11 +246,16 @@ public static class WorkerV2PromptCodec
                 throw new AgentProtocolException("invalid_request");
             }
 
+            var origin = value.ContainsKey("origin")
+                ? ReadInstructionOrigin(value["origin"])
+                : PromptInstructionOrigin.Workspace;
+
             return new PromptInstructionBlock(
                 RequiredString(value["source_id"]),
                 RequiredString(value["display_name"]),
                 RequiredString(value["content"]),
-                RequiredString(value["content_sha256"]));
+                RequiredString(value["content_sha256"]),
+                origin);
         }).ToArray();
 
         var capabilityRecords = capabilities.Select(node =>
@@ -321,6 +327,17 @@ public static class WorkerV2PromptCodec
         && value.TryGetValue<int>(out var number)
         ? number
         : throw new AgentProtocolException("invalid_request");
+
+    private static PromptInstructionOrigin ReadInstructionOrigin(JsonNode? node)
+    {
+        var value = RequiredString(node);
+        return value switch
+        {
+            nameof(PromptInstructionOrigin.Workspace) => PromptInstructionOrigin.Workspace,
+            nameof(PromptInstructionOrigin.ExternalSkill) => PromptInstructionOrigin.ExternalSkill,
+            _ => throw new AgentProtocolException("invalid_request"),
+        };
+    }
 
     private static bool HasExactFields(JsonObject value, IReadOnlySet<string> expected) =>
         value.Count == expected.Count

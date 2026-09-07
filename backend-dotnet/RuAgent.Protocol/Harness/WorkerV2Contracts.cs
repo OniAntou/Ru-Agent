@@ -67,7 +67,9 @@ public static class WorkerV2Contracts
     private static readonly IReadOnlySet<string> ModelToolOptional = new HashSet<string>(["hint", "input_schema"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptEnvironmentFields = new HashSet<string>(["model", "platform", "locale", "timezone", "date", "workspace_label"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> PromptInstructionFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptInstructionFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256", "origin"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptInstructionRequiredFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptInstructionOrigins = new HashSet<string>(["Workspace", "ExternalSkill"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptCapabilityFields = new HashSet<string>(["id", "version", "description", "scope", "input_schema_json", "input_schema_digest", "example_arguments_json", "availability"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptRuntimeFields = new HashSet<string>(["memory", "mood", "voice", "vts", "hardware", "references"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptReferenceFields = new HashSet<string>(["kind", "label", "content"], StringComparer.Ordinal);
@@ -402,11 +404,14 @@ public static class WorkerV2Contracts
         foreach (var instructionNodeItem in instructions)
         {
             if (instructionNodeItem is not JsonObject instruction
-                || !HasExactFields(instruction, PromptInstructionFields)
+                || !HasRequiredFields(instruction, PromptInstructionRequiredFields, PromptInstructionFields)
                 || !TryGetPromptIdentifier(instruction["source_id"], 128, allowColon: true, out var sourceId)
                 || !TryGetString(instruction["display_name"], 256, out _)
                 || !TryGetString(instruction["content"], MaxPromptInstructionBytes, out var content)
                 || !TryGetDigest(instruction["content_sha256"], out var contentDigest)
+                || (instruction.ContainsKey("origin")
+                    && (!TryGetString(instruction["origin"], 32, out var origin)
+                        || !PromptInstructionOrigins.Contains(origin)))
                 || !instructionIds.Add(sourceId))
             {
                 throw new AgentProtocolException("invalid_request");
@@ -527,6 +532,12 @@ public static class WorkerV2Contracts
     private static bool HasExactFields(JsonObject value, IReadOnlySet<string> expected)
     {
         return value.Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal).SetEquals(expected);
+    }
+
+    private static bool HasRequiredFields(JsonObject value, IReadOnlySet<string> required, IReadOnlySet<string> allowed)
+    {
+        var fields = value.Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
+        return required.IsSubsetOf(fields) && fields.IsSubsetOf(allowed);
     }
 
     private static bool TryGetString(JsonNode? node, int maxChars, out string value)

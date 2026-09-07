@@ -56,6 +56,11 @@ public sealed record PromptInstructionBlock
         string contentSha256,
         PromptInstructionOrigin origin = PromptInstructionOrigin.Workspace)
     {
+        if (!Enum.IsDefined(origin))
+        {
+            throw new ArgumentOutOfRangeException(nameof(origin));
+        }
+
         SourceId = PromptText.RequireIdentifier(sourceId, 128, nameof(sourceId), allowColon: true);
         DisplayName = PromptText.Require(displayName, 256, nameof(displayName));
         Content = PromptText.NormalizeAndRequireBytes(content, 64 * 1024, nameof(content));

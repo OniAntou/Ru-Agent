@@ -40,6 +40,18 @@ public sealed class SystemPromptContractTests
         Assert.DoesNotContain("prompt", typeof(AssistantStep).GetProperties().Select(property => property.Name), StringComparer.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Instruction_block_rejects_undefined_origin_values()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new PromptInstructionBlock(
+                "skill:calendar",
+                "Calendar helper",
+                "External skill guidance.",
+                "c60132ed4bbfd3d7b098b88390308e45dba05d846c3f3a1bcb8fe271042c4269",
+                (PromptInstructionOrigin)999));
+    }
+
     private static class PromptFixtures
     {
         public static SystemPromptContext ValidContext() =>

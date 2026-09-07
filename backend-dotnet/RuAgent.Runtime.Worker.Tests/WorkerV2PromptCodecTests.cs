@@ -36,6 +36,69 @@ public sealed class WorkerV2PromptCodecTests
     }
 
     [Fact]
+    public void Context_round_trip_preserves_external_instruction_origin()
+    {
+        const string content = "External skill guidance.";
+        var context = new SystemPromptContext(
+            1,
+            "ru-agent",
+            "standard",
+            new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
+            [new PromptInstructionBlock(
+                "skill:calendar",
+                "Calendar helper",
+                content,
+                PromptHashForTest.Sha256(content),
+                PromptInstructionOrigin.ExternalSkill)],
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+
+        var payload = WorkerV2PromptCodec.WriteContext(context);
+        Assert.Equal("ExternalSkill", payload["instruction_blocks"]!.AsArray()[0]!.AsObject()["origin"]!.GetValue<string>());
+
+        var decoded = WorkerV2PromptCodec.ReadStart(new JsonObject
+        {
+            ["prompt"] = "hello",
+            ["turns"] = new JsonArray(),
+            ["system_prompt_context"] = payload,
+            ["settings"] = new JsonObject(),
+        }).Context;
+
+        Assert.Equal(PromptInstructionOrigin.ExternalSkill, decoded.InstructionBlocks.Single().Origin);
+    }
+
+    [Fact]
+    public void Context_read_without_origin_defaults_to_workspace()
+    {
+        const string content = "Workspace guidance.";
+        var context = new SystemPromptContext(
+            1,
+            "ru-agent",
+            "standard",
+            new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
+            [new PromptInstructionBlock(
+                "root:Ru.md",
+                "Ru.md",
+                content,
+                PromptHashForTest.Sha256(content))],
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+
+        var payload = WorkerV2PromptCodec.WriteContext(context);
+        payload["instruction_blocks"]!.AsArray()[0]!.AsObject().Remove("origin");
+
+        var decoded = WorkerV2PromptCodec.ReadStart(new JsonObject
+        {
+            ["prompt"] = "hello",
+            ["turns"] = new JsonArray(),
+            ["system_prompt_context"] = payload,
+            ["settings"] = new JsonObject(),
+        }).Context;
+
+        Assert.Equal(PromptInstructionOrigin.Workspace, decoded.InstructionBlocks.Single().Origin);
+    }
+
+    [Fact]
     public void Context_rejects_capability_digest_drift_before_worker_execution()
     {
         var schema = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}";

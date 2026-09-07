@@ -52,8 +52,8 @@ is active on the headless Agent v2 path and resolves an ambiguous dispatch
 outcome before the run continues.
 The managed C# Worker owns authenticated Agent model steps (Worker v2) and the
 v1 runtime/device boundary for settings, voice orchestration, STT, VTube Studio,
-observation, and lifecycle coordination. The deterministic Harness uses a
-dependency-free test fixture.
+observation, and lifecycle coordination. The retired Python deterministic
+Harness is not part of production or the supported verification path.
 The CLI tracer `RuAgent.Cli` is a thin headless client: it delegates
 start/attach to `RuAgent.Client` and all run behavior to authenticated
 HTTP/SSE.
@@ -223,9 +223,9 @@ the exact current capability matrix.
 
 ## Verification
 
-Run heavyweight gates sequentially. The deterministic backend Harness owns a
-temporary test-fixture worker/Broker/edge session with dynamic loopback ports
-and emits a safe schema-v2 artifact:
+Run heavyweight gates sequentially. Production verification uses the managed
+C# Worker/Host and the .NET test suites; the retired Python deterministic
+Harness is no longer part of the supported workflow:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
@@ -234,18 +234,15 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.cspr
 dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\ru_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 63 HTTP routes and 1 WebSocket route (`/voice/stream`; 42 non-Agent
-plus 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), requires correct-bearer success plus
-wrong/missing-bearer rejection, and records observation routes as explicit
-hardware/external skips. It uses synthetic STT/TTS and records only statuses,
-timings, counts, event types, and cleanup state. In deterministic mode it also
-exercises one read-only `files.read` Agent tool loop. Broker approval/replay is
-checked separately with a temporary `files.write` fixture. At this
-checkpoint the harness also covers the additive Agent v2 tracer
+The backend contract tests cover 63 HTTP routes and 1 WebSocket route
+(`/voice/stream`; 42 non-Agent plus 20 `/agent/v1/*` plus 1 `POST /host/shutdown`),
+require correct-bearer success plus wrong/missing-bearer rejection, and record
+observation routes as explicit hardware/external skips. Broker approval/replay
+is checked separately with temporary fixtures. The managed test suites also
+cover the additive Agent v2 tracer
 (HTTP 201/200/409 idempotency, `workspace_busy`, `preset_mismatch`,
 unsupported capabilities return bounded `phase_not_available` errors, while
 SSE reconnect
@@ -257,28 +254,7 @@ fake Worker/Broker, plus deterministic file-tool matrix
 is intentionally not model-usable) with hash preimage and recovery caps) using a temp
 workspace.
 
-The deterministic GUI voice Harness is manual and interactive on Windows. It
-publishes the real WinUI shell, injects deterministic capture/playback at the
-physical boundaries, runs the typed UI Automation driver for turn/stop/cancel/
-stale-session scenarios, and writes a separate schema-v2 artifact:
-
-~~~powershell
-dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true --nologo
-dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
-& D:\LLM\scripts\run_gui_voice_harness.ps1 -AppPath D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe -DriverProject D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -OutputPath D:\LLM\artifacts\gui\ru-harness-vnext-gui.json
-~~~
-
-It refuses an existing RuApp instance and never opens physical microphone,
-speaker, or VTube Studio devices. The driver accepts `--scenario` values
-`agent-tool-contract`, `agent-cancel`, `agent-stale-result`, and
-`agent-private-metadata` in addition to the voice scenarios. Broker approval
-replay and the production approval-card UI are separate deterministic tests;
-they are not model-visible GUI Harness tools. Deterministic GUI success does
-not replace the separate live hardware acceptance gate. Cancel and stale-result
-replace an in-flight Agent session and reject any delayed visible update into
-the replacement session.
-
-The deterministic Harness does not claim managed-native voice acceptance.
+GUI build and typed driver tests remain available through the WinUI projects.
 Native microphone, audio, OmniVoice, subtitle, and VTube acceptance remains a
 separate user-run gate.
 

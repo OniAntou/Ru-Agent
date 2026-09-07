@@ -51,8 +51,8 @@ The ASP.NET HTTP boundary emits fixed route events such as `http.stt`,
 `http.voice`, `http.vts`, `http.observation`, `http.memory`, and
 `http.business` with status and duration only. The managed Worker and WinUI
 processes use separate bounded writers under the same resolved `RU_LOG_ROOT`;
-the deterministic Harness uses temporary test-fixture writers and never
-launches a production Python Worker.
+the managed test suites use temporary writer roots and never launch a
+production Python Worker.
 The `/diagnostics/*` routes are intentionally excluded from HTTP boundary
 events so the diagnostics UI polling does not create a self-referential log
 stream or cause unnecessary UI refreshes.

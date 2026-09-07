@@ -45,11 +45,8 @@ def test_registry_exposes_only_the_voice_websocket_and_no_chat_route() -> None:
     benchmark = (repo_root / "scripts" / "benchmark_backend.py").read_text(
         encoding="utf-8"
     )
-    session = (repo_root / "scripts" / "harness" / "session.py").read_text(encoding="utf-8")
     assert 'for path in ("/voice/stream",)' in benchmark
     assert '"/chat"' not in benchmark
-    assert '"/chat"' not in session
-    assert "deterministic-chat" not in session
 
 
 def test_vts_fixture_requests_match_runtime_contract() -> None:

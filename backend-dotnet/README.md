@@ -111,9 +111,8 @@ discovery, and optional volume commands use the terminal; notes use
 managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
 remain ordinary terminal requests.
 
-The deterministic Harness intentionally uses a dependency-free test-only
-fixture worker, so its route pass does not validate the raw Worker v1 relay
-surface in the published managed process. The managed composition now
+The retired Python deterministic Harness is not used for route verification,
+so managed route tests run directly against the published C# composition. The managed composition now
 binds every allowlisted private route to an explicit C# handler: status/models
 report the active typed settings (the worker never receives provider
 credentials), VTS owns runtime-scoped GUI state/config plus
@@ -144,16 +143,9 @@ validates its schema/source ownership, and `PublicRouteContractTests` compares
 it with ASP.NET's live `EndpointDataSource` so a missing route cannot be hidden
 by a forwarder.
 
-The deterministic Harness is a contract gate, not a managed-native voice gate:
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\ru_harness.py `
-  --mode backend-deterministic --output "$env:TEMP\\ru-backend-harness.json"
-```
-
-The harness records only statuses, timings, event types, counts, cleanup flags,
-and privacy checks. It must not store tokens, prompts, replies, transcripts,
-audio bytes, session IDs, or VTS metadata.
+The retired Python deterministic Harness is no longer a supported contract
+gate. Use the managed .NET test suites and `build.bat`; native voice and VTube
+acceptance remain separate user-run gates.
 
 Removing the HTTP proxy eliminates its measured local hop, but it does not make
 model inference, cloud providers, voice synthesis, STT, or VTube Studio itself

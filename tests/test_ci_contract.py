@@ -41,14 +41,3 @@ def test_static_analysis_targets_the_minimum_supported_python() -> None:
     assert config["tool"]["ruff"]["target-version"] == f"py{major}{minor}"
     assert config["tool"]["mypy"]["python_version"] == f"{major}.{minor}"
     assert config["tool"]["mypy"]["check_untyped_defs"] is True
-
-
-def test_gui_harness_is_manual_and_uses_the_interactive_runner() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "gui-harness.yml").read_text(encoding="utf-8")
-
-    assert "workflow_dispatch:" in workflow
-    assert "self-hosted" in workflow
-    assert "windows" in workflow
-    assert "ru-gui" in workflow
-    assert "scripts\\run_gui_voice_harness.ps1" in workflow
-    assert "ru-harness-vnext-gui" in workflow

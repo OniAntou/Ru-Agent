@@ -51,10 +51,10 @@ Fresh sequential evidence:
   compileall passed; pytest passed 397/397.
 - .NET Release: all 13 discovered test projects passed, 2,549/2,549 tests.
 - Public route matrix: 64 HTTP + 1 WebSocket (`/voice/stream`).
-- Backend deterministic Harness: `status=passed`, `failed_checks=0`; every
+- Historical backend deterministic Harness: `status=passed`, `failed_checks=0`; every
   child, port, descriptor, fixture, workspace, and temporary-root cleanup check
   passed.
-- Agent GUI Harness: `agent-tool-contract`, `agent-cancel`,
+- Historical Agent GUI Harness: `agent-tool-contract`, `agent-cancel`,
   `agent-stale-result`, and `agent-private-metadata` passed with zero failed
   checks. The driver now follows the current English ready text, Agent-only UI,
   and approval-free root-workspace policy.
@@ -81,9 +81,7 @@ dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
 & D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\measure_phase1_runtime.py --root D:\LLM
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\ru_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
 & D:\LLM\.venv\Scripts\python.exe -m pip check
 & D:\LLM\scripts\test_dotnet.ps1 -Configuration Release
 dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
@@ -510,8 +508,8 @@ retirement changes:
 | C# Release matrix | `2,085 passed` across 13 test assemblies (14 restored projects including the Harness build) |
 | Route contract | `56 HTTP + 1 WebSocket` |
 | Runtime-boundary scan | `865` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
-| Backend deterministic Harness | `contract` / `passed`; owned cleanup green |
-| Agent GUI Harness | 4/4 supported Agent scenarios passed |
+| Historical backend deterministic Harness | `contract` / `passed`; owned cleanup green |
+| Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Release build | `build.bat` `13/13`; GUI and managed Worker published |
 
 Managed startup is now unconditional. The legacy runtime setting, parser, and
@@ -560,8 +558,8 @@ The retirement changes were verified sequentially before the test-suite cleanup:
 | C# Release matrix | `2,086 passed` across 13 test assemblies |
 | Route contract | `56 HTTP + 1 WebSocket` |
 | Runtime-boundary scan | `864` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
-| Backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
-| Agent GUI Harness | 4/4 supported Agent scenarios passed |
+| Historical backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
+| Historical Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
 | Release build | `build.bat` `13/13`; GUI, managed Worker/Core, Broker, and backend published |
 | `git diff --check` | passed |
@@ -586,19 +584,11 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debu
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~HarnessPayloadStore|FullyQualifiedName~HarnessProjectionTransaction"
 ```
 
-The deterministic Harness artifact is status-only contract evidence. It and all public
-events must exclude prompt text, receipts, raw instruction contents, tool
-arguments, filesystem paths, and provider secrets. `model.prompt_composed` is a
-durable internal event only; it must remain absent from the public event
-allowlist and from CLI/WinUI rendering. Deterministic checks do not replace
-live microphone, speaker, VTube Studio, or real Windows endpoint acceptance.
-
-The backend-deterministic Harness is a separate synthetic fixture topology. It
-starts the dependency-free test-only `harness.deterministic_worker`, which
-serves the v1/v2 contract probes without importing production
-`ru_runtime.generation` or `ru_runtime.worker` modules. This keeps contract
-probes isolated from the published managed Worker; normal desktop startup is
-managed C# only.
+The retired deterministic Harness artifact and fixture Worker are no longer
+generated. Contract evidence now comes from the managed .NET suites and keeps
+prompt text, receipts, raw instruction contents, tool arguments, filesystem
+paths, and provider secrets out of public events. `model.prompt_composed` remains
+an internal event and must stay absent from CLI/WinUI rendering.
 
 This fixture evidence does not prove raw Worker v1 route parity in the
 default managed mode. The managed composition now binds every allowlisted
@@ -639,124 +629,9 @@ not visual acceptance; keep real responsive-policy and interaction tests.
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_current_documentation.py
 ```
 
-## evidence_class: contract
-
-Contract evidence proves protocol shape, lifecycle ordering, authorization,
-privacy, and cleanup without performing a valid native mutation.
-
-```powershell
-$artifact = Join-Path $env:TEMP 'ru-action-kernel-contract.json'
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\ru_harness.py --mode backend-deterministic --output $artifact
-$report = Get-Content -Raw -LiteralPath $artifact | ConvertFrom-Json
-if ($report.evidence_class -ne 'contract') { throw 'wrong evidence class' }
-if ($report.summary.status -ne 'passed') { throw 'contract Harness failed' }
-```
-
-The Harness owns temporary Worker, Broker, Public Host, credentials, loopback
-ports, data root, and workspace. Its synthetic Worker exercises a read-only
-`files.read` Agent step against the temporary fixture. The canonical binding
-must emit one bounded tool activity before the Agent completion and must not
-open a native device endpoint. The artifact contains statuses and safe reason
-codes only; raw tool arguments, receipts, prompts, and replies remain absent.
-
-A separate authenticated private-Broker probe opens only `workspace.write`,
-requests `files.write` in the temporary workspace, approves once, expects the
-replay to be denied as `approval_stale`, closes the session, and removes the
-fixture. The schema-v2 artifact contains bounded statuses and cleanup
-booleans, not request arguments, note content, workspace paths, tokens, or
-native output values.
-
-For a cold start, the Harness keeps all three port leases while it builds the
-Broker and Public Host projects sequentially, then launches each with
-`--no-build`. This avoids concurrent writes to their shared
-`RuAgent.Protocol` intermediate output. If a child still exits before
-readiness, `startup.readiness` reports `child_unexpected_exit` plus only the
-child role, exit code, and lifecycle classification; a live child that never
-becomes ready reports `readiness_timeout`.
-
-## evidence_class: adapter
-
-Adapter evidence proves result semantics with fake endpoints, temporary files,
-and bounded child processes. It does not open the real Windows audio endpoint.
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_harness_artifacts.py tests/test_harness_session.py tests/test_agent_harness.py
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AdapterConformanceTests|FullyQualifiedName~TerminalAdapterTests|FullyQualifiedName~ProcessTreeRunnerTests"
-dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AgentApprovalTests|FullyQualifiedName~AgentApprovalUiContractTests"
-```
-
-These tests establish file write/readback and cleanup, file-write approval,
-terminal zero/non-zero/timeout/start-failure outer statuses, restoration logic,
-and artifact privacy.
-
-Host tests cover cross-session rotation with a stateful single-owner fake and
-prove close-before-open, same-session reuse, and no dispatch after close failure.
-
-External-directory tests prove canonical descendant grants for read/list and
-create/edit, sibling isolation, absolute-path output, project-scope reuse across
-runs, and delete/root-directory approval gates.
-
-## Deterministic GUI Harness
-
-The GUI Harness is manual and interactive because it launches WinUI. It uses
-synthetic microphone/speaker boundaries and refuses to start while another
-RuApp instance exists. The supported Agent scenarios are exactly:
-
-- `agent-tool-contract`
-- `agent-cancel`
-- `agent-stale-result`
-- `agent-private-metadata`
-
-The cancel and stale-result scenarios replace the Agent session while its
-synthetic tool request is still in flight, wait beyond the delayed result, and
-fail if a user/assistant message or private marker leaks back into the
-replacement session.
-
-Each Agent GUI run receives a fresh temporary root workspace through the
-Harness descriptor and creates the bounded `harness-agent.txt` fixture. Root
-workspace tools are accepted without an approval card. The
-`agent-tool-contract` fixture exercises the read-only `files.read` loop and
-checks the bounded terminal reply. It never opens a native device endpoint.
-
-HTTP route probes use schema-valid VTS fixtures: the complete `MotionConfig`
-shape for `/vts/config`, a `typing` boolean for `/vts/activity`, and a bounded
-codes string for `/vts/action`. This keeps compatibility probes aligned with
-the typed route contract; live VTube Studio reconnect/action behavior remains
-a separate user-run acceptance gate.
-
-The UI driver verifies Agent behavior through the chat submission and activity
-stream; there is no mode-selector control to probe. `AgentStatusText` is
-expected only after an Agent request or another activity that needs user
-interaction. Typed requested, granted, verified, and failed
-copy is covered by WinUI contract tests. Agent artifacts and event-sink records
-contain only bounded states, counts, tool IDs, durations, and safe reason
-codes—not arguments, output, levels, amounts, mute state, prompts, replies,
-device identity, endpoint hashes, or exception text. The WinUI activity feed
-additionally accepts only typed transient `agent.activity` fields:
-basename/line range, symbol, counts, edit counts, duration, and `safe_code`;
-malformed or content-bearing transient frames are ignored and never become
-durable history.
-
-Broker approval dispatch/replay is covered by the private deterministic probe;
-the visible approval card remains covered by `AgentApprovalTests` and
-`AgentApprovalUiContractTests`. GUI Harness scenarios do not claim that
-terminal, files, Web, connectors, or skills are model-usable.
-
-Agent-only visual acceptance covers the GUI cleanup in Task 7 of the approved
-plan. The composer exposes no mode or preset selector, keeps the welcome layout
-fixed, and uses
-the Agent HTTP/SSE path for every prompt. Grow a transcript until scrolling is
-needed and verify messages stay centered while the native vertical scrollbar
-sits at the far-right edge; horizontal scrolling must remain disabled. These
-remain manual release checks; deterministic tests cover the source and layout
-contract but do not replace visual inspection.
-
-A passing deterministic GUI result does not accept live microphone capture,
-audible OmniVoice, subtitles, or VTube Studio. There is no automated
-managed-native live gate; physical microphone accuracy, speaker quality,
-natural bilingual conversation, and VTube Studio behavior remain explicit
-user-run checks. There is no dedicated native volume
-acceptance path.
-
-See [Agent tools and truthful execution](agent-tools.md) for the current
-capability matrix and ownership boundary.
+The retired Python deterministic backend/GUI Harness, its fixture Worker, and
+Phase 1 Python prompt-reference benchmark were removed. Current verification
+uses the managed .NET suites, the filesystem-only Python boundary scanner, and
+the release build/native overlay checks above. Live provider, audio,
+microphone, subtitle, and VTube Studio acceptance remain explicit user-run
+gates.

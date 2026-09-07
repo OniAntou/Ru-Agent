@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
-from scripts.check_python_runtime_boundary import _reference_cases, _summary, scan_runtime_boundary
-
-ROOT = Path(__file__).resolve().parents[1]
+from scripts.check_python_runtime_boundary import _summary, scan_runtime_boundary
 
 
 def test_inventory_identifies_known_entrypoints_without_claiming_reachability(tmp_path: Path) -> None:
@@ -47,8 +44,3 @@ def test_inventory_skips_generated_files_and_bounds_hash_input(tmp_path: Path) -
     assert records[0].path == "scripts/large.py"
     assert records[0].size_bytes == 70_000
     assert records[0].sha256 == hashlib.sha256(b"x" * 65_536).hexdigest()
-
-
-def test_reference_cases_match_the_checked_in_cross_language_fixture() -> None:
-    fixture = json.loads((ROOT / "tests/fixtures/python-csharp-phase1-baseline.json").read_text(encoding="utf-8"))
-    assert _reference_cases(ROOT) == fixture["cases"]

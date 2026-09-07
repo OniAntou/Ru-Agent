@@ -31,9 +31,9 @@ Last reviewed: 2026-09-06.
 - [x] Removed the one-value runtime migration selector, its configuration read,
   and the special error retained solely for the retired Python topology.
 - [x] Removed the no-op live retirement Harness mode and compatibility-only CLI
-  arguments/helpers; deterministic backend and GUI modes remain.
-- [x] Renamed active tooling to `scripts/ru_harness.py` and
-  `scripts/benchmark_backend.py` without aliases or fallback entry points.
+  arguments/helpers; managed .NET tests and GUI projects remain.
+- [x] Removed the retired Python deterministic Harness, its fixture worker,
+  prompt-generation stub, CLI wrapper, and GUI workflow.
 - [x] Kept Worker v1 device/voice routes and OmniVoice because they still have
   live responsibilities; persisted-data importers were handled separately.
 

@@ -5,7 +5,6 @@ supported production startup. The production Python generation and Worker
 v1/v2 modules are retired. The 2026-08-31 test cleanup also removed the unused
 Python VTS/overlay package and its nine test files; managed VTS, its canonical
 token file, and native overlay assets are unchanged.
-The deterministic Harness uses a test-only fixture under `scripts/harness`.
 Managed startup is unconditional and exposes no runtime selector.
 
 The deterministic inventory is generated with:
@@ -19,15 +18,11 @@ The scanner records relative paths, a bounded content hash, byte count,
 classification, and an `is_known_managed_startup` label for the two configured
 C# entrypoint files. Schema 2 reports `known_managed_startup_count`, not a
 reachability count. It does not analyze C# launch edges, Python imports, or
-transitive dependencies; the earlier schema 1 labels were not reachability
-proof either. It does not import or execute product modules. The scanner is
-inventory evidence, not permission to launch a retired module. The
-Dotnet default launches only `dotnet-agent-worker`; test-only fixture imports
-are not production reachability.
-Output is count-only on stdout; the baseline fixture contains only deterministic
-bounded reference values. Regenerate that fixture only intentionally with
-`--write-baseline tests/fixtures/python-csharp-phase1-baseline.json`, then
-review the changes and run the C# golden-parity consumers.
+transitive dependencies. It does not import or execute product modules. The
+scanner is inventory evidence, not permission to launch a retired module.
+Output is count-only on stdout. Prompt parity is owned by the C# harness
+contract tests; this scanner no longer imports a Python prompt implementation
+or generates a cross-language baseline.
 
 Current boundary classes are:
 
@@ -52,7 +47,7 @@ settings, voice/STT/VTS/observation adapters, one shared lease coordinator,
 and OmniVoice process shutdown. The bootstrap is read only for the v2 model
 provider and its environment path is cleared before the v1 graph is composed;
 v1 never receives the provider credential. The old Python Agent + Device
-topology and its retirement-only probe are deleted. This inventory is
+topology and its deterministic test harness are deleted. This inventory is
 classification evidence, not evidence that the separate
 OS-enforced filesystem/network sandbox project is complete.
 

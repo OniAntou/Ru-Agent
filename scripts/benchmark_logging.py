@@ -12,13 +12,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "scripts"))
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
-# These imports intentionally follow the local path bootstrap above; the
-# benchmark is executed as a standalone script rather than an installed package.
-from harness.worker_fixture import (  # noqa: E402
-    RUNTIME_REQUEST,
-    VOICE_START,
-    VTS_ACTION,
-)
+# These protocol labels are benchmark fixtures, not a dependency on the
+# retired deterministic Worker implementation.
+RUNTIME_REQUEST = "runtime.request"
+VOICE_START = "voice.start"
+VTS_ACTION = "vts.action"
 
 from ru_runtime.persistence.activity_outbox import ActivityOutboxWriter  # noqa: E402
 from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter  # noqa: E402

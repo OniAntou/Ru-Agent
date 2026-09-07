@@ -41,13 +41,20 @@ public sealed record PromptEnvironment
     public string? WorkspaceLabel { get; }
 }
 
+public enum PromptInstructionOrigin
+{
+    Workspace,
+    ExternalSkill,
+}
+
 public sealed record PromptInstructionBlock
 {
     public PromptInstructionBlock(
         string sourceId,
         string displayName,
         string content,
-        string contentSha256)
+        string contentSha256,
+        PromptInstructionOrigin origin = PromptInstructionOrigin.Workspace)
     {
         SourceId = PromptText.RequireIdentifier(sourceId, 128, nameof(sourceId), allowColon: true);
         DisplayName = PromptText.Require(displayName, 256, nameof(displayName));
@@ -57,6 +64,8 @@ public sealed record PromptInstructionBlock
         {
             throw new ArgumentException("Instruction content digest does not match content.", nameof(contentSha256));
         }
+
+        Origin = origin;
     }
 
     public string SourceId { get; }
@@ -66,6 +75,8 @@ public sealed record PromptInstructionBlock
     public string Content { get; }
 
     public string ContentSha256 { get; }
+
+    public PromptInstructionOrigin Origin { get; }
 }
 
 public sealed record PromptCapability
@@ -315,6 +326,7 @@ public sealed record SystemPromptContext
                 display_name = block.DisplayName,
                 content = block.Content,
                 content_sha256 = block.ContentSha256,
+                origin = block.Origin.ToString(),
             }),
             capabilities = Capabilities.Select(capability => new
             {

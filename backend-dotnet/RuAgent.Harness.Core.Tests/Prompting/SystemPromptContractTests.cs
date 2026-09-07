@@ -1,3 +1,4 @@
+using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
@@ -17,6 +18,8 @@ public sealed class SystemPromptContractTests
         Assert.Equal("standard", context.Preset);
         Assert.Single(context.InstructionBlocks);
         Assert.Equal("root:Ru.md", context.InstructionBlocks[0].SourceId);
+        Assert.Equal(PromptInstructionOrigin.Workspace, context.InstructionBlocks[0].Origin);
+        Assert.Contains("\"origin\":\"Workspace\"", Encoding.UTF8.GetString(context.SerializeUtf8()), StringComparison.Ordinal);
         Assert.Throws<ArgumentException>(() =>
             PromptFixtures.ContextWithInstructionBytes(64 * 1024 + 1));
     }

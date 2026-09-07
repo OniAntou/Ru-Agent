@@ -186,18 +186,21 @@ public sealed class TuiSessionRenderer
                 break;
 
             case "tool.execution_requested":
+                var reqIcon = GetToolIcon(summary);
                 _writer.WriteLine();
-                _writer.WriteLine(AnsiTheme.Yellow($"⚙ [Tool Request #{seq}] ") + AnsiTheme.Bold(summary));
+                _writer.WriteLine(AnsiTheme.Yellow($"{reqIcon} [Tool Request #{seq}] ") + AnsiTheme.Bold(summary));
                 break;
 
             case "tool.executed":
+                var doneIcon = GetToolIcon(summary);
                 if (status == "succeeded")
                 {
-                    _writer.WriteLine(AnsiTheme.Green($"✓ [Tool Done #{seq}] ") + summary);
+                    _writer.WriteLine(AnsiTheme.Green($"✓ {doneIcon} [Tool Done #{seq}] ") + summary);
+                    RenderDiffIfPresent(envelope.SafeSummary);
                 }
                 else
                 {
-                    _writer.WriteLine(AnsiTheme.Red($"✗ [Tool Failed #{seq}] ") + summary + $" ({status})");
+                    _writer.WriteLine(AnsiTheme.Red($"✗ {doneIcon} [Tool Failed #{seq}] ") + summary + $" ({status})");
                 }
                 break;
 
@@ -276,6 +279,38 @@ public sealed class TuiSessionRenderer
                 break;
         }
         _writer.Flush();
+    }
+
+    private void RenderDiffIfPresent(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        if (!text.Contains("+++") && !text.Contains("---") && !text.Contains("@@") && !text.Contains("\n+") && !text.Contains("\n-"))
+            return;
+
+        var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("+++", StringComparison.Ordinal)
+                || line.StartsWith("---", StringComparison.Ordinal)
+                || line.StartsWith("@@", StringComparison.Ordinal)
+                || line.StartsWith("+", StringComparison.Ordinal)
+                || line.StartsWith("-", StringComparison.Ordinal))
+            {
+                _writer.WriteLine("    " + AnsiTheme.FormatDiffLine(line));
+            }
+        }
+    }
+
+    private static string GetToolIcon(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "⚙";
+        var lower = text.ToLowerInvariant();
+        if (lower.Contains("read") || lower.Contains("files.read")) return "📖";
+        if (lower.Contains("edit") || lower.Contains("files.edit") || lower.Contains("patch")) return "✏️";
+        if (lower.Contains("write") || lower.Contains("files.write")) return "📝";
+        if (lower.Contains("terminal") || lower.Contains("bash") || lower.Contains("cmd") || lower.Contains("shell") || lower.Contains("run")) return "🐚";
+        if (lower.Contains("search") || lower.Contains("find") || lower.Contains("grep") || lower.Contains("list")) return "🔍";
+        return "⚙";
     }
 
     private static string Escape(string s)

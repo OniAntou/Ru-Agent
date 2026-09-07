@@ -166,6 +166,27 @@ public sealed class SessionApiClient
         return rewindRoot;
     }
 
+    public async Task<JsonElement> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var url = new Uri(_session.BaseUri, $"sessions/{Uri.EscapeDataString(sessionId)}/activate");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("session_get_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement.Clone();
+        EnsureOkEnvelope(root, "session_get_failed");
+        return root;
+    }
+
     private static void EnsureOkEnvelope(JsonElement root, string operation)
     {
         if (root.ValueKind != JsonValueKind.Object

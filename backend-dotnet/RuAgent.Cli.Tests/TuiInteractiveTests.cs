@@ -184,4 +184,56 @@ public sealed class TuiInteractiveTests
         Assert.False(res3.Success);
         Assert.Equal("unknown_subcommand", res3.ErrorCode);
     }
+
+    [Fact]
+    public void InteractiveLineReader_AutoCompletes_NewSlashCommands()
+    {
+        string[] cmds = ["/help", "/model", "/backend", "/fork", "/rewind", "/tree", "/stats", "/tokens", "/export", "/status", "/history", "/clear", "/exit", "/quit"];
+        Assert.Equal("/tree", InteractiveLineReader.AutoComplete("/tr", cmds));
+        Assert.Null(InteractiveLineReader.AutoComplete("/stat", cmds)); // ambiguous with /status
+        Assert.Equal("/stats", InteractiveLineReader.AutoComplete("/stats", cmds));
+        Assert.Equal("/tokens", InteractiveLineReader.AutoComplete("/tok", cmds));
+        Assert.Equal("/export", InteractiveLineReader.AutoComplete("/exp", cmds));
+    }
+
+    [Fact]
+    public void TuiEventRenderer_RendersToolIcons_And_Diffs()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+
+        var editEnv = new HarnessSafeEventEnvelope(
+            ProtocolVersion: 1,
+            EventId: "evt_edit",
+            RunId: "run_1",
+            SessionId: "sess_1",
+            Sequence: 10,
+            EventType: "tool.execution_requested",
+            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+            Status: "running",
+            SafeSummary: "files.edit path: src/app.cs");
+
+        TuiEventRenderer.RenderEnvelope(editEnv, sw);
+        var outReq = sw.ToString();
+        Assert.Contains("✏️", outReq);
+        Assert.Contains("Tool Request #10", outReq);
+
+        using var sw2 = new StringWriter();
+        var doneEnv = new HarnessSafeEventEnvelope(
+            ProtocolVersion: 1,
+            EventId: "evt_done",
+            RunId: "run_1",
+            SessionId: "sess_1",
+            Sequence: 11,
+            EventType: "tool.executed",
+            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+            Status: "succeeded",
+            SafeSummary: "files.edit completed\n--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line");
+
+        TuiEventRenderer.RenderEnvelope(doneEnv, sw2);
+        var outDone = sw2.ToString();
+        Assert.Contains("✓ ✏️ [Tool Done #11]", outDone);
+        Assert.Contains("+new line", outDone);
+        Assert.Contains("-old line", outDone);
+    }
 }

@@ -159,6 +159,17 @@ public sealed class FileReadAdapterTests : IDisposable
         Assert.True(result["truncated"]!.GetValue<bool>());
     }
 
+    [Fact]
+    public void Read_returns_expected_sha256_hash()
+    {
+        var content = "test sha256 content";
+        File.WriteAllText(FullPath("sha.txt"), content, Encoding.UTF8);
+        var expectedHash = FileHashService.GetCurrentHash(FullPath("sha.txt"));
+        var result = _adapter.Execute(new JsonObject { ["path"] = "sha.txt" });
+        Assert.Equal(expectedHash, result["sha256"]?.GetValue<string>());
+        Assert.False(string.IsNullOrWhiteSpace(result["sha256"]?.GetValue<string>()));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

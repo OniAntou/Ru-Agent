@@ -128,6 +128,8 @@ public static class BusinessEndpoints
                     created_at = value.CreatedAt.ToUniversalTime().ToString("O"),
                     updated_at = value.UpdatedAt.ToUniversalTime().ToString("O"),
                     message_count = value.MessageCount,
+                    parent_session_id = value.ParentSessionId,
+                    forked_from_message_id = value.ForkedFromMessageId,
                 }).ToArray(),
             });
         }
@@ -241,7 +243,11 @@ public static class BusinessEndpoints
 
     public sealed record ForkSessionRequest(
         [property: JsonPropertyName("up_to_message_index")] int UpToMessageIndex,
-        [property: JsonPropertyName("title")] string? Title = null);
+        [property: JsonPropertyName("title")] string? Title = null,
+        [property: JsonPropertyName("new_title")] string? NewTitle = null)
+    {
+        public string? ResolvedTitle => !string.IsNullOrWhiteSpace(Title) ? Title : NewTitle;
+    }
 
     public sealed record RewindSessionRequest(
         [property: JsonPropertyName("to_message_index")] int ToMessageIndex);
@@ -256,7 +262,7 @@ public static class BusinessEndpoints
         try
         {
             var upTo = request?.UpToMessageIndex ?? int.MaxValue;
-            var doc = await sessions.ForkAsync(sessionId, upTo, request?.Title, cancellationToken).ConfigureAwait(false);
+            var doc = await sessions.ForkAsync(sessionId, upTo, request?.ResolvedTitle, cancellationToken).ConfigureAwait(false);
             return doc is null
                 ? Results.Ok(new { status = "error", message = "Không tìm thấy session để fork." })
                 : Results.Ok(new { status = "ok", session = doc });

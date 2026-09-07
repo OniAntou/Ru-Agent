@@ -33,7 +33,7 @@ public sealed class AgentCommands
         _agentClient = new AgentApiClient(session, httpClient);
         _sseClient = new AgentSseClient(session, httpClient);
         _settingsClient = new SettingsApiClient(session, httpClient);
-        _slashCommands = new AgentSlashCommands(_settingsClient, outWriter, errWriter);
+        _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter);
     }
 
     public static async Task<AgentCommands> CreateWithStarterAsync(
@@ -862,8 +862,8 @@ public sealed class AgentCommands
         string wsVis = $"  Workspace: {shortWs}";
         string wsRen = $"  {Tui.AnsiTheme.Dim("Workspace: ")}{Tui.AnsiTheme.Dim(shortWs)}";
 
-        string cmdVis = "  Commands:  /model, /fork, /rewind, /history, /status, /exit";
-        if (cmdVis.Length > innerWidth) cmdVis = "  Commands:  /model, /history, /exit";
+        string cmdVis = "  Commands:  /model, /tree, /fork, /rewind, /stats, /export, /history, /exit";
+        if (cmdVis.Length > innerWidth) cmdVis = "  Commands:  /model, /tree, /stats, /export, /exit";
         string cmdRen = $"  {Tui.AnsiTheme.Dim(cmdVis[2..])}";
 
         await _out.WriteLineAsync(Tui.AnsiTheme.Cyan(topBorder)).ConfigureAwait(false);
@@ -904,7 +904,10 @@ public sealed class AgentCommands
                     await _out.WriteLineAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("RuAgent Interactive Console Commands:"))).ConfigureAwait(false);
                     await _out.WriteLineAsync().ConfigureAwait(false);
                     await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Session & Branching:")).ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/tree") + "            - Display ASCII Session Tree (DAG)").ConfigureAwait(false);
                     await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/status") + "          - Display session details & preset").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/stats, /tokens") + "  - Display session token & backend statistics").ConfigureAwait(false);
+                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/export [file]") + "   - Export conversation history to Markdown").ConfigureAwait(false);
                     await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/fork [title]") + "    - Fork session into a new branch").ConfigureAwait(false);
                     await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/rewind <index>") + "  - Rewind session to specified message index").ConfigureAwait(false);
                     await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/history") + "         - Show prompt history in current session").ConfigureAwait(false);
@@ -945,7 +948,7 @@ public sealed class AgentCommands
                     try { Console.Clear(); } catch { }
                     continue;
                 }
-                if (await _slashCommands.TryHandleAsync(slashCmd, arg, cancellationToken).ConfigureAwait(false))
+                if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
                 {
                     continue;
                 }

@@ -180,6 +180,7 @@ public sealed class FileReadAdapter
             ["total_bytes"] = observedFileLength,
             ["offset"] = offset,
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
+            ["sha256"] = FileHashService.GetCurrentHash(canonical),
         };
     }
 

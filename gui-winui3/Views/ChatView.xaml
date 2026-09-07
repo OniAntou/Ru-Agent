@@ -232,7 +232,7 @@
                       HorizontalAlignment="Center"
                       RowDefinitions="Auto,Auto,Auto">
                     <ListView x:Name="ChatListView"
-                              Grid.Row="0"
+                              Grid.Row="1"
                               AutomationProperties.AutomationId="ChatMessages"
                               Padding="16,16,16,8"
                               SelectionMode="None"
@@ -261,7 +261,7 @@
                     </ListView>
 
                     <ItemsControl x:Name="AgentActivityFeed"
-                                  Grid.Row="1"
+                                  Grid.Row="0"
                                   Visibility="Collapsed"
                                   HorizontalAlignment="Stretch"
                                   Margin="16,2,16,6"

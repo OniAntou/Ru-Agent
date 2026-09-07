@@ -29,6 +29,22 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void Activity_feed_is_rendered_before_transcript_messages()
+    {
+        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+
+        var messagesStart = xaml.IndexOf("<ListView x:Name=\"ChatListView\"", StringComparison.Ordinal);
+        var messagesEnd = xaml.IndexOf("</ListView>", messagesStart, StringComparison.Ordinal);
+        var feedStart = xaml.IndexOf("<ItemsControl x:Name=\"AgentActivityFeed\"", StringComparison.Ordinal);
+        var feedEnd = xaml.IndexOf("</ItemsControl>", feedStart, StringComparison.Ordinal);
+
+        Assert.True(messagesStart >= 0 && messagesEnd > messagesStart, "ChatListView is missing.");
+        Assert.True(feedStart >= 0 && feedEnd > feedStart, "AgentActivityFeed is missing.");
+        Assert.Contains("Grid.Row=\"1\"", xaml[messagesStart..messagesEnd], StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"0\"", xaml[feedStart..feedEnd], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Feed_template_exposes_only_safe_state_and_metadata_visuals()
     {
         var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));

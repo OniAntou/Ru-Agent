@@ -17,6 +17,8 @@ public sealed class RuPromptContextProviderTests
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), "root guidance", new System.Text.UTF8Encoding(false));
+        var skills = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills", "reloadable")).FullName;
+        File.WriteAllText(Path.Combine(skills, "SKILL.md"), "# Reloadable\n\nfirst skill body", new System.Text.UTF8Encoding(false));
         var settings = new StubSettingsStore(Settings());
         var time = new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero));
         var provider = new RuPromptContextProvider(
@@ -49,7 +51,13 @@ public sealed class RuPromptContextProviderTests
         File.WriteAllText(Path.Combine(fixture.Root, "Ru.md"), "changed guidance", new System.Text.UTF8Encoding(false));
         var second = await provider.BuildAsync(run, snapshot, CancellationToken.None);
 
-        Assert.Equal("root:Ru.md", Assert.Single(first.InstructionBlocks).SourceId);
+        Assert.Equal(new[] { "root:Ru.md", "skill:reloadable" }, first.InstructionBlocks.Select(block => block.SourceId));
+        File.WriteAllText(Path.Combine(skills, "SKILL.md"), "# Reloadable\n\nchanged skill body", new System.Text.UTF8Encoding(false));
+        var third = await provider.BuildAsync(run, snapshot, CancellationToken.None);
+        var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
+        var thirdSkill = third.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
+        Assert.NotEqual(firstSkill.ContentSha256, thirdSkill.ContentSha256);
+        Assert.Equal("changed skill body", thirdSkill.Content.Split("\n\n", 2)[1]);
         Assert.NotEqual(first.InstructionBlocks[0].ContentSha256, second.InstructionBlocks[0].ContentSha256);
         Assert.Equal("remembered preference", first.RuntimeContext.Memory);
         Assert.Single(first.RuntimeContext.References);

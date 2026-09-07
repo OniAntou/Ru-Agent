@@ -45,6 +45,19 @@ public sealed class RuInstructionLoader
         ("ru:CONTEXT.md", Path.Combine(".ru", "CONTEXT.md"), ".ru/CONTEXT.md"),
     ];
 
+    private readonly MarkdownSkillLoader _markdownSkillLoader;
+    private readonly string _localApplicationDataRoot;
+
+    public RuInstructionLoader(
+        MarkdownSkillLoader? markdownSkillLoader = null,
+        string? localApplicationDataRoot = null)
+    {
+        _markdownSkillLoader = markdownSkillLoader ?? new MarkdownSkillLoader();
+        _localApplicationDataRoot = string.IsNullOrWhiteSpace(localApplicationDataRoot)
+            ? GetLocalApplicationDataRoot()
+            : Path.GetFullPath(localApplicationDataRoot);
+    }
+
     public RuInstructionLoadResult Load(string workspaceRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -109,7 +122,99 @@ public sealed class RuInstructionLoader
             combinedBytes += contentBytes;
         }
 
+        var markdownRoots = new[]
+        {
+            Path.Combine(canonicalRoot, "skills"),
+            Path.Combine(canonicalRoot, ".ru", "skills"),
+            Path.Combine(_localApplicationDataRoot, "Ru", "skills"),
+        };
+        var markdownResult = _markdownSkillLoader.Load(markdownRoots);
+        var optionalRootPaths = markdownRoots
+            .Select(Path.GetFullPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var skip in markdownResult.Skips)
+        {
+            // The three Markdown roots are optional. Keep the established
+            // fixed-file missing diagnostics without adding noisy root-missing
+            // entries on every prompt build.
+            if (skip.Reason == "missing"
+                && optionalRootPaths.Contains(Path.GetFullPath(skip.SourcePath)))
+            {
+                continue;
+            }
+
+            skips.Add(new RuInstructionSkip(SafeSkillSourceId(skip.SourcePath), skip.Reason));
+        }
+
+        foreach (var skill in markdownResult.Skills)
+        {
+            var sourceId = $"skill:{skill.Id}";
+            var contentBytes = StrictUtf8.GetByteCount(skill.Body);
+            if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks
+                || combinedBytes > SystemPromptContext.MaxCombinedInstructionBytes - contentBytes)
+            {
+                skips.Add(new RuInstructionSkip(sourceId, "oversize"));
+                continue;
+            }
+
+            if (!sourceIds.Add(sourceId))
+            {
+                skips.Add(new RuInstructionSkip(sourceId, "duplicate_source"));
+                continue;
+            }
+
+            var displayName = SkillDisplayName(skill.Name, skill.Description);
+            blocks.Add(new PromptInstructionBlock(
+                sourceId,
+                displayName,
+                skill.Body,
+                skill.ContentSha256,
+                PromptInstructionOrigin.ExternalSkill));
+            combinedBytes += contentBytes;
+        }
+
         return new RuInstructionLoadResult(blocks, skips);
+    }
+
+    private static string GetLocalApplicationDataRoot()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return string.IsNullOrWhiteSpace(root)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            : root;
+    }
+
+    private static string SkillDisplayName(string name, string description)
+    {
+        const int maxCharacters = 256;
+        var prefix = string.IsNullOrWhiteSpace(name) ? "Markdown skill" : name.Trim();
+        var suffix = string.IsNullOrWhiteSpace(description) ? string.Empty : $": {description.Trim()}";
+        if (prefix.Length + suffix.Length <= maxCharacters)
+        {
+            return prefix + suffix;
+        }
+
+        var available = Math.Max(0, maxCharacters - prefix.Length);
+        return available == 0 ? prefix[..maxCharacters] : prefix + suffix[..available];
+    }
+
+    private static string SafeSkillSourceId(string sourcePath)
+    {
+        var name = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.Equals(name, "SKILL.md", StringComparison.OrdinalIgnoreCase))
+        {
+            name = Path.GetFileName(Path.GetDirectoryName(sourcePath));
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return "skill:markdown";
+        }
+
+        var safe = new string(name
+            .Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' or '.' ? character : '-')
+            .ToArray());
+        return "skill:" + (string.IsNullOrWhiteSpace(safe) ? "markdown" : safe);
     }
 
     private static (string? Content, string? Reason) ReadCandidate(string path)

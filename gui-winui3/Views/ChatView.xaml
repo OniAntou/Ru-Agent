@@ -21,6 +21,25 @@
                         BorderThickness="1"
                         CornerRadius="14,14,4,14"
                         Padding="14,10">
+                    <Border.ContextFlyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE8C8;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Fork Branch from Here" Click="OnForkFromMessageClick" Tag="{x:Bind}">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE8D8;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon Glyph="&#xE7A7;" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </Border.ContextFlyout>
                     <StackPanel Spacing="8">
                         <ItemsControl ItemsSource="{x:Bind Attachments, Mode=OneWay}"
                                       Visibility="{x:Bind HasAttachments, Mode=OneWay}">
@@ -105,6 +124,25 @@
 
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,16" HorizontalAlignment="Stretch">
+                <Grid.ContextFlyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE8C8;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Fork Branch from Here" Click="OnForkFromMessageClick" Tag="{x:Bind}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE8D8;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE7A7;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </Grid.ContextFlyout>
                 <StackPanel MaxWidth="760"
                             HorizontalAlignment="Left"
                             Spacing="6">

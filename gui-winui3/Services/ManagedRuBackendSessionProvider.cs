@@ -1,3 +1,7 @@
+using System;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using RuAgent.Client;
 
 namespace RuApp.Services;
@@ -6,6 +10,8 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
 {
     private readonly PublicHostStarter _starter;
     private readonly PublicHostLocator _locator;
+    private readonly object _gate = new();
+    private Process? _monitoredProcess;
     private bool _disposed;
 
     public ManagedRuBackendSessionProvider(PublicHostStarter? starter = null, PublicHostLocator? locator = null)
@@ -16,30 +22,66 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
 
     public string DisplayName => "Public Host (managed)";
     public BackendSession? Session { get; private set; }
-#pragma warning disable CS0067 // Interface requires event; managed host does not raise it – next StartAsync re-validates descriptor
     public event EventHandler? BackendExited;
-#pragma warning restore CS0067
 
     public async Task<BackendSession?> StartAsync(
         string projectRoot,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (Session is not null)
-            return Session;
+        lock (_gate)
+        {
+            if (Session is not null)
+            {
+                if (_monitoredProcess is { HasExited: true })
+                {
+                    OnProcessExited(this, EventArgs.Empty);
+                }
+                else
+                {
+                    return Session;
+                }
+            }
+        }
 
         try
         {
             var hostSession = await _starter.GetOrStartAsync(projectRoot, cancellationToken).ConfigureAwait(false);
-            // Validate descriptor + health already done by starter; create BackendSession for Chat and future Agent
             var backendSession = BackendSession.FromLoopback(hostSession.BaseUri.Port, hostSession.BearerToken);
-            Session = backendSession;
+
+            lock (_gate)
+            {
+                _monitoredProcess?.Dispose();
+                _monitoredProcess = null;
+
+                if (hostSession.Descriptor.ProcessId > 0)
+                {
+                    try
+                    {
+                        var proc = Process.GetProcessById(hostSession.Descriptor.ProcessId);
+                        proc.EnableRaisingEvents = true;
+                        proc.Exited += OnProcessExited;
+                        if (proc.HasExited)
+                        {
+                            OnProcessExited(this, EventArgs.Empty);
+                            return null;
+                        }
+                        _monitoredProcess = proc;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[ManagedRuBackendSessionProvider] Could not hook process {hostSession.Descriptor.ProcessId}: {ex.Message}");
+                    }
+                }
+
+                Session = backendSession;
+            }
+
             return backendSession;
         }
         catch (AgentApiException ex) when (ex.ErrorCode == "public_host_port_conflict")
         {
-            // Stable error for port conflict – do not attach to foreign process
-            System.Diagnostics.Debug.WriteLine($"[ManagedRuBackendSessionProvider] Port conflict: {ex.Message}");
+            Debug.WriteLine($"[ManagedRuBackendSessionProvider] Port conflict: {ex.Message}");
             return null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -48,15 +90,64 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ManagedRuBackendSessionProvider] Start failed: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[ManagedRuBackendSessionProvider] Start failed: {ex.GetType().Name}: {ex.Message}");
             return null;
+        }
+    }
+
+    public void NotifyBackendDown()
+    {
+        lock (_gate)
+        {
+            Session = null;
+            if (_monitoredProcess != null)
+            {
+                try { _monitoredProcess.Exited -= OnProcessExited; } catch { }
+                _monitoredProcess.Dispose();
+                _monitoredProcess = null;
+            }
+        }
+        BackendExited?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnProcessExited(object? sender, EventArgs e)
+    {
+        bool shouldRaise = false;
+        lock (_gate)
+        {
+            if (Session is not null)
+            {
+                Session = null;
+                shouldRaise = true;
+            }
+            if (_monitoredProcess != null)
+            {
+                try { _monitoredProcess.Exited -= OnProcessExited; } catch { }
+                _monitoredProcess.Dispose();
+                _monitoredProcess = null;
+            }
+        }
+
+        if (shouldRaise)
+        {
+            BackendExited?.Invoke(this, EventArgs.Empty);
         }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Session = null;
+            if (_monitoredProcess != null)
+            {
+                try { _monitoredProcess.Exited -= OnProcessExited; } catch { }
+                _monitoredProcess.Dispose();
+                _monitoredProcess = null;
+            }
+        }
         _starter.Dispose();
     }
 }

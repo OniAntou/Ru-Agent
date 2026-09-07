@@ -16,7 +16,8 @@ public sealed class RuAppComposition : IDisposable
         Func<IVoiceFrameSource>? voiceSourceFactory,
         Func<IVoicePlaybackDevice>? playbackDeviceFactory,
         HarnessEventSink? harnessEvents,
-        string? harnessScenario)
+        string? harnessScenario,
+        bool isHarness = false)
     {
         BackendProvider = backendProvider;
         EnableSubtitleOverlay = enableSubtitleOverlay;
@@ -26,6 +27,7 @@ public sealed class RuAppComposition : IDisposable
         PlaybackDeviceFactory = playbackDeviceFactory;
         HarnessEvents = harnessEvents;
         HarnessScenario = harnessScenario;
+        IsHarness = isHarness;
     }
 
     public IRuBackendSessionProvider BackendProvider { get; }
@@ -36,7 +38,7 @@ public sealed class RuAppComposition : IDisposable
     public Func<IVoicePlaybackDevice>? PlaybackDeviceFactory { get; }
     public HarnessEventSink? HarnessEvents { get; }
     public string? HarnessScenario { get; }
-    public bool IsHarness => !EnableSubtitleOverlay;
+    public bool IsHarness { get; }
     public AgentAuditLog AuditLog => _auditLog;
 
     public static RuAppComposition Production() => new(
@@ -47,7 +49,8 @@ public sealed class RuAppComposition : IDisposable
         voiceSourceFactory: null,
         playbackDeviceFactory: null,
         harnessEvents: null,
-        harnessScenario: null);
+        harnessScenario: null,
+        isHarness: false);
 
     public static RuAppComposition FromArguments(string? arguments)
     {
@@ -96,7 +99,8 @@ public sealed class RuAppComposition : IDisposable
             voiceSourceFactory ?? (() => new DeterministicVoiceFrameSource()),
             playbackDeviceFactory ?? (() => new RecordingVoicePlaybackDevice(events)),
             events,
-            harnessScenario ?? "turn");
+            harnessScenario ?? "turn",
+            isHarness: true);
     }
 
     public void Dispose()

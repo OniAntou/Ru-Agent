@@ -386,6 +386,24 @@ namespace RuApp.Models
 
         [JsonPropertyName("message_count")]
         public int MessageCount { get; set; }
+
+        [JsonPropertyName("parent_session_id")]
+        public string? ParentSessionId { get; set; }
+
+        [JsonPropertyName("forked_from_message_id")]
+        public string? ForkedFromMessageId { get; set; }
+
+        [JsonIgnore]
+        public bool IsForked => !string.IsNullOrEmpty(ParentSessionId);
+
+        [JsonIgnore]
+        public string IconGlyph => IsForked ? "\uE8D8" : "\uE8BD";
+
+        [JsonIgnore]
+        public Microsoft.UI.Xaml.Thickness ItemMargin => IsForked ? new Microsoft.UI.Xaml.Thickness(12, 0, 0, 0) : new Microsoft.UI.Xaml.Thickness(0, 0, 0, 0);
+
+        [JsonIgnore]
+        public string TooltipText => IsForked ? $"{Title} (Branch)" : Title;
     }
 
     public class SessionListResponse

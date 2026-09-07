@@ -106,6 +106,25 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void Agent_reply_anchor_is_added_before_streaming_deltas_arrive()
+    {
+        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        var beginStart = codeBehind.IndexOf("private void BeginAgentReply", StringComparison.Ordinal);
+        var beginEnd = codeBehind.IndexOf("private async Task CompleteActiveAgentTurnAsync", beginStart, StringComparison.Ordinal);
+        Assert.True(beginStart >= 0 && beginEnd > beginStart, "BeginAgentReply is missing.");
+
+        var beginBlock = codeBehind[beginStart..beginEnd];
+        var userAdd = beginBlock.IndexOf("Messages.Add(new ChatMessageItem", StringComparison.Ordinal);
+        var anchorStart = beginBlock.IndexOf("_activeAgentAssistantMessage = new ChatMessageItem", StringComparison.Ordinal);
+        var anchorAdd = beginBlock.IndexOf("Messages.Add(_activeAgentAssistantMessage)", anchorStart, StringComparison.Ordinal);
+
+        Assert.True(userAdd >= 0, "BeginAgentReply must add the user message.");
+        Assert.True(anchorStart >= 0, "BeginAgentReply must create an assistant anchor.");
+        Assert.True(anchorAdd > userAdd, "The assistant anchor must follow the user message.");
+        Assert.True(anchorAdd > anchorStart, "The assistant anchor must be visible before the first delta arrives.");
+    }
+
+    [Fact]
     public void Activity_item_contains_no_raw_payload_storage_or_reasoning_text()
     {
         var model = File.ReadAllText(FindSource("Models", "AgentActivityItem.cs"));

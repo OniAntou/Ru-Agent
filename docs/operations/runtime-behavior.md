@@ -316,6 +316,16 @@ desktop creates one replacement session and retries once only before a run is
 created. A second recovery failure is shown as a bounded error and is never
 looped or filled with an earlier response.
 
+## Desktop runtime lifecycle and reconnection
+
+The WinUI 3 desktop client connects to the shared local Public Host via loopback IPC.
+`ManagedRuBackendSessionProvider` tracks the Host process lifecycle and coordinates runtime liveness:
+- Liveness detection: `HealthStatusService` probes loopback status with a bounded 3-second timeout via `CheckHealthDetailedAsync`, distinguishing genuine Host offline state (`HttpRequestException` or connection refused) from worker initialization or readiness. Stale or disconnected sessions accurately mark `.NET Backend: Error`.
+- Exit detection: `ManagedRuBackendSessionProvider` hooks the Host process `Exited` event, clearing the active session and firing `BackendExited`.
+- Backoff & auto-reconnect: When the backend stops or becomes unreachable, high-frequency polling timers (observation, catalog, sessions) are stopped to prevent UI thread socket storms. A gentle reconnect timer probes for backend recovery every 3 seconds, re-attaching or restarting the backend and reinitializing active views and controllers without requiring a GUI restart.
+- Single-instance activation: Multiple instances detect existing instances via process enumeration and native WinUI class queries, bringing the existing window to the foreground cleanly.
+- Shutdown: Window close coordinates timer cancellation and Host shutdown without orphan processes.
+
 ## Session and history lifecycle
 
 ASP.NET Core is authoritative for persisted conversation sessions, history, and

@@ -10,13 +10,9 @@ public static class AppUnhandledExceptionPolicy
     {
         ArgumentNullException.ThrowIfNull(writeCrashEvent);
 
-        if (IsRecoverable(exception))
-        {
-            return true;
-        }
-
         writeCrashEvent(exception);
-        return false;
+
+        return IsRecoverable(exception);
     }
 
     private static bool IsRecoverable(Exception? exception)
@@ -26,9 +22,7 @@ public static class AppUnhandledExceptionPolicy
             or HttpRequestException
             or TaskCanceledException
             or ObjectDisposedException
-            or ArgumentException
             or InvalidOperationException
-            or System.Runtime.InteropServices.COMException
-            or XamlParseException;
+            or System.Runtime.InteropServices.COMException;
     }
 }

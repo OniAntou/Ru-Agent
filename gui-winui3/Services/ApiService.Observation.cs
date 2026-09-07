@@ -7,11 +7,17 @@ namespace RuApp.Services
 {
     public partial class ApiService
     {
-        public async Task<ObservationStatusDto?> GetObservationStatusAsync()
+        public async Task<ObservationStatusDto?> GetObservationStatusAsync(CancellationToken cancellationToken = default)
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
             try
             {
-                return await _httpClient.GetFromJsonAsync<ObservationStatusDto>($"{_baseUrl}/observation/status");
+                return await _httpClient.GetFromJsonAsync<ObservationStatusDto>($"{_baseUrl}/observation/status", timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

@@ -25,4 +25,26 @@ public sealed class BackendSessionTests
         Assert.Throws<ArgumentOutOfRangeException>(
             () => BackendSession.FromLoopback(port, "secret"));
     }
+
+    [Fact]
+    public void SessionInfo_deserializes_parent_and_fork_metadata()
+    {
+        var json = """
+        {
+            "id": "sess-child",
+            "title": "Child Session",
+            "created_at": "2026-09-08T00:00:00Z",
+            "updated_at": "2026-09-08T00:00:00Z",
+            "message_count": 5,
+            "parent_session_id": "sess-root",
+            "forked_from_message_id": "msg-123"
+        }
+        """;
+
+        var session = System.Text.Json.JsonSerializer.Deserialize<RuApp.Models.SessionInfo>(json);
+        Assert.NotNull(session);
+        Assert.Equal("sess-child", session.Id);
+        Assert.Equal("sess-root", session.ParentSessionId);
+        Assert.Equal("msg-123", session.ForkedFromMessageId);
+    }
 }

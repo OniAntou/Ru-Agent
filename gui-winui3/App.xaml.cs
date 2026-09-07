@@ -69,11 +69,32 @@ public partial class App : Application
     {
         try
         {
-            IntPtr hwnd = FindWindowW(null, "Ru — Conversational Runtime");
-            if (hwnd != IntPtr.Zero)
+            var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
+            var processes = System.Diagnostics.Process.GetProcessesByName("RuApp");
+            IntPtr targetHwnd = IntPtr.Zero;
+
+            foreach (var proc in processes)
             {
-                ShowWindow(hwnd, 9); // SW_RESTORE
-                SetForegroundWindow(hwnd);
+                if (proc.Id != currentProcess.Id && proc.MainWindowHandle != IntPtr.Zero)
+                {
+                    targetHwnd = proc.MainWindowHandle;
+                    break;
+                }
+            }
+
+            if (targetHwnd == IntPtr.Zero)
+            {
+                targetHwnd = FindWindowW("WinUIDesktopWin32WindowClass", null);
+                if (targetHwnd == IntPtr.Zero)
+                {
+                    targetHwnd = FindWindowW(null, "Ru — Conversational Runtime");
+                }
+            }
+
+            if (targetHwnd != IntPtr.Zero)
+            {
+                ShowWindow(targetHwnd, 9); // SW_RESTORE
+                SetForegroundWindow(targetHwnd);
             }
         }
         catch { }

@@ -37,6 +37,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
     private const uint SWP_SHOWWINDOW = 0x0040;
 
     private readonly IntPtr _hwnd;
+    private readonly string _className;
     private readonly WndProc _wndProcDelegate;
     private readonly DispatcherTimer _fadeTimer;
 
@@ -64,7 +65,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
     public SubtitleOverlayWindow()
     {
         _wndProcDelegate = CustomWndProc;
-        string className = "RuSubtitleOverlay_" + Guid.NewGuid().ToString("N");
+        _className = "RuSubtitleOverlay_" + Guid.NewGuid().ToString("N");
 
         var wndClass = new WNDCLASSEX
         {
@@ -78,7 +79,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
             hCursor = IntPtr.Zero,
             hbrBackground = IntPtr.Zero,
             lpszMenuName = null,
-            lpszClassName = className,
+            lpszClassName = _className,
             hIconSm = IntPtr.Zero
         };
 
@@ -87,7 +88,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
         int exStyle = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
         _hwnd = CreateWindowEx(
             exStyle,
-            className,
+            _className,
             "Ru Subtitle Overlay",
             WS_POPUP,
             0, 0, _width, _height,
@@ -367,26 +368,45 @@ public sealed class SubtitleOverlayWindow : IDisposable
 
         IntPtr screenDC = GetDC(IntPtr.Zero);
         IntPtr memDC = CreateCompatibleDC(screenDC);
-        IntPtr hBitmap = bitmap.GetHbitmap(Color.FromArgb(0, 0, 0, 0));
-        IntPtr oldBitmap = SelectObject(memDC, hBitmap);
-
-        var ptSrc = new POINT { X = 0, Y = 0 };
-        var ptDst = new POINT { X = _x, Y = _y };
-        var sz = new SIZE { cx = targetWidth, cy = targetHeight };
-        var blend = new BLENDFUNCTION
+        IntPtr hBitmap = IntPtr.Zero;
+        IntPtr oldBitmap = IntPtr.Zero;
+        try
         {
-            BlendOp = AC_SRC_OVER,
-            BlendFlags = 0,
-            SourceConstantAlpha = (byte)Math.Clamp((int)Math.Round(_currentOpacity * 255), 0, 255),
-            AlphaFormat = AC_SRC_ALPHA
-        };
+            hBitmap = bitmap.GetHbitmap(Color.FromArgb(0, 0, 0, 0));
+            oldBitmap = SelectObject(memDC, hBitmap);
 
-        UpdateLayeredWindow(_hwnd, screenDC, ref ptDst, ref sz, memDC, ref ptSrc, 0, ref blend, ULW_ALPHA);
+            var ptSrc = new POINT { X = 0, Y = 0 };
+            var ptDst = new POINT { X = _x, Y = _y };
+            var sz = new SIZE { cx = targetWidth, cy = targetHeight };
+            var blend = new BLENDFUNCTION
+            {
+                BlendOp = AC_SRC_OVER,
+                BlendFlags = 0,
+                SourceConstantAlpha = (byte)Math.Clamp((int)Math.Round(_currentOpacity * 255), 0, 255),
+                AlphaFormat = AC_SRC_ALPHA
+            };
 
-        SelectObject(memDC, oldBitmap);
-        DeleteObject(hBitmap);
-        DeleteDC(memDC);
-        ReleaseDC(IntPtr.Zero, screenDC);
+            UpdateLayeredWindow(_hwnd, screenDC, ref ptDst, ref sz, memDC, ref ptSrc, 0, ref blend, ULW_ALPHA);
+        }
+        finally
+        {
+            if (memDC != IntPtr.Zero)
+            {
+                if (oldBitmap != IntPtr.Zero)
+                {
+                    SelectObject(memDC, oldBitmap);
+                }
+                DeleteDC(memDC);
+            }
+            if (hBitmap != IntPtr.Zero)
+            {
+                DeleteObject(hBitmap);
+            }
+            if (screenDC != IntPtr.Zero)
+            {
+                ReleaseDC(IntPtr.Zero, screenDC);
+            }
+        }
     }
 
     public void Dispose()
@@ -399,6 +419,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
             ShowWindow(_hwnd, SW_HIDE);
             DestroyWindow(_hwnd);
         }
+        UnregisterClass(_className, GetModuleHandle(null));
     }
 
     private IntPtr CustomWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -525,4 +546,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool UnregisterClass(string lpClassName, IntPtr hInstance);
 }

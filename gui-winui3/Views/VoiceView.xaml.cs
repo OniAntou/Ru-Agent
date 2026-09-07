@@ -44,6 +44,10 @@ namespace RuApp.Views
         {
             _speedDebounceTimer?.Stop();
             _speedDebounceTimer = null;
+            if (_overlayService != null)
+            {
+                _overlayService.PositionChanged -= OnOverlayPositionChanged;
+            }
             _apiService = null;
             _voicePlayback = null;
             _overlayService = null;
@@ -52,8 +56,15 @@ namespace RuApp.Views
         private async Task LoadVoiceSettingsAsync()
         {
             if (_apiService == null) return;
-            var settings = await _apiService.GetSettingsAsync();
-            PopulateUi(settings);
+            try
+            {
+                var settings = await _apiService.GetSettingsAsync();
+                PopulateUi(settings);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VoiceView] Failed to load voice settings: {ex.Message}");
+            }
         }
 
         private void PopulateUi(AppSettingsDto? settings)
@@ -276,36 +287,43 @@ namespace RuApp.Views
         private async Task SaveVoiceSettingsAsync()
         {
             if (_apiService == null) return;
-            string label = (VoiceProfileComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Ru (OmniVoice)";
-            string subtitleSize = (SubtitleSizeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "medium";
-            string subtitleColor = (SubtitleColorCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "#FFFFFF";
-            double subtitleDuration = SubtitleDurationSlider.Value;
-
-            await _apiService.UpdateVoiceAsync(
-                label,
-                SpeedSlider.Value,
-                AutoPaceToggle.IsOn,
-                AutoReadToggle.IsOn,
-                SubtitleToggle.IsOn,
-                "original",
-                subtitleColor,
-                subtitleSize,
-                subtitleDuration,
-                _subtitlePosMode,
-                _subtitlePosX,
-                _subtitlePosY);
-
-            _overlayService?.ApplyCustomization(
-                subtitleColor,
-                subtitleSize,
-                subtitleDuration,
-                _subtitlePosMode,
-                _subtitlePosX,
-                _subtitlePosY);
-
-            if (_voicePlayback != null)
+            try
             {
-                await _voicePlayback.RefreshSettingsAsync();
+                string label = (VoiceProfileComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Ru (OmniVoice)";
+                string subtitleSize = (SubtitleSizeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "medium";
+                string subtitleColor = (SubtitleColorCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "#FFFFFF";
+                double subtitleDuration = SubtitleDurationSlider.Value;
+
+                await _apiService.UpdateVoiceAsync(
+                    label,
+                    SpeedSlider.Value,
+                    AutoPaceToggle.IsOn,
+                    AutoReadToggle.IsOn,
+                    SubtitleToggle.IsOn,
+                    "original",
+                    subtitleColor,
+                    subtitleSize,
+                    subtitleDuration,
+                    _subtitlePosMode,
+                    _subtitlePosX,
+                    _subtitlePosY);
+
+                _overlayService?.ApplyCustomization(
+                    subtitleColor,
+                    subtitleSize,
+                    subtitleDuration,
+                    _subtitlePosMode,
+                    _subtitlePosX,
+                    _subtitlePosY);
+
+                if (_voicePlayback != null)
+                {
+                    await _voicePlayback.RefreshSettingsAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VoiceView] Failed to save voice settings: {ex.Message}");
             }
         }
 

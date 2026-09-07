@@ -51,6 +51,8 @@ namespace RuApp
         private readonly UiThemePreferenceStore _themePreferenceStore = new();
         private Microsoft.UI.Windowing.AppWindow? _appWindow;
         private UiTheme _currentTheme = UiTheme.Light;
+        private bool _reconnecting;
+        private DispatcherTimer? _reconnectTimer;
 
         public static MainWindow? Instance { get; private set; }
 
@@ -280,6 +282,11 @@ namespace RuApp
                 _chatView.SessionOpened += (_, e) =>
                 {
                     SyncSidebarSelection(e.SessionId);
+                };
+                _chatView.SessionForked += async (_, forkedSession) =>
+                {
+                    await LoadSessionsAsync();
+                    SyncSidebarSelection(forkedSession.Id);
                 };
 
                 _voiceView = new VoiceView();
@@ -536,6 +543,10 @@ namespace RuApp
                 return;
             }
 
+            _providerCatalogController?.SetPollingActive(false);
+            _groupedCatalogs?.SetPollingActive(false);
+            _providerCatalogTimer?.Stop();
+
             ContentFrame.Content = tag switch
             {
                 "log" => _logView,
@@ -560,6 +571,99 @@ namespace RuApp
         }
 
 
+        private void ScheduleReconnect()
+        {
+            if (_closed || _reconnecting || _composition.IsHarness) return;
+            if (_reconnectTimer == null)
+            {
+                _reconnectTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                _reconnectTimer.Tick += async (_, __) => await TryReconnectBackendAsync();
+            }
+            if (!_reconnectTimer.IsEnabled)
+            {
+                _reconnectTimer.Start();
+            }
+        }
+
+        private async Task<bool> TryReconnectBackendAsync()
+        {
+            if (_closed || _reconnecting) return false;
+            _reconnecting = true;
+            try
+            {
+                string? projectRoot = _composition.IsHarness
+                    ? _composition.HarnessWorkspacePath ?? string.Empty
+                    : ResolveProjectRoot();
+                if (projectRoot == null) return false;
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+                var backendSession = await _backendProvider.StartAsync(projectRoot, cts.Token);
+                if (backendSession != null)
+                {
+                    _reconnectTimer?.Stop();
+                    await OnBackendReconnectedAsync(backendSession, projectRoot);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Reconnect attempt failed: {ex.Message}");
+            }
+            finally
+            {
+                _reconnecting = false;
+            }
+            return false;
+        }
+
+        private async Task OnBackendReconnectedAsync(BackendSession backendSession, string projectRoot)
+        {
+            var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
+            StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
+            StatusDot.Fill = successBrush;
+            DotBackend.Fill = successBrush;
+            TextBackend.Text = ".NET Backend: OK";
+            UpdateShellStatusTooltip();
+
+            _apiService?.Dispose();
+            _apiService = new ApiService(backendSession);
+            _apiService.SettingsSaved += OnSettingsSaved;
+
+            _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
+            _groupedCatalogs = new GroupedProviderCatalogController(new ProviderCatalogService(_apiService));
+            _providerCatalogController.SetPollingActive(true);
+            _groupedCatalogs.SetPollingActive(true);
+
+            _healthStatusService = new HealthStatusService(
+                _apiService,
+                () => _backendProvider.Session != null,
+                _composition.IsHarness);
+
+            _agentController?.Dispose();
+            _agentController = _composition.CreateAgentRunController(this.DispatcherQueue);
+
+            _chatView?.ReinitializeBackend(_apiService, _agentController, _providerCatalogController, _groupedCatalogs);
+            _settingsView?.Initialize(_apiService, _providerCatalogController);
+            _logView?.Initialize(_apiService);
+            _diagnosticsView?.Initialize(_apiService);
+
+            _sessionsTimer?.Start();
+            if (!_composition.IsHarness)
+            {
+                _observationTimer?.Start();
+            }
+            _providerCatalogTimer?.Start();
+
+            if (_sessionsRefreshController != null)
+            {
+                await _sessionsRefreshController.RefreshAsync();
+            }
+            if (_healthRefreshController != null)
+            {
+                await _healthRefreshController.RefreshAsync();
+            }
+        }
+
         private void OnBackendExited(object? sender, EventArgs e)
         {
             if (DispatcherQueue == null)
@@ -569,9 +673,13 @@ namespace RuApp
 
             DispatcherQueue.TryEnqueue(() =>
             {
+                _sessionsTimer?.Stop();
+                _observationTimer?.Stop();
+                _providerCatalogTimer?.Stop();
+
                 var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
-                StatusText.Text = $"{_backendProvider.DisplayName} Backend stopped.";
+                StatusText.Text = $"{_backendProvider.DisplayName} Backend stopped. Reconnecting...";
                 StatusDot.Fill = dangerBrush;
                 DotBackend.Fill = dangerBrush;
                 DotWorker.Fill = dangerBrush;
@@ -580,6 +688,11 @@ namespace RuApp
                 TextWorker.Text = "AI Worker: Stopped";
                 TextVts.Text = "VTS: Disconnected";
                 UpdateShellStatusTooltip();
+
+                if (!_closed && !_composition.IsHarness)
+                {
+                    ScheduleReconnect();
+                }
             });
         }
 
@@ -587,6 +700,8 @@ namespace RuApp
         {
             if (_closed) return;
             _closed = true;
+            _reconnectTimer?.Stop();
+            _reconnectTimer = null;
             _startup.Cancel();
             _sessionsTimer?.Stop();
             _providerCatalogTimer?.Stop();
@@ -687,6 +802,8 @@ namespace RuApp
                     existing.Title = incoming.Title;
                     existing.CreatedAt = incoming.CreatedAt;
                     existing.UpdatedAt = incoming.UpdatedAt;
+                    existing.ParentSessionId = incoming.ParentSessionId;
+                    existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
                     int currentIndex = Sessions.IndexOf(existing);
                     if (currentIndex != insertAt)
                     {
@@ -725,33 +842,10 @@ namespace RuApp
             }
         }
 
-        private async void OnSessionsTimerTick(object? sender, object e)
-        {
-            if (_apiService == null) return;
-            if (_sessionsRefreshController != null)
-            {
-                try { await _sessionsRefreshController.RefreshAsync(); } catch { }
-            }
-            else
-            {
-                try
-                {
-                    var result = await _apiService.GetSessionsAsync();
-                    if (result != null) ApplySessions(result);
-                }
-                catch { }
-            }
-
-            try
-            {
-                await UpdateHealthStatusAsync();
-            }
-            catch { }
-        }
 
         private async void OnObservationTimerTick(object? sender, object e)
         {
-            if (_apiService == null || _voicePlayback == null || _observationPollInFlight) return;
+            if (_apiService == null || _voicePlayback == null || _observationPollInFlight || _backendProvider.Session == null) return;
             _observationPollInFlight = true;
             try
             {
@@ -835,18 +929,30 @@ namespace RuApp
             {
                 StatusDot.Fill = dangerBrush;
                 StatusText.Text = "Could not connect to .NET Backend!";
-            }
-            else if (!workerOk)
-            {
-                StatusDot.Fill = warningBrush;
-                StatusText.Text = "AI Worker starting or not ready yet";
+                if (!_closed && !_composition.IsHarness && (_reconnectTimer == null || !_reconnectTimer.IsEnabled))
+                {
+                    ScheduleReconnect();
+                }
             }
             else
             {
-                StatusDot.Fill = successBrush;
-                StatusText.Text = _composition.IsHarness
-                    ? "Harness ready"
-                    : vtsConnected ? "System ready (Live2D connected)" : "System ready";
+                if (_reconnectTimer?.IsEnabled == true)
+                {
+                    _reconnectTimer.Stop();
+                }
+
+                if (!workerOk)
+                {
+                    StatusDot.Fill = warningBrush;
+                    StatusText.Text = "AI Worker starting or not ready yet";
+                }
+                else
+                {
+                    StatusDot.Fill = successBrush;
+                    StatusText.Text = _composition.IsHarness
+                        ? "Harness ready"
+                        : vtsConnected ? "System ready (Live2D connected)" : "System ready";
+                }
             }
 
             UpdateShellStatusTooltip();
@@ -907,9 +1013,32 @@ namespace RuApp
             }
         }
 
+        private async void OnForkSessionMenuClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement elem && elem.Tag is string sessionId && _apiService != null)
+            {
+                var targetSession = Sessions.FirstOrDefault(s => s.Id == sessionId);
+                var branchTitle = targetSession != null ? $"{targetSession.Title} (Branch)" : "New Branch";
+                var forked = await _apiService.ForkSessionAsync(sessionId, int.MaxValue, branchTitle);
+                if (forked != null)
+                {
+                    await LoadSessionsAsync();
+                    var newSession = Sessions.FirstOrDefault(s => s.Id == forked.Id);
+                    if (newSession != null)
+                    {
+                        SidebarSessionList.SelectedItem = newSession;
+                        if (_chatView != null)
+                        {
+                            await _chatView.OpenSessionAsync(newSession.Id, newSession.Title);
+                        }
+                    }
+                }
+            }
+        }
+
         private async void OnDeleteSessionClick(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.Tag is string sessionId && _apiService != null)
+            if (sender is FrameworkElement btn && btn.Tag is string sessionId && _apiService != null)
             {
                 if (ShellRoot.XamlRoot != null)
                 {
@@ -949,10 +1078,28 @@ namespace RuApp
                     return;
                 }
 
+                bool wasActive = string.Equals(_chatView?.CurrentSessionId, sessionId, StringComparison.OrdinalIgnoreCase);
+
                 await LoadSessionsAsync();
 
-                // Create new session if all sessions deleted
-                if (Sessions.Count == 0)
+                // If the deleted session was currently active, switch to another session or create a new one
+                if (wasActive)
+                {
+                    if (Sessions.Count > 0)
+                    {
+                        var first = Sessions[0];
+                        SidebarSessionList.SelectedItem = first;
+                        if (_chatView != null)
+                        {
+                            await _chatView.OpenSessionAsync(first.Id, first.Title);
+                        }
+                    }
+                    else
+                    {
+                        OnNewChatClick(this, new RoutedEventArgs());
+                    }
+                }
+                else if (Sessions.Count == 0)
                 {
                     OnNewChatClick(this, new RoutedEventArgs());
                 }

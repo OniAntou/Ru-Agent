@@ -150,19 +150,35 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:SessionInfo">
-                                    <Grid PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent">
+                                    <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneTime}"
+                                          PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent">
+                                        <Grid.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Text="Fork New Branch" Click="OnForkSessionMenuClick" Tag="{x:Bind Id}">
+                                                    <MenuFlyoutItem.Icon>
+                                                        <FontIcon Glyph="&#xE8D8;" />
+                                                    </MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutSeparator />
+                                                <MenuFlyoutItem Text="Delete Session" Click="OnDeleteSessionClick" Tag="{x:Bind Id}">
+                                                    <MenuFlyoutItem.Icon>
+                                                        <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}" />
+                                                    </MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                            </MenuFlyout>
+                                        </Grid.ContextFlyout>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE8BD;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <FontIcon Grid.Column="0" Glyph="{x:Bind IconGlyph, Mode=OneTime}" FontSize="12" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                                                    TextTrimming="CharacterEllipsis" 
                                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
                                                 Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
-                                                Tag="{x:Bind Id}" Opacity="0">
+                                                Tag="{x:Bind Id}" Opacity="0" ToolTipService.ToolTip="Delete session">
                                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
                                         </Button>
                                     </Grid>

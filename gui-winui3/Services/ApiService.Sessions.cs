@@ -96,9 +96,9 @@ namespace RuApp.Services
                         {
                             string role = item.TryGetProperty("role", out var roleProp) ? roleProp.GetString() ?? "" : "";
                             string content = item.TryGetProperty("content", out var contentProp) ? contentProp.GetString() ?? "" : "";
-                            if (role == "user" || role == "ai")
+                            if (role == "user" || role == "ai" || role == "assistant")
                             {
-                                list.Add((role == "ai" ? "assistant" : "user", content));
+                                list.Add((role == "user" ? "user" : "assistant", content));
                             }
                         }
                         return list;
@@ -133,6 +133,51 @@ namespace RuApp.Services
                 LogApiError("DeleteSessionAsync", ex);
                 return false;
             }
+        }
+
+        public async Task<SessionInfo?> ForkSessionAsync(string sessionId, int upToMessageIndex = int.MaxValue, string? title = null)
+        {
+            try
+            {
+                var payload = new { up_to_message_index = upToMessageIndex, title };
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/sessions/{sessionId}/fork", payload);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    if (result.TryGetProperty("status", out var status) && status.GetString() == "ok" &&
+                        result.TryGetProperty("session", out var sessObj))
+                    {
+                        var id = sessObj.GetProperty("id").GetString() ?? "";
+                        var t = sessObj.TryGetProperty("title", out var tp) ? tp.GetString() ?? "" : "";
+                        var parentId = sessObj.TryGetProperty("parent_session_id", out var pp) ? pp.GetString() : null;
+                        return new SessionInfo { Id = id, Title = t, ParentSessionId = parentId };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogApiError("ForkSessionAsync", ex);
+            }
+            return null;
+        }
+
+        public async Task<bool> RewindSessionAsync(string sessionId, int toMessageIndex)
+        {
+            try
+            {
+                var payload = new { to_message_index = toMessageIndex };
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/sessions/{sessionId}/rewind", payload);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    return result.TryGetProperty("status", out var status) && status.GetString() == "ok";
+                }
+            }
+            catch (Exception ex)
+            {
+                LogApiError("RewindSessionAsync", ex);
+            }
+            return false;
         }
     }
 }

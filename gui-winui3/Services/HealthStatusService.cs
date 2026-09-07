@@ -29,17 +29,22 @@ public sealed class HealthStatusService
 
     public async Task<HealthStatusSnapshot> GatherAsync(CancellationToken cancellationToken)
     {
-        bool backendRunning = _backendRunning();
+        bool backendConfigured = _backendRunning();
+        bool backendRunning = false;
         bool workerOk = false;
         string? workerError = null;
-        if (backendRunning)
+
+        if (backendConfigured)
         {
-            (workerOk, workerError) = await _apiService.CheckWorkerHealthAsync(cancellationToken);
+            var (alive, ok, error) = await _apiService.CheckHealthDetailedAsync(cancellationToken);
+            backendRunning = alive;
+            workerOk = ok;
+            workerError = error;
         }
 
         bool vtsSkipped = _isHarness || !workerOk;
         bool vtsConnected = false;
-        if (!vtsSkipped)
+        if (!vtsSkipped && backendRunning)
         {
             var vtsStatus = await _apiService.GetVtsStatusAsync(cancellationToken);
             vtsConnected = vtsStatus?.Connected == true;

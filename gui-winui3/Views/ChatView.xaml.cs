@@ -66,6 +66,9 @@ namespace RuApp.Views
         private HarnessEventSink? _harnessEvents;
         private string? _harnessScenario;
         private string _activeSessionId = "default";
+        public string CurrentSessionId => _activeSessionId;
+        private string _activeSessionTitle = "New Chat";
+        public event EventHandler<SessionInfo>? SessionForked;
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
@@ -297,6 +300,47 @@ namespace RuApp.Views
             Messages.CollectionChanged += (_, __) => UpdateContextUsage();
             PendingAttachments.CollectionChanged += (_, __) => UpdateContextUsage();
 
+            _ = LoadChatModelsAsync();
+        }
+
+        public void ReinitializeBackend(
+            ApiService apiService,
+            AgentRunController? agentController,
+            ProviderCatalogController? providerCatalogController,
+            GroupedProviderCatalogController? groupedProviderCatalogs)
+        {
+            _apiService = apiService;
+            if (_groupedCatalogs != null)
+            {
+                _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
+            }
+            if (_agentController != null)
+            {
+                _agentController.PropertyChanged -= OnAgentControllerChanged;
+                _agentController.ActivityReceived -= OnAgentActivityReceived;
+                _agentController.SummaryReceived -= OnAgentSummaryReceived;
+                _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
+                _agentController.UsageReceived -= OnAgentUsageReceived;
+            }
+
+            _agentController = agentController;
+            _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
+            _ownsProviderCatalogController = providerCatalogController == null;
+            _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));
+            _ownsGroupedCatalogs = groupedProviderCatalogs == null;
+            _groupedCatalogs.StateChanged += OnGroupedStateChanged;
+
+            if (_agentController != null)
+            {
+                _agentController.PropertyChanged += OnAgentControllerChanged;
+                _agentController.ActivityReceived += OnAgentActivityReceived;
+                _agentController.SummaryReceived += OnAgentSummaryReceived;
+                _agentController.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
+                _agentController.UsageReceived += OnAgentUsageReceived;
+            }
+
+            UpdateAgentComposerVisuals();
+            UpdateAgentInlineState();
             _ = LoadChatModelsAsync();
         }
 
@@ -904,12 +948,24 @@ namespace RuApp.Views
         {
             foreach (var message in Messages)
             {
-                message.AgentActivities = null;
+                if (ReferenceEquals(message.AgentActivities, AgentActivities))
+                {
+                    message.AgentActivities = null;
+                }
             }
         }
 
         private void StartNewAgentActivityRun()
         {
+            foreach (var message in Messages)
+            {
+                if (ReferenceEquals(message.AgentActivities, AgentActivities))
+                {
+                    message.AgentActivities = AgentActivities.Count > 0
+                        ? new ObservableCollection<AgentActivityItem>(AgentActivities)
+                        : null;
+                }
+            }
             ClearAgentActivities();
         }
 
@@ -1033,45 +1089,73 @@ namespace RuApp.Views
         {
             if (_sweepStoryboards.ContainsKey(textBlock)) return;
 
-            var mutedColor = ((SolidColorBrush)Application.Current.Resources["RuMutedBrush"]).Color;
             var inkColor = ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
+            var mutedColor = ((SolidColorBrush)Application.Current.Resources["RuMutedBrush"]).Color;
+
+            // Vibrant multi-stop color wave palette (Cyan -> Violet -> Rose -> Emerald)
+            var waveCyan = Windows.UI.Color.FromArgb(255, 56, 189, 248);    // #38BDF8 Sky/Cyan
+            var waveViolet = Windows.UI.Color.FromArgb(255, 168, 85, 247);  // #A855F7 Violet/Purple
+            var waveRose = Windows.UI.Color.FromArgb(255, 244, 114, 182);    // #F472B6 Pink/Rose
+            var waveEmerald = Windows.UI.Color.FromArgb(255, 52, 211, 153);  // #34D399 Emerald
 
             var brush = new LinearGradientBrush
             {
                 StartPoint = new Point(0, 0.5),
                 EndPoint = new Point(1, 0.5),
             };
-            var inkStop = new GradientStop { Color = inkColor, Offset = 0 };
-            var mutedStop = new GradientStop { Color = mutedColor, Offset = 0 };
-            brush.GradientStops.Add(inkStop);
-            brush.GradientStops.Add(mutedStop);
+
+            var stopBaseLeft = new GradientStop { Color = mutedColor, Offset = -0.6 };
+            var stopCyan = new GradientStop { Color = waveCyan, Offset = -0.45 };
+            var stopViolet = new GradientStop { Color = waveViolet, Offset = -0.3 };
+            var stopRose = new GradientStop { Color = waveRose, Offset = -0.15 };
+            var stopEmerald = new GradientStop { Color = waveEmerald, Offset = 0.0 };
+            var stopBaseRight = new GradientStop { Color = inkColor, Offset = 0.15 };
+
+            brush.GradientStops.Add(stopBaseLeft);
+            brush.GradientStops.Add(stopCyan);
+            brush.GradientStops.Add(stopViolet);
+            brush.GradientStops.Add(stopRose);
+            brush.GradientStops.Add(stopEmerald);
+            brush.GradientStops.Add(stopBaseRight);
+
             textBlock.Foreground = brush;
 
-            var easing = new CubicEase { EasingMode = EasingMode.EaseInOut };
-            var inkAnim = new DoubleAnimation
-            {
-                From = -0.2,
-                To = 1.2,
-                Duration = new Duration(TimeSpan.FromMilliseconds(1200)),
-                RepeatBehavior = RepeatBehavior.Forever,
-                EasingFunction = easing,
-            };
-            var mutedAnim = new DoubleAnimation
-            {
-                From = -0.2,
-                To = 1.2,
-                Duration = new Duration(TimeSpan.FromMilliseconds(1200)),
-                RepeatBehavior = RepeatBehavior.Forever,
-                EasingFunction = easing,
-            };
-            Storyboard.SetTarget(inkAnim, inkStop);
-            Storyboard.SetTargetProperty(inkAnim, "Offset");
-            Storyboard.SetTarget(mutedAnim, mutedStop);
-            Storyboard.SetTargetProperty(mutedAnim, "Offset");
+            var duration = new Duration(TimeSpan.FromMilliseconds(2000));
+            var easing = new SineEase { EasingMode = EasingMode.EaseInOut };
+
+            var animBaseLeft = new DoubleAnimation { From = -0.6, To = 1.0, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
+            var animCyan = new DoubleAnimation { From = -0.45, To = 1.15, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
+            var animViolet = new DoubleAnimation { From = -0.3, To = 1.3, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
+            var animRose = new DoubleAnimation { From = -0.15, To = 1.45, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
+            var animEmerald = new DoubleAnimation { From = 0.0, To = 1.6, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
+            var animBaseRight = new DoubleAnimation { From = 0.15, To = 1.75, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
+
+            Storyboard.SetTarget(animBaseLeft, stopBaseLeft);
+            Storyboard.SetTargetProperty(animBaseLeft, "Offset");
+
+            Storyboard.SetTarget(animCyan, stopCyan);
+            Storyboard.SetTargetProperty(animCyan, "Offset");
+
+            Storyboard.SetTarget(animViolet, stopViolet);
+            Storyboard.SetTargetProperty(animViolet, "Offset");
+
+            Storyboard.SetTarget(animRose, stopRose);
+            Storyboard.SetTargetProperty(animRose, "Offset");
+
+            Storyboard.SetTarget(animEmerald, stopEmerald);
+            Storyboard.SetTargetProperty(animEmerald, "Offset");
+
+            Storyboard.SetTarget(animBaseRight, stopBaseRight);
+            Storyboard.SetTargetProperty(animBaseRight, "Offset");
 
             var sb = new Storyboard();
-            sb.Children.Add(inkAnim);
-            sb.Children.Add(mutedAnim);
+            sb.Children.Add(animBaseLeft);
+            sb.Children.Add(animCyan);
+            sb.Children.Add(animViolet);
+            sb.Children.Add(animRose);
+            sb.Children.Add(animEmerald);
+            sb.Children.Add(animBaseRight);
+
             _sweepStoryboards[textBlock] = sb;
             sb.Begin();
         }
@@ -1851,6 +1935,7 @@ namespace RuApp.Views
                 SessionId = _activeSessionId,
             };
             _activeAgentAssistantMessage.AgentActivities = AgentActivities;
+            Messages.Add(_activeAgentAssistantMessage);
 
             if (source == AgentTurnSource.Voice)
             {
@@ -1892,6 +1977,14 @@ namespace RuApp.Views
             string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
             string fallbackText = latestAssistant
                 ?? StripDisplayMarkers(placeholder?.Content ?? string.Empty);
+            if (latestAssistant is null
+                && !_activeAgentReplyReceived
+                && placeholder is not null
+                && string.IsNullOrWhiteSpace(placeholder.Content)
+                && Messages.Contains(placeholder))
+            {
+                Messages.Remove(placeholder);
+            }
             if (_activeAgentTurnSource == AgentTurnSource.Voice)
             {
                 _harnessEvents?.Write("voice.reply.received");
@@ -1971,7 +2064,13 @@ namespace RuApp.Views
 
             if (_activeAgentAssistantMessage is not null)
             {
-                _activeAgentAssistantMessage.IsStreaming = false;
+                var abandonedMessage = _activeAgentAssistantMessage;
+                abandonedMessage.IsStreaming = false;
+                if (string.IsNullOrWhiteSpace(abandonedMessage.Content)
+                    && Messages.Contains(abandonedMessage))
+                {
+                    Messages.Remove(abandonedMessage);
+                }
             }
 
             _activeAgentAssistantMessage = null;
@@ -2230,19 +2329,45 @@ namespace RuApp.Views
                     return;
                 }
 
+                var existingActivities = Messages
+                    .Where(m => m.Role == "assistant")
+                    .Select(m => m.AgentActivities != null && !ReferenceEquals(m.AgentActivities, AgentActivities)
+                        ? m.AgentActivities
+                        : (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
+                            ? new ObservableCollection<AgentActivityItem>(AgentActivities)
+                            : null))
+                    .ToList();
+
                 DetachAgentActivitiesFromMessages();
                 Messages.Clear();
+                int assistantCount = 0;
                 int lastAssistantIndex = history.FindLastIndex(
                     item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
                 for (int index = 0; index < history.Count; index++)
                 {
                     var (role, content) = history[index];
+                    ObservableCollection<AgentActivityItem>? activities = null;
+                    if (role == "assistant")
+                    {
+                        if (index == lastAssistantIndex)
+                        {
+                            activities = AgentActivities.Count > 0
+                                ? new ObservableCollection<AgentActivityItem>(AgentActivities)
+                                : (assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null);
+                        }
+                        else if (assistantCount < existingActivities.Count)
+                        {
+                            activities = existingActivities[assistantCount];
+                        }
+                        assistantCount++;
+                    }
+
                     Messages.Add(new ChatMessageItem
                     {
                         Role = role,
                         Content = role == "assistant" ? StripDisplayMarkers(content) : content,
                         Usage = index == lastAssistantIndex ? _activeAgentUsage : null,
-                        AgentActivities = index == lastAssistantIndex ? AgentActivities : null
+                        AgentActivities = activities
                     });
                 }
 
@@ -2470,6 +2595,7 @@ namespace RuApp.Views
                 // misleading "workspace busy" error.
                 await StopActiveAgentAsync(force: true);
                 _activeSessionId = sessionId;
+                _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 DetachAgentActivitiesFromMessages();
@@ -2638,6 +2764,76 @@ namespace RuApp.Views
             AutomationProperties.SetName(
                 MicButton,
                 active ? "Stop voice conversation" : "Start voice conversation");
+        }
+
+
+        private void OnCopyMessageContentClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement element && element.Tag is ChatMessageItem msg && !string.IsNullOrEmpty(msg.Content))
+            {
+                try
+                {
+                    var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                    package.SetText(msg.Content);
+                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error copying content: {ex.Message}");
+                }
+            }
+        }
+
+        private async void OnForkFromMessageClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService == null) return;
+            if (sender is FrameworkElement element && element.Tag is ChatMessageItem msg)
+            {
+                int index = Messages.IndexOf(msg);
+                if (index < 0) return;
+
+                try
+                {
+                    var branchTitle = $"{_activeSessionTitle} (Nhánh @ {index + 1})";
+                    var forked = await _apiService.ForkSessionAsync(_activeSessionId, index, branchTitle);
+                    if (forked != null)
+                    {
+                        SessionForked?.Invoke(this, forked);
+                        await OpenSessionAsync(forked.Id, forked.Title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error forking session: {ex.Message}");
+                }
+            }
+        }
+
+        private async void OnRewindToMessageClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService == null) return;
+            if (sender is FrameworkElement element && element.Tag is ChatMessageItem msg)
+            {
+                int index = Messages.IndexOf(msg);
+                if (index < 0) return;
+
+                try
+                {
+                    var ok = await _apiService.RewindSessionAsync(_activeSessionId, index);
+                    if (ok)
+                    {
+                        while (Messages.Count > index + 1)
+                        {
+                            Messages.RemoveAt(Messages.Count - 1);
+                        }
+                        ScrollChatToBottom();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error rewinding session: {ex.Message}");
+                }
+            }
         }
 
         public void Dispose()

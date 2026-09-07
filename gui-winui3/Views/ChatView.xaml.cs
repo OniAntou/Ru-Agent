@@ -851,6 +851,22 @@ namespace RuApp.Views
             {
                 _activeAgentAssistantMessage.Usage = usage.Usage;
             }
+            else
+            {
+                // The turn already completed and history was reloaded before the
+                // usage payload arrived. Patch the last assistant bubble that was
+                // rendered without usage so the footer does not go missing.
+                for (int index = Messages.Count - 1; index >= 0; index--)
+                {
+                    var item = Messages[index];
+                    if (string.Equals(item.Role, "assistant", StringComparison.Ordinal)
+                        && item.Usage is null)
+                    {
+                        item.Usage = usage.Usage;
+                        break;
+                    }
+                }
+            }
         }
 
         private void ApplyReplySnapshot(AgentReplySnapshot snapshot)

@@ -271,11 +271,12 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         var input = ReadOptionalInt(usage["prompt_tokens"]);
         var output = ReadOptionalInt(usage["completion_tokens"]);
         var total = ReadOptionalInt(usage["total_tokens"]);
-        var cached = usage["prompt_tokens_details"] is JsonObject details
-            ? ReadOptionalInt(details["cached_tokens"])
-            : usage.ContainsKey("prompt_tokens_details")
-                ? throw new ModelProviderException("malformed_payload", retryable: false)
-                : null;
+        var detailsNode = usage["prompt_tokens_details"];
+        var cached = detailsNode is null || detailsNode.GetValueKind() == JsonValueKind.Null
+            ? null
+            : detailsNode is JsonObject details
+                ? ReadOptionalInt(details["cached_tokens"])
+                : throw new ModelProviderException("malformed_payload", retryable: false);
         if (input is null && output is null && total is null && cached is null)
             return null;
         return new ModelUsage(input, output, total, cached, null);

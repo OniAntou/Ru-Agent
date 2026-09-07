@@ -83,6 +83,27 @@ public sealed class OpenAiCompatibleModelProviderTests
         Assert.Equal(3, usage.CacheReadInputTokens);
     }
 
+    [Fact]
+    public async Task GenerateAsync_treats_null_prompt_tokens_details_as_absent()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":5,\"total_tokens\":17,\"prompt_tokens_details\":null}}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.NotNull(deltas[0].Usage);
+        var usage = deltas[0].Usage!;
+        Assert.Equal(12, usage.InputTokens);
+        Assert.Null(usage.CacheReadInputTokens);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "auth_failed", false)]
     [InlineData(HttpStatusCode.Forbidden, "forbidden", false)]

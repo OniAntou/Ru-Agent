@@ -430,17 +430,34 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         if (string.Equals(model.EventType, "model.usage_recorded", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(model.PayloadRef))
         {
+            CancellationToken fetchToken;
+            try
+            {
+                fetchToken = _subscriptionCts?.Token ?? CancellationToken.None;
+            }
+            catch (ObjectDisposedException)
+            {
+                fetchToken = CancellationToken.None;
+            }
+
             try
             {
                 var payload = await _client
-                    .GetPayloadAsync(model.RunId, model.PayloadRef, CancellationToken.None)
+                    .GetPayloadAsync(model.RunId, model.PayloadRef, fetchToken)
                     .ConfigureAwait(false);
                 usage = AgentModelUsage.Parse(payload.Content);
             }
-            catch
+            catch (OperationCanceledException)
+            {
+                // Subscription torn down; usage stays null for this event.
+            }
+            catch (Exception exception)
             {
                 // Usage is observational. A payload fetch failure must not stop the
-                // durable run stream or alter the assistant reply.
+                // durable run stream or alter the assistant reply. Log the failure
+                // type only (no identifiers or payload content) for diagnostics.
+                System.Diagnostics.Debug.WriteLine(
+                    $"Agent usage payload fetch failed: {exception.GetType().Name}");
             }
         }
 

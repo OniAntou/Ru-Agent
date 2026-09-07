@@ -331,8 +331,18 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                     ModelUsage? usage = null;
                     if (payload["usage"] is JsonNode usageNode)
                     {
-                        using var usageDocument = JsonDocument.Parse(usageNode.ToJsonString());
-                        usage = ModelUsage.Read(usageDocument.RootElement);
+                        try
+                        {
+                            using var usageDocument = JsonDocument.Parse(usageNode.ToJsonString());
+                            usage = ModelUsage.Read(usageDocument.RootElement);
+                        }
+                        catch (Exception exception) when (exception is
+                            JsonException
+                            or InvalidDataException
+                            or ArgumentException)
+                        {
+                            throw new WorkerProtocolException("invalid_step");
+                        }
                     }
                     finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0, usage);
                     try

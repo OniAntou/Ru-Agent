@@ -149,6 +149,26 @@ public sealed class OpenAiResponsesModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_treats_null_input_tokens_details_as_absent()
+    {
+        var sse = SseEventRaw("response.completed",
+            "{\"type\":\"response.completed\",\"response\":{\"model\":\"test-model\",\"status\":\"completed\"," +
+            "\"usage\":{\"input_tokens\":12,\"output_tokens\":5,\"total_tokens\":17,\"input_tokens_details\":null}}}");
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+
+        Assert.NotNull(deltas[^1].Usage);
+        var usage = deltas[^1].Usage!;
+        Assert.Equal(12, usage.InputTokens);
+        Assert.Null(usage.CacheReadInputTokens);
+    }
+
+    [Fact]
     public async Task GenerateAsync_rejects_model_mismatch_as_malformed_payload()
     {
         var sse = SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "other-model", ["status"] = "completed" } });

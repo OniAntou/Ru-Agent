@@ -70,10 +70,12 @@ def _acquire_single_instance() -> bool:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parent.parent
-MODEL_CACHE = REPOSITORY_ROOT / "models" / "omnivoice"
-REFERENCE_AUDIO = PROJECT_ROOT / "tyc_talk.wav"
-REFERENCE_TEXT = PROJECT_ROOT / "reference_text.txt"
-AI_VY_AUDIO = REPOSITORY_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"
+# Paths below keep repo defaults but honor explicit environment overrides so
+# tests/staging can relocate assets without editing source.
+MODEL_CACHE = Path(os.environ.get("RU_OMNIVOICE_MODEL_CACHE", "") or (REPOSITORY_ROOT / "models" / "omnivoice"))
+REFERENCE_AUDIO = Path(os.environ.get("RU_OMNIVOICE_REFERENCE_AUDIO", "") or (PROJECT_ROOT / "tyc_talk.wav"))
+REFERENCE_TEXT = Path(os.environ.get("RU_OMNIVOICE_REFERENCE_TEXT", "") or (PROJECT_ROOT / "reference_text.txt"))
+AI_VY_AUDIO = Path(os.environ.get("RU_OMNIVOICE_AI_VY_AUDIO", "") or (REPOSITORY_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"))
 AI_VY_TEXT = (
     "việt nam đang kiêu hãnh bước vào kỷ nguyên vươn mình rực rỡ với khát vọng "
     "mãnh liệt, trí tuệ đổi mới và tinh thần đoàn kết đất nước, tự tin bứt phá, "

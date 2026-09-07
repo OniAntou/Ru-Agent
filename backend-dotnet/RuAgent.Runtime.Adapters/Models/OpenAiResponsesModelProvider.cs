@@ -190,11 +190,12 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
         var input = ReadOptionalInt(usage["input_tokens"]);
         var output = ReadOptionalInt(usage["output_tokens"]);
         var total = ReadOptionalInt(usage["total_tokens"]);
-        var cached = usage["input_tokens_details"] is JsonObject details
-            ? ReadOptionalInt(details["cached_tokens"])
-            : usage.ContainsKey("input_tokens_details")
-                ? throw new ModelProviderException("malformed_payload", false)
-                : null;
+        var detailsNode = usage["input_tokens_details"];
+        var cached = detailsNode is null || detailsNode.GetValueKind() == JsonValueKind.Null
+            ? null
+            : detailsNode is JsonObject details
+                ? ReadOptionalInt(details["cached_tokens"])
+                : throw new ModelProviderException("malformed_payload", false);
         if (input is null && output is null && total is null && cached is null)
             return null;
         return new ModelUsage(input, output, total, cached, null);

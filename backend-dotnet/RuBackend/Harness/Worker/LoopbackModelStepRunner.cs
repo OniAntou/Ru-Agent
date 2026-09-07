@@ -328,7 +328,13 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                     };
 
                     // Enforce one-step constraint: at most one tool call (checked in AssistantStep)
-                    finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0);
+                    ModelUsage? usage = null;
+                    if (payload["usage"] is JsonNode usageNode)
+                    {
+                        using var usageDocument = JsonDocument.Parse(usageNode.ToJsonString());
+                        usage = ModelUsage.Read(usageDocument.RootElement);
+                    }
+                    finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0, usage);
                     try
                     {
                         finalReceipt = WorkerV2PromptCodec.ReadReceipt(
@@ -375,7 +381,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         // Ensure exactly one final step was received.
         return new ModelStepResult(
             finalStep,
-            finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"));
+            finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"),
+            finalStep.Usage);
         }
         finally
         {

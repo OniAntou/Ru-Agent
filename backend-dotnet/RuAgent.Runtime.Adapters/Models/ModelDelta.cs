@@ -1,12 +1,15 @@
 namespace RuAgent.Runtime.Adapters.Models;
 
+using RuAgent.Harness.Core;
+
 public sealed record ModelDelta
 {
     public ModelDelta(
         string? text,
         IReadOnlyList<ModelToolFragment> toolFragments,
         bool completed,
-        string? finishReason)
+        string? finishReason,
+        ModelUsage? usage = null)
     {
         if (text is not null && (text.Length > 64 * 1024 || text.Contains('\0')))
         {
@@ -28,6 +31,7 @@ public sealed record ModelDelta
         ToolFragments = toolFragments.ToArray();
         Completed = completed;
         FinishReason = finishReason;
+        Usage = usage;
     }
 
     public string? Text { get; }
@@ -37,4 +41,6 @@ public sealed record ModelDelta
     public bool Completed { get; }
 
     public string? FinishReason { get; }
+
+    public ModelUsage? Usage { get; }
 }

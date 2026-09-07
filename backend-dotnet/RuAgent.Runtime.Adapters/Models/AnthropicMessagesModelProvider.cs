@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
@@ -39,6 +40,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                 string? stopReason = null;
                 int? blockIndex = null;
                 string blockType = string.Empty;
+                ModelUsage? usage = null;
 
                 await foreach (var evt in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
@@ -71,6 +73,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                                 ?? throw new ModelProviderException("malformed_payload", false);
                             var model = ReadString(messageData["model"]);
                             if (model is null || model != request.Model) throw new ModelProviderException("malformed_payload", false);
+                            usage = ReadUsage(messageData["usage"]);
                             var content = ReadArray(messageData["content"]);
                             if (content is not null)
                                 foreach (var block in content)
@@ -138,6 +141,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                             if (reason is null) throw new ModelProviderException("malformed_payload", false);
                             if (reason == "tool_use") throw new ModelProviderException("malformed_payload", false);
                             if (reason is not ("end_turn" or "stop_sequence" or "max_tokens")) throw new ModelProviderException("malformed_payload", false);
+                            usage = MergeUsage(usage, ReadUsage(data["usage"]));
                             stopReason = reason == "max_tokens" ? "length" : "stop";
                             phase = Phase.GotDelta;
                             break;
@@ -145,7 +149,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                         case "message_stop":
                         {
                             if (phase != Phase.GotDelta) throw new ModelProviderException("malformed_payload", false);
-                            yield return new ModelDelta(null, [], true, stopReason ?? "stop");
+                            yield return new ModelDelta(null, [], true, stopReason ?? "stop", usage);
                             yield break;
                         }
                         case "error":
@@ -181,6 +185,43 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
         if (node is null) return null;
         if (node is JsonValue value && value.TryGetValue<int>(out var number)) return number;
         throw new ModelProviderException("malformed_payload", false);
+    }
+
+    private static ModelUsage? ReadUsage(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+            return null;
+        if (node is not JsonObject usage)
+            throw new ModelProviderException("malformed_payload", false);
+
+        var input = ReadOptionalInt(usage["input_tokens"]);
+        var output = ReadOptionalInt(usage["output_tokens"]);
+        var cacheRead = ReadOptionalInt(usage["cache_read_input_tokens"]);
+        var cacheWrite = ReadOptionalInt(usage["cache_creation_input_tokens"]);
+        if (input is null && output is null && cacheRead is null && cacheWrite is null)
+            return null;
+        return new ModelUsage(input, output, null, cacheRead, cacheWrite);
+    }
+
+    private static int? ReadOptionalInt(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+            return null;
+        if (node is JsonValue value && value.TryGetValue<int>(out var count) && count >= 0)
+            return count;
+        throw new ModelProviderException("malformed_payload", false);
+    }
+
+    private static ModelUsage? MergeUsage(ModelUsage? first, ModelUsage? second)
+    {
+        if (first is null) return second;
+        if (second is null) return first;
+        return new ModelUsage(
+            second.InputTokens ?? first.InputTokens,
+            second.OutputTokens ?? first.OutputTokens,
+            second.TotalTokens ?? first.TotalTokens,
+            second.CacheReadInputTokens ?? first.CacheReadInputTokens,
+            second.CacheWriteInputTokens ?? first.CacheWriteInputTokens);
     }
 
     private static JsonObject? ReadObject(JsonNode? node)

@@ -716,9 +716,14 @@ public static class WorkerV2Contracts
 
     public static void ValidateStepDone(JsonObject payload)
     {
-        if (payload.Count != 4 || !payload.ContainsKey("text") || !payload.ContainsKey("tool_calls") || !payload.ContainsKey("finish_reason") || !payload.ContainsKey("prompt_receipt"))
+        if (payload.Count is < 4 or > 5 || !payload.ContainsKey("text") || !payload.ContainsKey("tool_calls") || !payload.ContainsKey("finish_reason") || !payload.ContainsKey("prompt_receipt"))
         {
             throw new AgentProtocolException("invalid_step");
+        }
+
+        if (payload.ContainsKey("usage"))
+        {
+            ValidateUsage(payload["usage"]);
         }
 
         if (payload["prompt_receipt"] is not JsonObject promptReceipt)
@@ -814,6 +819,28 @@ public static class WorkerV2Contracts
             // In our earlier check, hasText false means text is null or empty; but spec says tool call step cannot contain visible text (null allowed). However payload definition requires text field to be null when tool_calls present.
             // The fixture has "text": null when tool_calls present, so that's allowed. So only fail if text is non-null string.
             // Already handled: if callsCount>0 and textNode not null and textNode is string with non-null, we threw. If it's Json null, it's ok.
+        }
+    }
+
+    private static void ValidateUsage(JsonNode? usageNode)
+    {
+        if (usageNode is not JsonObject usage || usage.Count is < 1 or > 5)
+        {
+            throw new AgentProtocolException("invalid_step");
+        }
+
+        var allowed = new HashSet<string>(["input_tokens", "output_tokens", "total_tokens", "cache_read_input_tokens", "cache_write_input_tokens"], StringComparer.Ordinal);
+        if (!usage.Select(pair => pair.Key).All(allowed.Contains))
+        {
+            throw new AgentProtocolException("invalid_step");
+        }
+
+        foreach (var value in usage.Select(pair => pair.Value))
+        {
+            if (value is not JsonValue number || !number.TryGetValue<int>(out var count) || count < 0)
+            {
+                throw new AgentProtocolException("invalid_step");
+            }
         }
     }
 

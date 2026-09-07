@@ -114,6 +114,41 @@ public sealed class OpenAiResponsesModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_preserves_usage_from_completed_response()
+    {
+        var completed = new JsonObject
+        {
+            ["type"] = "response.completed",
+            ["response"] = new JsonObject
+            {
+                ["model"] = "test-model",
+                ["status"] = "completed",
+                ["usage"] = new JsonObject
+                {
+                    ["input_tokens"] = 12,
+                    ["output_tokens"] = 5,
+                    ["total_tokens"] = 17,
+                    ["input_tokens_details"] = new JsonObject { ["cached_tokens"] = 3 }
+                }
+            }
+        };
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SseEvent("response.completed", completed), Encoding.UTF8, "text/event-stream")
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+
+        Assert.NotNull(deltas[^1].Usage);
+        var usage = deltas[^1].Usage!;
+        Assert.Equal(12, usage.InputTokens);
+        Assert.Equal(5, usage.OutputTokens);
+        Assert.Equal(17, usage.TotalTokens);
+        Assert.Equal(3, usage.CacheReadInputTokens);
+    }
+
+    [Fact]
     public async Task GenerateAsync_rejects_model_mismatch_as_malformed_payload()
     {
         var sse = SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "other-model", ["status"] = "completed" } });

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
@@ -84,9 +85,22 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                         throw new ModelProviderException("malformed_payload", retryable: false, error);
                     }
 
-                    if (data["choices"] is not JsonArray choices || choices.Count == 0
-                        || choices[0] is not JsonObject choice
-                        || choice["delta"] is not JsonObject delta)
+                    var usage = ReadUsage(data["usage"]);
+                    if (data["choices"] is not JsonArray choices)
+                    {
+                        throw new ModelProviderException("malformed_payload", retryable: false);
+                    }
+
+                    if (choices.Count == 0)
+                    {
+                        if (usage is not null)
+                        {
+                            yield return new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, usage);
+                        }
+                        continue;
+                    }
+
+                    if (choices[0] is not JsonObject choice || choice["delta"] is not JsonObject delta)
                     {
                         throw new ModelProviderException("malformed_payload", retryable: false);
                     }
@@ -100,7 +114,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                     }
 
                     var completed = finishReason is not null;
-                    yield return new ModelDelta(text, fragments, completed, finishReason);
+                    yield return new ModelDelta(text, fragments, completed, finishReason, usage);
                     if (completed)
                     {
                         yield break;
@@ -156,6 +170,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             ["model"] = request.Model,
             ["messages"] = messages,
             ["stream"] = true,
+            ["stream_options"] = new JsonObject { ["include_usage"] = true },
         };
         foreach (var property in request.Settings)
         {
@@ -163,7 +178,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             // managed Agent asks the model for a single JSON selection through
             // its composed prompt; provider-native function calling is not part
             // of this adapter contract.
-            if (property.Key is not ("model" or "messages" or "stream" or "model_tools"))
+            if (property.Key is not ("model" or "messages" or "stream" or "stream_options" or "model_tools"))
             {
                 body[property.Key] = property.Value?.DeepClone();
             }
@@ -243,6 +258,35 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             return text;
         }
 
+        throw new ModelProviderException("malformed_payload", retryable: false);
+    }
+
+    private static ModelUsage? ReadUsage(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+            return null;
+        if (node is not JsonObject usage)
+            throw new ModelProviderException("malformed_payload", retryable: false);
+
+        var input = ReadOptionalInt(usage["prompt_tokens"]);
+        var output = ReadOptionalInt(usage["completion_tokens"]);
+        var total = ReadOptionalInt(usage["total_tokens"]);
+        var cached = usage["prompt_tokens_details"] is JsonObject details
+            ? ReadOptionalInt(details["cached_tokens"])
+            : usage.ContainsKey("prompt_tokens_details")
+                ? throw new ModelProviderException("malformed_payload", retryable: false)
+                : null;
+        if (input is null && output is null && total is null && cached is null)
+            return null;
+        return new ModelUsage(input, output, total, cached, null);
+    }
+
+    private static int? ReadOptionalInt(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+            return null;
+        if (node is JsonValue value && value.TryGetValue<int>(out var count) && count >= 0)
+            return count;
         throw new ModelProviderException("malformed_payload", retryable: false);
     }
 

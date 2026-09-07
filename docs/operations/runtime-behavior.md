@@ -43,6 +43,20 @@ cannot update a newer bubble. A disconnect marks the active run as a bounded
 retryable connection error; Ru does not automatically replay an ambiguous
 request and risk duplicate history.
 
+### Token usage accounting
+
+Opening Ru does not call a model, so startup alone has no provider token usage.
+For an actual model step, adapters preserve provider-reported input, output,
+total, cache-read, and cache-write counts through the private Worker v2 done
+envelope. The Host persists those counts as a `ModelUsage` payload alongside a
+final reply and inside an `AssistantStep` for tool turns. The payload is a
+sidecar record for authenticated telemetry consumers; the current chat bubble
+can fetch it from the durable `model.usage_recorded` event, although the
+current chat bubble does not render token counts yet. A missing `usage`
+object means the provider did not report counts; it is not converted to zero.
+Numeric zero remains an exact provider value. `estimated_input_tokens` is kept
+for backward compatibility and remains an estimate, not a billing record.
+
 The managed C# Worker v1 protocol is the default runtime/device adapter
 boundary for runtime load/request, voice/STT, VTS, observation, and health.
 Agent generation uses the same process through the managed v2 step protocol. The two

@@ -144,6 +144,7 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
         HarnessEventKind.ReconciliationResolved => "reconciliation.resolved",
         HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
         HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
+        HarnessEventKind.ModelUsageRecorded => "model.usage_recorded",
         HarnessEventKind.ContextCompacted => "context.compacted",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };

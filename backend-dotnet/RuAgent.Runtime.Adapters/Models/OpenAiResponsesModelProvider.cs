@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
@@ -63,9 +64,10 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                         if (model is null || model != request.Model) throw new ModelProviderException("malformed_payload", false);
                         var status = ReadString(responseData["status"]);
                         if (status is null) throw new ModelProviderException("malformed_payload", false);
+                        var usage = ReadUsage(responseData["usage"]);
                         if (status == "completed")
                         {
-                            terminal = new ModelDelta(null, [], true, "stop");
+                            terminal = new ModelDelta(null, [], true, "stop", usage);
                             continue;
                         }
                         if (status == "incomplete")
@@ -74,7 +76,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                             var reason = ReadString(incompleteDetails?["reason"]);
                             if (reason == "max_output_tokens")
                             {
-                                terminal = new ModelDelta(null, [], true, "length");
+                                terminal = new ModelDelta(null, [], true, "length", usage);
                                 continue;
                             }
                             throw new ModelProviderException("malformed_payload", false);
@@ -175,6 +177,35 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
     {
         if (node is null) return null;
         if (node is JsonObject value) return value;
+        throw new ModelProviderException("malformed_payload", false);
+    }
+
+    private static ModelUsage? ReadUsage(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+            return null;
+        if (node is not JsonObject usage)
+            throw new ModelProviderException("malformed_payload", false);
+
+        var input = ReadOptionalInt(usage["input_tokens"]);
+        var output = ReadOptionalInt(usage["output_tokens"]);
+        var total = ReadOptionalInt(usage["total_tokens"]);
+        var cached = usage["input_tokens_details"] is JsonObject details
+            ? ReadOptionalInt(details["cached_tokens"])
+            : usage.ContainsKey("input_tokens_details")
+                ? throw new ModelProviderException("malformed_payload", false)
+                : null;
+        if (input is null && output is null && total is null && cached is null)
+            return null;
+        return new ModelUsage(input, output, total, cached, null);
+    }
+
+    private static int? ReadOptionalInt(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+            return null;
+        if (node is JsonValue value && value.TryGetValue<int>(out var count) && count >= 0)
+            return count;
         throw new ModelProviderException("malformed_payload", false);
     }
 

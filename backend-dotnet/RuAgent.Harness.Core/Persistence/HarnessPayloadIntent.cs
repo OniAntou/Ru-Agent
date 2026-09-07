@@ -14,6 +14,7 @@ public enum HarnessPayloadKind
     ModelContextSummary,
     PromptReceipt,
     UserImage = 11,
+    ModelUsage = 12,
 }
 
 [Flags]

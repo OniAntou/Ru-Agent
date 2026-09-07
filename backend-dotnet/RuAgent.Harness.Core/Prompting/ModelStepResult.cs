@@ -2,13 +2,16 @@ namespace RuAgent.Harness.Core.Prompting;
 
 public sealed record ModelStepResult
 {
-    public ModelStepResult(AssistantStep step, SystemPromptReceipt promptReceipt)
+    public ModelStepResult(AssistantStep step, SystemPromptReceipt promptReceipt, ModelUsage? usage = null)
     {
         Step = step ?? throw new ArgumentNullException(nameof(step));
         PromptReceipt = promptReceipt ?? throw new ArgumentNullException(nameof(promptReceipt));
+        Usage = usage;
     }
 
     public AssistantStep Step { get; }
 
     public SystemPromptReceipt PromptReceipt { get; }
+
+    public ModelUsage? Usage { get; }
 }

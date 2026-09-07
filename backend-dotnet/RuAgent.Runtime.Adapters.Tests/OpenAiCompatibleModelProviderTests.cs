@@ -32,6 +32,7 @@ public sealed class OpenAiCompatibleModelProviderTests
             Assert.True(JsonNode.DeepEquals(pair.Value, body[pair.Key]));
         Assert.False(body.ContainsKey("temperature"));
         Assert.False(body.ContainsKey("max_tokens"));
+        Assert.True(body["stream_options"]!["include_usage"]!.GetValue<bool>());
     }
 
     [Fact]
@@ -57,6 +58,29 @@ public sealed class OpenAiCompatibleModelProviderTests
         Assert.True(deltas[^1].Completed);
         Assert.DoesNotContain("README.md", deltas[1].Text ?? string.Empty, StringComparison.Ordinal);
         Assert.Contains("Bearer provider-secret", handler.Request.Headers.GetValues("Authorization"));
+    }
+
+    [Fact]
+    public async Task GenerateAsync_preserves_provider_usage_from_terminal_stream_chunk()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":5,\"total_tokens\":17,\"prompt_tokens_details\":{\"cached_tokens\":3}}}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.NotNull(deltas[0].Usage);
+        var usage = deltas[0].Usage!;
+        Assert.Equal(12, usage.InputTokens);
+        Assert.Equal(5, usage.OutputTokens);
+        Assert.Equal(17, usage.TotalTokens);
+        Assert.Equal(3, usage.CacheReadInputTokens);
     }
 
     [Theory]

@@ -91,6 +91,28 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Final_reply_persists_provider_usage_with_the_assistant_step()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("done", new ModelUsage(12, 5, 17, 3, null)));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var commit = Assert.Single(store.Commits, item => item.ConversationOutbox.Count == 1);
+        var payload = Assert.Single(commit.Payloads, item => item.Kind == HarnessPayloadKind.ModelUsage);
+        var usageEvent = Assert.Single(commit.Events, item => item.Kind == HarnessEventKind.ModelUsageRecorded);
+        Assert.Equal(payload.PayloadId, usageEvent.PayloadId);
+        using var document = JsonDocument.Parse(payload.Plaintext);
+        Assert.Equal(12, document.RootElement.GetProperty("input_tokens").GetInt32());
+        Assert.Equal(5, document.RootElement.GetProperty("output_tokens").GetInt32());
+        Assert.Equal(17, document.RootElement.GetProperty("total_tokens").GetInt32());
+        Assert.Equal(3, document.RootElement.GetProperty("cache_read_input_tokens").GetInt32());
+    }
+
+    [Fact]
     public async Task Final_reply_policy_failure_prevents_final_commit()
     {
         var model = new FakeModelStepRunner();
@@ -693,8 +715,8 @@ public sealed class AgentRunCoordinatorTests
         return enumerator.Current;
     }
 
-    private static AssistantStep FinalStep(string text) =>
-        new(text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 16);
+    private static AssistantStep FinalStep(string text, ModelUsage? usage = null) =>
+        new(text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 16, usage);
 
     private static AssistantStep ToolStep(int callCount = 1, string? path = null) =>
         new(

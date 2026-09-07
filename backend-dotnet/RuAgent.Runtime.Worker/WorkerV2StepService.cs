@@ -13,7 +13,8 @@ public sealed record WorkerV2StepResult(
     string? Text,
     IReadOnlyList<ModelToolCall> ToolCalls,
     string FinishReason,
-    SystemPromptReceipt PromptReceipt);
+    SystemPromptReceipt PromptReceipt,
+    ModelUsage? Usage);
 
 public sealed class WorkerV2StepException : Exception
 {
@@ -137,6 +138,7 @@ public sealed class WorkerV2StepService
             var text = new StringBuilder();
             var toolFragments = new List<ModelToolFragment>();
             string? finishReason = null;
+            ModelUsage? usage = null;
             IModelProvider provider;
             try { provider = _providers.Resolve(providerBootstrap.Protocol); }
             catch (ArgumentException ex) { throw new WorkerV2StepException("provider_bootstrap_invalid", false, ex); }
@@ -167,6 +169,11 @@ public sealed class WorkerV2StepService
                         finishReason = delta.FinishReason;
                     }
 
+                    if (delta.Usage is not null)
+                    {
+                        usage = delta.Usage;
+                    }
+
                     if (delta.Completed)
                     {
                         break;
@@ -190,7 +197,7 @@ public sealed class WorkerV2StepService
                 await holdback.ReleaseAsync().ConfigureAwait(false);
             }
 
-            return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt);
+            return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage);
         }
         catch (OperationCanceledException)
         {

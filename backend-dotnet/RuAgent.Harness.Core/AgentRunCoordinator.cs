@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
@@ -290,6 +291,15 @@ public sealed class AgentRunCoordinator
             payloadId: promptReceiptPayload.PayloadId,
             safeCode: "composed");
         var step = modelResult.Step;
+        if (step.Usage is null && modelResult.Usage is not null)
+        {
+            step = new AssistantStep(
+                step.Text,
+                step.ToolCalls,
+                step.FinishReason,
+                step.EstimatedInputTokens,
+                modelResult.Usage);
+        }
         assistantStream.Complete();
         AgentActivityProjector.PublishSafe(
             _activitySink,
@@ -1043,6 +1053,20 @@ public sealed class AgentRunCoordinator
             HarnessPayloadEncoding.Utf8Text,
             Math.Max(bytes.Length, 1),
             bytes);
+        var payloads = new List<HarnessPayloadIntent> { promptReceiptPayload, payload };
+        PayloadId? usagePayloadId = null;
+        if (step.Usage is not null)
+        {
+            var usageBytes = SerializeUsage(step.Usage);
+            usagePayloadId = _ids.NewPayloadId();
+            payloads.Add(new HarnessPayloadIntent(
+                usagePayloadId.Value,
+                HarnessPayloadKind.ModelUsage,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                Math.Max(usageBytes.Length, 1),
+                usageBytes));
+        }
         var events = new List<HarnessEventIntent>
         {
             promptComposedEvent,
@@ -1052,6 +1076,15 @@ public sealed class AgentRunCoordinator
                 modelStepId: modelStepId,
                 payloadId: payloadId),
         };
+        if (usagePayloadId is { } usageId)
+        {
+            events.Add(new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelUsageRecorded,
+                modelStepId: modelStepId,
+                payloadId: usageId,
+                safeCode: "reported"));
+        }
         if (droppedCount > 0)
         {
             events.Add(new HarnessEventIntent(
@@ -1072,7 +1105,7 @@ public sealed class AgentRunCoordinator
                 run,
                 next,
                 events,
-                new[] { promptReceiptPayload, payload },
+                payloads,
                 new[]
                 {
                     new ConversationOutboxIntent(
@@ -1101,6 +1134,17 @@ public sealed class AgentRunCoordinator
                     safeCode: "reply_effect_failed"));
         }
         return new AgentRunStepResult(run, Array.Empty<ToolExecutionReceipt>());
+    }
+
+    private static byte[] SerializeUsage(ModelUsage usage)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            usage.WriteTo(writer);
+        }
+
+        return stream.ToArray();
     }
 
     private static ValueTask PublishAssistantDelta(

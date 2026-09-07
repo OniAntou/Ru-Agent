@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
+using RuAgent.Harness.Core;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -247,18 +248,24 @@ public sealed class WorkerV2Server
                 });
             }
 
+            var donePayload = new JsonObject
+            {
+                ["text"] = result.Text,
+                ["tool_calls"] = toolCalls,
+                ["finish_reason"] = result.FinishReason,
+                ["prompt_receipt"] = WorkerV2PromptCodec.WriteReceipt(result.PromptReceipt),
+            };
+            if (result.Usage is not null)
+            {
+                donePayload["usage"] = UsageJson(result.Usage);
+            }
+
             await SendAsync(socket, sendLock, new WorkerV2Envelope(
                 WorkerV2Contracts.ProtocolVersion,
                 envelope.Id,
                 WorkerV2Contracts.AgentStepDone,
                 nextSequence(envelope.Id),
-                new JsonObject
-                {
-                    ["text"] = result.Text,
-                    ["tool_calls"] = toolCalls,
-                    ["finish_reason"] = result.FinishReason,
-                    ["prompt_receipt"] = WorkerV2PromptCodec.WriteReceipt(result.PromptReceipt),
-                }), CancellationToken.None).ConfigureAwait(false);
+                donePayload), CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -296,6 +303,17 @@ public sealed class WorkerV2Server
                 ["code"] = code,
                 ["retryable"] = retryable,
             }), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static JsonObject UsageJson(ModelUsage usage)
+    {
+        var json = new JsonObject();
+        if (usage.InputTokens is { } input) json["input_tokens"] = input;
+        if (usage.OutputTokens is { } output) json["output_tokens"] = output;
+        if (usage.TotalTokens is { } total) json["total_tokens"] = total;
+        if (usage.CacheReadInputTokens is { } read) json["cache_read_input_tokens"] = read;
+        if (usage.CacheWriteInputTokens is { } write) json["cache_write_input_tokens"] = write;
+        return json;
     }
 
     private static async Task SendAsync(WebSocket socket, SemaphoreSlim sendLock, WorkerV2Envelope envelope, CancellationToken cancellationToken)

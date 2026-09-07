@@ -74,7 +74,8 @@ public sealed record AssistantStep
         string? text,
         IReadOnlyList<ModelToolCall> toolCalls,
         AssistantFinishReason finishReason,
-        int estimatedInputTokens)
+        int estimatedInputTokens,
+        ModelUsage? usage = null)
     {
         ArgumentNullException.ThrowIfNull(toolCalls);
         if (text is { Length: > 1_000_000 })
@@ -109,6 +110,7 @@ public sealed record AssistantStep
         ToolCalls = new ReadOnlyCollection<ModelToolCall>(calls);
         FinishReason = finishReason;
         EstimatedInputTokens = estimatedInputTokens;
+        Usage = usage;
     }
 
     public string? Text { get; }
@@ -118,4 +120,6 @@ public sealed record AssistantStep
     public AssistantFinishReason FinishReason { get; }
 
     public int EstimatedInputTokens { get; }
+
+    public ModelUsage? Usage { get; }
 }

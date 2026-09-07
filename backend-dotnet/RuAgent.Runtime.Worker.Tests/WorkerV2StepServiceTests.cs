@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
@@ -24,6 +25,23 @@ public sealed class WorkerV2StepServiceTests
         Assert.Equal("stop", result.FinishReason);
         Assert.Equal("1.0.0", result.PromptReceipt.ComposerVersion);
         Assert.Equal("## ru.persona", provider.Requests[0].SystemPrompt[..13]);
+    }
+
+    [Fact]
+    public async Task Step_service_returns_provider_usage_without_synthesizing_missing_counts()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("ok", Array.Empty<ModelToolFragment>(), true, "stop",
+                new ModelUsage(12, 5, 17, 3, null)));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(), CancellationToken.None);
+
+        Assert.NotNull(result.Usage);
+        Assert.Equal(12, result.Usage!.InputTokens);
+        Assert.Equal(5, result.Usage.OutputTokens);
+        Assert.Equal(17, result.Usage.TotalTokens);
+        Assert.Equal(3, result.Usage.CacheReadInputTokens);
+        Assert.Null(result.Usage.CacheWriteInputTokens);
     }
 
     [Fact]

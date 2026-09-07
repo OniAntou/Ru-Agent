@@ -148,6 +148,12 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["tool_calls"] = new JsonArray(),
                     ["finish_reason"] = "stop",
                     ["prompt_receipt"] = PromptReceiptJson(),
+                    ["usage"] = new JsonObject
+                    {
+                        ["input_tokens"] = 12,
+                        ["output_tokens"] = 5,
+                        ["total_tokens"] = 17
+                    },
                 },
             };
             await SendTextAsync(socket, done.ToJsonString());
@@ -166,6 +172,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal("Hello world", step.Step.Text);
         Assert.Empty(step.Step.ToolCalls);
         Assert.Equal(AssistantFinishReason.Stop, step.Step.FinishReason);
+        Assert.Equal(12, step.Usage!.InputTokens);
+        Assert.Equal(5, step.Usage.OutputTokens);
+        Assert.Equal(17, step.Usage.TotalTokens);
         Assert.Equal(2, deltas.Count);
         Assert.Equal("Hello ", deltas[0]);
         Assert.Equal("world", deltas[1]);

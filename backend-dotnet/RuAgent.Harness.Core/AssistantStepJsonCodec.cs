@@ -44,6 +44,11 @@ public static class AssistantStepJsonCodec
             writer.WriteEndArray();
             writer.WriteString("finish_reason", FinishReason(step.FinishReason));
             writer.WriteNumber("estimated_input_tokens", step.EstimatedInputTokens);
+            if (step.Usage is not null)
+            {
+                writer.WritePropertyName("usage");
+                step.Usage.WriteTo(writer);
+            }
             writer.WriteEndObject();
         }
 
@@ -72,6 +77,12 @@ public static class AssistantStepJsonCodec
                     call.GetProperty("tool_version").GetString()!,
                     call.GetProperty("arguments")))
                 .ToArray();
+            ModelUsage? usage = null;
+            if (root.TryGetProperty("usage", out var usageElement))
+            {
+                usage = ModelUsage.Read(usageElement);
+            }
+
             return new AssistantStep(
                 root.TryGetProperty("text", out var text)
                     && text.ValueKind != JsonValueKind.Null
@@ -79,10 +90,12 @@ public static class AssistantStepJsonCodec
                         : null,
                 calls,
                 ParseFinishReason(root.GetProperty("finish_reason").GetString()),
-                root.GetProperty("estimated_input_tokens").GetInt32());
+                root.GetProperty("estimated_input_tokens").GetInt32(),
+                usage);
         }
         catch (Exception exception) when (exception is
             JsonException
+            or InvalidDataException
             or InvalidOperationException
             or KeyNotFoundException
             or ArgumentException)

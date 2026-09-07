@@ -123,6 +123,11 @@ public sealed record ModelContextSnapshot
         writer.WriteEndArray();
         writer.WriteString("finish_reason", FinishReasonName(step.FinishReason));
         writer.WriteNumber("estimated_input_tokens", step.EstimatedInputTokens);
+        if (step.Usage is not null)
+        {
+            writer.WritePropertyName("usage");
+            step.Usage.WriteTo(writer);
+        }
     }
 
     private static void WriteToolResult(

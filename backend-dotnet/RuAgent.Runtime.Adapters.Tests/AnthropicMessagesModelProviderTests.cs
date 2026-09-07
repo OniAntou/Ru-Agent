@@ -131,6 +131,51 @@ public sealed class AnthropicMessagesModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_preserves_usage_from_message_delta()
+    {
+        var messageStart = Sse("message_start", new JsonObject
+        {
+            ["type"] = "message_start",
+            ["message"] = new JsonObject
+            {
+                ["model"] = "test-model",
+                ["content"] = new JsonArray(),
+                ["usage"] = new JsonObject
+                {
+                    ["input_tokens"] = 12,
+                    ["cache_read_input_tokens"] = 3
+                }
+            }
+        });
+        var usageDelta = Sse("message_delta", new JsonObject
+        {
+            ["type"] = "message_delta",
+            ["delta"] = new JsonObject { ["stop_reason"] = "end_turn" },
+            ["usage"] = new JsonObject
+            {
+                ["output_tokens"] = 5,
+                ["cache_creation_input_tokens"] = 2
+            }
+        });
+        var lifecycle = messageStart + ContentBlockStart() + ContentBlockDeltaText(0, "ok") +
+            ContentBlockStop() + usageDelta + MessageStop();
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(lifecycle, Encoding.UTF8, "text/event-stream")
+        });
+        var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
+
+        Assert.NotNull(deltas[^1].Usage);
+        var usage = deltas[^1].Usage!;
+        Assert.Equal(12, usage.InputTokens);
+        Assert.Equal(5, usage.OutputTokens);
+        Assert.Equal(3, usage.CacheReadInputTokens);
+        Assert.Equal(2, usage.CacheWriteInputTokens);
+    }
+
+    [Fact]
     public async Task GenerateAsync_ignores_ping()
     {
         var sse = MessageStart() + Ping() + ContentBlockStart() + ContentBlockDeltaText(0, "hi") + ContentBlockStop() + MessageDelta() + MessageStop();

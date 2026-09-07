@@ -1,0 +1,763 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Approval;
+using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Reconciliation;
+using RuAgent.Harness.Core.Workspace;
+using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Policy;
+using RuAgent.Harness.Persistence.Privacy;
+using RuAgent.Harness.Persistence.Workspace;
+using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
+using RuBackend.Agent;
+using RuBackend.Business.Sessions;
+using RuBackend.Business.Settings;
+using RuBackend.Harness.Policy;
+using RuBackend.Harness.Workspace;
+using RuBackend.Providers;
+using RuAgent.Runtime.Adapters.Models;
+
+namespace RuBackend.Harness;
+
+public sealed partial class AgentV1Service
+{
+    // Host-side one-time approval ledger for HTTP approvals (first-writer wins).
+    // Entries are only a retry guard; the durable approval event/run state remains
+    // authoritative. Expire old entries so a host that processes many approvals
+    // cannot retain an unbounded amount of memory until restart.
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
+    private static readonly TimeSpan HostApprovalLedgerTtl = TimeSpan.FromMinutes(30);
+
+    internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
+
+    private static void PruneHostApprovalLedger(DateTimeOffset now)
+    {
+        // Pruning on every approval would add avoidable contention to the normal
+        // path. Once the bounded retry ledger grows, remove entries older than the
+        // same TTL used by pending approval requests.
+        if (HostApprovalLedger.Count < 1024)
+        {
+            return;
+        }
+
+        var cutoff = now - HostApprovalLedgerTtl;
+        foreach (var entry in HostApprovalLedger)
+        {
+            if (entry.Value <= cutoff)
+            {
+                HostApprovalLedger.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
+            }
+        }
+    }
+
+    public async Task<AgentServiceResult> HandleApprovalAsync(string runIdRaw, string approvalIdRaw, JsonElement? body, CancellationToken cancellationToken)
+    {
+        if (!IsRunId(runIdRaw))
+        {
+            return BoundedError(400, "invalid_run_id", "run_id invalid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(approvalIdRaw) || approvalIdRaw.Length > 128)
+        {
+            return BoundedError(400, "invalid_approval_id", "approval_id invalid.");
+        }
+
+        // Parse scope/decision from body
+        string? scopeRaw = null;
+        string? decisionRaw = null;
+        string? commandRaw = null;
+        if (body.HasValue && body.Value.ValueKind == JsonValueKind.Object)
+        {
+            if (body.Value.TryGetProperty("scope", out var scopeProp) && scopeProp.ValueKind == JsonValueKind.String)
+            {
+                scopeRaw = scopeProp.GetString();
+            }
+
+            if (body.Value.TryGetProperty("decision", out var decProp) && decProp.ValueKind == JsonValueKind.String)
+            {
+                decisionRaw = decProp.GetString();
+            }
+
+            if (body.Value.TryGetProperty("command", out var cmdProp) && cmdProp.ValueKind == JsonValueKind.String)
+            {
+                commandRaw = cmdProp.GetString();
+            }
+            else if (body.Value.TryGetProperty("approved", out var apprProp) && apprProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                commandRaw = apprProp.GetBoolean() ? "allow_once" : "deny";
+            }
+
+            // Also support scope-based command via scope field directly (takes precedence over decision)
+            if (scopeRaw is not null && string.IsNullOrWhiteSpace(commandRaw))
+            {
+                // scope alone implies allow with that scope, unless decision is deny
+                if (decisionRaw is not null && decisionRaw.Trim().Equals("deny", StringComparison.OrdinalIgnoreCase))
+                {
+                    commandRaw = "deny";
+                }
+                else
+                {
+                    commandRaw = scopeRaw.Trim().ToLowerInvariant() switch
+                    {
+                        "once" => "allow_once",
+                        "run" => "allow_run",
+                        "project" => "allow_project",
+                        "global" => "global",
+                        _ => null
+                    };
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(commandRaw) && decisionRaw is not null)
+            {
+                commandRaw = decisionRaw.Trim().Equals("allow", StringComparison.OrdinalIgnoreCase)
+                    ? "allow_once"
+                    : decisionRaw;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(commandRaw) && string.IsNullOrWhiteSpace(scopeRaw))
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval command is required.");
+        }
+
+        if (scopeRaw is not null
+            && scopeRaw.Trim().ToLowerInvariant() is not ("once" or "run" or "project" or "global"))
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval scope is invalid.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(scopeRaw) && scopeRaw!.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
+        {
+            return BoundedError(403, "approval_cannot_create_global", "Approval cannot create global rule.");
+        }
+
+        if (commandRaw is not null && commandRaw.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
+        {
+            return BoundedError(403, "approval_cannot_create_global", "Approval cannot create global rule.");
+        }
+
+        commandRaw = (commandRaw ?? "allow_once").Trim().ToLowerInvariant();
+        bool isDeny = commandRaw is "deny" or "reject";
+        bool isAllowRun = commandRaw is "allow_run" or "allowrun";
+        bool isAllowProject = commandRaw is "allow_project" or "allowproject";
+        var isAllowOnce = commandRaw is "allow_once" or "allowonce" or "once";
+        if (!isDeny && !isAllowRun && !isAllowProject && !isAllowOnce)
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval command is invalid.");
+        }
+
+        var runId = new RunId(runIdRaw);
+        var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return BoundedError(404, "run_not_found", "Run not found.");
+        }
+
+        // A durable approval request is consumable only while the run is still
+        // waiting for that approval.  Relying solely on an in-memory ledger would
+        // allow a replay after a host restart to resolve an already-used request.
+        if (run.State != HarnessRunState.WaitingApproval)
+        {
+            return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
+        }
+
+        // The approval ID must correspond to a persisted approval.requested event for this
+        // run while it is actually waiting; fabricated or mismatched IDs are rejected as
+        // approval_stale. This check is authoritative and survives process restarts because
+        // the event stream is durable. HostApprovalLedger below is only the atomic
+        // first-writer-wins guard for HTTP retries.
+        ApprovalId? latestPendingId = null;
+        HarnessEvent? pendingApprovalEvent = null;
+        var proposedEvents = new Dictionary<string, HarnessEvent>(StringComparer.Ordinal);
+        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            if (envelope.Event.Kind == "tool.proposed"
+                && envelope.Event.ToolCallId is { } proposedToolCall)
+            {
+                proposedEvents[proposedToolCall.Value] = envelope.Event;
+            }
+            else if (envelope.Event.Kind == "approval.requested"
+                && envelope.Event.ApprovalId is { } id)
+            {
+                latestPendingId = id;
+                pendingApprovalEvent = envelope.Event;
+            }
+        }
+
+        if (latestPendingId is null || !string.Equals(latestPendingId.Value.Value, approvalIdRaw, StringComparison.Ordinal))
+        {
+            return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
+        }
+
+        if (pendingApprovalEvent is null
+            || _time.UtcNow - pendingApprovalEvent.OccurredAt > TimeSpan.FromMinutes(30))
+        {
+            return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
+        }
+
+        ToolApprovalBinding? approvalBinding = null;
+        if (pendingApprovalEvent?.ToolCallId is { } pendingToolCallId
+            && proposedEvents.TryGetValue(pendingToolCallId.Value, out var proposedEvent)
+            && proposedEvent.PayloadId is { } proposalPayloadId)
+        {
+            approvalBinding = await BuildApprovalBindingAsync(
+                    run,
+                    pendingToolCallId,
+                    proposalPayloadId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (approvalBinding is null)
+        {
+            return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
+        }
+
+        // Session-scoped approvals (external directory + terminal risk) are
+        // authorized by the Broker only; run/project/global persistence scopes
+        // are rejected here instead of creating durable rules.
+        var isSessionScopedApproval = IsSessionScopedApprovalKind(pendingApprovalEvent?.SafeCode);
+        var scopeNorm = scopeRaw?.Trim().ToLowerInvariant();
+        if (isSessionScopedApproval
+            && (scopeNorm is "run" or "project" or "global"
+                || commandRaw is "allow_run" or "allowrun" or "allow_project" or "allowproject"))
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval scope is not supported for session-scoped approvals.");
+        }
+
+        // One-time consumption: first writer wins. The durable checks above prevent
+        // a replay after restart; this ledger only closes the concurrent HTTP race.
+
+        var key = $"{runIdRaw}|{approvalIdRaw}";
+        var ledgerNow = _time.UtcNow;
+        PruneHostApprovalLedger(ledgerNow);
+        if (!HostApprovalLedger.TryAdd(key, ledgerNow))
+        {
+            return BoundedError(409, "approval_stale", "approval already consumed");
+        }
+
+        if (isDeny)
+        {
+            var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Fail);
+            if (!denyTransition.Accepted)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                return BoundedError(409, denyTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
+            }
+
+            var denyNow = _time.UtcNow;
+            var deniedRun = AdvanceRun(
+                run,
+                denyTransition.Next,
+                run.BudgetWindow,
+                run.ModelStepsInWindow,
+                run.ToolCallsInWindow,
+                1,
+                denyNow,
+                terminalErrorCode: "approval_denied");
+            var denyEvt = new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.RunFailed,
+                safeCode: "approval_denied");
+            var denyCommit = new HarnessCommit(runId, run.Version, deniedRun, new[] { denyEvt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+            HarnessCommitResult denyResult;
+            try
+            {
+                denyResult = await _store.CommitAsync(denyCommit, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                throw;
+            }
+            if (denyResult.Outcome != HarnessCommitOutcome.Committed)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                return BoundedError(409, "commit_conflict", "Commit conflict.");
+            }
+
+            // Best-effort cross-system cleanup: the Broker pending approval expires
+            // on its own, so a failed cleanup must not fail the durable denial.
+            if (_brokerGateways is { IsConfigured: true })
+            {
+                try
+                {
+                    await _brokerGateways.RespondApprovalAsync(
+                        runIdRaw,
+                        approvalIdRaw,
+                        "deny",
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (ToolTransportException)
+                {
+                }
+            }
+
+            return new AgentServiceResult(200, new
+            {
+                approval_id = approvalIdRaw,
+                status = "denied",
+                error_code = "approval_denied",
+                safe_summary = "approval denied",
+                run_state = MapRunState(denyResult.Run!.Status),
+            });
+        }
+
+        bool ruleSaveFailed = false;
+        string? ruleId = null;
+        string? brokerAuthorizationToken = null;
+        var externalDirectoryRequested = string.Equals(
+            pendingApprovalEvent?.SafeCode,
+            "external_directory_required",
+            StringComparison.Ordinal);
+        string? externalDirectory = isAllowRun || isAllowProject
+            ? TryGetExternalDirectory(run, approvalBinding, externalDirectoryRequested)
+            : null;
+        // The Broker is the execution authority: without consuming its pending
+        // approval first there is no way for the resumed step to execute, so a
+        // failed bridge fails closed while the run is still waiting.
+        if (_brokerGateways is { IsConfigured: true })
+        {
+            // The Broker command follows the pending kind, never the caller's
+            // scope: external folders become a session grant, terminal risk
+            // stays a one-time token.
+            var brokerCommand = string.Equals(pendingApprovalEvent?.SafeCode, "external_directory_required", StringComparison.Ordinal)
+                ? "allow_session_directory"
+                : isAllowRun ? "allow_run" : isAllowProject ? "allow_project" : "allow_once";
+            bool bridged;
+            try
+            {
+                (bridged, brokerAuthorizationToken) = await _brokerGateways
+                    .RespondApprovalAsync(runIdRaw, approvalIdRaw, brokerCommand, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (ToolTransportException)
+            {
+                bridged = false;
+            }
+
+            if (!bridged)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                return BoundedError(
+                    409,
+                    "approval_stale",
+                    "Approval could not be authorized by the execution authority.");
+            }
+        }
+
+        // Durable rule creation applies only to legacy policy-rule approvals.
+        // Session-scoped approvals reuse the Broker grant or one-time token.
+        if ((isAllowRun || isAllowProject) && !isSessionScopedApproval)
+        {
+            try
+            {
+                var cmd = isAllowRun ? RuAgent.Harness.Core.Approval.ApprovalCommand.AllowRun : RuAgent.Harness.Core.Approval.ApprovalCommand.AllowProject;
+                var approvalService = new HarnessApprovalService(_options, _keyStore, _ids, _time);
+                var outcome = await approvalService.ProcessAsync(
+                    approvalBinding,
+                    cmd,
+                    run.WorkspaceId,
+                    runId,
+                    cancellationToken,
+                    externalDirectory,
+                    externalDirectoryRequested).ConfigureAwait(false);
+                ruleSaveFailed = outcome.RuleSaveFailed;
+                ruleId = outcome.RuleId;
+            }
+            catch (OperationCanceledException)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                throw;
+            }
+            catch
+            {
+                ruleSaveFailed = true;
+            }
+        }
+
+        var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
+        if (!allowTransition.Accepted)
+        {
+            HostApprovalLedger.TryRemove(key, out _);
+            return BoundedError(409, allowTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
+        }
+
+        var allowNow = _time.UtcNow;
+        var nextRun = AdvanceRun(run, allowTransition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, allowNow);
+        var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved");
+        var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+        HarnessCommitResult commitResult;
+        try
+        {
+            commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            HostApprovalLedger.TryRemove(key, out _);
+            throw;
+        }
+        if (commitResult.Outcome != HarnessCommitOutcome.Committed)
+        {
+            HostApprovalLedger.TryRemove(key, out _);
+            return BoundedError(409, "commit_conflict", "Commit conflict.");
+        }
+
+        // Bind the process-local allow-once bridge to the exact tool/version/
+        // argument hash that produced this approval. The resumed model step may
+        // allocate a new provider call id, but it must re-emit this same intent.
+        _approvalGrants?.GrantNext(runId.Value, approvalBinding.IntentHash);
+        if (externalDirectory is not null)
+        {
+            try
+            {
+                // The durable project rule covers future runs. The process-local
+                // directory grant is needed immediately because the active run's
+                // policy snapshot is intentionally immutable.
+                _approvalGrants?.GrantExternalDirectory(runId.Value, externalDirectory);
+            }
+            catch (Exception error) when (error is ArgumentException or DirectoryNotFoundException)
+            {
+                // A directory can disappear between approval binding and grant
+                // registration. Keep the run fail-closed; its next proposal will
+                // request approval again rather than turning this into a 500.
+            }
+        }
+
+        var matcherPreview = new
+        {
+            tool_id = approvalBinding.ToolId,
+            tool_version = approvalBinding.ToolVersion,
+            canonical_path = approvalBinding.CanonicalPath,
+            resolved_executable = approvalBinding.ResolvedExecutable,
+            argv_pattern = approvalBinding.Argv,
+            cwd_pattern = approvalBinding.Cwd,
+            operation_class = approvalBinding.OperationClass,
+            network_intent = approvalBinding.NetworkIntent,
+            scope = isAllowRun ? "run" : isAllowProject ? "project" : "once"
+        };
+
+        var resultBody = new
+        {
+            approval_id = approvalIdRaw,
+            status = "authorized",
+            authorization_token = brokerAuthorizationToken
+                ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+            expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
+            matcher_preview = matcherPreview,
+            rule_saved = !ruleSaveFailed && (isAllowRun || isAllowProject),
+            reusable_rule_not_saved = ruleSaveFailed,
+            rule_id = ruleId,
+            safe_summary = "approval authorized",
+            run_state = MapRunState(commitResult.Run!.Status),
+        };
+
+        return new AgentServiceResult(200, resultBody);
+    }
+
+    private static bool IsSessionScopedApprovalKind(string? safeCode) => safeCode is
+        "external_directory_required"
+        or "terminal_delete_requires_approval"
+        or "terminal_unknown_executable";
+
+    private IHarnessKeyStore GetKeyStore() => _keyStore;
+
+    private async Task<ToolApprovalBinding?> BuildApprovalBindingAsync(
+        AgentRun run,
+        ToolCallId toolCallId,
+        PayloadId payloadId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var payload = await _payloadStore
+                .ReadForClientAsync(run.RunId, payloadId, cancellationToken)
+                .ConfigureAwait(false);
+            using var document = JsonDocument.Parse(payload.Plaintext);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("tool_id", out var toolIdNode)
+                || toolIdNode.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("tool_version", out var versionNode)
+                || versionNode.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("arguments", out var arguments)
+                || arguments.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var toolId = ReadString(root, "tool_id", ApprovalToolIdMaxLength);
+            var toolVersion = ReadString(root, "tool_version", ApprovalToolVersionMaxLength);
+            if (toolId is null || toolVersion is null)
+            {
+                return null;
+            }
+
+            var canonicalPath = ReadString(arguments, "path", ApprovalPathMaxLength);
+            var requestedExecutable = ReadString(arguments, "executable", ApprovalExecutableMaxLength);
+            var shellRuntime = ReadString(arguments, "shell", 32) ?? "powershell";
+            var argv = ReadStringArray(arguments, "arguments");
+            if (string.Equals(toolId, "terminal.shell", StringComparison.Ordinal))
+            {
+                if (!string.Equals(shellRuntime, "powershell", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(shellRuntime, "pwsh", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                var script = ReadString(arguments, "script", ApprovalScriptMaxLength);
+                if (script is null)
+                {
+                    return null;
+                }
+
+                requestedExecutable = shellRuntime;
+                argv = ["-NoProfile", "-NonInteractive", "-Command", script];
+            }
+            else if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal)
+                && requestedExecutable is null)
+            {
+                return null;
+            }
+
+            if (toolId is "files.read" or "files.write" or "files.edit" or "files.delete"
+                && canonicalPath is null)
+            {
+                return null;
+            }
+
+            var cwd = ReadString(arguments, "working_directory", ApprovalCwdMaxLength);
+            if (toolId is "terminal.run" or "terminal.shell")
+            {
+                if (_runtimeRoots is null || !_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
+                    || string.IsNullOrWhiteSpace(rootPath))
+                {
+                    return null;
+                }
+
+                var trustedRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(rootPath);
+                var requestedCwd = cwd ?? ".";
+                var candidateCwd = Path.IsPathRooted(requestedCwd)
+                    ? Path.GetFullPath(requestedCwd)
+                    : Path.GetFullPath(Path.Combine(trustedRoot, requestedCwd));
+                if (!Directory.Exists(candidateCwd))
+                {
+                    return null;
+                }
+
+                // The gateway stores the final directory identity in its policy
+                // context. Resolve the same identity here so a reusable approval
+                // cannot be silently bound to a lexical path or a retargeted link.
+                cwd = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(candidateCwd);
+            }
+
+            var operationClass = toolId switch
+            {
+                "files.list" => "list",
+                "files.glob" => "glob",
+                "files.search" => "search",
+                "files.read" => "read",
+                "files.write" => "write",
+                "files.edit" => "edit",
+                "files.apply_patch" => "patch",
+                "files.delete" => "delete",
+                "files.restore" => "restore",
+                "terminal.run" or "terminal.shell" => "terminal",
+                _ => "mutation",
+            };
+            var networkIntent = "none";
+            if (arguments.TryGetProperty("network_intent", out var network))
+            {
+                if (network.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    return null;
+                }
+
+                networkIntent = network.ValueKind == JsonValueKind.True ? "declared" : "none";
+            }
+            else if (arguments.TryGetProperty("network", out var legacyNetwork))
+            {
+                if (legacyNetwork.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    return null;
+                }
+
+                networkIntent = legacyNetwork.ValueKind == JsonValueKind.True ? "declared" : "none";
+            }
+            var intentHash = HarnessIntentCanonicalizer.ComputeHash(
+                toolId,
+                toolVersion,
+                arguments);
+
+            return new ToolApprovalBinding(
+                run.RunId,
+                toolCallId,
+                toolId,
+                toolVersion,
+                canonicalPath,
+                requestedExecutable,
+                argv,
+                cwd,
+                operationClass,
+                networkIntent,
+                run.PolicySnapshotVersion,
+                intentHash,
+                _time.UtcNow.AddMinutes(30));
+        }
+        catch (Exception error) when (error is JsonException
+            or InvalidOperationException
+            or ArgumentException
+            or IOException
+            or HarnessStoreException
+            or CryptographicException)
+        {
+            return null;
+        }
+    }
+
+    private string? TryGetExternalDirectory(
+        AgentRun run,
+        ToolApprovalBinding binding,
+        bool externalDirectoryRequested)
+    {
+        if (!externalDirectoryRequested)
+        {
+            return null;
+        }
+
+        if (_runtimeRoots is null
+            || !_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
+            || string.IsNullOrWhiteSpace(rootPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var trustedRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(rootPath);
+            string? candidate;
+            if (binding.OperationClass == "terminal")
+            {
+                candidate = binding.Cwd;
+            }
+            else if (binding.CanonicalPath is not null)
+            {
+                candidate = Path.IsPathRooted(binding.CanonicalPath)
+                    ? Path.GetFullPath(binding.CanonicalPath)
+                    : Path.GetFullPath(Path.Combine(trustedRoot, binding.CanonicalPath));
+            }
+            else
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return null;
+            }
+
+            string directory;
+            if (Directory.Exists(candidate))
+            {
+                directory = candidate;
+            }
+            else
+            {
+                var parent = Directory.GetParent(candidate)?.FullName;
+                if (string.IsNullOrWhiteSpace(parent) || !Directory.Exists(parent))
+                {
+                    return null;
+                }
+
+                directory = parent;
+            }
+
+            var canonicalDirectory = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(directory);
+            if (IsWithinPath(canonicalDirectory, trustedRoot)
+                || !ExternalDirectoryPolicy.TryCreatePattern(canonicalDirectory, out _))
+            {
+                return null;
+            }
+
+            return canonicalDirectory;
+        }
+        catch (Exception error) when (error is ArgumentException
+            or IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadString(JsonElement objectNode, string propertyName, int maxLength)
+    {
+        if (!objectNode.TryGetProperty(propertyName, out var value)
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            throw new ArgumentException($"{propertyName} must be a string", propertyName);
+        }
+
+        var text = value.GetString();
+        if (text is null
+            || string.IsNullOrWhiteSpace(text)
+            || text.Length > maxLength
+            || text.Contains('\0'))
+        {
+            throw new ArgumentException($"{propertyName} is invalid", propertyName);
+        }
+
+        return text;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(JsonElement objectNode, string propertyName)
+    {
+        if (!objectNode.TryGetProperty(propertyName, out var value)
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            throw new ArgumentException("arguments array is invalid", propertyName);
+        }
+
+        var values = new List<string>();
+        if (value.GetArrayLength() > RuAgent.Protocol.TerminalLimits.MaxArguments)
+        {
+            throw new ArgumentException("arguments array is too large", propertyName);
+        }
+
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || item.GetString() is not { } text)
+            {
+                throw new ArgumentException("arguments array is invalid", propertyName);
+            }
+
+            if (text.Length > ApprovalArgumentMaxLength || text.Contains('\0'))
+            {
+                throw new ArgumentException("arguments array is invalid", propertyName);
+            }
+
+            values.Add(text);
+        }
+
+        return values;
+    }
+}

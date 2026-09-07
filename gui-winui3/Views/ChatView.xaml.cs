@@ -2186,19 +2186,49 @@ namespace RuApp.Views
                 return null;
             }
 
+            string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
+                ? StripDisplayMarkers(content)
+                : null;
             var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
             if (history is null || cancellationToken.IsCancellationRequested)
             {
                 return null;
             }
 
+            var normalizedHistory = history
+                .Select(item => (
+                    item.Role,
+                    Content: string.Equals(item.Role, "assistant", StringComparison.Ordinal)
+                        ? StripDisplayMarkers(item.Content)
+                        : item.Content))
+                .ToList();
             string? latestAssistant = history
                 .LastOrDefault(item => string.Equals(item.Role, "assistant", StringComparison.Ordinal))
                 .Content;
             latestAssistant = StripDisplayMarkers(latestAssistant ?? string.Empty);
+            bool preserveStreamedReply = ChatHistoryReloadPolicy.ShouldPreserveStreamedReply(
+                normalizedHistory,
+                streamedReply);
 
             void Apply()
             {
+                if (preserveStreamedReply
+                    && _activeAgentAssistantMessage is { } streamedMessage
+                    && !string.IsNullOrWhiteSpace(streamedReply))
+                {
+                    if (!Messages.Contains(streamedMessage))
+                    {
+                        Messages.Add(streamedMessage);
+                    }
+
+                    streamedMessage.Content = streamedReply;
+                    streamedMessage.IsStreaming = false;
+                    streamedMessage.Usage = _activeAgentUsage;
+                    ScrollChatToBottom();
+                    UpdateViewMode();
+                    return;
+                }
+
                 Messages.Clear();
                 int lastAssistantIndex = history.FindLastIndex(
                     item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
@@ -2248,7 +2278,7 @@ namespace RuApp.Views
                 await applied.Task.ConfigureAwait(false);
             }
 
-            return latestAssistant;
+            return preserveStreamedReply ? streamedReply : latestAssistant;
         }
 
         private async Task SendVoiceMessageAsync(string text, CancellationToken cancellationToken)

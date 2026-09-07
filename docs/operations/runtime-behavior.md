@@ -297,6 +297,10 @@ authoritative if a follow-up `GET` races host shutdown or restart. A late
 history/outbox failure after visible assistant deltas does not append a generic
 failure sentence to the answer or replace it with a duplicate failure banner;
 the durable run/event status remains available for diagnostics.
+If the terminal snapshot races conversation-outbox delivery, a session-history
+reload that still contains only the user turn preserves the already-rendered
+assistant bubble. A later history refresh can reconcile it once the persisted
+assistant entry is available.
 Agent final replies are normalized through the metadata policy before the
 authenticated payload and conversation outbox are committed; private VTS,
 voice, and action markers therefore never enter history or model context.

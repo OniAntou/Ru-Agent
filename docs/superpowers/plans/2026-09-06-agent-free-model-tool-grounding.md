@@ -43,7 +43,7 @@
 - Consumes: `ModelToolSelectionParser.NormalizeCandidate(string text)` and `ModelToolSelectionParser.Parse(string text, IReadOnlySet<string> advertisedToolIds)`.
 - Produces: normalization of one leading `<tool_call>` plus one complete JSON object, with or without the exact closing tag.
 
-- [ ] **Step 1: Change the parser contract test first**
+- [x] **Step 1: Change the parser contract test first**
 
 Replace the old missing-close rejection case with a success assertion using a fully valid selection, while retaining rejection cases for prose, attributes, nesting, suffixes, multiple wrappers, and incomplete JSON:
 
@@ -65,11 +65,11 @@ public void NormalizeCandidate_rejects_ambiguous_unclosed_markup(string text) =>
     Assert.Equal(text, ModelToolSelectionParser.NormalizeCandidate(text));
 ```
 
-- [ ] **Step 2: Add the Worker regression test**
+- [x] **Step 2: Add the Worker regression test**
 
 Feed the exact live shape in split deltas—`<tool_` followed by `call> {valid JSON}` with no close tag—and assert the result contains one `terminal.run` call, `Text` is empty, streamed visible deltas are empty, and `FinishReason` is `tool_calls`.
 
-- [ ] **Step 3: Run both focused tests and verify RED**
+- [x] **Step 3: Run both focused tests and verify RED**
 
 ```powershell
 dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj --filter FullyQualifiedName~ModelToolSelectionParserTests
@@ -78,11 +78,11 @@ dotnet test backend-dotnet/RuAgent.Runtime.Worker.Tests/RuAgent.Runtime.Worker.T
 
 Expected: the complete missing-close selection remains wrapped or visible and the new assertions fail.
 
-- [ ] **Step 4: Implement bounded normalization**
+- [x] **Step 4: Implement bounded normalization**
 
 After think-tag removal, detect an opening tag exactly equal to `<tool_call>`. If an exact final closing tag exists, preserve the existing behavior. If it does not, trim the body and remove the opening tag only when the body begins with `{`, contains no opening or closing tool tag, and `JsonDocument.Parse(body)` consumes one root JSON object. Do not validate tool identity in normalization; the existing `Parse` method remains authoritative.
 
-- [ ] **Step 5: Run GREEN tests and commit**
+- [x] **Step 5: Run GREEN tests and commit**
 
 Run both commands from Step 3, then:
 
@@ -104,7 +104,7 @@ Stage `WorkerV2StepService.cs` only if the RED evidence required a production ch
 - Consumes: `ResolveRootToolSet(ToolExecutionContext context, string? pathInput)` and `SessionDirectoryGrantRegistry`.
 - Produces: terminal execution through a `RootToolSet` whose `CanonicalRoot` is the run workspace or the longest matching session-granted directory.
 
-- [ ] **Step 1: Add a full Broker protocol regression**
+- [x] **Step 1: Add a full Broker protocol regression**
 
 Extend the existing external-directory test pattern:
 
@@ -117,7 +117,7 @@ Extend the existing external-directory test pattern:
 
 Add a paired new-session assertion showing the same terminal request returns `external_directory_required`.
 
-- [ ] **Step 2: Run the focused Broker tests and verify RED**
+- [x] **Step 2: Run the focused Broker tests and verify RED**
 
 ```powershell
 dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --filter "FullyQualifiedName~BrokerHostTests&FullyQualifiedName~external_directory"
@@ -125,7 +125,7 @@ dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --fi
 
 Expected: policy allows the same-session terminal request, but execution fails with `workspace_path_outside_root`.
 
-- [ ] **Step 3: Select the effective terminal root**
+- [x] **Step 3: Select the effective terminal root**
 
 In both `ExecuteTerminalRunAsync` and `ExecuteTerminalShellAsync`:
 
@@ -136,15 +136,15 @@ var tools = ResolveRootToolSet(context, workingDirectory);
 
 Canonicalize and execute through `tools.Terminal` with confinement enabled against that toolset. Keep protected-location checks and all analyzer/approval behavior unchanged.
 
-- [ ] **Step 4: Share approval-token authority with cached root toolsets**
+- [x] **Step 4: Share approval-token authority with cached root toolsets**
 
 Change `RootToolSet.Create` to accept the service's `ApprovalTokenService` and pass it to the external-root `TerminalAdapter`. Change `ToolsForRoot` to construct cached toolsets with that same service. This preserves separate terminal-risk approval for unknown or destructive commands inside a granted directory.
 
-- [ ] **Step 5: Format terminal results against the selected root**
+- [x] **Step 5: Format terminal results against the selected root**
 
 Change `ProcessOutcome` to receive the selected canonical root. For a confined result, produce the existing relative working-directory value against that root; otherwise use the existing bounded absolute formatter. Do not call the original `_workspace.ToRelative` for a result rooted in an external grant.
 
-- [ ] **Step 6: Run GREEN tests and commit**
+- [x] **Step 6: Run GREEN tests and commit**
 
 Run the focused Broker test, then the complete Broker suite:
 
@@ -168,7 +168,7 @@ Stage `ToolExecutionServiceTests.cs` only if it was modified.
 - Produces: `FailedToolCompletionGuard.TryGetFailure(ModelContextSnapshot context, out string errorCode) : bool`.
 - Consumes: trailing `ModelContextEntryKind.ToolResult` entries and their `ToolExecutionReceipt` values.
 
-- [ ] **Step 1: Add pure guard tests**
+- [x] **Step 1: Add pure guard tests**
 
 Cover a trailing failed receipt, mixed trailing receipts where one failed, all-success receipts, a non-tool trailing entry, and a missing/blank receipt code. The fallback for a blank code is `tool_failed`.
 
@@ -178,7 +178,7 @@ Assert.Equal("workspace_path_outside_root", code);
 Assert.False(FailedToolCompletionGuard.TryGetFailure(contextWithSuccessfulTerminal, out _));
 ```
 
-- [ ] **Step 2: Run the guard tests and verify RED**
+- [x] **Step 2: Run the guard tests and verify RED**
 
 ```powershell
 dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj --filter FullyQualifiedName~FailedToolCompletionGuardTests
@@ -186,11 +186,11 @@ dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests
 
 Expected: compilation fails because the guard does not exist.
 
-- [ ] **Step 3: Implement the pure trailing-receipt guard**
+- [x] **Step 3: Implement the pure trailing-receipt guard**
 
 Walk backward over only the final contiguous `ToolResult` entries. Return the first unsuccessful stable code in model order; treat `Succeeded` as successful and map a missing/invalid code to `tool_failed`. Return false when the context does not end in a tool result or every trailing receipt succeeded.
 
-- [ ] **Step 4: Add coordinator RED tests**
+- [x] **Step 4: Add coordinator RED tests**
 
 Seed context ending in a failed receipt, queue an ordinary final assistant step containing a false success claim, and assert:
 
@@ -202,7 +202,7 @@ Seed context ending in a failed receipt, queue an ordinary final assistant step 
 
 Add a second test where the next model step proposes a different recovery tool and assert it still executes normally.
 
-- [ ] **Step 5: Run coordinator tests and verify RED**
+- [x] **Step 5: Run coordinator tests and verify RED**
 
 ```powershell
 dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj --filter "FullyQualifiedName~AgentRunCoordinatorTests&FullyQualifiedName~failed_tool"
@@ -210,11 +210,11 @@ dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests
 
 Expected: the prose step currently completes the run and creates a visible outbox entry.
 
-- [ ] **Step 6: Commit grounded failure instead of final prose**
+- [x] **Step 6: Commit grounded failure instead of final prose**
 
 Before `HandleFinalStepAsync`, call the guard. Add `HandleUnverifiedFailureStepAsync` that stores the prompt receipt and assistant step as internal audit payloads, emits `ModelPromptComposed`, `ModelStepCompleted(unverified_after_tool_failure)`, and `RunFailed(errorCode)`, writes no conversation outbox item, and advances the run through `HarnessRunTransition.Fail`.
 
-- [ ] **Step 7: Run GREEN tests and commit**
+- [x] **Step 7: Run GREEN tests and commit**
 
 ```powershell
 dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj

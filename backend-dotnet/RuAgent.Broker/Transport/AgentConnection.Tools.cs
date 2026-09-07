@@ -1,0 +1,447 @@
+using System.Buffers;
+using System.Globalization;
+using System.Net.WebSockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy;
+using RuAgent.Broker.Runtime;
+using RuAgent.Broker.Skills;
+using RuAgent.Protocol;
+
+namespace RuAgent.Broker.Transport;
+
+public sealed partial class AgentConnection
+{
+    private Task<AgentEnvelope> HandleToolEvaluateAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        var payload = request.Payload;
+        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
+        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
+        var toolVersion = ReadOptionalPayloadString(payload, "tool_version") ?? "1.0.0";
+
+        if (!TryGetOwnedRunLease(request, runId, out var lease, out var leaseError) || lease is null)
+        {
+            return Task.FromResult(ToolError(request, leaseError, "run lease is not open"));
+        }
+
+        if (!lease.AdvertisedCapabilities.Contains(toolId))
+        {
+            // Phase 2 advertises only files.list/files.read; terminal and mutation tools stay
+            // unadvertised until their phases land, regardless of what a rule might allow.
+            return Task.FromResult(ToolError(request, "phase_not_available", "tool is not advertised yet"));
+        }
+
+        if (payload["arguments"] is not JsonObject arguments)
+        {
+            return Task.FromResult(DecisionReply(
+                request,
+                decision: "deny",
+                reasonCode: "schema_invalid",
+                matchedRuleId: null));
+        }
+
+        PolicyContext context;
+        try
+        {
+            context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
+        }
+        catch (PolicyContextException error)
+        {
+            return Task.FromResult(DecisionReply(request, "deny", error.Code, null));
+        }
+
+        var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
+            .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+
+        string? decisionToken = null;
+        string? approvalId = null;
+        DateTimeOffset? approvalExpiresAt = null;
+        JsonObject? matcherPreview = null;
+        if (string.Equals(evaluation.Decision, "allow", StringComparison.Ordinal))
+        {
+            try
+            {
+                decisionToken = _session.RegisterDecision(runId, toolId, context.IntentHash, DecisionLifetime);
+            }
+            catch (BrokerSessionException)
+            {
+                return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
+            }
+        }
+        else if (string.Equals(evaluation.Decision, "ask", StringComparison.Ordinal))
+        {
+            // V2 two-phase approval: persist pending bound to snapshot + intent hash (30-min expiry, exact-by-default preview)
+            var toolCallId = ReadOptionalPayloadString(payload, "tool_call_id") ?? request.RequestId;
+            var snapshotVersion = lease.Snapshot.Version;
+            var approvalKind = string.Equals(evaluation.ReasonCode, "external_directory_required", StringComparison.Ordinal)
+                ? "external_directory"
+                : "terminal_risk";
+            var binding = new V2ApprovalBinding(
+                RunId: runId,
+                ToolCallId: toolCallId,
+                ToolId: toolId,
+                ToolVersion: toolVersion,
+                CanonicalPath: context.Target?.CanonicalPath ?? context.RelativePathInsideWorkspace,
+                ResolvedExecutable: context.ResolvedExecutable,
+                Argv: context.Argv,
+                Cwd: context.CanonicalCwd,
+                OperationClass: context.OperationClass,
+                NetworkIntent: context.NetworkIntent,
+                SnapshotVersion: snapshotVersion,
+                IntentHash: context.IntentHash,
+                ApprovalKind: approvalKind,
+                BoundaryDirectory: approvalKind == "external_directory" ? DeriveGrantDirectory(context) : null);
+            var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
+            approvalId = _pendingV2.IssueV2(binding, expiresAt);
+            approvalExpiresAt = expiresAt;
+            matcherPreview = PendingApprovalStore.BuildMatcherPreview(binding);
+            matcherPreview["safe_summary"] = "approval required for " + toolId;
+        }
+
+        var replyPayload = new JsonObject
+        {
+            ["status"] = evaluation.Decision switch
+            {
+                "allow" => ToolResultStatuses.Succeeded,
+                "deny" => ToolResultStatuses.Denied,
+                _ => ToolResultStatuses.Succeeded,
+            },
+            ["decision"] = evaluation.Decision,
+            ["reason_code"] = evaluation.ReasonCode,
+            ["analyzer_risk_pending"] = evaluation.AnalyzerRiskPending,
+            ["safe_summary"] = evaluation.Decision switch
+            {
+                "allow" => "policy allowed the call",
+                "ask" => "policy requires user approval",
+                _ => "policy denied the call",
+            },
+        };
+        if (evaluation.MatchedRuleId is not null)
+        {
+            replyPayload["matched_rule_id"] = evaluation.MatchedRuleId;
+        }
+
+        if (decisionToken is not null)
+        {
+            replyPayload["decision_token"] = decisionToken;
+        }
+
+        if (approvalId is not null)
+        {
+            replyPayload["approval_id"] = approvalId;
+            replyPayload["approval_kind"] = string.Equals(evaluation.ReasonCode, "external_directory_required", StringComparison.Ordinal)
+                ? "external_directory"
+                : "terminal_risk";
+            var grantDirectory = DeriveGrantDirectory(context);
+            if (grantDirectory is not null)
+            {
+                replyPayload["boundary_directory"] = grantDirectory;
+            }
+
+            replyPayload["expires_at"] = approvalExpiresAt!.Value.ToString("O");
+            replyPayload["matcher_preview"] = matcherPreview!.DeepClone();
+        }
+
+        return Task.FromResult(Reply(request, AgentMessageTypes.ToolDecision, replyPayload));
+    }
+
+    private Task<AgentEnvelope> HandleToolPrepareAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        var payload = request.Payload;
+        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
+        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
+        var decisionToken = ReadOptionalPayloadString(payload, "decision_token");
+
+        if (!TryGetOwnedRunLease(request, runId, out _, out var leaseError))
+        {
+            return Task.FromResult(ToolError(request, leaseError, "run lease is not open"));
+        }
+
+        if (string.IsNullOrWhiteSpace(decisionToken))
+        {
+            return Task.FromResult(ToolError(request, "invalid_prepare", "missing decision token"));
+        }
+
+        if (!_session.TryPrepareDecision(decisionToken!, runId, toolId, out var preparationToken, out var errorCode))
+        {
+            return Task.FromResult(ToolError(request, errorCode ?? "decision_stale", "prepare failed"));
+        }
+
+        return Task.FromResult(Reply(request, AgentMessageTypes.ToolPrepared, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Succeeded,
+            ["preparation_token"] = preparationToken,
+            ["safe_summary"] = "prepared",
+        }));
+    }
+
+    private async Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        var payload = request.Payload;
+        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
+        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
+        var toolVersion = ReadOptionalPayloadString(payload, "tool_version") ?? "1.0.0";
+        var preparationToken = ReadOptionalPayloadString(payload, "preparation_token");
+        var authorizationToken = ReadOptionalPayloadString(payload, "authorization_token")
+            ?? ReadOptionalPayloadString(payload, "authorizationToken")
+            ?? ReadOptionalPayloadString(payload, "approval_token");
+
+        if (!TryGetOwnedRunLease(request, runId, out var lease, out var leaseError) || lease is null)
+        {
+            return ToolError(request, leaseError, "run lease is not open");
+        }
+
+        if (!lease.AdvertisedCapabilities.Contains(toolId))
+        {
+            return ToolError(request, "phase_not_available", "tool is not advertised yet");
+        }
+
+        if (!string.IsNullOrWhiteSpace(authorizationToken))
+        {
+            // V2 path: authorization_token must be valid, bound to snapshot version + intent hash + tool identity.
+            // Tool dispatch coordination: authorization must be consumed BEFORE adapter invocation.
+            if (payload["arguments"] is not JsonObject authArguments)
+            {
+                return ToolError(request, "invalid_execute", "missing arguments");
+            }
+
+            PolicyContext authContext;
+            try
+            {
+                authContext = new PolicyContextFactory(lease).Create(toolId, toolVersion, authArguments);
+            }
+            catch (PolicyContextException error)
+            {
+                return ToolError(request, error.Code, "execution intent could not be re-resolved");
+            }
+
+            var expected = new ApprovalBinding(
+                RequestId: runId,
+                SessionId: request.SessionId,
+                ToolId: toolId,
+                ToolVersion: toolVersion,
+                ArgumentsHash: authContext.IntentHash,
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
+                SnapshotVersion: lease.Snapshot.Version,
+                IntentHash: authContext.IntentHash);
+
+            if (!_authTokens.TryConsume(authorizationToken!, expected, out _))
+            {
+                return ToolError(request, "decision_stale", "authorization is no longer valid");
+            }
+
+            // Also ensure stale pending from old snapshot is invalidated (binding version check)
+            // The lease's snapshot version must equal the token's snapshot version (already checked), and
+            // any other pending V2 decisions from older binding are already stale via snapshotVersion mismatch.
+
+            if (_toolHandler is null)
+            {
+                return ToolError(request, "broker_not_ready", "tool execution is not registered");
+            }
+
+            var result = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+            return new AgentEnvelope(
+                result.ProtocolVersion,
+                result.RequestId,
+                AgentMessageTypes.ToolExecuteResult,
+                result.SessionId,
+                result.CorrelationId,
+                result.DeadlineMs,
+                (JsonObject)result.Payload.DeepClone());
+        }
+
+        if (string.IsNullOrWhiteSpace(preparationToken))
+        {
+            return ToolError(request, "invalid_execute", "missing preparation token");
+        }
+
+        if (payload["arguments"] is not JsonObject arguments)
+        {
+            return ToolError(request, "invalid_execute", "missing arguments");
+        }
+
+        PolicyContext context;
+        try
+        {
+            context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
+        }
+        catch (PolicyContextException error)
+        {
+            return ToolError(request, error.Code, "execution intent could not be re-resolved");
+        }
+
+        // Execution-time re-resolution: the prepared canonical intent must still match exactly.
+        if (!_session.TryConsumePreparation(preparationToken!, runId, toolId, context.IntentHash, out var consumeError))
+        {
+            return ToolError(request, consumeError ?? "decision_stale", "preparation is no longer valid");
+        }
+
+        if (_toolHandler is null)
+        {
+            return ToolError(request, "broker_not_ready", "tool execution is not registered");
+        }
+
+        var result2 = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+        return new AgentEnvelope(
+            result2.ProtocolVersion,
+            result2.RequestId,
+            AgentMessageTypes.ToolExecuteResult,
+            result2.SessionId,
+            result2.CorrelationId,
+            result2.DeadlineMs,
+            (JsonObject)result2.Payload.DeepClone());
+    }
+
+    private static readonly TimeSpan DecisionLifetime = TimeSpan.FromMinutes(10);
+
+    private static string? ReadOptionalPayloadString(JsonObject payload, string key) =>
+        payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
+            ? result
+            : null;
+
+    /// <summary>
+    /// Nearest existing ancestor directory of the evaluation boundary.
+    /// File targets grant their parent; external cwds grant themselves.
+    /// Returns null when nothing usable exists (fail closed, no grant).
+    /// </summary>
+
+    /// <summary>
+    /// Nearest existing ancestor directory of the evaluation boundary.
+    /// File targets grant their parent; external cwds grant themselves.
+    /// Returns null when nothing usable exists (fail closed, no grant).
+    /// </summary>
+    private static string? DeriveGrantDirectory(Policy.PolicyContext context)
+    {
+        var raw = context.Target?.CanonicalPath
+            ?? context.WorkingDirectory?.CanonicalPath
+            ?? context.CanonicalCwd;
+        if (string.IsNullOrWhiteSpace(raw) || raw.Length > 4096)
+        {
+            return null;
+        }
+
+        try
+        {
+            var current = Directory.Exists(raw)
+                ? Path.GetFullPath(raw)
+                : Path.GetDirectoryName(Path.GetFullPath(raw));
+            while (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
+            {
+                current = Path.GetDirectoryName(current);
+            }
+
+            if (string.IsNullOrEmpty(current) || current.Length > 4096)
+            {
+                return null;
+            }
+
+            return current;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private AgentEnvelope HandleSessionGrantsRevoke(AgentEnvelope request)
+    {
+        if (!_session.Owns(request.SessionId))
+        {
+            return ToolError(request, "broker_not_ready", "session is not open");
+        }
+
+        var targetSession = ReadOptionalPayloadString(request.Payload, "agent_session_id");
+        if (string.IsNullOrWhiteSpace(targetSession) || targetSession.Length > 128)
+        {
+            return Reply(request, AgentMessageTypes.SessionGrantsRevoked, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Denied,
+                ["error_code"] = "invalid_session_id",
+                ["safe_summary"] = "invalid agent session id",
+            });
+        }
+
+        _session.DirectoryGrants.RevokeSession(targetSession);
+        return Reply(request, AgentMessageTypes.SessionGrantsRevoked, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Succeeded,
+            ["safe_summary"] = "session grants revoked",
+        });
+    }
+
+    private static AgentEnvelope DecisionReply(
+        AgentEnvelope request,
+        string decision,
+        string reasonCode,
+        string? matchedRuleId) => Reply(request, AgentMessageTypes.ToolDecision, new JsonObject
+        {
+            ["status"] = decision switch
+            {
+                "deny" => ToolResultStatuses.Denied,
+                _ => ToolResultStatuses.Succeeded,
+            },
+            ["decision"] = decision,
+            ["reason_code"] = reasonCode,
+            ["analyzer_risk_pending"] = false,
+            ["matched_rule_id"] = matchedRuleId,
+            ["safe_summary"] = decision switch
+            {
+                "allow" => "policy allowed the call",
+                "ask" => "policy requires user approval",
+                _ => "policy denied the call",
+            },
+        });
+
+    private static string ReadRequiredString(JsonObject payload, string key)
+    {
+        if (payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result))
+        {
+            return result;
+        }
+
+        throw new AgentProtocolException($"invalid_{key}");
+    }
+
+    private static long ReadRequiredLong(JsonObject payload, string key)
+    {
+        if (payload[key] is JsonValue value && (value.TryGetValue<long>(out var l) || value.TryGetValue<int>(out var i) && (l = i) == l))
+        {
+            return l;
+        }
+
+        if (payload[key] is JsonValue iv && iv.TryGetValue<int>(out var intVal))
+        {
+            return intVal;
+        }
+
+        throw new AgentProtocolException($"invalid_{key}");
+    }
+
+    private static AgentEnvelope ToolError(AgentEnvelope request, string errorCode, string summary)
+        => Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Denied,
+            ["error_code"] = errorCode,
+            ["safe_summary"] = summary,
+        });
+
+    private static IReadOnlySet<string> ReadScopes(JsonObject payload)
+    {
+        if (payload["scopes"] is not JsonArray values)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in values)
+        {
+            if (value is JsonValue item && item.TryGetValue<string>(out var scope) && !string.IsNullOrWhiteSpace(scope))
+            {
+                result.Add(scope);
+            }
+        }
+
+        return result;
+    }
+}

@@ -4,6 +4,26 @@ Run heavyweight gates sequentially on Windows. Restore each .NET test project
 before using `--no-restore`; concurrent Python, frontend, and .NET builds can
 exhaust the page file on this workspace.
 
+## Task 5 verification (2026-09-07)
+
+Fresh sequential Debug checks on `main` passed all four requested managed test
+projects: `RuAgent.Harness.Core.Tests` 273/273, `RuAgent.Runtime.Worker.Tests`
+63/63, `RuBackend.Tests` 783/783, and `RuAgent.Broker.Tests` 557/557. The
+combined result was 1,676 passed, 0 failed, and 0 skipped. Focused Markdown
+checks also passed: `HelpDocsTests` 10/10 and `MarkdownSkillLoaderTests` 15/15.
+
+`cmd /c build.bat` exited 0 and completed all 13 stages. The Release GUI
+artifact was published at
+`gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/RuApp.exe`
+(162,816 bytes); native overlay build/tests passed 2/2
+(`overlay_options_tests`, `overlay_check_failure`).
+
+The focused documentation integrity check was not fully green: 5/6 tests
+passed, while `test_completed_implementation_archives_are_not_kept_in_the_checkout`
+failed because four dated Markdown plans remain under `docs/superpowers/plans`.
+Those files were not removed as part of verification. No live provider, audio,
+microphone, volume, or VTube Studio acceptance was run.
+
 ## Legacy mirror and document retirement (2026-09-06)
 
 Python structured-memory and observation mirrors, the startup activity-log

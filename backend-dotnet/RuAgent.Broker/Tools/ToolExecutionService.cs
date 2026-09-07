@@ -32,7 +32,7 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly BrokerSession _session;
     private readonly ToolCatalog _catalog;
     private readonly ToolPolicyEngine _policy = new();
-    private readonly ApprovalTokenService _approvalTokens = new();
+    private readonly ApprovalTokenService _approvalTokens;
     private readonly PendingApprovalStore _approvals = new();
     private readonly WorkspacePathGuard _workspace;
     private readonly FileTools _files;
@@ -61,7 +61,8 @@ public sealed class ToolExecutionService : IToolInvoker
         IEnumerable<SkillManifest>? builtinSkills = null,
         IEnumerable<string>? skillPackageRoots = null,
         WebOptions? webOptions = null,
-        HttpClient? webHttpClient = null)
+        HttpClient? webHttpClient = null,
+        ApprovalTokenService? approvalTokens = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = new WorkspacePathGuard(workspaceRoot);
@@ -75,6 +76,7 @@ public sealed class ToolExecutionService : IToolInvoker
         _fileRestore = new FileRestoreAdapter(_workspace.Root);
         _mutationResolver = new CanonicalPathResolver(_workspace.Root);
         _helpDocs = HelpDocsTool.CreateDefault();
+        _approvalTokens = approvalTokens ?? new ApprovalTokenService();
         _terminal = new TerminalAdapter(
             _workspace,
             new ShellRuntimeResolver(),

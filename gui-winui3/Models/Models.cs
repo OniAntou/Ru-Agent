@@ -22,6 +22,7 @@ namespace RuApp.Models
         private bool _isError = false;
         private string? _turnId;
         private string? _sessionId;
+        private AgentModelUsage? _usage;
 
         public string Id
         {
@@ -98,6 +99,23 @@ namespace RuApp.Models
             get => _sessionId;
             set => SetProperty(ref _sessionId, value);
         }
+
+        public AgentModelUsage? Usage
+        {
+            get => _usage;
+            set
+            {
+                if (SetProperty(ref _usage, value))
+                {
+                    OnPropertyChanged(nameof(HasUsage));
+                    OnPropertyChanged(nameof(UsageLabel));
+                }
+            }
+        }
+
+        public bool HasUsage => Usage?.HasAny == true;
+
+        public string UsageLabel => Usage?.DisplayText ?? string.Empty;
 
         private System.Collections.ObjectModel.ObservableCollection<ImageAttachmentItem> _attachments = new();
 

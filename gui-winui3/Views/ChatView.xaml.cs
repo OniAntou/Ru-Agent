@@ -92,6 +92,7 @@ namespace RuApp.Views
         private string? _activeWorkspaceId;
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
+        private AgentModelUsage? _activeAgentUsage;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
         private readonly AgentReplyRenderScheduler _replyRenderScheduler;
@@ -271,6 +272,7 @@ namespace RuApp.Views
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
+            _agentController?.UsageReceived += OnAgentUsageReceived;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
             _voiceCapture = new VoiceTurnCaptureService(voiceSourceFactory);
@@ -829,6 +831,28 @@ namespace RuApp.Views
             _replyRenderScheduler.Schedule();
         }
 
+        private void OnAgentUsageReceived(object? sender, AgentUsageReceivedEventArgs usage)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentUsageReceived(sender, usage));
+                return;
+            }
+
+            if (_agentController?.CurrentRun is not { } run
+                || !string.Equals(run.RunId, usage.RunId, StringComparison.Ordinal)
+                || !string.Equals(run.SessionId, usage.SessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _activeAgentUsage = usage.Usage;
+            if (_activeAgentAssistantMessage is not null)
+            {
+                _activeAgentAssistantMessage.Usage = usage.Usage;
+            }
+        }
+
         private void ApplyReplySnapshot(AgentReplySnapshot snapshot)
         {
             if (_activeAgentAssistantMessage == null
@@ -1258,6 +1282,7 @@ namespace RuApp.Views
             monitor?.Dispose();
             _agentActivityVisible = false;
             _agentActionPending = false;
+            _activeAgentUsage = null;
             AbandonActiveAgentReply(notifyVoice: true);
 
             UpdateAgentComposerVisuals();
@@ -1779,6 +1804,7 @@ namespace RuApp.Views
             _activeAgentRunId = null;
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
+            _activeAgentUsage = null;
             _agentDeltaKeys.Clear();
             _replyRenderScheduler.Invalidate();
 
@@ -2124,12 +2150,16 @@ namespace RuApp.Views
             void Apply()
             {
                 Messages.Clear();
-                foreach (var (role, content) in history)
+                int lastAssistantIndex = history.FindLastIndex(
+                    item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
+                for (int index = 0; index < history.Count; index++)
                 {
+                    var (role, content) = history[index];
                     Messages.Add(new ChatMessageItem
                     {
                         Role = role,
-                        Content = role == "assistant" ? StripDisplayMarkers(content) : content
+                        Content = role == "assistant" ? StripDisplayMarkers(content) : content,
+                        Usage = index == lastAssistantIndex ? _activeAgentUsage : null
                     });
                 }
 

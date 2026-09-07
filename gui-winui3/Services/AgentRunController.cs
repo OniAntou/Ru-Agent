@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
+using RuApp.Models;
 
 namespace RuApp.Services;
 
@@ -425,6 +426,24 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        AgentModelUsage? usage = null;
+        if (string.Equals(model.EventType, "model.usage_recorded", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(model.PayloadRef))
+        {
+            try
+            {
+                var payload = await _client
+                    .GetPayloadAsync(model.RunId, model.PayloadRef, CancellationToken.None)
+                    .ConfigureAwait(false);
+                usage = AgentModelUsage.Parse(payload.Content);
+            }
+            catch
+            {
+                // Usage is observational. A payload fetch failure must not stop the
+                // durable run stream or alter the assistant reply.
+            }
+        }
+
         RunOnUi(() =>
         {
             if (Events.Count > 200)
@@ -465,6 +484,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 // event list to avoid cross-thread ObservableCollection access.
                 _auditSink?.Invoke(model);
                 WriteSink(model);
+            }
+
+            if (usage is not null)
+            {
+                UsageReceived?.Invoke(
+                    this,
+                    new AgentUsageReceivedEventArgs(model.RunId, model.SessionId, usage));
             }
 
             RefreshCommands();
@@ -638,6 +664,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     public event EventHandler<AgentRunSummaryModel>? SummaryReceived;
 
     public event EventHandler<AgentAssistantDeltaModel>? AssistantDeltaReceived;
+
+    public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
 
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

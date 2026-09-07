@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-09-01.
+Status: operating contract for the current main branch, 2026-09-07.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -51,8 +51,8 @@ total, cache-read, and cache-write counts through the private Worker v2 done
 envelope. The Host persists those counts as a `ModelUsage` payload alongside a
 final reply and inside an `AssistantStep` for tool turns. The payload is a
 sidecar record for authenticated telemetry consumers; the current chat bubble
-can fetch it from the durable `model.usage_recorded` event, although the
-current chat bubble does not render token counts yet. A missing `usage`
+fetches it from the durable `model.usage_recorded` event and renders the
+reported counts below the assistant text. A missing `usage`
 object means the provider did not report counts; it is not converted to zero.
 Numeric zero remains an exact provider value. `estimated_input_tokens` is kept
 for backward compatibility and remains an estimate, not a billing record.

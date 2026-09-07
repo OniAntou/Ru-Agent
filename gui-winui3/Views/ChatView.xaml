@@ -79,6 +79,13 @@
                                             FontSize="15"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
+                    <TextBlock Text="{x:Bind UsageLabel, Mode=OneWay}"
+                               Visibility="{x:Bind HasUsage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                               AutomationProperties.Name="{x:Bind UsageLabel, Mode=OneWay}"
+                               FontSize="11"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               FontFamily="{StaticResource RuMonoFontFamily}"
+                               Margin="0,2,0,0" />
                 </StackPanel>
             </Grid>
         </DataTemplate>

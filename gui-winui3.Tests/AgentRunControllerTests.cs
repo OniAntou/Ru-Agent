@@ -46,6 +46,7 @@ public sealed class AgentRunControllerTests
         public bool PresetCalled;
         public bool ApproveCalled;
         public bool DenyCalled;
+        public string PayloadContent { get; set; } = "{}";
         public TaskCompletionSource<bool>? SubscriptionGate;
         public Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
             => Task.FromResult(Run!);
@@ -54,7 +55,7 @@ public sealed class AgentRunControllerTests
             => Task.FromResult(Run!);
 
         public Task<AgentPayloadModel> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
-            => Task.FromResult(new AgentPayloadModel(runId, payloadId, "{}"));
+            => Task.FromResult(new AgentPayloadModel(runId, payloadId, PayloadContent));
 
         public Task<long> SetSessionPresetAsync(
             string sessionId,
@@ -239,6 +240,41 @@ public sealed class AgentRunControllerTests
         Assert.Equal("Xin chào", item.Text);
         Assert.Equal(7, item.TransientSequence);
         Assert.True(dispatches > 0);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_fetches_and_delivers_provider_usage_payload()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            PayloadContent = "{\"input_tokens\":0,\"output_tokens\":12,\"total_tokens\":12}",
+        };
+        fake.Stream.Add(new AgentEventModel(
+            "usage-event",
+            RunId,
+            "sess_1",
+            "model.usage_recorded",
+            "2026",
+            "running",
+            "reported",
+            "payload_usage",
+            null,
+            1,
+            false,
+            null,
+            null));
+        var received = new List<AgentUsageReceivedEventArgs>();
+        var controller = new AgentRunController(fake);
+        controller.UsageReceived += (_, item) => received.Add(item);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-usage"));
+
+        var usage = Assert.Single(received);
+        Assert.Equal(RunId, usage.RunId);
+        Assert.Equal(0, usage.Usage.InputTokens);
+        Assert.Equal("0 input · 12 output · 12 total", usage.Usage.DisplayText);
     }
 
     [Fact]

@@ -189,10 +189,10 @@ The Public Host derives `model_tools` from canonical model exposure and runtime
 availability, while the Broker session owns executable scopes and publishes the actual
 resulting grant as `agent.session`. Managed startup enables the Host web
 configuration and the default headless model loop advertises both read-only
-Web bindings through the Broker gateway. Skill package roots and
-`/skills`/`/skill` still require explicit session grants. WinUI renders a
-received grant; it does not infer workspace, terminal, Web, connector, or
-skill access.
+Web bindings through the Broker gateway. Executable Skill package roots and
+`/skills`/`/skill` require explicit session grants; Markdown skill roots are
+prompt guidance and are not executable grants. WinUI renders a received grant;
+it does not infer workspace, terminal, Web, connector, or skill access.
 
 The Worker emits at most one tool request at a time and at most 10 sequential
 tool requests in one conversational turn. It receives only the bounded enabled
@@ -246,15 +246,49 @@ cancellation, and sorts results by ordinal path/line before applying its result
 cap. Terminal children receive redirected stdin that is closed immediately;
 TTY/editor-style requests remain rejected by canonical command policy.
 
+### Markdown skill guidance
+
+Markdown skills are a separate prompt-guidance format. Copy a directory
+containing a case-insensitive `SKILL.md` into one of the supported roots:
+`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, or
+`%LOCALAPPDATA%\Ru\skills`. A minimal package can look like this:
+
+```markdown
+---
+name: pdf-analyzer
+description: Analyze and summarize PDF files
+allowed-tools: files.read, terminal.run
+---
+
+# PDF Analyzer
+
+Describe the review workflow here.
+```
+
+The Host discovers direct child directories in that precedence order and
+re-reads them for each newly built prompt context, including a new Agent run
+or after restart. `allowed-tools` is descriptive metadata only: it does not
+advertise or grant tools, scopes, paths, network access, or approvals. Only
+`SKILL.md` is read by discovery. Ancillary `references/`, `assets/`, and
+`scripts/` files are ignored and never automatically read or executed; any
+later access still has to use an advertised tool under Broker policy.
+
+Markdown guidance is rendered as untrusted `ExternalSkill` prompt content. It
+does not become a `SkillManifest` executable workflow, does not use
+`skill.json`/`instructions.md`, and does not appear in the executable
+`/skills`/`/skill` session grant. `RuAgentBroker` remains the only authority
+for canonical paths, capabilities, scopes, approvals, and execution.
+
 Declarative Skills are available at session-open only when their validated
-manifest IDs are included in the session grant. `/skills` lists only those
-grants, and `/skill <id> {json}` resolves the highest granted version before
-the Broker rechecks required scopes, tool bindings, schema, step, output, and
-timeout limits. A Skill never bypasses policy or approval, and raw step output
-is not promoted to visible chat. `SkillEvent` and `SkillResult` failures keep
-the same bounded identity/state/error shape as successes, including when the
-session is missing, so clients can fail closed without parsing raw exceptions.
-Connectors, workspace search, and application launchers remain unadvertised.
+`SkillManifest` IDs are included in the session grant. `/skills` lists only
+those grants, and `/skill <id> {json}` resolves the highest granted version
+before the Broker rechecks required scopes, tool bindings, schema, step,
+output, and timeout limits. A Skill never bypasses policy or approval, and raw
+step output is not promoted to visible chat. `SkillEvent` and `SkillResult`
+failures keep the same bounded identity/state/error shape as successes,
+including when the session is missing, so clients can fail closed without
+parsing raw exceptions. Connectors, workspace search, and application
+launchers remain unadvertised.
 
 ## Typed command channel
 

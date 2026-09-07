@@ -86,6 +86,36 @@ The declarative, bounded description of an allowed workflow, its named tools,
 scopes, ordered steps, schemas, and approval policy.
 _Avoid_: executable plugin or self-modifying workflow
 
+**Markdown Skill**:
+A directory containing a case-insensitive `SKILL.md` under one of the supported
+skill roots: `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, or
+`%LOCALAPPDATA%\Ru\skills`. It is bounded, untrusted prompt guidance. For
+example:
+
+```markdown
+---
+name: pdf-analyzer
+description: Analyze and summarize PDF files
+allowed-tools: files.read, terminal.run
+---
+
+# PDF Analyzer
+
+Describe the review workflow here.
+```
+
+`allowed-tools` is descriptive metadata only; it never grants a tool, scope,
+path, network permission, approval, or Broker capability. The Host discovers
+only direct child skill directories and reads `SKILL.md`; adjacent
+`references/`, `assets/`, and `scripts/` files are ignored by discovery and are
+never automatically read or executed. Copying a package requires no downloader
+or package manager: the Host re-reads the roots when building a new prompt
+context, including a new Agent run or after restart. Markdown skills never
+become `SkillManifest`/`skill.json` executable workflows and never enter
+`/skills` or `/skill`; `RuAgentBroker` remains the sole authority for path
+canonicalization, policy, approvals, and execution.
+_Avoid_: treating `SKILL.md` as a permission manifest or executable plugin
+
 **Session Grant**:
 The Broker-checked set of scopes and skill IDs attached to one Agent Session.
 It does not grant arbitrary filesystem paths, domains, credentials, or apps.

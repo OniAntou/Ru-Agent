@@ -83,14 +83,42 @@ and makes no success claim until the durable result arrives. Ordinary answers
 remain ordinary text. The Worker rejects unknown, duplicate, or digest-mismatched
 contracts before provider execution.
 
-The Host reads only `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
-selected run root. It applies final-path containment, strict UTF-8 decoding,
+The Host reads `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
+selected run root, then discovers direct-child Markdown skill directories from
+`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
+`%LOCALAPPDATA%\Ru\skills`, in that order. A directory is a Markdown skill
+only when it contains a case-insensitive `SKILL.md`. For example:
+
+```markdown
+---
+name: pdf-analyzer
+description: Analyze and summarize PDF files
+allowed-tools: files.read, terminal.run
+---
+
+# PDF Analyzer
+
+Describe the review workflow here.
+```
+
+The loader applies final-path containment, strict UTF-8 decoding,
 NFC/newline normalization, a 64 KiB per-file limit, and a 256 KiB combined
-instruction limit. Context values remain bounded (100 KiB memory, 32 KiB per
-reference, and 512 KiB serialized context). Root-selected instructions are
-followed for persona and workflow but cannot grant tools, permissions,
-approvals, paths, network access, or preset changes. Memory, runtime references,
-and tool/search results remain explicitly untrusted.
+instruction limit. It re-reads those roots for every newly built prompt
+context, so copying or changing `SKILL.md` is picked up on a new run or after
+restart without a downloader or package manager. Ancillary `references/`,
+`assets/`, and `scripts/` files are ignored by discovery and are not
+automatically read or executed. Context values remain bounded (100 KiB memory,
+32 KiB per reference, and 512 KiB serialized context). Root-selected
+instructions and Markdown skills are followed only as guidance; they cannot
+grant tools, permissions, approvals, paths, network access, or preset changes.
+The Markdown `allowed-tools` field is descriptive only. Memory, runtime
+references, and tool/search results remain explicitly untrusted.
+
+Markdown skills are prompt guidance, not executable workflows. The existing
+declarative `SkillManifest` format (`skill.json` plus `instructions.md`) remains
+the only path for `/skills` and `/skill` execution and still requires an
+explicit session grant. `RuAgentBroker` remains the sole authority for path
+canonicalization, capability policy, approvals, and tool execution.
 
 The Worker returns only a versioned SHA-256 receipt. Core validates it against
 the exact context before committing model completion or dispatching tools, then
@@ -322,7 +350,8 @@ searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
 Declarative Skills are added only from validated manifests explicitly included
 in the session grant; each Skill step re-enters normal tool scope, schema,
-approval, timeout, and output limits. Skill package roots are not auto-loaded.
+approval, timeout, and output limits. Executable Skill package roots are not
+auto-loaded; the separate Markdown skill roots are prompt guidance only.
 The managed Git commit workflow is shipped inside terminal execution, using a
 temporary index and refusing dirty user index state. Other Git commands remain
 ordinary terminal requests governed by Broker policy. The
@@ -358,8 +387,9 @@ are rejected as well. Fetched text is wrapped with
 `[untrusted_web_reference]`. These gates are not an OS-enforced network
 sandbox.
 
-Declarative Skills are the only workflow extension surface in this checkpoint;
-subagents, LSP, extensions, plugins, and MCP are not loaded or discoverable.
+Declarative Skills remain the only executable workflow extension surface in
+this checkpoint; Markdown skills are untrusted prompt guidance. Subagents,
+LSP, extensions, plugins, and MCP are not loaded or discoverable.
 
 Selecting a preset while idle does not add a composer status row, so the empty
 conversation welcome content keeps its position. The Agent inline status appears only

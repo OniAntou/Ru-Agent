@@ -132,14 +132,44 @@ instruction text, memory, tool results, arguments, paths, and provider data do
 not enter history, diagnostics, or public SSE. Public SSE advances over the
 internal event without emitting it or its payload reference.
 
-The instruction loader considers only `Ru.md`, `.ru/AGENTS.md`, and
-`.ru/CONTEXT.md` below the selected run root. It performs final-path containment,
-strict UTF-8 decoding, NFC and newline normalization, a 64 KiB per-file cap,
-and a 256 KiB combined instruction cap. The typed context has bounded memory
-(100 KiB), references (32 KiB each), and a 512 KiB serialized-context cap.
-`Ru.md` is the sole persona/style source. Root-selected instructions are
-followed for persona and workflow but cannot add capabilities, grants, or
-override Broker policy; runtime references and tool results stay untrusted.
+The instruction loader reads the fixed `Ru.md`, `.ru/AGENTS.md`, and
+`.ru/CONTEXT.md` files below the selected run root, then discovers direct-child
+Markdown skill directories from these roots in precedence order:
+`<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
+`%LOCALAPPDATA%\Ru\skills`. A package is recognized only when it contains a
+case-insensitive `SKILL.md`; for example:
+
+```markdown
+---
+name: pdf-analyzer
+description: Analyze and summarize PDF files
+allowed-tools: files.read, terminal.run
+---
+
+# PDF Analyzer
+
+Describe the review workflow here.
+```
+
+The loader applies final-path containment, strict UTF-8 decoding, NFC and
+newline normalization, a 64 KiB per-file cap, and a 256 KiB combined
+instruction cap. It re-reads the roots whenever a prompt context is built, so
+copying or editing a package is picked up on the next Agent run (and after a
+restart) without a downloader or package manager. Only `SKILL.md` is loaded;
+nearby `references/`, `assets/`, and `scripts/` files are ignored by discovery
+and are never automatically read or executed. The typed context has bounded
+memory (100 KiB), references (32 KiB each), and a 512 KiB serialized-context
+cap.
+
+`Ru.md` remains the sole persona/style source. Markdown skills are rendered as
+`ExternalSkill` untrusted guidance. Their `allowed-tools` metadata is
+descriptive only and cannot add capabilities, grants, paths, network access,
+or approvals. This prompt-guidance path is separate from the executable
+`SkillManifest` format (`skill.json` plus `instructions.md`), which remains the
+only declarative workflow path invoked through `/skill` and still requires an
+explicit session grant. `RuAgentBroker` remains authoritative for path
+canonicalization, tool policy, approval, and execution; runtime references and
+tool results stay untrusted.
 Invalid context or receipt metadata fails closed with the bounded
 `prompt_contract_invalid` path; there is no static-prompt fallback or reduced-
 context retry. Managed runtime wiring advertises `web.search` and `web.fetch`

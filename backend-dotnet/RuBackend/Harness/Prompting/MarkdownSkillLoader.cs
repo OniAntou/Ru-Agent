@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness.Prompting;
@@ -28,6 +30,7 @@ public sealed class MarkdownSkillLoader
     public const int MaxFileBytes = 64 * 1024;
     public const int MaxCombinedBytes = 256 * 1024;
     public const int MaxSkillCount = 16;
+    public const int MaxDirectoriesPerRoot = 256;
     public const int MaxDescriptionBytes = 2048;
     public const int MaxNameBytes = 256;
     public const int MaxIdLength = 96;
@@ -67,6 +70,12 @@ public sealed class MarkdownSkillLoader
                 continue;
             }
 
+            if (IsReparsePoint(root))
+            {
+                skips.Add(new MarkdownSkillSkip(root, "reparse_point"));
+                continue;
+            }
+
             try
             {
                 root = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(root);
@@ -83,9 +92,22 @@ public sealed class MarkdownSkillLoader
             }
 
             string[] directories;
+            var directoryEnumerationTruncated = false;
             try
             {
-                directories = Directory.EnumerateDirectories(root, "*", SearchOption.TopDirectoryOnly)
+                var discoveredDirectories = new List<string>(MaxDirectoriesPerRoot);
+                foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.TopDirectoryOnly))
+                {
+                    if (discoveredDirectories.Count >= MaxDirectoriesPerRoot)
+                    {
+                        directoryEnumerationTruncated = true;
+                        break;
+                    }
+
+                    discoveredDirectories.Add(directory);
+                }
+
+                directories = discoveredDirectories
                     .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal)
                     .ToArray();
             }
@@ -102,12 +124,6 @@ public sealed class MarkdownSkillLoader
 
             foreach (var directory in directories)
             {
-                if (skills.Count >= MaxSkillCount)
-                {
-                    skips.Add(new MarkdownSkillSkip(directory, "oversize"));
-                    continue;
-                }
-
                 if (IsReparsePoint(directory))
                 {
                     skips.Add(new MarkdownSkillSkip(directory, "reparse_point"));
@@ -141,7 +157,7 @@ public sealed class MarkdownSkillLoader
                     continue;
                 }
 
-                var read = ReadSkillFile(finalFile);
+                var read = ReadSkillFile(skillFile, root);
                 if (read.Reason is not null)
                 {
                     skips.Add(new MarkdownSkillSkip(finalFile, read.Reason));
@@ -156,21 +172,27 @@ public sealed class MarkdownSkillLoader
                 }
 
                 var skill = parsed.Skill!;
-                var bodyBytes = StrictUtf8.GetByteCount(skill.Body);
-                if (bodyBytes == 0 || combinedBytes > MaxCombinedBytes - bodyBytes)
-                {
-                    skips.Add(new MarkdownSkillSkip(finalFile, "oversize"));
-                    continue;
-                }
-
-                if (!seenIds.Add(skill.Id))
+                if (seenIds.Contains(skill.Id))
                 {
                     skips.Add(new MarkdownSkillSkip(finalFile, "duplicate"));
                     continue;
                 }
 
+                var bodyBytes = StrictUtf8.GetByteCount(skill.Body);
+                if (skills.Count >= MaxSkillCount || bodyBytes == 0 || combinedBytes > MaxCombinedBytes - bodyBytes)
+                {
+                    skips.Add(new MarkdownSkillSkip(finalFile, "oversize"));
+                    continue;
+                }
+
+                seenIds.Add(skill.Id);
                 skills.Add(skill);
                 combinedBytes += bodyBytes;
+            }
+
+            if (directoryEnumerationTruncated)
+            {
+                skips.Add(new MarkdownSkillSkip(root, "oversize"));
             }
         }
 
@@ -198,7 +220,7 @@ public sealed class MarkdownSkillLoader
         }
     }
 
-    private static (string? Content, string? Reason) ReadSkillFile(string path)
+    private static (string? Content, string? Reason) ReadSkillFile(string path, string root)
     {
         try
         {
@@ -209,6 +231,26 @@ public sealed class MarkdownSkillLoader
                 FileShare.Read,
                 bufferSize: 4096,
                 FileOptions.SequentialScan);
+
+            var openedFinalPath = ResolveOpenedFinalPath(stream, path);
+            if (openedFinalPath is null)
+            {
+                return (null, "unreadable");
+            }
+
+            var packageDirectory = Path.GetDirectoryName(path);
+            if (IsReparsePoint(path)
+                || packageDirectory is null
+                || IsReparsePoint(packageDirectory))
+            {
+                return (null, "reparse_point");
+            }
+
+            if (!IsContained(root, openedFinalPath))
+            {
+                return (null, "outside_root");
+            }
+
             var bytes = new byte[MaxFileBytes + 1];
             var count = 0;
             while (count < bytes.Length)
@@ -254,6 +296,40 @@ public sealed class MarkdownSkillLoader
         }
     }
 
+    private static string? ResolveOpenedFinalPath(FileStream stream, string fallbackPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return Path.GetFullPath(fallbackPath);
+        }
+
+        var buffer = new StringBuilder(32 * 1024);
+        var length = GetFinalPathNameByHandle(stream.SafeFileHandle, buffer, buffer.Capacity, 0);
+        if (length == 0 || length >= buffer.Capacity)
+        {
+            return null;
+        }
+
+        var finalPath = buffer.ToString();
+        if (finalPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            finalPath = @"\\" + finalPath[8..];
+        }
+        else if (finalPath.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            finalPath = finalPath[4..];
+        }
+
+        try
+        {
+            return Path.GetFullPath(finalPath);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
     private static (MarkdownSkill? Skill, string? Reason) Parse(string path, string content)
     {
         var parsedFrontMatter = ParseFrontMatter(content);
@@ -283,6 +359,11 @@ public sealed class MarkdownSkillLoader
         }
 
         var digest = Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(body))).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            id = "skill-" + digest[..16];
+        }
+
         return (new MarkdownSkill(id, name, description, body, digest, path), null);
     }
 
@@ -483,4 +564,11 @@ public sealed class MarkdownSkillLoader
             && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
     }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern uint GetFinalPathNameByHandle(
+        SafeFileHandle hFile,
+        StringBuilder lpszFilePath,
+        int cchFilePath,
+        uint dwFlags);
 }

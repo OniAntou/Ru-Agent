@@ -187,6 +187,80 @@ public sealed class MarkdownSkillLoaderTests
         Assert.Equal(new[] { "skill-0", "skill-1", "skill-2", "skill-3" }, result.Skills.Select(skill => skill.Id));
     }
 
+    [Fact]
+    public void Uses_a_deterministic_nonempty_safe_id_when_metadata_and_folder_are_not_sluggable()
+    {
+        using var fixture = TempRoot.Create();
+        var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
+        WriteSkill(root, "!!!", "# No slug\n\nStill usable.");
+
+        var result = new MarkdownSkillLoader().Load(new[] { root });
+
+        var skill = Assert.Single(result.Skills);
+        Assert.NotEmpty(skill.Id);
+        Assert.Matches("^[a-z0-9][a-z0-9._-]*$", skill.Id);
+        Assert.Equal(skill.Id, new MarkdownSkillLoader().Load(new[] { root }).Skills.Single().Id);
+    }
+
+    [Fact]
+    public void Reports_a_duplicate_before_the_capacity_skip_for_a_later_root()
+    {
+        using var fixture = TempRoot.Create();
+        var firstRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "first")).FullName;
+        var secondRoot = Directory.CreateDirectory(Path.Combine(fixture.Root, "second")).FullName;
+        for (var index = 0; index < MarkdownSkillLoader.MaxSkillCount; index++)
+        {
+            WriteSkill(firstRoot, $"skill-{index:00}", $"# Skill {index}\n\nFirst root.");
+        }
+
+        WriteSkill(secondRoot, "duplicate", "---\nname: skill-00\n---\n# Duplicate\n\nMust be reported as duplicate.");
+
+        var result = new MarkdownSkillLoader().Load(new[] { firstRoot, secondRoot });
+
+        Assert.Contains(result.Skips, skip => skip.Reason == "duplicate");
+        Assert.DoesNotContain(result.Skips, skip => skip.SourcePath.EndsWith(Path.Combine("duplicate", "SKILL.md"), StringComparison.OrdinalIgnoreCase) && skip.Reason == "oversize");
+    }
+
+    [Fact]
+    public void Bounds_child_directory_discovery_and_skip_diagnostics()
+    {
+        using var fixture = TempRoot.Create();
+        var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
+        for (var index = 0; index < 300; index++)
+        {
+            Directory.CreateDirectory(Path.Combine(root, $"empty-{index:000}"));
+        }
+
+        var result = new MarkdownSkillLoader().Load(new[] { root });
+
+        Assert.Empty(result.Skills);
+        Assert.Contains(result.Skips, skip => skip.Reason == "oversize");
+        Assert.InRange(result.Skips.Count, 1, 257);
+    }
+
+    [Fact]
+    public void Rejects_a_reparse_discovery_root_before_canonicalizing_it()
+    {
+        using var fixture = TempRoot.Create();
+        using var target = TempRoot.Create();
+        var root = Path.Combine(fixture.Root, "skills-link");
+        WriteSkill(target.Root, "visible", "# Visible\n\nMust not be discovered through a root link.");
+
+        try
+        {
+            Directory.CreateSymbolicLink(root, target.Root);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        var result = new MarkdownSkillLoader().Load(new[] { root });
+
+        Assert.Empty(result.Skills);
+        Assert.Contains(result.Skips, skip => skip.Reason == "reparse_point");
+    }
+
     private static void WriteSkill(string root, string directoryName, string content)
     {
         var package = Directory.CreateDirectory(Path.Combine(root, directoryName)).FullName;

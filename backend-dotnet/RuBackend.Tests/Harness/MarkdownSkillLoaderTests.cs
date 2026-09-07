@@ -226,14 +226,15 @@ public sealed class MarkdownSkillLoaderTests
     {
         using var fixture = TempRoot.Create();
         var root = Directory.CreateDirectory(Path.Combine(fixture.Root, "skills")).FullName;
-        for (var index = 0; index < 300; index++)
+        for (var index = 0; index < 256; index++)
         {
-            Directory.CreateDirectory(Path.Combine(root, $"empty-{index:000}"));
+            Directory.CreateDirectory(Path.Combine(root, $"a{index:000}"));
         }
+        WriteSkill(root, "A999", "# Ordinal winner\n\nThe uppercase ordinal package must survive the bound.");
 
         var result = new MarkdownSkillLoader().Load(new[] { root });
 
-        Assert.Empty(result.Skills);
+        Assert.Contains(result.Skills, skill => skill.Id == "a999");
         Assert.Contains(result.Skips, skip => skip.Reason == "oversize");
         Assert.InRange(result.Skips.Count, 1, 257);
     }

@@ -95,21 +95,27 @@ public sealed class MarkdownSkillLoader
             var directoryEnumerationTruncated = false;
             try
             {
-                var discoveredDirectories = new List<string>(MaxDirectoriesPerRoot);
+                var discoveredDirectories = new SortedSet<string>(
+                    Comparer<string>.Create(CompareDirectoryOrdinal));
                 foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.TopDirectoryOnly))
                 {
                     if (discoveredDirectories.Count >= MaxDirectoriesPerRoot)
                     {
                         directoryEnumerationTruncated = true;
-                        break;
+                        var last = discoveredDirectories.Max!;
+                        if (CompareDirectoryOrdinal(directory, last) < 0)
+                        {
+                            discoveredDirectories.Remove(last);
+                            discoveredDirectories.Add(directory);
+                        }
+
+                        continue;
                     }
 
                     discoveredDirectories.Add(directory);
                 }
 
-                directories = discoveredDirectories
-                    .OrderBy(path => Path.GetFileName(path), StringComparer.Ordinal)
-                    .ToArray();
+                directories = discoveredDirectories.ToArray();
             }
             catch (IOException)
             {
@@ -563,6 +569,17 @@ public sealed class MarkdownSkillLoader
             && relative != ".."
             && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private static int CompareDirectoryOrdinal(string left, string right)
+    {
+        var byName = string.Compare(
+            Path.GetFileName(left),
+            Path.GetFileName(right),
+            StringComparison.Ordinal);
+        return byName != 0
+            ? byName
+            : string.Compare(left, right, StringComparison.Ordinal);
     }
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]

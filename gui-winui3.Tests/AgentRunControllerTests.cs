@@ -46,13 +46,21 @@ public sealed class AgentRunControllerTests
         public bool PresetCalled;
         public bool ApproveCalled;
         public bool DenyCalled;
+        public bool ThrowOnGetRun;
         public string PayloadContent { get; set; } = "{}";
         public TaskCompletionSource<bool>? SubscriptionGate;
         public Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
             => Task.FromResult(Run!);
 
         public Task<AgentRunModel> GetRunAsync(string runId, CancellationToken ct = default)
-            => Task.FromResult(Run!);
+        {
+            if (ThrowOnGetRun)
+            {
+                throw new InvalidOperationException("run_refresh_failed");
+            }
+
+            return Task.FromResult(Run!);
+        }
 
         public Task<AgentPayloadModel> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
             => Task.FromResult(new AgentPayloadModel(runId, payloadId, PayloadContent));
@@ -417,6 +425,38 @@ public sealed class AgentRunControllerTests
 
         Assert.Equal("failed", controller.CurrentRun?.Status);
         Assert.Equal("provider_rate_limited", controller.StatusText);
+        Assert.False(controller.IsBusy);
+        Assert.False(controller.CanCancel);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_uses_terminal_sse_snapshot_when_refresh_fails()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            ThrowOnGetRun = true,
+        };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: string.Empty,
+            RunId: string.Empty,
+            SessionId: string.Empty,
+            EventType: "final_snapshot",
+            OccurredAt: string.Empty,
+            Status: "completed",
+            SafeSummary: "completed",
+            PayloadRef: null,
+            ApprovalId: null,
+            Sequence: null,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-snapshot-fallback"));
+
+        Assert.Equal("completed", controller.CurrentRun?.Status);
         Assert.False(controller.IsBusy);
         Assert.False(controller.CanCancel);
     }

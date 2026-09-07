@@ -52,6 +52,7 @@ public sealed class AgentRunSummaryUiContractTests
 
         var applyBody = code[applyStart..applyEnd];
         Assert.Contains("IsFailure", applyBody, StringComparison.Ordinal);
+        Assert.Contains("HasRenderedAgentReply", applyBody, StringComparison.Ordinal);
         Assert.Contains("return;", applyBody, StringComparison.Ordinal);
     }
 

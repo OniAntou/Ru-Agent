@@ -68,7 +68,9 @@ namespace RuApp.Services
                 };
                 using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
                 bool ok = await HasOkEnvelopeAsync(response);
-                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                // Reasoning preferences do not change the provider catalog; notifying
+                // SettingsSaved would clear the catalog and make the effort picker
+                // briefly fall back to the default-only state.
                 return ok;
             }
             catch (Exception ex)

@@ -746,6 +746,16 @@ namespace RuApp.Views
             }
 
             var item = new AgentRunSummaryItem(summary);
+            if (item.IsFailure && HasRenderedAgentReply())
+            {
+                // A transient assistant reply may already be visible when the
+                // history/outbox finalization reports a late failure. Do not
+                // overwrite a usable answer with the generic "Agent failed"
+                // banner; the reply is the user-visible result of this turn.
+                ClearAgentRunSummary();
+                return;
+            }
+
             if (!item.IsFailure)
             {
                 // Success and cancelled runs keep the transcript clean; the
@@ -1908,6 +1918,13 @@ namespace RuApp.Views
 
         private void FailActiveAgentReply(Exception exception)
         {
+            AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
+            if (pending is not null && _activeAgentAssistantMessage is not null)
+            {
+                _activeAgentAssistantMessage.Content = pending.Text;
+            }
+
+            bool hasReply = HasRenderedAgentReply();
             _replyRenderScheduler.Invalidate();
             if (_activeAgentAssistantMessage is not null)
             {
@@ -1915,18 +1932,25 @@ namespace RuApp.Views
                 {
                     Messages.Add(_activeAgentAssistantMessage);
                 }
-                _activeAgentAssistantMessage.Content = string.IsNullOrWhiteSpace(
-                    _activeAgentAssistantMessage.Content)
-                    ? "Coding Agent could not complete this turn. Please try again later."
-                    : $"{_activeAgentAssistantMessage.Content}\n\nCoding Agent could not complete this turn.";
+                if (!hasReply)
+                {
+                    _activeAgentAssistantMessage.Content = "Coding Agent could not complete this turn. Please try again later.";
+                }
                 _activeAgentAssistantMessage.IsStreaming = false;
-                _activeAgentAssistantMessage.IsError = true;
+                _activeAgentAssistantMessage.IsError = !hasReply;
             }
 
             if (_activeAgentTurnSource == AgentTurnSource.Voice)
             {
-                _voicePlayback?.FailReplyStream();
-                _voiceConversation?.NotifyReplyError(exception);
+                if (hasReply)
+                {
+                    _voiceConversation?.NotifyReplyCompleted();
+                }
+                else
+                {
+                    _voicePlayback?.FailReplyStream();
+                    _voiceConversation?.NotifyReplyError(exception);
+                }
             }
 
             _activeAgentAssistantMessage = null;
@@ -2081,6 +2105,11 @@ namespace RuApp.Views
 
         private void ShowAgentError(Exception exception)
         {
+            if (HasRenderedAgentReply())
+            {
+                return;
+            }
+
             ClearAgentRunSummary();
             string status = exception switch
             {
@@ -2104,6 +2133,11 @@ namespace RuApp.Views
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = Visibility.Collapsed;
         }
+
+        private bool HasRenderedAgentReply() =>
+            _activeAgentReplyReceived
+            || (_activeAgentAssistantMessage is { Content: { } content }
+                && !string.IsNullOrWhiteSpace(content));
 
         private void StartAgentMonitor()
         {

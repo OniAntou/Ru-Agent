@@ -338,7 +338,7 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
-    public async Task Reasoning_save_is_partial_and_emits_invalidation_event()
+    public async Task Reasoning_save_is_partial_without_invalidating_provider_catalog()
     {
         using var handler = new SaveHandler(new[] { "{\"status\":\"ok\"}" });
         using var api = new ApiService(
@@ -350,7 +350,7 @@ public sealed class ProviderCatalogTests
         Assert.True(await api.SaveReasoningSettingsAsync("high", "model-a", "identity"));
         Assert.Contains("reasoning_effort", handler.LastBody);
         Assert.DoesNotContain("backend_choice", handler.LastBody);
-        Assert.Equal(1, notifications);
+        Assert.Equal(0, notifications);
     }
 
     [Fact]

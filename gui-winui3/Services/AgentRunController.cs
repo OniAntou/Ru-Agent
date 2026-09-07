@@ -26,6 +26,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private string? _waitKind;
     private string? _pendingApprovalId;
     private string? _pendingApprovalSummary;
+    private string? _streamTerminalStatus;
     private bool _isCancelRequested;
     private CancellationTokenSource? _subscriptionCts;
 
@@ -147,6 +148,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             lock (_gate)
             {
                 _assistantDeltaKeys.Clear();
+                _streamTerminalStatus = null;
             }
             RefreshCommands();
         });
@@ -176,7 +178,16 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             // may be stale (or the stream may have disconnected). Refresh the durable
             // run before changing command state so Cancel is never left enabled for a
             // completed run and a disconnect is not reported as success.
-            await RefreshAsync(token).ConfigureAwait(false);
+            try
+            {
+                await RefreshAsync(token).ConfigureAwait(false);
+            }
+            catch (Exception) when (!token.IsCancellationRequested && TryApplyTerminalStreamSnapshot())
+            {
+                // The SSE stream already delivered the authoritative terminal
+                // snapshot. A follow-up GET can race backend shutdown/restart; do
+                // not turn a completed reply into a false client-side failure.
+            }
 
             RunOnUi(() =>
             {
@@ -461,6 +472,15 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             }
         }
 
+        if (string.Equals(model.EventType, "final_snapshot", StringComparison.Ordinal)
+            && IsTerminalStatus(model.Status))
+        {
+            lock (_gate)
+            {
+                _streamTerminalStatus = model.Status;
+            }
+        }
+
         RunOnUi(() =>
         {
             if (Events.Count > 200)
@@ -688,6 +708,38 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     private static bool IsTerminalStatus(string? status) => status is
         "completed" or "failed" or "cancelled" or "interrupted";
+
+    private bool TryApplyTerminalStreamSnapshot()
+    {
+        string? status;
+        string? runId;
+        lock (_gate)
+        {
+            status = _streamTerminalStatus;
+            runId = _currentRunId;
+        }
+
+        if (!IsTerminalStatus(status) || string.IsNullOrWhiteSpace(runId))
+        {
+            return false;
+        }
+
+        RunOnUi(() =>
+        {
+            if (!string.Equals(_currentRunId, runId, StringComparison.Ordinal)
+                || CurrentRun is not { } current)
+            {
+                return;
+            }
+
+            CurrentRun = current with { Status = status! };
+            _waitKind = null;
+            PendingApprovalId = null;
+            PendingApprovalSummary = null;
+            RefreshCommands();
+        });
+        return true;
+    }
 
     public void Dispose()
     {

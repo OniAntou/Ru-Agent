@@ -93,10 +93,14 @@ class InstructionBlock:
     display_name: str
     content: str
     content_sha256: str
+    origin: str = "Workspace"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "source_id", _require_identifier(self.source_id, 128, allow_colon=True))
         object.__setattr__(self, "display_name", _require_string(self.display_name, 256))
+        if not isinstance(self.origin, str) or self.origin not in {"Workspace", "ExternalSkill"}:
+            raise PromptContextError()
+        object.__setattr__(self, "origin", self.origin)
         content = normalize_text(self.content, maximum_bytes=MAX_PROMPT_INSTRUCTION_BYTES)
         if not content:
             raise PromptContextError()
@@ -220,6 +224,7 @@ class SystemPromptContext:
                     "display_name": block.display_name,
                     "content": block.content,
                     "content_sha256": block.content_sha256,
+                    "origin": block.origin,
                 }
                 for block in self.instruction_blocks
             ],
@@ -323,12 +328,16 @@ def parse_system_prompt_context(value: Mapping[str, Any]) -> SystemPromptContext
 def _parse_instruction(value: object) -> InstructionBlock:
     if not isinstance(value, Mapping):
         raise PromptContextError()
-    _require_exact_fields(value, {"source_id", "display_name", "content", "content_sha256"})
+    required_fields = {"source_id", "display_name", "content", "content_sha256"}
+    allowed_fields = required_fields | {"origin"}
+    if not required_fields.issubset(value) or not set(value).issubset(allowed_fields):
+        raise PromptContextError()
     return InstructionBlock(
         source_id=value["source_id"],
         display_name=value["display_name"],
         content=value["content"],
         content_sha256=value["content_sha256"],
+        origin=value.get("origin", "Workspace"),
     )
 
 

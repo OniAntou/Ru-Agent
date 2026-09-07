@@ -4,6 +4,19 @@ Run heavyweight gates sequentially on Windows. Restore each .NET test project
 before using `--no-restore`; concurrent Python, frontend, and .NET builds can
 exhaust the page file on this workspace.
 
+## Deterministic Python Harness cleanup (2026-09-07)
+
+The retired Python deterministic Worker, prompt-generation stub, session
+orchestrator, CLI/GUI wrappers, Phase 1 prompt benchmark, and their dedicated
+tests/workflow were removed. The retained filesystem-only boundary scanner and
+logging benchmark no longer import those modules. Focused retained checks
+passed 12/12 and Ruff passed for the changed Python files.
+
+The full Python suite recorded 305 passed and one failure in the existing
+documentation archive guard because four dated Markdown plans remain under
+`docs/superpowers/plans`; those plans were intentionally preserved. No models,
+voice runtimes, app data, credentials, or user caches were removed.
+
 ## Task 5 verification (2026-09-07)
 
 Fresh sequential Debug checks on `main` passed all four requested managed test

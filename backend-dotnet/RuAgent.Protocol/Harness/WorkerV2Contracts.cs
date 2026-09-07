@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -822,6 +823,10 @@ public static class WorkerV2Contracts
         }
     }
 
+    private static readonly FrozenSet<string> AllowedUsageKeys = FrozenSet.ToFrozenSet(
+        ["input_tokens", "output_tokens", "total_tokens", "cache_read_input_tokens", "cache_write_input_tokens"],
+        StringComparer.Ordinal);
+
     private static void ValidateUsage(JsonNode? usageNode)
     {
         if (usageNode is not JsonObject usage || usage.Count is < 1 or > 5)
@@ -829,15 +834,14 @@ public static class WorkerV2Contracts
             throw new AgentProtocolException("invalid_step");
         }
 
-        var allowed = new HashSet<string>(["input_tokens", "output_tokens", "total_tokens", "cache_read_input_tokens", "cache_write_input_tokens"], StringComparer.Ordinal);
-        if (!usage.Select(pair => pair.Key).All(allowed.Contains))
+        foreach (var pair in usage)
         {
-            throw new AgentProtocolException("invalid_step");
-        }
+            if (!AllowedUsageKeys.Contains(pair.Key))
+            {
+                throw new AgentProtocolException("invalid_step");
+            }
 
-        foreach (var value in usage.Select(pair => pair.Value))
-        {
-            if (value is not JsonValue number || !number.TryGetValue<int>(out var count) || count < 0)
+            if (pair.Value is not JsonValue number || !number.TryGetValue<int>(out var count) || count < 0)
             {
                 throw new AgentProtocolException("invalid_step");
             }

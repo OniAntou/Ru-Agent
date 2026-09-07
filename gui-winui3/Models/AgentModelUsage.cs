@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace RuApp.Models;
@@ -47,6 +48,10 @@ public sealed record AgentModelUsage(
             using var document = JsonDocument.Parse(json);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
+                // Display path stays lenient, but record the shape mismatch so a
+                // missing footer is traceable (field names/kinds only, no values).
+                Debug.WriteLine(
+                    $"Agent usage payload is not an object: {document.RootElement.ValueKind}");
                 return null;
             }
 
@@ -58,8 +63,10 @@ public sealed record AgentModelUsage(
                 ReadOptional(document.RootElement, "cache_write_input_tokens"));
             return usage.HasAny ? usage : null;
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
+            Debug.WriteLine(
+                $"Agent usage payload is not valid JSON: {exception.GetType().Name}");
             return null;
         }
     }
@@ -76,6 +83,10 @@ public sealed record AgentModelUsage(
             || !value.TryGetInt32(out var count)
             || count < 0)
         {
+            // Lenient by design (partial footer still renders), but log the
+            // skipped field so malformed provider data does not vanish silently.
+            Debug.WriteLine(
+                $"Agent usage field '{name}' ignored: {value.ValueKind}");
             return null;
         }
 

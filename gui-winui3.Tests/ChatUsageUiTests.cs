@@ -1,8 +1,6 @@
 using System;
-using System.IO;
-using System.Linq;
+using System.Collections.Generic;
 using RuApp.Models;
-using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -43,33 +41,36 @@ public sealed class ChatUsageUiTests
     }
 
     [Fact]
-    public void Chat_markup_and_controller_include_provider_usage_contract()
+    public void Usage_parser_keeps_valid_fields_and_ignores_malformed_ones()
     {
-        var root = FindSourceRoot();
-        var xaml = File.ReadAllText(Path.Combine(root, "Views", "ChatView.xaml"));
-        var codeBehind = File.ReadAllText(Path.Combine(root, "Views", "ChatView.xaml.cs"));
-        var controller = File.ReadAllText(Path.Combine(root, "Services", "AgentRunController.cs"));
+        var usage = AgentModelUsage.Parse("{\"input_tokens\":\"oops\",\"output_tokens\":5,\"total_tokens\":-1}");
 
-        Assert.Contains("UsageLabel", xaml, StringComparison.Ordinal);
-        Assert.Contains("HasUsage", xaml, StringComparison.Ordinal);
-        Assert.Contains("UsageReceived", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("model.usage_recorded", controller, StringComparison.Ordinal);
-        Assert.Contains("GetPayloadAsync", controller, StringComparison.Ordinal);
+        Assert.NotNull(usage);
+        Assert.Null(usage!.InputTokens);
+        Assert.Equal(5, usage.OutputTokens);
+        Assert.Null(usage.TotalTokens);
+        Assert.Equal("5 output", usage.DisplayText);
     }
 
-    private static string FindSourceRoot()
+    [Fact]
+    public void Chat_message_notifies_usage_bindings_when_usage_arrives_late()
     {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
+        var message = new ChatMessageItem { Role = "assistant", Content = "done" };
+        var notified = new List<string>();
+        message.PropertyChanged += (_, args) =>
         {
-            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
-            if (Directory.Exists(sourceRoot))
+            if (args.PropertyName is not null)
             {
-                return sourceRoot;
+                notified.Add(args.PropertyName);
             }
-        }
+        };
 
-        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
+        message.Usage = new AgentModelUsage(null, 12, 12, null, null);
+
+        Assert.True(message.HasUsage);
+        Assert.Equal("12 output · 12 total", message.UsageLabel);
+        Assert.Contains("Usage", notified);
+        Assert.Contains("HasUsage", notified);
+        Assert.Contains("UsageLabel", notified);
     }
 }

@@ -112,7 +112,6 @@ namespace RuApp.Views
                 ApplyReplySnapshot);
             ChatListView.ItemsSource = Messages;
             AttachmentPreviewList.ItemsSource = PendingAttachments;
-            AgentActivityFeed.ItemsSource = AgentActivities;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             this.Loaded += (s, e) => ApplyInputWidth();
@@ -720,10 +719,6 @@ namespace RuApp.Views
                 AgentActivities.Add(item);
             }
 
-            if (AgentActivityFeed is not null)
-            {
-                AgentActivityFeed.Visibility = AgentActivities.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            }
             ScrollChatToBottom();
         }
 
@@ -903,9 +898,13 @@ namespace RuApp.Views
             _sweepStoryboards.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
-            if (AgentActivityFeed is not null)
+        }
+
+        private void DetachAgentActivitiesFromMessages()
+        {
+            foreach (var message in Messages)
             {
-                AgentActivityFeed.Visibility = Visibility.Collapsed;
+                message.AgentActivities = null;
             }
         }
 
@@ -1851,6 +1850,7 @@ namespace RuApp.Views
                 IsStreaming = true,
                 SessionId = _activeSessionId,
             };
+            _activeAgentAssistantMessage.AgentActivities = AgentActivities;
 
             if (source == AgentTurnSource.Voice)
             {
@@ -2002,6 +2002,7 @@ namespace RuApp.Views
             _activeSessionId = sessionId!;
             ClearAgentActivities();
             ClearAgentRunSummary();
+            DetachAgentActivitiesFromMessages();
             Messages.Clear();
             UpdateViewMode();
             SessionOpened?.Invoke(
@@ -2229,6 +2230,7 @@ namespace RuApp.Views
                     return;
                 }
 
+                DetachAgentActivitiesFromMessages();
                 Messages.Clear();
                 int lastAssistantIndex = history.FindLastIndex(
                     item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
@@ -2239,7 +2241,8 @@ namespace RuApp.Views
                     {
                         Role = role,
                         Content = role == "assistant" ? StripDisplayMarkers(content) : content,
-                        Usage = index == lastAssistantIndex ? _activeAgentUsage : null
+                        Usage = index == lastAssistantIndex ? _activeAgentUsage : null,
+                        AgentActivities = index == lastAssistantIndex ? AgentActivities : null
                     });
                 }
 
@@ -2469,6 +2472,7 @@ namespace RuApp.Views
                 _activeSessionId = sessionId;
                 ResetAgentState();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
+                DetachAgentActivitiesFromMessages();
                 Messages.Clear();
                 var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
                 if (history != null)

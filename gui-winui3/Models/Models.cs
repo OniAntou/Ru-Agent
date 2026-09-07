@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
@@ -23,6 +25,7 @@ namespace RuApp.Models
         private string? _turnId;
         private string? _sessionId;
         private AgentModelUsage? _usage;
+        private ObservableCollection<AgentActivityItem>? _agentActivities;
 
         public string Id
         {
@@ -117,6 +120,34 @@ namespace RuApp.Models
 
         public string UsageLabel => Usage?.DisplayText ?? string.Empty;
 
+        public ObservableCollection<AgentActivityItem>? AgentActivities
+        {
+            get => _agentActivities;
+            set
+            {
+                if (ReferenceEquals(_agentActivities, value))
+                {
+                    return;
+                }
+
+                if (_agentActivities is not null)
+                {
+                    _agentActivities.CollectionChanged -= OnAgentActivitiesChanged;
+                }
+
+                _agentActivities = value;
+                if (_agentActivities is not null)
+                {
+                    _agentActivities.CollectionChanged += OnAgentActivitiesChanged;
+                }
+
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasAgentActivities));
+            }
+        }
+
+        public bool HasAgentActivities => AgentActivities?.Count > 0;
+
         private System.Collections.ObjectModel.ObservableCollection<ImageAttachmentItem> _attachments = new();
 
         public System.Collections.ObjectModel.ObservableCollection<ImageAttachmentItem> Attachments
@@ -142,6 +173,11 @@ namespace RuApp.Models
         public string TimeLabel => Timestamp.ToString("HH:mm");
 
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnAgentActivitiesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            OnPropertyChanged(nameof(HasAgentActivities));
+        }
 
         protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
         {

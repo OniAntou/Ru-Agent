@@ -13,7 +13,7 @@ public sealed class AgentActivityUiSourceContractTests
         var model = File.ReadAllText(FindSource("Models", "AgentActivityItem.cs"));
 
         Assert.Contains("ObservableCollection<AgentActivityItem> AgentActivities", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentActivityFeed\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.AutomationId=\"AgentActivityFeed\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsControl", xaml, StringComparison.Ordinal);
         Assert.Contains("ChatContentGrid", xaml, StringComparison.Ordinal);
         Assert.Contains("AgentActivityItem", model, StringComparison.Ordinal);
@@ -29,28 +29,29 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void Activity_feed_is_rendered_before_transcript_messages()
+    public void Activity_feed_is_rendered_before_assistant_content()
     {
         var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
-        var messagesStart = xaml.IndexOf("<ListView x:Name=\"ChatListView\"", StringComparison.Ordinal);
-        var messagesEnd = xaml.IndexOf("</ListView>", messagesStart, StringComparison.Ordinal);
-        var feedStart = xaml.IndexOf("<ItemsControl x:Name=\"AgentActivityFeed\"", StringComparison.Ordinal);
-        var feedEnd = xaml.IndexOf("</ItemsControl>", feedStart, StringComparison.Ordinal);
+        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", StringComparison.Ordinal);
+        var assistantEnd = xaml.IndexOf("</DataTemplate>", assistantStart, StringComparison.Ordinal);
+        var feedStart = xaml.IndexOf("AutomationProperties.AutomationId=\"AgentActivityFeed\"", assistantStart, StringComparison.Ordinal);
+        var markdownStart = xaml.IndexOf("<controls:MarkdownBlock", assistantStart, StringComparison.Ordinal);
 
-        Assert.True(messagesStart >= 0 && messagesEnd > messagesStart, "ChatListView is missing.");
-        Assert.True(feedStart >= 0 && feedEnd > feedStart, "AgentActivityFeed is missing.");
-        Assert.Contains("Grid.Row=\"1\"", xaml[messagesStart..messagesEnd], StringComparison.Ordinal);
-        Assert.Contains("Grid.Row=\"0\"", xaml[feedStart..feedEnd], StringComparison.Ordinal);
+        Assert.True(assistantStart >= 0 && assistantEnd > assistantStart, "AssistantMessageTemplate is missing.");
+        Assert.True(feedStart > assistantStart && feedStart < assistantEnd, "AgentActivityFeed must belong to the assistant template.");
+        Assert.True(markdownStart > feedStart && markdownStart < assistantEnd, "Assistant content must follow AgentActivityFeed.");
     }
 
     [Fact]
     public void Feed_template_exposes_only_safe_state_and_metadata_visuals()
     {
         var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var feedStart = xaml.IndexOf("x:Name=\"AgentActivityFeed\"", StringComparison.Ordinal);
+        var feedStart = xaml.IndexOf("<DataTemplate x:Key=\"AgentActivityTemplate\"", StringComparison.Ordinal);
         Assert.True(feedStart >= 0, "AgentActivityFeed is missing.");
-        var feedBlock = xaml[feedStart..];
+        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", feedStart, StringComparison.Ordinal);
+        Assert.True(assistantStart > feedStart, "AssistantMessageTemplate must follow AgentActivityTemplate.");
+        var feedBlock = xaml[feedStart..assistantStart];
 
         foreach (var state in new[] { "IsRunning", "IsCompleted", "IsFailed", "IsWaiting" })
         {

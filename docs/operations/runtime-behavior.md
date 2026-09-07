@@ -281,8 +281,9 @@ expose a workspace editor, while the authenticated API still validates the
 canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE path.
 Workspace trust, approval, Stop, Continue, and bounded
 Agent status remain inline above the input. While a run is active, the transcript
-may also show a separate transient activity feed above the message list, driven
-by typed `agent.activity` SSE frames. It renders only safe state, basename/line-range, symbol/count,
+may also show a separate transient activity feed above the assistant content,
+driven by typed `agent.activity` SSE frames. It renders only safe state,
+basename/line-range, symbol/count,
 edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
 frames do not enter durable history or audit. Agent payloads and raw tool output

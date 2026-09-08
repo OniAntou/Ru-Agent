@@ -200,7 +200,7 @@ public sealed class AgentSessionPermissionEndpointTests
     }
 
     [Fact]
-    public async Task RequestBodyPresetAloneCannotEscalateStandardToFull()
+    public async Task LegacyFullPresetInBodyCreatesStandardRun()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
@@ -213,20 +213,20 @@ public sealed class AgentSessionPermissionEndpointTests
         using var presetResp = await clientInteractive.PostAsJsonAsync("/agent/v1/policies", presetBody);
         Assert.Equal(HttpStatusCode.OK, presetResp.StatusCode);
 
-        // Try to create run with full_access without having set full preset – should fail even though body says full
+        // Legacy full_access body maps to the same standard behavior.
         var runBody = new
         {
             session_id = sessionId,
             workspace_path = wsPath,
-            prompt = "try escalate",
+            prompt = "legacy full body",
             preset = "full_access",
             preset_selection_version = 1,
             idempotency_key = Guid.NewGuid().ToString("N")
         };
         using var runResp = await client.PostAsJsonAsync("/agent/v1/runs", runBody);
-        Assert.Equal((HttpStatusCode)409, runResp.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, runResp.StatusCode);
         var json = await runResp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("preset_mismatch", json.GetProperty("error_code").GetString());
+        Assert.Equal("standard", json.GetProperty("preset").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear();

@@ -45,18 +45,12 @@ static WebOptions? BuildWebOptions()
         maxResponseBytes = (int)parsed;
     }
 
-    var requireApproval = string.Equals(
-        Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL"),
-        "true",
-        StringComparison.OrdinalIgnoreCase);
-
     try
     {
         return new WebOptions(
             enabled: true,
             searchEndpoint: searchEndpoint,
-            maxResponseBytes: maxResponseBytes,
-            requireApproval: requireApproval);
+            maxResponseBytes: maxResponseBytes);
     }
     catch (ArgumentException error)
     {

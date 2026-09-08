@@ -13,9 +13,13 @@ CURRENT_DOCS = [
     ROOT / "docs/README.md",
     ROOT / "docs/architecture.md",
     ROOT / "docs/operations/agent-tools.md",
+    ROOT / "backend-dotnet/RuAgent.Cli/README.md",
+]
+
+CURRENT_DOCS_WITH_ADRS = [
+    *CURRENT_DOCS,
     ROOT / "docs/adr/0007-mode-capability-profiles.md",
     ROOT / "docs/adr/0009-broker-execution-authority.md",
-    ROOT / "backend-dotnet/RuAgent.Cli/README.md",
 ]
 
 
@@ -65,13 +69,13 @@ def test_current_docs_describe_session_scoped_agent_permissions() -> None:
     """Current docs must mention the new permission vocabulary.
 
     Plan Task 8 asserts the current-state docs cover session-scoped
-    permissions, the three reason-specific approval codes, and do not claim
+    permissions, the six reason-specific approval codes, and do not claim
     external grants are durable or that Full Access allows every well-formed
     call. Marking the previous preset model superseded without rewriting
     completed implementation archives are not part of the current contract.
     """
     missing: list[str] = []
-    for path in CURRENT_DOCS:
+    for path in CURRENT_DOCS_WITH_ADRS:
         text = _read(path)
         if "session-scoped" not in text:
             missing.append(f"{path.relative_to(ROOT)} missing 'session-scoped'")
@@ -81,6 +85,12 @@ def test_current_docs_describe_session_scoped_agent_permissions() -> None:
             missing.append(f"{path.relative_to(ROOT)} missing 'terminal_delete_requires_approval'")
         if "terminal_unknown_executable" not in text:
             missing.append(f"{path.relative_to(ROOT)} missing 'terminal_unknown_executable'")
+        if "terminal_external_mutation_requires_approval" not in text:
+            missing.append(f"{path.relative_to(ROOT)} missing 'terminal_external_mutation_requires_approval'")
+        if "terminal_timeout_requires_approval" not in text:
+            missing.append(f"{path.relative_to(ROOT)} missing 'terminal_timeout_requires_approval'")
+        if "web_approval_required" not in text:
+            missing.append(f"{path.relative_to(ROOT)} missing 'web_approval_required'")
     assert missing == [], missing
 
 

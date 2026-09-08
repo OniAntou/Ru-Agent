@@ -25,7 +25,6 @@ public sealed record TerminalShellRequest(
     string ApprovalToken,
     string RequestId = "",
     string SessionId = "",
-    string ArgumentsHash = "",
     bool ReadOnly = false,
     IReadOnlyList<string>? WriteSet = null,
     bool Approved = false);

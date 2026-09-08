@@ -11,8 +11,7 @@ public sealed record WebOptions
     public WebOptions(
         bool enabled = false,
         Uri? searchEndpoint = null,
-        int maxResponseBytes = DefaultMaxResponseBytes,
-        bool requireApproval = false)
+        int maxResponseBytes = DefaultMaxResponseBytes)
     {
         if (maxResponseBytes is < 1 or > MaxConfiguredResponseBytes)
         {
@@ -33,13 +32,11 @@ public sealed record WebOptions
         Enabled = enabled;
         SearchEndpoint = searchEndpoint;
         MaxResponseBytes = maxResponseBytes;
-        RequireApproval = requireApproval;
     }
 
     public bool Enabled { get; }
     public Uri? SearchEndpoint { get; }
     public int MaxResponseBytes { get; }
-    public bool RequireApproval { get; }
 
     public bool FetchEnabled => Enabled;
     public bool SearchEnabled => Enabled && SearchEndpoint is not null;

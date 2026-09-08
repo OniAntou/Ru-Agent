@@ -135,24 +135,11 @@ public enum ApprovalOutcome
     NotFound,
 }
 
-/// <summary>
-/// The exact-by-default reusable rule an AllowRun/AllowProject decision may persist.
-/// Normalization strips glob metacharacters so an approval card can never broaden authority.
-/// </summary>
-public sealed record ReusableRuleCandidate(
-    PolicyRuleScope Scope,
-    string ToolId,
-    string ToolVersion,
-    IReadOnlyList<string> PathPatterns,
-    string? CwdPattern,
-    IReadOnlyList<string> ArgvPatterns);
-
 public sealed record ApprovalResolution(
-    ApprovalOutcome Outcome,
-    ReusableRuleCandidate? ReusableRuleCandidate)
+    ApprovalOutcome Outcome)
 {
     public static readonly ApprovalResolution NotFound =
-        new(ApprovalOutcome.NotFound, null);
+        new(ApprovalOutcome.NotFound);
 }
 
 /// <summary>
@@ -180,26 +167,20 @@ public static class ApprovalState
 
         if (pending.Binding.ExpiresAt <= now)
         {
-            return new ApprovalResolution(ApprovalOutcome.Expired, null);
+            return new ApprovalResolution(ApprovalOutcome.Expired);
         }
 
         if (!SameBinding(pending.Binding, expectedBinding))
         {
-            return new ApprovalResolution(ApprovalOutcome.Stale, null);
+            return new ApprovalResolution(ApprovalOutcome.Stale);
         }
 
         if (!command.IsAllow)
         {
-            return new ApprovalResolution(ApprovalOutcome.ConsumedDenied, null);
+            return new ApprovalResolution(ApprovalOutcome.ConsumedDenied);
         }
 
-        var candidate = command.Kind switch
-        {
-            ApprovalCommandKind.AllowRun => BuildCandidate(PolicyRuleScope.Run, pending.Binding),
-            ApprovalCommandKind.AllowProject => BuildCandidate(PolicyRuleScope.Project, pending.Binding),
-            _ => null,
-        };
-        return new ApprovalResolution(ApprovalOutcome.ConsumedApproved, candidate);
+        return new ApprovalResolution(ApprovalOutcome.ConsumedApproved);
     }
 
     private static bool SameBinding(ToolApprovalBinding left, ToolApprovalBinding right)
@@ -216,25 +197,6 @@ public static class ApprovalState
             && string.Equals(left.NetworkIntent, right.NetworkIntent, StringComparison.Ordinal)
             && left.SnapshotVersion == right.SnapshotVersion
             && string.Equals(left.IntentHash, right.IntentHash, StringComparison.Ordinal);
-    }
-
-    private static ReusableRuleCandidate BuildCandidate(
-        PolicyRuleScope scope,
-        ToolApprovalBinding binding)
-    {
-        // Exact-by-default: strip any glob metacharacter the canonical value might contain.
-        string Sanitize(string? value) =>
-            value is null ? string.Empty : value.Replace("*", string.Empty).Replace("?", string.Empty);
-
-        return new ReusableRuleCandidate(
-            scope,
-            binding.ToolId,
-            binding.ToolVersion,
-            binding.CanonicalPath is null
-                ? Array.Empty<string>()
-                : new[] { Sanitize(binding.CanonicalPath) },
-            binding.Cwd is null ? null : Sanitize(binding.Cwd),
-            binding.Argv.Select(Sanitize).ToArray());
     }
 }
 

@@ -22,8 +22,10 @@ session replacement or restart. There is no Chat compatibility transport or
 read-only generation profile. Elevation, admin, registry, and service
 installation stay out of scope with no adapters. The picker was
 retired in 2026-09-04; the current pending-approval model exposes
-`external_directory_required`, `terminal_delete_requires_approval`, and
-`terminal_unknown_executable` as the only ask reasons.
+`external_directory_required`, `terminal_delete_requires_approval`,
+`terminal_external_mutation_requires_approval`,
+`terminal_timeout_requires_approval`, `web_approval_required`, and
+`terminal_unknown_executable` as the ask reasons.
 
 ## Recorded limitations and decisions
 

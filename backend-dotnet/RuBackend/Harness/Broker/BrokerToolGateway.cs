@@ -12,10 +12,11 @@ namespace RuBackend.Harness.Broker;
 
 /// <summary>
 /// IToolGateway adapter that evaluates and executes tool calls inside the
-/// isolated Broker process over the V2 wire flow: tool.evaluate →
-/// tool.decision → tool.prepare → tool.prepared → tool.execute →
-/// tool.result. One gateway instance owns one connection and one open run
-/// lease; requests on it are serialized.
+/// isolated Broker process over the single-token wire flow: tool.evaluate →
+/// tool.decision (allow carries one authorization_token, ask carries one
+/// approval_id) → approval.respond → tool.execute → tool.result. One gateway
+/// instance owns one connection and one open run lease; requests on it are
+/// serialized.
 /// </summary>
 public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
 {
@@ -37,8 +38,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         string ToolId,
         string ToolVersion,
         ToolAccessKind AccessKind,
-        string PreparationToken,
-        string? AuthorizationToken,
+        string AuthorizationToken,
         string ArgumentsJson);
 
     public BrokerToolGateway(
@@ -105,7 +105,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         {
             "allow" => ToolProposalDecision.Allow(
                 accessKind,
-                body["decision_token"]?.GetValue<string>()
+                body["authorization_token"]?.GetValue<string>()
                     ?? throw new ToolTransportException("missing_decision_token")),
             "deny" => ToolProposalDecision.Deny(
                 accessKind,
@@ -141,7 +141,10 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             {
                 "external_directory_required" => "external_directory_required",
                 "terminal_delete_requires_approval" => "terminal_delete_requires_approval",
+                "terminal_external_mutation_requires_approval" => "terminal_external_mutation_requires_approval",
+                "terminal_timeout_requires_approval" => "terminal_timeout_requires_approval",
                 "terminal_unknown_executable" => "terminal_unknown_executable",
+                "web_approval_required" => "web_approval_required",
                 _ => "approval_required",
             });
     }
@@ -151,37 +154,17 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(execution);
+        cancellationToken.ThrowIfCancellationRequested();
         var accessKind = AccessKindForTool(execution.Proposal.ToolId);
-        string? authorizationToken = null;
-        string preparationToken;
         var canonicalToken = execution.CanonicalIntentToken;
-        if (canonicalToken.StartsWith(AuthorizationTokenPrefix, StringComparison.Ordinal))
-        {
-            authorizationToken = canonicalToken[AuthorizationTokenPrefix.Length..];
-            preparationToken = canonicalToken;
-        }
-        else
-        {
-            var prepared = await RpcAsync(
-                AgentMessageTypes.ToolPrepare,
-                new JsonObject
-                {
-                    ["run_id"] = _runId,
-                    ["tool_id"] = execution.Proposal.ToolId,
-                    ["decision_token"] = execution.CanonicalIntentToken,
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            var body = ThrowIfTransportError(prepared);
-            preparationToken = body["preparation_token"]?.GetValue<string>()
-                ?? throw new ToolTransportException("missing_preparation_token");
-        }
+        var authorizationToken = canonicalToken.StartsWith(AuthorizationTokenPrefix, StringComparison.Ordinal)
+            ? canonicalToken[AuthorizationTokenPrefix.Length..]
+            : canonicalToken;
 
         _pending[execution.ExecutionId.Value] = new PendingExecution(
             execution.Proposal.ToolId,
             execution.Proposal.ToolVersion,
             accessKind,
-            preparationToken,
             authorizationToken,
             execution.Proposal.Arguments.GetRawText());
         return new PreparedToolExecution(
@@ -189,7 +172,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             execution.Proposal.ToolCallId,
             execution.Proposal.ModelOrder,
             accessKind,
-            authorizationToken ?? preparationToken,
+            authorizationToken,
             []);
     }
 
@@ -224,8 +207,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
                 ["run_id"] = _runId,
                 ["tool_id"] = pending.ToolId,
                 ["tool_version"] = pending.ToolVersion,
-                [pending.AuthorizationToken is null ? "preparation_token" : "authorization_token"] =
-                    pending.AuthorizationToken ?? pending.PreparationToken,
+                ["authorization_token"] = pending.AuthorizationToken,
                 ["arguments"] = ParseArgumentsJson(pending.ArgumentsJson),
             },
             cancellationToken).ConfigureAwait(false);
@@ -260,13 +242,10 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    /// <summary>
     /// Forwards an approval resolution to the Broker on this gateway's
     /// connection (whose session owns the run lease). On success the returned
     /// one-time authorization token is stored under the original intent key so
-    /// the resumed proposal evaluates, prepares, and executes without a new
-    /// ask.
-    /// </summary>
+    /// the resumed proposal evaluates and executes without a new ask.
     public async Task<(bool Authorized, string? AuthorizationToken)> RespondApprovalAsync(
         string brokerApprovalId,
         string command,

@@ -365,6 +365,15 @@ public sealed class AgentReplyPolicyTests
         public int EnqueueCalls { get; private set; }
         public List<(string Prompt, string Response)> Remembered { get; } = [];
 
+        public Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(Records);
+
+        public Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(int limit, string? cursor, CancellationToken cancellationToken) =>
+            Task.FromResult(Records);
+
+        public Task<MemoryRecord?> GetAsync(string id, CancellationToken cancellationToken) =>
+            Task.FromResult(Records.FirstOrDefault(record => record.Id == id));
+
         public Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(string query, CancellationToken cancellationToken)
         {
             LastQuery = query;

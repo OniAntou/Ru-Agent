@@ -8,24 +8,33 @@ using RuAgent.Protocol.Harness;
 namespace RuAgent.Broker.Tools.Terminal;
 
 /// <summary>
+/// Single source of truth for which terminal operation classes execute without
+/// approval. PolicySnapshotEvaluator consumes this verdict for the evaluate leg;
+/// this adapter enforces the same verdict for the execution leg. Read-only, test,
+/// build, lint, and local-git run payloads execute on an authorization token;
+/// external mutation, delete, shell scripts, and unknown always ask for a
+/// one-time approval token bound to the exact intent hash.
+/// </summary>
+public static class TerminalAutoPolicy
+{
+    public static bool IsAutoExecutable(TerminalOperationClass operationClass) =>
+        operationClass is TerminalOperationClass.ReadOnly
+            or TerminalOperationClass.Test
+            or TerminalOperationClass.Build
+            or TerminalOperationClass.Lint
+            or TerminalOperationClass.GitMutation;
+}
+
+/// <summary>
 /// The v2 terminal executor. Every call is canonicalized into a <see cref="CanonicalCommandIntent"/>
 /// whose hash binds the resolved executable, argv, canonical working directory, operation class,
-/// network intent, and timeout. Recognized read-only/test/build/lint forms run directly; every other
-/// form requires a one-time approval token bound to that exact intent hash, so any change between
-/// approval and execution invalidates the authorization. Execution streams through the
-/// <see cref="StreamingProcessRunner"/> which owns one Job Object per call.
+/// network intent, and timeout. Auto forms (see <see cref="TerminalAutoPolicy"/>) run directly;
+/// every other form requires a one-time approval token bound to that exact intent hash, so any
+/// change between approval and execution invalidates the authorization. Execution streams through
+/// the <see cref="StreamingProcessRunner"/> which owns one Job Object per call.
 /// </summary>
 public sealed class TerminalAdapter
 {
-    private static readonly FrozenSet<string> RecognizedSafeClasses = new HashSet<string>(
-        [
-            nameof(TerminalOperationClass.ReadOnly),
-            nameof(TerminalOperationClass.Test),
-            nameof(TerminalOperationClass.Build),
-            nameof(TerminalOperationClass.Lint),
-        ],
-        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
-
     private readonly WorkspacePathGuard _workspace;
     private readonly ShellRuntimeResolver _shells;
     private readonly ApprovalTokenService? _approvalTokens;
@@ -117,12 +126,16 @@ public sealed class TerminalAdapter
         var intent = CanonicalizeRun(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
-        if (request.Network && !grant.Scopes.Contains(ToolScope.TerminalNetwork))
+        // Network is audit metadata and an approval classifier, never a separate
+        // scope gate: PolicySnapshotEvaluator asks ExternalMutation on the
+        // operation class and V2 authorization arrives via Approved/token.
+        if (request.Network && !grant.Scopes.Contains(ToolScope.TerminalNetwork)
+            && !request.Approved && string.IsNullOrWhiteSpace(request.ApprovalToken))
         {
             throw new UnauthorizedAccessException("terminal_network_requires_approval");
         }
 
-        if (!RecognizedSafeClasses.Contains(intent.OperationClass.ToString()))
+        if (!TerminalAutoPolicy.IsAutoExecutable(intent.OperationClass))
         {
             if (request.Approved)
             {
@@ -130,7 +143,7 @@ public sealed class TerminalAdapter
             }
             else
             {
-                // Unrecognized forms execute only with a one-time token bound to this exact intent.
+                // Non-auto forms execute only with a one-time token bound to this exact intent.
                 // A missing token keeps the legacy unregistered-command rejection; a present-but-
                 // invalid token means the authorization was stale, replayed, or bound to a
                 // different canonical intent.
@@ -175,10 +188,11 @@ public sealed class TerminalAdapter
         var intent = CanonicalizeShell(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
-        if (confineWorkspace)
-        {
-            EnsureShellApprovalTokenValid(request);
-        }
+        // Shell scripts always require explicit approval through the same
+        // one-time token path as terminal.run: the evaluator asks (never auto)
+        // and V2 authorization arrives via Approved/token. Confinement stays as
+        // defense in depth behind that gate.
+        EnsureShellApprovalTokenValid(request);
 
         var shell = _shells.Resolve(request.Shell);
         return await _runner.RunAsync(
@@ -335,10 +349,19 @@ public sealed class TerminalAdapter
             return;
         }
 
+        CanonicalCommandIntent intent;
+        try
+        {
+            intent = CanonicalizeShell(request);
+        }
+        catch (CommandIntentException error)
+        {
+            throw new UnauthorizedAccessException(error.Code, error);
+        }
+
         if (_approvalTokens is null
             || string.IsNullOrWhiteSpace(request.RequestId)
             || string.IsNullOrWhiteSpace(request.SessionId)
-            || string.IsNullOrWhiteSpace(request.ArgumentsHash)
             || !_approvalTokens.TryConsume(
                 request.ApprovalToken,
                 new ApprovalBinding(
@@ -346,7 +369,7 @@ public sealed class TerminalAdapter
                     request.SessionId,
                     "terminal.shell",
                     "1.0.0",
-                    request.ArgumentsHash,
+                    intent.IntentHash,
                     DateTimeOffset.UtcNow),
                 out _))
         {

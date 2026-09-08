@@ -54,7 +54,7 @@ public sealed partial class AgentConnection
         var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
             .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
 
-        string? decisionToken = null;
+        string? authorizationToken = null;
         string? approvalId = null;
         DateTimeOffset? approvalExpiresAt = null;
         JsonObject? matcherPreview = null;
@@ -62,9 +62,17 @@ public sealed partial class AgentConnection
         {
             try
             {
-                decisionToken = _session.RegisterDecision(runId, toolId, context.IntentHash, DecisionLifetime);
+                authorizationToken = _authTokens.Issue(
+                    requestId: runId,
+                    sessionId: request.SessionId,
+                    toolId: toolId,
+                    toolVersion: toolVersion,
+                    argumentsHash: context.IntentHash,
+                    lifetime: TimeSpan.FromSeconds(60),
+                    snapshotVersion: lease.Snapshot.Version,
+                    intentHash: context.IntentHash);
             }
-            catch (BrokerSessionException)
+            catch (ArgumentOutOfRangeException)
             {
                 return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
             }
@@ -122,9 +130,9 @@ public sealed partial class AgentConnection
             replyPayload["matched_rule_id"] = evaluation.MatchedRuleId;
         }
 
-        if (decisionToken is not null)
+        if (authorizationToken is not null)
         {
-            replyPayload["decision_token"] = decisionToken;
+            replyPayload["authorization_token"] = authorizationToken;
         }
 
         if (approvalId is not null)
@@ -148,32 +156,17 @@ public sealed partial class AgentConnection
 
     private Task<AgentEnvelope> HandleToolPrepareAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
+        // Legacy path kept for wire compatibility: allow-decisions now carry a
+        // single authorization token, so prepare always fails closed.
+        _ = cancellationToken;
         var payload = request.Payload;
         var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
-        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
-        var decisionToken = ReadOptionalPayloadString(payload, "decision_token");
-
         if (!TryGetOwnedRunLease(request, runId, out _, out var leaseError))
         {
             return Task.FromResult(ToolError(request, leaseError, "run lease is not open"));
         }
 
-        if (string.IsNullOrWhiteSpace(decisionToken))
-        {
-            return Task.FromResult(ToolError(request, "invalid_prepare", "missing decision token"));
-        }
-
-        if (!_session.TryPrepareDecision(decisionToken!, runId, toolId, out var preparationToken, out var errorCode))
-        {
-            return Task.FromResult(ToolError(request, errorCode ?? "decision_stale", "prepare failed"));
-        }
-
-        return Task.FromResult(Reply(request, AgentMessageTypes.ToolPrepared, new JsonObject
-        {
-            ["status"] = ToolResultStatuses.Succeeded,
-            ["preparation_token"] = preparationToken,
-            ["safe_summary"] = "prepared",
-        }));
+        return Task.FromResult(ToolError(request, "decision_stale", "prepare is no longer supported; use the authorization token"));
     }
 
     private async Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
@@ -182,7 +175,6 @@ public sealed partial class AgentConnection
         var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
         var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
         var toolVersion = ReadOptionalPayloadString(payload, "tool_version") ?? "1.0.0";
-        var preparationToken = ReadOptionalPayloadString(payload, "preparation_token");
         var authorizationToken = ReadOptionalPayloadString(payload, "authorization_token")
             ?? ReadOptionalPayloadString(payload, "authorizationToken")
             ?? ReadOptionalPayloadString(payload, "approval_token");
@@ -197,84 +189,43 @@ public sealed partial class AgentConnection
             return ToolError(request, "phase_not_available", "tool is not advertised yet");
         }
 
-        if (!string.IsNullOrWhiteSpace(authorizationToken))
+        // Single-token flow: every execute needs a one-time authorization
+        // token bound to snapshot version + intent hash + tool identity.
+        // Tool dispatch coordination: authorization must be consumed BEFORE
+        // adapter invocation.
+        if (string.IsNullOrWhiteSpace(authorizationToken))
         {
-            // V2 path: authorization_token must be valid, bound to snapshot version + intent hash + tool identity.
-            // Tool dispatch coordination: authorization must be consumed BEFORE adapter invocation.
-            if (payload["arguments"] is not JsonObject authArguments)
-            {
-                return ToolError(request, "invalid_execute", "missing arguments");
-            }
-
-            PolicyContext authContext;
-            try
-            {
-                authContext = new PolicyContextFactory(lease).Create(toolId, toolVersion, authArguments);
-            }
-            catch (PolicyContextException error)
-            {
-                return ToolError(request, error.Code, "execution intent could not be re-resolved");
-            }
-
-            var expected = new ApprovalBinding(
-                RequestId: runId,
-                SessionId: request.SessionId,
-                ToolId: toolId,
-                ToolVersion: toolVersion,
-                ArgumentsHash: authContext.IntentHash,
-                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
-                SnapshotVersion: lease.Snapshot.Version,
-                IntentHash: authContext.IntentHash);
-
-            if (!_authTokens.TryConsume(authorizationToken!, expected, out _))
-            {
-                return ToolError(request, "decision_stale", "authorization is no longer valid");
-            }
-
-            // Also ensure stale pending from old snapshot is invalidated (binding version check)
-            // The lease's snapshot version must equal the token's snapshot version (already checked), and
-            // any other pending V2 decisions from older binding are already stale via snapshotVersion mismatch.
-
-            if (_toolHandler is null)
-            {
-                return ToolError(request, "broker_not_ready", "tool execution is not registered");
-            }
-
-            var result = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
-            return new AgentEnvelope(
-                result.ProtocolVersion,
-                result.RequestId,
-                AgentMessageTypes.ToolExecuteResult,
-                result.SessionId,
-                result.CorrelationId,
-                result.DeadlineMs,
-                (JsonObject)result.Payload.DeepClone());
+            return ToolError(request, "invalid_execute", "missing authorization token");
         }
 
-        if (string.IsNullOrWhiteSpace(preparationToken))
-        {
-            return ToolError(request, "invalid_execute", "missing preparation token");
-        }
-
-        if (payload["arguments"] is not JsonObject arguments)
+        if (payload["arguments"] is not JsonObject authArguments)
         {
             return ToolError(request, "invalid_execute", "missing arguments");
         }
 
-        PolicyContext context;
+        PolicyContext authContext;
         try
         {
-            context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
+            authContext = new PolicyContextFactory(lease).Create(toolId, toolVersion, authArguments);
         }
         catch (PolicyContextException error)
         {
             return ToolError(request, error.Code, "execution intent could not be re-resolved");
         }
 
-        // Execution-time re-resolution: the prepared canonical intent must still match exactly.
-        if (!_session.TryConsumePreparation(preparationToken!, runId, toolId, context.IntentHash, out var consumeError))
+        var expected = new ApprovalBinding(
+            RequestId: runId,
+            SessionId: request.SessionId,
+            ToolId: toolId,
+            ToolVersion: toolVersion,
+            ArgumentsHash: authContext.IntentHash,
+            ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(5),
+            SnapshotVersion: lease.Snapshot.Version,
+            IntentHash: authContext.IntentHash);
+
+        if (!_authTokens.TryConsume(authorizationToken!, expected, out _))
         {
-            return ToolError(request, consumeError ?? "decision_stale", "preparation is no longer valid");
+            return ToolError(request, "decision_stale", "authorization is no longer valid");
         }
 
         if (_toolHandler is null)
@@ -282,18 +233,16 @@ public sealed partial class AgentConnection
             return ToolError(request, "broker_not_ready", "tool execution is not registered");
         }
 
-        var result2 = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+        var result = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
         return new AgentEnvelope(
-            result2.ProtocolVersion,
-            result2.RequestId,
+            result.ProtocolVersion,
+            result.RequestId,
             AgentMessageTypes.ToolExecuteResult,
-            result2.SessionId,
-            result2.CorrelationId,
-            result2.DeadlineMs,
-            (JsonObject)result2.Payload.DeepClone());
+            result.SessionId,
+            result.CorrelationId,
+            result.DeadlineMs,
+            (JsonObject)result.Payload.DeepClone());
     }
-
-    private static readonly TimeSpan DecisionLifetime = TimeSpan.FromMinutes(10);
 
     private static string? ReadOptionalPayloadString(JsonObject payload, string key) =>
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)

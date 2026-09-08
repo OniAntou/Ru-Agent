@@ -396,51 +396,59 @@ public static class AgentV1Endpoints
             return;
         }
 
-        try
-        {
-            while (!ct.IsCancellationRequested && !isTerminal)
+try
             {
-                var reloadedRun = await store.GetRunAsync(runIdObj, ct);
-                if (reloadedRun is not null)
+                while (!ct.IsCancellationRequested && !isTerminal)
                 {
-                    run = reloadedRun;
-                    isTerminal = run.State.IsTerminal();
+                    var reloadedRun = await store.GetRunAsync(runIdObj, ct);
+                    if (reloadedRun is not null)
+                    {
+                        run = reloadedRun;
+                        isTerminal = run.State.IsTerminal();
+                    }
+
+                    await StreamDurablesAsync();
+
+                    while (hubLease is { } activeLease && activeLease.Reader.TryRead(out var frame))
+                    {
+                        localTransientSeq++;
+                        if (frame.Kind == "agent.summary")
+                        {
+                            summaryWritten = true;
+                        }
+                        var payload = new { kind = frame.Kind, data = frame.Data };
+                        await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, frame.Kind, payload, ct);
+                        // transient does not advance lastSent (durable cursor)
+                    }
+
+                    if (isTerminal)
+                    {
+                        break;
+                    }
+
+                    if (!ct.IsCancellationRequested && !isTerminal)
+                    {
+                        // Wait for next transient frame or cancellation instead of busy-polling
+                        if (hubLease is { } activeLease)
+                        {
+                            await activeLease.Reader.WaitToReadAsync(ct);
+                        }
+                        else
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+                        }
+                    }
                 }
 
                 await StreamDurablesAsync();
-
-                while (hubLease is { } activeLease && activeLease.Reader.TryRead(out var frame))
-                {
-                    localTransientSeq++;
-                    if (frame.Kind == "agent.summary")
-                    {
-                        summaryWritten = true;
-                    }
-                    var payload = new { kind = frame.Kind, data = frame.Data };
-                    await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, frame.Kind, payload, ct);
-                    // transient does not advance lastSent (durable cursor)
-                }
-
                 if (isTerminal)
                 {
-                    break;
+                    await WriteTerminalSummaryAsync(run);
+                    await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
                 }
 
-                if (!ct.IsCancellationRequested && !isTerminal)
-                {
-                    await Task.Delay(pollInterval, ct);
-                }
+                await context.Response.Body.FlushAsync(ct);
             }
-
-            await StreamDurablesAsync();
-            if (isTerminal)
-            {
-                await WriteTerminalSummaryAsync(run);
-                await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
-            }
-
-            await context.Response.Body.FlushAsync(ct);
-        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // client disconnected

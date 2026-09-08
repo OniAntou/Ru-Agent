@@ -112,9 +112,10 @@ public sealed class CommandIntentResolver
         bool networkIntent,
         int timeoutMs)
     {
-        var timeoutClass = timeoutMs <= TerminalLimits.StandardApprovalThresholdMs
-            ? TerminalTimeoutClass.StandardWindow
-            : TerminalTimeoutClass.ApprovalRequired;
+        // The 900s standard window / 30m hard cap live in the policy fallback
+        // (PolicySnapshotEvaluator asks terminal_timeout_requires_approval above
+        // the window, denies above the cap). Resolution records the timeout in
+        // the intent hash; it never invents a second verdict here.
         var hash = CanonicalCommandIntent.ComputeIntentHash(
             resolvedExecutable,
             arguments,
@@ -130,7 +131,7 @@ public sealed class CommandIntentResolver
             networkIntent,
             timeoutMs,
             TerminalOperationClass.Unknown,
-            timeoutClass,
+            TerminalTimeoutClass.StandardWindow,
             hash);
     }
 

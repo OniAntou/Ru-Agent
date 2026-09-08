@@ -73,7 +73,7 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 - **Tự động hóa lập trình đầy đủ**: Khả năng phân tích yêu cầu, tự động đọc mã nguồn, viết code mới, refactor, chạy test và sửa lỗi lặp cho đến khi hoàn thành mục tiêu.
 - **Quản lý quyền hạn thông minh (Policy & Approvals)**:
   - Tự động cho phép các thao tác đọc/ghi trong thư mục làm việc tin cậy (`trusted workspace`).
-  - Yêu cầu xác nhận phê duyệt tương tác (`Interactive Approval`) đối với các hành động rủi ro: truy cập thư mục ngoài workspace (`external_directory_required`), lệnh xóa vĩnh viễn trên terminal (`terminal_delete_requires_approval`), hoặc thực thi tệp thực thi lạ (`terminal_unknown_executable`).
+  - Mọi Agent run là session-scoped: phê duyệt thư mục ngoài chỉ mở grant cho session hiện tại, token terminal chỉ dùng một lần. Yêu cầu xác nhận phê duyệt tương tác (`Interactive Approval`) đối với các hành động rủi ro: truy cập thư mục ngoài workspace (`external_directory_required`), lệnh xóa vĩnh viễn trên terminal (`terminal_delete_requires_approval`), thực thi tệp thực thi lạ (`terminal_unknown_executable`), mutation ngoài workspace như push mạng/cài package (`terminal_external_mutation_requires_approval`), lệnh chạy quá cửa sổ chuẩn (`terminal_timeout_requires_approval`), hoặc gọi web ngoài khi bật kiểm duyệt (`web_approval_required`). Mọi `terminal.shell` script đều hỏi phê duyệt.
 - **Phản hồi sự kiện thời gian thực (Agent Activity)**: Hiển thị dòng trạng thái hoạt động trực quan với hiệu ứng sóng màu **Color Wave** (Cyan $\to$ Violet $\to$ Rose $\to$ Emerald) khi Agent đang suy nghĩ/thực thi công cụ.
 
 ### 💬 Trải nghiệm Chat & Quản lý Nhánh (Session Branching)
@@ -100,10 +100,13 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 
 ## 3. Yêu cầu môi trường (Prerequisites)
 
+> Tất cả lệnh bên dưới chạy từ thư mục gốc repo (`%RU_ROOT%` — nơi chứa `build.bat`).
+
 - **Hệ điều hành**: Windows 10 / Windows 11 (64-bit, phiên bản 22H2 hoặc 24H2 khuyến nghị).
 - **.NET SDK**: Phiên bản **.NET 10.0** (x64).
-- **Python**: Phiên bản **3.13** (64-bit) phục vụ các tiện ích và môi trường OmniVoice TTS.
+- **Python**: **3.11–3.14** (64-bit) theo `pyproject.toml` (`requires-python = ">=3.11,<3.15"`), phục vụ tooling và OmniVoice TTS.
 - **Trình biên dịch C++**: Visual Studio 2022 C++ Build Tools (cho các native modules nếu build từ source).
+- **Voice (tùy chọn)**: extra `voice` (`torch/torchaudio/omnivoice`) + script `scripts/setup_omnivoice_env.ps1 -ConfirmModelDownload`.
 
 ---
 
@@ -111,16 +114,19 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 
 ### 4.1. Thiết lập môi trường Python
 ```powershell
-# Khởi tạo virtual environment và cài đặt dependencies
-& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,dev]"
+# Chạy từ %RU_ROOT%. Khởi tạo virtual environment và cài đặt dependencies
+.venv\Scripts\python.exe -m pip install -e ".[runtime,dev]"
+# Voice TTS (tùy chọn): cài extra voice rồi chạy setup cách ly
+.venv\Scripts\python.exe -m pip install -e ".[voice]"
+.\scripts\setup_omnivoice_env.ps1 -ConfirmModelDownload
 ```
 
 ### 4.2. Biên dịch toàn bộ hệ thống
 Sử dụng script biên dịch tự động chính thức của dự án:
 ```powershell
-& D:\LLM\build.bat
+.\build.bat
 ```
-Script sẽ biên dịch toàn bộ 13 dự án .NET và xuất bản các tệp thực thi self-contained tại:
+Script sẽ biên dịch toàn bộ .NET và xuất bản các tệp thực thi self-contained tại:
 - **GUI Desktop**: `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`
 - **Agent Worker**: `backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe`
 
@@ -129,13 +135,13 @@ Script sẽ biên dịch toàn bộ 13 dự án .NET và xuất bản các tệp
 #### Cách 1: Khởi chạy Giao diện đồ họa (GUI)
 Chạy script khởi động phát triển:
 ```powershell
-& D:\LLM\start_dev.bat
+.\start_dev.bat
 ```
 *Hoặc mở trực tiếp file `RuApp.exe` đã xuất bản.*
 
 #### Cách 2: Khởi chạy Giao diện dòng lệnh (TUI CLI)
 ```powershell
-dotnet run --project D:\LLM\backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -- agent chat
+dotnet run --project backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -- agent chat
 ```
 
 ---
@@ -156,41 +162,28 @@ Ru Agent được trang bị 13 công cụ cốt lõi được định nghĩa ch
 | | `files.restore` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
 | **Terminal** | `terminal.run` | Chạy lệnh trong shell PowerShell/cmd với giới hạn thời gian chờ. |
 | | `terminal.shell` | Mở phiên shell tương tác để quản lý tác vụ nền. |
-| **Tra cứu Web** | `web.search` | Tìm kiếm thông tin trên Web qua DuckDuckGo endpoint an toàn. |
-| | `web.fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web. |
+| **Tra cứu Web** | `web.search` | Tìm kiếm thông tin trên Web qua DuckDuckGo endpoint an toàn (cần phê duyệt mỗi lần dùng). |
+| | `web.fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
 | **Tài liệu** | `help.docs` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
 
 ---
 
 ## 6. Kiểm thử & Đảm bảo chất lượng (Verification & Testing)
 
-Dự án áp dụng chính sách kiểm thử khắt khe trước mỗi lần bàn giao. Toàn bộ **1,885 tests** đều phải vượt qua 100%:
+Dự án áp dụng chính sách kiểm thử khắt khe trước mỗi lần bàn giao. Chạy từ `%RU_ROOT%`:
 
 ```powershell
-# 1. Kiểm thử tầng GUI WinUI 3 (410 tests)
-dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
-
-# 2. Kiểm thử ASP.NET Core Backend & Session Coordinator (784 tests)
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
-
-# 3. Kiểm thử Tool Broker & Sandbox Policy (558 tests)
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --nologo
-
-# 4. Kiểm thử TUI CLI & Slash Commands (133 tests)
-dotnet test D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj --nologo
+.\scripts\test_dotnet.ps1 -Configuration Debug
 ```
 
-### Kết quả kiểm thử tổng thể:
-- ✅ **Tổng số test cases**: `1,885 / 1,885 PASSED (100%)`
-- ✅ **Hồi quy**: `0 failed`
-- ✅ **Kiểm chứng Live GUI**: Xác nhận qua probe Windows UI Automation (`WinUIDesktopWin32WindowClass` render ổn định).
+Script `scripts/test_dotnet.ps1` tự phát hiện **13 test projects** (`*Tests.csproj` dưới `backend-dotnet` và `gui-winui3.Tests`, loại trừ `bin`/`obj`/`out`) và chạy tuần tự, dừng ở lỗi đầu tiên. Số lượng test hiện tại thay đổi theo từng gate — xem [verification](docs/operations/verification.md) để lấy con số mới nhất, không hard-code tổng số tại đây.
 
 ---
 
 ## 7. Cấu trúc thư mục dự án (Project Structure)
 
 ```text
-D:\LLM\
+.\
 ├── backend-dotnet/              # Tầng xử lý trung tâm .NET 10
 │   ├── RuBackend/               # Máy chủ ASP.NET Core Public Host (Cổng 8000)
 │   ├── RuAgent.Broker/          # Engine thực thi công cụ & Sandbox chính sách
@@ -198,13 +191,20 @@ D:\LLM\
 │   ├── RuAgent.Client/          # Client thư viện kết nối Public Host
 │   ├── RuAgent.Cli/             # Giao diện dòng lệnh tương tác TUI
 │   ├── RuAgent.Protocol/        # Định nghĩa kiểu dữ liệu & hợp đồng Protocol
-│   └── *.Tests/                 # Các bộ test suites xUnit toàn diện
+│   ├── RuAgent.Harness.Core/    # Durable Harness Core (state machines, policy)
+│   ├── RuAgent.Harness.Persistence/ # Harness SQLite/payload/outbox stores
+│   └── *.Tests/                 # 12 test projects (cùng gui-winui3.Tests = 13)
 ├── gui-winui3/                  # Ứng dụng Desktop WinUI 3 (C# / XAML)
 │   ├── Views/                   # ChatView, VoiceView, SettingsView, LogView,...
 │   ├── Services/                # ApiService, HealthStatusService, Reconnect,...
 │   ├── Models/                  # Data models cho giao diện
 │   └── RuApp.csproj             # Dự án chính WinUI 3
 ├── gui-winui3.Tests/            # Unit tests cho GUI & Services
+├── gui-winui3.Harness/          # Harness composition cho GUI acceptance
+├── src/ru_runtime/              # Python provider/tooling còn giữ (voice, speech)
+├── tests/                       # Python pytest suites (tooling, boundary, docs)
+├── tools/                       # maintenance + ru_desktop_overlay
+├── skills/                      # Markdown skill packages (prompt guidance)
 ├── docs/                        # Tài liệu kiến trúc chuyên sâu
 │   ├── architecture.md          # Đặc tả kiến trúc tổng quan
 │   ├── operations/              # Runtime behavior, agent tools, verification

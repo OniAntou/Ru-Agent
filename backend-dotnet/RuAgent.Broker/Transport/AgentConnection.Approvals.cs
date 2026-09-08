@@ -47,8 +47,8 @@ public sealed partial class AgentConnection
         if (!string.IsNullOrWhiteSpace(commandRaw))
         {
             var normalizedCommand = commandRaw.ToLowerInvariant();
-            if (normalizedCommand is not ("allow_once" or "allowonce" or "allow_run" or "allowrun"
-                or "allow_project" or "allowproject" or "allow_session_directory" or "allowsessiondirectory"
+            if (normalizedCommand is not ("allow_once" or "allowonce"
+                or "allow_session_directory" or "allowsessiondirectory"
                 or "deny"))
             {
                 return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
@@ -62,8 +62,6 @@ public sealed partial class AgentConnection
             command = normalizedCommand switch
             {
                 "allow_once" or "allowonce" => ApprovalCommandV2.AllowOnce,
-                "allow_run" or "allowrun" => ApprovalCommandV2.AllowRun,
-                "allow_project" or "allowproject" => ApprovalCommandV2.AllowProject,
                 "allow_session_directory" or "allowsessiondirectory" => ApprovalCommandV2.AllowSessionDirectory,
                 "deny" => ApprovalCommandV2.Deny,
                 _ => throw new InvalidOperationException("invalid_command"),
@@ -130,7 +128,8 @@ public sealed partial class AgentConnection
         if (command == ApprovalCommandV2.AllowSessionDirectory)
         {
             // Directory grants are only available for external-directory approvals.
-            // Terminal approvals stay one-time tokens and never create reusable grants.
+            // Terminal and web approvals stay one-time tokens and never create
+            // reusable grants.
             if (!string.Equals(pending.Binding.ApprovalKind, "external_directory", StringComparison.Ordinal)
                 || string.IsNullOrWhiteSpace(pending.Binding.BoundaryDirectory))
             {
@@ -235,20 +234,6 @@ public sealed partial class AgentConnection
                 resultPayload["authorization_token"] = authToken;
                 resultPayload["expires_at"] = DateTimeOffset.UtcNow.AddSeconds(60).ToString("O");
                 resultPayload["matcher_preview"] = PendingApprovalStore.BuildMatcherPreview(pending.Binding).DeepClone();
-                if (resolution.Candidate is not null)
-                {
-                    // Exact-by-default preview already stripped
-                    resultPayload["rule_saved"] = false; // Broker does not persist reusable rules; Host does. Report not saved here.
-                    resultPayload["reusable_candidate"] = new JsonObject
-                    {
-                        ["scope"] = resolution.Candidate.Scope,
-                        ["tool_id"] = resolution.Candidate.ToolId,
-                        ["tool_version"] = resolution.Candidate.ToolVersion,
-                        ["path_patterns"] = new JsonArray(resolution.Candidate.PathPatterns.Select(p => (JsonNode?)p).ToArray()),
-                        ["cwd_pattern"] = resolution.Candidate.CwdPattern,
-                        ["argv_patterns"] = new JsonArray(resolution.Candidate.ArgvPatterns.Select(p => (JsonNode?)p).ToArray()),
-                    };
-                }
                 resultPayload["safe_summary"] = "approval authorized";
                 break;
         }

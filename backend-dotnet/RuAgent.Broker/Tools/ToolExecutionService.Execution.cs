@@ -97,11 +97,10 @@ public sealed partial class ToolExecutionService : IToolInvoker
                     adapterInvoked: false);
             }
 
-            // V2 executes arrive with a consumed preparation or authorization token
+            // V2 executes arrive with a consumed authorization token
             // (AgentConnection consumes it before dispatch), so the v1 approval
             // prompt must not re-gate them; approval already happened at evaluate.
-            var isV2Authorized = ReadOptionalString(request.Payload, "preparation_token") is not null
-                || ReadAuthorizationToken(request.Payload) is not null;
+            var isV2Authorized = ReadAuthorizationToken(request.Payload) is not null;
             if (decision.RequiresApproval && !isV2Authorized)
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
@@ -150,10 +149,8 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 contextRequest: request,
                 binding,
                 arguments,
-                approved: ReadAuthorizationToken(request.Payload) is not null
-                    || ReadOptionalString(request.Payload, "preparation_token") is not null,
-                approvalToken: ReadAuthorizationToken(request.Payload)
-                    ?? ReadOptionalString(request.Payload, "preparation_token"),
+                approved: ReadAuthorizationToken(request.Payload) is not null,
+                approvalToken: ReadAuthorizationToken(request.Payload),
                 ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
                 cancellationToken).ConfigureAwait(false);
         }

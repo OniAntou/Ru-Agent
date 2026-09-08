@@ -20,8 +20,8 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService : IToolInvoker
 {
-    // Dispatch coordination: V2 tool.execute (files.* via policy snapshot) is gated in AgentConnection before dispatch:
-    //  - tool.evaluate (allow) → decision_token → tool.prepare → preparation_token → tool.execute
+    // Dispatch coordination: V2 tool.execute is gated in AgentConnection before dispatch:
+    //  - tool.evaluate (allow) → authorization_token (60s) → tool.execute
     //  - tool.evaluate (ask) → approval_id (30m) → approval.respond → authorization_token (60s) → tool.execute
     // This service's ExecuteAsync is the v1 terminal/file path (scope grant + optional approval). It never bypasses
     // the V2 authorization check; AgentConnection consumes the authorization_token BEFORE invoking the tool handler.

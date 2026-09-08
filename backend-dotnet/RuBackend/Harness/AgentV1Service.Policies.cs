@@ -484,54 +484,29 @@ public sealed partial class AgentV1Service
         var ruleId = new PolicyRuleId(trimmed);
         var store = new SqlitePolicyRuleStore(_options, _keyStore);
 
-        // Determine if global and check interactive
-        bool isGlobal = false;
+        PolicyDeleteResult deleteResult;
         try
         {
-            var globals = await store.ListGlobalAsync(cancellationToken).ConfigureAwait(false);
-            isGlobal = globals.Any(r => r.RuleId.Value == trimmed);
-            if (!isGlobal)
-            {
-                // also need to check if rule exists at all; query raw to find scope
-                // For project/run we can query via direct SQL to see existence
-                await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
-                await using var checkCmd = conn.CreateCommand();
-                checkCmd.CommandText = "SELECT 1 FROM agent_global_rules WHERE rule_id = $id UNION ALL SELECT 1 FROM agent_project_rules WHERE rule_id = $id UNION ALL SELECT 1 FROM agent_run_rules WHERE rule_id = $id LIMIT 1";
-                checkCmd.Parameters.AddWithValue("$id", trimmed);
-                var exists = await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                if (exists is null)
-                {
-                    return BoundedError(404, "rule_not_found", "Rule not found.");
-                }
-
-                // If not global but exists, we already know interactive not required
-            }
-            else
-            {
-                if (!isInteractive)
-                {
-                    return BoundedError(403, "interactive_required", "Global rule deletion requires interactive confirmation.");
-                }
-            }
+            // Atomic scope-resolve + delete in a single store transaction.
+            // No separate check-then-delete, so a concurrent writer cannot slip
+            // a global rule past the interactive gate (TOCTOU). Non-interactive
+            // callers fail closed for globals without deleting.
+            deleteResult = await store.DeleteByIdAtomicAsync(ruleId, isInteractive, cancellationToken).ConfigureAwait(false);
         }
         catch (HarnessStoreException ex)
         {
             return BoundedError(500, ex.Code ?? "policy_delete_failed", ex.Message);
         }
 
-        if (isGlobal)
+        return deleteResult.Outcome switch
         {
-            await store.DeleteGlobalAsync(ruleId, cancellationToken).ConfigureAwait(false);
-            return new AgentServiceResult(200, new { rule_id = trimmed, deleted = true });
-        }
-
-        // Try project and run deletions (by rule_id, store handles)
-        // We already confirmed existence via SQL above, so try both
-        await store.DeleteProjectAsync(ruleId, cancellationToken).ConfigureAwait(false);
-        await store.DeleteRunAsync(ruleId, cancellationToken).ConfigureAwait(false);
-        // Also attempt global delete in case race
-        await store.DeleteGlobalAsync(ruleId, cancellationToken).ConfigureAwait(false);
-        return new AgentServiceResult(200, new { rule_id = trimmed, deleted = true });
+            PolicyDeleteOutcome.NotFound => BoundedError(404, "rule_not_found", "Rule not found."),
+            PolicyDeleteOutcome.GlobalRequiresInteractive => BoundedError(403, "interactive_required", "Global rule deletion requires interactive confirmation."),
+            PolicyDeleteOutcome.DeletedGlobal => new AgentServiceResult(200, new { rule_id = trimmed, deleted = true }),
+            PolicyDeleteOutcome.DeletedProject => new AgentServiceResult(200, new { rule_id = trimmed, deleted = true }),
+            PolicyDeleteOutcome.DeletedRun => new AgentServiceResult(200, new { rule_id = trimmed, deleted = true }),
+            _ => BoundedError(500, "policy_delete_failed", "Unable to delete policy."),
+        };
     }
 
     private static object MapPolicyRule(PolicyRule rule)

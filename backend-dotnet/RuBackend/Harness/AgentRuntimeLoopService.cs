@@ -155,7 +155,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly ReconciliationInspectionGate? _inspectionGate;
-    private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private readonly ITransientContentRedactor? _transientRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
@@ -175,7 +174,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         HarnessSqliteOptions sqliteOptions,
         HarnessPayloadStore payloadStore,
         ReconciliationInspectionGate? inspectionGate = null,
-        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         ITransientContentRedactor? transientRedactor = null,
         HarnessLiveEventHub? liveEvents = null,
         AgentRunSummaryLivePublisher? summaryPublisher = null,
@@ -194,7 +192,6 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _inspectionGate = inspectionGate;
-        _approvalGrants = approvalGrants;
         _transientRedactor = transientRedactor;
         _liveEvents = liveEvents;
         _summaryPublisher = summaryPublisher;

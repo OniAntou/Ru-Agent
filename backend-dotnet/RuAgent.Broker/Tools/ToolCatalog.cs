@@ -81,12 +81,12 @@ public sealed class ToolCatalog
         yield return TerminalManifests.Shell;
         if (webOptions.FetchEnabled)
         {
-            yield return Manifest("web.fetch", ToolScope.WebFetch, RiskClass.Read, "web", requiresApproval: webOptions.RequireApproval);
+            yield return Manifest("web.fetch", ToolScope.WebFetch, RiskClass.Read, "web", requiresApproval: true);
         }
 
         if (webOptions.SearchEnabled)
         {
-            yield return Manifest("web.search", ToolScope.WebSearch, RiskClass.Read, "web", requiresApproval: webOptions.RequireApproval);
+            yield return Manifest("web.search", ToolScope.WebSearch, RiskClass.Read, "web", requiresApproval: true);
         }
     }
 

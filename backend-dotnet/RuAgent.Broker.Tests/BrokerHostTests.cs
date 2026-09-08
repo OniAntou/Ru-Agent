@@ -125,7 +125,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task Hello_with_full_profile_adds_terminal_capabilities()
+    public async Task Hello_with_full_profile_maps_to_single_agent_policy()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -754,7 +754,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task V2_evaluate_prepare_execute_flow_for_workspace_reads()
+    public async Task V2_evaluate_execute_flow_for_workspace_reads()
     {
         await using var fixture = await HostFixture.StartAsync();
         var probePath = Path.Combine(fixture.Root, "probe.txt");
@@ -787,23 +787,8 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.ToolDecision, decision.MessageType);
         Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
         Assert.Equal("standard_workspace_allow", decision.Payload["reason_code"]!.GetValue<string>());
-        var decisionToken = decision.Payload["decision_token"]!.GetValue<string>();
-        Assert.False(string.IsNullOrWhiteSpace(decisionToken));
-
-        await SendAsync(
-            socket,
-            new AgentEnvelope(2, "prepare-1", AgentMessageTypes.ToolPrepare, "session-flow", null, 10_000,
-                new System.Text.Json.Nodes.JsonObject
-                {
-                    ["run_id"] = "run_flow111111111111111111111111111",
-                    ["tool_id"] = "files.read",
-                    ["decision_token"] = decisionToken,
-                }),
-            cts.Token);
-        var prepared = await ReceiveAsync(socket, cts.Token);
-        Assert.Equal(AgentMessageTypes.ToolPrepared, prepared.MessageType);
-        Assert.Equal("succeeded", prepared.Payload["status"]!.GetValue<string>());
-        var preparationToken = prepared.Payload["preparation_token"]!.GetValue<string>();
+        var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(authorizationToken));
 
         await SendAsync(
             socket,
@@ -813,7 +798,7 @@ public sealed class BrokerHostTests
                     ["run_id"] = "run_flow111111111111111111111111111",
                     ["tool_id"] = "files.read",
                     ["tool_version"] = "1.0.0",
-                    ["preparation_token"] = preparationToken,
+                    ["authorization_token"] = authorizationToken,
                     ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
                 }),
             cts.Token);
@@ -951,21 +936,7 @@ public sealed class BrokerHostTests
             await SendAsync(socket, Evaluate("evaluate-external-terminal-run", sessionId, runB, "terminal.run", terminalArguments.DeepClone().AsObject()), cts.Token);
             var decision = await ReceiveAsync(socket, cts.Token);
             Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
-            var decisionToken = decision.Payload["decision_token"]!.GetValue<string>();
-
-            await SendAsync(
-                socket,
-                new AgentEnvelope(2, "prepare-external-terminal-run", AgentMessageTypes.ToolPrepare, sessionId, null, 10_000,
-                    new JsonObject
-                    {
-                        ["run_id"] = runB,
-                        ["tool_id"] = "terminal.run",
-                        ["decision_token"] = decisionToken,
-                    }),
-                cts.Token);
-            var prepared = await ReceiveAsync(socket, cts.Token);
-            Assert.Equal(AgentMessageTypes.ToolPrepared, prepared.MessageType);
-            Assert.Equal("succeeded", prepared.Payload["status"]!.GetValue<string>());
+            var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
 
             await SendAsync(
                 socket,
@@ -975,7 +946,7 @@ public sealed class BrokerHostTests
                         ["run_id"] = runB,
                         ["tool_id"] = "terminal.run",
                         ["tool_version"] = "1.0.0",
-                        ["preparation_token"] = prepared.Payload["preparation_token"]!.GetValue<string>(),
+                        ["authorization_token"] = authorizationToken,
                         ["arguments"] = terminalArguments.DeepClone().AsObject(),
                     }),
                 cts.Token);
@@ -1203,7 +1174,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task V2_terminal_shell_safe_command_with_preparation_token_executes_successfully()
+    public async Task V2_terminal_shell_safe_command_requires_approval_then_executes()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -1227,23 +1198,23 @@ public sealed class BrokerHostTests
 
         await SendAsync(socket, Evaluate("evaluate-shell-safe", sessionId, runId, "terminal.shell", shellArgs.DeepClone().AsObject()), cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
-        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
-        var decisionToken = decision.Payload["decision_token"]!.GetValue<string>();
+        Assert.Equal("ask", decision.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("terminal_unknown_executable", decision.Payload["reason_code"]!.GetValue<string>());
+        var approvalId = decision.Payload["approval_id"]!.GetValue<string>();
 
         await SendAsync(
             socket,
-            new AgentEnvelope(2, "prepare-shell-safe", AgentMessageTypes.ToolPrepare, sessionId, null, 10_000,
+            new AgentEnvelope(2, "respond-shell-safe", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
                 new JsonObject
                 {
                     ["run_id"] = runId,
-                    ["tool_id"] = "terminal.shell",
-                    ["decision_token"] = decisionToken,
+                    ["approval_id"] = approvalId,
+                    ["command"] = "allow_once",
                 }),
             cts.Token);
-        var prepared = await ReceiveAsync(socket, cts.Token);
-        Assert.Equal(AgentMessageTypes.ToolPrepared, prepared.MessageType);
-        Assert.Equal("succeeded", prepared.Payload["status"]!.GetValue<string>());
-        var preparationToken = prepared.Payload["preparation_token"]!.GetValue<string>();
+        var authorized = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("authorized", authorized.Payload["status"]!.GetValue<string>());
+        var authorizationToken = authorized.Payload["authorization_token"]!.GetValue<string>();
 
         await SendAsync(
             socket,
@@ -1253,7 +1224,7 @@ public sealed class BrokerHostTests
                     ["run_id"] = runId,
                     ["tool_id"] = "terminal.shell",
                     ["tool_version"] = "1.0.0",
-                    ["preparation_token"] = preparationToken,
+                    ["authorization_token"] = authorizationToken,
                     ["arguments"] = shellArgs.DeepClone().AsObject(),
                 }),
             cts.Token);
@@ -1515,7 +1486,7 @@ public sealed class BrokerHostTests
                 }),
             cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
-        var staleToken = decision.Payload["decision_token"]!.GetValue<string>();
+        var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
 
         var rebind = new AgentEnvelope(
             2,
@@ -1533,12 +1504,14 @@ public sealed class BrokerHostTests
 
         await SendAsync(
             socket,
-            new AgentEnvelope(2, "rebind-prepare-stale", AgentMessageTypes.ToolPrepare, sessionId, null, 10_000,
+            new AgentEnvelope(2, "rebind-execute-stale", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = runId,
                     ["tool_id"] = "files.list",
-                    ["decision_token"] = staleToken,
+                    ["tool_version"] = "1.0.0",
+                    ["authorization_token"] = authorizationToken,
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
                 }),
             cts.Token);
         var stale = await ReceiveAsync(socket, cts.Token);

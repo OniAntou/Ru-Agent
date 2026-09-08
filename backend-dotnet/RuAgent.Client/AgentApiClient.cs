@@ -282,7 +282,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         ValidateRunId(runId);
         if (string.IsNullOrWhiteSpace(approvalId)) throw new AgentApiException("invalid_approval_id", "approval_id invalid");
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/approvals/{approvalId}");
-        var payload = JsonSerializer.Serialize(new { scope, decision = "allow" });
+        var payload = JsonSerializer.Serialize(new { command = "allow_once" });
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
@@ -297,7 +297,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         ValidateRunId(runId);
         if (string.IsNullOrWhiteSpace(approvalId)) throw new AgentApiException("invalid_approval_id", "approval_id invalid");
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/approvals/{approvalId}");
-        var payload = JsonSerializer.Serialize(new { decision = "deny", scope = "once" });
+        var payload = JsonSerializer.Serialize(new { command = "deny" });
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);

@@ -87,7 +87,7 @@ public sealed class ToolExecutionServiceTests
         session.Open(
             "session-terminal-unrestricted",
             new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
                 StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal));
         session.DirectoryGrants.Add(
@@ -198,7 +198,7 @@ public sealed class ToolExecutionServiceTests
         session.Open(
             "session-terminal-network-confined",
             new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
                 StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal));
         var service = new ToolExecutionService(session, workspaceRoot);
@@ -276,7 +276,7 @@ public sealed class ToolExecutionServiceTests
         session.Open(
             "session-shell-full",
             new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
                 StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal));
         var service = new ToolExecutionService(session, workspaceRoot);
@@ -577,7 +577,7 @@ public sealed class ToolExecutionServiceTests
         session.Open(
             "session-terminal-recognized",
             new HashSet<string>(
-                [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
                 StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal));
         var service = new ToolExecutionService(session, workspaceRoot);

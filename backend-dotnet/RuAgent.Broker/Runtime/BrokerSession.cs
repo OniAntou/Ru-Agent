@@ -24,22 +24,10 @@ public sealed class BrokerSession
     private IReadOnlySet<string> _activeScopes = new HashSet<string>(StringComparer.Ordinal);
     private IReadOnlySet<string> _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
     private readonly Dictionary<string, BrokerRunLease> _runLeases = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, PendingDecision> _pendingDecisions = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _advertisedCapabilities =
         RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
-    private long _decisionCounter;
 
     public SessionDirectoryGrantRegistry DirectoryGrants { get; private set; } = new();
-
-    private sealed record PendingDecision(
-        string Token,
-        string Kind,
-        string RunId,
-        string ToolId,
-        string IntentHash,
-        long BindingVersion,
-        DateTimeOffset ExpiresAt,
-        bool Consumed);
 
     private BrokerSession(string descriptorPath, BrokerSessionDescriptor descriptor)
     {
@@ -150,7 +138,7 @@ public sealed class BrokerSession
         lock (_gate)
         {
             // Scope teardown to the named session so concurrent chats sharing
-            // this Broker process keep their own leases, decisions, and grants.
+            // this Broker process keep their own leases and grants.
             var ownedRuns = _runLeases.Values
                 .Where(lease => string.Equals(lease.SessionId, sessionId, StringComparison.Ordinal))
                 .Select(lease => lease.RunId)
@@ -158,14 +146,6 @@ public sealed class BrokerSession
             foreach (var runId in ownedRuns)
             {
                 _runLeases.Remove(runId);
-            }
-
-            foreach (var token in _pendingDecisions
-                         .Where(pair => ownedRuns.Contains(pair.Value.RunId))
-                         .Select(pair => pair.Key)
-                         .ToList())
-            {
-                _pendingDecisions.Remove(token);
             }
 
             DirectoryGrants.RevokeSession(sessionId);
@@ -178,28 +158,12 @@ public sealed class BrokerSession
         }
     }
 
-    /// <summary>
-    /// Closes the run lease with the given id (and invalidates its pending decisions) without
-    /// closing the owning session.
-    /// </summary>
+    /// Closes the run lease with the given id without closing the owning session.
     public bool TryCloseRun(string runId)
     {
         lock (_gate)
         {
-            if (!_runLeases.Remove(runId))
-            {
-                return false;
-            }
-
-            foreach (var token in _pendingDecisions
-                         .Where(pair => string.Equals(pair.Value.RunId, runId, StringComparison.Ordinal))
-                         .Select(pair => pair.Key)
-                         .ToList())
-            {
-                _pendingDecisions.Remove(token);
-            }
-
-            return true;
+            return _runLeases.Remove(runId);
         }
     }
 
@@ -259,171 +223,6 @@ public sealed class BrokerSession
             errorCode = null;
             return true;
         }
-    }
-
-    /// <summary>
-    /// Registers an allow decision bound to the CURRENT snapshot binding. Rebinding to a newer
-    /// snapshot invalidates it.
-    /// </summary>
-    public string RegisterDecision(string runId, string toolId, string intentHash, TimeSpan lifetime)
-    {
-        lock (_gate)
-        {
-            var lease = RequireActiveRunLocked(runId);
-            _decisionCounter++;
-            var token = $"dec-{lease.BindingVersion}-{_decisionCounter:X8}-{Guid.NewGuid():N}";
-            _pendingDecisions[token] = new PendingDecision(
-                token,
-                "decision",
-                runId,
-                toolId,
-                intentHash,
-                lease.BindingVersion,
-                DateTimeOffset.UtcNow.Add(lifetime),
-                Consumed: false);
-            return token;
-        }
-    }
-
-    /// <summary>
-    /// Converts a still-valid decision token into a preparation token under the same binding,
-    /// keeping the exact canonical intent recorded at evaluation time.
-    /// </summary>
-    public bool TryPrepareDecision(string decisionToken, string runId, string toolId, out string? preparationToken, out string? errorCode)
-    {
-        lock (_gate)
-        {
-            preparationToken = null;
-            if (!LeaseIsOpenLocked(runId))
-            {
-                errorCode = "run_not_open";
-                return false;
-            }
-
-            if (!_pendingDecisions.TryGetValue(decisionToken, out var entry)
-                || entry.Consumed
-                || !string.Equals(entry.Kind, "decision", StringComparison.Ordinal)
-                || !string.Equals(entry.RunId, runId, StringComparison.Ordinal)
-                || !string.Equals(entry.ToolId, toolId, StringComparison.Ordinal)
-                || entry.ExpiresAt <= DateTimeOffset.UtcNow)
-            {
-                errorCode = ResolveDecisionErrorCode(decisionToken, entry, runId, toolId, entry?.IntentHash ?? string.Empty);
-                return false;
-            }
-
-            if (entry.BindingVersion != CurrentBindingVersionLocked(runId))
-            {
-                errorCode = "decision_stale";
-                return false;
-            }
-
-            var lease = RequireActiveRunLocked(runId);
-            _decisionCounter++;
-            var token = $"prep-{lease.BindingVersion}-{_decisionCounter:X8}-{Guid.NewGuid():N}";
-            _pendingDecisions[token] = entry with { Token = token, Kind = "preparation" };
-            preparationToken = token;
-            errorCode = null;
-            return true;
-        }
-    }
-
-    public bool TryConsumePreparation(string preparationToken, string runId, string toolId, string intentHash, out string? errorCode)
-    {
-        lock (_gate)
-        {
-            if (!LeaseIsOpenLocked(runId))
-            {
-                errorCode = "run_not_open";
-                return false;
-            }
-
-            if (!_pendingDecisions.TryGetValue(preparationToken, out var entry)
-                || entry.Consumed
-                || !string.Equals(entry.Kind, "preparation", StringComparison.Ordinal)
-                || !string.Equals(entry.RunId, runId, StringComparison.Ordinal)
-                || !string.Equals(entry.ToolId, toolId, StringComparison.Ordinal)
-                || !string.Equals(entry.IntentHash, intentHash, StringComparison.Ordinal)
-                || entry.ExpiresAt <= DateTimeOffset.UtcNow)
-            {
-                errorCode = ResolveDecisionErrorCode(preparationToken, entry, runId, toolId, intentHash);
-                return false;
-            }
-
-            if (entry.BindingVersion != CurrentBindingVersionLocked(runId))
-            {
-                errorCode = "decision_stale";
-                return false;
-            }
-
-            _pendingDecisions[preparationToken] = entry with { Consumed = true };
-            errorCode = null;
-            return true;
-        }
-    }
-
-    public void ClearDecisions()
-    {
-        lock (_gate)
-        {
-            _pendingDecisions.Clear();
-        }
-    }
-
-    private long CurrentBindingVersionLocked(string runId)
-    {
-        return _runLeases.TryGetValue(runId, out var lease)
-            && !lease.IsExpired(DateTimeOffset.UtcNow)
-            ? lease.BindingVersion
-            : -1;
-    }
-
-    private BrokerRunLease RequireActiveRunLocked(string runId)
-    {
-        if (!_runLeases.TryGetValue(runId, out var lease))
-        {
-            throw new BrokerSessionException("run_not_open");
-        }
-
-        if (lease.IsExpired(DateTimeOffset.UtcNow))
-        {
-            throw new BrokerSessionException("lease_expired");
-        }
-
-        return lease;
-    }
-
-    private string ResolveDecisionErrorCode(string? token, PendingDecision? entry, string runId, string toolId, string intentHash)
-    {
-        if (!_runLeases.ContainsKey(runId))
-        {
-            return "run_not_open";
-        }
-
-        if (entry is not null && entry.BindingVersion != CurrentBindingVersionLocked(runId))
-        {
-            return "decision_stale";
-        }
-
-        if (entry is not null && entry.ExpiresAt <= DateTimeOffset.UtcNow)
-        {
-            return "decision_expired";
-        }
-
-        if (entry is not null
-            && (!string.Equals(entry.RunId, runId, StringComparison.Ordinal)
-                || !string.Equals(entry.ToolId, toolId, StringComparison.Ordinal)
-                || !string.Equals(entry.IntentHash, intentHash, StringComparison.Ordinal)))
-        {
-            return "decision_mismatch";
-        }
-
-        return "unknown_decision_token";
-    }
-
-    private bool LeaseIsOpenLocked(string runId)
-    {
-        return _runLeases.TryGetValue(runId, out var lease)
-            && !lease.IsExpired(DateTimeOffset.UtcNow);
     }
 
     public BrokerRunLease? ActiveRunLease

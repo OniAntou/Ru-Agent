@@ -45,7 +45,11 @@ public sealed partial class AgentV1Service
                 return BoundedError(400, "image_limit_exceeded", "Too many images. Maximum is 4.");
             }
 
-            long totalDecodedBytes = 0;
+            const int MaxImageDataUrlChars = 5_600_000;
+            const long MaxSingleImageBytes = 4L * 1024 * 1024;
+            const long MaxTotalImagesBytes = 20L * 1024 * 1024;
+
+            long totalEstimatedBytes = 0;
             foreach (var url in request.ImageAttachments)
             {
                 if (string.IsNullOrWhiteSpace(url))
@@ -53,7 +57,7 @@ public sealed partial class AgentV1Service
                     return BoundedError(400, "invalid_image_mime", "Image attachment cannot be empty.");
                 }
 
-                if (url.Length > 5_600_000)
+                if (url.Length > MaxImageDataUrlChars)
                 {
                     return BoundedError(413, "image_too_large", "Image attachment exceeds character limit.");
                 }
@@ -81,6 +85,7 @@ public sealed partial class AgentV1Service
                     return BoundedError(400, "invalid_image_base64", "Base64 data cannot be empty.");
                 }
 
+                // Validate base64 charset without allocating
                 for (var i = 0; i < b64.Length; i++)
                 {
                     var ch = b64[i];
@@ -90,27 +95,23 @@ public sealed partial class AgentV1Service
                     }
                 }
 
-                byte[] decoded;
-                try
-                {
-                    decoded = Convert.FromBase64String(b64);
-                }
-                catch (FormatException)
-                {
-                    return BoundedError(400, "invalid_image_base64", "Base64 data is malformed.");
-                }
+                // Estimate decoded size from base64 length: ceil(b64_len * 3 / 4)
+                // Account for padding: each '=' reduces decoded size by 1
+                var padding = 0;
+                if (b64.EndsWith("==", StringComparison.Ordinal)) padding = 2;
+                else if (b64.EndsWith("=", StringComparison.Ordinal)) padding = 1;
+                var estimatedDecoded = (b64.Length * 3L) / 4 - padding;
 
-                if (decoded.Length > 4 * 1024 * 1024)
+                if (estimatedDecoded > MaxSingleImageBytes)
                 {
                     return BoundedError(413, "image_too_large", "Image decoded size exceeds 4MB.");
                 }
 
-                totalDecodedBytes += decoded.Length;
-            }
-
-            if (totalDecodedBytes > 20 * 1024 * 1024)
-            {
-                return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
+                totalEstimatedBytes += estimatedDecoded;
+                if (totalEstimatedBytes > MaxTotalImagesBytes)
+                {
+                    return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
+                }
             }
 
             if (_settingsStore is not null)
@@ -169,16 +170,11 @@ public sealed partial class AgentV1Service
         }
 
         var presetRaw = request.Preset?.Trim().ToLowerInvariant() ?? string.Empty;
-        AgentPermissionPreset preset;
-        if (presetRaw == "standard")
-        {
-            preset = AgentPermissionPreset.Standard;
-        }
-        else if (presetRaw == "full_access")
-        {
-            preset = AgentPermissionPreset.FullAccess;
-        }
-        else
+        // Single preset: the preset field is compatibility metadata only. Empty
+        // means standard; legacy full_access values are accepted but mapped to
+        // the same standard behavior — Full Access no longer changes policy.
+        AgentPermissionPreset preset = AgentPermissionPreset.Standard;
+        if (!string.IsNullOrEmpty(presetRaw) && presetRaw != "standard" && presetRaw != "full_access" && presetRaw != "full")
         {
             return BoundedError(400, "invalid_preset", "preset must be standard or full_access.");
         }
@@ -264,36 +260,17 @@ public sealed partial class AgentV1Service
         var now = _time.UtcNow;
         long effectiveVersion;
         var existingSelection = await _permissionStore.GetAsync(new SessionId(sessionIdRaw), cancellationToken).ConfigureAwait(false);
-        bool isProjectRoot = IsProjectRootWorkspace(canonicalWorkspacePath);
+        // Single preset: keep the permission row as compatibility metadata.
+        // Any mismatch resolves to the stored version; no preset upgrade path.
         if (existingSelection is null)
         {
-            if (preset == AgentPermissionPreset.FullAccess)
+            if (clientVersion is null || clientVersion == 1)
             {
-                if (isProjectRoot)
-                {
-                    var setResult = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), AgentPermissionPreset.FullAccess, 0, now, cancellationToken).ConfigureAwait(false);
-                    existingSelection = setResult.Selection;
-                    effectiveVersion = existingSelection?.Version ?? 1;
-                }
-                else
-                {
-                    return BoundedError(409, "preset_mismatch", "Full Access requires preset selection.");
-                }
+                effectiveVersion = 1;
             }
             else
             {
-                if (clientVersion is null)
-                {
-                    effectiveVersion = 1;
-                }
-                else if (clientVersion == 1)
-                {
-                    effectiveVersion = 1;
-                }
-                else
-                {
-                    return BoundedError(409, "preset_mismatch", "preset_selection_version mismatch.");
-                }
+                return BoundedError(409, "preset_mismatch", "preset_selection_version mismatch.");
             }
         }
         else
@@ -301,47 +278,22 @@ public sealed partial class AgentV1Service
             if (clientVersion is null)
             {
                 var idemShaCheck = ComputeSha256(idempotencyKey);
-                var storedHash = await FindIdempotentNormalizedHashAsync(sessionIdRaw, idemShaCheck, cancellationToken).ConfigureAwait(false);
-                if (storedHash is not null)
-                {
-                    effectiveVersion = existingSelection.Version;
-                }
-                else if (preset == existingSelection.Preset)
-                {
-                    effectiveVersion = existingSelection.Version;
-                }
-                else if (isProjectRoot && preset == AgentPermissionPreset.FullAccess)
-                {
-                    var setResult = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), AgentPermissionPreset.FullAccess, existingSelection.Version, now, cancellationToken).ConfigureAwait(false);
-                    effectiveVersion = setResult.Selection?.Version ?? (existingSelection.Version + 1);
-                }
-                else
-                {
-                    return BoundedError(409, "preset_mismatch", "preset_selection_version required.");
-                }
+                await FindIdempotentNormalizedHashAsync(sessionIdRaw, idemShaCheck, cancellationToken).ConfigureAwait(false);
+                effectiveVersion = existingSelection.Version;
             }
             else
             {
-                if (existingSelection.Preset != preset || existingSelection.Version != clientVersion.Value)
+                if (existingSelection.Version != clientVersion.Value)
                 {
-                    if (isProjectRoot && preset == AgentPermissionPreset.FullAccess)
-                    {
-                        var setResult = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), AgentPermissionPreset.FullAccess, existingSelection.Version, now, cancellationToken).ConfigureAwait(false);
-                        effectiveVersion = setResult.Selection?.Version ?? Math.Max(existingSelection.Version + 1, clientVersion.Value);
-                    }
-                    else
-                    {
-                        return BoundedError(409, "preset_mismatch", "preset/version mismatch.");
-                    }
+                    return BoundedError(409, "preset_mismatch", "preset/version mismatch.");
                 }
-                else
-                {
-                    effectiveVersion = existingSelection.Version;
-                }
+
+                effectiveVersion = existingSelection.Version;
             }
         }
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
+        bool isProjectRoot = IsProjectRootWorkspace(canonicalWorkspacePath);
         if (!isTrusted && isProjectRoot)
         {
             isTrusted = true;
@@ -984,6 +936,8 @@ public sealed partial class AgentV1Service
         WorkspaceId: run.WorkspaceId.Value,
         Status: MapRunState(run.Status),
         HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
+        // Single preset: legacy stored FullAccess rows still project as full_access
+        // for wire compatibility; new runs are always standard.
         Preset: run.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access",
         PolicySnapshotVersion: run.PolicySnapshotVersion,
         PolicySnapshotSha256: run.PolicySnapshotSha256,

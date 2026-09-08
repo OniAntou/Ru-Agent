@@ -85,22 +85,18 @@ public sealed class AgentApprovalWorkflowTests
         Assert.Equal(ApprovalOutcome.NotFound, second.Outcome);
     }
 
-    // 11c Exact scope preview
+    // 11c Preview stays exact
     [Fact]
-    public void Exact_scope_preview_strips_glob()
+    public void Preview_is_exact_without_rule_candidate()
     {
-        var binding = Binding(path: "a*.txt", exe: "tool*.exe", argv: new[] { "arg*1", "value?" }, cwd: @"C:\ws\*");
-        var pending = PendingToolApproval.Issue("apr_" + new string('d', 32), binding);
-        var res = ApprovalState.TryResolve(pending, ApprovalCommand.AllowRun, Binding(path: "a*.txt", exe: "tool*.exe", argv: new[] { "arg*1", "value?" }, cwd: @"C:\ws\*"), FixedNow);
-        Assert.NotNull(res.ReusableRuleCandidate);
-        Assert.DoesNotContain("*", res.ReusableRuleCandidate!.PathPatterns[0]);
-        Assert.All(res.ReusableRuleCandidate.ArgvPatterns, p => Assert.DoesNotContain("*", p));
-        Assert.DoesNotContain("*", res.ReusableRuleCandidate.CwdPattern!);
+        var pending = PendingToolApproval.Issue("apr_" + new string('d', 32), Binding(path: "a.txt"));
+        var res = ApprovalState.TryResolve(pending, ApprovalCommand.AllowOnce, Binding(path: "a.txt"), FixedNow);
+        Assert.Equal(ApprovalOutcome.ConsumedApproved, res.Outcome);
     }
 
     // 11d Ordering critical test
     [Fact]
-    public async Task Ordering_consume_persist_execute_snapshot_bump_invalidates_other_pending()
+    public async Task Ordering_consume_execute_snapshot_bump_invalidates_other_pending()
     {
         // Setup: two pending approvals under snapshot N
         var ledger = new PendingApprovalLedger();
@@ -124,25 +120,10 @@ public sealed class AgentApprovalWorkflowTests
         ledger.Issue(idB, bindingB);
 
         // 1) consume one-time approval under snapshot N
-        var resA = ledger.Resolve(idA, ApprovalCommand.AllowRun, bindingA, now);
+        var resA = ledger.Resolve(idA, ApprovalCommand.AllowOnce, bindingA, now);
         Assert.Equal(ApprovalOutcome.ConsumedApproved, resA.Outcome);
-        Assert.NotNull(resA.ReusableRuleCandidate);
-        Assert.Equal(PolicyRuleScope.Run, resA.ReusableRuleCandidate!.Scope);
 
-        // 2) persist reusable rule (or rule_save_failed)
-        var tmpRoot = Path.Combine(Path.GetTempPath(), "ru-ordering-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tmpRoot);
-        var dbPath = Path.Combine(tmpRoot, "ordering.db");
-        var options = new HarnessSqliteOptions(dbPath);
-        var keyStore = new EphemeralKeyStore();
-        await HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None);
-        var policyStore = new SqlitePolicyRuleStore(options, keyStore);
-        var approvalService = new HarnessApprovalService(policyStore, new TestIdGen(), new FixedTimeProvider(FixedNow));
-
-        var workspaceId = new WorkspaceId("ws_11111111111111111111111111111111");
-        var runId = new RunId("run_" + new string('a', 32));
-        var persistResult = await approvalService.ProcessAsync(bindingA, ApprovalCommand.AllowRun, workspaceId, runId, CancellationToken.None);
-        Assert.True(persistResult.Authorized);
+        // 2) one-time authorization needs no rule persistence
 
         // 3) execute already-authorized call under snapshot N (already consumed, token valid)
         // Simulate execution succeeded – we just verify bindingA would still match snapshot N
@@ -169,16 +150,12 @@ public sealed class AgentApprovalWorkflowTests
         // Initiating call's ledger entry already consumed, second try is NotFound
         var secondTry = ledger.Resolve(idB, ApprovalCommand.AllowOnce, bindingB, now);
         Assert.Equal(ApprovalOutcome.NotFound, secondTry.Outcome);
-
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        // Give SQLite a moment to release file
-        await Task.Delay(50);
-        try { Directory.Delete(tmpRoot, recursive: true); } catch { }
+        await Task.CompletedTask;
     }
 
-    // 11e Rule persistence failure still permits once-only execution
+    // 11e Approval service authorizes once without persisting rules
     [Fact]
-    public async Task Rule_persistence_failure_still_permits_once_execution()
+    public async Task Approval_service_authorizes_once_with_preview()
     {
         var tmpRoot = Path.Combine(Path.GetTempPath(), "ru-rulefail-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpRoot);
@@ -202,9 +179,8 @@ public sealed class AgentApprovalWorkflowTests
             new string('0', 64),
             FixedNow.AddMinutes(30));
 
-        var result = await service.ProcessAsync(binding, ApprovalCommand.AllowProject, new WorkspaceId("ws_11111111111111111111111111111111"), new RunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), CancellationToken.None);
+        var result = await service.ProcessAsync(binding, ApprovalCommand.AllowOnce, new WorkspaceId("ws_11111111111111111111111111111111"), new RunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), CancellationToken.None);
         Assert.True(result.Authorized);
-        Assert.True(result.RuleSaveFailed);
         Assert.NotNull(result.MatcherPreview);
         Assert.DoesNotContain("*", result.MatcherPreview!["tool_id"]!.GetValue<string>());
         SqliteConnection.ClearAllPools();
@@ -213,7 +189,7 @@ public sealed class AgentApprovalWorkflowTests
     }
 
     [Fact]
-    public async Task Invalid_external_directory_scope_never_persists_exact_path_rule()
+    public async Task External_directory_approval_never_persists_rule()
     {
         var tmpRoot = Path.Combine(Path.GetTempPath(), "ru-external-rule-reject-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpRoot);
@@ -231,7 +207,7 @@ public sealed class AgentApprovalWorkflowTests
         {
             var result = await service.ProcessAsync(
                 binding,
-                ApprovalCommand.AllowProject,
+                ApprovalCommand.AllowOnce,
                 workspaceId,
                 runId,
                 CancellationToken.None,
@@ -239,8 +215,6 @@ public sealed class AgentApprovalWorkflowTests
                 externalDirectoryRequested: true);
 
             Assert.True(result.Authorized);
-            Assert.True(result.RuleSaveFailed);
-            Assert.Null(result.RuleId);
             Assert.Empty(await policyStore.ListProjectAsync(workspaceId, CancellationToken.None));
         }
         finally

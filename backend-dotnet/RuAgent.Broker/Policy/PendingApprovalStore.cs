@@ -21,8 +21,6 @@ public sealed record PendingApproval(
 public enum ApprovalCommandV2
 {
     AllowOnce,
-    AllowRun,
-    AllowProject,
     AllowSessionDirectory,
     Deny,
 }
@@ -112,17 +110,8 @@ public sealed record V2ApprovalBinding
     public string? BoundaryDirectory { get; init; }
 }
 
-public sealed record V2ReusableRuleCandidate(
-    string Scope,
-    string ToolId,
-    string ToolVersion,
-    IReadOnlyList<string> PathPatterns,
-    string? CwdPattern,
-    IReadOnlyList<string> ArgvPatterns);
-
 public sealed record V2ApprovalResolution(
-    V2ApprovalOutcome Outcome,
-    V2ReusableRuleCandidate? Candidate);
+    V2ApprovalOutcome Outcome);
 
 public sealed record V2PendingApproval(
     string ApprovalId,
@@ -248,49 +237,38 @@ public sealed class PendingApprovalStore
         ArgumentNullException.ThrowIfNull(expectedBinding);
         if (string.IsNullOrWhiteSpace(approvalId))
         {
-            return new V2ApprovalResolution(V2ApprovalOutcome.NotFound, null);
+            return new V2ApprovalResolution(V2ApprovalOutcome.NotFound);
         }
 
         if (!_v2.TryGetValue(approvalId, out var candidate))
         {
-            return new V2ApprovalResolution(V2ApprovalOutcome.NotFound, null);
+            return new V2ApprovalResolution(V2ApprovalOutcome.NotFound);
         }
 
         // One-time consumption: remove first, exactly one winner.
         if (!_v2.TryRemove(new KeyValuePair<string, V2PendingApproval>(approvalId, candidate)))
         {
-            return new V2ApprovalResolution(V2ApprovalOutcome.NotFound, null);
+            return new V2ApprovalResolution(V2ApprovalOutcome.NotFound);
         }
 
         if (candidate.ExpiresAt <= now)
         {
-            return new V2ApprovalResolution(V2ApprovalOutcome.Expired, null);
+            return new V2ApprovalResolution(V2ApprovalOutcome.Expired);
         }
 
         if (!SameBindingV2(candidate.Binding, expectedBinding))
         {
-            return new V2ApprovalResolution(V2ApprovalOutcome.Stale, null);
+            return new V2ApprovalResolution(V2ApprovalOutcome.Stale);
         }
 
         if (command == ApprovalCommandV2.Deny)
         {
-            return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedDenied, null);
+            return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedDenied);
         }
 
-        V2ReusableRuleCandidate? ruleCandidate = null;
-        if (command == ApprovalCommandV2.AllowRun)
-        {
-            ruleCandidate = BuildCandidateV2("run", candidate.Binding);
-        }
-        else if (command == ApprovalCommandV2.AllowProject)
-        {
-            ruleCandidate = BuildCandidateV2("project", candidate.Binding);
-        }
-
-        // AllowSessionDirectory issues only the one-time token like AllowOnce;
-        // the reusable directory grant is recorded by the transport handler,
-        // never as a policy rule candidate.
-        return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedApproved, ruleCandidate);
+        // Only one-time tokens and session-directory grants exist. The Broker
+        // never persists policy rules.
+        return new V2ApprovalResolution(V2ApprovalOutcome.ConsumedApproved);
     }
 
     public void ClearV2() => _v2.Clear();
@@ -320,18 +298,6 @@ public sealed class PendingApprovalStore
             && string.Equals(left.IntentHash, right.IntentHash, StringComparison.Ordinal)
             && string.Equals(left.ApprovalKind, right.ApprovalKind, StringComparison.Ordinal)
             && string.Equals(left.BoundaryDirectory, right.BoundaryDirectory, StringComparison.Ordinal);
-    }
-
-    private static V2ReusableRuleCandidate BuildCandidateV2(string scope, V2ApprovalBinding binding)
-    {
-        string Sanitize(string? value) => value is null ? string.Empty : value.Replace("*", string.Empty).Replace("?", string.Empty);
-        return new V2ReusableRuleCandidate(
-            scope,
-            binding.ToolId,
-            binding.ToolVersion,
-            binding.CanonicalPath is null ? Array.Empty<string>() : new[] { Sanitize(binding.CanonicalPath) },
-            binding.Cwd is null ? null : Sanitize(binding.Cwd),
-            binding.Argv.Select(Sanitize).ToArray());
     }
 
     public static System.Text.Json.Nodes.JsonObject BuildMatcherPreview(V2ApprovalBinding binding)

@@ -32,16 +32,11 @@ public sealed class ToolBindingRegistryTests
     }
 
     [Fact]
-    public void Full_profile_keeps_the_same_nonweb_model_bindings_as_agent()
+    public void Single_agent_profile_matches_legacy_full_model_bindings()
     {
         var agent = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
-        var full = CatalogForTests().ModelCapabilities(CapabilityProfile.Full)
-            .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.True(agent.SetEquals(full));
-        Assert.Contains("terminal.run", full);
-        Assert.Contains("terminal.shell", full);
         Assert.Contains("terminal.run", agent);
         Assert.Contains("terminal.shell", agent);
     }

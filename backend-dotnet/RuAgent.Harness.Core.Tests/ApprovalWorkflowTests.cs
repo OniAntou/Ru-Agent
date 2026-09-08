@@ -48,7 +48,6 @@ public sealed class ApprovalWorkflowTests
             Binding(),
             Epoch);
         Assert.Equal(ApprovalOutcome.ConsumedApproved, first.Outcome);
-        Assert.Null(first.ReusableRuleCandidate);
 
         var replay = ledger.Resolve(
             "apr_" + new string('c', 32),
@@ -59,7 +58,7 @@ public sealed class ApprovalWorkflowTests
     }
 
     [Fact]
-    public void Deny_consumes_as_denied_and_produces_no_rule_candidate()
+    public void Deny_consumes_as_denied()
     {
         var ledger = new PendingApprovalLedger();
         ledger.Issue("apr_" + new string('d', 32), Binding());
@@ -71,56 +70,16 @@ public sealed class ApprovalWorkflowTests
             Epoch);
 
         Assert.Equal(ApprovalOutcome.ConsumedDenied, resolution.Outcome);
-        Assert.Null(resolution.ReusableRuleCandidate);
-    }
-
-    [Theory]
-    [InlineData(AllowScope.Run)]
-    [InlineData(AllowScope.Project)]
-    public void Allow_run_or_project_yields_exact_normalized_rule_candidate_without_glob(AllowScope scope)
-    {
-        var binding = Binding(argv: new[] { "--flag", "value" }, cwd: @"C:\ws");
-        var pending = PendingToolApproval.Issue("apr_" + new string('e', 32), binding);
-
-        var command = scope == AllowScope.Run ? ApprovalCommand.AllowRun : ApprovalCommand.AllowProject;
-        var resolution = ApprovalState.TryResolve(pending, command, Binding(
-            argv: new[] { "--flag", "value" },
-            cwd: @"C:\ws"), Epoch);
-
-        Assert.Equal(ApprovalOutcome.ConsumedApproved, resolution.Outcome);
-        Assert.NotNull(resolution.ReusableRuleCandidate);
-        var candidate = resolution.ReusableRuleCandidate!;
-        Assert.Equal(scope == AllowScope.Run ? PolicyRuleScope.Run : PolicyRuleScope.Project, candidate.Scope);
-        Assert.Equal("files.write", candidate.ToolId);
-        Assert.Equal("1.0.0", candidate.ToolVersion);
-        // Exact-by-default: approval-derived matchers may never broaden to a glob.
-        foreach (var pattern in candidate.PathPatterns.Append(candidate.CwdPattern))
-        {
-            if (pattern is not null)
-            {
-                Assert.DoesNotContain('*', pattern);
-            }
-        }
-
-        Assert.All(candidate.ArgvPatterns, pattern => Assert.DoesNotContain('*', pattern));
-        Assert.Equal(binding.CanonicalPath, candidate.PathPatterns.Single());
-        Assert.Equal(binding.Cwd, candidate.CwdPattern);
-    }
-
-    public enum AllowScope
-    {
-        Run,
-        Project,
     }
 
     [Fact]
-    public void Allow_once_never_creates_reusable_candidate()
+    public void Allow_once_carries_no_reusable_rule()
     {
         var pending = PendingToolApproval.Issue("apr_" + new string('f', 32), Binding());
 
         var resolution = ApprovalState.TryResolve(pending, ApprovalCommand.AllowOnce, Binding(), Epoch);
 
-        Assert.Null(resolution.ReusableRuleCandidate);
+        Assert.Equal(ApprovalOutcome.ConsumedApproved, resolution.Outcome);
     }
 
     [Fact]

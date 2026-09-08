@@ -27,15 +27,21 @@ advertised Agent tools.
 >   payloads, idempotent conversation outbox, workspace trust,
 >   session permissions with monotonic version, encrypted `PolicySnapshot`
 >   snapshots, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering
->   `consume → persist rule → execute under N → receipt → N+1` with
->   `reusable_rule_not_saved` still permitting once-only execution) and a thin
+>   `consume one-time approval → execute under N → receipt → N+1` with no
+>   reusable rule persisted; every approval is `allow_once`,
+>   `allow_session_directory` (external folders only), or `deny`) and a thin
 >   `RuAgent.Cli` tracer (safe envelope only, NDJSON `--json` `v:1`, no private
 >   payload auto-fetch, `policy list`/`import --global FILE`/`remove`,
 >   `approve <run-id> <approval-id>`/`deny`, `run --workspace PATH "prompt"`,
->   with no `--scope`/`--preset` flags exposed; the server picks the right
->   one-time token from the pending binding — session-scoped directory grant
->   for `external_directory_required`, ephemeral terminal token for
->   `terminal_delete_requires_approval` or `terminal_unknown_executable`).
+>   with no `--scope`/`--preset` flags exposed; the Host accepts exactly
+>   `allow_once`, `allow_session_directory` (external folders only), and
+>   `deny` — the server picks the right one-time token from the pending
+>   binding — session-scoped directory grant
+>   for `external_directory_required`, ephemeral token for
+>   `terminal_delete_requires_approval`,
+>   `terminal_external_mutation_requires_approval`,
+>   `terminal_timeout_requires_approval`, `web_approval_required`, or
+>   `terminal_unknown_executable`).
 >   `--json` cannot confirm any approval.
 >   Policy/approval/reconcile routes are active on the Agent v2 headless path.
 >   `POST /agent/v1/runs/{runId}/reconcile` resolves ambiguous dispatch and
@@ -49,9 +55,9 @@ advertised Agent tools.
 >   Protocol parser and do not become model history. Declarative Skills are
 >   session-granted and execute through the Broker's existing scope/approval
 >   boundary.
->   Managed startup enables `web.search` and `web.fetch` as read-only
->   capabilities backed by the fixed DuckDuckGo HTML endpoint; results are
->   bounded, sanitized, and explicitly untrusted.
+>   Managed startup enables `web.search` and `web.fetch` as
+>   approval-gated capabilities backed by the fixed DuckDuckGo HTML endpoint;
+>   results are bounded, sanitized, and explicitly untrusted.
 >   Workspace coordination is now opt-in per workspace through the authenticated
 >   concurrency/activity/changes endpoints. Shared mode permits disjoint runs;
 >   active Ru runs hold renewable workspace membership leases, and external file
@@ -68,8 +74,8 @@ advertised Agent tools.
 >   `PolicySnapshotEvaluator`, `PendingApprovalStore`/`ApprovalTokenService`,
 >   `FileList`/`Glob`/`Search`/`Read`/`Write`/`Edit`/`Delete`/`Restore`
 >   adapters, `FileHashService`/`AtomicFileReplacement`/`FileMutationJournal`),
->   and `RuAgent.Cli` (`PolicyJsonCodec` versioned, exact scope preview, no
->   glob broadening) are covered in `docs/architecture.md`, `CONTEXT.md`,
+>   and `RuAgent.Cli` (`PolicyJsonCodec` versioned, exact scope preview) are
+>   covered in `docs/architecture.md`, `CONTEXT.md`,
 >   `backend-dotnet/README.md`, and `backend-dotnet/RuAgent.Cli/README.md`.
 
 ## Current capability matrix
@@ -87,7 +93,7 @@ terminal request is descriptive input metadata, not a security boundary.
 | `files.write`, `files.edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
 | `files.delete`, `files.restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
 | `terminal.run`, `terminal.shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
-| `web.search`, `web.fetch` | advertised when managed Web is enabled | bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
+| `web.search`, `web.fetch` | advertised when managed Web is enabled | approval-gated, bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
 | `help.docs` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
@@ -111,9 +117,15 @@ external-root terminal adapters share the Broker's approval-token authority for
 unknown or destructive commands. The implementation never disables confinement
 globally.
 
-Only terminal commands that perform destructive deletion or launch an unknown
-executable ask for a one-time terminal approval. Recognized Git and package
-management commands are not dangerous solely by command name. Terminal calls
+Only `terminal.run` commands that perform destructive deletion, external mutation
+(network egress, package installs, push/fetch/pull), run longer than the
+standard timeout window, or launch an unknown executable ask for a one-time
+terminal approval; every `terminal.shell` script asks. Recognized read-only,
+test,
+build, lint, and local Git run commands are not dangerous solely by command name
+(see `TerminalAutoPolicy`, consumed by the evaluator fallback and enforced by
+the adapter execution leg).
+Terminal calls
 still run as the current Windows user and may execute host code or open sockets;
 `network_intent` is audit metadata, not network isolation. Current time,
 machine/process status, application discovery, and optional volume commands use
@@ -133,7 +145,9 @@ success claim. The Worker also accepts that exact object inside one
 attribute-free `<tool_call>...</tool_call>` wrapper or an attribute-free leading
 `<tool_call>` followed by a complete JSON object through the end of the response
 for compatibility with providers that emit textual tool markup; malformed, nested,
-prefixed, or suffixed wrappers remain prose and never execute. Both presets receive the same runtime-enabled definitions. Each
+prefixed, or suffixed wrappers remain prose and never execute. There is a single
+runtime policy profile; the preserved `standard`/`full_access` wire values map to
+the same enabled definitions. Each
 step allows at most 10 sequential tool selections; exhausting that budget
 forces one final wrap-up answer without tools. Approvals still gate mutating
 tools — a card with a bounded preview and an explicit user decision precede
@@ -248,6 +262,16 @@ TTY/editor-style requests remain rejected by canonical command policy.
 
 ### Markdown skill guidance
 
+`Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are user-workspace files below
+the selected run root, not repo templates. Minimal format:
+
+```markdown
+# Ru workspace instructions
+
+- Follow repo conventions.
+- Keep changes minimal and verified.
+```
+
 Markdown skills are a separate prompt-guidance format. Copy a directory
 containing a case-insensitive `SKILL.md` into one of the supported roots:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, or
@@ -302,8 +326,9 @@ adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates
 
-For the managed Agent path, `WebOptions` is enabled with the fixed public
-DuckDuckGo HTML endpoint `https://html.duckduckgo.com/html/`. `web.search` is
+For the managed Agent path, web tools are enabled with the fixed public
+DuckDuckGo HTML endpoint `https://html.duckduckgo.com/html/` and always
+require approval (`RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL=true`). `web.search` is
 advertised with `network.search`; `web.fetch` is advertised with
 `network.fetch`; the normal Harness policy remains authoritative. Automatic
 redirects are disabled or validated hop-by-hop; private, loopback, link-local,
@@ -343,11 +368,22 @@ message per reason code:
 - `terminal_unknown_executable` — Ru chưa nhận diện được executable của
   lệnh terminal này. The approval returns an ephemeral one-time
   terminal token.
+- `terminal_external_mutation_requires_approval` — Lệnh terminal này gây
+  mutation ngoài workspace (push/fetch mạng, cài package, restore).
+  The approval returns an ephemeral one-time terminal token, never a
+  reusable rule.
+- `terminal_timeout_requires_approval` — Lệnh terminal này chạy lâu hơn
+  cửa sổ chuẩn (900s). The approval returns an ephemeral one-time terminal
+  token, never a reusable rule.
+- `web_approval_required` — Ru cần phê duyệt trước khi gọi web bên ngoài.
+  The approval returns an ephemeral one-time token, never a reusable rule.
+  Web tools always ask; explicit rules can still deny them first, and managed
+  startup keeps approval-gating on.
 
-Recognized Git commands and recognized package install/restore
-commands are auto-allowed; direct terminal deletion and unrecognized
-executables require a single-use approval even inside the project
-root or an approved folder. The CLI exposes the same model with
+Recognized local Git mutations, read-only/test/build/lint run commands are
+auto-allowed (shell scripts always ask); network-affecting external mutations, direct terminal
+deletion, extended timeouts, and unrecognized executables require a single-use approval
+even inside the project root or an approved folder. The CLI exposes the same model with
 `agent approve <run-id> <approval-id>` and `agent deny`; there is no
 `--scope` flag and no `--preset` flag in the normal flow.
 
@@ -412,12 +448,9 @@ first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
 `HostApprovalLedger`). Deny terminates the current run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
 fields and expired or moved-workspace replays return `approval_stale`. The
-Broker returns the normalized candidate matcher for `AllowRun`/`AllowProject`; the UI/CLI shows
-that exact scope before confirmation. The model cannot broaden a rule with a
-glob; for an external-directory approval the Host itself generates a bounded
-descendant matcher only after the user chooses run/project scope. Ordering is
-`consume one-time approval under snapshot N → persist
-reusable rule (or `reusable_rule_not_saved` still permits once-only execution)
+Broker reply carries the exact matcher preview plus one `authorization_token`
+(60s); no reusable rule is ever produced. Ordering is
+`consume one-time approval under snapshot N
 → execute already-authorized call under N → persist final receipt → build/bind
 N+1 → invalidate other pending N decisions`; Broker restart before dispatch
 invalidates ephemeral decision and causes safe re-evaluation, never adapter

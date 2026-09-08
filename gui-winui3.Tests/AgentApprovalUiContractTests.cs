@@ -45,9 +45,13 @@ public sealed class AgentApprovalUiContractTests
 
         Assert.Contains("external_directory_required", code, StringComparison.Ordinal);
         Assert.Contains("terminal_delete_requires_approval", code, StringComparison.Ordinal);
+        Assert.Contains("terminal_external_mutation_requires_approval", code, StringComparison.Ordinal);
+        Assert.Contains("terminal_timeout_requires_approval", code, StringComparison.Ordinal);
+        Assert.Contains("web_approval_required", code, StringComparison.Ordinal);
         Assert.Contains("terminal_unknown_executable", code, StringComparison.Ordinal);
         Assert.Contains("Ru needs to access a directory", code, StringComparison.Ordinal);
         Assert.Contains("This terminal command will delete files", code, StringComparison.Ordinal);
+        Assert.Contains("changes something outside the workspace", code, StringComparison.Ordinal);
         Assert.Contains("Ru has not recognized the executable", code, StringComparison.Ordinal);
     }
 

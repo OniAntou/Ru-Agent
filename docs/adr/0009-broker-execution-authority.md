@@ -16,7 +16,10 @@ projection, approvals, and recovery persistence only.
 The Broker is also the only authority for **session-scoped** Agent
 permissions. It owns the in-memory `SessionDirectoryGrantRegistry` and
 the typed pending-approval reasons (`external_directory_required`,
-`terminal_delete_requires_approval`, `terminal_unknown_executable`).
+`terminal_delete_requires_approval`,
+`terminal_external_mutation_requires_approval`,
+`terminal_timeout_requires_approval`, `web_approval_required`,
+`terminal_unknown_executable`).
 Host and UI never persist or duplicate those grants; the GUI and CLI
 only render the server-selected reason and forward a parameterless
 approve.
@@ -45,8 +48,8 @@ approve.
   file tools, mutations, terminal, web.
 
 - Migration status (updated 2026-09-03, cutover complete):
-  - `BrokerSession` supports multiple concurrent run leases (per-run
-    decision/preparation registries, per-lease close), and
+  - `BrokerSession` supports multiple concurrent run leases (per-lease
+    close), and
     `ToolExecutionService` resolves every workspace-bound adapter against
     the lease's canonical root — the precondition for multiple concurrent
     runs on one Broker process.
@@ -70,13 +73,13 @@ approve.
   - Approval bridging: the Host approval endpoint forwards the resolution to
     the Broker (`approval.respond`) before resuming the run and the resumed
     proposal executes with the returned one-time `authorization_token`
-    (60 s). The legacy process-local external-directory grant memory is
-    replaced by per-execution Broker approvals; reusable `allow_run` /
-    `allow_project` rules stay Host-durable, and the Broker lease rebind
-    remains future work.
+    (60 s). Approvals never persist reusable rules; the token or the
+    session-directory grant is the whole authorization, and the Broker lease
+    rebind remains future work.
   - Web wiring: web options are defined once on the Host, forwarded to the
     Broker process through the environment, and the v2 lease advertises
-    `web.search` / `web.fetch` only when enabled. Live-network acceptance
+    `web.search` / `web.fetch` only when enabled. Web tools always ask;
+    explicit rules still deny first. Live-network acceptance
     stays separate per docs/operations/verification.md.
   - The v2 lease advertises the full authoritative tool set (16 bindings:
     system, help, notes, files, terminal) plus web when enabled.

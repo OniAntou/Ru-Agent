@@ -258,11 +258,11 @@ public sealed class AgentPolicyEndpointTests
         var runId = (await runResp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("run_id").GetString()!;
         var approvalId = "apr_" + new string('a', 32);
 
-        var body = new { scope = "global", decision = "allow" };
+        var body = new { command = "global" };
         using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", body);
-        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("approval_cannot_create_global", json.GetProperty("error_code").GetString());
+        Assert.Equal("invalid_approval_command", json.GetProperty("error_code").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear();

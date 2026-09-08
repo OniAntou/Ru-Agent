@@ -99,6 +99,7 @@ namespace RuApp.Views
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
         private readonly AgentReplyRenderScheduler _replyRenderScheduler;
+        private readonly object _accumulatorLock = new();
 
         public ChatView()
         {
@@ -293,7 +294,7 @@ namespace RuApp.Views
                 if (!string.IsNullOrEmpty(ChatInputTextBox.Text) && !_typingPushed)
                 {
                     _typingPushed = true;
-                    _ = _apiService?.PushVtsActivityAsync(true);
+                    PushSafelyAsync(_apiService?.PushVtsActivityAsync(true));
                 }
             };
 
@@ -480,6 +481,7 @@ namespace RuApp.Views
 
         private void UpdateReasoningEffortUi()
         {
+            SyncEffortFromCatalog();
             var options = GetCurrentReasoningOptions();
 
             if (!options.Any(o => string.Equals(o.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase)))
@@ -506,20 +508,33 @@ namespace RuApp.Views
 
             if (groupedState.Catalogs.TryGetValue(groupedState.SelectedBackend, out var catalogState))
             {
-                if (!string.IsNullOrWhiteSpace(catalogState.SelectedEffort) &&
-                    string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
-                {
-                    _selectedReasoningEffort = catalogState.SelectedEffort;
-                }
                 return ProviderReasoningOptions.For(catalogState);
             }
 
             return [new ProviderReasoningOption("default", "default")];
         }
 
+        private void SyncEffortFromCatalog()
+        {
+            if (_groupedCatalogs is null) return;
+
+            var groupedState = _groupedCatalogs.State;
+            if (string.IsNullOrWhiteSpace(groupedState.SelectedBackend)) return;
+
+            if (groupedState.Catalogs.TryGetValue(groupedState.SelectedBackend, out var catalogState))
+            {
+                if (!string.IsNullOrWhiteSpace(catalogState.SelectedEffort) &&
+                    string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+                {
+                    _selectedReasoningEffort = catalogState.SelectedEffort;
+                }
+            }
+        }
+
         private void OnChatReasoningFlyoutOpened(object sender, object e)
         {
             ReasoningOptionsContainer.Children.Clear();
+            SyncEffortFromCatalog();
             var options = GetCurrentReasoningOptions();
 
             foreach (var option in options)
@@ -574,8 +589,15 @@ namespace RuApp.Views
                 string effort = option.Value;
                 btn.Click += async (s, args) =>
                 {
-                    ChatReasoningFlyout.Hide();
-                    await ApplyReasoningEffortAsync(effort);
+                    try
+                    {
+                        ChatReasoningFlyout.Hide();
+                        await ApplyReasoningEffortAsync(effort);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[ChatView] Reasoning effort selection failed: {ex.Message}");
+                    }
                 };
 
                 ReasoningOptionsContainer.Children.Add(btn);
@@ -647,8 +669,11 @@ namespace RuApp.Views
             return null;
         }
 
+        private bool _suppressContextUsageUpdate;
+
         public void UpdateContextUsage()
         {
+            if (_suppressContextUsageUpdate) return;
             string currentModel = _selectedModel;
             int? catalogCtx = GetCurrentModelContextLength();
             var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel, catalogCtx);
@@ -714,12 +739,25 @@ namespace RuApp.Views
                 if (_typingPushed)
                 {
                     _typingPushed = false;
-                    _ = _apiService?.PushVtsActivityAsync(false);
+                    PushSafelyAsync(_apiService?.PushVtsActivityAsync(false));
                 }
                 return;
             }
             _typingDebounce?.Stop();
             _typingDebounce?.Start();
+        }
+
+        private static async void PushSafelyAsync(Task? task)
+        {
+            if (task == null) return;
+            try
+            {
+                await task;
+            }
+            catch
+            {
+                // Fire-and-forget VTS activity push should never crash the UI
+            }
         }
 
         private void OnAgentControllerChanged(object? sender, PropertyChangedEventArgs e)
@@ -823,7 +861,14 @@ namespace RuApp.Views
             {
                 // Deliver voice promptly on any thread that received the delta, but ensure the run is still current
                 var runForVoice = _agentController?.CurrentRun;
-                if (runForVoice != null && _activeAgentAssistantMessage != null && string.Equals(_activeAgentRunId ?? runForVoice.RunId, runForVoice.RunId, StringComparison.Ordinal))
+                ChatMessageItem? capturedAssistantMessage;
+                string? capturedRunId;
+                lock (_accumulatorLock)
+                {
+                    capturedAssistantMessage = _activeAgentAssistantMessage;
+                    capturedRunId = _activeAgentRunId;
+                }
+                if (runForVoice != null && capturedAssistantMessage != null && string.Equals(capturedRunId ?? runForVoice.RunId, runForVoice.RunId, StringComparison.Ordinal))
                 {
                     _voicePlayback.AppendReplyDelta(delta.Text);
                 }
@@ -841,13 +886,24 @@ namespace RuApp.Views
                 return;
             }
 
-            if (_activeAgentAssistantMessage is null)
+            ChatMessageItem? activeAssistantMessage;
+            string? activeRunId;
+            lock (_accumulatorLock)
+            {
+                activeAssistantMessage = _activeAgentAssistantMessage;
+                activeRunId = _activeAgentRunId;
+            }
+            if (activeAssistantMessage is null)
             {
                 return;
             }
 
-            _activeAgentRunId ??= run.RunId;
-            if (!string.Equals(_activeAgentRunId, run.RunId, StringComparison.Ordinal))
+            activeRunId ??= run.RunId;
+            lock (_accumulatorLock)
+            {
+                _activeAgentRunId = activeRunId;
+            }
+            if (!string.Equals(activeRunId, run.RunId, StringComparison.Ordinal))
             {
                 return;
             }
@@ -862,7 +918,12 @@ namespace RuApp.Views
             if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
             {
                 // If no active accumulator (e.g., after Invalidate), begin with real runId and retry once
-                if (_activeAgentRunId != null && run.RunId == _activeAgentRunId)
+                string? currentRunId;
+                lock (_accumulatorLock)
+                {
+                    currentRunId = _activeAgentRunId;
+                }
+                if (currentRunId != null && run.RunId == currentRunId)
                 {
                     _replyAccumulator.Begin(_activeSessionId, run.RunId);
                     if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
@@ -1059,7 +1120,7 @@ namespace RuApp.Views
                 {
                     DispatcherQueue?.TryEnqueue(() =>
                     {
-                        if (s is AgentActivityItem ai)
+                        if (s is AgentActivityItem ai && ReferenceEquals(grid.DataContext, ai))
                         {
                             ApplyActivityTextStyle(displayText, ai);
                         }
@@ -1108,7 +1169,7 @@ namespace RuApp.Views
             if (_waveTimer == null)
             {
                 _waveTimer = DispatcherQueue.CreateTimer();
-                _waveTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60 FPS butter-smooth
+                _waveTimer.Interval = TimeSpan.FromMilliseconds(33); // ~30 FPS
                 _waveTimer.Tick += OnWaveTimerTick;
             }
 
@@ -1186,19 +1247,33 @@ namespace RuApp.Views
             // Subtle Cyan-Violet Aurora beam center (-0.35 to 1.35)
             double center = -0.35 + 1.70 * phase;
 
-            var brush = new LinearGradientBrush
+            // Cache brush per TextBlock to avoid allocation churn
+            if (tb.Tag is not LinearGradientBrush brush)
             {
-                StartPoint = new Point(0, 0.5),
-                EndPoint = new Point(1, 0.5),
-                GradientStops =
+                brush = new LinearGradientBrush
                 {
-                    new GradientStop { Color = SampleAuroraColor(0.00, center, baseColor), Offset = 0.00 },
-                    new GradientStop { Color = SampleAuroraColor(0.25, center, baseColor), Offset = 0.25 },
-                    new GradientStop { Color = SampleAuroraColor(0.50, center, baseColor), Offset = 0.50 },
-                    new GradientStop { Color = SampleAuroraColor(0.75, center, baseColor), Offset = 0.75 },
-                    new GradientStop { Color = SampleAuroraColor(1.00, center, baseColor), Offset = 1.00 },
-                }
-            };
+                    StartPoint = new Point(0, 0.5),
+                    EndPoint = new Point(1, 0.5),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = baseColor, Offset = 0.00 },
+                        new GradientStop { Color = baseColor, Offset = 0.25 },
+                        new GradientStop { Color = baseColor, Offset = 0.50 },
+                        new GradientStop { Color = baseColor, Offset = 0.75 },
+                        new GradientStop { Color = baseColor, Offset = 1.00 },
+                    }
+                };
+                tb.Tag = brush;
+            }
+
+            // Mutate stops in place
+            var stops = brush.GradientStops;
+            stops[0].Color = SampleAuroraColor(0.00, center, baseColor);
+            stops[1].Color = SampleAuroraColor(0.25, center, baseColor);
+            stops[2].Color = SampleAuroraColor(0.50, center, baseColor);
+            stops[3].Color = SampleAuroraColor(0.75, center, baseColor);
+            stops[4].Color = SampleAuroraColor(1.00, center, baseColor);
+
             tb.Foreground = brush;
         }
 
@@ -1413,7 +1488,9 @@ namespace RuApp.Views
         /// The Host is the only authority, so we never echo the raw argv, script,
         /// working directory, or secrets. Reason codes come from the broker
         /// (external_directory_required, terminal_delete_requires_approval,
-        /// terminal_unknown_executable); unknown values stay generic.
+        /// terminal_external_mutation_requires_approval, terminal_timeout_requires_approval,
+        /// web_approval_required, terminal_unknown_executable);
+        /// unknown values stay generic.
         /// </summary>
         private static string RenderApprovalSummary(string? summary)
         {
@@ -1425,6 +1502,18 @@ namespace RuApp.Views
             if (string.Equals(trimmed, "terminal_delete_requires_approval", StringComparison.Ordinal))
             {
                 return "This terminal command will delete files.";
+            }
+            if (string.Equals(trimmed, "terminal_external_mutation_requires_approval", StringComparison.Ordinal))
+            {
+                return "This terminal command changes something outside the workspace (network, install).";
+            }
+            if (string.Equals(trimmed, "terminal_timeout_requires_approval", StringComparison.Ordinal))
+            {
+                return "This terminal command runs longer than the standard window.";
+            }
+            if (string.Equals(trimmed, "web_approval_required", StringComparison.Ordinal))
+            {
+                return "Ru needs approval to fetch this web content.";
             }
             if (string.Equals(trimmed, "terminal_unknown_executable", StringComparison.Ordinal))
             {
@@ -1621,16 +1710,23 @@ namespace RuApp.Views
 
         private async void OnInputDrop(object sender, DragEventArgs e)
         {
-            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            try
             {
-                var items = await e.DataView.GetStorageItemsAsync();
-                foreach (var storageItem in items)
+                if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
                 {
-                    if (storageItem is Windows.Storage.StorageFile file)
+                    var items = await e.DataView.GetStorageItemsAsync();
+                    foreach (var storageItem in items)
                     {
-                        await AddFileAttachmentAsync(file);
+                        if (storageItem is Windows.Storage.StorageFile file)
+                        {
+                            await AddFileAttachmentAsync(file);
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error dropping files: {ex.Message}");
             }
         }
 
@@ -1848,7 +1944,7 @@ namespace RuApp.Views
                 if (_typingPushed)
                 {
                     _typingPushed = false;
-                    _ = _apiService?.PushVtsActivityAsync(false);
+                    PushSafelyAsync(_apiService?.PushVtsActivityAsync(false));
                 }
 
                 var textAttachments = attachments.Where(a => !a.IsImage && !string.IsNullOrWhiteSpace(a.TextContent)).ToList();
@@ -1962,7 +2058,7 @@ namespace RuApp.Views
             {
                 // Preserve the voice completion gate while replacing the stale
                 // session and retrying this same logical turn once.
-                AbandonActiveAgentReply(notifyVoice: false);
+                AbandonActiveAgentReply(notifyVoice: false, removeUserMessage: true);
                 await RecoverAgentSessionAsync(cancellationToken);
                 await SendAgentTurnAsync(
                     text,
@@ -2130,7 +2226,7 @@ namespace RuApp.Views
             _activeAgentTurnSource = AgentTurnSource.Typed;
         }
 
-        private void AbandonActiveAgentReply(bool notifyVoice)
+        private void AbandonActiveAgentReply(bool notifyVoice, bool removeUserMessage = false)
         {
             _replyRenderScheduler.Invalidate();
             _voicePlayback?.StopVoice();
@@ -2138,6 +2234,15 @@ namespace RuApp.Views
             {
                 _voiceConversation?.NotifyReplyError(
                     new OperationCanceledException("Agent turn was replaced or cancelled."));
+            }
+
+            if (removeUserMessage && Messages.Count > 0)
+            {
+                var last = Messages[^1];
+                if (string.Equals(last.Role, "user", StringComparison.Ordinal))
+                {
+                    Messages.RemoveAt(Messages.Count - 1);
+                }
             }
 
             if (_activeAgentAssistantMessage is not null)
@@ -2390,71 +2495,80 @@ namespace RuApp.Views
 
             void Apply()
             {
-                if (preserveStreamedReply
-                    && _activeAgentAssistantMessage is { } streamedMessage
-                    && !string.IsNullOrWhiteSpace(streamedReply))
+                _suppressContextUsageUpdate = true;
+                try
                 {
-                    if (!Messages.Contains(streamedMessage))
+                    if (preserveStreamedReply
+                        && _activeAgentAssistantMessage is { } streamedMessage
+                        && !string.IsNullOrWhiteSpace(streamedReply))
                     {
-                        Messages.Add(streamedMessage);
+                        if (!Messages.Contains(streamedMessage))
+                        {
+                            Messages.Add(streamedMessage);
+                        }
+
+                        streamedMessage.Content = streamedReply;
+                        streamedMessage.IsStreaming = false;
+                        streamedMessage.Usage = _activeAgentUsage;
+                        ScrollChatToBottom();
+                        UpdateViewMode();
+                        return;
                     }
 
-                    streamedMessage.Content = streamedReply;
-                    streamedMessage.IsStreaming = false;
-                    streamedMessage.Usage = _activeAgentUsage;
-                    ScrollChatToBottom();
-                    UpdateViewMode();
-                    return;
-                }
-
-                var existingActivities = Messages
-                    .Where(m => m.Role == "assistant")
-                    .Select(m => m.AgentActivities != null && !ReferenceEquals(m.AgentActivities, AgentActivities)
-                        ? m.AgentActivities
-                        : (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
-                            ? new ObservableCollection<AgentActivityItem>(AgentActivities)
-                            : null))
-                    .ToList();
-
-                DetachAgentActivitiesFromMessages();
-                Messages.Clear();
-                int assistantCount = 0;
-                int lastAssistantIndex = history.FindLastIndex(
-                    item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
-                for (int index = 0; index < history.Count; index++)
-                {
-                    var (role, content) = history[index];
-                    ObservableCollection<AgentActivityItem>? activities = null;
-                    if (role == "assistant")
-                    {
-                        if (index == lastAssistantIndex)
-                        {
-                            activities = AgentActivities.Count > 0
+                    var existingActivities = Messages
+                        .Where(m => m.Role == "assistant")
+                        .Select(m => m.AgentActivities != null && !ReferenceEquals(m.AgentActivities, AgentActivities)
+                            ? m.AgentActivities
+                            : (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
                                 ? new ObservableCollection<AgentActivityItem>(AgentActivities)
-                                : (assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null);
-                        }
-                        else if (assistantCount < existingActivities.Count)
+                                : null))
+                        .ToList();
+
+                    DetachAgentActivitiesFromMessages();
+                    Messages.Clear();
+                    int assistantCount = 0;
+                    int lastAssistantIndex = history.FindLastIndex(
+                        item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
+                    for (int index = 0; index < history.Count; index++)
+                    {
+                        var (role, content) = history[index];
+                        ObservableCollection<AgentActivityItem>? activities = null;
+                        if (role == "assistant")
                         {
-                            activities = existingActivities[assistantCount];
+                            if (index == lastAssistantIndex)
+                            {
+                                activities = AgentActivities.Count > 0
+                                    ? new ObservableCollection<AgentActivityItem>(AgentActivities)
+                                    : (assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null);
+                            }
+                            else if (assistantCount < existingActivities.Count)
+                            {
+                                activities = existingActivities[assistantCount];
+                            }
+                            assistantCount++;
                         }
-                        assistantCount++;
+
+                        Messages.Add(new ChatMessageItem
+                        {
+                            Role = role,
+                            Content = role == "assistant" ? StripDisplayMarkers(content) : content,
+                            Usage = index == lastAssistantIndex ? _activeAgentUsage : null,
+                            AgentActivities = activities
+                        });
                     }
 
-                    Messages.Add(new ChatMessageItem
+                    if (history.Count > 0)
                     {
-                        Role = role,
-                        Content = role == "assistant" ? StripDisplayMarkers(content) : content,
-                        Usage = index == lastAssistantIndex ? _activeAgentUsage : null,
-                        AgentActivities = activities
-                    });
-                }
+                        ScrollChatToBottom();
+                    }
 
-                if (history.Count > 0)
+                    UpdateViewMode();
+                }
+                finally
                 {
-                    ScrollChatToBottom();
+                    _suppressContextUsageUpdate = false;
+                    UpdateContextUsage();
                 }
-
-                UpdateViewMode();
             }
 
             if (DispatcherQueue.HasThreadAccess)
@@ -2571,10 +2685,15 @@ namespace RuApp.Views
 
         private void ScrollChatToBottom()
         {
-            ChatScrollHost.UpdateLayout();
             if (ChatScrollHost.ScrollableHeight > 0)
             {
-                ChatScrollHost.ChangeView(null, ChatScrollHost.ScrollableHeight, null, disableAnimation: true);
+                double verticalOffset = ChatScrollHost.VerticalOffset;
+                double maxOffset = ChatScrollHost.ScrollableHeight;
+                bool nearBottom = maxOffset - verticalOffset <= 100; // Within 100px of bottom
+                if (nearBottom)
+                {
+                    ChatScrollHost.ChangeView(null, maxOffset, null, disableAnimation: true);
+                }
                 return;
             }
             DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RetryScrollAfterLayout);
@@ -2582,10 +2701,15 @@ namespace RuApp.Views
 
         private void RetryScrollAfterLayout()
         {
-            ChatScrollHost.UpdateLayout();
             if (ChatScrollHost.ScrollableHeight > 0)
             {
-                ChatScrollHost.ChangeView(null, ChatScrollHost.ScrollableHeight, null, disableAnimation: true);
+                double verticalOffset = ChatScrollHost.VerticalOffset;
+                double maxOffset = ChatScrollHost.ScrollableHeight;
+                bool nearBottom = maxOffset - verticalOffset <= 100;
+                if (nearBottom)
+                {
+                    ChatScrollHost.ChangeView(null, maxOffset, null, disableAnimation: true);
+                }
             }
         }
 
@@ -2919,23 +3043,32 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
-            _modelSaveFailureTimer?.Stop();
+            if (_modelSaveFailureTimer != null)
+            {
+                _modelSaveFailureTimer.Stop();
+                _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
+                _modelSaveFailureTimer = null;
+            }
             if (_providerCatalogController != null)
             {
-                if (_ownsProviderCatalogController)
-                {
-                    _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                }
+                var catalog = _providerCatalogController;
+                bool owns = _ownsProviderCatalogController;
                 _providerCatalogController = null;
+                if (owns)
+                {
+                    _ = catalog.DisposeAsync().AsTask().ContinueWith(_ => { });
+                }
             }
             if (_groupedCatalogs != null)
             {
-                _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
-                if (_ownsGroupedCatalogs)
-                {
-                    _groupedCatalogs.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                }
+                var grouped = _groupedCatalogs;
+                bool ownsGrouped = _ownsGroupedCatalogs;
+                grouped.StateChanged -= OnGroupedStateChanged;
                 _groupedCatalogs = null;
+                if (ownsGrouped)
+                {
+                    _ = grouped.DisposeAsync().AsTask().ContinueWith(_ => { });
+                }
             }
             if (_agentController is not null)
             {
@@ -2943,11 +3076,20 @@ namespace RuApp.Views
                 _agentController.ActivityReceived -= OnAgentActivityReceived;
                 _agentController.SummaryReceived -= OnAgentSummaryReceived;
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
+                _agentController.UsageReceived -= OnAgentUsageReceived;
             }
+            StopAllTextSweeps();
+            DetachWaveTimer();
             ClearAgentActivities();
             ClearAgentRunSummary();
             _typingDebounce?.Stop();
             _typingDebounce = null;
+            if (_modelSaveFailureTimer != null)
+            {
+                _modelSaveFailureTimer.Stop();
+                _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
+                _modelSaveFailureTimer = null;
+            }
             MeteorShowerField?.Dispose();
             _voicePlayback?.StopVoice();
             if (_voiceConversation != null)
@@ -2958,6 +3100,15 @@ namespace RuApp.Views
             }
             _voiceCapture?.Dispose();
             _voiceCapture = null;
+        }
+
+        private void DetachWaveTimer()
+        {
+            if (_waveTimer != null)
+            {
+                _waveTimer.Tick -= OnWaveTimerTick;
+                _waveTimer = null;
+            }
         }
     }
 }

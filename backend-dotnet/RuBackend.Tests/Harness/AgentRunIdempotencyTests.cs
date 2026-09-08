@@ -157,7 +157,7 @@ public sealed class AgentRunIdempotencyTests
     }
 
     [Fact]
-    public async Task Full_preset_without_version_returns_preset_mismatch()
+    public async Task Legacy_full_preset_without_version_creates_standard_run()
     {
         using var tmp = TempWorkspace.Create();
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
@@ -174,9 +174,9 @@ public sealed class AgentRunIdempotencyTests
         };
 
         using var resp = await client.PostAsJsonAsync("/agent/v1/runs", body);
-        Assert.Equal((HttpStatusCode)409, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
         var j = await resp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("preset_mismatch", j.GetProperty("error_code").GetString());
+        Assert.Equal("standard", j.GetProperty("preset").GetString());
     }
 
     [Fact]

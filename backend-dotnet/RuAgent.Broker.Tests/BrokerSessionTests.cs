@@ -208,7 +208,7 @@ public sealed class BrokerSessionTests
     }
 
     [Fact]
-    public void Rebind_increments_binding_version_and_invalidates_pending_decisions()
+    public void Rebind_increments_binding_version()
     {
         using var fixture = DescriptorFixture.Create();
         var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
@@ -222,8 +222,6 @@ public sealed class BrokerSessionTests
         Assert.True(session.TryOpenRunLease(first, out _));
         Assert.Equal(1, session.ActiveRunLease!.BindingVersion);
 
-        var staleToken = session.RegisterDecision(first.RunId, "files.read", "intent-1", TimeSpan.FromMinutes(5));
-
         var second = CreateLease(
             first.RunId,
             first.SessionId,
@@ -235,12 +233,6 @@ public sealed class BrokerSessionTests
         Assert.Null(rebindError);
         Assert.Equal(2, session.ActiveRunLease!.BindingVersion);
         Assert.Equal(2, session.ActiveRunLease.Snapshot.Version);
-
-        Assert.False(session.TryPrepareDecision(staleToken, first.RunId, "files.read", out _, out var staleError));
-        Assert.Equal("decision_stale", staleError);
-
-        var freshToken = session.RegisterDecision(first.RunId, "files.read", "intent-2", TimeSpan.FromMinutes(5));
-        Assert.True(session.TryPrepareDecision(freshToken, first.RunId, "files.read", out _, out _));
     }
 
     [Fact]

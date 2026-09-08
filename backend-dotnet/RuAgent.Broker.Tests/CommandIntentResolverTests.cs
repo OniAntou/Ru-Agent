@@ -119,11 +119,11 @@ public sealed class CommandIntentResolverTests
     }
 
     [Theory]
-    [InlineData(1_200_000, TerminalTimeoutClass.ApprovalRequired)]
-    [InlineData(900_000, TerminalTimeoutClass.StandardWindow)]
-    [InlineData(900_001, TerminalTimeoutClass.ApprovalRequired)]
-    [InlineData(1_800_000, TerminalTimeoutClass.ApprovalRequired)]
-    public void Timeout_class_follows_the_standard_window_boundary(int timeoutMs, TerminalTimeoutClass expected)
+    [InlineData(1_200_000)]
+    [InlineData(900_000)]
+    [InlineData(900_001)]
+    [InlineData(1_800_000)]
+    public void Timeout_is_recorded_in_the_intent_hash_without_a_second_verdict(int timeoutMs)
     {
         var workspace = CreateTemporaryRoot("ru-intent-timeout-");
         try
@@ -133,7 +133,7 @@ public sealed class CommandIntentResolverTests
             var intent = resolver.ResolveRun(new CanonicalCommandRequest(executable, TimeoutMs: timeoutMs));
 
             Assert.Equal(timeoutMs, intent.TimeoutMs);
-            Assert.Equal(expected, intent.TimeoutClass);
+            Assert.Equal(TerminalTimeoutClass.StandardWindow, intent.TimeoutClass);
         }
         finally
         {

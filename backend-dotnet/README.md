@@ -84,32 +84,37 @@ directly; they validate the descriptor and `GET /status` bearer, and poll for a
 valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
 `v1`; the setting remains accepted by compatibility Harness construction but is
 not a product mode switch and cannot re-enable Chat. Agent v2 (`/worker/v2`
-one-step, `/agent/v1/*` 15 routes, SSE reconnect with durable `id:<sequence>`
+one-step, `/agent/v1/*` 20 routes, SSE reconnect with durable `id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 `agent_harness.db` + AES-GCM payloads, workspace trust, session permissions,
 and encrypted policy snapshots) is the current path. Worker v2 performs
 exactly one `generate_reply` per `agent.step.start` and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same eleven bindings in Standard and Full Access (including offline
+the same eleven bindings in the single Agent profile (including offline
 `help.docs`): `files.list`/`files.glob`/
 `files.search`/`files.read` (offset/limit, streaming, bounded `truncated`),
 hash-guarded `files.write`/`files.edit`, recoverable
 `files.delete`/`files.restore` (one-time, `recovery_too_large` beyond 1 MiB,
-`recovery_consumed` on replay), and `terminal.run`/`terminal.shell`. Standard
-automatically allows ordinary trusted-workspace file reads/creates/edits and
-applies analyzer/rule/approval decisions to terminal requests. Full Access
-keeps the same advertisement but normally uses its broader fallback for
-well-formed calls; protected paths, hard invariants, and extended timeout
-thresholds remain gated. An explicit absolute path outside the trusted root
+`recovery_consumed` on replay), and `terminal.run`/`terminal.shell`. The single
+profile automatically allows ordinary trusted-workspace file reads/creates/edits
+and applies single-verdict analyzer/rule/approval decisions to terminal requests:
+auto for recognized read/test/build/lint/local-Git `terminal.run` payloads,
+ask for deletion, external mutation, extended timeouts, every `terminal.shell`
+script, and unknown executables. Protected paths, hard invariants, and extended
+timeout thresholds remain gated. An explicit absolute path outside the trusted
+root
 asks with `external_directory_required`; the approval UI can grant only that
-canonical directory for the current run or project, and the grant covers
-read/create/edit operations only. Terminal calls run as the current Windows
-user and may execute host code or open sockets; `network_intent` is
+canonical directory for the current live session, and the grant covers
+read/create/edit operations only. Managed web tools ask with
+`web_approval_required` when approval-gating is enabled. Terminal calls run as
+the current Windows user and may execute host code or open sockets;
+`network_intent` is
 audit/approval metadata, not network isolation. Time, machine status, app
 discovery, and optional volume commands use the terminal; notes use
 `files.write`. `files.apply_patch` is not advertised or model-usable. The
-managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
-remain ordinary terminal requests.
+managed Git commit workflow is fully shipped with temporary index isolation,
+path rollback attribution, and refusal on dirty user state; other Git commands
+remain ordinary terminal requests governed by Broker policy.
 
 The retired Python deterministic Harness is not used for route verification,
 so managed route tests run directly against the published C# composition. The managed composition now
@@ -133,8 +138,8 @@ parity.
 dotnet restore backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore
 dotnet list backend-dotnet/RuBackend/RuBackend.csproj package --vulnerable --include-transitive
-& D:\LLM\.venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\build.bat
+.venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
+.\build.bat
 ```
 
 The canonical public surface is

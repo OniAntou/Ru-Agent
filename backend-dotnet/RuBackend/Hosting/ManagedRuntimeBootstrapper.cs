@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using RuAgent.Hosting;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
+using RuBackend.Hosting;
 using RuBackend.Runtime;
 
 namespace RuBackend.Hosting;
@@ -22,13 +23,23 @@ internal sealed record ManagedRuntimeBootstrap(
     RuntimeDescriptorWriter DescriptorWriter,
     PublicHostSingleInstance SingleInstance);
 
+internal sealed class HostStartupException : Exception
+{
+    public int ExitCode { get; }
+
+    public HostStartupException(string message, int exitCode) : base(message)
+    {
+        ExitCode = exitCode;
+    }
+}
+
 internal static class ManagedRuntimeBootstrapper
 {
     // Web tool configuration is defined once and shared: the Host executor uses
     // it directly, the Broker process receives it through the environment.
     public const string BrokerWebSearchEndpoint = "https://html.duckduckgo.com/html/";
 
-    internal static ManagedRuntimeBootstrap Start(IConfiguration configuration, string projectRoot)
+    internal static async Task<ManagedRuntimeBootstrap> StartAsync(IConfiguration configuration, string projectRoot)
     {
         string? managedPublicBearer = null;
         var managedAgentWorkerToken = string.Empty;
@@ -51,9 +62,7 @@ internal static class ManagedRuntimeBootstrapper
         // Port conflict check: if port occupied and no valid owned descriptor, fail fast
         if (IsPortOccupied(publicPort) && managedDescriptorWriter.IsStale())
         {
-            Console.Error.WriteLine("{\"error_code\":\"public_host_port_conflict\"}");
-            // Do not attach to or kill foreign process; exit immediately
-            Environment.Exit(2);
+            throw new HostStartupException("{\"error_code\":\"public_host_port_conflict\"}", 2);
         }
 
         // Single instance mutex (global per port)
@@ -65,8 +74,7 @@ internal static class ManagedRuntimeBootstrapper
             managedSingleInstance = new RuAgent.Hosting.PublicHostSingleInstance($"Local\\RuPublicHost-{publicPort}");
             if (!managedSingleInstance.IsAcquired)
             {
-                Console.Error.WriteLine("{\"error_code\":\"public_host_already_running\"}");
-                Environment.Exit(3);
+                throw new HostStartupException("{\"error_code\":\"public_host_already_running\"}", 3);
             }
         }
 
@@ -100,18 +108,19 @@ internal static class ManagedRuntimeBootstrapper
             PublicHostRuntimeOptions.DefaultDeviceWorkerPort);
 
         var bootstrapRoot = Path.Combine(managedLogRoot, "agent", "session");
-        var providerBootstrapPath = new ManagedProviderBootstrapFactory()
+        var providerBootstrapPath = await new ManagedProviderBootstrapFactory()
             .CreateAsync(
                 bootstrapRoot,
                 CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
+            .ConfigureAwait(false);
 
         // Web tool configuration is forwarded to the Broker process (the execution
         // authority) through the environment before the children start.
+        // Web egress requires explicit approval by default: read-only risk class
+        // alone must never auto-allow traffic outside the loopback boundary.
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED", "true");
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", BrokerWebSearchEndpoint);
-        Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "false");
+        Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "true");
 
         // Start Worker and Broker in one Job
         var managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
@@ -123,10 +132,9 @@ internal static class ManagedRuntimeBootstrapper
             managedDeviceWorkerPort,
             null,
             Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
-        var workerStarted = managedWorkerBrokerManager
+        var workerStarted = await managedWorkerBrokerManager
             .StartAsync(projectRoot, startup)
-            .GetAwaiter()
-            .GetResult();
+            .ConfigureAwait(false);
         if (!workerStarted)
         {
             if (!string.IsNullOrWhiteSpace(providerBootstrapPath))
@@ -141,8 +149,7 @@ internal static class ManagedRuntimeBootstrapper
                 }
             }
 
-            Console.Error.WriteLine($"Worker/Broker start failed: {managedWorkerBrokerManager.LastError}");
-            Environment.Exit(4);
+            throw new HostStartupException($"Worker/Broker start failed: {managedWorkerBrokerManager.LastError}", 4);
         }
 
         managedAgentWorkerPort = managedWorkerBrokerManager.AgentWorkerPort;
@@ -166,7 +173,7 @@ internal static class ManagedRuntimeBootstrapper
             proc.StartTime.ToUniversalTime().ToString("O"),
             RuAgent.Hosting.PublicHostRuntimeOptions.GenerateNonce(),
             DateTimeOffset.UtcNow.ToString("O"));
-        managedDescriptorWriter.WriteAsync(descriptor).GetAwaiter().GetResult();
+        await managedDescriptorWriter.WriteAsync(descriptor).ConfigureAwait(false);
 
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,

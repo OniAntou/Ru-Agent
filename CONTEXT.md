@@ -122,11 +122,12 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The session-scoped Agent preset that controls Broker policy. The model-visible
+The single session-scoped Agent preset. The model-visible
 Worker v2 list is the runtime projection of eleven core Protocol definitions
-(including offline `help.docs`) plus independently enabled `web.search`/`web.fetch`; Standard and Full Access receive
-the same enabled list, while Full Access only changes Broker policy defaults;
-it does not introduce provider, model, protocol, or tool fallback.
+(including offline `help.docs`) plus independently enabled `web.search`/`web.fetch`
+(approval-gated). The legacy `standard`/`full_access` wire values are accepted
+as compatibility metadata but map to the same policy; there is no second
+policy tier and no provider, model, protocol, or tool fallback.
 _Avoid_: permanent permission
 
 **Agent Persona Source**:
@@ -161,14 +162,18 @@ _Avoid_: repository-stored authority
 The binding of a canonical root to its Windows volume serial and root file
 identity (`WorkspaceIdentity` `ws_*` + `DisplayIdentityHash`), persisted as
 one active trusted identity per workspace and validated via final-path
-resolution; a moved identity creates a fresh trust request and Full Access
-never bypasses it.
+resolution; a moved identity creates a fresh trust request and no preset
+ever bypasses it.
 _Avoid_: repository-marker trust
 
 **Workspace Terminal**:
 The non-admin terminal adapter constrained to the configured workspace,
 allowlisted executables, bounded output, cancellation, and process-tree
-cleanup. Raw shell and network use require a separate approval path.
+cleanup. `terminal.run` auto-forms (read/test/build/lint/local-Git) run on an
+authorization token; external mutation, deletion, extended timeouts, every
+`terminal.shell` script, and unknown executables require a one-time approval
+token. Network use is audit metadata plus an approval classifier, never a
+separate scope gate.
 _Avoid_: unrestricted Bash/PowerShell access
 
 **Connector Adapter**:

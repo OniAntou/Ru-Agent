@@ -56,8 +56,10 @@ public sealed partial class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        var confineWorkspace = context.ConfinementRequired;
-        if (confineWorkspace && !context.Approved && context.ApprovalToken is null)
+        // Shell scripts always require explicit approval: the evaluator asks with
+        // terminal_unknown_executable and the execution leg consumes the same
+        // one-time token. Confinement is defense in depth, not the gate.
+        if (!context.Approved && context.ApprovalToken is null)
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }
@@ -72,24 +74,15 @@ public sealed partial class ToolExecutionService : IToolInvoker
             context.ApprovalToken ?? string.Empty,
             context.RequestId,
             context.SessionId,
-            TryComputeTerminalIntentHash(tools, "terminal.shell", arguments)
-                ?? PendingApprovalStore.ComputeArgumentsHash("terminal.shell", "1.0.0", arguments),
             IsTrue(arguments, "read_only"),
             ReadWriteSet(arguments),
             Approved: context.Approved);
         var result = await tools.Terminal.RunApprovedShellAsync(
             shellRequest,
-            confineWorkspace,
+            context.ConfinementRequired,
             cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result, confineWorkspace, tools.CanonicalRoot);
+        return ProcessOutcome(result, context.ConfinementRequired, tools.CanonicalRoot);
     }
-
-    /// <summary>
-    /// Resolves the canonical intent hash for a terminal call without executing it.
-    /// Approval tokens bind to this hash so any change to the resolved executable,
-    /// argv, working directory, operation class, network intent, or timeout between
-    /// approval and execution invalidates the authorization.
-    /// </summary>
 
     /// <summary>
     /// Resolves the canonical intent hash for a terminal call without executing it.

@@ -22,12 +22,12 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
-    public async Task Approve_DefaultOnce_SucceedsAndShowsPreview()
+    public async Task Approve_SendsAllowOnceCommandAndShowsPreview()
     {
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('b', 32);
-        bool scopeChecked = false;
+        bool commandChecked = false;
         var handler = CreateFakeClient(req =>
         {
             var uri = req.RequestUri!.ToString();
@@ -35,8 +35,8 @@ public sealed class ApprovalCommandTests
             {
                 var body = req.Content!.ReadAsStringAsync().Result;
                 var doc = JsonDocument.Parse(body);
-                Assert.Equal("once", doc.RootElement.GetProperty("scope").GetString());
-                scopeChecked = true;
+                Assert.Equal("allow_once", doc.RootElement.GetProperty("command").GetString());
+                commandChecked = true;
                 var respJson = JsonSerializer.Serialize(new
                 {
                     approval_id = approvalId,
@@ -55,24 +55,24 @@ public sealed class ApprovalCommandTests
         var cmd = new ApproveCommand(runId, approvalId, ApprovalScope.Once, false);
         var exit = await commands.ApproveAsync(cmd, CancellationToken.None);
         Assert.Equal(0, exit);
-        Assert.True(scopeChecked);
+        Assert.True(commandChecked);
         var output = outWriter.ToString();
         Assert.Contains("authorized", output);
         Assert.Contains("preview", output);
     }
 
     [Fact]
-    public async Task Approve_WithScopeRun_RoutesToOnceToken()
+    public async Task Approve_SendsAllowOnceCommand()
     {
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('c', 32);
-        string? observedScope = null;
+        string? observedCommand = null;
         var handler = CreateFakeClient(req =>
         {
             var body = req.Content!.ReadAsStringAsync().Result;
             var doc = JsonDocument.Parse(body);
-            observedScope = doc.RootElement.GetProperty("scope").GetString();
+            observedCommand = doc.RootElement.GetProperty("command").GetString();
             var respJson = JsonSerializer.Serialize(new
             {
                 approval_id = approvalId,
@@ -87,7 +87,7 @@ public sealed class ApprovalCommandTests
         var cmd = new ApproveCommand(runId, approvalId, ApprovalScope.Run, false);
         var exit = await commands.ApproveAsync(cmd, CancellationToken.None);
         Assert.Equal(0, exit);
-        Assert.Equal("once", observedScope);
+        Assert.Equal("allow_once", observedCommand);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class ApprovalCommandTests
         {
             var body = req.Content!.ReadAsStringAsync().Result;
             var doc = JsonDocument.Parse(body);
-            Assert.Equal("deny", doc.RootElement.GetProperty("decision").GetString());
+            Assert.Equal("deny", doc.RootElement.GetProperty("command").GetString());
             var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "denied" });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
         });
@@ -164,17 +164,17 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
-    public async Task Approve_WithProjectScope_RoutesToOnceToken()
+    public async Task Approve_SendsAllowOnceCommand_ForProjectScope()
     {
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('a', 32).Replace('a', '9');
-        string? observedScope = null;
+        string? observedCommand = null;
         var handler = CreateFakeClient(req =>
         {
             var body = req.Content!.ReadAsStringAsync().Result;
             var doc = JsonDocument.Parse(body);
-            observedScope = doc.RootElement.GetProperty("scope").GetString();
+            observedCommand = doc.RootElement.GetProperty("command").GetString();
             var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized" });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
         });
@@ -183,7 +183,7 @@ public sealed class ApprovalCommandTests
         var cmd = new ApproveCommand(runId, approvalId, ApprovalScope.Project, false);
         var exit = await commands.ApproveAsync(cmd, CancellationToken.None);
         Assert.Equal(0, exit);
-        Assert.Equal("once", observedScope);
+        Assert.Equal("allow_once", observedCommand);
     }
 
     private sealed class FakeHandler : HttpMessageHandler

@@ -387,9 +387,8 @@ public sealed partial class AgentConnection
         {
             "chat" => CapabilityProfile.Chat,
             "agent" => CapabilityProfile.Agent,
-            // Keep the Broker wire profile for existing clients. The Agent API
-            // still controls whether a run may select Full Access.
-            "full" => CapabilityProfile.Full,
+            // Legacy "full" maps to the single Agent policy: no second tier.
+            "full" => CapabilityProfile.Agent,
             _ => throw new AgentProtocolException("invalid_profile"),
         };
     }

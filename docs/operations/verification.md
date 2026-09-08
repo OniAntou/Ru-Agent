@@ -1,5 +1,13 @@
 # Verification
 
+> **Current as of 2026-09-08.** Older dated entries below are history; only this table is current.
+
+| Surface | Current status |
+| --- | --- |
+| Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` |
+| .NET tests | 13 test projects discovered by `scripts/test_dotnet.ps1` (not run here); last-recorded full matrix 2,538 passed across 13 projects (2026-09-06) |
+| Python suite | Last-recorded 305 passed + 1 documentation-archive failure (2026-09-07); archive now removed, rerun pending |
+
 Run heavyweight gates sequentially on Windows. Restore each .NET test project
 before using `--no-restore`; concurrent Python, frontend, and .NET builds can
 exhaust the page file on this workspace.
@@ -90,15 +98,16 @@ The public route checker reports
 ## Deterministic release matrix
 
 ```powershell
-dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
-& D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
-& D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe -m pip check
-& D:\LLM\scripts\test_dotnet.ps1 -Configuration Release
-dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
-cmd /c D:\LLM\build.bat
+# Run from %RU_ROOT%.
+dotnet restore gui-winui3.Harness\RuApp.Harness.csproj --nologo
+.venv\Scripts\python.exe -m ruff check src tests scripts tools
+.venv\Scripts\python.exe -m mypy src
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
+.venv\Scripts\python.exe -m pip check
+.\scripts\test_dotnet.ps1 -Configuration Release
+dotnet build gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
+cmd /c build.bat
 ```
 
 CI and local verification share `scripts/test_dotnet.ps1`, which recursively
@@ -453,8 +462,8 @@ device.
 The Worker v2 model inventory is deterministic and should stay aligned with
 `AgentRuntimeCoordinatorFactory.RuntimeCapabilities`: `files.list`,
 `files.read`, `files.glob`, `files.search`, `files.write`, `files.edit`,
-`files.delete`, `files.restore`, `terminal.run`, and `terminal.shell`. Standard
-and Full Access receive the same advertised list; policy fallback behavior is
+`files.delete`, `files.restore`, `terminal.run`, and `terminal.shell`. The single
+Agent profile receives the advertised list; policy fallback behavior is
 verified separately. `files.apply_patch` remains unadvertised. Time, machine
 status, app discovery, and optional volume operations use terminal tools;
 notes use `files.write`.
@@ -473,9 +482,10 @@ reject that response, and the WinUI delete handler must not refresh or create a
 replacement session after application-level failure:
 
 ```powershell
-dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --filter "FullyQualifiedName~SessionDeletionApiTests"
-dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --filter "FullyQualifiedName~Session"
+# Run from %RU_ROOT%.
+dotnet test gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --filter "FullyQualifiedName~SessionDeletionApiTests"
+dotnet test gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore
+dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --filter "FullyQualifiedName~Session"
 ```
 
 The pre-cleanup verification passed the focused regression (`1/1`), the then
@@ -591,10 +601,11 @@ final-path escape handling, the C# wire codec, internal persistence, and public
 SSE cursor suppression.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_python_runtime_boundary.py
-dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~AgentPromptReceipt|FullyQualifiedName~SystemPromptContract"
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~RuInstructionLoader|FullyQualifiedName~RuPromptContextProvider|FullyQualifiedName~WorkerV2Prompt|FullyQualifiedName~WorkerV2Contract|FullyQualifiedName~WorkerV2Client|FullyQualifiedName~AgentSseReconnect"
-dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~HarnessPayloadStore|FullyQualifiedName~HarnessProjectionTransaction"
+# Run from %RU_ROOT%.
+.venv\Scripts\python.exe -m pytest -q tests/test_python_runtime_boundary.py
+dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~AgentPromptReceipt|FullyQualifiedName~SystemPromptContract"
+dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~RuInstructionLoader|FullyQualifiedName~RuPromptContextProvider|FullyQualifiedName~WorkerV2Prompt|FullyQualifiedName~WorkerV2Contract|FullyQualifiedName~WorkerV2Client|FullyQualifiedName~AgentSseReconnect"
+dotnet test backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~HarnessPayloadStore|FullyQualifiedName~HarnessProjectionTransaction"
 ```
 
 The retired deterministic Harness artifact and fixture Worker are no longer
@@ -639,7 +650,8 @@ ADR counts, colors or historical deletion lists. GUI structural checks are
 not visual acceptance; keep real responsive-policy and interaction tests.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_current_documentation.py
+# Run from %RU_ROOT%.
+.venv\Scripts\python.exe -m pytest -q tests/test_current_documentation.py
 ```
 
 The retired Python deterministic backend/GUI Harness, its fixture Worker, and

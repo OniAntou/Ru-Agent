@@ -1,5 +1,6 @@
 using System.Globalization;
 using RuAgent.Broker.Policy.Commands;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -153,6 +154,12 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
+        // Web tools always ask: network egress is never auto-allowed.
+        if (IsWebTool(context.ToolId))
+        {
+            return Ask("web_approval_required");
+        }
+
         return EffectiveFallback(context);
     }
 
@@ -166,6 +173,11 @@ public sealed class PolicySnapshotEvaluator
                 return Deny("timeout_exceeds_hard_max");
             }
 
+            if (timeoutMs > TerminalLimits.StandardApprovalThresholdMs)
+            {
+                return Ask("terminal_timeout_requires_approval");
+            }
+
             return TerminalFallback(context);
         }
 
@@ -174,20 +186,39 @@ public sealed class PolicySnapshotEvaluator
 
     private PolicyEvaluation TerminalFallback(PolicyContext context)
     {
+        // Single terminal verdict. terminal.shell always asks: arbitrary script
+        // text cannot be auto-classified safe, so the AST verdict only feeds the
+        // approval preview, never an allow. Keep in sync with TerminalAutoPolicy
+        // (run payloads) and TerminalAdapter (execution leg).
+        if (string.Equals(context.ToolId, "terminal.shell", StringComparison.Ordinal))
+        {
+            var shellAnalysis = context.TerminalAnalysis
+                ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
+            return shellAnalysis.OperationClass switch
+            {
+                TerminalOperationClass.ExternalMutation => Ask("terminal_external_mutation_requires_approval"),
+                TerminalOperationClass.DirectDelete => Ask("terminal_delete_requires_approval"),
+                _ => Ask("terminal_unknown_executable"),
+            };
+        }
+
         var analysis = context.TerminalAnalysis
             ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
+        // External mutations (network egress, package installs, push/fetch/pull)
+        // always require explicit approval. The analyzer verdict only feeds the
+        // approval preview; it never auto-allows side effects outside the workspace.
+        // Keep in sync with TerminalAutoPolicy: auto = read/test/build/lint/git-mutation.
+        if (TerminalAutoPolicy.IsAutoExecutable(analysis.OperationClass))
+        {
+            return new PolicyEvaluation(
+                "allow",
+                "recognized_safe_form",
+                MatchedRuleId: null,
+                AnalyzerRiskPending: true);
+        }
         return analysis.OperationClass switch
         {
-            TerminalOperationClass.ReadOnly
-                or TerminalOperationClass.Test
-                or TerminalOperationClass.Build
-                or TerminalOperationClass.Lint
-                or TerminalOperationClass.GitMutation
-                or TerminalOperationClass.ExternalMutation => new PolicyEvaluation(
-                    "allow",
-                    "recognized_safe_form",
-                    MatchedRuleId: null,
-                    AnalyzerRiskPending: true),
+            TerminalOperationClass.ExternalMutation => Ask("terminal_external_mutation_requires_approval"),
             TerminalOperationClass.DirectDelete => Ask("terminal_delete_requires_approval"),
             _ => Ask("terminal_unknown_executable"),
         };
@@ -195,6 +226,10 @@ public sealed class PolicySnapshotEvaluator
 
     private static PolicyEvaluation Allow(string reasonCode) =>
         new("allow", reasonCode, MatchedRuleId: null);
+
+    private static bool IsWebTool(string toolId) =>
+        string.Equals(toolId, "web.search", StringComparison.Ordinal)
+        || string.Equals(toolId, "web.fetch", StringComparison.Ordinal);
 
     private static PolicyEvaluation Ask(string reasonCode, string? matchedRuleId = null) =>
         new("ask", reasonCode, matchedRuleId);

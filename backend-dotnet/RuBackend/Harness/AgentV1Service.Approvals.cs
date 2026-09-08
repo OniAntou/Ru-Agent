@@ -33,6 +33,8 @@ public sealed partial class AgentV1Service
     // Entries are only a retry guard; the durable approval event/run state remains
     // authoritative. Expire old entries so a host that processes many approvals
     // cannot retain an unbounded amount of memory until restart.
+    // Static: the ledger guards concurrent HTTP races across all service instances
+    // in this process, and tests clear it via ClearHostApprovalsForTests.
     private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
     private static readonly TimeSpan HostApprovalLedgerTtl = TimeSpan.FromMinutes(30);
 
@@ -40,14 +42,6 @@ public sealed partial class AgentV1Service
 
     private static void PruneHostApprovalLedger(DateTimeOffset now)
     {
-        // Pruning on every approval would add avoidable contention to the normal
-        // path. Once the bounded retry ledger grows, remove entries older than the
-        // same TTL used by pending approval requests.
-        if (HostApprovalLedger.Count < 1024)
-        {
-            return;
-        }
-
         var cutoff = now - HostApprovalLedgerTtl;
         foreach (var entry in HostApprovalLedger)
         {
@@ -70,17 +64,14 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_approval_id", "approval_id invalid.");
         }
 
-        // Parse scope/decision from body
-        string? scopeRaw = null;
+        // Parse command. Pi-style UX: exactly 3 commands — allow_once,
+        // allow_session_directory (external folders only), deny.
+        // run/project/global are rejected outright below; approvals never
+        // create reusable rules.
         string? decisionRaw = null;
         string? commandRaw = null;
         if (body.HasValue && body.Value.ValueKind == JsonValueKind.Object)
         {
-            if (body.Value.TryGetProperty("scope", out var scopeProp) && scopeProp.ValueKind == JsonValueKind.String)
-            {
-                scopeRaw = scopeProp.GetString();
-            }
-
             if (body.Value.TryGetProperty("decision", out var decProp) && decProp.ValueKind == JsonValueKind.String)
             {
                 decisionRaw = decProp.GetString();
@@ -95,27 +86,6 @@ public sealed partial class AgentV1Service
                 commandRaw = apprProp.GetBoolean() ? "allow_once" : "deny";
             }
 
-            // Also support scope-based command via scope field directly (takes precedence over decision)
-            if (scopeRaw is not null && string.IsNullOrWhiteSpace(commandRaw))
-            {
-                // scope alone implies allow with that scope, unless decision is deny
-                if (decisionRaw is not null && decisionRaw.Trim().Equals("deny", StringComparison.OrdinalIgnoreCase))
-                {
-                    commandRaw = "deny";
-                }
-                else
-                {
-                    commandRaw = scopeRaw.Trim().ToLowerInvariant() switch
-                    {
-                        "once" => "allow_once",
-                        "run" => "allow_run",
-                        "project" => "allow_project",
-                        "global" => "global",
-                        _ => null
-                    };
-                }
-            }
-
             if (string.IsNullOrWhiteSpace(commandRaw) && decisionRaw is not null)
             {
                 commandRaw = decisionRaw.Trim().Equals("allow", StringComparison.OrdinalIgnoreCase)
@@ -124,33 +94,16 @@ public sealed partial class AgentV1Service
             }
         }
 
-        if (string.IsNullOrWhiteSpace(commandRaw) && string.IsNullOrWhiteSpace(scopeRaw))
+        if (string.IsNullOrWhiteSpace(commandRaw))
         {
             return BoundedError(400, "invalid_approval_command", "Approval command is required.");
         }
 
-        if (scopeRaw is not null
-            && scopeRaw.Trim().ToLowerInvariant() is not ("once" or "run" or "project" or "global"))
-        {
-            return BoundedError(400, "invalid_approval_command", "Approval scope is invalid.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(scopeRaw) && scopeRaw!.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
-        {
-            return BoundedError(403, "approval_cannot_create_global", "Approval cannot create global rule.");
-        }
-
-        if (commandRaw is not null && commandRaw.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
-        {
-            return BoundedError(403, "approval_cannot_create_global", "Approval cannot create global rule.");
-        }
-
-        commandRaw = (commandRaw ?? "allow_once").Trim().ToLowerInvariant();
+        commandRaw = commandRaw.Trim().ToLowerInvariant();
         bool isDeny = commandRaw is "deny" or "reject";
-        bool isAllowRun = commandRaw is "allow_run" or "allowrun";
-        bool isAllowProject = commandRaw is "allow_project" or "allowproject";
+        bool isAllowSessionDirectory = commandRaw is "allow_session_directory" or "allowsessiondirectory";
         var isAllowOnce = commandRaw is "allow_once" or "allowonce" or "once";
-        if (!isDeny && !isAllowRun && !isAllowProject && !isAllowOnce)
+        if (!isDeny && !isAllowOnce && !isAllowSessionDirectory)
         {
             return BoundedError(400, "invalid_approval_command", "Approval command is invalid.");
         }
@@ -222,16 +175,12 @@ public sealed partial class AgentV1Service
             return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
         }
 
-        // Session-scoped approvals (external directory + terminal risk) are
-        // authorized by the Broker only; run/project/global persistence scopes
-        // are rejected here instead of creating durable rules.
-        var isSessionScopedApproval = IsSessionScopedApprovalKind(pendingApprovalEvent?.SafeCode);
-        var scopeNorm = scopeRaw?.Trim().ToLowerInvariant();
-        if (isSessionScopedApproval
-            && (scopeNorm is "run" or "project" or "global"
-                || commandRaw is "allow_run" or "allowrun" or "allow_project" or "allowproject"))
+        // allow_session_directory is only meaningful for external folders;
+        // terminal risk stays a one-time token. Anything else fails closed.
+        if (isAllowSessionDirectory
+            && !string.Equals(pendingApprovalEvent?.SafeCode, "external_directory_required", StringComparison.Ordinal))
         {
-            return BoundedError(400, "invalid_approval_command", "Approval scope is not supported for session-scoped approvals.");
+            return BoundedError(400, "invalid_approval_command", "Approval command is not supported for this approval.");
         }
 
         // One-time consumption: first writer wins. The durable checks above prevent
@@ -312,27 +261,19 @@ public sealed partial class AgentV1Service
             });
         }
 
-        bool ruleSaveFailed = false;
-        string? ruleId = null;
         string? brokerAuthorizationToken = null;
         var externalDirectoryRequested = string.Equals(
             pendingApprovalEvent?.SafeCode,
             "external_directory_required",
             StringComparison.Ordinal);
-        string? externalDirectory = isAllowRun || isAllowProject
-            ? TryGetExternalDirectory(run, approvalBinding, externalDirectoryRequested)
-            : null;
-        // The Broker is the execution authority: without consuming its pending
-        // approval first there is no way for the resumed step to execute, so a
-        // failed bridge fails closed while the run is still waiting.
+        // The Broker command follows the pending kind, never the caller's
+        // wording: external folders become a session grant, everything else
+        // stays a one-time token.
         if (_brokerGateways is { IsConfigured: true })
         {
-            // The Broker command follows the pending kind, never the caller's
-            // scope: external folders become a session grant, terminal risk
-            // stays a one-time token.
-            var brokerCommand = string.Equals(pendingApprovalEvent?.SafeCode, "external_directory_required", StringComparison.Ordinal)
+            var brokerCommand = externalDirectoryRequested
                 ? "allow_session_directory"
-                : isAllowRun ? "allow_run" : isAllowProject ? "allow_project" : "allow_once";
+                : "allow_once";
             bool bridged;
             try
             {
@@ -355,36 +296,8 @@ public sealed partial class AgentV1Service
             }
         }
 
-        // Durable rule creation applies only to legacy policy-rule approvals.
-        // Session-scoped approvals reuse the Broker grant or one-time token.
-        if ((isAllowRun || isAllowProject) && !isSessionScopedApproval)
-        {
-            try
-            {
-                var cmd = isAllowRun ? RuAgent.Harness.Core.Approval.ApprovalCommand.AllowRun : RuAgent.Harness.Core.Approval.ApprovalCommand.AllowProject;
-                var approvalService = new HarnessApprovalService(_options, _keyStore, _ids, _time);
-                var outcome = await approvalService.ProcessAsync(
-                    approvalBinding,
-                    cmd,
-                    run.WorkspaceId,
-                    runId,
-                    cancellationToken,
-                    externalDirectory,
-                    externalDirectoryRequested).ConfigureAwait(false);
-                ruleSaveFailed = outcome.RuleSaveFailed;
-                ruleId = outcome.RuleId;
-            }
-            catch (OperationCanceledException)
-            {
-                HostApprovalLedger.TryRemove(key, out _);
-                throw;
-            }
-            catch
-            {
-                ruleSaveFailed = true;
-            }
-        }
-
+        // Pi-style: approvals never create reusable rules. The Broker grant or
+        // one-time token is the whole authorization.
         var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
         if (!allowTransition.Accepted)
         {
@@ -412,27 +325,8 @@ public sealed partial class AgentV1Service
             return BoundedError(409, "commit_conflict", "Commit conflict.");
         }
 
-        // Bind the process-local allow-once bridge to the exact tool/version/
-        // argument hash that produced this approval. The resumed model step may
-        // allocate a new provider call id, but it must re-emit this same intent.
-        _approvalGrants?.GrantNext(runId.Value, approvalBinding.IntentHash);
-        if (externalDirectory is not null)
-        {
-            try
-            {
-                // The durable project rule covers future runs. The process-local
-                // directory grant is needed immediately because the active run's
-                // policy snapshot is intentionally immutable.
-                _approvalGrants?.GrantExternalDirectory(runId.Value, externalDirectory);
-            }
-            catch (Exception error) when (error is ArgumentException or DirectoryNotFoundException)
-            {
-                // A directory can disappear between approval binding and grant
-                // registration. Keep the run fail-closed; its next proposal will
-                // request approval again rather than turning this into a 500.
-            }
-        }
-
+        // The Broker grant or one-time token is the whole authorization; the
+        // Host keeps no reusable rule and no shadow grant ledger.
         var matcherPreview = new
         {
             tool_id = approvalBinding.ToolId,
@@ -443,7 +337,7 @@ public sealed partial class AgentV1Service
             cwd_pattern = approvalBinding.Cwd,
             operation_class = approvalBinding.OperationClass,
             network_intent = approvalBinding.NetworkIntent,
-            scope = isAllowRun ? "run" : isAllowProject ? "project" : "once"
+            scope = "once"
         };
 
         var resultBody = new
@@ -454,22 +348,15 @@ public sealed partial class AgentV1Service
                 ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
             expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
             matcher_preview = matcherPreview,
-            rule_saved = !ruleSaveFailed && (isAllowRun || isAllowProject),
-            reusable_rule_not_saved = ruleSaveFailed,
-            rule_id = ruleId,
+            rule_saved = false,
+            reusable_rule_not_saved = false,
+            rule_id = (string?)null,
             safe_summary = "approval authorized",
             run_state = MapRunState(commitResult.Run!.Status),
         };
 
         return new AgentServiceResult(200, resultBody);
     }
-
-    private static bool IsSessionScopedApprovalKind(string? safeCode) => safeCode is
-        "external_directory_required"
-        or "terminal_delete_requires_approval"
-        or "terminal_unknown_executable";
-
-    private IHarnessKeyStore GetKeyStore() => _keyStore;
 
     private async Task<ToolApprovalBinding?> BuildApprovalBindingAsync(
         AgentRun run,

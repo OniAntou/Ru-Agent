@@ -67,20 +67,6 @@ public sealed class BrokerApprovalState
         return true;
     }
 
-    public bool TryConsumeAuthorizationToken(string runId, string argsKey, out string? token)
-    {
-        token = null;
-        if (!_runs.TryGetValue(runId, out var run)
-            || !run.Tokens.TryRemove(argsKey, out var entry)
-            || entry.ExpiresAt <= DateTimeOffset.UtcNow)
-        {
-            return false;
-        }
-
-        token = entry.Token;
-        return true;
-    }
-
     public void ClearRun(string runId)
     {
         _runs.TryRemove(runId, out _);

@@ -118,7 +118,6 @@ public sealed class PendingApprovalStoreTests
 
         var first = store.TryConsumeV2(approvalId, ApprovalCommandV2.AllowOnce, V2Binding(), DateTimeOffset.UtcNow);
         Assert.Equal(V2ApprovalOutcome.ConsumedApproved, first.Outcome);
-        Assert.Null(first.Candidate);
 
         var replay = store.TryConsumeV2(approvalId, ApprovalCommandV2.AllowOnce, V2Binding(), DateTimeOffset.UtcNow);
         Assert.Equal(V2ApprovalOutcome.NotFound, replay.Outcome);
@@ -210,33 +209,24 @@ public sealed class PendingApprovalStoreTests
         }
     }
 
-    [Theory]
-    [InlineData("run")]
-    [InlineData("project")]
-    public void V2_allow_run_or_project_yields_exact_candidate(string scope)
+    [Fact]
+    public void V2_allow_once_approves()
     {
         var store = new PendingApprovalStore();
         var binding = V2Binding(canonicalPath: @"C:\ws\target.txt", cwd: @"C:\ws", argv: new[] { "a" });
         var id = store.IssueV2(binding, DateTimeOffset.UtcNow.AddMinutes(5));
-        var cmd = scope == "run" ? ApprovalCommandV2.AllowRun : ApprovalCommandV2.AllowProject;
-        var res = store.TryConsumeV2(id, cmd, V2Binding(canonicalPath: @"C:\ws\target.txt", cwd: @"C:\ws", argv: new[] { "a" }), DateTimeOffset.UtcNow);
+        var res = store.TryConsumeV2(id, ApprovalCommandV2.AllowOnce, V2Binding(canonicalPath: @"C:\ws\target.txt", cwd: @"C:\ws", argv: new[] { "a" }), DateTimeOffset.UtcNow);
         Assert.Equal(V2ApprovalOutcome.ConsumedApproved, res.Outcome);
-        Assert.NotNull(res.Candidate);
-        Assert.Equal(scope, res.Candidate!.Scope);
-        Assert.Equal("files.read", res.Candidate.ToolId);
-        Assert.DoesNotContain("*", res.Candidate.PathPatterns.Single());
-        Assert.All(res.Candidate.ArgvPatterns, p => Assert.DoesNotContain("*", p));
     }
 
     [Fact]
-    public void V2_allow_session_directory_approves_without_rule_candidate()
+    public void V2_allow_session_directory_approves()
     {
         var store = new PendingApprovalStore();
         var binding = V2Binding() with { ApprovalKind = "external_directory", BoundaryDirectory = @"C:\shared" };
         var id = store.IssueV2(binding, DateTimeOffset.UtcNow.AddMinutes(5));
         var res = store.TryConsumeV2(id, ApprovalCommandV2.AllowSessionDirectory, binding, DateTimeOffset.UtcNow);
         Assert.Equal(V2ApprovalOutcome.ConsumedApproved, res.Outcome);
-        Assert.Null(res.Candidate);
     }
 
     [Theory]
@@ -263,7 +253,6 @@ public sealed class PendingApprovalStoreTests
         var id = store.IssueV2(V2Binding(), DateTimeOffset.UtcNow.AddMinutes(5));
         var res = store.TryConsumeV2(id, ApprovalCommandV2.Deny, V2Binding(), DateTimeOffset.UtcNow);
         Assert.Equal(V2ApprovalOutcome.ConsumedDenied, res.Outcome);
-        Assert.Null(res.Candidate);
     }
 
     private static V2ApprovalBinding V2Binding(

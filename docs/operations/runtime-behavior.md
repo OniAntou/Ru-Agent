@@ -352,8 +352,11 @@ terminal requests. Protected paths and hard invariants remain gated. Terminal ex
 not an OS-enforced filesystem/network sandbox. File tools may
 request an explicit absolute path outside the project; the user can grant that
 canonical directory to all tools in the current live session. The grant is not
-shared with a new or forked session and disappears on restart. Only terminal
-deletion and unknown executable launch require terminal approval. `files.apply_patch`
+shared with a new or forked session and disappears on restart. Terminal
+deletion, external mutation (network egress, package installs, push/fetch),
+extended timeouts beyond the standard window, shell scripts, web calls when
+approval-gated, and unknown executable launch require approval.
+`files.apply_patch`
 is not advertised or model-usable in the current runtime.
 The model selection channel is active for every Agent run: each step allows up
 to ten model-initiated tool calls through the Agent Broker pipeline. Selection

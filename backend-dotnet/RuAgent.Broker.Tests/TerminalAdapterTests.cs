@@ -30,7 +30,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public void Adapter_rejects_unregistered_commands_and_unscoped_network_requests()
+    public void Adapter_rejects_unregistered_commands_and_unapproved_network_requests()
     {
         var root = CreateTemporaryRoot("ru-terminal-");
         try
@@ -39,7 +39,7 @@ public sealed class TerminalAdapterTests
             var allowlistError = Assert.Throws<UnauthorizedAccessException>(() =>
             {
                 _ = adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
                     new TerminalRunRequest("powershell", ".", "notepad.exe", [], 1_000),
                     confineWorkspace: true,
                     CancellationToken.None);
@@ -260,15 +260,27 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task NetworkCommandAllowedWhenGrantIncludesNetworkScope()
+    public async Task NetworkCommandRequiresApprovalTokenWithoutNetworkScope()
     {
         var root = CreateTemporaryRoot("ru-terminal-network-granted-");
         try
         {
-            var adapter = CreateAdapter(root);
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                new ShellRuntimeResolver(),
+                approvals);
+            var intent = adapter.CanonicalizeRun(Request("dotnet", ["--version"], network: true));
+            var token = approvals.Issue(
+                "request-network-1",
+                "session-network-1",
+                "terminal.run",
+                "1.0.0",
+                intent.IntentHash,
+                TimeSpan.FromSeconds(60));
             var result = await adapter.RunAsync(
-                MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
-                Request("dotnet", ["--version"], network: true),
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("dotnet", ["--version"], network: true, approvalToken: token, requestId: "request-network-1", sessionId: "session-network-1"),
                 confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
@@ -280,7 +292,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task NetworkCommandStillRejectedWithoutNetworkScope()
+    public async Task NetworkCommandStillRejectedWithoutApproval()
     {
         var root = CreateTemporaryRoot("ru-terminal-network-denied-");
         try
@@ -313,7 +325,7 @@ public sealed class TerminalAdapterTests
         {
             var adapter = CreateAdapter(workspaceRoot);
             var result = await adapter.RunAsync(
-                MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
                 Request(
                     "rg",
                     ["--files"],
@@ -340,7 +352,7 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(root);
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request("rg", ["--files"], workingDirectory: windowsDirectory),
                     confineWorkspace: false,
                     CancellationToken.None));
@@ -367,7 +379,7 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(workspaceRoot);
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request(
                         "rg",
                         ["--files"],
@@ -394,7 +406,7 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(root);
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request(
                         "rg",
                         ["--files"],
@@ -418,7 +430,7 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(root);
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
                     Request(
                         "rg",
                         ["--files"],
@@ -441,30 +453,39 @@ public sealed class TerminalAdapterTests
         try
         {
             var approvals = new ApprovalTokenService();
-            var argumentsHash = "script-hash";
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                new ShellRuntimeResolver(),
+                approvals);
+            var scriptIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
+                "powershell",
+                ".",
+                "Get-Date",
+                1_000,
+                string.Empty));
+            var staleIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
+                "powershell",
+                ".",
+                "Get-Location",
+                1_000,
+                string.Empty));
             var token = approvals.Issue(
                 "request-1",
                 "session-1",
                 "terminal.shell",
                 "1.0.0",
-                argumentsHash,
+                scriptIntent.IntentHash,
                 TimeSpan.FromSeconds(30));
-            var adapter = new TerminalAdapter(
-                new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
-                approvals);
 
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunApprovedShellAsync(
                     new TerminalShellRequest(
                         "powershell",
                         ".",
-                        "Get-Date",
+                        "Get-Location",
                         1_000,
                         token,
-                        "request-1",
-                        "session-1",
-                        "different-hash"),
+                        "request-1",                        "session-1"),
                     confineWorkspace: true,
                     CancellationToken.None));
 
@@ -475,9 +496,7 @@ public sealed class TerminalAdapterTests
                     "Get-Date",
                     1_000,
                     token,
-                    "request-1",
-                    "session-1",
-                    argumentsHash),
+                    "request-1",                    "session-1"),
                 confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
@@ -490,9 +509,7 @@ public sealed class TerminalAdapterTests
                         "Get-Date",
                         1_000,
                         token,
-                        "request-1",
-                        "session-1",
-                        argumentsHash),
+                        "request-1",                        "session-1"),
                     confineWorkspace: true,
                     CancellationToken.None));
         }
@@ -503,7 +520,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Unrestricted_shell_skips_token_and_honors_cwd_denylist()
+    public async Task Unconfined_shell_still_requires_a_token_and_honors_cwd_denylist()
     {
         var parent = CreateTemporaryRoot("ru-terminal-shell-unconfined-");
         var workspaceRoot = Path.Combine(parent, "workspace");
@@ -512,22 +529,49 @@ public sealed class TerminalAdapterTests
         Directory.CreateDirectory(outsideDirectory);
         try
         {
-            var adapter = CreateAdapter(workspaceRoot);
-            var request = new Func<string, TerminalShellRequest>(workingDirectory => new(
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(workspaceRoot),
+                new ShellRuntimeResolver(),
+                approvals);
+            var request = new Func<string, string, string, TerminalShellRequest>(
+                (workingDirectory, token, requestId) => new(
+                    "powershell",
+                    workingDirectory,
+                    "Get-Date",
+                    30_000,
+                    token,
+                    requestId,
+                    "session-shell-unconfined"));
+
+            var outsideIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
                 "powershell",
-                workingDirectory,
+                Path.Combine("..", "outside"),
                 "Get-Date",
                 30_000,
                 string.Empty));
+            var outsideToken = approvals.Issue(
+                "request-outside-1",
+                "session-shell-unconfined",
+                "terminal.shell",
+                "1.0.0",
+                outsideIntent.IntentHash,
+                TimeSpan.FromSeconds(60));
 
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunApprovedShellAsync(
-                    request(Environment.GetFolderPath(Environment.SpecialFolder.Windows)),
+                    request(
+                        Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                        outsideToken,
+                        "request-outside-1"),
                     confineWorkspace: false,
                     CancellationToken.None));
 
             var result = await adapter.RunApprovedShellAsync(
-                request(Path.Combine("..", "outside")),
+                request(
+                    Path.Combine("..", "outside"),
+                    outsideToken,
+                    "request-outside-1"),
                 confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);

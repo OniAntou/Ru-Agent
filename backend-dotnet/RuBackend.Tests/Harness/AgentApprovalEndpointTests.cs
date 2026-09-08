@@ -44,7 +44,7 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Fact]
-    public async Task Approval_unknown_scope_is_rejected_instead_of_defaulting_to_once()
+    public async Task Approval_unknown_command_is_rejected_instead_of_defaulting_to_once()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
@@ -54,7 +54,7 @@ public sealed class AgentApprovalEndpointTests
 
         using var resp = await client.PostAsJsonAsync(
             $"/agent/v1/runs/{runId}/approvals/{approvalId}",
-            new { scope = "not-a-scope", decision = "allow" });
+            new { command = "not-a-command" });
 
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
@@ -120,7 +120,7 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Fact]
-    public async Task Approval_RunScope_Rejected_ForSessionApproval()
+    public async Task Approval_RunScope_Rejected()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         BackendWebApplicationFactory? factory = null;
@@ -130,7 +130,7 @@ public sealed class AgentApprovalEndpointTests
             factory = fact;
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
-            using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "run", decision = "allow" });
+            using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_run" });
             Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
             var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("invalid_approval_command", json.GetProperty("error_code").GetString());
@@ -175,7 +175,7 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Fact]
-    public async Task Approval_ProjectScope_Rejected_ForSessionApproval()
+    public async Task Approval_ProjectScope_Rejected()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         BackendWebApplicationFactory? factory = null;
@@ -185,7 +185,7 @@ public sealed class AgentApprovalEndpointTests
             factory = fact;
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
 
-            using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "project", decision = "allow" });
+            using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_project" });
             Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
             var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("invalid_approval_command", json.GetProperty("error_code").GetString());
@@ -442,14 +442,18 @@ public sealed class AgentApprovalEndpointTests
     [Theory]
     [InlineData("unknown-tool-xyz.exe", "terminal_unknown_executable")]
     [InlineData("rm.exe", "terminal_delete_requires_approval")]
+    [InlineData("git", "terminal_external_mutation_requires_approval")]
     public async Task Terminal_reason_reaches_public_api(string executable, string expectedReason)
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         BackendWebApplicationFactory? factory = null;
         try
         {
+            var argumentsJson = executable == "git"
+                ? JsonSerializer.Serialize(new { executable, arguments = new[] { "push" } })
+                : JsonSerializer.Serialize(new { executable, arguments = new[] { "--version" } });
             var runner = new ScriptedRunner(
-                ToolCall("terminal.run", JsonSerializer.Serialize(new { executable, arguments = new[] { "--version" } })),
+                ToolCall("terminal.run", argumentsJson),
                 FinalStep("done"));
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
             var client = factory.CreateAuthenticatedClient();

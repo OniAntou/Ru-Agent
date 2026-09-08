@@ -46,15 +46,18 @@ public sealed class CommandAnalyzerRegistry
             _ => Unknown("unrecognized_executable"),
         };
 
-        return analysis.OperationClass == TerminalOperationClass.Unknown
-               && baseName is "git" or "dotnet" or "python" or "python3" or "py"
-                   or "pytest" or "ruff" or "mypy" or "pip" or "pip3" or "rg"
-            ? analysis with
+        if (analysis.OperationClass == TerminalOperationClass.Unknown
+            && baseName is "git" or "dotnet" or "python" or "python3" or "py"
+                or "pytest" or "ruff" or "mypy" or "pip" or "pip3")
+        {
+            return analysis with
             {
                 OperationClass = TerminalOperationClass.ExternalMutation,
                 ReasonCode = "recognized_executable_unclassified_form",
-            }
-            : analysis;
+            };
+        }
+
+        return analysis;
     }
 
     private static CommandAnalysis Unknown(string reasonCode) =>

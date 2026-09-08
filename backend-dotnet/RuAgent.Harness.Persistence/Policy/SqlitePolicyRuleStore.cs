@@ -8,6 +8,17 @@ using RuAgent.Harness.Persistence.Privacy;
 
 namespace RuAgent.Harness.Persistence.Policy;
 
+public enum PolicyDeleteOutcome
+{
+    NotFound,
+    GlobalRequiresInteractive,
+    DeletedGlobal,
+    DeletedProject,
+    DeletedRun,
+}
+
+public sealed record PolicyDeleteResult(PolicyDeleteOutcome Outcome);
+
 public sealed class SqlitePolicyRuleStore
 {
     private const int CurrentProtectionVersion = 1;
@@ -167,6 +178,109 @@ public sealed class SqlitePolicyRuleStore
         await using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM agent_global_rules WHERE rule_id = $rule_id";
         command.Parameters.AddWithValue("$rule_id", ruleId.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Atomically resolves a rule's scope and deletes it. The scope check and
+    /// delete run in a single IMMEDIATE transaction so a concurrent writer cannot
+    /// change scope between check and delete (TOCTOU). Global deletes require
+    /// <paramref name="isInteractive"/>; when false and the rule is global the
+    /// transaction rolls back and reports <see cref="PolicyDeleteOutcome.GlobalRequiresInteractive"/>
+    /// without deleting.
+    /// </summary>
+    public async Task<PolicyDeleteResult> DeleteByIdAtomicAsync(
+        PolicyRuleId ruleId,
+        bool isInteractive,
+        CancellationToken cancellationToken)
+    {
+        _ = ruleId.Value;
+        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            var isGlobal = await ExistsInTableAsync(connection, transaction, "agent_global_rules", ruleId.Value, cancellationToken).ConfigureAwait(false);
+            if (isGlobal)
+            {
+                if (!isInteractive)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new PolicyDeleteResult(PolicyDeleteOutcome.GlobalRequiresInteractive);
+                }
+
+                await DeleteFromTableAsync(connection, transaction, "agent_global_rules", ruleId.Value, cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new PolicyDeleteResult(PolicyDeleteOutcome.DeletedGlobal);
+            }
+
+            var isProject = await ExistsInTableAsync(connection, transaction, "agent_project_rules", ruleId.Value, cancellationToken).ConfigureAwait(false);
+            var isRun = await ExistsInTableAsync(connection, transaction, "agent_run_rules", ruleId.Value, cancellationToken).ConfigureAwait(false);
+            if (!isProject && !isRun)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new PolicyDeleteResult(PolicyDeleteOutcome.NotFound);
+            }
+
+            if (isProject)
+            {
+                await DeleteFromTableAsync(connection, transaction, "agent_project_rules", ruleId.Value, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (isRun)
+            {
+                await DeleteFromTableAsync(connection, transaction, "agent_run_rules", ruleId.Value, cancellationToken).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            if (isProject && isRun)
+            {
+                return new PolicyDeleteResult(PolicyDeleteOutcome.DeletedProject);
+            }
+
+            return new PolicyDeleteResult(isProject ? PolicyDeleteOutcome.DeletedProject : PolicyDeleteOutcome.DeletedRun);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is SqliteException or IOException)
+        {
+            throw new HarnessStoreException("policy_store_failed", ex);
+        }
+    }
+
+    private static async Task<bool> ExistsInTableAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string table,
+        string ruleId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // Table name is a fixed allowlist value from this method's callers, never user input.
+        command.CommandText = $"SELECT 1 FROM {table} WHERE rule_id = $rule_id LIMIT 1";
+        command.Parameters.AddWithValue("$rule_id", ruleId);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is not null;
+    }
+
+    private static async Task DeleteFromTableAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string table,
+        string ruleId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // Table name is a fixed allowlist value from this method's callers, never user input.
+        command.CommandText = $"DELETE FROM {table} WHERE rule_id = $rule_id";
+        command.Parameters.AddWithValue("$rule_id", ruleId);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

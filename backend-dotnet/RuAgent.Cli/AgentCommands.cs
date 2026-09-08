@@ -69,7 +69,6 @@ public sealed class AgentCommands
         }
 
         string sessionId;
-        bool isNewSession = false;
         if (cmd.SessionId is not null)
         {
             sessionId = cmd.SessionId;
@@ -80,7 +79,6 @@ public sealed class AgentCommands
             {
                 sessionId = await _sessionClient.CreateAsync(cancellationToken).ConfigureAwait(false);
                 await _out.WriteLineAsync($"session_id: {sessionId}").ConfigureAwait(false);
-                isNewSession = true;
             }
             catch (AgentApiException ex)
             {
@@ -92,80 +90,23 @@ public sealed class AgentCommands
         var preset = cmd.Preset;
         long? presetVersion = null;
 
-        if (preset == "full_access")
+        if (preset == "full_access" || preset == "full")
         {
-            if (cmd.Json)
-            {
-                await _err.WriteLineAsync("interactive_required: --json cannot be used with --preset full_access").ConfigureAwait(false);
-                return 1;
-            }
-
-            await _out.WriteLineAsync("WARNING: Full Access grants the agent broad file and command execution permissions as the current Windows user.").ConfigureAwait(false);
-            await _out.WriteLineAsync("It does not provide filesystem or network sandboxing.").ConfigureAwait(false);
-            await _out.WriteAsync("Confirm Full Access (y/N): ").ConfigureAwait(false);
-            await _out.FlushAsync().ConfigureAwait(false);
-            var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            var normalized = answer?.Trim().ToLowerInvariant();
-            if (normalized != "y" && normalized != "yes")
-            {
-                await _err.WriteLineAsync("cancelled: Full Access not confirmed.").ConfigureAwait(false);
-                return 1;
-            }
-
-            // Ensure session preset is set interactively
-            long expectedVersion = isNewSession ? 0 : 0;
-            // For new session, 0 creates version 1; for existing, try 0 then handle conflict
-            bool presetSet = false;
-            long newVersion = 1;
-            try
-            {
-                var presetResp = await _agentClient.SetSessionPresetAsync(sessionId, "full_access", expectedVersion, interactive: true, cancellationToken).ConfigureAwait(false);
-                if (presetResp.TryGetProperty("version", out var vProp) && vProp.ValueKind == JsonValueKind.Number && vProp.TryGetInt64(out var v))
-                    newVersion = v;
-                presetSet = true;
-            }
-            catch (AgentApiException ex) when (ex.ErrorCode == "preset_version_conflict")
-            {
-                // Try with version 1 then 2 etc for existing sessions (max 3 attempts)
-                for (long tryVer = 1; tryVer <= 3; tryVer++)
-                {
-                    try
-                    {
-                        var r = await _agentClient.SetSessionPresetAsync(sessionId, "full_access", tryVer, interactive: true, cancellationToken).ConfigureAwait(false);
-                        if (r.TryGetProperty("version", out var vp) && vp.TryGetInt64(out var vv)) newVersion = vv;
-                        presetSet = true;
-                        break;
-                    }
-                    catch (AgentApiException) { continue; }
-                }
-                if (!presetSet)
-                {
-                    await _err.WriteLineAsync($"preset_failed: {ex.Message}").ConfigureAwait(false);
-                    return 1;
-                }
-            }
-            catch (AgentApiException ex)
-            {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
-                return 1;
-            }
-
-            presetVersion = newVersion;
-            preset = "full_access";
+            // Compatibility: legacy full_access flag maps to standard behavior.
+            preset = "standard";
         }
-        else if (preset != "standard")
+
+        if (preset != "standard")
         {
             await _err.WriteLineAsync("invalid_preset: preset must be standard or full_access").ConfigureAwait(false);
             return 1;
         }
-        else
-        {
-            // For standard, if we have a new session, version will be 1 (implicit). For existing, we need to match stored version.
-            // Try to fetch existing preset version: for standard, we can omit version if new, or use stored if existing.
-            // For simplicity, if isNewSession, leave null (server will create 1). If existing, try to use 1 or stored?
-            // We'll leave null and let server handle lenient replay for standard.
-            presetVersion = null;
-        }
+
+        // For standard, if we have a new session, version will be 1 (implicit). For existing, we need to match stored version.
+        // Try to fetch existing preset version: for standard, we can omit version if new, or use stored if existing.
+        // For simplicity, if isNewSession, leave null (server will create 1). If existing, try to use 1 or stored?
+        // We'll leave null and let server handle lenient replay for standard.
+        presetVersion = null;
 
         var idempotencyKey = Guid.NewGuid().ToString("N");
         var request = new CreateAgentRunRequest(
@@ -465,7 +406,7 @@ public sealed class AgentCommands
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var body = await ReadBoundedBodyAsync(response.Content, cancellationToken).ConfigureAwait(false);
         if ((response.StatusCode == HttpStatusCode.BadRequest
                 && body.Contains("invalid_snapshot_hash", StringComparison.Ordinal))
             || (response.StatusCode == HttpStatusCode.Conflict
@@ -515,7 +456,7 @@ public sealed class AgentCommands
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var body = await ReadBoundedBodyAsync(response.Content, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             await _err.WriteLineAsync(body.Contains("reconcile_stale", StringComparison.Ordinal)
@@ -567,7 +508,7 @@ public sealed class AgentCommands
             using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
             req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
             using var resp = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
-            var body = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var body = await ReadBoundedBodyAsync(resp.Content, cancellationToken).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
                 await _err.WriteLineAsync($"trust_failed: {body}").ConfigureAwait(false);
@@ -1044,7 +985,7 @@ public sealed class AgentCommands
                                 if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
                                 {
                                     var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : resp.RunId;
-                                    await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Yellow("\n  ❯ Approve this action? [y: once / r: run / N: deny] (default: n): "))).ConfigureAwait(false);
+                                    await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Yellow("\n  ❯ Approve this action? [y: once / N: deny] (default: n): "))).ConfigureAwait(false);
                                     await _out.FlushAsync().ConfigureAwait(false);
                                     var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                                     var normalized = string.IsNullOrWhiteSpace(answer) ? "n" : answer.Trim().ToLowerInvariant();
@@ -1053,11 +994,6 @@ public sealed class AgentCommands
                                     {
                                         await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, "once", cancellationToken).ConfigureAwait(false);
                                         await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Approved (scope: once). Resuming execution...")).ConfigureAwait(false);
-                                    }
-                                    else if (normalized is "r" or "run")
-                                    {
-                                        await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, "run", cancellationToken).ConfigureAwait(false);
-                                        await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Approved (scope: run). Resuming execution...")).ConfigureAwait(false);
                                     }
                                     else
                                     {
@@ -1166,6 +1102,18 @@ public sealed class AgentCommands
         {
             await _err.WriteLineAsync($"session_rewind_error: {ex.Message}").ConfigureAwait(false);
             return 1;
+        }
+    }
+
+    private static async Task<string> ReadBoundedBodyAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await BoundedHttpResponseReader.ReadAsync(content, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AgentApiException ex) when (ex.ErrorCode is "response_too_large" or "invalid_response")
+        {
+            throw new AgentApiException(ex.ErrorCode, "Host response exceeds the 8 MiB client limit.");
         }
     }
 }

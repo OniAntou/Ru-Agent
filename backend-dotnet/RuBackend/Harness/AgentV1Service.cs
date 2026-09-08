@@ -47,7 +47,6 @@ public sealed partial class AgentV1Service
     private readonly HarnessPolicySnapshotService? _policySnapshotService;
     private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? _snapshots;
     private readonly ReconciliationInspectionGate? _inspectionGate;
-    private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private readonly IAgentBrokerClient? _agentBrokerClient;
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
@@ -81,7 +80,6 @@ public sealed partial class AgentV1Service
         IAgentRuntimeRootRegistry? runtimeRoots = null,
         RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? snapshots = null,
         ReconciliationInspectionGate? inspectionGate = null,
-        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         HarnessPolicySnapshotService? policySnapshotService = null,
         IAgentBrokerClient? agentBrokerClient = null,
         Broker.BrokerToolGatewayFactory? brokerGateways = null,
@@ -106,7 +104,6 @@ public sealed partial class AgentV1Service
         _policySnapshotService = policySnapshotService;
         _snapshots = snapshots;
         _inspectionGate = inspectionGate;
-        _approvalGrants = approvalGrants;
         _agentBrokerClient = agentBrokerClient;
         _brokerGateways = brokerGateways;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;

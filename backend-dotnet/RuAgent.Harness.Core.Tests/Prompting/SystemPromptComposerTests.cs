@@ -142,7 +142,8 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("Use terminal tools for current time, machine or process status, application discovery, and optional volume commands.", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Use files.write to create note files.", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("destructive deletion or an unknown executable", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("shell scripts, external mutations, direct deletion", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Web tools always require one-time approval", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Do not invent aliases or fallback tools", snapshot.Text, StringComparison.Ordinal);
     }
 

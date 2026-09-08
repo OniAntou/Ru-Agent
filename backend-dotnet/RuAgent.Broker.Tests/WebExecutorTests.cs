@@ -13,7 +13,7 @@ namespace RuAgent.Broker.Tests;
 public sealed class WebExecutorTests
 {
     [Fact]
-    public async Task Service_dispatches_configured_search_and_fetch_with_bounded_untrusted_output()
+    public async Task Service_requires_approval_for_web_tools()
     {
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
@@ -32,12 +32,10 @@ public sealed class WebExecutorTests
         var fetch = await service.ExecuteAsync(Envelope(
             "fetch", "web.fetch", new JsonObject { ["url"] = "https://93.184.216.34/page" }), CancellationToken.None);
 
-        Assert.Equal(ToolResultStatuses.Succeeded, search.Status);
-        Assert.True(search.AdapterInvoked);
-        Assert.Single(search.Output["citations"]!.AsArray());
-        Assert.Equal(ToolResultStatuses.Succeeded, fetch.Status);
-        Assert.Contains("[untrusted_web_reference]", fetch.Output["content"]!.GetValue<string>(), StringComparison.Ordinal);
-        Assert.DoesNotContain("alert", fetch.Output["content"]!.GetValue<string>(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, search.Status);
+        Assert.False(search.AdapterInvoked);
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, fetch.Status);
+        Assert.False(fetch.AdapterInvoked);
     }
 
     [Fact]
@@ -61,7 +59,7 @@ public sealed class WebExecutorTests
     }
 
     [Fact]
-    public async Task Service_parses_bounded_json_search_results()
+    public async Task Service_gates_json_search_behind_approval()
     {
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
@@ -79,11 +77,8 @@ public sealed class WebExecutorTests
             Envelope("json-search", "web.search", new JsonObject { ["query"] = "ru" }),
             CancellationToken.None);
 
-        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
-        var citation = Assert.Single(result.Output["citations"]!.AsArray());
-        Assert.Equal("JSON result", citation!["title"]!.GetValue<string>());
-        Assert.Equal("https://93.184.216.34/result", citation["url"]!.GetValue<string>());
-        Assert.Equal("bounded snippet", citation["snippet"]!.GetValue<string>());
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
+        Assert.False(result.AdapterInvoked);
     }
 
     private static AgentEnvelope Envelope(string requestId, string toolId, JsonObject arguments) =>

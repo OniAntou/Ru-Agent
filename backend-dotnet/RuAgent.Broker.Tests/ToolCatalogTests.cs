@@ -47,7 +47,7 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void Terminal_bindings_are_model_visible_in_agent_and_full_but_still_require_approval()
+    public void Terminal_bindings_are_model_visible_in_agent_but_still_require_approval()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
         var run = catalog.Registry.Get("terminal.run", "1.0.0");
@@ -59,7 +59,7 @@ public sealed class ToolCatalogTests
         Assert.False(shell.VerificationRequired);
         Assert.Equal("executable", shell.Availability);
 
-        // Advertisement is derived from profile scopes. The current Agent
+        // Advertisement is derived from profile scopes. The single Agent
         // profile includes terminal execution; policy still decides whether
         // each concrete command can run or needs one-time approval.
         var advertised = Enum.GetValues<CapabilityProfile>()
@@ -68,7 +68,6 @@ public sealed class ToolCatalogTests
             .ToArray();
         Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
         Assert.Contains(CapabilityProfile.Agent, advertised);
-        Assert.Contains(CapabilityProfile.Full, advertised);
     }
 
     [Fact]
@@ -86,12 +85,12 @@ public sealed class ToolCatalogTests
             Assert.True(binding.ModelEnabled);
         }
 
-        var fullModelIds = catalog.Registry.ModelCapabilities(CapabilityProfile.Full)
+        var agentModelIds = catalog.Registry.ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id)
             .ToHashSet(StringComparer.Ordinal);
         Assert.All(
             new[] { "system.time", "system.status", "app.list", "notes.create", "system.volume" },
-            retiredId => Assert.DoesNotContain(retiredId, fullModelIds));
+            retiredId => Assert.DoesNotContain(retiredId, agentModelIds));
     }
 
     [Fact]

@@ -939,7 +939,7 @@ namespace RuApp.Views
 
         private void ClearAgentActivities()
         {
-            _sweepStoryboards.Clear();
+            StopAllTextSweeps();
             _agentActivityById.Clear();
             AgentActivities.Clear();
         }
@@ -969,43 +969,72 @@ namespace RuApp.Views
             ClearAgentActivities();
         }
 
-        // ── Activity text sweep animation ──────────────────────────────
-        private readonly Dictionary<TextBlock, Storyboard> _sweepStoryboards = new();
+        // ── Activity text wave animation ──────────────────────────────
+        private readonly HashSet<TextBlock> _activeWaveTextBlocks = new();
+        private DispatcherQueueTimer? _waveTimer;
+        private readonly System.Diagnostics.Stopwatch _waveStopwatch = new();
 
         private void OnActivityItemLoaded(object sender, RoutedEventArgs e)
         {
-            if (sender is not Grid grid || grid.DataContext is not AgentActivityItem item)
+            if (sender is not Grid grid) return;
+            grid.DataContextChanged -= OnActivityItemDataContextChanged;
+            grid.DataContextChanged += OnActivityItemDataContextChanged;
+            AttachActivityItem(grid);
+        }
+
+        private void OnActivityItemDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+        {
+            if (sender is Grid grid)
+            {
+                AttachActivityItem(grid);
+            }
+        }
+
+        private void OnActivityItemUnloaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Grid grid) return;
+            grid.DataContextChanged -= OnActivityItemDataContextChanged;
+            DetachActivityItem(grid);
+        }
+
+        private void AttachActivityItem(Grid grid)
+        {
+            DetachActivityItem(grid, clearEntrance: false);
+
+            if (grid.DataContext is not AgentActivityItem item)
                 return;
 
-            // Micro-animation: smooth fade-in and subtle slide-up on entrance
-            grid.Opacity = 0;
-            var translate = new TranslateTransform { Y = 4 };
-            grid.RenderTransform = translate;
-
-            var fadeIn = new DoubleAnimation
+            if (grid.Tag == null)
             {
-                From = 0.0,
-                To = 1.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(240)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(fadeIn, grid);
-            Storyboard.SetTargetProperty(fadeIn, "Opacity");
+                grid.Opacity = 0;
+                var translate = new TranslateTransform { Y = 4 };
+                grid.RenderTransform = translate;
 
-            var slideIn = new DoubleAnimation
-            {
-                From = 4.0,
-                To = 0.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(240)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(slideIn, translate);
-            Storyboard.SetTargetProperty(slideIn, "Y");
+                var fadeIn = new DoubleAnimation
+                {
+                    From = 0.0,
+                    To = 1.0,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(240)),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(fadeIn, grid);
+                Storyboard.SetTargetProperty(fadeIn, "Opacity");
 
-            var entranceSb = new Storyboard();
-            entranceSb.Children.Add(fadeIn);
-            entranceSb.Children.Add(slideIn);
-            entranceSb.Begin();
+                var slideIn = new DoubleAnimation
+                {
+                    From = 4.0,
+                    To = 0.0,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(240)),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(slideIn, translate);
+                Storyboard.SetTargetProperty(slideIn, "Y");
+
+                var entranceSb = new Storyboard();
+                entranceSb.Children.Add(fadeIn);
+                entranceSb.Children.Add(slideIn);
+                entranceSb.Begin();
+            }
 
             TextBlock? displayText = null;
             foreach (var child in grid.Children)
@@ -1022,33 +1051,36 @@ namespace RuApp.Views
 
             PropertyChangedEventHandler handler = (s, args) =>
             {
-                if (args.PropertyName == nameof(AgentActivityItem.State) && s is AgentActivityItem ai)
+                if (string.IsNullOrEmpty(args.PropertyName) ||
+                    args.PropertyName == nameof(AgentActivityItem.State) ||
+                    args.PropertyName == nameof(AgentActivityItem.IsRunning) ||
+                    args.PropertyName == nameof(AgentActivityItem.IsCompleted) ||
+                    args.PropertyName == nameof(AgentActivityItem.IsFailed))
                 {
-                    DispatcherQueue?.TryEnqueue(() => ApplyActivityTextStyle(displayText, ai));
+                    DispatcherQueue?.TryEnqueue(() =>
+                    {
+                        if (s is AgentActivityItem ai)
+                        {
+                            ApplyActivityTextStyle(displayText, ai);
+                        }
+                    });
                 }
             };
             item.PropertyChanged += handler;
-            grid.Tag = handler;
+            grid.Tag = (handler, displayText, item);
         }
 
-        private void OnActivityItemUnloaded(object sender, RoutedEventArgs e)
+        private void DetachActivityItem(Grid grid, bool clearEntrance = true)
         {
-            if (sender is not Grid grid) return;
-
-            if (grid.Tag is PropertyChangedEventHandler handler && grid.DataContext is AgentActivityItem item)
+            if (grid.Tag is ValueTuple<PropertyChangedEventHandler, TextBlock, AgentActivityItem> tuple)
             {
-                item.PropertyChanged -= handler;
+                tuple.Item3.PropertyChanged -= tuple.Item1;
+                StopTextSweep(tuple.Item2);
             }
-
-            foreach (var child in grid.Children)
+            if (clearEntrance)
             {
-                if (child is TextBlock tb && Grid.GetColumn(tb) == 0)
-                {
-                    StopTextSweep(tb);
-                    break;
-                }
+                grid.Tag = null;
             }
-            grid.Tag = null;
         }
 
         private void ApplyActivityTextStyle(TextBlock textBlock, AgentActivityItem item)
@@ -1060,112 +1092,158 @@ namespace RuApp.Views
             else
             {
                 StopTextSweep(textBlock);
-                var targetColor = item.IsFailed
-                    ? ((SolidColorBrush)Application.Current.Resources["RuDangerBrush"]).Color
-                    : ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
+                var targetBrush = item.IsFailed
+                    ? (SolidColorBrush)Application.Current.Resources["RuDangerBrush"]
+                    : (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
 
-                if (textBlock.Foreground is SolidColorBrush currentBrush)
-                {
-                    var settleAnim = new ColorAnimation
-                    {
-                        To = targetColor,
-                        Duration = new Duration(TimeSpan.FromMilliseconds(220)),
-                        EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
-                    };
-                    Storyboard.SetTarget(settleAnim, currentBrush);
-                    Storyboard.SetTargetProperty(settleAnim, "Color");
-                    var settleSb = new Storyboard();
-                    settleSb.Children.Add(settleAnim);
-                    settleSb.Begin();
-                }
-                else
-                {
-                    textBlock.Foreground = new SolidColorBrush(targetColor);
-                }
+                textBlock.Foreground = targetBrush;
             }
         }
 
         private void StartTextSweep(TextBlock textBlock)
         {
-            if (_sweepStoryboards.ContainsKey(textBlock)) return;
+            if (!_activeWaveTextBlocks.Add(textBlock))
+                return;
 
-            var inkColor = ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
-            var mutedColor = ((SolidColorBrush)Application.Current.Resources["RuMutedBrush"]).Color;
+            if (_waveTimer == null)
+            {
+                _waveTimer = DispatcherQueue.CreateTimer();
+                _waveTimer.Interval = TimeSpan.FromMilliseconds(16); // ~60 FPS butter-smooth
+                _waveTimer.Tick += OnWaveTimerTick;
+            }
 
-            // Vibrant multi-stop color wave palette (Cyan -> Violet -> Rose -> Emerald)
-            var waveCyan = Windows.UI.Color.FromArgb(255, 56, 189, 248);    // #38BDF8 Sky/Cyan
-            var waveViolet = Windows.UI.Color.FromArgb(255, 168, 85, 247);  // #A855F7 Violet/Purple
-            var waveRose = Windows.UI.Color.FromArgb(255, 244, 114, 182);    // #F472B6 Pink/Rose
-            var waveEmerald = Windows.UI.Color.FromArgb(255, 52, 211, 153);  // #34D399 Emerald
+            if (!_waveTimer.IsRunning)
+            {
+                _waveStopwatch.Restart();
+                _waveTimer.Start();
+            }
+
+            UpdateWaveTextBlock(textBlock, 0.0);
+        }
+
+        private void StopTextSweep(TextBlock textBlock)
+        {
+            if (_activeWaveTextBlocks.Remove(textBlock))
+            {
+                if (_activeWaveTextBlocks.Count == 0)
+                {
+                    _waveTimer?.Stop();
+                    _waveStopwatch.Reset();
+                }
+            }
+        }
+
+        private void StopAllTextSweeps()
+        {
+            _activeWaveTextBlocks.Clear();
+            _waveTimer?.Stop();
+            _waveStopwatch.Reset();
+        }
+
+        private void OnWaveTimerTick(DispatcherQueueTimer sender, object args)
+        {
+            if (_activeWaveTextBlocks.Count == 0)
+            {
+                sender.Stop();
+                _waveStopwatch.Reset();
+                return;
+            }
+
+            double elapsed = _waveStopwatch.Elapsed.TotalSeconds;
+            double phase = (elapsed / 1.25) % 1.0;
+
+            List<TextBlock>? deadBlocks = null;
+            foreach (var tb in _activeWaveTextBlocks)
+            {
+                if (tb.XamlRoot == null)
+                {
+                    deadBlocks ??= new List<TextBlock>();
+                    deadBlocks.Add(tb);
+                    continue;
+                }
+                UpdateWaveTextBlock(tb, phase);
+            }
+
+            if (deadBlocks != null)
+            {
+                foreach (var dead in deadBlocks)
+                {
+                    _activeWaveTextBlocks.Remove(dead);
+                }
+                if (_activeWaveTextBlocks.Count == 0)
+                {
+                    sender.Stop();
+                    _waveStopwatch.Reset();
+                }
+            }
+        }
+
+        private static void UpdateWaveTextBlock(TextBlock tb, double phase)
+        {
+            var mutedBrush = Application.Current.Resources["RuMutedBrush"] as SolidColorBrush;
+            var baseColor = mutedBrush?.Color ?? Windows.UI.Color.FromArgb(255, 148, 163, 184);
+
+            // Subtle Cyan-Violet Aurora beam center (-0.35 to 1.35)
+            double center = -0.35 + 1.70 * phase;
 
             var brush = new LinearGradientBrush
             {
                 StartPoint = new Point(0, 0.5),
                 EndPoint = new Point(1, 0.5),
+                GradientStops =
+                {
+                    new GradientStop { Color = SampleAuroraColor(0.00, center, baseColor), Offset = 0.00 },
+                    new GradientStop { Color = SampleAuroraColor(0.25, center, baseColor), Offset = 0.25 },
+                    new GradientStop { Color = SampleAuroraColor(0.50, center, baseColor), Offset = 0.50 },
+                    new GradientStop { Color = SampleAuroraColor(0.75, center, baseColor), Offset = 0.75 },
+                    new GradientStop { Color = SampleAuroraColor(1.00, center, baseColor), Offset = 1.00 },
+                }
             };
-
-            var stopBaseLeft = new GradientStop { Color = mutedColor, Offset = -0.6 };
-            var stopCyan = new GradientStop { Color = waveCyan, Offset = -0.45 };
-            var stopViolet = new GradientStop { Color = waveViolet, Offset = -0.3 };
-            var stopRose = new GradientStop { Color = waveRose, Offset = -0.15 };
-            var stopEmerald = new GradientStop { Color = waveEmerald, Offset = 0.0 };
-            var stopBaseRight = new GradientStop { Color = inkColor, Offset = 0.15 };
-
-            brush.GradientStops.Add(stopBaseLeft);
-            brush.GradientStops.Add(stopCyan);
-            brush.GradientStops.Add(stopViolet);
-            brush.GradientStops.Add(stopRose);
-            brush.GradientStops.Add(stopEmerald);
-            brush.GradientStops.Add(stopBaseRight);
-
-            textBlock.Foreground = brush;
-
-            var duration = new Duration(TimeSpan.FromMilliseconds(2000));
-            var easing = new SineEase { EasingMode = EasingMode.EaseInOut };
-
-            var animBaseLeft = new DoubleAnimation { From = -0.6, To = 1.0, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
-            var animCyan = new DoubleAnimation { From = -0.45, To = 1.15, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
-            var animViolet = new DoubleAnimation { From = -0.3, To = 1.3, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
-            var animRose = new DoubleAnimation { From = -0.15, To = 1.45, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
-            var animEmerald = new DoubleAnimation { From = 0.0, To = 1.6, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
-            var animBaseRight = new DoubleAnimation { From = 0.15, To = 1.75, Duration = duration, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = easing };
-
-            Storyboard.SetTarget(animBaseLeft, stopBaseLeft);
-            Storyboard.SetTargetProperty(animBaseLeft, "Offset");
-
-            Storyboard.SetTarget(animCyan, stopCyan);
-            Storyboard.SetTargetProperty(animCyan, "Offset");
-
-            Storyboard.SetTarget(animViolet, stopViolet);
-            Storyboard.SetTargetProperty(animViolet, "Offset");
-
-            Storyboard.SetTarget(animRose, stopRose);
-            Storyboard.SetTargetProperty(animRose, "Offset");
-
-            Storyboard.SetTarget(animEmerald, stopEmerald);
-            Storyboard.SetTargetProperty(animEmerald, "Offset");
-
-            Storyboard.SetTarget(animBaseRight, stopBaseRight);
-            Storyboard.SetTargetProperty(animBaseRight, "Offset");
-
-            var sb = new Storyboard();
-            sb.Children.Add(animBaseLeft);
-            sb.Children.Add(animCyan);
-            sb.Children.Add(animViolet);
-            sb.Children.Add(animRose);
-            sb.Children.Add(animEmerald);
-            sb.Children.Add(animBaseRight);
-
-            _sweepStoryboards[textBlock] = sb;
-            sb.Begin();
+            tb.Foreground = brush;
         }
 
-        private void StopTextSweep(TextBlock textBlock)
+        private static Windows.UI.Color SampleAuroraColor(double u, double center, Windows.UI.Color baseColor)
         {
-            if (_sweepStoryboards.Remove(textBlock, out var sb))
+            double dist = Math.Abs(u - center);
+            const double radius = 0.35;
+            if (dist >= radius)
             {
-                sb.Stop();
+                return baseColor;
             }
+
+            // Smooth bell-shaped intensity around the beam center
+            double intensity = (1.0 - Math.Cos((1.0 - dist / radius) * Math.PI)) / 2.0;
+
+            // Subtle Cyan-Violet Aurora palette:
+            // Leading edge: soft ethereal cyan (#38BDF8)
+            // Trailing edge: soft elegant indigo/violet (#818CF8)
+            // Peak core: soft bright luminous shimmer (#E0F2FE)
+            var cCyan = Windows.UI.Color.FromArgb(255, 56, 189, 248);
+            var cViolet = Windows.UI.Color.FromArgb(255, 129, 140, 248);
+            var cGlow = Windows.UI.Color.FromArgb(255, 224, 242, 254);
+
+            Windows.UI.Color auroraTint;
+            if (u < center)
+            {
+                double t = (center - u) / radius;
+                auroraTint = LerpColor(cGlow, cCyan, t);
+            }
+            else
+            {
+                double t = (u - center) / radius;
+                auroraTint = LerpColor(cGlow, cViolet, t);
+            }
+
+            return LerpColor(baseColor, auroraTint, intensity * 0.85);
+        }
+
+        private static Windows.UI.Color LerpColor(Windows.UI.Color from, Windows.UI.Color to, double progress)
+        {
+            double smooth = (1.0 - Math.Cos(progress * Math.PI)) / 2.0;
+            byte r = (byte)(from.R + (to.R - from.R) * smooth);
+            byte g = (byte)(from.G + (to.G - from.G) * smooth);
+            byte b = (byte)(from.B + (to.B - from.B) * smooth);
+            return Windows.UI.Color.FromArgb(255, r, g, b);
         }
 
         private void ClearAgentRunSummary()

@@ -142,6 +142,31 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.Contains("WaitingText", model, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Activity_feed_supports_fluid_color_wave_animation_and_lifecycle_binding()
+    {
+        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        // DataContextChanged hooked for robust template recycling
+        Assert.Contains("DataContextChanged=\"OnActivityItemDataContextChanged\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("OnActivityItemDataContextChanged", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("AttachActivityItem", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("DetachActivityItem", codeBehind, StringComparison.Ordinal);
+
+        // Fluid chromatic wave animation engine
+        Assert.Contains("StartTextSweep", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("StopTextSweep", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("StopAllTextSweeps", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("SampleAuroraColor", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("UpdateWaveTextBlock", codeBehind, StringComparison.Ordinal);
+
+        // Subtle Cyan-Violet Aurora palette
+        Assert.Contains("56, 189, 248", codeBehind, StringComparison.Ordinal); // Soft Cyan
+        Assert.Contains("129, 140, 248", codeBehind, StringComparison.Ordinal); // Soft Violet / Indigo
+        Assert.Contains("224, 242, 254", codeBehind, StringComparison.Ordinal); // Luminous Glow
+    }
+
     private static string FindSource(params string[] parts)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

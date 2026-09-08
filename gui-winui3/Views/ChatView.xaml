@@ -97,6 +97,7 @@
                   HorizontalAlignment="Left"
                   Loaded="OnActivityItemLoaded"
                   Unloaded="OnActivityItemUnloaded"
+                  DataContextChanged="OnActivityItemDataContextChanged"
                   AutomationProperties.LiveSetting="Polite">
                 <TextBlock Grid.Column="0"
                            Text="{x:Bind DisplayText, Mode=OneWay}"

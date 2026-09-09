@@ -299,6 +299,7 @@ public static class AgentV1Endpoints
         async Task<bool> StreamDurablesAsync()
         {
             var any = false;
+            var usageTracker = new RunUsageTracker();
             await foreach (var envelope in store.ReadEventsAsync(runIdObj, lastSent, ct))
             {
                 any = true;
@@ -314,7 +315,25 @@ public static class AgentV1Endpoints
                     continue;
                 }
 
+                // Cumulative usage enrich: resolve ModelUsage payloads once per
+                // request and attach running totals to following envelopes.
+                if (string.Equals(
+                        envelope.Event.Kind,
+                        "model.usage_recorded",
+                        StringComparison.Ordinal)
+                    && envelope.Event.PayloadId is { } usagePayloadId)
+                {
+                    var usage = await service.TryReadModelUsageAsync(runId, usagePayloadId.Value, ct).ConfigureAwait(false);
+                    usageTracker.Track(usage);
+                }
+
                 var safe = HarnessEventMapper.ToSafeEnvelope(envelope.Event, run);
+                var (usedInput, usedOutput, usedTotal) = usageTracker.Snapshot();
+                if (usedInput is not null || usedOutput is not null || usedTotal is not null)
+                {
+                    safe = safe with { InputTokens = usedInput, OutputTokens = usedOutput, TotalTokens = usedTotal };
+                }
+
                 // Verify safe envelope not containing forbidden fields
                 var json = JsonSerializer.Serialize(safe);
                 if (HarnessEventContractValidator.ContainsForbiddenField(json))

@@ -134,6 +134,10 @@ public sealed partial class HarnessPayloadStore
                 HarnessPayloadIntent.MaximumByteCap,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.ModelUsage] = new(
+                16 * 1024,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Json]),
         };
 
     private readonly HarnessPayloadCryptography _cryptography;

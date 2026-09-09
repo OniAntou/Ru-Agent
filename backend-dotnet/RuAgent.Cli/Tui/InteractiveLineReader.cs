@@ -51,6 +51,13 @@ public sealed class InteractiveLineReader
         return "╰" + new string('─', fill) + label + "╯";
     }
 
+    public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor)
+    {
+        var mid = BuildMid(width, prompt, buffer ?? string.Empty);
+        var col = 2 + StripAnsi(prompt).Length + Math.Max(0, cursor);
+        return "\r" + mid + "\r\x1b[" + col + "C";
+    }
+
     public static int ComputeBoxWidth()
     {
         try
@@ -166,30 +173,28 @@ public sealed class InteractiveLineReader
         await outWriter.WriteLineAsync(AnsiTheme.Gray(BuildTop(boxWidth))).ConfigureAwait(false);
         await outWriter.WriteAsync(AnsiTheme.Gray("│ ") + prompt).ConfigureAwait(false);
         await outWriter.FlushAsync().ConfigureAwait(false);
-        int midTop = 0;
-        try { midTop = Console.CursorTop; } catch { }
         await outWriter.WriteLineAsync().ConfigureAwait(false);
         await outWriter.WriteLineAsync(AnsiTheme.Gray(BuildBottom(boxWidth, Legend))).ConfigureAwait(false);
+        await outWriter.FlushAsync().ConfigureAwait(false);
+        await outWriter.WriteAsync("\x1b[1A").ConfigureAwait(false);
         await outWriter.FlushAsync().ConfigureAwait(false);
 
         void RenderLine()
         {
             try
             {
-                Console.SetCursorPosition(0, midTop);
-                outWriter.Write(BuildMid(boxWidth, prompt, buffer.ToString()));
-                Console.SetCursorPosition(midPrefixLen + cursor, midTop);
+                outWriter.Write(BuildMidRewrite(boxWidth, prompt, buffer.ToString(), cursor));
                 outWriter.Flush();
             }
             catch
             {
-                // Fallback if cursor positioning throws
+                // Fallback if console write throws
             }
         }
 
         void LeaveBox()
         {
-            try { Console.SetCursorPosition(0, midTop + 2); } catch { }
+            try { outWriter.Write("\x1b[1B"); } catch { }
         }
 
         RenderLine();
@@ -254,7 +259,7 @@ public sealed class InteractiveLineReader
                 if (cursor > 0)
                 {
                     cursor--;
-                    try { Console.CursorLeft = promptLen + cursor; } catch { }
+                    try { Console.CursorLeft = midPrefixLen + cursor; } catch { }
                 }
                 continue;
             }
@@ -264,7 +269,7 @@ public sealed class InteractiveLineReader
                 if (cursor < buffer.Length)
                 {
                     cursor++;
-                    try { Console.CursorLeft = promptLen + cursor; } catch { }
+                    try { Console.CursorLeft = midPrefixLen + cursor; } catch { }
                 }
                 continue;
             }
@@ -279,7 +284,7 @@ public sealed class InteractiveLineReader
             if (key.Key == ConsoleKey.End)
             {
                 cursor = buffer.Length;
-                try { Console.CursorLeft = promptLen + cursor; } catch { }
+                try { Console.CursorLeft = midPrefixLen + cursor; } catch { }
                 continue;
             }
 

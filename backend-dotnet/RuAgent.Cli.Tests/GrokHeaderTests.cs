@@ -1,5 +1,6 @@
 using RuAgent.Cli.Tui;
 using Spectre.Console;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
@@ -24,12 +25,19 @@ public sealed class GrokHeaderTests
             Assert.Contains("/model", output, StringComparison.Ordinal);
             Assert.Contains("/exit", output, StringComparison.Ordinal);
             Assert.Contains("╭", output, StringComparison.Ordinal);
+            foreach (var line in output.Split('\n'))
+            {
+                Assert.True(StripVisible(line).Length <= 60, $"header line too wide: {line}");
+            }
         }
         finally
         {
             AnsiTheme.IsEnabled = false;
         }
     }
+
+    private static string StripVisible(string text) =>
+        Regex.Replace(text, @"\x1b\[[0-9;]*[a-zA-Z]", "");
 
     [Fact]
     public void GrokHeader_FallsBack_To_PlainText_When_Theme_Disabled()

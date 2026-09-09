@@ -166,6 +166,20 @@ public sealed class GrokFaithfulTests
         Assert.InRange(width, 48, 76);
     }
 
+    [Fact]
+    public void ComposerBox_MidRewrite_Uses_Relative_Cursor()
+    {
+        var rewrite = InteractiveLineReader.BuildMidRewrite(20, "❯ ", "hi", 2);
+        Assert.Equal("\r│ ❯ hi" + new string(' ', 12) + " │\r\x1b[6C", rewrite);
+    }
+
+    [Fact]
+    public void ComposerBox_MidRewrite_Moves_To_Prefix_When_Empty()
+    {
+        var rewrite = InteractiveLineReader.BuildMidRewrite(20, "", "", 0);
+        Assert.Equal("\r" + InteractiveLineReader.BuildMid(20, "", "") + "\r\x1b[2C", rewrite);
+    }
+
     private static RuAgent.Protocol.Harness.HarnessSafeEventEnvelope GrokEnvelope(
         string eventType,
         string safeSummary,

@@ -28,7 +28,7 @@ public sealed class WorkerV2Server
 
     public async Task HandleAsync(HttpContext context)
     {
-        if (!string.Equals(context.Request.Path, "/worker/v2", StringComparison.Ordinal))
+        if (!IsWorkerPath(context.Request.Path))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -304,6 +304,11 @@ public sealed class WorkerV2Server
                 ["retryable"] = retryable,
             }), cancellationToken).ConfigureAwait(false);
     }
+
+    private static bool IsWorkerPath(PathString path) =>
+        string.Equals(path, "/worker", StringComparison.Ordinal)
+        || string.Equals(path, "/worker/v1", StringComparison.Ordinal)
+        || string.Equals(path, "/worker/v2", StringComparison.Ordinal);
 
     private static JsonObject UsageJson(ModelUsage usage)
     {

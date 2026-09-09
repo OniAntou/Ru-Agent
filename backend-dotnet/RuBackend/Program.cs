@@ -83,6 +83,14 @@ builder.WebHost.UseUrls(
 
 var app = builder.Build();
 
+// Media surfaces are optional (Pi-style): voice/STT/VTube/observation map
+// only when RU_MEDIA_SURFACES is unset or "1". Headless coding agents run
+// with RU_MEDIA_SURFACES=0 and keep the 63-route contract minus media.
+var mediaSurfacesEnabled = !string.Equals(
+    Environment.GetEnvironmentVariable("RU_MEDIA_SURFACES"),
+    "0",
+    StringComparison.Ordinal);
+
 // Hook shutdown cleanup for managed runtime: descriptor cleanup, job shutdown
 if (isManagedRuntime)
 {
@@ -124,16 +132,23 @@ app.Use(async (context, next) =>
 });
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
-VoiceStreamEndpoint.Map(app);
+if (mediaSurfacesEnabled)
+{
+    VoiceStreamEndpoint.Map(app);
+}
+
 BusinessEndpoints.Map(app);
 AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
 MemoryEndpoints.Map(app);
 StatusEndpoints.Map(app);
-VoiceEndpoints.Map(app);
-ObservationEndpoints.Map(app);
-SttEndpoints.Map(app);
-VtsEndpoints.Map(app);
+if (mediaSurfacesEnabled)
+{
+    VoiceEndpoints.Map(app);
+    ObservationEndpoints.Map(app);
+    SttEndpoints.Map(app);
+    VtsEndpoints.Map(app);
+}
 
 app.Run();
 

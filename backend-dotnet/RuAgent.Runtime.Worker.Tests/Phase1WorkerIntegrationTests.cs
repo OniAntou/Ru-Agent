@@ -154,9 +154,6 @@ public sealed class Phase1WorkerIntegrationTests
         await using var host = await StartHostAsync(new SequenceProvider(
             new ModelDelta("unused", [], true, "stop")));
 
-        using var response = await host.GetTestClient().GetAsync("/worker/v1");
-        Assert.Equal(404, (int)response.StatusCode);
-
         using var socket = await ConnectAsync(host);
         await HelloAsync(socket);
         _ = await ReceiveAsync(socket);

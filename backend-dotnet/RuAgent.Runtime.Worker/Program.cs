@@ -72,14 +72,14 @@ internal static class WorkerEntryPoint
             });
 
         var builder = WebApplication.CreateBuilder();
-        var urls = devicePort == port
-            ? new[] { $"http://{host}:{port}" }
-            : new[] { $"http://{host}:{port}", $"http://{host}:{devicePort}" };
-        builder.WebHost.UseUrls(urls);
+        builder.WebHost.UseUrls($"http://{host}:{port}");
         var app = builder.Build();
         app.UseWebSockets();
         try
         {
+            // Single /worker endpoint (Pi-style). Device v1 traffic is an alias
+            // on the same socket until callers finish migrating off the
+            // dedicated device port; the v1 server enforces its own token.
             app.Run(context => string.Equals(context.Request.Path, "/worker/v1", StringComparison.Ordinal)
                 ? composition.DeviceServer.HandleAsync(context)
                 : composition.AgentServer.HandleAsync(context));

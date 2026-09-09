@@ -1,15 +1,45 @@
 # Verification
 
-> **Current as of 2026-09-09 (Pi Phase 2 WIP).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-09 (Pi Phase 3+5 done).** Older dated entries below are history; only this table is current.
 
 | Surface | Current status |
 | --- | --- |
 | Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | Pi Phase 2 in progress: Protocol 22/22, Broker 544/554 (10 pre-existing HEAD failures confirmed via stash isolate: 2 v1 terminal approval + 5 V2 terminal/shell wiring + 3 skill-connection sequencing), Harness.Core 271/275 (4 pre-existing HEAD failures: golden parity + activity lifecycle), RuBackend conformance 23/23 + factory 6/6 + web executor 3/3 |
+| .NET tests | Pi simplification done: Protocol 22/22, Broker 544/554 (10 pre-existing HEAD failures: 2 v1 terminal approval + 5 V2 terminal/shell wiring + 3 skill-connection sequencing), Harness.Core 271/275 (4 pre-existing: golden parity + activity lifecycle), Worker 64/64, Persistence 103/103, RuBackend conformance 23/23 + factory 6/6 + web executor 3/3 + media 24/24 |
 | Python suite | 306 passed, 0 failed; `ruff check src tests scripts tools` passed; `mypy src` passed |
 | `git diff --check` | passed |
 
-## Pi Phase 2: gọn policy gate (2026-09-09, WIP)
+## Pi Phase 3: worker single-port + /worker alias (2026-09-09)
+
+- `Worker` bind 1 port duy nhất (`UseUrls($http://{host}:{port})`); `--device-port`
+  còn parse để tương thích CLI nhưng không bind listener thứ hai.
+- `WorkerV2Server` chấp nhận `/worker`, `/worker/v1`, `/worker/v2`
+  (`IsWorkerPath`); `/worker/v1` giữ cho device traffic, token v1/v2 riêng
+  vẫn enforce ở từng server.
+- Test `Phase1WorkerIntegrationTests` bỏ assert GET `/worker/v1` → 404
+  (giờ là alias hợp lệ); Worker 64/64 xanh.
+
+## Pi Phase 4: persistence — giữ SQLite, không làm JSONL (2026-09-09)
+
+- Quyết định KHÔNG thay `agent_harness.db` + AES-GCM payloads bằng JSONL:
+  103 Persistence tests + `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/
+  `HarnessPayloadStore`/`HarnessOutboxStore`/`SqliteHarnessEventStore` và toàn bộ
+  `RuBackend` (`HarnessPolicySnapshotService`, `HarnessApprovalService`,
+  `AgentV1Service.Policies`, recovery scanner, outbox dispatcher) đều dựng trên
+  transaction/SQLite. Thay = viết lại durability layer + audit + migration,
+  rủi ro cao, lợi ích Pi-style thấp (Pi JSONL vì single-user TUI, Ru cần
+  multi-session + idempotent outbox + concurrent lease).
+- Gọn đã làm thay thế: Phase 1+2 đã gọn tool surface (13→4) và policy gate
+  (xóa prepare, gộp approval handler) — đúng trọng số "làm gọn" mà không
+  đụng durability.
+
+## Pi Phase 5: media endpoints optional (2026-09-09)
+
+- `Program.cs`: voice/STT/VTube/observation chỉ map khi `RU_MEDIA_SURFACES`
+  khác `"0"` (`VoiceStreamEndpoint` + `Voice/Observation/Stt/VtsEndpoints`).
+  Headless coding agent chạy `RU_MEDIA_SURFACES=0`, contract mặc định giữ
+  63 HTTP + 1 WS nên `check_aspnetcore_route_matrix.py` vẫn pass.
+- RuBackend build 0 warning; media + gateway tests 56/56 xanh.
 
 - Xóa `tool.prepare`/`tool.prepared` legacy khỏi `AgentMessageTypes` (cả `Known` + `V2Only`):
   gate giờ là 1 evaluate + 1 execute đúng kiểu Pi, không còn prepare trung gian.

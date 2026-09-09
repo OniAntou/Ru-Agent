@@ -25,8 +25,6 @@ public static class AgentMessageTypes
     public const string RunClosed = "run.closed";
     public const string ToolEvaluate = "tool.evaluate";
     public const string ToolDecision = "tool.decision";
-    public const string ToolPrepare = "tool.prepare";
-    public const string ToolPrepared = "tool.prepared";
     public const string ToolExecute = "tool.execute";
     public const string ToolExecuteResult = "tool.result";
     public const string ToolOutputDelta = "tool.output.delta";
@@ -60,8 +58,6 @@ public static class AgentMessageTypes
             RunClosed,
             ToolEvaluate,
             ToolDecision,
-            ToolPrepare,
-            ToolPrepared,
             ToolExecute,
             ToolExecuteResult,
             ToolOutputDelta,
@@ -82,8 +78,6 @@ public static class AgentMessageTypes
             RunClosed,
             ToolEvaluate,
             ToolDecision,
-            ToolPrepare,
-            ToolPrepared,
             ToolExecute,
             ToolExecuteResult,
             ToolOutputDelta,

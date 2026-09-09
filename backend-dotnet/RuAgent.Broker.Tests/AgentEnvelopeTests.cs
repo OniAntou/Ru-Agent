@@ -217,8 +217,6 @@ public sealed class AgentEnvelopeTests
     [InlineData("run.close", false)]
     [InlineData("tool.evaluate", false)]
     [InlineData("tool.decision", false)]
-    [InlineData("tool.prepare", false)]
-    [InlineData("tool.prepared", false)]
     [InlineData("tool.execute", false)]
     [InlineData("tool.result", false)]
     [InlineData("approval.respond", false)]

@@ -19,7 +19,6 @@ public sealed partial class AgentConnection
     private readonly Func<CapabilityProfile, IReadOnlyList<AgentToolCapability>> _capabilityProvider;
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _toolHandler;
-    private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _approvalHandler;
     private readonly Action<string>? _sessionClosedHandler;
     private readonly PendingApprovalStore _pendingV2;
     private readonly ApprovalTokenService _authTokens;
@@ -39,7 +38,6 @@ public sealed partial class AgentConnection
         Func<CapabilityProfile, IReadOnlyList<AgentToolCapability>> capabilityProvider,
         IReadOnlySet<string> executableScopes,
         Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? toolHandler = null,
-        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? approvalHandler = null,
         Action<string>? sessionClosedHandler = null,
         PendingApprovalStore? pendingV2Store = null,
         ApprovalTokenService? approvalTokenService = null,
@@ -55,7 +53,6 @@ public sealed partial class AgentConnection
             executableScopes ?? throw new ArgumentNullException(nameof(executableScopes)),
             StringComparer.Ordinal);
         _toolHandler = toolHandler;
-        _approvalHandler = approvalHandler;
         _sessionClosedHandler = sessionClosedHandler;
         // State is scoped to the BrokerHost by callers that need reconnect support;
         // a directly constructed connection gets private state instead of sharing
@@ -160,6 +157,7 @@ public sealed partial class AgentConnection
             case AgentMessageTypes.RunClose:
                 return HandleRunClose(request);
             case AgentMessageTypes.ToolRequest:
+            case AgentMessageTypes.ApprovalResponse:
                 if (!_session.Owns(request.SessionId))
                 {
                     return ToolError(request, "broker_not_ready", "session is not open");
@@ -170,8 +168,6 @@ public sealed partial class AgentConnection
                     : await _toolHandler(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.ToolEvaluate:
                 return await HandleToolEvaluateAsync(request, cancellationToken).ConfigureAwait(false);
-            case AgentMessageTypes.ToolPrepare:
-                return await HandleToolPrepareAsync(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.ToolExecute:
                 return await HandleToolExecuteAsync(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.ToolOutputDelta:
@@ -185,21 +181,6 @@ public sealed partial class AgentConnection
             case AgentMessageTypes.SkillStart:
                 var skillMessages = await HandleSkillStartAsync(request, cancellationToken).ConfigureAwait(false);
                 return skillMessages[^1];
-            case AgentMessageTypes.ApprovalResponse:
-                if (!_session.Owns(request.SessionId))
-                {
-                    return ToolError(request, "broker_not_ready", "session is not open");
-                }
-
-                if (request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2)
-                {
-                    // Phase 1: approval handling via Broker is not available for v2; approvals are user-control only.
-                    return ToolError(request, "phase_not_available", "approval handling not available in phase 1");
-                }
-
-                return _approvalHandler is null
-                    ? ToolError(request, "broker_not_ready", "approval handling is not registered")
-                    : await _approvalHandler(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.ApprovalRespond:
                 if (!_session.Owns(request.SessionId))
                 {

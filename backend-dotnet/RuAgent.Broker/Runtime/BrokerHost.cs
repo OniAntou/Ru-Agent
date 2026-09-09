@@ -156,7 +156,6 @@ public sealed class BrokerHost : IAsyncDisposable
                 .Append(ToolScope.SkillExecute)
                 .ToHashSet(StringComparer.Ordinal),
             (request, token) => ExecuteToolAsync(request, token),
-            (request, token) => ExecuteApprovalAsync(request, token),
             sessionId => _tools.RemoveSession(sessionId),
             pendingV2Store: _pendingV2,
             approvalTokenService: _authTokens,
@@ -177,33 +176,9 @@ public sealed class BrokerHost : IAsyncDisposable
         RuAgent.Protocol.AgentEnvelope request,
         CancellationToken cancellationToken)
     {
-        var result = await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
-        return new RuAgent.Protocol.AgentEnvelope(
-            request.ProtocolVersion,
-            request.RequestId,
-            RuAgent.Protocol.AgentMessageTypes.ToolResult,
-            request.SessionId,
-            request.CorrelationId,
-            request.DeadlineMs,
-            new System.Text.Json.Nodes.JsonObject
-            {
-                ["status"] = result.Status,
-                ["output"] = result.Output.DeepClone(),
-                ["error_code"] = result.ErrorCode,
-                ["safe_summary"] = result.SafeSummary,
-                ["duration_ms"] = result.DurationMs,
-                ["verification_state"] = result.VerificationState,
-                ["endpoint_role"] = result.EndpointRole,
-                ["endpoint_hash"] = result.EndpointHash,
-                ["adapter_invoked"] = result.AdapterInvoked,
-            });
-    }
-
-    private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteApprovalAsync(
-        RuAgent.Protocol.AgentEnvelope request,
-        CancellationToken cancellationToken)
-    {
-        var result = await _tools.RespondToApprovalAsync(request, cancellationToken).ConfigureAwait(false);
+        var result = request.MessageType == RuAgent.Protocol.AgentMessageTypes.ApprovalResponse
+            ? await _tools.RespondToApprovalAsync(request, cancellationToken).ConfigureAwait(false)
+            : await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         return new RuAgent.Protocol.AgentEnvelope(
             request.ProtocolVersion,
             request.RequestId,

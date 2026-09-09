@@ -618,7 +618,6 @@ public sealed class BrokerHostTests
                  {
                      AgentMessageTypes.RunPolicyRebind,
                      AgentMessageTypes.ToolDecision,
-                     AgentMessageTypes.ToolPrepared,
                      AgentMessageTypes.ApprovalRespond,
                      AgentMessageTypes.ApprovalResult,
                  })

@@ -154,21 +154,6 @@ public sealed partial class AgentConnection
         return Task.FromResult(Reply(request, AgentMessageTypes.ToolDecision, replyPayload));
     }
 
-    private Task<AgentEnvelope> HandleToolPrepareAsync(AgentEnvelope request, CancellationToken cancellationToken)
-    {
-        // Legacy path kept for wire compatibility: allow-decisions now carry a
-        // single authorization token, so prepare always fails closed.
-        _ = cancellationToken;
-        var payload = request.Payload;
-        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
-        if (!TryGetOwnedRunLease(request, runId, out _, out var leaseError))
-        {
-            return Task.FromResult(ToolError(request, leaseError, "run lease is not open"));
-        }
-
-        return Task.FromResult(ToolError(request, "decision_stale", "prepare is no longer supported; use the authorization token"));
-    }
-
     private async Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
         var payload = request.Payload;

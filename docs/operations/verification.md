@@ -1,15 +1,23 @@
 # Verification
 
-> **Current as of 2026-09-09 (Pi Phase 1 WIP).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-09 (Pi Phase 2 WIP).** Older dated entries below are history; only this table is current.
 
 | Surface | Current status |
 | --- | --- |
 | Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | Pi Phase 1 in progress: Protocol 22/22, Broker 546/556 (10 pre-existing HEAD failures confirmed via stash isolate: 2 v1 terminal approval + 5 V2 terminal/shell wiring + 3 skill-connection sequencing), Harness.Core 271/275 (4 pre-existing HEAD failures: golden parity + activity lifecycle), RuBackend conformance 23/23 + factory 6/6 + web executor 3/3 |
+| .NET tests | Pi Phase 2 in progress: Protocol 22/22, Broker 544/554 (10 pre-existing HEAD failures confirmed via stash isolate: 2 v1 terminal approval + 5 V2 terminal/shell wiring + 3 skill-connection sequencing), Harness.Core 271/275 (4 pre-existing HEAD failures: golden parity + activity lifecycle), RuBackend conformance 23/23 + factory 6/6 + web executor 3/3 |
 | Python suite | 306 passed, 0 failed; `ruff check src tests scripts tools` passed; `mypy src` passed |
 | `git diff --check` | passed |
 
-## Pi Phase 1: 13 tools → read/write/edit/bash (2026-09-09, WIP)
+## Pi Phase 2: gọn policy gate (2026-09-09, WIP)
+
+- Xóa `tool.prepare`/`tool.prepared` legacy khỏi `AgentMessageTypes` (cả `Known` + `V2Only`):
+  gate giờ là 1 evaluate + 1 execute đúng kiểu Pi, không còn prepare trung gian.
+- Gộp v1 approval path: `AgentConnection` chỉ còn 1 `_toolHandler`
+  (`ToolRequest` + `ApprovalResponse` cùng đi qua `BrokerHost.ExecuteToolAsync`,
+  rẽ trong service); xóa `_approvalHandler`/`ExecuteApprovalAsync` riêng lẻ.
+
+## Pi Phase 1: 13 tools → read/write/edit/bash (2026-09-09)
 
 - Protocol catalog is 4 definitions (`read` with `op=list|glob|search|read|help|web_search|web_fetch`,
   `write` with `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`).

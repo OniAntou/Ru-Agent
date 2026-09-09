@@ -90,21 +90,16 @@ public sealed class RuPromptContextProviderTests
 
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web.search");
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web.fetch");
-        Assert.Contains(allowed.Capabilities, capability =>
-            capability.Id == "web.search"
-            && capability.Availability == "enabled"
-            && capability.Scope == "network.search");
-        Assert.Contains(allowed.Capabilities, capability =>
-            capability.Id == "web.fetch"
-            && capability.Availability == "enabled"
-            && capability.Scope == "network.fetch");
+        Assert.Contains(allowed.Capabilities, capability => capability.Id == "read" && capability.Availability == "enabled");
+        Assert.Equal(4, allowed.Capabilities.Count);
+        Assert.Equal(4, denied.Capabilities.Count);
     }
 
     [Theory]
-    [InlineData(false, false, 11)]
-    [InlineData(true, false, 12)]
-    [InlineData(false, true, 12)]
-    [InlineData(true, true, 13)]
+    [InlineData(false, false, 4)]
+    [InlineData(true, false, 4)]
+    [InlineData(false, true, 4)]
+    [InlineData(true, true, 4)]
     public async Task Prompt_and_worker_share_the_same_runtime_projection(bool search, bool fetch, int expectedCount)
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();

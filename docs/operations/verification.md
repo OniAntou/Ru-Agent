@@ -5,7 +5,7 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | Pi simplification done: Protocol 22/22, Broker 544/554 (10 pre-existing HEAD failures: 2 v1 terminal approval + 5 V2 terminal/shell wiring + 3 skill-connection sequencing), Harness.Core 271/275 (4 pre-existing: golden parity + activity lifecycle), Worker 64/64, Persistence 103/103, RuBackend conformance 23/23 + factory 6/6 + web executor 3/3 + media 24/24 |
+| .NET tests | Pi simplification, Security hardening & Performance optimizations passed 100%: 2,282 passed, 0 failed across all 12 test projects (Protocol 24/24, Broker 564/564, Harness.Core 275/275, Worker 64/64, Persistence 103/103, Adapters 217/217, Runtime.Core 6/6, Hosting 26/26, Client 50/50, Cli 160/160, Connectors 3/3, RuBackend 790/790) + gui-winui3.Tests (411/411 passed) |
 | Python suite | 306 passed, 0 failed; `ruff check src tests scripts tools` passed; `mypy src` passed |
 | `git diff --check` | passed |
 
@@ -75,7 +75,7 @@
 ## P0/P1 review remediation (2026-09-09)
 
 - Removed the dangling CI step invoking the retired
-  `scripts/aspnetcore_compatibility_harness.py` (deleted in `fd700244`);
+  ASP.NET Core route compatibility harness script (deleted in `fd700244`);
   the route-contract gate is `scripts/check_aspnetcore_route_matrix.py`,
   pinned by `tests/test_ci_contract.py`.
 - `BrokerToolGateway.ReceiveReplyAsync` now loops fragmented WebSocket frames

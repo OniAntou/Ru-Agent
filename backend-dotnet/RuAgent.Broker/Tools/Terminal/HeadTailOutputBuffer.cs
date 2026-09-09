@@ -47,25 +47,39 @@ public sealed class HeadTailOutputBuffer
         TotalChars += text.Length;
         TotalBytes += Encoding.UTF8.GetByteCount(text);
 
+        var offset = 0;
         if (_head.Length < HeadCapacity)
         {
             var taken = Math.Min(HeadCapacity - _head.Length, text.Length);
             _head.Append(text, 0, taken);
-            text = text[taken..];
+            offset = taken;
         }
 
-        if (text.Length == 0)
+        if (offset >= text.Length)
         {
             return;
         }
 
-        _tail.Append(text);
+        _tail.Append(text, offset, text.Length - offset);
         if (_tail.Length > TailCapacity)
         {
             var excess = _tail.Length - TailCapacity;
-            var dropped = _tail.ToString(0, excess);
+            var remainingChars = excess;
+            var excessBytes = 0;
+            foreach (var chunk in _tail.GetChunks())
+            {
+                if (remainingChars <= 0)
+                {
+                    break;
+                }
+
+                var take = Math.Min(chunk.Length, remainingChars);
+                excessBytes += Encoding.UTF8.GetByteCount(chunk.Span[..take]);
+                remainingChars -= take;
+            }
+
             DroppedChars += excess;
-            DroppedBytes += Encoding.UTF8.GetByteCount(dropped);
+            DroppedBytes += excessBytes;
             _tail.Remove(0, excess);
         }
     }

@@ -122,7 +122,12 @@ class OwnedProcess:
             )
             return
         try:
-            os.killpg(self._process.pid, signal.SIGKILL)
+            killpg = getattr(os, "killpg", None)
+            sigkill = getattr(signal, "SIGKILL", getattr(signal, "SIGTERM", 15))
+            if killpg is not None:
+                killpg(self._process.pid, sigkill)
+            else:
+                self._process.kill()
         except (OSError, ProcessLookupError):
             self._process.kill()
 

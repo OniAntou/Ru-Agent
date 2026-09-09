@@ -48,7 +48,7 @@ def validate_envelope(value: object) -> dict[str, object]:
     return dict(value)
 
 
-def run_benchmark(samples: int = 30, output_path: str = None):
+def run_benchmark(samples: int = 30, output_path: str | None = None):
     print(
         f"Running logging performance benchmark with {samples} paired samples per real pipeline path..."
     )

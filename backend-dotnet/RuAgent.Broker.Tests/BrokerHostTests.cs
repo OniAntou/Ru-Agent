@@ -928,15 +928,7 @@ public sealed class BrokerHostTests
 
             await SendAsync(
                 socket,
-                new AgentEnvelope(2, "execute-external-terminal-run", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
-                    new JsonObject
-                    {
-                        ["run_id"] = runB,
-                        ["tool_id"] = "terminal.run",
-                        ["tool_version"] = "1.0.0",
-                        ["authorization_token"] = authorizationToken,
-                        ["arguments"] = terminalArguments.DeepClone().AsObject(),
-                    }),
+                Execute("execute-external-terminal-run", sessionId, runB, "terminal.run", authorizationToken, terminalArguments.DeepClone().AsObject()),
                 cts.Token);
             var execution = await ReceiveAsync(socket, cts.Token);
             Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
@@ -1014,15 +1006,7 @@ public sealed class BrokerHostTests
         // Execute using the authorization token
         await SendAsync(
             socket,
-            new AgentEnvelope(2, "execute-terminal-risky", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
-                new JsonObject
-                {
-                    ["run_id"] = runId,
-                    ["tool_id"] = "terminal.run",
-                    ["tool_version"] = "1.0.0",
-                    ["authorization_token"] = authToken,
-                    ["arguments"] = riskyArgs.DeepClone().AsObject(),
-                }),
+            Execute("execute-terminal-risky", sessionId, runId, "terminal.run", authToken, riskyArgs.DeepClone().AsObject()),
             cts.Token);
 
         var execution = await ReceiveAsync(socket, cts.Token);
@@ -1035,15 +1019,7 @@ public sealed class BrokerHostTests
         // Replay must be rejected because token was consumed
         await SendAsync(
             socket,
-            new AgentEnvelope(2, "execute-terminal-replay", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
-                new JsonObject
-                {
-                    ["run_id"] = runId,
-                    ["tool_id"] = "terminal.run",
-                    ["tool_version"] = "1.0.0",
-                    ["authorization_token"] = authToken,
-                    ["arguments"] = riskyArgs.DeepClone().AsObject(),
-                }),
+            Execute("execute-terminal-replay", sessionId, runId, "terminal.run", authToken, riskyArgs.DeepClone().AsObject()),
             cts.Token);
 
         var replay = await ReceiveAsync(socket, cts.Token);
@@ -1133,15 +1109,7 @@ public sealed class BrokerHostTests
 
             await SendAsync(
                 socket,
-                new AgentEnvelope(2, "execute-shell-delete", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
-                    new JsonObject
-                    {
-                        ["run_id"] = runB,
-                        ["tool_id"] = "terminal.shell",
-                        ["tool_version"] = "1.0.0",
-                        ["authorization_token"] = shellAuthToken,
-                        ["arguments"] = shellArgs.DeepClone().AsObject(),
-                    }),
+                Execute("execute-shell-delete", sessionId, runB, "terminal.shell", shellAuthToken, shellArgs.DeepClone().AsObject()),
                 cts.Token);
 
             var shellExec = await ReceiveAsync(socket, cts.Token);
@@ -1206,15 +1174,7 @@ public sealed class BrokerHostTests
 
         await SendAsync(
             socket,
-            new AgentEnvelope(2, "execute-shell-safe", AgentMessageTypes.ToolExecute, sessionId, null, 10_000,
-                new JsonObject
-                {
-                    ["run_id"] = runId,
-                    ["tool_id"] = "terminal.shell",
-                    ["tool_version"] = "1.0.0",
-                    ["authorization_token"] = authorizationToken,
-                    ["arguments"] = shellArgs.DeepClone().AsObject(),
-                }),
+            Execute("execute-shell-safe", sessionId, runId, "terminal.shell", authorizationToken, shellArgs.DeepClone().AsObject()),
             cts.Token);
 
         var execution = await ReceiveAsync(socket, cts.Token);
@@ -1696,6 +1656,32 @@ public sealed class BrokerHostTests
                 ["run_id"] = runId,
                 ["tool_id"] = piId,
                 ["tool_version"] = "1.0.0",
+                ["arguments"] = piArgs,
+            });
+    }
+
+    private static AgentEnvelope Execute(
+        string requestId,
+        string sessionId,
+        string runId,
+        string toolId,
+        string authorizationToken,
+        JsonObject arguments)
+    {
+        var (piId, piArgs) = MapToPiArgs(toolId, arguments);
+        return new AgentEnvelope(
+            2,
+            requestId,
+            AgentMessageTypes.ToolExecute,
+            sessionId,
+            null,
+            10_000,
+            new JsonObject
+            {
+                ["run_id"] = runId,
+                ["tool_id"] = piId,
+                ["tool_version"] = "1.0.0",
+                ["authorization_token"] = authorizationToken,
                 ["arguments"] = piArgs,
             });
     }

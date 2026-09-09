@@ -17,6 +17,7 @@ cloud providers.
 - [6. Kiểm thử & Đảm bảo chất lượng (Verification & Testing)](#6-kiểm-thử--đảm-bảo-chất-lượng-verification--testing)
 - [7. Cấu trúc thư mục dự án (Project Structure)](#7-cấu-trúc-thư-mục-dự-án-project-structure)
 - [8. Bảo mật & Quản lý dữ liệu (Security & Data Privacy)](#8-bảo-mật--quản-lý-dữ-liệu-security--data-privacy)
+- [9. Nhật ký thay đổi (Changelog)](#9-nhật-ký-thay-đổi-changelog)
 
 ---
 
@@ -222,6 +223,12 @@ Script `scripts/test_dotnet.ps1` tự phát hiện **13 test projects** (`*Tests
 - **Mã hóa khóa API**: Tất cả API keys (OpenCode, Kilo, OpenAI, Anthropic, Gemini) được mã hóa bằng **Windows Credential Manager (DPAPI)**, không bao giờ lưu trữ dạng plain-text trên ổ đĩa.
 - **Bảo mật cơ sở dữ liệu**: Lịch sử phiên và artifacts của Agent Harness được lưu trữ tại `agent_harness.db` với mã hóa AES-GCM cho các payload nhạy cảm.
 - **Quyền riêng tư tuyệt đối**: Các thông tin nhạy cảm như dữ liệu âm thanh thô, tokens, hành động VTS và metadata kiểm soát nội bộ bị chặn hoàn toàn không cho xuất hiện trong nhật ký (logs), lịch sử hội thoại hiển thị hay bộ nhớ dài hạn.
+
+---
+
+## 9. Nhật ký thay đổi (Changelog)
+
+Chi tiết lịch sử phát triển, sửa lỗi và cập nhật qua các đợt phát hành được ghi nhận tại [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+_SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?…])(?<!\d)\s+|\n+")
+
 
 def split_tts_chunks(text: str, *, max_chars: int = 120) -> list[str]:
     """Split speech text into short, ordered chunks without breaking words.
@@ -11,8 +13,7 @@ def split_tts_chunks(text: str, *, max_chars: int = 120) -> list[str]:
     if max_chars < 20:
         raise ValueError("max_chars must be at least 20")
 
-    sentence_break = re.compile(r"(?<=[.!?…])(?<!\d)\s+|\n+")
-    sentences = sentence_break.split(text.strip())
+    sentences = _SENTENCE_BREAK_RE.split(text.strip())
     chunks: list[str] = []
     for sentence in (part.strip() for part in sentences):
         while len(sentence) > max_chars:

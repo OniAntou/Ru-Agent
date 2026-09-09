@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using Xunit;
@@ -131,19 +132,45 @@ public sealed class HeadlessCodingLoopTests
         }
     }
 
-    private static AssistantStep ToolCall(string toolId, string argumentsJson) =>
-        new(
+    private static AssistantStep ToolCall(string toolId, string argumentsJson)
+    {
+        var (mappedId, mappedJson) = MapToPi(toolId, argumentsJson);
+        return new(
             null,
             new[]
             {
                 new ModelToolCall(
                     null,
-                    toolId,
+                    mappedId,
                     "1.0.0",
-                    JsonDocument.Parse(argumentsJson).RootElement.Clone()),
+                    JsonDocument.Parse(mappedJson).RootElement.Clone()),
             },
             AssistantFinishReason.ToolCalls,
             0);
+    }
+
+    private static (string Id, string Json) MapToPi(string toolId, string argumentsJson)
+    {
+        var node = JsonNode.Parse(argumentsJson) as JsonObject ?? new JsonObject();
+        var id = toolId;
+        switch (toolId)
+        {
+            case "files.list": id = "read"; node["op"] = "list"; break;
+            case "files.glob": id = "read"; node["op"] = "glob"; break;
+            case "files.search": id = "read"; node["op"] = "search"; break;
+            case "files.read": id = "read"; node["op"] = "read"; break;
+            case "files.write": id = "write"; node["op"] = "write"; break;
+            case "files.edit": id = "edit"; break;
+            case "files.delete": id = "write"; node["op"] = "delete"; break;
+            case "files.restore": id = "write"; node["op"] = "restore"; break;
+            case "terminal.run": id = "bash"; node["mode"] = "run"; break;
+            case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
+            case "web.search": id = "read"; node["op"] = "web_search"; break;
+            case "web.fetch": id = "read"; node["op"] = "web_fetch"; break;
+            case "help.docs": id = "read"; node["op"] = "help"; break;
+        }
+        return (id, node.ToJsonString());
+    }
 
     private static AssistantStep FinalStep(string text) =>
         new(text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0);

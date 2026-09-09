@@ -80,13 +80,39 @@ public sealed class WebPolicy
         }
 
         var segments = address.GetAddressBytes();
+
+        // RFC 6052: NAT64 Well-Known Prefix 64:ff9b::/96 embedding private IPv4
+        if (segments[0] == 0x00 && segments[1] == 0x64 && segments[2] == 0xff && segments[3] == 0x9b
+            && segments[4] == 0 && segments[5] == 0 && segments[6] == 0 && segments[7] == 0
+            && segments[8] == 0 && segments[9] == 0 && segments[10] == 0 && segments[11] == 0)
+        {
+            var embeddedIpv4 = new IPAddress(segments[12..16]);
+            if (IsPrivate(embeddedIpv4))
+            {
+                return true;
+            }
+        }
+
+        // RFC 3056: 6to4 2002::/16 embedding private IPv4
+        if (segments[0] == 0x20 && segments[1] == 0x02)
+        {
+            var embeddedIpv4 = new IPAddress(segments[2..6]);
+            if (IsPrivate(embeddedIpv4))
+            {
+                return true;
+            }
+        }
+
         return (segments[0] & 0xfe) == 0xfc
             || segments[0] == 0xfe && (segments[1] & 0xc0) == 0x80
             || segments[0] == 0xfe && (segments[1] & 0xc0) == 0xc0
+            || (segments[0] == 0x01 && segments[1] == 0x00)
             || segments[0] == 0x20 && segments[1] == 0x01
                 && segments[2] == 0x0d && segments[3] == 0xb8
             || segments[0] == 0x20 && segments[1] == 0x01
                 && segments[2] == 0x00 && segments[3] == 0x00
+            || segments[0] == 0x20 && segments[1] == 0x01
+                && segments[2] == 0x00 && (segments[3] & 0xf0) == 0x10
             || segments.All(segment => segment == 0);
     }
 

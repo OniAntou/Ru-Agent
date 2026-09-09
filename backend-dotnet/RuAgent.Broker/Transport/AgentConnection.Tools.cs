@@ -353,12 +353,15 @@ public sealed partial class AgentConnection
     }
 
     private static AgentEnvelope ToolError(AgentEnvelope request, string errorCode, string summary)
-        => Reply(request, AgentMessageTypes.ToolResult, new JsonObject
-        {
-            ["status"] = ToolResultStatuses.Denied,
-            ["error_code"] = errorCode,
-            ["safe_summary"] = summary,
-        });
+        => Reply(
+            request,
+            request.MessageType == AgentMessageTypes.ToolExecute ? AgentMessageTypes.ToolExecuteResult : AgentMessageTypes.ToolResult,
+            new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Denied,
+                ["error_code"] = errorCode,
+                ["safe_summary"] = summary,
+            });
 
     private static IReadOnlySet<string> ReadScopes(JsonObject payload)
     {

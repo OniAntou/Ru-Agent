@@ -282,18 +282,18 @@ public sealed class StreamingProcessRunner
                 return;
             }
 
-            var encoded = Encoding.UTF8.GetBytes(text);
+            var encodedByteCount = Encoding.UTF8.GetByteCount(text);
             var remaining = Math.Max(0L, limitBytes - acceptedBytes);
             if (remaining == 0)
             {
-                droppedBytes += encoded.Length;
+                droppedBytes += encodedByteCount;
                 return;
             }
 
-            if (encoded.Length <= remaining)
+            if (encodedByteCount <= remaining)
             {
                 buffer.Append(text);
-                acceptedBytes += encoded.Length;
+                acceptedBytes += encodedByteCount;
                 await emit(streamName, text, redacted, drainToken).ConfigureAwait(false);
                 return;
             }
@@ -306,7 +306,7 @@ public sealed class StreamingProcessRunner
                 await emit(streamName, clipped, redacted, drainToken).ConfigureAwait(false);
             }
 
-            droppedBytes += encoded.Length - clippedBytes;
+            droppedBytes += encodedByteCount - clippedBytes;
         }
 
         try

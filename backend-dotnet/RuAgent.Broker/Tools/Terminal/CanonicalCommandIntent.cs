@@ -120,13 +120,28 @@ internal static class FinalPathResolver
 
     internal static string Resolve(string candidate)
     {
+        if (string.IsNullOrWhiteSpace(candidate) || candidate.Contains('\0'))
+        {
+            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(candidate);
+        }
+        catch
+        {
+            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+
         if (!OperatingSystem.IsWindows())
         {
-            return Path.GetFullPath(candidate);
+            return fullPath;
         }
 
         using var handle = CreateFile(
-            ExtendedDevicePath(candidate),
+            ExtendedDevicePath(fullPath),
             QueryOnlyDesiredAccess,
             FileShareReadWrite,
             IntPtr.Zero,

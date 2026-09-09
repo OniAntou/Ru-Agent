@@ -57,4 +57,22 @@ public sealed class HeadTailOutputBufferTests
         Assert.Equal("naïve café", buffer.Render());
         Assert.Equal(Encoding.UTF8.GetByteCount("naïve café"), buffer.TotalBytes);
     }
+
+    [Fact]
+    public void Byte_counters_correctly_count_dropped_utf8_bytes()
+    {
+        var buffer = new HeadTailOutputBuffer(headCapacity: 4, tailCapacity: 4);
+        buffer.Append("1234");
+        buffer.Append("café");
+        buffer.Append("xyz");
+
+        Assert.Equal(3, buffer.DroppedChars);
+        Assert.Equal(Encoding.UTF8.GetByteCount("caf"), buffer.DroppedBytes);
+
+        buffer.Append("123");
+        Assert.Equal(6, buffer.DroppedChars);
+        Assert.Equal(Encoding.UTF8.GetByteCount("caf") + Encoding.UTF8.GetByteCount("éxy"), buffer.DroppedBytes);
+        Assert.Equal(14, buffer.TotalChars);
+        Assert.Equal(Encoding.UTF8.GetByteCount("1234caféxyz123"), buffer.TotalBytes);
+    }
 }

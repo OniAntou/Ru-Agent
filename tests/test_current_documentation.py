@@ -135,7 +135,7 @@ def test_retired_runtime_scaffolding_is_absent_from_current_sources() -> None:
             and path.suffix.lower() in {".cs", ".csproj", ".md", ".py", ".ps1", ".bat"}
         )
 
-    matches = []
+    matches: list[str] = []
     for path in files:
         text = path.read_text(encoding="utf-8")
         matches.extend(

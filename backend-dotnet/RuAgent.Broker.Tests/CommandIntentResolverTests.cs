@@ -202,6 +202,12 @@ public sealed class CommandIntentResolverTests
                 () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["--tty"]))).Code);
             Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
                 () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["sudo"]))).Code);
+            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["doas"]))).Code);
+            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["pkexec"]))).Code);
+            Assert.Equal("password_prompt_rejected", Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["/prompt"]))).Code);
             Assert.Equal("background_daemon_rejected", Assert.Throws<CommandIntentException>(
                 () => resolver.ResolveRun(new CanonicalCommandRequest(executable, ["--daemon"]))).Code);
         }

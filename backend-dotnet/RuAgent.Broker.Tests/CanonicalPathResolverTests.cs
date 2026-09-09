@@ -211,6 +211,18 @@ public sealed class CanonicalPathResolverTests : IDisposable
         Assert.ThrowsAny<ArgumentException>(() => _resolver.Resolve(input));
     }
 
+    [Theory]
+    [InlineData("file.txt:stream")]
+    [InlineData("file.txt::$DATA")]
+    [InlineData("dir/file.txt:evil.exe")]
+    [InlineData("C:\\workspace\\file.txt:stream")]
+    [InlineData("\\\\?\\C:\\workspace\\file.txt:stream")]
+    public void Alternate_data_stream_input_throws(string input)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => _resolver.Resolve(input));
+        Assert.Contains("Alternate data streams", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool TryCreateJunction(string junctionPath, string targetPath)
     {
         try

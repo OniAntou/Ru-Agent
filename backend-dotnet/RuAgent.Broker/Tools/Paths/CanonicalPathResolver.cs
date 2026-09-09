@@ -49,6 +49,11 @@ public sealed class CanonicalPathResolver
             throw new ArgumentException("Path contains null character.", nameof(inputPath));
         }
 
+        if (HasAlternateDataStream(inputPath))
+        {
+            throw new ArgumentException("Alternate data streams are not allowed.", nameof(inputPath));
+        }
+
         var isAbsolute = Path.IsPathRooted(inputPath);
         string logicalCandidate;
         try
@@ -395,6 +400,29 @@ public sealed class CanonicalPathResolver
         }
 
         return path;
+    }
+
+    private static bool HasAlternateDataStream(string path)
+    {
+        var colonIndex = path.IndexOf(':');
+        if (colonIndex < 0)
+        {
+            return false;
+        }
+
+        if (colonIndex == 1 && char.IsAsciiLetter(path[0]))
+        {
+            return path.IndexOf(':', 2) >= 0;
+        }
+
+        if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)
+            && colonIndex == 5
+            && char.IsAsciiLetter(path[4]))
+        {
+            return path.IndexOf(':', 6) >= 0;
+        }
+
+        return true;
     }
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]

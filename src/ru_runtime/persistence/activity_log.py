@@ -12,7 +12,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ru_runtime.persistence.activity_outbox import (
+from .activity_outbox import (
     get_activity_outbox_writer,
     get_outbox_file,
     reset_global_outbox_writer,

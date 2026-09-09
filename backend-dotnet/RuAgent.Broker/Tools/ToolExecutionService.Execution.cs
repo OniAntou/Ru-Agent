@@ -100,7 +100,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
                 var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
-                var terminalApprovalToken = toolId == "bash"
+                var terminalApprovalToken = toolId is "bash" or "terminal.run" or "terminal.shell"
                     ? _approvalTokens.Issue(
                         request.RequestId,
                         request.SessionId,

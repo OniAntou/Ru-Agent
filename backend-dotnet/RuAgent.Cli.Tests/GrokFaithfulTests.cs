@@ -148,6 +148,24 @@ public sealed class GrokFaithfulTests
         }
     }
 
+    [Fact]
+    public void ComposerBox_Builders_Produce_Bordered_Box()
+    {
+        Assert.Equal("╭" + new string('─', 18) + "╮", InteractiveLineReader.BuildTop(20));
+        Assert.Equal("│ ❯ hi" + new string(' ', 12) + " │", InteractiveLineReader.BuildMid(20, "❯ ", "hi"));
+        var bottom = InteractiveLineReader.BuildBottom(20, "m · s");
+        Assert.StartsWith("╰", bottom, StringComparison.Ordinal);
+        Assert.EndsWith("╯", bottom, StringComparison.Ordinal);
+        Assert.Contains("m · s", bottom, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ComposerBox_Width_Is_Clamped()
+    {
+        var width = InteractiveLineReader.ComputeBoxWidth();
+        Assert.InRange(width, 48, 76);
+    }
+
     private static RuAgent.Protocol.Harness.HarnessSafeEventEnvelope GrokEnvelope(
         string eventType,
         string safeSummary,

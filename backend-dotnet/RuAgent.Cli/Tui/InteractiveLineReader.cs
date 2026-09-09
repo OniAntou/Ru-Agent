@@ -26,6 +26,44 @@ public sealed class InteractiveLineReader
 
     public IReadOnlyList<string> History => _history;
 
+    /// <summary>Legend gắn ở cạnh dưới composer box (vd "model · preset").</summary>
+    public string Legend { get; set; } = string.Empty;
+
+    public static string BuildTop(int width)
+    {
+        var w = Math.Clamp(width, 10, 200);
+        return "╭" + new string('─', w - 2) + "╮";
+    }
+
+    public static string BuildMid(int width, string prompt, string buffer)
+    {
+        var w = Math.Clamp(width, 10, 200);
+        var visibleLen = StripAnsi(prompt).Length + (buffer?.Length ?? 0);
+        var pad = Math.Max(0, w - 2 - 2 - visibleLen);
+        return "│ " + prompt + (buffer ?? string.Empty) + new string(' ', pad) + " │";
+    }
+
+    public static string BuildBottom(int width, string legend)
+    {
+        var w = Math.Clamp(width, 10, 200);
+        var label = string.IsNullOrWhiteSpace(legend) ? "" : " " + legend.Trim() + " ";
+        var fill = Math.Max(0, w - 2 - label.Length);
+        return "╰" + new string('─', fill) + label + "╯";
+    }
+
+    public static int ComputeBoxWidth()
+    {
+        try
+        {
+            if (!Console.IsOutputRedirected && Console.WindowWidth > 20)
+            {
+                return Math.Clamp(Console.WindowWidth - 2, 48, 76);
+            }
+        }
+        catch { }
+        return 76;
+    }
+
     public void AddToHistory(string line)
     {
         if (string.IsNullOrWhiteSpace(line)) return;
@@ -122,21 +160,39 @@ public sealed class InteractiveLineReader
         int historyIndex = _history.Count;
         string tempInput = string.Empty;
         int promptLen = StripAnsi(prompt).Length;
+        int boxWidth = ComputeBoxWidth();
+        int midPrefixLen = 2 + promptLen;
+
+        await outWriter.WriteLineAsync(AnsiTheme.Gray(BuildTop(boxWidth))).ConfigureAwait(false);
+        await outWriter.WriteAsync(AnsiTheme.Gray("│ ") + prompt).ConfigureAwait(false);
+        await outWriter.FlushAsync().ConfigureAwait(false);
+        int midTop = 0;
+        try { midTop = Console.CursorTop; } catch { }
+        await outWriter.WriteLineAsync().ConfigureAwait(false);
+        await outWriter.WriteLineAsync(AnsiTheme.Gray(BuildBottom(boxWidth, Legend))).ConfigureAwait(false);
+        await outWriter.FlushAsync().ConfigureAwait(false);
 
         void RenderLine()
         {
             try
             {
-                Console.CursorLeft = 0;
-                outWriter.Write(prompt + buffer.ToString() + "   ");
-                Console.CursorLeft = promptLen + cursor;
+                Console.SetCursorPosition(0, midTop);
+                outWriter.Write(BuildMid(boxWidth, prompt, buffer.ToString()));
+                Console.SetCursorPosition(midPrefixLen + cursor, midTop);
                 outWriter.Flush();
             }
             catch
             {
-                // Fallback if Console.CursorLeft throws
+                // Fallback if cursor positioning throws
             }
         }
+
+        void LeaveBox()
+        {
+            try { Console.SetCursorPosition(0, midTop + 2); } catch { }
+        }
+
+        RenderLine();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -150,6 +206,7 @@ public sealed class InteractiveLineReader
 
             if (key.Key == ConsoleKey.Enter)
             {
+                LeaveBox();
                 await outWriter.WriteLineAsync().ConfigureAwait(false);
                 await outWriter.FlushAsync().ConfigureAwait(false);
                 return buffer.ToString();
@@ -165,6 +222,7 @@ public sealed class InteractiveLineReader
 
             if (key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control))
             {
+                LeaveBox();
                 await outWriter.WriteLineAsync("^C").ConfigureAwait(false);
                 await outWriter.FlushAsync().ConfigureAwait(false);
                 return string.Empty;

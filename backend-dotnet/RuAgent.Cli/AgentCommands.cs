@@ -801,6 +801,7 @@ public sealed class AgentCommands
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
         var lineReader = new Tui.InteractiveLineReader();
         string modelLabel = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
+        lineReader.Legend = $"{modelLabel} · {cmd.Preset}";
         await _out.WriteLineAsync(Tui.AnsiTheme.Gray($"{modelLabel} · {cmd.Preset}  ") + Tui.AnsiTheme.Dim("Tab:complete │ ↑/↓:history │ \\:continue │ Ctrl+c:cancel")).ConfigureAwait(false);
         string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("❯ "));
         string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");

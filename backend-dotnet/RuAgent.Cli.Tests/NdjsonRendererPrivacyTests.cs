@@ -189,6 +189,19 @@ public sealed class NdjsonRendererPrivacyTests
     }
 
     [Fact]
+    public void Ndjson_Emits_Usage_Totals_When_Present()
+    {
+        var env = MakeEnvelope() with { InputTokens = 1000, OutputTokens = 200, TotalTokens = 1200 };
+        var sw = new StringWriter();
+        NdjsonEventRenderer.Render(env, sw);
+        var doc = JsonDocument.Parse(sw.ToString().Trim());
+        Assert.Equal(1000, doc.RootElement.GetProperty("input_tokens").GetInt64());
+        Assert.Equal(200, doc.RootElement.GetProperty("output_tokens").GetInt64());
+        Assert.Equal(1200, doc.RootElement.GetProperty("total_tokens").GetInt64());
+        Assert.False(NdjsonEventRenderer.ContainsForbidden(sw.ToString()));
+    }
+
+    [Fact]
     public void JsonOutput_NeverContainsRawPayloadContent()
     {
         // Ensure that even if envelope had payload_ref, the actual payload bytes are not inline

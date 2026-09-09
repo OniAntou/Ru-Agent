@@ -33,6 +33,9 @@ public static class NdjsonEventRenderer
             status = envelope.Status,
             safe_summary = envelope.SafeSummary,
             payload_ref = envelope.PayloadRef,
+            input_tokens = envelope.InputTokens,
+            output_tokens = envelope.OutputTokens,
+            total_tokens = envelope.TotalTokens,
         };
         var json = JsonSerializer.Serialize(obj);
         // Double-check no forbidden substrings

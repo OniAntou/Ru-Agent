@@ -1,7 +1,6 @@
 using System.Text.Json;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
-using Spectre.Console;
 
 namespace RuAgent.Cli.Tui;
 
@@ -215,29 +214,12 @@ public sealed class TuiSessionRenderer
 
             case "approval.requested":
                 _writer.WriteLine();
-                if (AnsiTheme.IsEnabled)
-                {
-                    var approvalConsole = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(_writer) });
-                    var panelBody = new Markup(
-                        $"{Markup.Escape(summary)}\n" +
-                        $"[dim]Run ID:[/] {Markup.Escape(envelope.RunId)}\n" +
-                        $"[dim]Approval ID:[/] {Markup.Escape(envelope.ApprovalId ?? "")}\n" +
-                        $"[dim]Actions:[/] [green][y] Approve once[/]  [yellow][r] Approve for run[/]  [red][n] Deny[/]");
-                    approvalConsole.Write(new Panel(panelBody)
-                    {
-                        Header = new PanelHeader(" [yellow]⚠ Approval required[/] "),
-                        Border = BoxBorder.Rounded,
-                        BorderStyle = new Style(Color.Yellow),
-                        Expand = true,
-                    });
-                }
-                else
-                {
-                    _writer.WriteLine($"⚠ Approval required: {summary}");
-                    _writer.WriteLine($"  Run ID: {envelope.RunId}");
-                    _writer.WriteLine($"  Approval ID: {envelope.ApprovalId ?? ""}");
-                    _writer.WriteLine("  Actions: [y] Approve once  [r] Approve for run  [n] Deny");
-                }
+                var gutter = AnsiTheme.Gray("┃ ");
+                _writer.WriteLine(gutter + AnsiTheme.Silver(AnsiTheme.Bold(summary)));
+                _writer.WriteLine(gutter + AnsiTheme.Gray($"Run: {envelope.RunId}"));
+                _writer.WriteLine(gutter + AnsiTheme.White(AnsiTheme.Bold("1 (●) ")) + AnsiTheme.Silver("Yes, proceed (once)"));
+                _writer.WriteLine(gutter + AnsiTheme.Gray("2 (○) No, deny"));
+                _writer.WriteLine(AnsiTheme.Dim("  1/2:select │ Ctrl+c:cancel"));
                 break;
 
             case "reconciliation.required":

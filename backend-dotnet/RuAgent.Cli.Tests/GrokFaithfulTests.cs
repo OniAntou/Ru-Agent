@@ -104,6 +104,27 @@ public sealed class GrokFaithfulTests
         }
     }
 
+    [Fact]
+    public void Approval_Renders_Gray_Gutter_Radios_And_Hint_Bar()
+    {
+        AnsiTheme.IsEnabled = false;
+        try
+        {
+            using var sw = new StringWriter();
+            TuiEventRenderer.RenderEnvelope(GrokEnvelope("approval.requested", "Run tests", 12), sw);
+            var output = sw.ToString();
+            Assert.Contains("┃", output, StringComparison.Ordinal);
+            Assert.Contains("(●)", output, StringComparison.Ordinal);
+            Assert.Contains("(○)", output, StringComparison.Ordinal);
+            Assert.Contains("1/2:select", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("╔", output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            AnsiTheme.IsEnabled = false;
+        }
+    }
+
     private static RuAgent.Protocol.Harness.HarnessSafeEventEnvelope GrokEnvelope(
         string eventType,
         string safeSummary,

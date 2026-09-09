@@ -972,12 +972,12 @@ public sealed class AgentCommands
                                 if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
                                 {
                                     var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : resp.RunId;
-                                    await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Yellow("\n  ❯ Approve this action? [y: once / N: deny] (default: n): "))).ConfigureAwait(false);
+                                    await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("\n  ❯ Approve? [1: once / 2: deny] (default: 2): "))).ConfigureAwait(false);
                                     await _out.FlushAsync().ConfigureAwait(false);
                                     var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                                    var normalized = string.IsNullOrWhiteSpace(answer) ? "n" : answer.Trim().ToLowerInvariant();
+                                    var normalized = string.IsNullOrWhiteSpace(answer) ? "2" : answer.Trim().ToLowerInvariant();
 
-                                    if (normalized is "y" or "yes" or "once")
+                                    if (normalized is "1" or "once" or "yes" or "y")
                                     {
                                         await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, "once", cancellationToken).ConfigureAwait(false);
                                         await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Approved (scope: once). Resuming execution...")).ConfigureAwait(false);

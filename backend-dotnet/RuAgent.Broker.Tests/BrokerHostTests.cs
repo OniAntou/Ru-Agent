@@ -83,7 +83,7 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, ids);
+        Assert.Equal(new[] { "read" }, ids);
         Assert.Empty(hello.Payload["skills"]!.AsArray());
     }
 
@@ -113,9 +113,10 @@ public sealed class BrokerHostTests
 
         var tools = hello.Payload["tools"]!.AsArray();
         var ids = tools.Select(node => node!["tool_id"]!.GetValue<string>()).ToArray();
-        Assert.Contains("files.write", ids);
-        Assert.Contains("terminal.run", ids);
-        Assert.Contains("terminal.shell", ids);
+        Assert.Contains("write", ids);
+        Assert.Contains("edit", ids);
+        Assert.Contains("bash", ids);
+        Assert.Contains("read", ids);
         Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
         Assert.DoesNotContain("app.open", ids);
@@ -151,8 +152,7 @@ public sealed class BrokerHostTests
         var ids = hello.Payload["tools"]!.AsArray()
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .ToArray();
-        Assert.Contains("terminal.run", ids);
-        Assert.Contains("terminal.shell", ids);
+        Assert.Contains("bash", ids);
     }
 
     [Fact]
@@ -300,7 +300,7 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("workspace.read"),
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("workspace.read", "system.read"),
                 }), cancellation.Token);
         var opened = await ReceiveAsync(socket, cancellation.Token);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
@@ -316,9 +316,9 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["tool_id"] = "files.list",
+                    ["tool_id"] = "read",
                     ["tool_version"] = "1.0.0",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "src" },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "src" },
                 }), cancellation.Token);
         var result = await ReceiveAsync(socket, cancellation.Token);
 
@@ -367,10 +367,11 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["tool_id"] = "terminal.run",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["arguments"] = new System.Text.Json.Nodes.JsonObject
                     {
+                        ["mode"] = "run",
                         ["executable"] = "dotnet",
                         ["arguments"] = new System.Text.Json.Nodes.JsonArray("--version"),
                         ["working_directory"] = ".",
@@ -445,10 +446,11 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["tool_id"] = "terminal.run",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["arguments"] = new System.Text.Json.Nodes.JsonObject
                     {
+                        ["mode"] = "run",
                         ["executable"] = "python",
                         ["arguments"] = new System.Text.Json.Nodes.JsonArray("-c", "raise SystemExit(7)"),
                         ["working_directory"] = ".",
@@ -523,10 +525,11 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["tool_id"] = "terminal.shell",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["arguments"] = new System.Text.Json.Nodes.JsonObject
                     {
+                        ["mode"] = "shell",
                         ["working_directory"] = ".",
                         ["script"] = "Get-Date",
                     },
@@ -660,7 +663,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell" }, caps);
+        Assert.Equal(new[] { "bash", "edit", "read", "write" }, caps);
     }
 
     [Fact]
@@ -697,14 +700,7 @@ public sealed class BrokerHostTests
         var opened = await ReceiveAsync(socket, cts.Token);
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(
-            new[]
-            {
-                "files.delete", "files.edit", "files.glob", "files.list",
-                "files.read", "files.restore", "files.search", "files.write",
-                "help.docs", "terminal.run", "terminal.shell", "web.fetch", "web.search",
-            },
-            caps);
+        Assert.Equal(new[] { "bash", "edit", "read", "write" }, caps);
     }
 
     [Fact]
@@ -725,7 +721,7 @@ public sealed class BrokerHostTests
                     "rule_allow_reads",
                     "project",
                     "allow",
-                    new BrokerPolicyMatcherWire("files.read", null, null, null, null, null, null, null),
+                    new BrokerPolicyMatcherWire("read", null, null, null, null, null, null, null),
                     1,
                     null)));
         payload["snapshot_hash"] = new string('e', 64);
@@ -743,14 +739,7 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(
-            new[]
-            {
-                "files.delete", "files.edit", "files.glob", "files.list",
-                "files.read", "files.restore", "files.search", "files.write",
-                "help.docs", "terminal.run", "terminal.shell",
-            },
-            ids);
+        Assert.Equal(new[] { "bash", "edit", "read", "write" }, ids);
     }
 
     [Fact]
@@ -778,9 +767,9 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = "run_flow111111111111111111111111111",
-                    ["tool_id"] = "files.read",
+                    ["tool_id"] = "read",
                     ["tool_version"] = "1.0.0",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "read", ["path"] = "probe.txt" },
                 }),
             cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
@@ -796,10 +785,10 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = "run_flow111111111111111111111111111",
-                    ["tool_id"] = "files.read",
+                    ["tool_id"] = "read",
                     ["tool_version"] = "1.0.0",
                     ["authorization_token"] = authorizationToken,
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "read", ["path"] = "probe.txt" },
                 }),
             cts.Token);
         var result = await ReceiveAsync(socket, cts.Token);
@@ -1441,19 +1430,30 @@ public sealed class BrokerHostTests
 
         foreach (var toolId in new[] { "web.search", "totally.unknown" })
         {
+            var (piId, piArgs) = toolId == "web.search"
+                ? ("read", new JsonObject { ["op"] = "web_search", ["path"] = "." })
+                : (toolId, new JsonObject { ["path"] = "." });
             await SendAsync(
                 socket,
                 new AgentEnvelope(2, "evaluate-" + toolId, AgentMessageTypes.ToolEvaluate, "session-unadv", null, 10_000,
                     new System.Text.Json.Nodes.JsonObject
                     {
                         ["run_id"] = "run_unad111111111111111111111111111",
-                        ["tool_id"] = toolId,
-                        ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                        ["tool_id"] = piId,
+                        ["arguments"] = piArgs,
                     }),
                 cts.Token);
             var reply = await ReceiveAsync(socket, cts.Token);
-            Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
-            Assert.Equal("phase_not_available", reply.Payload["error_code"]!.GetValue<string>());
+            if (toolId == "web.search")
+            {
+                Assert.Equal("ask", reply.Payload["decision"]!.GetValue<string>());
+                Assert.Equal("web_approval_required", reply.Payload["reason_code"]!.GetValue<string>());
+            }
+            else
+            {
+                Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
+                Assert.Equal("phase_not_available", reply.Payload["error_code"]!.GetValue<string>());
+            }
         }
     }
 
@@ -1481,8 +1481,8 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = runId,
-                    ["tool_id"] = "files.list",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                    ["tool_id"] = "read",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "." },
                 }),
             cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
@@ -1508,10 +1508,10 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = runId,
-                    ["tool_id"] = "files.list",
+                    ["tool_id"] = "read",
                     ["tool_version"] = "1.0.0",
                     ["authorization_token"] = authorizationToken,
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "." },
                 }),
             cts.Token);
         var stale = await ReceiveAsync(socket, cts.Token);
@@ -1552,8 +1552,8 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = runId,
-                    ["tool_id"] = "files.list",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                    ["tool_id"] = "read",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "." },
                 }),
             cts.Token);
         var rejected = await ReceiveAsync(socket, cts.Token);
@@ -1682,20 +1682,52 @@ public sealed class BrokerHostTests
         string sessionId,
         string runId,
         string toolId,
-        JsonObject arguments) => new(
-        2,
-        requestId,
-        AgentMessageTypes.ToolEvaluate,
-        sessionId,
-        null,
-        10_000,
-        new JsonObject
+        JsonObject arguments)
+    {
+        var (piId, piArgs) = MapToPiArgs(toolId, arguments);
+        return new AgentEnvelope(
+            2,
+            requestId,
+            AgentMessageTypes.ToolEvaluate,
+            sessionId,
+            null,
+            10_000,
+            new JsonObject
+            {
+                ["run_id"] = runId,
+                ["tool_id"] = piId,
+                ["tool_version"] = "1.0.0",
+                ["arguments"] = piArgs,
+            });
+    }
+
+    private static (string PiId, JsonObject PiArgs) MapToPiArgs(string toolId, JsonObject arguments)
+    {
+        var mapped = (JsonObject)arguments.DeepClone();
+        string? op = null;
+        string? mode = null;
+        string piId = toolId;
+        switch (toolId)
         {
-            ["run_id"] = runId,
-            ["tool_id"] = toolId,
-            ["tool_version"] = "1.0.0",
-            ["arguments"] = arguments,
-        });
+            case "files.list": piId = "read"; op = "list"; break;
+            case "files.glob": piId = "read"; op = "glob"; break;
+            case "files.search": piId = "read"; op = "search"; break;
+            case "files.read": piId = "read"; op = "read"; break;
+            case "files.write": piId = "write"; op = "write"; break;
+            case "files.edit": piId = "edit"; break;
+            case "files.delete": piId = "write"; op = "delete"; break;
+            case "files.restore": piId = "write"; op = "restore"; break;
+            case "terminal.run": piId = "bash"; mode = "run"; break;
+            case "terminal.shell": piId = "bash"; mode = "shell"; break;
+            case "web.search": piId = "read"; op = "web_search"; break;
+            case "web.fetch": piId = "read"; op = "web_fetch"; break;
+            case "help.docs": piId = "read"; op = "help"; break;
+        }
+
+        if (op is not null) mapped["op"] = op;
+        if (mode is not null) mapped["mode"] = mode;
+        return (piId, mapped);
+    }
 
     private static async Task SendAsync(ClientWebSocket socket, AgentEnvelope envelope, CancellationToken cancellationToken)
     {

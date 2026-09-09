@@ -19,10 +19,9 @@ advertised Agent tools.
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
 >   `/agent/v1/*` (20 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
->   This checkpoint exposes Broker-backed model tools (`files.list`,
->   `files.glob`, `files.search`, `files.read` offset/limit, `files.write`,
->   `files.edit`, `files.delete`, one-time
->   `files.restore`) through a durable Core (state machines incl.
+>   This checkpoint exposes Broker-backed model tools (`read` with
+>   `op=list|glob|search|read` plus offset/limit, `write` with `op=write`,
+>   `edit`, one-time `write` with `op=restore`) through a durable Core (state machines incl.
 >   `tool.execution_requested`, SQLite WAL `agent_harness.db`, AES-GCM
 >   payloads, idempotent conversation outbox, workspace trust,
 >   session permissions with monotonic version, encrypted `PolicySnapshot`
@@ -55,7 +54,7 @@ advertised Agent tools.
 >   Protocol parser and do not become model history. Declarative Skills are
 >   session-granted and execute through the Broker's existing scope/approval
 >   boundary.
->   Managed startup enables `web.search` and `web.fetch` as
+>   Managed startup enables `read` with `op=web_search` and `op=web_fetch` as
 >   approval-gated capabilities backed by the fixed DuckDuckGo HTML endpoint;
 >   results are bounded, sanitized, and explicitly untrusted.
 >   Workspace coordination is now opt-in per workspace through the authenticated
@@ -72,33 +71,36 @@ advertised Agent tools.
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
 >   (`CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, `PolicyContext`/
 >   `PolicySnapshotEvaluator`, `PendingApprovalStore`/`ApprovalTokenService`,
->   `FileList`/`Glob`/`Search`/`Read`/`Write`/`Edit`/`Delete`/`Restore`
->   adapters, `FileHashService`/`AtomicFileReplacement`/`FileMutationJournal`),
+>   `FileList`/`Glob`/`Search`/`Read`/`Write`/`Edit`/`Delete`/`Restore` file
+>   adapters behind the `read`/`write`/`edit` ops,
+>   `FileHashService`/`AtomicFileReplacement`/`FileMutationJournal`),
 >   and `RuAgent.Cli` (`PolicyJsonCodec` versioned, exact scope preview) are
 >   covered in `docs/architecture.md`, `CONTEXT.md`,
 >   `backend-dotnet/README.md`, and `backend-dotnet/RuAgent.Cli/README.md`.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 13 model-visible definitions: eleven
-always-available core bindings (including offline `help.docs`) plus
-runtime-enabled read-only `web.search`/`web.fetch`. Managed
-startup uses the fixed DuckDuckGo endpoint
+The immutable Protocol catalog contains 4 model-visible definitions (`read`,
+`write`, `edit`, `bash`). `read` carries an `op` discriminator (`list`, `glob`,
+`search`, `read`, `help`, `web_search`, `web_fetch`); `write` carries `op`
+(`write`, `delete`, `restore`); `bash` carries `mode` (`run`, `shell`). The
+`web_search`/`web_fetch` ops are the runtime-enabled read-only web surface.
+Managed startup uses the fixed DuckDuckGo endpoint
 `https://html.duckduckgo.com/html/`. The `network_intent` argument on a
-terminal request is descriptive input metadata, not a security boundary.
+bash request is descriptive input metadata, not a security boundary.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `files.list`, `files.glob`, `files.search`, `files.read` | always advertised | automatic inside the trusted or session-granted root |
-| `files.write`, `files.edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
-| `files.delete`, `files.restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
-| `terminal.run`, `terminal.shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
-| `web.search`, `web.fetch` | advertised when managed Web is enabled | approval-gated, bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
-| `help.docs` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
+| `read` with `op=list`, `op=glob`, `op=search`, `op=read` | always advertised | automatic inside the trusted or session-granted root |
+| `write` with `op=write`, `edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
+| `write` with `op=delete`, `op=restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
+| `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
+| `read` with `op=web_search`, `op=web_fetch` | advertised when managed Web is enabled | approval-gated, bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
+| `read` with `op=help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
-### Session folder grants and terminal approval
+### Session folder grants and bash approval
 
 Ordinary tools run automatically in the trusted root. An explicit absolute
 path outside that root asks once for `external_directory_required`; approval
@@ -108,7 +110,7 @@ not shared with another or forked session and is lost when the app restarts.
 Continuing the same live session reuses it. Relative traversal cannot escape a
 trusted root. When the user supplies an absolute path inside a granted folder,
 the model must preserve that exact path instead of rewriting it relative to the
-trusted workspace. When executing `terminal.run` or `terminal.shell` with a
+trusted workspace. When executing `bash` with `mode=run` or `mode=shell` with a
 working directory inside a session-granted directory, the Broker selects an
 effective root toolset (`RootToolSet`) rooted at that granted directory.
 Confinement remains enabled against that root toolset so child commands cannot
@@ -117,10 +119,10 @@ external-root terminal adapters share the Broker's approval-token authority for
 unknown or destructive commands. The implementation never disables confinement
 globally.
 
-Only `terminal.run` commands that perform destructive deletion, external mutation
+Only `bash` commands with `mode=run` that perform destructive deletion, external mutation
 (network egress, package installs, push/fetch/pull), run longer than the
 standard timeout window, or launch an unknown executable ask for a one-time
-terminal approval; every `terminal.shell` script asks. Recognized read-only,
+terminal approval; every `bash` script with `mode=shell` asks. Recognized read-only,
 test,
 build, lint, and local Git run commands are not dangerous solely by command name
 (see `TerminalAutoPolicy`, consumed by the evaluator fallback and enforced by
@@ -158,13 +160,14 @@ arguments terminates the run with `repeated_tool_call` before a second Broker
 dispatch. This applies to read-only calls as well as mutations and terminal
 commands, preventing model loops from duplicating side effects.
 
-Use `help.docs` when the user asks how Ru's own features, architecture,
+Use `read` with `op=help` when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
 bounded excerpts from the five current bundled documents (`ru-overview`,
 `architecture`, `runtime`, `agent-tools`, and `provider-catalog`). Use runtime
 context or an advertised terminal tool for live machine, process, device, and
 workspace state. There is no second docs alias or fallback tool; the only
-model-visible bundled-help contract is `help.docs@1.0.0`.
+model-visible bundled-help contract is `read` with `op=help` on tool
+`1.0.0`.
 
 ## One execution path
 
@@ -238,8 +241,8 @@ into desktop side effects; structured selection is the only action channel.
 ## File and terminal boundaries
 
 File and terminal bindings are advertised by the Worker v2 settings as the
-matrix above shows. On the headless Agent v2 path, `terminal.run` and
-`terminal.shell` execute as the current Windows user and can run arbitrary host
+matrix above shows. On the headless Agent v2 path, `bash` with `mode=run` and
+`mode=shell` execute as the current Windows user and can run arbitrary host
 code or open sockets; analyzer/rule/approval decisions remain authoritative.
 The managed Git commit workflow is shipped inside terminal execution with
 temporary-index isolation, path attribution rollback, and refusal when the
@@ -252,12 +255,12 @@ is `timed_out`. File tools run automatically in the trusted root or a folder
 granted to the same live session; protected paths and hard invariants stay
 gated. Every mutation binds the preimage hash captured by Broker preparation and
 fails with `workspace_changed` on mismatch without writing; the hash is not a
-model argument. `files.delete` keeps its bounded, host-configurable recovery cap
+model argument. `write` with `op=delete` keeps its bounded, host-configurable recovery cap
 (default and hard maximum 4 MiB) and returns an opaque `recovery_id`.
-`files.edit` accepts LF-authored markers in CRLF files while preserving the
-file's newline style. `files.search` uses bounded concurrent reads, propagates
+`edit` accepts LF-authored markers in CRLF files while preserving the
+file's newline style. `read` with `op=search` uses bounded concurrent reads, propagates
 cancellation, and sorts results by ordinal path/line before applying its result
-cap. Terminal children receive redirected stdin that is closed immediately;
+cap. Bash children receive redirected stdin that is closed immediately;
 TTY/editor-style requests remain rejected by canonical command policy.
 
 ### Markdown skill guidance
@@ -281,7 +284,7 @@ containing a case-insensitive `SKILL.md` into one of the supported roots:
 ---
 name: pdf-analyzer
 description: Analyze and summarize PDF files
-allowed-tools: files.read, terminal.run
+allowed-tools: read, bash
 ---
 
 # PDF Analyzer
@@ -333,9 +336,9 @@ adapter uses the same parser and renders only bounded result metadata.
 
 For the managed Agent path, web tools are enabled with the fixed public
 DuckDuckGo HTML endpoint `https://html.duckduckgo.com/html/` and always
-require approval (`RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL=true`). `web.search` is
-advertised with `network.search`; `web.fetch` is advertised with
-`network.fetch`; the normal Harness policy remains authoritative. Automatic
+require approval (`RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL=true`). `read` with
+`op=web_search` is advertised with `network.search`; `read` with `op=web_fetch`
+is advertised with `network.fetch`; the normal Harness policy remains authoritative. Automatic
 redirects are disabled or validated hop-by-hop; private, loopback, link-local,
 multicast, reserved, and test-net targets are rejected. Responses enforce a
 configured byte cap, strict UTF-8/content-type checks, sanitizer limits, and
@@ -462,7 +465,7 @@ invalidates ephemeral decision and causes safe re-evaluation, never adapter
 invocation. File tools follow the same ordering with `tool.execution_requested`
 persisted before dispatch and `FileRecoveryStore`/`RunChangeSetStore` for
 recoverable deletes. The deterministic Broker approval probe uses
-`files.write` (and file delete/restore) only inside a fresh temporary
+`write` with `op=write` (and file delete/restore ops) only inside a fresh temporary
 workspace, approves once, expects the replay to be denied as `approval_stale`,
 closes the private session, and removes the workspace. Production WinUI
 approval-card behavior remains covered independently by its UI contract tests.

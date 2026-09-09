@@ -304,9 +304,75 @@ public sealed partial class ToolExecutionService : IToolInvoker
 
     private ToolPolicyDecision EvaluateWithOpScope(string sessionId, ToolManifest manifest, JsonObject arguments)
     {
-        return _policy.Evaluate(
-            new PolicyGrant(sessionId, _session.Scopes, _session.Descriptor.ExpiresAt),
-            manifest);
+        var grant = new PolicyGrant(sessionId, _session.Scopes, _session.Descriptor.ExpiresAt);
+        var decision = _policy.Evaluate(grant, manifest);
+        if (!decision.Allowed)
+        {
+            return decision;
+        }
+
+        if (manifest.Id is "read" or "write" or "bash")
+        {
+            return EvaluateOpGrant(grant, manifest, arguments) ?? decision;
+        }
+
+        return decision;
+    }
+
+    private ToolPolicyDecision? EvaluateOpGrant(PolicyGrant grant, ToolManifest manifest, JsonObject arguments)
+    {
+        var op = ReadOptionalString(arguments, "op");
+        if (manifest.Id == "read")
+        {
+            if (op is "web_search" or "web_fetch")
+            {
+                var scope = op == "web_search" ? ToolScope.WebSearch : ToolScope.WebFetch;
+                return grant.Scopes.Contains(scope)
+                    ? new ToolPolicyDecision(true, true, "allowed")
+                    : new ToolPolicyDecision(false, false, "scope_missing");
+            }
+
+            if (op is "help")
+            {
+                return new ToolPolicyDecision(true, false, "allowed");
+            }
+
+            if (op is "list" or "glob" or "search" or "read")
+            {
+                var manifestScopes = new HashSet<string>(manifest.Scopes, StringComparer.Ordinal);
+                manifestScopes.Remove(ToolScope.WebSearch);
+                manifestScopes.Remove(ToolScope.WebFetch);
+                if (!manifestScopes.All(grant.Scopes.Contains))
+                {
+                    return new ToolPolicyDecision(false, false, "scope_missing");
+                }
+
+                return new ToolPolicyDecision(true, false, "allowed");
+            }
+
+            return null;
+        }
+
+        if (manifest.Id == "write")
+        {
+            if (op is "write" or "delete" or "restore")
+            {
+                return grant.Scopes.Contains(ToolScope.WorkspaceWrite)
+                    ? new ToolPolicyDecision(true, true, "allowed")
+                    : new ToolPolicyDecision(false, false, "scope_missing");
+            }
+
+            return null;
+        }
+
+        if (manifest.Id == "bash")
+        {
+            return grant.Scopes.Contains(ToolScope.TerminalExecute)
+                ? new ToolPolicyDecision(true, true, "allowed")
+                : new ToolPolicyDecision(false, false, "scope_missing");
+        }
+
+        return null;
     }
 
     private async Task<ToolResult> ExecuteBindingAsync(

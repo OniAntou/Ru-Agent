@@ -10,59 +10,61 @@ public sealed class PendingApprovalPreviewTests
     private const int MaxPreviewLength = ApprovalPreviewFields.MaxLength;
 
     [Fact]
-    public void Files_write_preview_is_the_first_512_chars_of_content()
+    public void Write_preview_is_the_first_512_chars_of_content()
     {
         var content = new string('a', 700);
         var args = new JsonObject
         {
+            ["op"] = "write",
             ["path"] = "notes/demo.txt",
             ["content"] = content,
         };
 
-        var preview = ToolExecutionService.BuildPreview("files.write", args);
+        var preview = ToolExecutionService.BuildPreview("write", args);
 
         Assert.Equal(content[..MaxPreviewLength], preview);
     }
 
     [Fact]
-    public void Terminal_shell_preview_is_the_script_head()
+    public void Bash_shell_preview_is_the_script_head()
     {
         var script = "Get-ChildItem -Recurse " + new string('x', 600);
-        var args = new JsonObject { ["script"] = script };
+        var args = new JsonObject { ["mode"] = "shell", ["script"] = script };
 
-        var preview = ToolExecutionService.BuildPreview("terminal.shell", args);
+        var preview = ToolExecutionService.BuildPreview("bash", args);
 
         Assert.Equal(script[..MaxPreviewLength], preview);
     }
 
     [Fact]
-    public void Terminal_run_preview_is_the_bounded_command_head()
+    public void Bash_run_preview_is_the_bounded_command_head()
     {
         var args = new JsonObject
         {
+            ["mode"] = "run",
             ["executable"] = "git",
             ["arguments"] = new JsonArray("commit", "-m", new string('m', 800)),
         };
 
-        var preview = ToolExecutionService.BuildPreview("terminal.run", args);
+        var preview = ToolExecutionService.BuildPreview("bash", args);
 
         Assert.True(preview.Length <= MaxPreviewLength);
         Assert.StartsWith("git commit", preview, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Terminal_run_preview_without_an_executable_is_empty()
+    public void Bash_run_preview_without_an_executable_is_empty()
     {
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("terminal.run", new JsonObject { ["arguments"] = new JsonArray("x") }));
+            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "run", ["arguments"] = new JsonArray("x") }));
         Assert.Equal(
             "git",
-            ToolExecutionService.BuildPreview("terminal.run", new JsonObject { ["executable"] = "git" }));
+            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "run", ["executable"] = "git" }));
     }
 
     [Fact]
-    public void Files_edit_preview_shows_inline_markers_centered_on_first_match()
+    public void Edit_preview_shows_inline_markers_centered_on_first_match()
     {
         var before = new string('b', 300);
         var after = new string('a', 300);
@@ -73,7 +75,7 @@ public sealed class PendingApprovalPreviewTests
             ["new_string"] = "REPLACED",
         };
 
-        var preview = ToolExecutionService.BuildPreview("files.edit", args, before + "TARGET" + after);
+        var preview = ToolExecutionService.BuildPreview("edit", args, before + "TARGET" + after);
 
         Assert.True(preview.Length <= MaxPreviewLength);
         Assert.Contains("[-TARGET-]", preview, StringComparison.Ordinal);
@@ -85,7 +87,7 @@ public sealed class PendingApprovalPreviewTests
     }
 
     [Fact]
-    public void Files_edit_excerpt_is_hard_capped_at_512_chars()
+    public void Edit_excerpt_is_hard_capped_at_512_chars()
     {
         var args = new JsonObject
         {
@@ -95,14 +97,14 @@ public sealed class PendingApprovalPreviewTests
         };
         var fileText = new string('x', 10_000) + "needle" + new string('y', 10_000);
 
-        var preview = ToolExecutionService.BuildPreview("files.edit", args, fileText);
+        var preview = ToolExecutionService.BuildPreview("edit", args, fileText);
 
         Assert.Equal(MaxPreviewLength, preview.Length);
         Assert.Contains("[-needle-]", preview, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Files_edit_falls_back_to_old_and_new_heads_without_a_readable_match()
+    public void Edit_falls_back_to_old_and_new_heads_without_a_readable_match()
     {
         var args = new JsonObject
         {
@@ -111,8 +113,8 @@ public sealed class PendingApprovalPreviewTests
             ["new_string"] = new string('n', 400),
         };
 
-        var missingFile = ToolExecutionService.BuildPreview("files.edit", args, fileText: null);
-        var noMatch = ToolExecutionService.BuildPreview("files.edit", args, "unrelated text");
+        var missingFile = ToolExecutionService.BuildPreview("edit", args, fileText: null);
+        var noMatch = ToolExecutionService.BuildPreview("edit", args, "unrelated text");
 
         foreach (var preview in new[] { missingFile, noMatch })
         {
@@ -138,13 +140,13 @@ public sealed class PendingApprovalPreviewTests
     {
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("files.write", new JsonObject { ["path"] = "a.txt" }));
+            ToolExecutionService.BuildPreview("write", new JsonObject { ["op"] = "write", ["path"] = "a.txt" }));
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("terminal.shell", new JsonObject { ["shell"] = "powershell" }));
+            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "shell" }));
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("files.edit", new JsonObject()));
+            ToolExecutionService.BuildPreview("edit", new JsonObject()));
     }
 
     [Fact]
@@ -152,10 +154,10 @@ public sealed class PendingApprovalPreviewTests
     {
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("files.write", new JsonObject { ["content"] = 123 }));
+            ToolExecutionService.BuildPreview("write", new JsonObject { ["op"] = "write", ["content"] = 123 }));
         Assert.Equal(
             string.Empty,
-            ToolExecutionService.BuildPreview("terminal.shell", new JsonObject { ["script"] = true }));
+            ToolExecutionService.BuildPreview("bash", new JsonObject { ["mode"] = "shell", ["script"] = true }));
     }
 
     [Fact]

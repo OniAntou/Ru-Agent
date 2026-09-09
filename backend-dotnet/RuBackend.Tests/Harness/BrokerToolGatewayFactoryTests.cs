@@ -86,8 +86,9 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         try
         {
             var decision = await gateway.EvaluateAsync(
-                Proposal(runId, "files.read", new System.Text.Json.Nodes.JsonObject
+                Proposal(runId, "read", new System.Text.Json.Nodes.JsonObject
                 {
+                    ["op"] = "read",
                     ["path"] = "notes/a.txt",
                 }),
                 CancellationToken.None);
@@ -117,10 +118,11 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         await File.WriteAllTextAsync(externalPath, "factory-external");
         var readArgs = new System.Text.Json.Nodes.JsonObject
         {
+            ["op"] = "read",
             ["path"] = externalPath,
         };
         var decision = await gateway.EvaluateAsync(
-            Proposal(runId, "files.read", readArgs),
+            Proposal(runId, "read", readArgs),
             CancellationToken.None);
         Assert.Equal(PolicyDecision.Ask, decision.Decision);
         Assert.Equal("external_directory_required", decision.SafeCode);
@@ -134,7 +136,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         Assert.True(authorized);
         Assert.False(string.IsNullOrWhiteSpace(token));
 
-        var resumed = Proposal(runId, "files.read", readArgs);
+        var resumed = Proposal(runId, "read", readArgs);
         var resumedDecision = await gateway.EvaluateAsync(resumed, CancellationToken.None);
         Assert.Equal(PolicyDecision.Allow, resumedDecision.Decision);
         var prepared = await gateway.PrepareAsync(
@@ -178,7 +180,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         await File.WriteAllTextAsync(editPath, "factory-edit-pre");
         try
         {
-            var editProposal = Proposal(runId, "files.edit", new System.Text.Json.Nodes.JsonObject
+            var editProposal = Proposal(runId, "edit", new System.Text.Json.Nodes.JsonObject
             {
                 ["path"] = editPath,
                 ["old_string"] = "factory-edit-pre",
@@ -188,8 +190,9 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             Assert.Equal(PolicyDecision.Ask, editDecision.Decision);
 
             var notePath = Path.Combine(externalDir, "note.md");
-            var writeProposal = Proposal(runId, "files.write", new System.Text.Json.Nodes.JsonObject
+            var writeProposal = Proposal(runId, "write", new System.Text.Json.Nodes.JsonObject
             {
+                ["op"] = "write",
                 ["path"] = notePath,
                 ["content"] = "external-note-content",
                 ["overwrite"] = false,
@@ -204,7 +207,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
                 CancellationToken.None);
             Assert.True(editAuthorized.Authorized);
 
-            var editResumed = Proposal(runId, "files.edit", new System.Text.Json.Nodes.JsonObject
+            var editResumed = Proposal(runId, "edit", new System.Text.Json.Nodes.JsonObject
             {
                 ["path"] = editPath,
                 ["old_string"] = "factory-edit-pre",
@@ -232,8 +235,9 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
                 CancellationToken.None);
             Assert.True(writeAuthorized.Authorized);
 
-            var writeResumed = Proposal(runId, "files.write", new System.Text.Json.Nodes.JsonObject
+            var writeResumed = Proposal(runId, "write", new System.Text.Json.Nodes.JsonObject
             {
+                ["op"] = "write",
                 ["path"] = notePath,
                 ["content"] = "external-note-content",
                 ["overwrite"] = false,

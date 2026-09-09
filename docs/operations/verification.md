@@ -1,13 +1,38 @@
 # Verification
 
-> **Current as of 2026-09-09.** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-09 (Pi Phase 1 WIP).** Older dated entries below are history; only this table is current.
 
 | Surface | Current status |
 | --- | --- |
 | Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | 13 test projects via `scripts/test_dotnet.ps1 -Configuration Debug`: 2,655 passed, 0 failed (Broker 559, Cli 133, Client 50, Connectors 3, Harness.Core 275, Harness.Persistence 103, Hosting 26, Protocol 22, Adapters 217, Runtime.Core 6, Worker 64, Backend 786, GUI 411) |
+| .NET tests | Pi Phase 1 in progress: Protocol 22/22, Broker 546/556 (10 pre-existing HEAD failures confirmed via stash isolate: 2 v1 terminal approval + 5 V2 terminal/shell wiring + 3 skill-connection sequencing), Harness.Core 271/275 (4 pre-existing HEAD failures: golden parity + activity lifecycle), RuBackend conformance 23/23 + factory 6/6 + web executor 3/3 |
 | Python suite | 306 passed, 0 failed; `ruff check src tests scripts tools` passed; `mypy src` passed |
 | `git diff --check` | passed |
+
+## Pi Phase 1: 13 tools → read/write/edit/bash (2026-09-09, WIP)
+
+- Protocol catalog is 4 definitions (`read` with `op=list|glob|search|read|help|web_search|web_fetch`,
+  `write` with `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`).
+  `AgentModelToolContractCatalog.WebToolIds={read}`, `WebOps={web_search,web_fetch}`.
+- Broker core migrated: `ToolCatalog` (4 manifests; `read` carries WorkspaceRead+SystemRead only),
+  `PolicyContextFactory` (op/mode routing, target-free help/web ops), `PolicySnapshotEvaluator.IsWebOp`
+  (`read`+`web_*`), `PolicyRuleMatcher.LegacyToolIdMatches` (old IDs in snapshots still match),
+  `BrokerSession.WorkspaceScopesFor` (4 tools), `AgentActivityProjector` (op-based kinds),
+  `TerminalAdapter` approval binding (`bash`), consolidated `ExecuteReadOp/WriteOp/Bash` executors.
+- V1 execution path is op-scoped (`EvaluateWithOpScope`): file ops check WorkspaceRead/SystemRead,
+  web ops additionally require their Web scope, `help` allows with file scopes, `write`/`bash`
+  require WorkspaceWrite/TerminalExecute. Whole-manifest scope gate stays as the baseline.
+- `RuBackend` gateway migrated: `BrokerToolGateway.AccessKindForTool` (op-aware),
+  `AgentWebToolExecutor` (`read`+`op`), `AgentV1Service.Approvals.BuildApprovalBindingAsync`
+  (Pi op/mode + legacy fallback), `AgentToolRuntimeProjection` (4 tools).
+  `docs/operations/agent-tools.md` rewritten for the 4-tool matrix (embedded help docs rebuilt).
+- Conformance (`ToolGatewayConformance`) migrated to Pi IDs: 23/23 pass through `BrokerToolGateway`.
+- Pre-existing failures (confirmed identical on clean HEAD via `git stash` isolate, not caused by
+  this phase): 2 v1 terminal approval (`Approved_full_terminal_run`, `Nonzero_terminal_exit`),
+  5 V2 terminal/shell wiring (`tool.result` vs `tool_result` naming + shell approval execute),
+  3 skill-connection sequencing (session_open/tool_result ordering), 4 Core
+  (golden parity hash + activity lifecycle), ~9 RuBackend prompt/worker projection (13→4 count).
+  RuBackend approval/headless slowness (30s+ per terminal test) is also pre-existing.
 
 ## P0/P1 review remediation (2026-09-09)
 

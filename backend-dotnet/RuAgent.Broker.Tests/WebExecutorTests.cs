@@ -27,6 +27,7 @@ public sealed class WebExecutorTests
             webOptions: new WebOptions(true, new Uri("https://93.184.216.34/search")),
             webHttpClient: http);
 
+        // The no-grant deny path is covered by Service_denies_web_scope_before_http_adapter.
         var search = await service.ExecuteAsync(Envelope(
             "search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }), CancellationToken.None);
         var fetch = await service.ExecuteAsync(Envelope(
@@ -64,7 +65,7 @@ public sealed class WebExecutorTests
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
             "web-session",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch]),
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
             new HashSet<string>());
         using var http = new HttpClient(new JsonHandler());
         var service = new ToolExecutionService(

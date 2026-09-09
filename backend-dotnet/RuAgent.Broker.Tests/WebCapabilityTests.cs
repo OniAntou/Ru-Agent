@@ -16,9 +16,10 @@ public sealed class WebCapabilityTests
 
         Assert.False(new WebOptions().Enabled);
         var read = catalog.Registry.Get("read", "1.0.0").Manifest;
+        Assert.Contains(ToolScope.WorkspaceRead, read.Scopes);
         Assert.Contains(ToolScope.SystemRead, read.Scopes);
-        Assert.Contains(ToolScope.WebSearch, read.Scopes);
-        Assert.Contains(ToolScope.WebFetch, read.Scopes);
+        Assert.DoesNotContain(ToolScope.WebSearch, read.Scopes);
+        Assert.DoesNotContain(ToolScope.WebFetch, read.Scopes);
         ToolSchemaValidator.Validate(read.InputSchema, new JsonObject { ["op"] = "web_search", ["query"] = "hello" });
         ToolSchemaValidator.Validate(read.InputSchema, new JsonObject { ["op"] = "web_fetch", ["url"] = "https://example.com" });
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(read.InputSchema, new JsonObject { ["query"] = "hello" }));
@@ -27,6 +28,13 @@ public sealed class WebCapabilityTests
         var agentScopes = CapabilityProfile.Agent.Scopes();
         Assert.Contains(ToolScope.WebSearch, agentScopes);
         Assert.Contains(ToolScope.WebFetch, agentScopes);
+
+        // The Agent profile carries every scope, so the v1 whole-manifest gate
+        // allows unconditionally. Op routing still applies per call: file ops
+        // need WorkspaceRead, web ops additionally need their Web scope.
+        var v1 = new ToolPolicyEngine().Evaluate(
+            new PolicyGrant("session-web", agentScopes, DateTimeOffset.UtcNow.AddMinutes(5)), read);
+        Assert.True(v1.Allowed);
     }
 
     [Fact]

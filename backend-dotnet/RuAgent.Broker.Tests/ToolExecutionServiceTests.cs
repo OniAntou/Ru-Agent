@@ -26,7 +26,7 @@ public sealed class ToolExecutionServiceTests
         var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
         session.Open(
             "session-help",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal),
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal));
 
         var workspace = Path.Combine(root, "empty-workspace");
@@ -44,10 +44,11 @@ public sealed class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "help.docs",
+                        ["tool_id"] = "read",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
-                        ["arguments"] = new JsonObject { ["query"] = "approvals", ["max_results"] = 1 },
+                        ["run_id"] = "session-help",
+                        ["arguments"] = new JsonObject { ["op"] = "help", ["query"] = "approvals", ["max_results"] = 1 },
                     }),
                 CancellationToken.None);
 
@@ -106,10 +107,10 @@ public sealed class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "terminal.run",
+                        ["tool_id"] = "bash",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
-                        ["arguments"] = new JsonObject { ["network"] = true },
+                        ["arguments"] = new JsonObject { ["mode"] = "run", ["network"] = true },
                     }),
                 CancellationToken.None);
             Assert.Equal(ToolResultStatuses.Failed, malformed.Status);
@@ -126,11 +127,12 @@ public sealed class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "terminal.run",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
+                        ["mode"] = "run",
                         ["executable"] = "python",
                         ["arguments"] = new JsonArray("-c", "print(1)"),
                         ["working_directory"] = outsideDirectory,
@@ -213,11 +215,12 @@ public sealed class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "terminal.run",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
+                        ["mode"] = "run",
                         ["executable"] = "dotnet",
                         ["arguments"] = new JsonArray("--version"),
                         ["working_directory"] = outsideDirectory,
@@ -291,11 +294,12 @@ public sealed class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "terminal.shell",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
+                        ["mode"] = "shell",
                         ["script"] = "Get-Date",
                         ["working_directory"] = outsideDirectory,
                     },
@@ -350,11 +354,12 @@ public sealed class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "terminal.shell",
+                    ["tool_id"] = "bash",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
+                        ["mode"] = "shell",
                         ["script"] = "Get-Date",
                         ["working_directory"] = ".",
                     },
@@ -409,7 +414,7 @@ public sealed class ToolExecutionServiceTests
                 30_000,
                 new JsonObject
                 {
-                    ["tool_id"] = "files.edit",
+                    ["tool_id"] = "edit",
                     ["tool_version"] = "1.0.0",
                     ["capability_class"] = "tool",
                     ["arguments"] = new JsonObject
@@ -586,6 +591,7 @@ public sealed class ToolExecutionServiceTests
             var pending = await service.ExecuteAsync(
                 TerminalRequest("session-terminal-recognized", new JsonObject
                 {
+                    ["mode"] = "run",
                     ["executable"] = "rg",
                     ["arguments"] = new JsonArray("--files"),
                 }),
@@ -646,6 +652,7 @@ public sealed class ToolExecutionServiceTests
             var result = await service.ExecuteAsync(
                 TerminalRequest("session-terminal-max", new JsonObject
                 {
+                    ["mode"] = "run",
                     ["executable"] = "rg",
                     ["arguments"] = new JsonArray("--files"),
                     ["timeout_ms"] = 1_900_000,
@@ -671,7 +678,7 @@ public sealed class ToolExecutionServiceTests
         30_000,
         new JsonObject
         {
-            ["tool_id"] = "terminal.run",
+            ["tool_id"] = "bash",
             ["tool_version"] = "1.0.0",
             ["capability_class"] = "internal",
             ["arguments"] = arguments,

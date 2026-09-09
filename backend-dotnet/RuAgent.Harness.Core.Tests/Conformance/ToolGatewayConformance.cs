@@ -35,17 +35,10 @@ public abstract class ToolGatewayConformance : IDisposable
 
     protected virtual IReadOnlyList<string> AdvertisedCapabilities { get; } =
     [
-        "help.docs",
-        "files.list",
-        "files.glob",
-        "files.search",
-        "files.read",
-        "files.write",
-        "files.edit",
-        "files.delete",
-        "files.restore",
-        "terminal.run",
-        "terminal.shell",
+        "read",
+        "write",
+        "edit",
+        "bash",
     ];
 
     protected virtual string ToolVersion => "1.0.0";
@@ -86,7 +79,9 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task UnadvertisedToolId_is_denied_as_phase_not_available()
     {
-        var decision = await Gateway.EvaluateAsync(Proposal("web.search", []), CancellationToken.None);
+        var decision = await Gateway.EvaluateAsync(
+            Proposal("totally.unknown", new JsonObject { ["path"] = "." }),
+            CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("phase_not_available", decision.SafeCode);
@@ -107,8 +102,9 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task Delete_rejects_preimage_hash_in_model_arguments()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("files.delete", new JsonObject
+            Proposal("write", new JsonObject
             {
+                ["op"] = "delete",
                 ["path"] = "notes/a.txt",
                 ["expected_sha256"] = new string('a', 64),
             }),
@@ -122,8 +118,9 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task Search_rejects_the_retired_regex_argument_name()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("files.search", new JsonObject
+            Proposal("read", new JsonObject
             {
+                ["op"] = "search",
                 ["query"] = "needle",
                 ["regex"] = false,
             }),
@@ -136,8 +133,9 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task HelpDocs_executes_read_only_within_bounds()
     {
-        var proposal = Proposal("help.docs", new JsonObject
+        var proposal = Proposal("read", new JsonObject
         {
+            ["op"] = "help",
             ["query"] = "approval",
             ["max_results"] = 1,
         });
@@ -157,7 +155,7 @@ public abstract class ToolGatewayConformance : IDisposable
             CancellationToken.None);
         Assert.True(
             receipt.Outcome == ToolExecutionOutcome.Succeeded,
-            $"help.docs execution failed: code={receipt.Code}");
+            $"help execution failed: code={receipt.Code}");
         var output = ParseModelContent(receipt);
         Assert.Equal("approval", output["query"]!.GetValue<string>());
         Assert.True(output["results"]!.AsArray().Count <= 1);
@@ -169,7 +167,7 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task RelativeTraversal_outside_root_is_denied_as_invalid_arguments()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("files.read", new JsonObject { ["path"] = "notes/../../escape.txt" }),
+            Proposal("read", new JsonObject { ["op"] = "read", ["path"] = "notes/../../escape.txt" }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
@@ -182,7 +180,7 @@ public abstract class ToolGatewayConformance : IDisposable
         var outsidePath = Path.Combine(Path.GetTempPath(), "conformance-outside-target.txt");
 
         var decision = await Gateway.EvaluateAsync(
-            Proposal("files.read", new JsonObject { ["path"] = outsidePath }),
+            Proposal("read", new JsonObject { ["op"] = "read", ["path"] = outsidePath }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Ask, decision.Decision);
@@ -194,7 +192,7 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesRead_returns_exact_content_with_metadata()
     {
-        var receipt = await ExecuteAllowedAsync("files.read", new JsonObject { ["path"] = "notes/a.txt" });
+        var receipt = await ExecuteAllowedAsync("read", new JsonObject { ["op"] = "read", ["path"] = "notes/a.txt" });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         Assert.Equal("ok", receipt.Code);
@@ -211,7 +209,7 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesRead_missing_file_fails_with_file_not_found()
     {
-        var receipt = await ExecuteAllowedAsync("files.read", new JsonObject { ["path"] = "notes/missing.txt" });
+        var receipt = await ExecuteAllowedAsync("read", new JsonObject { ["op"] = "read", ["path"] = "notes/missing.txt" });
 
         Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
         Assert.Equal("file_not_found", receipt.Code);
@@ -222,7 +220,7 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesRead_invalid_utf8_fails_as_invalid_utf8()
     {
-        var receipt = await ExecuteAllowedAsync("files.read", new JsonObject { ["path"] = "notes/data.bin" });
+        var receipt = await ExecuteAllowedAsync("read", new JsonObject { ["op"] = "read", ["path"] = "notes/data.bin" });
 
         Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
         Assert.Equal("invalid_utf8", receipt.Code);
@@ -235,7 +233,7 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesList_returns_entries_with_relative_paths()
     {
-        var receipt = await ExecuteAllowedAsync("files.list", new JsonObject { ["path"] = "notes" });
+        var receipt = await ExecuteAllowedAsync("read", new JsonObject { ["op"] = "list", ["path"] = "notes" });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         var output = ParseModelContent(receipt);
@@ -255,8 +253,8 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task FilesGlob_returns_sorted_relative_matches()
     {
         var receipt = await ExecuteAllowedAsync(
-            "files.glob",
-            new JsonObject { ["path"] = ".", ["pattern"] = "notes/*.txt" });
+            "read",
+            new JsonObject { ["op"] = "glob", ["path"] = ".", ["pattern"] = "notes/*.txt" });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         var output = ParseModelContent(receipt);
@@ -270,8 +268,8 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task FilesSearch_finds_substring_matches()
     {
         var receipt = await ExecuteAllowedAsync(
-            "files.search",
-            new JsonObject { ["query"] = "beta" });
+            "read",
+            new JsonObject { ["op"] = "search", ["query"] = "beta" });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         var output = ParseModelContent(receipt);
@@ -313,7 +311,7 @@ public abstract class ToolGatewayConformance : IDisposable
             return;
         }
 
-        var proposal = Proposal("files.read", new JsonObject { ["path"] = "notes/b.txt" });
+        var proposal = Proposal("read", new JsonObject { ["op"] = "read", ["path"] = "notes/b.txt" });
         var decision = await Gateway.EvaluateAsync(proposal, CancellationToken.None);
         Assert.Equal(PolicyDecision.Allow, decision.Decision);
 
@@ -347,8 +345,9 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesWrite_creates_file_with_preimage_and_after_hash()
     {
-        var receipt = await ExecuteAllowedAsync("files.write", new JsonObject
+        var receipt = await ExecuteAllowedAsync("write", new JsonObject
         {
+            ["op"] = "write",
             ["path"] = "notes/created.txt",
             ["content"] = "fresh",
         });
@@ -362,15 +361,16 @@ public abstract class ToolGatewayConformance : IDisposable
         Assert.Equal("missing", output["before_sha256"]!.GetValue<string>());
         Assert.Equal(Sha256("fresh"), output["after_sha256"]!.GetValue<string>());
 
-        var readBack = await ExecuteAllowedAsync("files.read", new JsonObject { ["path"] = "notes/created.txt" });
+        var readBack = await ExecuteAllowedAsync("read", new JsonObject { ["op"] = "read", ["path"] = "notes/created.txt" });
         Assert.Equal("fresh", ParseModelContent(readBack)["content"]!.GetValue<string>());
     }
 
     [Fact]
     public async Task FilesWrite_existing_without_overwrite_fails_file_exists()
     {
-        var receipt = await ExecuteAllowedAsync("files.write", new JsonObject
+        var receipt = await ExecuteAllowedAsync("write", new JsonObject
         {
+            ["op"] = "write",
             ["path"] = "notes/a.txt",
             ["content"] = "clash",
         });
@@ -383,7 +383,7 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task FilesEdit_replaces_expected_occurrences()
     {
-        var receipt = await ExecuteAllowedAsync("files.edit", new JsonObject
+        var receipt = await ExecuteAllowedAsync("edit", new JsonObject
         {
             ["path"] = "notes/b.txt",
             ["old_string"] = "beta",
@@ -394,7 +394,7 @@ public abstract class ToolGatewayConformance : IDisposable
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         Assert.True(receipt.SideEffectsPossible);
 
-        var readBack = await ExecuteAllowedAsync("files.read", new JsonObject { ["path"] = "notes/b.txt" });
+        var readBack = await ExecuteAllowedAsync("read", new JsonObject { ["op"] = "read", ["path"] = "notes/b.txt" });
         Assert.Equal("gamma\nsecond line gamma\n", ParseModelContent(readBack)["content"]!.GetValue<string>());
     }
 
@@ -402,7 +402,7 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task FilesDelete_allows_inside_workspace_in_standard()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("files.delete", new JsonObject { ["path"] = "notes/a.txt" }),
+            Proposal("write", new JsonObject { ["op"] = "delete", ["path"] = "notes/a.txt" }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Allow, decision.Decision);
@@ -415,38 +415,38 @@ public abstract class ToolGatewayConformance : IDisposable
 
         var created = await ExecuteOnAsync(
             gateway,
-            "files.write",
-            new JsonObject { ["path"] = "doomed.txt", ["content"] = "doomed" });
+            "write",
+            new JsonObject { ["op"] = "write", ["path"] = "doomed.txt", ["content"] = "doomed" });
         Assert.Equal(ToolExecutionOutcome.Succeeded, created.Outcome);
 
         var deleted = await ExecuteOnAsync(
             gateway,
-            "files.delete",
-            new JsonObject { ["path"] = "doomed.txt" });
+            "write",
+            new JsonObject { ["op"] = "delete", ["path"] = "doomed.txt" });
         Assert.Equal(ToolExecutionOutcome.Succeeded, deleted.Outcome);
         var deleteOutput = ParseModelContent(deleted);
         Assert.Equal("doomed.txt", deleteOutput["path"]!.GetValue<string>());
         Assert.Equal(Sha256("doomed"), deleteOutput["before_sha256"]!.GetValue<string>());
         var recoveryId = deleteOutput["recovery_id"]!.GetValue<string>();
 
-        var gone = await ExecuteOnAsync(gateway, "files.read", new JsonObject { ["path"] = "doomed.txt" });
+        var gone = await ExecuteOnAsync(gateway, "read", new JsonObject { ["op"] = "read", ["path"] = "doomed.txt" });
         Assert.Equal(ToolExecutionOutcome.Failed, gone.Outcome);
         Assert.Equal("file_not_found", gone.Code);
 
         var restored = await ExecuteOnAsync(
             gateway,
-            "files.restore",
-            new JsonObject { ["recovery_id"] = recoveryId });
+            "write",
+            new JsonObject { ["op"] = "restore", ["recovery_id"] = recoveryId });
         Assert.Equal(ToolExecutionOutcome.Succeeded, restored.Outcome);
         Assert.Equal("doomed.txt", ParseModelContent(restored)["path"]!.GetValue<string>());
 
-        var readBack = await ExecuteOnAsync(gateway, "files.read", new JsonObject { ["path"] = "doomed.txt" });
+        var readBack = await ExecuteOnAsync(gateway, "read", new JsonObject { ["op"] = "read", ["path"] = "doomed.txt" });
         Assert.Equal("doomed", ParseModelContent(readBack)["content"]!.GetValue<string>());
 
         var replay = await ExecuteOnAsync(
             gateway,
-            "files.restore",
-            new JsonObject { ["recovery_id"] = recoveryId });
+            "write",
+            new JsonObject { ["op"] = "restore", ["recovery_id"] = recoveryId });
         Assert.Equal(ToolExecutionOutcome.Failed, replay.Outcome);
         Assert.Equal("recovery_unavailable", replay.Code);
     }
@@ -456,8 +456,9 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task Terminal_run_standard_analyzer_safe_form_is_allowed_and_executes()
     {
-        var receipt = await ExecuteAllowedAsync("terminal.run", new JsonObject
+        var receipt = await ExecuteAllowedAsync("bash", new JsonObject
         {
+            ["mode"] = "run",
             ["executable"] = "dotnet",
             ["arguments"] = new JsonArray("--version"),
         });
@@ -471,8 +472,9 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task Terminal_unknown_executable_requires_approval_in_standard()
     {
         var decision = await Gateway.EvaluateAsync(
-            Proposal("terminal.run", new JsonObject
+            Proposal("bash", new JsonObject
             {
+                ["mode"] = "run",
                 ["executable"] = "cmd.exe",
                 ["arguments"] = new JsonArray("/c", "echo", "conformance"),
             }),

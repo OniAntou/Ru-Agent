@@ -103,11 +103,11 @@ public sealed class FileReadAdapterTests : IDisposable
     [Fact]
     public void Read_respects_max_bytes_cap_of_256KiB()
     {
-        var schema = RuAgent.Protocol.AgentModelToolContractCatalog.Get("files.read", "1.0.0").InputSchema;
+        var schema = RuAgent.Protocol.AgentModelToolContractCatalog.Get("read", "1.0.0").InputSchema;
         // limit 300 KiB should be rejected by schema
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, new JsonObject { ["path"] = "a.txt", ["limit"] = 300 * 1024 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(schema, new JsonObject { ["op"] = "read", ["path"] = "a.txt", ["limit"] = 300 * 1024 }));
         // valid limit passes
-        ToolSchemaValidator.Validate(schema, new JsonObject { ["path"] = "a.txt", ["limit"] = 256 * 1024 });
+        ToolSchemaValidator.Validate(schema, new JsonObject { ["op"] = "read", ["path"] = "a.txt", ["limit"] = 256 * 1024 });
     }
 
     [Fact]

@@ -25,8 +25,8 @@ public sealed class AgentWebToolExecutorTests
         var executor = CreateExecutor(http);
 
         var output = await executor.ExecuteAsync(
-            "web.search",
-            new JsonObject { ["query"] = "ru" },
+            "read",
+            new JsonObject { ["op"] = "web_search", ["query"] = "ru" },
             CancellationToken.None);
 
         Assert.True(output["untrusted"]!.GetValue<bool>());
@@ -43,8 +43,8 @@ public sealed class AgentWebToolExecutorTests
         var executor = CreateExecutor(http);
 
         var output = await executor.ExecuteAsync(
-            "web.fetch",
-            new JsonObject { ["url"] = "https://8.8.8.8/page" },
+            "read",
+            new JsonObject { ["op"] = "web_fetch", ["url"] = "https://8.8.8.8/page" },
             CancellationToken.None);
 
         var content = output["content"]!.GetValue<string>();
@@ -63,12 +63,12 @@ public sealed class AgentWebToolExecutorTests
         var executor = CreateExecutor(http);
 
         await Assert.ThrowsAsync<ArgumentException>(() => executor.ExecuteAsync(
-            "web.unknown",
-            new JsonObject(),
+            "write",
+            new JsonObject { ["op"] = "write" },
             CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentException>(() => executor.ExecuteAsync(
-            "web.search",
-            new JsonObject(),
+            "totally.unknown",
+            new JsonObject { ["op"] = "web_search", ["query"] = "ru" },
             CancellationToken.None));
 
         Assert.Equal(0, handler.RequestCount);

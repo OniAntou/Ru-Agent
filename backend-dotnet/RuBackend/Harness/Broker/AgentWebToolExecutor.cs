@@ -58,10 +58,14 @@ public sealed class AgentWebToolExecutor
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
 
+        var op = arguments["op"]?.GetValue<string>();
         var definition = AgentModelToolContractCatalog.Find(
             toolId,
             AgentModelToolContractCatalog.CurrentVersion);
-        if (definition is null || !AgentModelToolContractCatalog.WebToolIds.Contains(toolId))
+        if (definition is null
+            || !AgentModelToolContractCatalog.WebToolIds.Contains(toolId)
+            || op is null
+            || !AgentModelToolContractCatalog.WebOps.Contains(op))
         {
             throw new ArgumentException("web_tool_not_supported", nameof(toolId));
         }
@@ -80,10 +84,10 @@ public sealed class AgentWebToolExecutor
             throw new ArgumentException(error.Code, nameof(arguments), error);
         }
 
-        return toolId switch
+        return op switch
         {
-            "web.search" => await ExecuteSearchAsync(boundedArguments, cancellationToken).ConfigureAwait(false),
-            "web.fetch" => await ExecuteFetchAsync(boundedArguments, cancellationToken).ConfigureAwait(false),
+            "web_search" => await ExecuteSearchAsync(boundedArguments, cancellationToken).ConfigureAwait(false),
+            "web_fetch" => await ExecuteFetchAsync(boundedArguments, cancellationToken).ConfigureAwait(false),
             _ => throw new ArgumentException("web_tool_not_supported", nameof(toolId)),
         };
     }

@@ -12,8 +12,10 @@ public static class AgentToolRuntimeProjection
         AgentToolDefinitionCatalog.Get()
             .Where(definition => definition.ToolId switch
             {
-                "web.search" => availability.WebSearchEnabled,
-                "web.fetch" => availability.WebFetchEnabled,
+                "read" => true,
+                "write" => true,
+                "edit" => true,
+                "bash" => true,
                 _ => true,
             })
             .ToArray();

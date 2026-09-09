@@ -97,7 +97,9 @@ public static class PolicyRuleMatcher
             return false;
         }
 
-        if (matcher.ToolId is not null && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal))
+        if (matcher.ToolId is not null
+            && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal)
+            && !LegacyToolIdMatches(matcher.ToolId, context.ToolId, context.ToolOp, context.BashMode))
         {
             return false;
         }
@@ -228,6 +230,25 @@ public static class PolicyRuleMatcher
 
         return context.Target?.CanonicalPath;
     }
+
+    private static bool LegacyToolIdMatches(string matcherToolId, string contextToolId, string? toolOp, string? bashMode) =>
+        (matcherToolId, contextToolId) switch
+        {
+            ("files.list", "read") => toolOp == "list",
+            ("files.glob", "read") => toolOp == "glob",
+            ("files.search", "read") => toolOp == "search",
+            ("files.read", "read") => toolOp == "read",
+            ("files.write", "write") => toolOp == "write",
+            ("files.edit", "edit") => true,
+            ("files.delete", "write") => toolOp == "delete",
+            ("files.restore", "write") => toolOp == "restore",
+            ("terminal.run", "bash") => bashMode == "run",
+            ("terminal.shell", "bash") => bashMode == "shell",
+            ("web.search", "read") => toolOp == "web_search",
+            ("web.fetch", "read") => toolOp == "web_fetch",
+            ("help.docs", "read") => toolOp == "help",
+            _ => false,
+        };
 
     private static bool ExecutableMatches(string pattern, string? resolvedExecutable)
     {

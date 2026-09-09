@@ -389,11 +389,33 @@ public sealed partial class AgentV1Service
                 return null;
             }
 
+            var op = arguments.TryGetProperty("op", out var opNode) && opNode.ValueKind == JsonValueKind.String
+                ? opNode.GetString()
+                : null;
+            var mode = arguments.TryGetProperty("mode", out var modeNode) && modeNode.ValueKind == JsonValueKind.String
+                ? modeNode.GetString()
+                : null;
+            var isBash = string.Equals(toolId, "bash", StringComparison.Ordinal);
+            if (string.Equals(toolId, "bash", StringComparison.Ordinal)
+                && !string.Equals(mode, "run", StringComparison.Ordinal)
+                && !string.Equals(mode, "shell", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if ((string.Equals(toolId, "read", StringComparison.Ordinal)
+                    || string.Equals(toolId, "write", StringComparison.Ordinal))
+                && op is null)
+            {
+                return null;
+            }
+
             var canonicalPath = ReadString(arguments, "path", ApprovalPathMaxLength);
             var requestedExecutable = ReadString(arguments, "executable", ApprovalExecutableMaxLength);
             var shellRuntime = ReadString(arguments, "shell", 32) ?? "powershell";
             var argv = ReadStringArray(arguments, "arguments");
-            if (string.Equals(toolId, "terminal.shell", StringComparison.Ordinal))
+            var isShellMode = isBash && string.Equals(mode, "shell", StringComparison.Ordinal);
+            if (isShellMode)
             {
                 if (!string.Equals(shellRuntime, "powershell", StringComparison.OrdinalIgnoreCase)
                     && !string.Equals(shellRuntime, "pwsh", StringComparison.OrdinalIgnoreCase))
@@ -410,20 +432,27 @@ public sealed partial class AgentV1Service
                 requestedExecutable = shellRuntime;
                 argv = ["-NoProfile", "-NonInteractive", "-Command", script];
             }
-            else if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal)
+            else if (isBash
+                && string.Equals(mode, "run", StringComparison.Ordinal)
                 && requestedExecutable is null)
             {
                 return null;
             }
 
-            if (toolId is "files.read" or "files.write" or "files.edit" or "files.delete"
-                && canonicalPath is null)
+            if ((toolId is "read" or "write") && MapPiOp(toolId, op) is null)
+            {
+                return null;
+            }
+
+            if (toolId is "read" or "write" or "edit"
+                && canonicalPath is null
+                && !IsTargetFreePiOp(toolId, op))
             {
                 return null;
             }
 
             var cwd = ReadString(arguments, "working_directory", ApprovalCwdMaxLength);
-            if (toolId is "terminal.run" or "terminal.shell")
+            if (isBash)
             {
                 if (_runtimeRoots is null || !_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
                     || string.IsNullOrWhiteSpace(rootPath))
@@ -447,18 +476,31 @@ public sealed partial class AgentV1Service
                 cwd = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(candidateCwd);
             }
 
-            var operationClass = toolId switch
+            var operationClass = (toolId, MapPiOp(toolId, op), isShellMode, isBash, mode) switch
             {
-                "files.list" => "list",
-                "files.glob" => "glob",
-                "files.search" => "search",
-                "files.read" => "read",
-                "files.write" => "write",
-                "files.edit" => "edit",
-                "files.apply_patch" => "patch",
-                "files.delete" => "delete",
-                "files.restore" => "restore",
-                "terminal.run" or "terminal.shell" => "terminal",
+                ("read", "list", _, _, _) => "list",
+                ("read", "glob", _, _, _) => "glob",
+                ("read", "search", _, _, _) => "search",
+                ("read", "read", _, _, _) => "read",
+                ("read", "help", _, _, _) => "read",
+                ("read", "web_search", _, _, _) => "read",
+                ("read", "web_fetch", _, _, _) => "read",
+                ("write", "write", _, _, _) => "write",
+                ("write", "delete", _, _, _) => "delete",
+                ("write", "restore", _, _, _) => "restore",
+                ("edit", _, _, _, _) => "edit",
+                (_, _, _, true, _) => "terminal",
+                ("files.list", _, _, _, _) => "list",
+                ("files.glob", _, _, _, _) => "glob",
+                ("files.search", _, _, _, _) => "search",
+                ("files.read", _, _, _, _) => "read",
+                ("files.write", _, _, _, _) => "write",
+                ("files.edit", _, _, _, _) => "edit",
+                ("files.apply_patch", _, _, _, _) => "patch",
+                ("files.delete", _, _, _, _) => "delete",
+                ("files.restore", _, _, _, _) => "restore",
+                ("terminal.run", _, _, _, _) => "terminal",
+                ("terminal.shell", _, _, _, _) => "terminal",
                 _ => "mutation",
             };
             var networkIntent = "none";
@@ -585,6 +627,25 @@ public sealed partial class AgentV1Service
             return null;
         }
     }
+
+    private static string? MapPiOp(string toolId, string? op) => (toolId, op) switch
+    {
+        ("read", "list") => "list",
+        ("read", "glob") => "glob",
+        ("read", "search") => "search",
+        ("read", "read") => "read",
+        ("read", "help") => "help",
+        ("read", "web_search") => "web_search",
+        ("read", "web_fetch") => "web_fetch",
+        ("write", "write") => "write",
+        ("write", "delete") => "delete",
+        ("write", "restore") => "restore",
+        _ => null,
+    };
+
+    private static bool IsTargetFreePiOp(string toolId, string? op) =>
+        string.Equals(toolId, "read", StringComparison.Ordinal)
+        && op is "help" or "web_search" or "web_fetch";
 
     private static string? ReadString(JsonElement objectNode, string propertyName, int maxLength)
     {

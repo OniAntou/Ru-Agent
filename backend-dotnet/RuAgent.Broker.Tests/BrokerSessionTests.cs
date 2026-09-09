@@ -95,7 +95,7 @@ public sealed class BrokerSessionTests
         Assert.True(session.TryOpenRunLease(lease, out var error));
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
-        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "bash", "edit", "read", "write" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
     [Fact]
@@ -174,8 +174,8 @@ public sealed class BrokerSessionTests
             new string('c', 64),
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
-        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
-        Assert.DoesNotContain("web.search", lease.AdvertisedCapabilities);
+        Assert.Equal(new[] { "bash", "edit", "read", "write" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.DoesNotContain("web_fetch", lease.AdvertisedCapabilities);
     }
 
     [Fact]
@@ -334,8 +334,8 @@ public sealed class BrokerSessionTests
                 leaseRoot,
                 LeaseTestSnapshots.StandardEmpty());
             var factory = new RuAgent.Broker.Policy.PolicyContextFactory(lease);
-            var context = factory.Create("files.read", "1.0.0",
-                new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" });
+            var context = factory.Create("read", "1.0.0",
+                new System.Text.Json.Nodes.JsonObject { ["op"] = "read", ["path"] = "probe.txt" });
 
             Assert.True(context.Target!.IsInsideWorkspace);
             Assert.Equal(

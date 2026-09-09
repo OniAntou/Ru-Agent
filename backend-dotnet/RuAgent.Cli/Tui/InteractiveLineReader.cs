@@ -168,25 +168,21 @@ public sealed class InteractiveLineReader
         string prompt,
         CancellationToken cancellationToken)
     {
-        await outWriter.WriteAsync(prompt).ConfigureAwait(false);
-        await outWriter.FlushAsync().ConfigureAwait(false);
-
         var buffer = new StringBuilder();
         int cursor = 0;
         int historyIndex = _history.Count;
         string tempInput = string.Empty;
-        int promptLen = StripAnsi(prompt).Length;
+        const string boxPrompt = "";
         int boxWidth = ComputeBoxWidth();
-        int midPrefixLen = 2 + promptLen;
 
-        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, prompt, Legend)).ConfigureAwait(false);
+        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, Legend)).ConfigureAwait(false);
         await outWriter.FlushAsync().ConfigureAwait(false);
 
         void RenderLine()
         {
             try
             {
-                outWriter.Write(BuildMidRewrite(boxWidth, prompt, buffer.ToString(), cursor));
+                outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, buffer.ToString(), cursor));
                 outWriter.Flush();
             }
             catch
@@ -262,7 +258,7 @@ public sealed class InteractiveLineReader
                 if (cursor > 0)
                 {
                     cursor--;
-                    try { Console.CursorLeft = midPrefixLen + cursor; } catch { }
+                    try { outWriter.Write("\x1b[1D"); outWriter.Flush(); } catch { }
                 }
                 continue;
             }
@@ -272,7 +268,7 @@ public sealed class InteractiveLineReader
                 if (cursor < buffer.Length)
                 {
                     cursor++;
-                    try { Console.CursorLeft = midPrefixLen + cursor; } catch { }
+                    try { outWriter.Write("\x1b[1C"); outWriter.Flush(); } catch { }
                 }
                 continue;
             }
@@ -280,14 +276,18 @@ public sealed class InteractiveLineReader
             if (key.Key == ConsoleKey.Home)
             {
                 cursor = 0;
-                try { Console.CursorLeft = promptLen; } catch { }
+                try { outWriter.Write("\r\x1b[2C"); outWriter.Flush(); } catch { }
                 continue;
             }
 
             if (key.Key == ConsoleKey.End)
             {
-                cursor = buffer.Length;
-                try { Console.CursorLeft = midPrefixLen + cursor; } catch { }
+                if (cursor < buffer.Length)
+                {
+                    var steps = buffer.Length - cursor;
+                    cursor = buffer.Length;
+                    try { outWriter.Write("\x1b[" + steps + "C"); outWriter.Flush(); } catch { }
+                }
                 continue;
             }
 

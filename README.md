@@ -1,6 +1,6 @@
-# Ru
+# Ru Agent
 
-Ru is a Vietnamese-English conversational companion built around a WinUI 3
+Ru is a Coding Agent built around a WinUI 3
 desktop app, an ASP.NET Core public backend, and one managed C# Worker serving
 Agent and runtime/device boundaries. Conversational generation uses configured
 cloud providers.

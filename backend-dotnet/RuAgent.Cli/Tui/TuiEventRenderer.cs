@@ -1,6 +1,7 @@
 using System.Text.Json;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
+using Spectre.Console;
 
 namespace RuAgent.Cli.Tui;
 
@@ -10,6 +11,7 @@ public sealed class TuiSessionRenderer
     private bool _hasStreamedDelta;
     private bool _isThinking;
     private System.Diagnostics.Stopwatch? _thinkingWatch;
+    private System.Diagnostics.Stopwatch? _turnWatch;
 
     private CancellationTokenSource? _spinnerCts;
     private Task? _spinnerTask;
@@ -26,6 +28,7 @@ public sealed class TuiSessionRenderer
         _hasStreamedDelta = false;
         _isThinking = false;
         _thinkingWatch?.Reset();
+        _turnWatch?.Reset();
     }
 
     private void StartThinkingSpinner()
@@ -54,7 +57,7 @@ public sealed class TuiSessionRenderer
                 {
                     var elapsed = _thinkingWatch?.Elapsed.TotalSeconds ?? 0;
                     var frameChar = SpinnerFrames[frameIdx++ % SpinnerFrames.Length];
-                    _writer.Write($"\r  {AnsiTheme.Cyan(frameChar)} {AnsiTheme.Dim($"Thinking... ({elapsed:F1}s)")}  ");
+                    _writer.Write($"\r  {AnsiTheme.Yellow(frameChar)} {AnsiTheme.Dim($"Thinking… ({elapsed:F1}s)")}  ");
                     _writer.Flush();
                     await Task.Delay(80, ct).ConfigureAwait(false);
                 }
@@ -88,7 +91,7 @@ public sealed class TuiSessionRenderer
             var elapsed = _thinkingWatch?.Elapsed.TotalSeconds ?? 0;
             if (elapsed >= 0.4)
             {
-                _writer.WriteLine(AnsiTheme.Dim($"  • Thought for {elapsed:F1}s"));
+                _writer.WriteLine(AnsiTheme.Dim($"  ◆ Thought for {elapsed:F1}s"));
                 _writer.Flush();
             }
         }
@@ -182,57 +185,54 @@ public sealed class TuiSessionRenderer
         switch (type)
         {
             case "model.turn_started":
-                _writer.WriteLine(AnsiTheme.Cyan($"┌─ Turn #{seq}: Model Thinking..."));
+                _turnWatch = System.Diagnostics.Stopwatch.StartNew();
+                _writer.WriteLine(AnsiTheme.Cyan($"┌─ ◆ Turn #{seq}"));
                 break;
 
             case "tool.execution_requested":
-                var reqIcon = GetToolIcon(summary);
+                var (reqVerb, reqDetail) = SplitToolLine(summary);
                 _writer.WriteLine();
-                _writer.WriteLine(AnsiTheme.Yellow($"{reqIcon} [Tool Request #{seq}] ") + AnsiTheme.Bold(summary));
+                _writer.WriteLine(AnsiTheme.Dim("◆ ") + AnsiTheme.Bold($"{reqVerb} ") + reqDetail);
                 break;
 
             case "tool.executed":
-                var doneIcon = GetToolIcon(summary);
+                var (doneVerb, doneDetail) = SplitToolLine(summary);
                 if (status == "succeeded")
                 {
-                    _writer.WriteLine(AnsiTheme.Green($"✓ {doneIcon} [Tool Done #{seq}] ") + summary);
+                    _writer.WriteLine(AnsiTheme.Green($"✓ {doneVerb} ") + doneDetail);
                     RenderDiffIfPresent(envelope.SafeSummary);
                 }
                 else
                 {
-                    _writer.WriteLine(AnsiTheme.Red($"✗ {doneIcon} [Tool Failed #{seq}] ") + summary + $" ({status})");
+                    _writer.WriteLine(AnsiTheme.Red($"✗ {doneVerb} ") + doneDetail + $" ({status})");
                 }
                 break;
 
             case "approval.requested":
                 _writer.WriteLine();
-                int boxWidth = 76;
-                try
+                if (AnsiTheme.IsEnabled)
                 {
-                    if (!Console.IsOutputRedirected && Console.WindowWidth > 20)
+                    var approvalConsole = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(_writer) });
+                    var panelBody = new Markup(
+                        $"{Markup.Escape(summary)}\n" +
+                        $"[dim]Run ID:[/] {Markup.Escape(envelope.RunId)}\n" +
+                        $"[dim]Approval ID:[/] {Markup.Escape(envelope.ApprovalId ?? "")}\n" +
+                        $"[dim]Actions:[/] [green][y] Approve once[/]  [yellow][r] Approve for run[/]  [red][n] Deny[/]");
+                    approvalConsole.Write(new Panel(panelBody)
                     {
-                        boxWidth = Math.Clamp(Console.WindowWidth - 2, 48, 76);
-                    }
+                        Header = new PanelHeader(" [yellow]⚠ Approval required[/] "),
+                        Border = BoxBorder.Rounded,
+                        BorderStyle = new Style(Color.Yellow),
+                        Expand = true,
+                    });
                 }
-                catch { }
-                int inner = boxWidth - 2;
-                string top = "╔" + new string('═', Math.Max(0, inner - 24)) + " ⚠️  APPROVAL REQUIRED " + new string('═', 2) + "╗";
-                if (top.Length > boxWidth) top = "╔" + new string('═', inner) + "╗";
-                string bot = "╚" + new string('═', inner) + "╝";
-
-                string BoxLine(string text)
+                else
                 {
-                    var vis = text.Length > inner - 2 ? text[..(inner - 5)] + "..." : text;
-                    int pad = Math.Max(0, inner - 2 - vis.Length);
-                    return AnsiTheme.Yellow("║ ") + vis + new string(' ', pad) + AnsiTheme.Yellow(" ║");
+                    _writer.WriteLine($"⚠ Approval required: {summary}");
+                    _writer.WriteLine($"  Run ID: {envelope.RunId}");
+                    _writer.WriteLine($"  Approval ID: {envelope.ApprovalId ?? ""}");
+                    _writer.WriteLine("  Actions: [y] Approve once  [r] Approve for run  [n] Deny");
                 }
-
-                _writer.WriteLine(AnsiTheme.Yellow(top));
-                _writer.WriteLine(BoxLine(summary));
-                _writer.WriteLine(BoxLine($"Run ID: {envelope.RunId}"));
-                _writer.WriteLine(BoxLine($"Approval ID: {envelope.ApprovalId ?? ""}"));
-                _writer.WriteLine(BoxLine("Actions: [y] Approve once  [r] Approve for run  [n] Deny"));
-                _writer.WriteLine(AnsiTheme.Yellow(bot));
                 break;
 
             case "reconciliation.required":
@@ -248,8 +248,11 @@ public sealed class TuiSessionRenderer
             case "run.failed":
                 if (status == "succeeded" && type != "run.failed")
                 {
+                    var turnSecs = _turnWatch?.Elapsed.TotalSeconds ?? 0;
+                    _turnWatch?.Reset();
                     _writer.WriteLine();
-                    _writer.WriteLine(AnsiTheme.Green($"└─ [Run #{seq} Succeeded] ") + summary);
+                    _writer.WriteLine(AnsiTheme.Green("◆stop"));
+                    _writer.WriteLine(AnsiTheme.Dim($"Turn completed in {turnSecs:F1}s ") + summary);
                 }
                 else
                 {
@@ -301,16 +304,28 @@ public sealed class TuiSessionRenderer
         }
     }
 
-    private static string GetToolIcon(string text)
+    private static (string Verb, string Detail) SplitToolLine(string text)
     {
-        if (string.IsNullOrEmpty(text)) return "⚙";
         var lower = text.ToLowerInvariant();
-        if (lower.Contains("read") || lower.Contains("files.read")) return "📖";
-        if (lower.Contains("edit") || lower.Contains("files.edit") || lower.Contains("patch")) return "✏️";
-        if (lower.Contains("write") || lower.Contains("files.write")) return "📝";
-        if (lower.Contains("terminal") || lower.Contains("bash") || lower.Contains("cmd") || lower.Contains("shell") || lower.Contains("run")) return "🐚";
-        if (lower.Contains("search") || lower.Contains("find") || lower.Contains("grep") || lower.Contains("list")) return "🔍";
-        return "⚙";
+        string verb = lower.Contains("edit") || lower.Contains("patch") ? "edit"
+            : lower.Contains("write") ? "write"
+            : lower.Contains("read") ? "read"
+            : lower.Contains("terminal") || lower.Contains("bash") || lower.Contains("shell") || lower.Contains("cmd") || lower.Contains("run") ? "bash"
+            : lower.Contains("search") || lower.Contains("find") || lower.Contains("grep") || lower.Contains("list") ? "search"
+            : "tool";
+        var detail = text;
+        var pathIdx = text.IndexOf("path:", StringComparison.OrdinalIgnoreCase);
+        if (pathIdx >= 0)
+        {
+            detail = text[(pathIdx + 5)..].Trim();
+        }
+
+        if (detail.Length > 120)
+        {
+            detail = detail[..117] + "...";
+        }
+
+        return (verb, detail);
     }
 
     private static string Escape(string s)

@@ -63,7 +63,8 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(envelope, sw);
         var output = sw.ToString();
-        Assert.Contains("Turn #1: Model Thinking...", output, StringComparison.Ordinal);
+        Assert.Contains("◆", output, StringComparison.Ordinal);
+        Assert.Contains("Turn #1", output, StringComparison.Ordinal);
 
         using var sw2 = new StringWriter();
         var toolEnvelope = new HarnessSafeEventEnvelope(
@@ -79,8 +80,7 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(toolEnvelope, sw2);
         var toolOutput = sw2.ToString();
-        Assert.Contains("Tool Request #2", toolOutput, StringComparison.Ordinal);
-        Assert.Contains("read", toolOutput, StringComparison.Ordinal);
+        Assert.Contains("◆ read src/main.rs", toolOutput, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class TuiInteractiveTests
             SafeSummary: "Task completed successfully");
 
         TuiEventRenderer.RenderEnvelope(successEnv, sw);
-        Assert.Contains("Run #5 Succeeded", sw.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Turn completed in", sw.ToString(), StringComparison.Ordinal);
 
         using var sw2 = new StringWriter();
         var failEnv = new HarnessSafeEventEnvelope(
@@ -215,8 +215,7 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(editEnv, sw);
         var outReq = sw.ToString();
-        Assert.Contains("✏️", outReq);
-        Assert.Contains("Tool Request #10", outReq);
+        Assert.Contains("◆ edit src/app.cs", outReq);
 
         using var sw2 = new StringWriter();
         var doneEnv = new HarnessSafeEventEnvelope(
@@ -232,7 +231,7 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(doneEnv, sw2);
         var outDone = sw2.ToString();
-        Assert.Contains("✓ ✏️ [Tool Done #11]", outDone);
+        Assert.Contains("✓ edit", outDone);
         Assert.Contains("+new line", outDone);
         Assert.Contains("-old line", outDone);
     }

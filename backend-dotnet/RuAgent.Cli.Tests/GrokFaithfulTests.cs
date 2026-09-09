@@ -179,6 +179,14 @@ public sealed class GrokFaithfulTests
         Assert.Equal("\r" + InteractiveLineReader.BuildMid(20, "", "") + "\r\x1b[2C", rewrite);
     }
 
+    [Fact]
+    public void ComposerBox_Initial_Returns_To_Mid_Line()
+    {
+        var open = InteractiveLineReader.BuildBoxOpen(20, "❯ ", "m · s");
+        Assert.StartsWith(AnsiTheme.Gray(InteractiveLineReader.BuildTop(20)), open, StringComparison.Ordinal);
+        Assert.EndsWith("\x1b[2A", open, StringComparison.Ordinal);
+    }
+
     private static RuAgent.Protocol.Harness.HarnessSafeEventEnvelope GrokEnvelope(
         string eventType,
         string safeSummary,

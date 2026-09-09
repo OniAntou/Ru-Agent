@@ -58,6 +58,15 @@ public sealed class InteractiveLineReader
         return "\r" + mid + "\r\x1b[" + col + "C";
     }
 
+    public static string BuildBoxOpen(int width, string prompt, string legend)
+    {
+        var nl = Environment.NewLine;
+        return AnsiTheme.Gray(BuildTop(width)) + nl
+            + AnsiTheme.Gray("│ ") + prompt + nl
+            + AnsiTheme.Gray(BuildBottom(width, legend)) + nl
+            + "\x1b[2A";
+    }
+
     public static int ComputeBoxWidth()
     {
         try
@@ -170,13 +179,7 @@ public sealed class InteractiveLineReader
         int boxWidth = ComputeBoxWidth();
         int midPrefixLen = 2 + promptLen;
 
-        await outWriter.WriteLineAsync(AnsiTheme.Gray(BuildTop(boxWidth))).ConfigureAwait(false);
-        await outWriter.WriteAsync(AnsiTheme.Gray("│ ") + prompt).ConfigureAwait(false);
-        await outWriter.FlushAsync().ConfigureAwait(false);
-        await outWriter.WriteLineAsync().ConfigureAwait(false);
-        await outWriter.WriteLineAsync(AnsiTheme.Gray(BuildBottom(boxWidth, Legend))).ConfigureAwait(false);
-        await outWriter.FlushAsync().ConfigureAwait(false);
-        await outWriter.WriteAsync("\x1b[1A").ConfigureAwait(false);
+        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, prompt, Legend)).ConfigureAwait(false);
         await outWriter.FlushAsync().ConfigureAwait(false);
 
         void RenderLine()

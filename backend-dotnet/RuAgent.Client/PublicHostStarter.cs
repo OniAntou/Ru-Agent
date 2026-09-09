@@ -72,7 +72,7 @@ public sealed class PublicHostStarter : IDisposable
         }
 
         // Poll for valid descriptor + health
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -162,18 +162,34 @@ public sealed class PublicHostStarter : IDisposable
                 return Task.FromResult(false);
             }
 
+            string actualProjectRoot = projectRoot;
+            if (!Directory.Exists(Path.Combine(actualProjectRoot, "backend-dotnet"))
+                && !File.Exists(Path.Combine(actualProjectRoot, "pyproject.toml")))
+            {
+                var exeDir = Path.GetDirectoryName(exe);
+                for (var dir = exeDir is not null ? new DirectoryInfo(exeDir) : null; dir is not null; dir = dir.Parent)
+                {
+                    if (File.Exists(Path.Combine(dir.FullName, "pyproject.toml"))
+                        || Directory.Exists(Path.Combine(dir.FullName, "backend-dotnet")))
+                    {
+                        actualProjectRoot = dir.FullName;
+                        break;
+                    }
+                }
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = exe,
                 Arguments = $"--managed-runtime --urls http://127.0.0.1:8000",
-                WorkingDirectory = projectRoot,
+                WorkingDirectory = actualProjectRoot,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
             };
             // Pass bearer and project root via environment for Host to pick up
             psi.Environment["RU_DESKTOP_TOKEN"] = bearer;
-            psi.Environment["RU_PROJECT_ROOT"] = projectRoot;
+            psi.Environment["RU_PROJECT_ROOT"] = actualProjectRoot;
             // Track GUI parent so Host can auto-exit if GUI is killed via Task Manager
             // (normal close uses POST /host/shutdown). Only set for RuApp, not CLI tracer.
             try

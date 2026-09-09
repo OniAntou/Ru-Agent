@@ -802,7 +802,7 @@ public sealed class AgentCommands
         var lineReader = new Tui.InteractiveLineReader();
         string modelLabel = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
         lineReader.Legend = $"{modelLabel} · {cmd.Preset}";
-        await _out.WriteLineAsync(Tui.AnsiTheme.Gray($"{modelLabel} · {cmd.Preset}  ") + Tui.AnsiTheme.Dim("Tab:complete │ history: pgup/pgdn │ \\:continue │ Ctrl+c:cancel")).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Gray($"{modelLabel} · {cmd.Preset}  ") + Tui.AnsiTheme.Cyan("✦ Gõ / để gợi ý lệnh") + Tui.AnsiTheme.Dim(" │ Tab: điền │ ↑/↓: chọn │ \\: tiếp dòng │ Ctrl+c: hủy")).ConfigureAwait(false);
         string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("❯ "));
         string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
         int turn = 0;

@@ -396,9 +396,10 @@ public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
         var budget = Stopwatch.StartNew();
         while (!cancellationToken.IsCancellationRequested && budget.Elapsed < TotalBudget)
         {
-            if (await CanConnectAsync(agentWorkerPort, cancellationToken).ConfigureAwait(false)
-                && await CanConnectAsync(deviceWorkerPort, cancellationToken).ConfigureAwait(false)
-                && await CanConnectAsync(brokerPort, cancellationToken).ConfigureAwait(false))
+            var agentOk = await CanConnectAsync(agentWorkerPort, cancellationToken).ConfigureAwait(false);
+            var deviceOk = deviceWorkerPort == agentWorkerPort || await CanConnectAsync(deviceWorkerPort, cancellationToken).ConfigureAwait(false);
+            var brokerOk = await CanConnectAsync(brokerPort, cancellationToken).ConfigureAwait(false);
+            if (agentOk && deviceOk && brokerOk)
             {
                 return true;
             }

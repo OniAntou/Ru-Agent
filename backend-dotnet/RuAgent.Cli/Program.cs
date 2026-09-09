@@ -38,7 +38,7 @@ public static class Program
         try
         {
             // Use starter to get authenticated session; include cancellation for Ctrl+C
-            using var starterCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var starterCts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
             var session = await starter.GetOrStartAsync(projectRoot, starterCts.Token).ConfigureAwait(false);
             commands = new AgentCommands(session, httpClient, Console.Out, Console.Error);
         }
@@ -94,37 +94,27 @@ public static class Program
 
     private static string ResolveProjectRoot(AgentCommand command)
     {
-        if (command is RunCommand run)
+        string? envRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot)
+            && (File.Exists(Path.Combine(envRoot, "pyproject.toml")) || Directory.Exists(Path.Combine(envRoot, "backend-dotnet"))))
         {
-            try
+            return Path.GetFullPath(envRoot);
+        }
+
+        var cwd = Directory.GetCurrentDirectory();
+        if (File.Exists(Path.Combine(cwd, "pyproject.toml")) || Directory.Exists(Path.Combine(cwd, "backend-dotnet")))
+        {
+            return Path.GetFullPath(cwd);
+        }
+
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "pyproject.toml")) || Directory.Exists(Path.Combine(dir.FullName, "backend-dotnet")))
             {
-                var full = Path.GetFullPath(run.WorkspacePath);
-                // If path is directory, use it; if file path, use its directory
-                if (Directory.Exists(full)) return full;
-                var dir = Path.GetDirectoryName(full);
-                if (dir is not null && Directory.Exists(dir)) return dir;
-                return Directory.GetCurrentDirectory();
-            }
-            catch
-            {
-                return Directory.GetCurrentDirectory();
+                return dir.FullName;
             }
         }
-        if (command is ChatCommand chat)
-        {
-            try
-            {
-                var full = Path.GetFullPath(chat.WorkspacePath);
-                if (Directory.Exists(full)) return full;
-                var dir = Path.GetDirectoryName(full);
-                if (dir is not null && Directory.Exists(dir)) return dir;
-                return Directory.GetCurrentDirectory();
-            }
-            catch
-            {
-                return Directory.GetCurrentDirectory();
-            }
-        }
+
         return Directory.GetCurrentDirectory();
     }
 

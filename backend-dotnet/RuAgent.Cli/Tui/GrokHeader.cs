@@ -14,18 +14,18 @@ public static class GrokHeader
         }
 
         var body = new Markup(
-            $"[bold white]RuAgent v2.0[/] [grey]· Autonomous Coding Agent[/]\n" +
-            $"[grey]Session {Markup.Escape(ShortId(sessionId))} · {Markup.Escape(workspace)}[/]\n" +
-            $"[bold yellow]{Markup.Escape(model)}[/][grey] ({Markup.Escape(preset)})[/]\n" +
+            $"[bold cyan]✦ RuAgent v2.0[/] [grey]· Autonomous Coding Agent[/]\n" +
+            $"[grey]Session:[/] [bold white]{Markup.Escape(ShortId(sessionId))}[/] [grey]· Workspace:[/] [silver]{Markup.Escape(workspace)}[/]\n" +
+            $"[grey]Engine:[/] [bold yellow]{Markup.Escape(model)}[/] [grey]({Markup.Escape(backend)} · {Markup.Escape(preset)})[/]\n" +
             $"\n" +
-            $"{MenuRow("/model", "switch model")}\n" +
-            $"{MenuRow("/fork", "branch session")}\n" +
-            $"{MenuRow("/stats", "usage stats")}\n" +
-            $"{MenuRow("/exit", "quit")}");
+            $"{MenuRow("/model", "switch model")}  {MenuRow("/fork", "branch session")}\n" +
+            $"{MenuRow("/stats", "usage stats")}   {MenuRow("/exit", "quit")}\n" +
+            $"\n" +
+            $"[grey]Type [/][bold cyan]/[/][grey] to view & auto-complete available commands (↑/↓ to choose, Tab to apply)[/]");
         console.Write(new Panel(body)
         {
             Border = BoxBorder.Rounded,
-            BorderStyle = new Style(Color.Grey),
+            BorderStyle = new Style(Color.Teal),
             Expand = true,
         });
     }

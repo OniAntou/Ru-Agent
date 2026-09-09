@@ -72,7 +72,10 @@ internal static class WorkerEntryPoint
             });
 
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseUrls($"http://{host}:{port}");
+        var urls = devicePort == 0 || devicePort == port
+            ? new[] { $"http://{host}:{port}" }
+            : new[] { $"http://{host}:{port}", $"http://{host}:{devicePort}" };
+        builder.WebHost.UseUrls(urls);
         var app = builder.Build();
         app.UseWebSockets();
         try

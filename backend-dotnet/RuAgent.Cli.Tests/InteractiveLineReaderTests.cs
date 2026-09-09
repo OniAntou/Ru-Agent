@@ -87,4 +87,74 @@ public sealed class InteractiveLineReaderTests
         Assert.Equal("single command line", result);
         Assert.Equal("prompt > ", outWriter.ToString());
     }
+
+    [Fact]
+    public void FindMatches_ReturnsAllSlashCommands_WhenInputIsSingleSlash()
+    {
+        var matches = InteractiveLineReader.FindMatches("/");
+        Assert.NotEmpty(matches);
+        Assert.Contains(matches, m => m.Command == "/model");
+        Assert.Contains(matches, m => m.Command == "/help");
+        Assert.Contains(matches, m => m.Command == "/exit");
+    }
+
+    [Fact]
+    public void FindMatches_FiltersPrefix_CaseInsensitively()
+    {
+        var matches = InteractiveLineReader.FindMatches("/m");
+        Assert.Contains(matches, m => m.Command == "/model");
+        Assert.DoesNotContain(matches, m => m.Command == "/help");
+
+        var matchesUpper = InteractiveLineReader.FindMatches("/MO");
+        Assert.Contains(matchesUpper, m => m.Command == "/model");
+
+        var emptyMatches = InteractiveLineReader.FindMatches("/nonexistent");
+        Assert.Empty(emptyMatches);
+    }
+
+    [Fact]
+    public void BuildTop_And_BuildBottom_Support_Slash_Mode_Styling()
+    {
+        AnsiTheme.IsEnabled = true;
+        try
+        {
+            var normalTop = InteractiveLineReader.BuildTop(40, isSlash: false);
+            var slashTop = InteractiveLineReader.BuildTop(40, isSlash: true);
+            Assert.Contains(AnsiTheme.CyanCode, slashTop, StringComparison.Ordinal);
+
+            var normalBottom = InteractiveLineReader.BuildBottom(40, "legend", isSlash: false);
+            var slashBottom = InteractiveLineReader.BuildBottom(40, "legend", isSlash: true);
+            Assert.Contains(AnsiTheme.CyanCode, slashBottom, StringComparison.Ordinal);
+        }
+        finally
+        {
+            AnsiTheme.IsEnabled = false;
+        }
+    }
+
+    [Fact]
+    public void BuildDropdownTop_And_Bottom_Render_Correct_Frame()
+    {
+        var top = InteractiveLineReader.BuildDropdownTop(50);
+        Assert.StartsWith("╭", top);
+        Assert.EndsWith("╮", top);
+        Assert.Contains("Gợi ý lệnh", top);
+
+        var bottom = InteractiveLineReader.BuildDropdownBottom(50, 0, 5);
+        Assert.StartsWith("╰", bottom);
+        Assert.EndsWith("╯", bottom);
+        Assert.Contains("[1/5]", bottom);
+    }
+
+    [Fact]
+    public void BuildDropdownRow_Highlights_Selected_Item()
+    {
+        var item = new InteractiveLineReader.SlashCommandInfo("/model", "Đổi mô hình", "/model [name]");
+        var selectedRow = InteractiveLineReader.BuildDropdownRow(60, item, isSelected: true);
+        var unselectedRow = InteractiveLineReader.BuildDropdownRow(60, item, isSelected: false);
+
+        Assert.Contains("❯ /model", selectedRow);
+        Assert.Contains("  /model", unselectedRow);
+        Assert.Contains("Đổi mô hình", selectedRow);
+    }
 }

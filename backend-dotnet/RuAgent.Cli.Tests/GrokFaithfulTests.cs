@@ -1,4 +1,6 @@
+using System.Text.Json;
 using RuAgent.Cli.Tui;
+using RuAgent.Client;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
@@ -118,6 +120,27 @@ public sealed class GrokFaithfulTests
             Assert.Contains("(○)", output, StringComparison.Ordinal);
             Assert.Contains("1/2:select", output, StringComparison.Ordinal);
             Assert.DoesNotContain("╔", output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            AnsiTheme.IsEnabled = false;
+        }
+    }
+
+    [Fact]
+    public void ThinkingFailed_Renders_Diamond_Notice()
+    {
+        AnsiTheme.IsEnabled = false;
+        try
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
+            var inner = JsonSerializer.Serialize(new { activity_id = "act_11111111111111111111111111111111", kind = "thinking", state = "failed", safe_code = "failed" });
+            var outer = JsonSerializer.Serialize(new { kind = "agent.activity", data = inner });
+            renderer.RenderFrame(new SseFrame(null, "transient", outer, true, 1));
+            var output = sw.ToString();
+            Assert.Contains("◆", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("• Model thinking failed.", output, StringComparison.Ordinal);
         }
         finally
         {

@@ -162,7 +162,7 @@ public sealed class TuiSessionRenderer
                 else if (activity.State == AgentActivityState.Failed)
                 {
                     StopThinkingSpinner(showSummary: false);
-                    _writer.WriteLine(AnsiTheme.Red("  • Model thinking failed."));
+                    _writer.WriteLine(AnsiTheme.Red("  ◆ Model thinking failed."));
                     _writer.Flush();
                 }
             }

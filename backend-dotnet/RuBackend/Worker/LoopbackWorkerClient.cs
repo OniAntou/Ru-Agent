@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json.Nodes;
 using RuBackend.Diagnostics;
 
@@ -16,6 +17,10 @@ public sealed class LoopbackWorkerClient :
     private readonly DeviceWorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
         new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _poolLock = new(1, 1);
+    private WorkerConnection? _pooledConnection;
+    private WorkerHello? _pooledHello;
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private int _disposed;
 
     public LoopbackWorkerClient(DeviceWorkerClientOptions options)
@@ -37,9 +42,6 @@ public sealed class LoopbackWorkerClient :
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        await using var connection = new WorkerConnection(_options);
-        var hello = await connection.ConnectAsync(cancellationToken);
-        EnsureCapability(hello.Capabilities, "vts");
         var request = new WorkerEnvelope(
             DeviceWorkerClientOptions.ProtocolVersion,
             requestId,
@@ -48,8 +50,9 @@ public sealed class LoopbackWorkerClient :
             new JsonObject { ["operation"] = "catalog" },
             CorrelationContext.Current);
 
-        await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
+        try
         {
+            var item = await SendPooledUnaryAsync(request, "vts", cancellationToken).ConfigureAwait(false);
             if (item.Type == WorkerMessageTypes.Error)
             {
                 var error = RemoteError(item.Payload);
@@ -70,8 +73,10 @@ public sealed class LoopbackWorkerClient :
                 ReadVtsCodeSet(item.Payload["hotkey_codes"]),
                 ReadVtsCodeSet(item.Payload["expression_codes"]));
         }
-
-        throw new WorkerProtocolException("missing_response");
+        catch (WorkerProtocolException)
+        {
+            throw;
+        }
     }
 
     public async Task TriggerVtsActionsAsync(
@@ -81,9 +86,6 @@ public sealed class LoopbackWorkerClient :
     {
         ThrowIfDisposed();
         var normalized = NormalizeVtsCodes(codes);
-        await using var connection = new WorkerConnection(_options);
-        var hello = await connection.ConnectAsync(cancellationToken);
-        EnsureCapability(hello.Capabilities, "vts");
         var request = new WorkerEnvelope(
             DeviceWorkerClientOptions.ProtocolVersion,
             requestId,
@@ -97,33 +99,27 @@ public sealed class LoopbackWorkerClient :
             },
             CorrelationContext.Current);
 
-        await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
+        var item = await SendPooledUnaryAsync(request, "vts", cancellationToken).ConfigureAwait(false);
+        if (item.Type == WorkerMessageTypes.Error)
         {
-            if (item.Type == WorkerMessageTypes.Error)
-            {
-                throw RemoteError(item.Payload);
-            }
-
-            if (item.Type != WorkerMessageTypes.VtsAction
-                || !string.Equals(
-                    ReadOptionalString(item.Payload["status"], "invalid_vts_action"),
-                    "ok",
-                    StringComparison.Ordinal))
-            {
-                throw new WorkerProtocolException("invalid_vts_action");
-            }
-
-            return;
+            throw RemoteError(item.Payload);
         }
 
-        throw new WorkerProtocolException("missing_response");
+        if (item.Type != WorkerMessageTypes.VtsAction
+            || !string.Equals(
+                ReadOptionalString(item.Payload["status"], "invalid_vts_action"),
+                "ok",
+                StringComparison.Ordinal))
+        {
+            throw new WorkerProtocolException("invalid_vts_action");
+        }
+
+        return;
     }
 
     public async Task<WorkerHealth> GetHealthAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        await using var connection = new WorkerConnection(_options);
-        await connection.ConnectAsync(cancellationToken);
         var request = new WorkerEnvelope(
             DeviceWorkerClientOptions.ProtocolVersion,
             $"health-{Guid.NewGuid():N}",
@@ -132,25 +128,21 @@ public sealed class LoopbackWorkerClient :
             [],
             CorrelationContext.Current);
 
-        await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
+        var item = await SendPooledUnaryAsync(request, requiredCapability: null, cancellationToken).ConfigureAwait(false);
+        if (item.Type == WorkerMessageTypes.Error)
         {
-            if (item.Type == WorkerMessageTypes.Error)
-            {
-                throw RemoteError(item.Payload);
-            }
-
-            if (item.Type != WorkerMessageTypes.WorkerHealthOk)
-            {
-                throw new WorkerProtocolException("unexpected_type");
-            }
-
-            var ready = ReadBoolean(item.Payload["ready"], "invalid_health");
-            var version = ReadInt32(item.Payload["version"], "invalid_health");
-            var capabilities = ReadStringSet(item.Payload["capabilities"], "invalid_health");
-            return new WorkerHealth(ready, version, capabilities);
+            throw RemoteError(item.Payload);
         }
 
-        throw new WorkerProtocolException("missing_response");
+        if (item.Type != WorkerMessageTypes.WorkerHealthOk)
+        {
+            throw new WorkerProtocolException("unexpected_type");
+        }
+
+        var ready = ReadBoolean(item.Payload["ready"], "invalid_health");
+        var version = ReadInt32(item.Payload["version"], "invalid_health");
+        var capabilities = ReadStringSet(item.Payload["capabilities"], "invalid_health");
+        return new WorkerHealth(ready, version, capabilities);
     }
 
     public async Task<WorkerRuntimeResponse> InvokeRuntimeAsync(
@@ -166,9 +158,6 @@ public sealed class LoopbackWorkerClient :
             throw new WorkerProtocolException("invalid_runtime_request");
         }
 
-        await using var connection = new WorkerConnection(_options);
-        var hello = await connection.ConnectAsync(cancellationToken);
-        EnsureCapability(hello.Capabilities, "runtime");
         var envelope = new WorkerEnvelope(
             DeviceWorkerClientOptions.ProtocolVersion,
             request.RequestId,
@@ -179,49 +168,62 @@ public sealed class LoopbackWorkerClient :
                 ["method"] = request.Method,
                 ["path_and_query"] = request.PathAndQuery,
                 ["content_type"] = request.ContentType,
-                ["body"] = System.Text.Encoding.UTF8.GetString(request.Body),
+                // Binary-safe transport: body_b64 is authoritative. Legacy `body`
+                // kept only for backward compat with workers that predate body_b64;
+                // it carries the strict-UTF8 decoding when possible, else empty,
+                // so we never corrupt binary via lossy GetString coercion.
+                ["body_b64"] = Convert.ToBase64String(request.Body),
+                ["body"] = EncodeLegacyBody(request.Body),
             },
             CorrelationContext.Current);
 
-        await foreach (var item in connection.SendRequestAsync(envelope, cancellationToken))
+        var item = await SendPooledUnaryAsync(envelope, "runtime", cancellationToken).ConfigureAwait(false);
+        if (item.Type == WorkerMessageTypes.Error)
         {
-            if (item.Type == WorkerMessageTypes.Error)
-            {
-                throw RemoteError(item.Payload);
-            }
+            throw RemoteError(item.Payload);
+        }
 
-            if (item.Type != WorkerMessageTypes.RuntimeResponse)
-            {
-                throw new WorkerProtocolException("unexpected_type");
-            }
+        if (item.Type != WorkerMessageTypes.RuntimeResponse)
+        {
+            throw new WorkerProtocolException("unexpected_type");
+        }
 
-            var statusCode = ReadInt32(item.Payload["status_code"], "invalid_runtime_response");
-            if (statusCode is < 100 or > 599)
+        var statusCode = ReadInt32(item.Payload["status_code"], "invalid_runtime_response");
+        if (statusCode is < 100 or > 599)
+        {
+            throw new WorkerProtocolException("invalid_runtime_response");
+        }
+
+        var contentType = ReadOptionalString(
+            item.Payload["content_type"],
+            "invalid_runtime_response");
+        var headers = ReadHeaders(item.Payload["headers"]);
+        byte[] body;
+        var b64 = ReadOptionalString(item.Payload["body_b64"], "invalid_runtime_response");
+        if (!string.IsNullOrEmpty(b64))
+        {
+            try
+            {
+                body = Convert.FromBase64String(b64);
+            }
+            catch (FormatException)
             {
                 throw new WorkerProtocolException("invalid_runtime_response");
             }
-
-            var contentType = ReadOptionalString(
-                item.Payload["content_type"],
-                "invalid_runtime_response");
-            var headers = ReadHeaders(item.Payload["headers"]);
-            byte[] body;
-            if (!item.Binary.IsEmpty)
-            {
-                body = item.Binary.ToArray();
-            }
-            else
-            {
-                var text = ReadOptionalString(
-                    item.Payload["body"],
-                    "invalid_runtime_response") ?? string.Empty;
-                body = System.Text.Encoding.UTF8.GetBytes(text);
-            }
-
-            return new WorkerRuntimeResponse(statusCode, contentType, body, headers);
+        }
+        else if (!item.Binary.IsEmpty)
+        {
+            body = item.Binary.ToArray();
+        }
+        else
+        {
+            var text = ReadOptionalString(
+                item.Payload["body"],
+                "invalid_runtime_response") ?? string.Empty;
+            body = Encoding.UTF8.GetBytes(text);
         }
 
-        throw new WorkerProtocolException("missing_response");
+        return new WorkerRuntimeResponse(statusCode, contentType, body, headers);
     }
 
     public async IAsyncEnumerable<WorkerEvent> StreamVoiceAsync(
@@ -334,6 +336,128 @@ public sealed class LoopbackWorkerClient :
         foreach (var connection in connections)
         {
             await connection.DisposeAsync();
+        }
+
+        WorkerConnection? pooled = null;
+        await _poolLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            pooled = _pooledConnection;
+            _pooledConnection = null;
+            _pooledHello = null;
+        }
+        finally
+        {
+            _poolLock.Release();
+        }
+
+        if (pooled is not null)
+        {
+            await pooled.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _poolLock.Dispose();
+    }
+
+    private static string EncodeLegacyBody(byte[] body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        if (body.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return StrictUtf8.GetString(body);
+        }
+        catch (DecoderFallbackException)
+        {
+            // Binary payload: legacy `body` cannot represent it without corruption,
+            // so leave it empty and rely on body_b64 (authoritative).
+            return string.Empty;
+        }
+    }
+
+    private async Task<WorkerEvent> SendPooledUnaryAsync(
+        WorkerEnvelope request,
+        string? requiredCapability,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ThrowIfDisposed();
+        await _poolLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var connection = _pooledConnection;
+            var hello = _pooledHello;
+            if (connection is null || hello is null)
+            {
+                var fresh = new WorkerConnection(_options);
+                WorkerHello freshHello;
+                try
+                {
+                    freshHello = await fresh.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await fresh.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
+
+                _pooledConnection = fresh;
+                _pooledHello = freshHello;
+                connection = fresh;
+                hello = freshHello;
+            }
+
+            if (requiredCapability is not null)
+            {
+                EnsureCapability(hello.Capabilities, requiredCapability);
+            }
+
+            try
+            {
+                await foreach (var item in connection.SendRequestAsync(request, cancellationToken).ConfigureAwait(false))
+                {
+                    return item;
+                }
+
+                throw new WorkerProtocolException("missing_response");
+            }
+            catch (WorkerUnavailableException)
+            {
+                await InvalidatePooledLockedAsync(connection).ConfigureAwait(false);
+                throw;
+            }
+            catch (WorkerProtocolException)
+            {
+                // Protocol errors may leave the stream out of sync; drop pooled
+                // connection so the next call re-handshakes cleanly.
+                await InvalidatePooledLockedAsync(connection).ConfigureAwait(false);
+                throw;
+            }
+        }
+        finally
+        {
+            _poolLock.Release();
+        }
+    }
+
+    private async Task InvalidatePooledLockedAsync(WorkerConnection connection)
+    {
+        if (ReferenceEquals(_pooledConnection, connection))
+        {
+            _pooledConnection = null;
+            _pooledHello = null;
+            try
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // Dispose must not mask the original protocol/transport error.
+            }
         }
     }
 

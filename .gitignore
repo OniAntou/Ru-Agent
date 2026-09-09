@@ -54,10 +54,9 @@ rustup-init.exe
 *.wav
 
 # Scratch/verification artifacts
-artifacts/aspnetcore/
-artifacts/cleanup/
-artifacts/gui/
-tmp_verify_fresh*/
+artifacts/
+data/evaluations/
+*.db
 resources.pri.xml
 *.lnk
 test_settings.json

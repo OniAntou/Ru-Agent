@@ -180,6 +180,10 @@ public sealed partial class AgentV1Service
         }
     }
 
+    private const long MaxRestoreSizeBytes = 16 * 1024 * 1024; // 16MB cap per restore
+    private static readonly TimeSpan MinRestoreInterval = TimeSpan.FromSeconds(1); // Rate limit: max 1 restore/sec per workspace
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> _lastRestoreTime = new(StringComparer.Ordinal);
+
     public async Task<AgentServiceResult> RestoreWorkspaceChangeAsync(
         string workspaceIdRaw,
         string changeId,
@@ -200,6 +204,16 @@ public sealed partial class AgentV1Service
             || !IsLowerHex(request.ExpectedCurrentSha256))
         {
             return new AgentServiceResult(400, new AgentErrorResponse("invalid_expected_current_sha256"));
+        }
+
+        // Rate limiting per workspace
+        var now = _time.UtcNow;
+        if (_lastRestoreTime.TryGetValue(workspaceIdRaw, out var lastTime))
+        {
+            if (now - lastTime < MinRestoreInterval)
+            {
+                return new AgentServiceResult(429, new AgentErrorResponse("workspace_restore_rate_limited"));
+            }
         }
 
         try
@@ -244,6 +258,12 @@ public sealed partial class AgentV1Service
                 return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_unavailable"));
             }
 
+            // Cap restore size
+            if (restoredBytes.Length > MaxRestoreSizeBytes)
+            {
+                return new AgentServiceResult(413, new AgentErrorResponse("workspace_restore_too_large"));
+            }
+
             var restoredSha = Convert.ToHexString(SHA256.HashData(restoredBytes)).ToLowerInvariant();
             var restoreChangeId = $"chg_restore_{Guid.NewGuid():N}";
             var restorePayload = JsonSerializer.SerializeToUtf8Bytes(new
@@ -281,6 +301,18 @@ public sealed partial class AgentV1Service
                     // file is harmless and is cleaned by the next retry/startup.
                 }
             }
+
+            // Re-validate after move to detect symlink swap (TOCTOU)
+            var postMoveSha = File.Exists(target)
+                ? await ComputeFileSha256Async(target, cancellationToken).ConfigureAwait(false)
+                : Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())).ToLowerInvariant();
+            if (!string.Equals(postMoveSha, restoredSha, StringComparison.Ordinal))
+            {
+                return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_verification_failed"));
+            }
+
+            _lastRestoreTime[workspaceIdRaw] = now;
+
             await _workspaceCoordinatorStore.AppendChangeAsync(
                 workspaceId,
                 runId: null,

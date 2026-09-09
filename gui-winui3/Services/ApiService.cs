@@ -69,6 +69,15 @@ namespace RuApp.Services
 
             LastError = snapshot;
 
+            try
+            {
+                GuiDiagnosticWriter.WriteApiError(method, ex.GetType().Name, statusCode);
+            }
+            catch
+            {
+                // Diagnostics must never break the API caller.
+            }
+
             var status = statusCode.HasValue
                 ? $" status={statusCode.Value} "
                 : string.Empty;

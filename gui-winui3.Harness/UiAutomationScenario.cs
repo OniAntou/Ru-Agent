@@ -8,7 +8,7 @@ using System.Windows.Automation;
 
 namespace RuApp.Harness;
 
-public sealed class UiAutomationScenario : IDisposable
+public sealed class UiAutomationScenario : IAsyncDisposable
 {
     private const string MicAutomationId = "MicButton";
     private const string VoiceStatusAutomationId = "VoiceConversationStatus";
@@ -351,14 +351,19 @@ public sealed class UiAutomationScenario : IDisposable
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (!_closed)
         {
-            CloseAsync(TimeSpan.FromSeconds(2)).GetAwaiter().GetResult();
+            await CloseAsync(TimeSpan.FromSeconds(2));
         }
 
         _process.Dispose();
+    }
+
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     private async Task<AutomationElement> WaitForElementAsync(string automationId, TimeSpan timeout)

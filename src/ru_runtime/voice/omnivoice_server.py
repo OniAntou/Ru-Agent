@@ -68,8 +68,8 @@ def _acquire_single_instance() -> bool:
     return True
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY_ROOT = PROJECT_ROOT.parent.parent
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = REPOSITORY_ROOT
 # Paths below keep repo defaults but honor explicit environment overrides so
 # tests/staging can relocate assets without editing source.
 MODEL_CACHE = Path(os.environ.get("RU_OMNIVOICE_MODEL_CACHE", "") or (REPOSITORY_ROOT / "models" / "omnivoice"))
@@ -269,13 +269,12 @@ def synthesize_fast(
 ) -> str:
     total_started = perf_counter()
     waveform = _generate_source_audio(text, profile, speed, voice_style_id, timing=timing)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as output:
-        output_path = output.name
     write_started = perf_counter()
+    wav_bytes = _waveform_to_wav(waveform, MODEL_SAMPLE_RATE)
+    fd, output_path = tempfile.mkstemp(suffix=".wav")
     try:
-        import soundfile as sf
-
-        sf.write(output_path, waveform, MODEL_SAMPLE_RATE)
+        with os.fdopen(fd, "wb") as output:
+            output.write(wav_bytes)
         if timing is not None:
             timing("write_ms", (perf_counter() - write_started) * 1000)
             timing("total_ms", (perf_counter() - total_started) * 1000)

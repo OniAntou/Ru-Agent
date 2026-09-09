@@ -20,6 +20,10 @@ public sealed class DiagnosticLogReader
 {
     private readonly string _logDirectory;
 
+    // Cap: newest ~20 files, ~20MB total scanned
+    private const int MaxFilesToScan = 20;
+    private const long MaxTotalScanBytes = 20 * 1024 * 1024;
+
     public DiagnosticLogReader(string logDirectory)
     {
         _logDirectory = logDirectory;
@@ -71,11 +75,13 @@ public sealed class DiagnosticLogReader
 
                 return true;
             })
-            .OrderBy(f => f)
+            .OrderByDescending(f => f) // Newest first
+            .Take(MaxFilesToScan)
             .ToList();
 
         var collectedEvents = new List<DiagnosticEvent>();
         var maxBufferSize = Math.Min(limit * 3, 10000);
+        long totalScannedBytes = 0;
 
         // Parse cursor if present: format "cur_{ts}_{eventId}"
         double? cursorTs = null;
@@ -90,6 +96,11 @@ public sealed class DiagnosticLogReader
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (totalScannedBytes >= MaxTotalScanBytes)
+            {
+                break;
+            }
+
             try
             {
                 using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -101,7 +112,8 @@ public sealed class DiagnosticLogReader
                     var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                     if (read.EndOfFile) break;
                     scannedBytes += read.Bytes;
-                    if (scannedBytes > DiagnosticLogQueryPolicy.MaxScanBytesPerFile)
+                    totalScannedBytes += read.Bytes;
+                    if (scannedBytes > DiagnosticLogQueryPolicy.MaxScanBytesPerFile || totalScannedBytes > MaxTotalScanBytes)
                     {
                         break;
                     }

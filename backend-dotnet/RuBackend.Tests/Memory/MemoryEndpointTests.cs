@@ -21,14 +21,15 @@ public sealed class MemoryEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var items = payload.GetProperty("items");
         Assert.Equal(
             ["id", "text", "category", "created_at"],
-            payload[0].EnumerateObject().Select(property => property.Name).ToArray());
-        Assert.True(payload[0].TryGetProperty("id", out _));
-        Assert.True(payload[0].TryGetProperty("text", out _));
-        Assert.True(payload[0].TryGetProperty("category", out _));
-        Assert.True(payload[0].TryGetProperty("created_at", out _));
-        Assert.False(payload[0].TryGetProperty("evidence", out _));
+            items[0].EnumerateObject().Select(property => property.Name).ToArray());
+        Assert.True(items[0].TryGetProperty("id", out _));
+        Assert.True(items[0].TryGetProperty("text", out _));
+        Assert.True(items[0].TryGetProperty("category", out _));
+        Assert.True(items[0].TryGetProperty("created_at", out _));
+        Assert.False(items[0].TryGetProperty("evidence", out _));
     }
 
     [Fact]
@@ -63,7 +64,7 @@ public sealed class MemoryEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("memory-1", payload[0].GetProperty("id").GetString());
+        Assert.Equal("memory-1", payload.GetProperty("items")[0].GetProperty("id").GetString());
         Assert.Empty(runtimeWorker.Requests);
     }
 
@@ -151,6 +152,12 @@ public sealed class MemoryEndpointTests
             Task.FromResult(_records.FirstOrDefault(record => record.Id == id));
 
         public Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken)
+        {
+            ListActiveCount++;
+            return Task.FromResult(_records);
+        }
+
+        public Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(int limit, string? cursor, CancellationToken cancellationToken)
         {
             ListActiveCount++;
             return Task.FromResult(_records);

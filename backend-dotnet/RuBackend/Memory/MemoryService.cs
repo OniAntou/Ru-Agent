@@ -15,6 +15,8 @@ public interface IMemoryService
     Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
         RetrieveAsync(string.Empty, cancellationToken);
 
+    Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(int limit, string? cursor, CancellationToken cancellationToken);
+    Task<MemoryRecord?> GetAsync(string id, CancellationToken cancellationToken);
     Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(string query, CancellationToken cancellationToken);
     Task<IReadOnlyList<MemoryRecord>> RememberTurnAsync(string prompt, string response, CancellationToken cancellationToken);
     Task ClearAsync(CancellationToken cancellationToken);
@@ -50,10 +52,22 @@ public sealed class MemoryService : IMemoryService, IAsyncDisposable
         _learningQueue = new MemoryLearningQueue(ProcessQueuedWorkAsync, queueLogger);
     }
 
-    public async Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken)
+public async Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken)
     {
         EnsureNotDisposed();
         return await _repository.ListActiveAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(int limit, string? cursor, CancellationToken cancellationToken)
+    {
+        EnsureNotDisposed();
+        return await _repository.ListActiveAsync(limit, cursor, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<MemoryRecord?> GetAsync(string id, CancellationToken cancellationToken)
+    {
+        EnsureNotDisposed();
+        return await _repository.GetAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(

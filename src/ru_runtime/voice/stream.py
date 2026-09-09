@@ -20,6 +20,11 @@ VoicePlaybackState = Literal["started", "ended", "cancelled", "failed"]
 
 logger = logging.getLogger(__name__)
 
+# Bound the cancelled-request set so cancel() spam cannot grow memory unbounded.
+_CANCELLED_MAXSIZE = 1000
+_CANCELLED_TTL_SECONDS = 3600.0
+_TIMINGS_MAXSIZE = 200
+
 
 @dataclass(frozen=True, slots=True)
 class VoiceStreamEvent:
@@ -61,23 +66,55 @@ class VoiceStreamCoordinator:
         self._memory_lock = memory_lock
         self._lock_timeout = lock_timeout
         self._request_timeout = request_timeout
-        self._cancelled: set[str] = set()
+        self._cancelled: dict[str, float] = {}
         self._cancel_lock = threading.Lock()
         self._timings: dict[str, VoiceTiming] = {}
         self._timing_started: dict[str, float] = {}
         self._current_request_id: str | None = None
 
+    def _prune_cancelled_locked(self) -> None:
+        now = perf_counter()
+        expired = [
+            key for key, ts in self._cancelled.items()
+            if (now - ts) > _CANCELLED_TTL_SECONDS
+        ]
+        for key in expired:
+            self._cancelled.pop(key, None)
+        while len(self._cancelled) > _CANCELLED_MAXSIZE:
+            oldest = next(iter(self._cancelled))
+            self._cancelled.pop(oldest, None)
+
+    def _prune_timings_locked(self, keep_request_id: str | None = None) -> None:
+        while len(self._timings) > _TIMINGS_MAXSIZE:
+            oldest = next(
+                (key for key in self._timings if key != keep_request_id),
+                None,
+            )
+            if oldest is None:
+                break
+            self._timings.pop(oldest, None)
+            self._timing_started.pop(oldest, None)
+
     def cancel(self, request_id: str) -> None:
+        if not request_id:
+            return
         with self._cancel_lock:
-            self._cancelled.add(request_id)
+            self._prune_cancelled_locked()
+            self._cancelled[request_id] = perf_counter()
 
     def _is_cancelled(self, request_id: str) -> bool:
         with self._cancel_lock:
-            return request_id in self._cancelled
+            ts = self._cancelled.get(request_id)
+            if ts is None:
+                return False
+            if (perf_counter() - ts) > _CANCELLED_TTL_SECONDS:
+                self._cancelled.pop(request_id, None)
+                return False
+            return True
 
     def _finish_request(self, request_id: str) -> None:
         with self._cancel_lock:
-            self._cancelled.discard(request_id)
+            self._cancelled.pop(request_id, None)
 
     @staticmethod
     def _consume_background_worker_result(worker: asyncio.Future[object]) -> None:
@@ -205,13 +242,15 @@ class VoiceStreamCoordinator:
                 return
             lock_acquired = True
         with self._cancel_lock:
-            self._timings.clear()
-            self._timing_started.clear()
+            # Key timings by request_id; never clear all entries so concurrent
+            # or previous requests keep their snapshots for debugging.
             self._current_request_id = request_id
             self._timings[request_id] = VoiceTiming(
                 request_id, selection.profile_id, "vi-normalized-16"
             )
             self._timing_started[request_id] = perf_counter()
+            self._prune_timings_locked(keep_request_id=request_id)
+            self._prune_cancelled_locked()
         worker_task: asyncio.Task[object] | None = None
         worker_completion: asyncio.Future[object] | None = None
         try:

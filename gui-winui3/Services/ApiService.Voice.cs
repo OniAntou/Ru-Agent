@@ -14,7 +14,9 @@ namespace RuApp.Services
         {
             try
             {
-                return await _httpClient.GetFromJsonAsync<VoiceStatusDto>($"{_baseUrl}/voice/status", cancellationToken);
+                using var response = await _httpClient.GetAsync($"{_baseUrl}/voice/status", cancellationToken);
+                if (!response.IsSuccessStatusCode) return null;
+                return await response.Content.ReadFromJsonAsync<VoiceStatusDto>(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -58,7 +60,7 @@ namespace RuApp.Services
                     SubtitlePosX = subtitlePosX,
                     SubtitlePosY = subtitlePosY,
                 };
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -72,7 +74,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/voice/warmup", null);
+                using var response = await _httpClient.PostAsync($"{_baseUrl}/voice/warmup", null);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -102,7 +104,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/voice/release", null);
+                using var response = await _httpClient.PostAsync($"{_baseUrl}/voice/release", null);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -116,7 +118,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/voice/tts", new { text });
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/voice/tts", new { text });
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -136,7 +138,7 @@ namespace RuApp.Services
                     voice_label = voiceLabel,
                     speed
                 };
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/voice/tts", payload);
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/voice/tts", payload);
                 if (response.IsSuccessStatusCode &&
                     response.Content.Headers.ContentType?.MediaType == "audio/wav")
                 {
@@ -160,7 +162,7 @@ namespace RuApp.Services
                     audio_b64 = audioB64,
                     sample_rate = 16000
                 };
-                var response = await _httpClient.PostAsJsonAsync(
+                using var response = await _httpClient.PostAsJsonAsync(
                     $"{_baseUrl}/voice/transcribe",
                     payload,
                     cancellationToken);

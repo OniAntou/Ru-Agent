@@ -20,6 +20,7 @@ dev = [
     "pytest>=8",
     "flask>=3.1,<4",
     "soundfile>=0.12",
+    "packaging>=24",
     "ruff==0.16.2",
     "mypy==2.3.0",
 ]
@@ -32,6 +33,8 @@ voice = [
     "torchaudio>=2.8,<2.9",
     "omnivoice>=0.2.1",
     "flask>=3.1,<4",
+    "numpy>=1.26",
+    "soundfile>=0.12",
 ]
 
 [tool.setuptools.packages.find]

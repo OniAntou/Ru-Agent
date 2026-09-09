@@ -30,10 +30,8 @@ public sealed class DesktopTokenMiddleware
             ? authorization[BearerPrefix.Length..].Trim()
             : string.Empty;
 
-        if (candidate.Length == 0 && context.WebSockets.IsWebSocketRequest)
-        {
-            candidate = context.Request.Query["token"].ToString().Trim();
-        }
+        // Bearer travels via the Authorization header only. Query-string tokens
+        // are rejected so secrets never land in access logs or ETW traces.
 
         var configuredToken = _options.Value.DesktopToken?.Trim() ?? string.Empty;
         if (!TokensMatch(candidate, configuredToken))

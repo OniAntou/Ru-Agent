@@ -266,7 +266,6 @@ public static class AgentV1Endpoints
         // Set SSE headers
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";
-        context.Response.ContentType = "text/event-stream";
 
         // Need to get run for status mapping
         var runIdObj = new RuAgent.Harness.Core.RunId(runId);
@@ -277,6 +276,8 @@ public static class AgentV1Endpoints
             await context.Response.WriteAsJsonAsync(new { error_code = "run_not_found" }, ct);
             return;
         }
+
+        context.Response.ContentType = "text/event-stream";
 
         // Streaming durable events without materializing
         long lastSent = effectiveAfter;

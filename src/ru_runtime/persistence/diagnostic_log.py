@@ -149,25 +149,33 @@ class DiagnosticLogWriter:
     def _write_batch(self, batch: list[DiagnosticEvent]) -> bool:
         if not batch:
             return True
+        # Serialize per-event so one poison event cannot fail the whole batch.
+        by_date: dict[str, list[str]] = collections.defaultdict(list)
+        good_events: list[DiagnosticEvent] = []
+        for evt in batch:
+            try:
+                dt = datetime.datetime.fromtimestamp(evt.ts, datetime.UTC)
+                date_str = dt.strftime("%Y-%m-%d")
+                line = serialize_diagnostic_event(evt) + "\n"
+            except Exception:
+                with self.queue._lock:
+                    self.queue.dropped_count += 1
+                continue
+            by_date[date_str].append(line)
+            good_events.append(evt)
+        if not good_events:
+            return True
         with self._write_lock:
             try:
                 os.makedirs(self.log_dir, exist_ok=True)
-                # Group by date
-                by_date: dict[str, list[DiagnosticEvent]] = collections.defaultdict(list)
-                for evt in batch:
-                    dt = datetime.datetime.fromtimestamp(evt.ts, datetime.UTC)
-                    date_str = dt.strftime("%Y-%m-%d")
-                    by_date[date_str].append(evt)
-
-                for date_str, evts in by_date.items():
+                for date_str, lines in by_date.items():
                     file_path = os.path.join(self.log_dir, f"{self.prefix}{date_str}.jsonl")
-                    lines = [serialize_diagnostic_event(e) + "\n" for e in evts]
                     with open(file_path, "a", encoding="utf-8") as f:
                         f.writelines(lines)
                 return True
             except Exception:
                 self.queue.record_write_failure()
-                self.queue.requeue_front(batch)
+                self.queue.requeue_front(good_events)
                 return False
 
 

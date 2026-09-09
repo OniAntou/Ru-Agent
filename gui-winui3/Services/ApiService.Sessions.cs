@@ -32,7 +32,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/new", null);
+                using var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/new", null);
                 if (!response.IsSuccessStatusCode)
                 {
                     return null;
@@ -70,7 +70,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
+                using var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -84,7 +84,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
+                using var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -140,7 +140,7 @@ namespace RuApp.Services
             try
             {
                 var payload = new { up_to_message_index = upToMessageIndex, title };
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/sessions/{sessionId}/fork", payload);
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/sessions/{sessionId}/fork", payload);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -166,7 +166,7 @@ namespace RuApp.Services
             try
             {
                 var payload = new { to_message_index = toMessageIndex };
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/sessions/{sessionId}/rewind", payload);
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/sessions/{sessionId}/rewind", payload);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>();

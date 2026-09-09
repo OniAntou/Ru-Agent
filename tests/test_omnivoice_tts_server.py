@@ -6,18 +6,31 @@ from pathlib import Path
 import ru_runtime.voice.omnivoice_server as server
 
 
-class FakeTemporaryOutput:
-    def __init__(self, path: Path) -> None:
-        self.name = str(path)
+def _fail_tempfile(*args, **kwargs):
+    raise AssertionError("byte-based synthesis must not create a temp file")
 
-    def __enter__(self) -> FakeTemporaryOutput:
-        return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
+def _fake_fdopen_writing_wav_bytes(target: Path):
+    import contextlib
 
-    def close(self) -> None:
-        return None
+    @contextlib.contextmanager
+    def fake_fdopen(fd: int, mode: str):
+        written: list[bytes] = []
+        yield _CollectingFile(written)
+        assert written, "synthesize_fast must write WAV bytes to the temp file"
+        target.write_bytes(b"".join(written))
+
+    return fake_fdopen
+
+
+class _CollectingFile:
+    def __init__(self, written: list[bytes]) -> None:
+        self._written = written
+
+    def write(self, data: bytes) -> int:
+        chunk = bytes(data)
+        self._written.append(chunk)
+        return len(chunk)
 
 
 def test_run_server_refuses_a_second_heavy_instance(monkeypatch) -> None:
@@ -205,11 +218,6 @@ def test_synthesis_uses_native_speed_without_local_waveform_effects(tmp_path, mo
         def inference_mode() -> FakeInferenceMode:
             return FakeInferenceMode()
 
-    class FakeSoundFile:
-        @staticmethod
-        def write(path: str, audio, sample_rate: int) -> None:
-            Path(path).write_bytes(b"RIFF")
-
     class FakeModel:
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
@@ -220,7 +228,6 @@ def test_synthesis_uses_native_speed_without_local_waveform_effects(tmp_path, mo
 
     model = FakeModel()
     monkeypatch.setitem(sys.modules, "torch", FakeTorch())
-    monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
     monkeypatch.setattr(server, "get_model", lambda: model)
     monkeypatch.setattr(
@@ -241,9 +248,10 @@ def test_synthesis_uses_native_speed_without_local_waveform_effects(tmp_path, mo
     )
     monkeypatch.setattr(
         server.tempfile,
-        "NamedTemporaryFile",
-        lambda **kwargs: FakeTemporaryOutput(tmp_path / "speech.wav"),
+        "mkstemp",
+        lambda **kwargs: (999, str(tmp_path / "speech.wav")),
     )
+    monkeypatch.setattr(server.os, "fdopen", _fake_fdopen_writing_wav_bytes(tmp_path / "speech.wav"))
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt", "ai_vy": "ai-vy-prompt"})
 
@@ -281,10 +289,7 @@ def test_synthesize_fast_bytes_returns_wav_bytes_without_temp_file(monkeypatch) 
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt"})
 
-    def fail_tempfile(**kwargs):
-        raise AssertionError("byte-based synthesis must not create a temp file")
-
-    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", fail_tempfile)
+    monkeypatch.setattr(server.tempfile, "mkstemp", _fail_tempfile)
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
 
     import io
@@ -309,10 +314,7 @@ def test_tts_route_returns_bytes_without_temp_file(tmp_path, monkeypatch) -> Non
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt"})
 
-    def boom(*args, **kwargs):
-        raise AssertionError("tts route must not temp-file the audio")
-
-    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", boom)
+    monkeypatch.setattr(server.tempfile, "mkstemp", _fail_tempfile)
 
     client = server.create_app().test_client()
     response = client.post("/tts", json={"text": "xin chào", "voice_profile": "ru"})
@@ -335,10 +337,7 @@ def test_tts_stream_route_uses_bytes_without_temp_files(tmp_path, monkeypatch) -
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt"})
 
-    def boom(*args, **kwargs):
-        raise AssertionError("tts_stream must not temp-file the audio")
-
-    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", boom)
+    monkeypatch.setattr(server.tempfile, "mkstemp", _fail_tempfile)
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
 
     client = server.create_app().test_client()
@@ -363,7 +362,10 @@ def test_omnivoice_server_exposes_no_local_waveform_effects() -> None:
     assert not hasattr(server, "apply_voice_pitch")
 
 
-def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
+def test_synthesize_fast_writes_wav_bytes_without_soundfile(tmp_path, monkeypatch) -> None:
+    import io
+    import wave as wave_module
+
     import numpy as np
 
     class FakeInferenceMode:
@@ -389,26 +391,31 @@ def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server, "get_model", lambda: FakeModel())
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt"})
-    writes: list[np.ndarray] = []
 
-    def fake_write(name: str, data: object, samplerate: int) -> None:
-        writes.append(np.asarray(data))
-        Path(name).write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+    target = tmp_path / "speech.wav"
+
+    def fake_mkstemp(**kwargs):
+        if target.is_file():
+            target.unlink()
+        return 999, str(target)
+
+    def fake_fdopen(fd: int, mode: str):
+        assert fd == 999
+        return target.open("wb")
 
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
     monkeypatch.setitem(sys.modules, "torch", FakeTorch())
-    monkeypatch.setattr("soundfile.write", fake_write)
-    monkeypatch.setattr(
-        server.tempfile,
-        "NamedTemporaryFile",
-        lambda **kwargs: FakeTemporaryOutput(tmp_path / "speech.wav"),
-    )
+    assert "soundfile" not in sys.modules
+    monkeypatch.setattr(server.tempfile, "mkstemp", fake_mkstemp)
+    monkeypatch.setattr(server.os, "fdopen", fake_fdopen)
 
     path = server.synthesize_fast("Chào anh.", "ru", speed=1.0)
 
     assert Path(path).is_file()
-    assert writes, "soundfile.write must be called"
-    assert writes[0].ndim == 1, "waveform must be 1D for libsndfile"
+    with wave_module.open(io.BytesIO(Path(path).read_bytes()), "rb") as output:
+        assert output.getnchannels() == 1
+        assert output.getframerate() == server.MODEL_SAMPLE_RATE
+        assert output.getnframes() == 2400
 
 
 def test_synthesize_fast_reports_privacy_safe_timing(tmp_path, monkeypatch) -> None:
@@ -430,20 +437,15 @@ def test_synthesize_fast_reports_privacy_safe_timing(tmp_path, monkeypatch) -> N
         def generate(self, **kwargs: object) -> list[object]:
             return [np.zeros((1, 2400), dtype=np.float32)]
 
-    class FakeSoundFile:
-        @staticmethod
-        def write(path: str, data: object, samplerate: int) -> None:
-            Path(path).write_bytes(b"RIFF")
-
     monkeypatch.setitem(sys.modules, "torch", FakeTorch())
-    monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
     monkeypatch.setattr(server, "get_model", lambda: FakeModel())
     monkeypatch.setattr(
         server.tempfile,
-        "NamedTemporaryFile",
-        lambda **kwargs: FakeTemporaryOutput(tmp_path / "speech.wav"),
+        "mkstemp",
+        lambda **kwargs: (999, str(tmp_path / "speech.wav")),
     )
+    monkeypatch.setattr(server.os, "fdopen", _fake_fdopen_writing_wav_bytes(tmp_path / "speech.wav"))
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt"})
     events: list[tuple[str, float]] = []

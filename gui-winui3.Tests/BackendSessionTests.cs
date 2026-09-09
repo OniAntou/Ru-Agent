@@ -12,8 +12,10 @@ public sealed class BackendSessionTests
 
         Assert.Equal(new Uri("http://127.0.0.1:18001/"), session.HttpBaseUri);
         Assert.Equal(
-            new Uri("ws://127.0.0.1:18001/voice/stream?token=desktop-secret"),
+            new Uri("ws://127.0.0.1:18001/voice/stream"),
             session.VoiceStreamUri);
+        Assert.DoesNotContain("token", session.VoiceStreamUri.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("desktop-secret", session.VoiceStreamUri.ToString(), StringComparison.Ordinal);
     }
 
     [Theory]

@@ -99,6 +99,64 @@ public sealed class GuiDiagnosticWriter : IDisposable
         return TryEnqueueEvent(diagnosticEvent);
     }
 
+    public bool TryEnqueueApiError(string method, string errorType, int? statusCode = null)
+    {
+        if (string.IsNullOrWhiteSpace(method) || method.Length > 128)
+        {
+            throw new ArgumentException("API diagnostic method must be 1-128 characters.", nameof(method));
+        }
+
+        string safeType = string.IsNullOrWhiteSpace(errorType) || errorType.Length > 64
+            ? "unknown"
+            : errorType.Trim();
+        string code = statusCode.HasValue
+            ? $"api_{SanitizeCode(method)}_{statusCode.Value}"
+            : $"api_{SanitizeCode(method)}";
+        if (code.Length > 64)
+        {
+            code = code[..64];
+        }
+
+        var diagnosticEvent = new GuiDiagnosticEvent(
+            EventId: $"evt_{Guid.NewGuid():N}",
+            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0,
+            Iso: DateTimeOffset.UtcNow.ToString("O"),
+            Level: "error",
+            Component: "gui",
+            EventCode: "gui_api_error",
+            Status: "failed",
+            ErrorCode: code,
+            ExceptionKind: safeType.Length > 32 ? safeType[..32] : safeType);
+
+        return TryEnqueueEvent(diagnosticEvent);
+    }
+
+    public bool TryEnqueueGuiError(string component, string errorCode)
+    {
+        if (string.IsNullOrWhiteSpace(component) || component.Length > 64)
+        {
+            throw new ArgumentException("GUI diagnostic component must be 1-64 characters.", nameof(component));
+        }
+
+        if (string.IsNullOrWhiteSpace(errorCode) || errorCode.Length > 64)
+        {
+            throw new ArgumentException("GUI diagnostic error code must be 1-64 characters.", nameof(errorCode));
+        }
+
+        var diagnosticEvent = new GuiDiagnosticEvent(
+            EventId: $"evt_{Guid.NewGuid():N}",
+            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0,
+            Iso: DateTimeOffset.UtcNow.ToString("O"),
+            Level: "error",
+            Component: "gui",
+            EventCode: component.Trim(),
+            Status: "failed",
+            ErrorCode: errorCode.Trim(),
+            ExceptionKind: "unknown");
+
+        return TryEnqueueEvent(diagnosticEvent);
+    }
+
     public bool Flush(TimeSpan timeout)
     {
         if (timeout < TimeSpan.Zero)
@@ -134,6 +192,34 @@ public sealed class GuiDiagnosticWriter : IDisposable
         {
             using var writer = new GuiDiagnosticWriter(logRoot, capacity: 1);
             return writer.TryEnqueueVoiceCaptureFailure(errorCode, exception)
+                && writer.Flush(TimeSpan.FromMilliseconds(500));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool WriteApiError(string method, string errorType, int? statusCode = null, string? logRoot = null)
+    {
+        try
+        {
+            using var writer = new GuiDiagnosticWriter(logRoot, capacity: 4);
+            return writer.TryEnqueueApiError(method, errorType, statusCode)
+                && writer.Flush(TimeSpan.FromMilliseconds(500));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool WriteGuiError(string component, string errorCode, string? logRoot = null)
+    {
+        try
+        {
+            using var writer = new GuiDiagnosticWriter(logRoot, capacity: 4);
+            return writer.TryEnqueueGuiError(component, errorCode)
                 && writer.Flush(TimeSpan.FromMilliseconds(500));
         }
         catch
@@ -342,6 +428,18 @@ public sealed class GuiDiagnosticWriter : IDisposable
             System.Net.WebSockets.WebSocketException => "network",
             _ => "unknown",
         };
+    }
+
+    private static string SanitizeCode(string value)
+    {
+        var builder = new System.Text.StringBuilder(value.Length);
+        foreach (char ch in value.Trim().ToLowerInvariant())
+        {
+            builder.Append(char.IsLetterOrDigit(ch) ? ch : '_');
+        }
+
+        string sanitized = builder.ToString().Trim('_');
+        return string.IsNullOrEmpty(sanitized) ? "unknown" : sanitized;
     }
 
     private sealed record GuiDiagnosticEvent(

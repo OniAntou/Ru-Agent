@@ -33,6 +33,7 @@ namespace RuApp.Views
 
         public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
         {
+            DisposeEventHandlers();
             _apiService = apiService;
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
@@ -75,16 +76,16 @@ namespace RuApp.Views
                 await SaveSettingsAsync();
             };
 
-            BackendComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
-            OpenCodeApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            KiloApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            OpenAiApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            AnthropicApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            GeminiVisionKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            CustomEndpointUrlBox.TextChanged += (_, __) => ScheduleAutoSave();
-            CustomApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            SelfLearningToggle.Toggled += (_, __) => ScheduleAutoSave();
-            CloudMemoryConsentToggle.Toggled += (_, __) => ScheduleAutoSave();
+            BackendComboBox.SelectionChanged += AutoSaveHandler;
+            OpenCodeApiKeyBox.PasswordChanged += AutoSaveHandler;
+            KiloApiKeyBox.PasswordChanged += AutoSaveHandler;
+            OpenAiApiKeyBox.PasswordChanged += AutoSaveHandler;
+            AnthropicApiKeyBox.PasswordChanged += AutoSaveHandler;
+            GeminiVisionKeyBox.PasswordChanged += AutoSaveHandler;
+            CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
+            CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
+            SelfLearningToggle.Toggled += AutoSaveHandler;
+            CloudMemoryConsentToggle.Toggled += AutoSaveHandler;
         }
 
         private void ScheduleAutoSave()
@@ -247,12 +248,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
-            _autoSaveTimer?.Stop();
-            _autoSaveTimer = null;
-            _vtsConfigDebounce?.Stop();
-            _vtsConfigDebounce = null;
-            _vtsControlDebounce?.Stop();
-            _vtsControlDebounce = null;
+            DisposeEventHandlers();
             if (_providerCatalogController is not null)
             {
                 if (_ownsProviderCatalogController)
@@ -265,6 +261,30 @@ namespace RuApp.Views
             MemoryControl?.Dispose();
             _apiService = null;
         }
+
+        private void DisposeEventHandlers()
+        {
+            BackendComboBox.SelectionChanged -= AutoSaveHandler;
+            OpenCodeApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            KiloApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            OpenAiApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            AnthropicApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            GeminiVisionKeyBox.PasswordChanged -= AutoSaveHandler;
+            CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
+            CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            SelfLearningToggle.Toggled -= AutoSaveHandler;
+            CloudMemoryConsentToggle.Toggled -= AutoSaveHandler;
+            _autoSaveTimer?.Stop();
+            _autoSaveTimer = null;
+            _vtsConfigDebounce?.Stop();
+            _vtsConfigDebounce = null;
+            _vtsControlDebounce?.Stop();
+            _vtsControlDebounce = null;
+        }
+
+        private void AutoSaveHandler(object sender, RoutedEventArgs e) => ScheduleAutoSave();
+
+        private void AutoSaveTextHandler(object sender, TextChangedEventArgs e) => ScheduleAutoSave();
 
         private async void OnConnectVtsClick(object sender, RoutedEventArgs e)
         {

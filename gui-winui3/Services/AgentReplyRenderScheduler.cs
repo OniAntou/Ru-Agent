@@ -80,7 +80,7 @@ public sealed class AgentReplyRenderScheduler
                 // The callback was rejected, so it cannot clear ownership later.
                 _callbackPending = false;
                 currentGeneration = _generation;
-                retryForCurrentGeneration = _pendingWork && generation != currentGeneration;
+                retryForCurrentGeneration = _pendingWork;
                 if (retryForCurrentGeneration)
                 {
                     _callbackPending = true;

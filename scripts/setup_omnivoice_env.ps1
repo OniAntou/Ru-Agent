@@ -58,9 +58,9 @@ if ($LASTEXITCODE -ne 0) { throw "Could not upgrade pip in $environmentPath." }
 if ($LASTEXITCODE -ne 0) { throw "Could not install CUDA Torch in $environmentPath." }
 & $environmentPython -m pip install --cache-dir $pipCache "torchaudio==2.8.0+cu128" --index-url "https://download.pytorch.org/whl/cu128"
 if ($LASTEXITCODE -ne 0) { throw "Could not install matching CUDA torchaudio in $environmentPath." }
-& $environmentPython -m pip install --cache-dir $pipCache omnivoice flask
+& $environmentPython -m pip install --cache-dir $pipCache omnivoice flask numpy soundfile
 if ($LASTEXITCODE -ne 0) { throw "Could not install OmniVoice and its loopback service in $environmentPath." }
 & $environmentPython -m pip install --cache-dir $pipCache -e $projectRoot --no-deps
 if ($LASTEXITCODE -ne 0) { throw "Could not install Ru benchmark sources in $environmentPath." }
 
-& $environmentPython -c "import flask, os, omnivoice, torch; print('flask=' + flask.__version__); print('omnivoice=' + getattr(omnivoice, '__version__', 'unknown')); print('torch=' + torch.__version__); print('cuda=' + str(torch.cuda.is_available())); print('HF_HOME=' + os.environ['HF_HOME'])"
+& $environmentPython -c "import flask, os, omnivoice, torch, numpy, soundfile; print('flask=' + flask.__version__); print('omnivoice=' + getattr(omnivoice, '__version__', 'unknown')); print('torch=' + torch.__version__); print('numpy=' + numpy.__version__); print('soundfile=' + getattr(soundfile, '__version__', 'unknown')); print('cuda=' + str(torch.cuda.is_available())); print('HF_HOME=' + os.environ['HF_HOME'])"

@@ -15,6 +15,8 @@ public static class MemoryEndpoints
 {
     private const string BusyMessage = "Memory is busy (self-learning in progress); try again in a moment.";
     private const string ClearSuccessMessage = "Structured memory cleared. Session history was retained.";
+    private const int DefaultLimit = 200;
+    private const int MaxLimit = 500;
 
     public static void Map(WebApplication app)
     {
@@ -23,14 +25,48 @@ public static class MemoryEndpoints
     }
 
     private static async Task<IResult> GetMemoryAsync(
+        HttpContext context,
         IMemoryService memoryService,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         try
         {
-            var records = await memoryService.ListActiveAsync(cancellationToken).ConfigureAwait(false);
-            return Results.Ok(records.Select(ToDto).ToArray());
+            var limitRaw = context.Request.Query["limit"].ToString();
+            var cursor = context.Request.Query["cursor"].ToString();
+            var limit = DefaultLimit;
+
+            if (!string.IsNullOrWhiteSpace(limitRaw) && int.TryParse(limitRaw, out var parsedLimit))
+            {
+                limit = Math.Clamp(parsedLimit, 1, MaxLimit);
+            }
+
+            if (string.IsNullOrWhiteSpace(cursor))
+            {
+                cursor = null;
+            }
+
+            var records = await memoryService.ListActiveAsync(limit, cursor, cancellationToken).ConfigureAwait(false);
+            var items = records.Select(ToDto).ToArray();
+
+            string? nextCursor = null;
+            if (items.Length == limit)
+            {
+                var last = items[^1];
+                var record = await memoryService.GetAsync(last.Id, cancellationToken).ConfigureAwait(false);
+                if (record is not null)
+                {
+                    nextCursor = $"{record.UpdatedAt.UtcTicks}|{record.Id}";
+                }
+            }
+
+            var response = new
+            {
+                items,
+                next_cursor = nextCursor
+            };
+
+            return Results.Ok(response);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

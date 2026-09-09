@@ -60,7 +60,7 @@ public static class VtsEndpoints
                     context.Request.ContentType,
                     requestBody),
                 cancellationToken).ConfigureAwait(false);
-            await WriteWorkerResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
+            await RuntimeEndpointRelay.WriteWorkerResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -78,28 +78,5 @@ public static class VtsEndpoints
                 new { status = "error", message = "VTube Studio runtime is temporarily unavailable." },
                 cancellationToken).ConfigureAwait(false);
         }
-    }
-
-    private static async Task WriteWorkerResponseAsync(
-        HttpContext context,
-        RuntimeWorkerResponse response,
-        CancellationToken cancellationToken)
-    {
-        context.Response.StatusCode = response.StatusCode;
-        if (!string.IsNullOrWhiteSpace(response.ContentType))
-        {
-            context.Response.ContentType = response.ContentType;
-        }
-
-        if (response.Headers is not null)
-        {
-            foreach (var header in response.Headers)
-            {
-                context.Response.Headers[header.Key] = header.Value;
-            }
-        }
-
-        context.Response.ContentLength = response.Body.Length;
-        await context.Response.Body.WriteAsync(response.Body, cancellationToken).ConfigureAwait(false);
     }
 }

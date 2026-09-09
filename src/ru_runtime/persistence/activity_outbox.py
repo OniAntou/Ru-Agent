@@ -164,10 +164,10 @@ def sanitize_activity_event(event: dict) -> dict:
         for k, v in raw_data.items():
             k_str = str(k).lower().strip()
             if k_str in allowed_scalar_keys:
-                if isinstance(v, (int, float)):
-                    sanitized_data[k_str] = round(float(v), 2)
-                elif isinstance(v, bool):
+                if isinstance(v, bool):
                     sanitized_data[k_str] = v
+                elif isinstance(v, (int, float)):
+                    sanitized_data[k_str] = round(float(v), 2)
                 elif isinstance(v, str):
                     sanitized_data[k_str] = v[:100]
 

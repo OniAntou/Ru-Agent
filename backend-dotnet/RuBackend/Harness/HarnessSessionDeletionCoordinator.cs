@@ -7,6 +7,7 @@ public enum HarnessSessionDeletionOutcome
 {
     Deleted,
     SessionNotFound,
+    ArtifactsPending,
 }
 
 public interface IHarnessSessionDeletionCoordinator
@@ -45,6 +46,7 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
             throw new HarnessStoreException("broker_revoke_rejected");
         }
 
+        bool artifactsDeleted;
         try
         {
             await _artifacts.CloseAndDeleteAsync(
@@ -52,15 +54,24 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
                     _clock.GetUtcNow().ToUniversalTime(),
                     cancellationToken)
                 .ConfigureAwait(false);
+            artifactsDeleted = true;
         }
         catch (HarnessStoreException ex)
         {
-            // For old chats, harness artifacts are secondary. A transient DB busy/conflict should not block the user's chat file deletion.
-            // The harness row will be cleaned on next expiry or successful delete. Keep the session file deletion as primary.
-            System.Diagnostics.Debug.WriteLine($"[Delete] Harness artifacts issue for {sessionId}: {ex.Code}, continuing to session file delete");
+            // Harness artifacts are secondary, but their failure must be visible:
+            // the session file is still deleted (primary), while the caller gets
+            // ArtifactsPending so the UI can report partial cleanup and retry.
+            // The leftover harness row is also reclaimed on next expiry.
+            System.Diagnostics.Debug.WriteLine($"[Delete] Harness artifacts issue for {sessionId}: {ex.Code}, session file delete continues");
+            artifactsDeleted = false;
         }
-        return await _sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false)
+        var sessionDeleted = await _sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (!sessionDeleted)
+        {
+            return HarnessSessionDeletionOutcome.SessionNotFound;
+        }
+        return artifactsDeleted
             ? HarnessSessionDeletionOutcome.Deleted
-            : HarnessSessionDeletionOutcome.SessionNotFound;
+            : HarnessSessionDeletionOutcome.ArtifactsPending;
     }
 }

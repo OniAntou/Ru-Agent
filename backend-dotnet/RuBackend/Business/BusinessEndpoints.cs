@@ -225,10 +225,12 @@ public static class BusinessEndpoints
         {
             var outcome = await deletion.DeleteAsync(sessionId, cancellationToken)
                 .ConfigureAwait(false);
-            var deleted = outcome == HarnessSessionDeletionOutcome.Deleted;
-            return deleted
-                ? Results.Ok(new { status = "ok" })
-                : Results.Ok(new { status = "error", message = "Session không tồn tại." });
+            return outcome switch
+            {
+                HarnessSessionDeletionOutcome.Deleted => Results.Ok(new { status = "ok" }),
+                HarnessSessionDeletionOutcome.ArtifactsPending => Results.Ok(new { status = "error", message = "Session đã xoá nhưng artifacts còn sót, hãy thử xoá lại." }),
+                _ => Results.Ok(new { status = "error", message = "Session không tồn tại." }),
+            };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -267,6 +269,10 @@ public static class BusinessEndpoints
                 ? Results.Ok(new { status = "error", message = "Không tìm thấy session để fork." })
                 : Results.Ok(new { status = "ok", session = doc });
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception error)
         {
             LogFailure(loggers, "session fork", error);
@@ -288,6 +294,10 @@ public static class BusinessEndpoints
             return doc is null
                 ? Results.Ok(new { status = "error", message = "Không tìm thấy session để rewind." })
                 : Results.Ok(new { status = "ok", session = doc });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception error)
         {

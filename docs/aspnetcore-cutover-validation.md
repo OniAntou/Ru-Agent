@@ -1,5 +1,7 @@
 # ASP.NET Core decommission validation
 
+> **HISTORICAL — superseded by [architecture](architecture.md) and [python-runtime-boundary](operations/python-runtime-boundary.md).** The Python topology below is retired; this record uses the past tense and is not the current runtime.
+
 This record contains the final measured evidence for removing the public
 FastAPI backend. It supersedes the earlier staged-cutover evidence and its
 runtime ownership flags.
@@ -10,17 +12,17 @@ authoritative for the FastAPI decommission itself.
 
 ## Final architecture and rollback
 
-- ASP.NET Core is the only public HTTP and WebSocket host.
-- The desktop launch plan starts one private Python runtime worker and then
-  ASP.NET Core. The worker has no public API and is authenticated with a
+- ASP.NET Core became the only public HTTP and WebSocket host.
+- The desktop launch plan started one private Python runtime worker and then
+  ASP.NET Core. The worker had no public API and was authenticated with a
   per-launch bearer token.
-- Python remains only where the active model, STT, OmniVoice, VTS, or provider
-  libraries require it. Session, memory, activity, settings, orchestration,
-  public routing, authentication, and persistence ownership are in ASP.NET
+- Python remained only where the active model, STT, OmniVoice, VTS, or provider
+  libraries required it. Session, memory, activity, settings, orchestration,
+  public routing, authentication, and persistence ownership were in ASP.NET
   Core.
-- There is no FastAPI host mode, forwarding fallback, upstream URL, or
+- There was no FastAPI host mode, forwarding fallback, upstream URL, or
   per-route ownership switch.
-- The pre-deletion rollback point is Git commit `e023fd3`. Restoring FastAPI is
+- The pre-deletion rollback point was Git commit `e023fd3`. Restoring FastAPI was
   a source rollback, not a runtime environment-variable change.
 
 ## Final static and build gates (2026-08-13)

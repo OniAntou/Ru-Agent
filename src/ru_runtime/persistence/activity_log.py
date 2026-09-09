@@ -15,6 +15,7 @@ from pathlib import Path
 from ru_runtime.persistence.activity_outbox import (
     get_activity_outbox_writer,
     get_outbox_file,
+    reset_global_outbox_writer,
 )
 
 logger = logging.getLogger("ru_runtime.persistence.activity_log")
@@ -34,20 +35,41 @@ def _now_iso() -> str:
 
 def append(event: dict) -> None:
     """Publish a sanitized activity event to the worker outbox."""
-    event.setdefault("ts", time.time())
-    event.setdefault("iso", _now_iso())
+    event_copy = dict(event)
+    event_copy.setdefault("ts", time.time())
+    event_copy.setdefault("iso", _now_iso())
     writer = get_activity_outbox_writer()
-    writer.try_enqueue(event)
+    writer.try_enqueue(event_copy)
 
 
 def clear() -> None:
     """Clear outbox log."""
     with _log_lock:
         try:
-            get_activity_outbox_writer().flush(timeout_seconds=0.5)
+            # Close + reset the writer under lock so the background worker
+            # cannot recreate the file with a stale in-flight batch after unlink.
+            try:
+                get_activity_outbox_writer().close()
+            except Exception as exc:
+                logger.warning("activity_log writer close failed: %s", exc)
+            reset_global_outbox_writer()
             get_activity_log_file().unlink(missing_ok=True)
         except OSError as e:
             logger.warning("activity_log clear failed: %s", e)
+
+
+def _sort_key_ts(event: dict) -> float:
+    ts = event.get("ts", 0.0)
+    if isinstance(ts, bool):
+        return 0.0
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if isinstance(ts, str):
+        try:
+            return float(ts.strip() or 0.0)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 def read(limit: int = 200) -> list[dict]:
@@ -78,11 +100,14 @@ def read(limit: int = 200) -> list[dict]:
                     if not line:
                         continue
                     try:
-                        events.append(json.loads(line))
+                        obj = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if not isinstance(obj, dict):
+                        continue
+                    events.append(obj)
         except OSError as e:
             logger.warning("activity_log read failed: %s", e)
             return []
-    events.sort(key=lambda e: e.get("ts", 0.0))
+    events.sort(key=_sort_key_ts)
     return events[-limit:]

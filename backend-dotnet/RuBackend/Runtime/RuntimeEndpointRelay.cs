@@ -2,6 +2,33 @@ namespace RuBackend.Runtime;
 
 internal static class RuntimeEndpointRelay
 {
+    private static readonly HashSet<string> AllowedResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Content-Type",
+        "X-Request-Id",
+        "X-Correlation-Id",
+        "X-Worker-Version",
+        "X-Runtime-Version",
+        "X-Capabilities",
+        "X-Error-Code",
+        "X-Error-Detail"
+    };
+
+    private static readonly HashSet<string> ForbiddenResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Content-Length",
+        "Transfer-Encoding",
+        "Connection",
+        "Set-Cookie",
+        "Cookie",
+        "Keep-Alive",
+        "Proxy-Authenticate",
+        "Proxy-Authorization",
+        "TE",
+        "Trailer",
+        "Upgrade"
+    };
+
     internal static async Task<byte[]?> ReadBoundedBodyAsync(
         HttpRequest request,
         long configuredMaximumBytes,
@@ -63,7 +90,7 @@ internal static class RuntimeEndpointRelay
                     context.Request.ContentType,
                     requestBody),
                 cancellationToken).ConfigureAwait(false);
-            await WriteResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
+            await WriteWorkerResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -84,7 +111,7 @@ internal static class RuntimeEndpointRelay
         }
     }
 
-    private static async Task WriteResponseAsync(
+    public static async Task WriteWorkerResponseAsync(
         HttpContext context,
         RuntimeWorkerResponse response,
         CancellationToken cancellationToken)
@@ -99,7 +126,15 @@ internal static class RuntimeEndpointRelay
         {
             foreach (var header in response.Headers)
             {
-                context.Response.Headers[header.Key] = header.Value;
+                var key = header.Key;
+                if (ForbiddenResponseHeaders.Contains(key))
+                {
+                    continue;
+                }
+                if (AllowedResponseHeaders.Contains(key) || key.StartsWith("X-", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.Headers[key] = header.Value;
+                }
             }
         }
 

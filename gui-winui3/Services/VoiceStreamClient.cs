@@ -24,6 +24,7 @@ public sealed class VoiceStreamClient : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Uri _endpoint;
+    private readonly string _authSecret;
     private readonly object _gate = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _socket;
@@ -36,8 +37,9 @@ public sealed class VoiceStreamClient : IDisposable
 
     public VoiceStreamClient(BackendSession session)
     {
-        _endpoint = session?.VoiceStreamUri
-            ?? throw new ArgumentNullException(nameof(session));
+        ArgumentNullException.ThrowIfNull(session);
+        _endpoint = session.VoiceStreamUri;
+        _authSecret = session.AuthSecret;
     }
 
     public static string SerializeStartFrame(string requestId, string text, string voiceLabel, double speed, string? correlationId = null)
@@ -73,6 +75,7 @@ public sealed class VoiceStreamClient : IDisposable
         ThrowIfDisposed();
 
         var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + _authSecret);
         lock (_gate)
         {
             if (_socket is not null)

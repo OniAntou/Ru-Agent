@@ -397,12 +397,17 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             .ConfigureAwait(false);
     }
 
+    private const int MaxBrokerFrameBytes = 64 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
     private async Task<AgentEnvelope> ReceiveReplyAsync(string requestId, CancellationToken cancellationToken)
     {
-        var buffer = new byte[64 * 1024];
+        var socket = _socket ?? throw new ToolTransportException("broker_connection_closed");
+        using var content = new MemoryStream();
+        var buffer = new byte[8 * 1024];
         while (true)
         {
-            var result = await (_socket ?? throw new ToolTransportException("broker_connection_closed"))
+            var result = await socket
                 .ReceiveAsync(buffer, cancellationToken)
                 .ConfigureAwait(false);
             if (result.MessageType == WebSocketMessageType.Close)
@@ -410,7 +415,34 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
                 throw new ToolTransportException("broker_connection_closed");
             }
 
-            var reply = AgentEnvelopeCodec.Parse(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                throw new ToolTransportException("broker_unexpected_frame");
+            }
+
+            if (content.Length + result.Count > MaxBrokerFrameBytes)
+            {
+                throw new ToolTransportException("broker_frame_too_large");
+            }
+
+            content.Write(buffer, 0, result.Count);
+            if (!result.EndOfMessage)
+            {
+                continue;
+            }
+
+            string text;
+            try
+            {
+                text = StrictUtf8.GetString(content.GetBuffer(), 0, (int)content.Length);
+            }
+            catch (DecoderFallbackException)
+            {
+                throw new ToolTransportException("broker_invalid_utf8");
+            }
+
+            content.SetLength(0);
+            var reply = AgentEnvelopeCodec.Parse(text);
             if (reply.RequestId == requestId)
             {
                 return reply;

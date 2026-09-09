@@ -38,10 +38,14 @@ def _http_url(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + path
 
 
-def _websocket_url(base_url: str, path: str, token: str) -> str:
+def _websocket_url(base_url: str, path: str, token: str | None = None) -> str:
+    # NOTE: bearer token must never appear in the URL query (leaks to logs);
+    # it is sent via the Authorization header in _measure_websocket_once.
+    # The optional token arg is kept for backward compatibility and ignored.
+    del token
     scheme = "wss" if base_url.startswith("https://") else "ws"
     authority = base_url.split("://", 1)[1].rstrip("/")
-    return f"{scheme}://{authority}{path}?token={token}"
+    return f"{scheme}://{authority}{path}"
 
 
 def measure_http_settings(base_url: str, token: str, samples: int) -> dict[str, float | int | None]:
@@ -64,9 +68,10 @@ def measure_http_settings(base_url: str, token: str, samples: int) -> dict[str, 
     return summarize_samples(timings, failures=failures)
 
 
-async def _measure_websocket_once(uri: str) -> float:
+async def _measure_websocket_once(uri: str, token: str) -> float:
     started = time.perf_counter()
-    async with connect(uri, proxy=None, open_timeout=10, close_timeout=2):
+    headers = {"Authorization": f"Bearer {token}"}
+    async with connect(uri, proxy=None, open_timeout=10, close_timeout=2, additional_headers=headers):
         pass
     return (time.perf_counter() - started) * 1000
 
@@ -76,10 +81,10 @@ def measure_websockets(base_url: str, token: str, samples: int) -> dict[str, dic
     for path in ("/voice/stream",):
         timings: list[float] = []
         failures = 0
-        uri = _websocket_url(base_url, path, token)
+        uri = _websocket_url(base_url, path)
         for _ in range(samples):
             try:
-                timings.append(asyncio.run(_measure_websocket_once(uri)))
+                timings.append(asyncio.run(_measure_websocket_once(uri, token)))
             except Exception:
                 failures += 1
         result[path] = summarize_samples(timings, failures=failures)

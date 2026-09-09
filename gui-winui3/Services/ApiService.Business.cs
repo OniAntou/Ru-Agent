@@ -15,7 +15,9 @@ namespace RuApp.Services
         {
             try
             {
-                var result = await _httpClient.GetFromJsonAsync<JsonElement>($"{_baseUrl}/activity-log?limit={limit}");
+                using var response = await _httpClient.GetAsync($"{_baseUrl}/activity-log?limit={limit}");
+                if (!response.IsSuccessStatusCode) return null;
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>();
                 if (result.TryGetProperty("events", out var events))
                     return events.Deserialize<List<ActivityLogEventDto>>();
                 return null;
@@ -31,7 +33,7 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"{_baseUrl}/activity-log");
+                using var response = await _httpClient.DeleteAsync($"{_baseUrl}/activity-log");
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -80,7 +82,7 @@ namespace RuApp.Services
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/status", timeoutCts.Token);
+                using var response = await _httpClient.GetAsync($"{_baseUrl}/status", timeoutCts.Token);
                 if (!response.IsSuccessStatusCode)
                 {
                     return (BackendAlive: true, WorkerOk: false, WorkerError: null);

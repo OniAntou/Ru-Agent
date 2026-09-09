@@ -78,7 +78,7 @@ public sealed class Phase1RemediationTests
     }
 
     [Fact]
-    public async Task Project_root_workspace_auto_trusts_and_allows_full_access_without_prior_selection()
+    public async Task Project_root_workspace_auto_trusts_and_maps_legacy_full_to_standard()
     {
         using var tmp = TempWorkspace.Create();
         var prevEnv = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
@@ -104,7 +104,7 @@ public sealed class Phase1RemediationTests
 
             var json = JsonDocument.Parse(body).RootElement;
             Assert.Equal("waiting_history_user", json.GetProperty("status").GetString());
-            Assert.Equal("full_access", json.GetProperty("preset").GetString());
+            Assert.Equal("standard", json.GetProperty("preset").GetString());
         }
         finally
         {

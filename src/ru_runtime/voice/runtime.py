@@ -54,19 +54,28 @@ def voice_selection_from_saved(value: object) -> VoiceSelection:
 # OmniVoice service defaults (overridable via environment)
 _OMNIVOICE_ENV_DIR = "omnivoice_env"
 _OMNIVOICE_SERVER_SCRIPT = "src/ru_runtime/voice/omnivoice_server.py"
+_DEFAULT_VOICE_HOST = "127.0.0.1"
+_DEFAULT_VOICE_PORT = 5052
+_MIN_PORT = 1_024
+_MAX_PORT = 65_535
 
 
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:
     if selection.engine_id != "omnivoice":
         raise ValueError(f"Unsupported voice engine: {selection.engine_id!r}")
     # Accept both RU_VOICE_* (public) and RU_OMNIVOICE_* (server binding) for compatibility
-    host = os.environ.get("RU_VOICE_HOST") or os.environ.get("RU_OMNIVOICE_HOST", "127.0.0.1")
-    host = host.strip() if isinstance(host, str) else "127.0.0.1"
-    raw_port = os.environ.get("RU_VOICE_PORT") or os.environ.get("RU_OMNIVOICE_PORT", "5052")
+    host = os.environ.get("RU_VOICE_HOST") or os.environ.get("RU_OMNIVOICE_HOST", _DEFAULT_VOICE_HOST)
+    host = host.strip() if isinstance(host, str) else _DEFAULT_VOICE_HOST
+    # Loopback-only: same validation as omnivoice_server._server_binding.
+    if host != _DEFAULT_VOICE_HOST:
+        raise ValueError("OmniVoice must bind to loopback.")
+    raw_port = os.environ.get("RU_VOICE_PORT") or os.environ.get("RU_OMNIVOICE_PORT", str(_DEFAULT_VOICE_PORT))
     try:
         port = int(str(raw_port).strip())
-    except ValueError:
-        port = 5052
+    except (ValueError, AttributeError) as error:
+        raise ValueError("OmniVoice port is invalid.") from error
+    if not _MIN_PORT <= port <= _MAX_PORT:
+        raise ValueError("OmniVoice port is invalid.")
     # Cross-platform venv layout: Windows uses Scripts/python.exe, POSIX uses bin/python
     if os.name == "nt":
         python_rel = Path(_OMNIVOICE_ENV_DIR) / "Scripts" / "python.exe"

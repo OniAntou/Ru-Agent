@@ -7,11 +7,11 @@ Python VTS/overlay package and its nine test files; managed VTS, its canonical
 token file, and native overlay assets are unchanged.
 Managed startup is unconditional and exposes no runtime selector.
 
-The deterministic inventory is generated with:
+The deterministic inventory is generated from `%RU_ROOT%` with:
 
 ```powershell
-D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_python_runtime_boundary.py `
-  --root D:\LLM
+.venv\Scripts\python.exe scripts\check_python_runtime_boundary.py `
+  --root .
 ```
 
 The scanner records relative paths, a bounded content hash, byte count,

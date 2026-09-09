@@ -43,6 +43,12 @@ public partial class App : Application
         }
 
         _window = new MainWindow(composition);
+        _window.Closed += (_, _) =>
+        {
+            try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+            _singleInstanceMutex?.Dispose();
+            _singleInstanceMutex = null;
+        };
         _window.Activate();
     }
 

@@ -26,6 +26,7 @@ namespace RuApp.Views
 
         public void Initialize(ApiService apiService, VoicePlaybackService voicePlayback, SubtitleOverlayService? overlayService = null)
         {
+            DisposeTimerOnly();
             _apiService = apiService;
             _voicePlayback = voicePlayback;
             _overlayService = overlayService;
@@ -42,8 +43,7 @@ namespace RuApp.Views
 
         public void Dispose()
         {
-            _speedDebounceTimer?.Stop();
-            _speedDebounceTimer = null;
+            DisposeTimerOnly();
             if (_overlayService != null)
             {
                 _overlayService.PositionChanged -= OnOverlayPositionChanged;
@@ -51,6 +51,12 @@ namespace RuApp.Views
             _apiService = null;
             _voicePlayback = null;
             _overlayService = null;
+        }
+
+        private void DisposeTimerOnly()
+        {
+            _speedDebounceTimer?.Stop();
+            _speedDebounceTimer = null;
         }
 
         private async Task LoadVoiceSettingsAsync()

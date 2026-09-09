@@ -57,6 +57,8 @@ def int_to_vietnamese_words(n: int) -> str:
     while temp > 0:
         groups.append(temp % 1000)
         temp //= 1000
+    if len(groups) > len(units_scale):
+        raise ValueError(f"Number too large to verbalize: {n!r} (max scale: {units_scale[-1]!r})")
 
     group_strings = []
     for idx, grp in enumerate(groups):
@@ -120,6 +122,20 @@ def _replace_decimal(match: re.Match) -> str:
     dec_chars = match.group(2)
     dec_p = " ".join(_DIGITS_VI[int(ch)] for ch in dec_chars if ch.isdigit())
     return f"{int_p} phẩy {dec_p}"
+
+
+def _verbalize_unit_number(num_str: str) -> str:
+    """Verbalize the numeric part of a unit expression (e.g. '15.7' -> words)."""
+    normalized = num_str.replace(",", ".").strip()
+    if "." in normalized:
+        int_part_raw, dec_part_raw = normalized.split(".", 1)
+        int_part = int_to_vietnamese_words(int(int_part_raw or 0))
+        dec_digits = [ch for ch in dec_part_raw if ch.isdigit()]
+        if not dec_digits:
+            return int_part
+        dec_part = " ".join(_DIGITS_VI[int(ch)] for ch in dec_digits)
+        return f"{int_part} phẩy {dec_part}"
+    return int_to_vietnamese_words(int(normalized))
 
 
 def _replace_unit(match: re.Match) -> str:

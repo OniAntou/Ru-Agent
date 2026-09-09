@@ -42,7 +42,7 @@ public sealed class CredentialStoreTests
         Assert.Equal(
             new WindowsCredentialEntry("existing", "existing-secret"),
             native.Values["existing@mini_gpt"]);
-        Assert.Equal(new WindowsCredentialEntry("api_key", "new-secret"), native.Values["mini_gpt"]);
+        Assert.Equal(new WindowsCredentialEntry("api_key", "  new-secret  "), native.Values["mini_gpt"]);
     }
 
     [Fact]

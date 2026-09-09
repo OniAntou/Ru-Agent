@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -240,11 +242,16 @@ public sealed class BrokerHost : IAsyncDisposable
 
     private bool IsAuthorized(HttpContext context)
     {
+        var candidate = context.Request.Headers.Authorization.ToString();
         var expected = "Bearer " + _session.Descriptor.AuthToken;
-        return string.Equals(
-            context.Request.Headers.Authorization.ToString(),
-            expected,
-            StringComparison.Ordinal);
+        if (candidate.Length == 0 || expected.Length == "Bearer ".Length)
+        {
+            return false;
+        }
+
+        var candidateHash = SHA256.HashData(Encoding.UTF8.GetBytes(candidate));
+        var expectedHash = SHA256.HashData(Encoding.UTF8.GetBytes(expected));
+        return CryptographicOperations.FixedTimeEquals(candidateHash, expectedHash);
     }
 
     private static async Task RejectAsync(HttpContext context)

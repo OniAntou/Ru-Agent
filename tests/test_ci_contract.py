@@ -14,6 +14,9 @@ def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
     assert "python -m pytest -q" in workflow
     assert 'python-version: ["3.11", "3.13"]' in workflow
     assert "python-version: ${{ matrix.python-version }}" in workflow
+    assert "python scripts/check_aspnetcore_route_matrix.py" in workflow
+    assert "retired-compat-harness" not in workflow
+    assert "ru-harness-vnext.json" not in workflow
     assert "python -m ruff check src tests scripts tools" in workflow
     assert "python -m mypy src" in workflow
     assert "pip check" in workflow

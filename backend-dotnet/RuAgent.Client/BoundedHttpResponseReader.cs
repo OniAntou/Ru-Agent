@@ -2,12 +2,12 @@ using System.Text;
 
 namespace RuAgent.Client;
 
-internal static class BoundedHttpResponseReader
+public static class BoundedHttpResponseReader
 {
-    internal const int MaximumBytes = 8 * 1024 * 1024;
+    public const int MaximumBytes = 8 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    internal static async Task<string> ReadAsync(HttpContent content, CancellationToken cancellationToken)
+    public static async Task<string> ReadAsync(HttpContent content, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(content);
         if (content.Headers.ContentLength is > MaximumBytes)

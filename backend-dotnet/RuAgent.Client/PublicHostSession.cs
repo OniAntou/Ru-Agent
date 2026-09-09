@@ -29,6 +29,10 @@ public sealed record PublicHostSession(
 
     private Uri BuildWebSocketUri(string path)
     {
-        return new Uri($"ws://{BaseUri.Host}:{BaseUri.Port}{path}?token={Uri.EscapeDataString(BearerToken)}");
+        // Auth travels via the Authorization header on the ClientWebSocket handshake,
+        // never in the query string, so the bearer never lands in logs or ETW traces.
+        // Callers must set: socket.Options.SetRequestHeader("Authorization", "Bearer " + BearerToken).
+        var builder = new UriBuilder(BaseUri.Scheme == Uri.UriSchemeHttps ? "wss" : "ws", BaseUri.Host, BaseUri.Port, path);
+        return builder.Uri;
     }
 }

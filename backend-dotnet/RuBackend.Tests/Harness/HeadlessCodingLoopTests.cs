@@ -48,7 +48,7 @@ public sealed class HeadlessCodingLoopTests
         runner.Enqueue(FinalStep("repair finished"));
         using var approve = await client.PostAsJsonAsync(
             $"/agent/v1/runs/{runId}/approvals/{approvalId}",
-            new { scope = "once" });
+            new { command = "allow_once" });
         Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
 
         var completedSeen = await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30));
@@ -82,11 +82,11 @@ public sealed class HeadlessCodingLoopTests
         var approvalId = approvalRequested.GetProperty("approval_id").GetString();
 
         using var first = await desktopClient.PostAsJsonAsync(
-            $"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "once" });
+            $"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_once" });
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
         using var second = await cliClient.PostAsJsonAsync(
-            $"/agent/v1/runs/{runId}/approvals/{approvalId}", new { scope = "once" });
+            $"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_once" });
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
         var secondJson = await second.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("approval_stale", secondJson.GetProperty("error_code").GetString());

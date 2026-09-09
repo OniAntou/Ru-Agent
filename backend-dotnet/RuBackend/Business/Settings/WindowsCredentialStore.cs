@@ -72,12 +72,14 @@ public sealed class WindowsCredentialStore : ICredentialStore
     {
         ValidateNames(serviceName, accountName);
         ArgumentNullException.ThrowIfNull(secret);
-        var normalizedSecret = secret.Trim();
-        if (normalizedSecret.Length == 0)
+        // Reject empty and whitespace-only secrets, but store significant
+        // secrets byte-exact: surrounding whitespace can be part of a pasted
+        // key, so only the emptiness check trims, never the stored value.
+        if (string.IsNullOrWhiteSpace(secret))
         {
             throw new ArgumentException("Credential cannot be empty.", nameof(secret));
         }
-        if (normalizedSecret.Length > MaximumSecretCharacters)
+        if (secret.Length > MaximumSecretCharacters)
         {
             throw new ArgumentException("Credential is too large.", nameof(secret));
         }
@@ -94,7 +96,7 @@ public sealed class WindowsCredentialStore : ICredentialStore
                     existing.Secret);
             }
 
-            _native.Write(serviceName, accountName, normalizedSecret);
+            _native.Write(serviceName, accountName, secret);
             return Task.CompletedTask;
         }
         catch (OperationCanceledException)

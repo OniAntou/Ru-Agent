@@ -41,7 +41,7 @@ public sealed class VoiceStreamEndpointTests
             }),
         ]);
         using var factory = Factory(protocol);
-        using var socket = await ConnectAsync(factory, "?token=test-secret");
+        using var socket = await ConnectAsync(factory, bearer: "test-secret");
 
         await SendTextAsync(socket, JsonSerializer.Serialize(new
         {
@@ -71,7 +71,7 @@ public sealed class VoiceStreamEndpointTests
     {
         var protocol = new FakeVoiceProtocolClient([]);
         using var factory = Factory(protocol);
-        using var socket = await ConnectAsync(factory, "?token=test-secret");
+        using var socket = await ConnectAsync(factory, bearer: "test-secret");
 
         await SendTextAsync(socket, payload);
         using var response = JsonDocument.Parse(await ReceiveTextAsync(socket));
@@ -86,7 +86,7 @@ public sealed class VoiceStreamEndpointTests
     {
         var protocol = new FakeVoiceProtocolClient([], block: true);
         using var factory = Factory(protocol);
-        using var socket = await ConnectAsync(factory, "?token=test-secret");
+        using var socket = await ConnectAsync(factory, bearer: "test-secret");
         await SendTextAsync(socket, "{\"type\":\"start\",\"request_id\":\"voice-1\",\"text\":\"synthetic\",\"voice_label\":\"Ru (OmniVoice)\",\"speed\":1.0}");
         await protocol.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -101,12 +101,13 @@ public sealed class VoiceStreamEndpointTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("?token=wrong")]
-    public async Task Missing_or_invalid_token_closes_with_4401(string query)
+    [InlineData(null)]
+    [InlineData("wrong")]
+    [InlineData("?token=test-secret")]
+    public async Task Missing_or_invalid_token_closes_with_4401(string? credential)
     {
         using var factory = Factory(new FakeVoiceProtocolClient([]));
-        using var socket = await ConnectAsync(factory, query);
+        using var socket = await ConnectAsync(factory, credential);
 
         var buffer = new byte[32];
         var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
@@ -118,10 +119,22 @@ public sealed class VoiceStreamEndpointTests
     private static BackendWebApplicationFactory Factory(IVoiceProtocolClient protocol) =>
         new(voiceProtocolClient: protocol);
 
-    private static Task<WebSocket> ConnectAsync(BackendWebApplicationFactory factory, string query) =>
-        factory.Server.CreateWebSocketClient().ConnectAsync(
-            new Uri("ws://localhost/voice/stream" + query),
+    private static Task<WebSocket> ConnectAsync(BackendWebApplicationFactory factory, string? bearer)
+    {
+        var client = factory.Server.CreateWebSocketClient();
+        if (bearer is not null && !bearer.StartsWith("?", StringComparison.Ordinal))
+        {
+            client.ConfigureRequest = request =>
+                request.Headers.Authorization = "Bearer " + bearer;
+            return client.ConnectAsync(
+                new Uri("ws://localhost/voice/stream"),
+                CancellationToken.None);
+        }
+
+        return client.ConnectAsync(
+            new Uri("ws://localhost/voice/stream" + (bearer ?? string.Empty)),
             CancellationToken.None);
+    }
 
     private static Task SendTextAsync(WebSocket socket, string text) => socket.SendAsync(
         Encoding.UTF8.GetBytes(text),

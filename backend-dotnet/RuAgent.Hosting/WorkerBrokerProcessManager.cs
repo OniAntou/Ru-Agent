@@ -280,10 +280,50 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         {
             if (!string.IsNullOrWhiteSpace(descriptorPath) && File.Exists(descriptorPath))
                 File.Delete(descriptorPath);
-            if (!string.IsNullOrWhiteSpace(sessionRoot) && Directory.Exists(sessionRoot))
+            if (IsOwnedSessionRoot(sessionRoot) && Directory.Exists(sessionRoot))
                 Directory.Delete(sessionRoot, recursive: true);
         }
         catch { }
+    }
+
+    private static bool IsOwnedSessionRoot(string? sessionRoot)
+    {
+        if (string.IsNullOrWhiteSpace(sessionRoot))
+        {
+            return false;
+        }
+
+        string fullRoot;
+        try
+        {
+            fullRoot = Path.GetFullPath(sessionRoot);
+        }
+        catch
+        {
+            return false;
+        }
+
+        try
+        {
+            if ((File.GetAttributes(fullRoot) & FileAttributes.ReparsePoint) != 0)
+            {
+                return false;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        var leaf = Path.GetFileName(fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (!string.Equals(leaf, "session", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var parent = Path.GetDirectoryName(fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return parent is not null
+            && string.Equals(Path.GetFileName(parent), "agent", StringComparison.OrdinalIgnoreCase);
     }
 }
 

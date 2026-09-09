@@ -54,12 +54,14 @@ public static class StatusEndpoints
     private static IResult ShutdownAsync(IHostApplicationLifetime lifetime)
     {
         // Auth already enforced by DesktopTokenMiddleware.
-        // Trigger graceful shutdown after response is sent.
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(100).ConfigureAwait(false);
-            lifetime.StopApplication();
-        });
+        // HTTP delivery completes before the host stops: Minimal-API IResult
+        // execution flushes the response before this handler returns, so stop
+        // on the next thread-pool yield instead of a wall-clock delay.
+        _ = Task.Factory.StartNew(
+            () => lifetime.StopApplication(),
+            CancellationToken.None,
+            TaskCreationOptions.None,
+            TaskScheduler.Default);
         return Results.Json(new { status = "ok" });
     }
 }

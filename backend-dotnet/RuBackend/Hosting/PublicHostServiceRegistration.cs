@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Net;
+using System.Net.Http;
 using RuBackend.Agent;
 using RuBackend.Business;
 using RuBackend.Business.Activity;
@@ -80,27 +83,25 @@ internal static class PublicHostServiceRegistration
             services.GetRequiredService<LoopbackWorkerClient>());
         services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
         services.AddSingleton<IAgentVtsClient, WorkerAgentVtsClient>();
-        services.AddSingleton<HttpClient>(_ =>
+        services.AddHttpClient<AgentWebToolExecutor>(client =>
         {
-            var handler = new HttpClientHandler
-            {
-                AllowAutoRedirect = false,
-                AutomaticDecompression = DecompressionMethods.All,
-            };
-            var client = new HttpClient(handler, disposeHandler: true)
-            {
-                Timeout = TimeSpan.FromSeconds(20),
-            };
+            client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("RuAgent/1.0");
-            return client;
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.All,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            MaxConnectionsPerServer = 10,
         });
         services.AddSingleton<AgentWebToolExecutor>(services =>
             new AgentWebToolExecutor(
                 new WebOptions(
                     enabled: true,
-                    searchEndpoint: new Uri(ManagedRuntimeBootstrapper.BrokerWebSearchEndpoint),
-                    requireApproval: false),
-                services.GetRequiredService<HttpClient>()));
+                    searchEndpoint: new Uri(ManagedRuntimeBootstrapper.BrokerWebSearchEndpoint)),
+                services.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(AgentWebToolExecutor))));
         services.AddSingleton<AgentReplyPolicy>();
         services.AddSingleton<IAgentReplyPolicy>(services =>
             services.GetRequiredService<AgentReplyPolicy>());
@@ -197,7 +198,6 @@ internal static class PublicHostServiceRegistration
         // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
         services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
         services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
-        services.AddSingleton<RuBackend.Harness.Reconciliation.IAgentApprovalGrants, RuBackend.Harness.Reconciliation.InMemoryAgentApprovalGrants>();
         services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
         var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
         services.AddSingleton(_ =>
@@ -280,19 +280,15 @@ internal static class PublicHostServiceRegistration
         {
             services.AddHostedService<RuAgent.Hosting.ParentProcessWatcher>();
         }
-        services.AddSingleton<HarnessStoreHealth>(services =>
-        {
-            var options = services.GetRequiredService<HarnessSqliteOptions>();
-            try
-            {
-                var health = HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None).GetAwaiter().GetResult();
-                return health.IsAvailable ? new HarnessStoreHealth(true, health.SchemaVersion, null) : new HarnessStoreHealth(false, health.SchemaVersion, health.ErrorCode);
-            }
-            catch
-            {
-                return new HarnessStoreHealth(false, 0, "agent_store_unavailable");
-            }
-        });
+        // Non-blocking store health: Lazy<Task<...>> starts init asynchronously on first
+        // use (or via warmup hosted service) instead of .GetAwaiter().GetResult() in a
+        // singleton factory, which could deadlock the host startup thread pool.
+        // Middleware awaits the task asynchronously and fails closed (503) until ready.
+        services.AddSingleton<Lazy<Task<HarnessStoreHealth>>>(services =>
+            new Lazy<Task<HarnessStoreHealth>>(
+                () => HarnessStoreHealthInitializer.InitializeHarnessStoreHealthAsync(services.GetRequiredService<HarnessSqliteOptions>()),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        services.AddHostedService<HarnessStoreHealthWarmupService>();
         return services;
     }
 
@@ -458,4 +454,51 @@ internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Pri
         Buffer.BlockCopy(_key, 0, copy, 0, 32);
         return ValueTask.FromResult(copy);
     }
+}
+
+internal static class HarnessStoreHealthInitializer
+{
+    public static async Task<HarnessStoreHealth> InitializeHarnessStoreHealthAsync(
+        HarnessSqliteOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        return await RuAgent.Harness.Persistence.HarnessSqliteSchema.InitializeAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+}
+
+internal sealed class HarnessStoreHealthWarmupService : IHostedService
+{
+    private readonly Lazy<Task<HarnessStoreHealth>> _healthLazy;
+    private readonly ILogger<HarnessStoreHealthWarmupService> _logger;
+
+    public HarnessStoreHealthWarmupService(
+        Lazy<Task<HarnessStoreHealth>> healthLazy,
+        ILogger<HarnessStoreHealthWarmupService> logger)
+    {
+        _healthLazy = healthLazy;
+        _logger = logger;
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Trigger async initialization; result is cached in the Lazy.
+        _ = _healthLazy.Value.ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                _logger.LogWarning("Harness store health initialization failed: {Error}", t.Exception?.GetBaseException().Message);
+            }
+            else if (t.Result.IsAvailable)
+            {
+                _logger.LogInformation("Harness store initialized (schema v{Version})", t.Result.SchemaVersion);
+            }
+            else
+            {
+                _logger.LogWarning("Harness store unavailable: {ErrorCode}", t.Result.ErrorCode);
+            }
+        }, CancellationToken.None);
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

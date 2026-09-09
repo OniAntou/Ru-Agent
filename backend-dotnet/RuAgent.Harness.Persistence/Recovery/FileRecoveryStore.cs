@@ -12,32 +12,15 @@ public sealed class FileRecoveryStore
     public const int HardMaxRecoveryBytes = DefaultMaxRecoveryBytes;
     private readonly HarnessSqliteOptions _options;
     private readonly HarnessPayloadStore _payloadStore;
-    private readonly HarnessPayloadCryptography _cryptography;
-    private readonly KnownSecretRedactor _redactor;
     private readonly int _maxRecoveryBytes;
 
     public FileRecoveryStore(HarnessSqliteOptions options, HarnessPayloadCryptography cryptography, KnownSecretRedactor redactor, int maxRecoveryBytes = DefaultMaxRecoveryBytes)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _cryptography = cryptography ?? throw new ArgumentNullException(nameof(cryptography));
-        _redactor = redactor ?? throw new ArgumentNullException(nameof(redactor));
+        ArgumentNullException.ThrowIfNull(cryptography);
+        ArgumentNullException.ThrowIfNull(redactor);
         _maxRecoveryBytes = ValidateRecoveryBytes(maxRecoveryBytes);
         _payloadStore = new HarnessPayloadStore(options, cryptography, redactor);
-    }
-
-    public FileRecoveryStore(HarnessSqliteOptions options, HarnessPayloadStore payloadStore, int maxRecoveryBytes = DefaultMaxRecoveryBytes)
-    {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
-        _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
-        _maxRecoveryBytes = ValidateRecoveryBytes(maxRecoveryBytes);
-        // Extract cryptography/redactor via reflection? For simplicity require the other ctor for direct usage.
-        _cryptography = new HarnessPayloadCryptography(new FakeFallbackKeyStore());
-        _redactor = KnownSecretRedactor.Empty;
-    }
-
-    private sealed class FakeFallbackKeyStore : IHarnessKeyStore
-    {
-        public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken) => ValueTask.FromResult(new byte[32]);
     }
 
     public async Task EnsureSchemaAsync(CancellationToken cancellationToken)

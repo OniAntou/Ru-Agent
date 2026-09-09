@@ -46,7 +46,7 @@ public sealed class RuntimeDescriptorWriter
         {
             if (OperatingSystem.IsWindows())
             {
-                try { RestrictToCurrentUser(tempPath); } catch { }
+                RestrictToCurrentUser(tempPath);
             }
 
             // Atomic replace: move temp over target
@@ -55,7 +55,7 @@ public sealed class RuntimeDescriptorWriter
 
             if (OperatingSystem.IsWindows())
             {
-                try { RestrictToCurrentUser(_descriptorPath); } catch { }
+                RestrictToCurrentUser(_descriptorPath);
             }
         }
         finally

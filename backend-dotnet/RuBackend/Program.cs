@@ -48,7 +48,15 @@ builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 ManagedRuntimeBootstrap? bootstrap = null;
 if (isManagedRuntime)
 {
-    bootstrap = ManagedRuntimeBootstrapper.Start(builder.Configuration, Directory.GetCurrentDirectory());
+    try
+    {
+        bootstrap = await ManagedRuntimeBootstrapper.StartAsync(builder.Configuration, Directory.GetCurrentDirectory()).ConfigureAwait(false);
+    }
+    catch (HostStartupException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        Environment.Exit(ex.ExitCode);
+    }
 }
 
 var agentWorkerPort = bootstrap?.AgentWorkerPort ?? PublicHostRuntimeOptions.DefaultWorkerPort;
@@ -98,13 +106,17 @@ app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/agent/v1", StringComparison.OrdinalIgnoreCase))
     {
-        var health = context.RequestServices.GetService<HarnessStoreHealth>();
-        if (health is not null && !health.IsAvailable)
+        var healthLazy = context.RequestServices.GetService<Lazy<Task<HarnessStoreHealth>>>();
+        if (healthLazy is not null)
         {
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { error_code = "agent_store_unavailable" });
-            return;
+            var health = await healthLazy.Value.ConfigureAwait(false);
+            if (!health.IsAvailable)
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new { error_code = "agent_store_unavailable" });
+                return;
+            }
         }
     }
 

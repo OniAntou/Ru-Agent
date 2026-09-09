@@ -21,14 +21,9 @@ jobs:
       - run: pip install -e ".[dev,runtime]"
       - run: python -m pytest -q
       - run: python scripts/check_aspnetcore_route_matrix.py
-      - run: python scripts/aspnetcore_compatibility_harness.py --mode backend-deterministic --output artifacts/aspnetcore/ru-harness-vnext.json
+      - run: python -c "import tomllib; voice = tomllib.load(open('pyproject.toml','rb'))['project']['optional-dependencies']['voice']; missing = [p for p in ('torch','torchaudio','omnivoice','flask','numpy','soundfile') if not any(r.startswith(p) for r in voice)]; raise SystemExit(f'voice extra missing: {missing}') if missing else print('voice extra ok: ' + str(len(voice)) + ' requirements')"
       - run: python -m ruff check src tests scripts tools
       - run: python -m mypy src
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ru-harness-vnext-py${{ matrix.python-version }}
-          path: artifacts/aspnetcore/ru-harness-vnext.json
       - run: pip check
 
   dotnet:

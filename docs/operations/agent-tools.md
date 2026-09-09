@@ -17,7 +17,7 @@ advertised Agent tools.
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. Worker v1 is a device/runtime adapter only; Agent
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
->   `/agent/v1/*` (19 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
+>   `/agent/v1/*` (20 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
 >   This checkpoint exposes Broker-backed model tools (`files.list`,
 >   `files.glob`, `files.search`, `files.read` offset/limit, `files.write`,
@@ -308,7 +308,12 @@ Declarative Skills are available at session-open only when their validated
 those grants, and `/skill <id> {json}` resolves the highest granted version
 before the Broker rechecks required scopes, tool bindings, schema, step,
 output, and timeout limits. A Skill never bypasses policy or approval, and raw
-step output is not promoted to visible chat. `SkillEvent` and `SkillResult`
+step output is not promoted to visible chat. Step `name` values are local
+aliases for readability only; execution always dispatches on the adjacent
+`tool_id`, which must be an advertised binding. A Skill that requires a
+non-advertised binding (for example `calendar.*`, which remains
+experimental/unwired per the capability table) fails closed at validation and
+never executes. `SkillEvent` and `SkillResult`
 failures keep the same bounded identity/state/error shape as successes,
 including when the session is missing, so clients can fail closed without
 parsing raw exceptions. Connectors, workspace search, and application

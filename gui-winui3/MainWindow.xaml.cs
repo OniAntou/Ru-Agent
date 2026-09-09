@@ -41,6 +41,7 @@ namespace RuApp
         private AgentPolicyController? _policyController;
         private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
+        private bool _sessionsPollInFlight;
         private RefreshController<SessionListResponse?>? _sessionsRefreshController;
         private RefreshController<HealthStatusSnapshot?>? _healthRefreshController;
         private ProviderCatalogController? _providerCatalogController;
@@ -220,6 +221,12 @@ namespace RuApp
                 _backendProvider.BackendExited += OnBackendExited;
 
                 _apiService = new ApiService(backendSession);
+                _apiService.RequestFailed += (_, args) =>
+                {
+                    var err = args.Error;
+                    System.Diagnostics.Debug.WriteLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
+                    GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
+                };
                 _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
                 _groupedCatalogs = new GroupedProviderCatalogController(new ProviderCatalogService(_apiService));
                 _apiService.SettingsSaved += OnSettingsSaved;
@@ -345,9 +352,19 @@ namespace RuApp
                 _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 _sessionsTimer.Tick += async (_, __) =>
                 {
-                    if (_sessionsRefreshController != null) await _sessionsRefreshController.RefreshAsync();
-                    else await LoadSessionsAsync();
-                    try { await UpdateHealthStatusAsync(); } catch { }
+                    if (_sessionsPollInFlight) return;
+                    _sessionsPollInFlight = true;
+                    try
+                    {
+                        if (_sessionsRefreshController != null) await _sessionsRefreshController.RefreshAsync();
+                        else await LoadSessionsAsync();
+                        try { await UpdateHealthStatusAsync(); } catch { }
+                    }
+                    catch { }
+                    finally
+                    {
+                        _sessionsPollInFlight = false;
+                    }
                 };
                 _sessionsTimer.Start();
 
@@ -625,10 +642,28 @@ namespace RuApp
             TextBackend.Text = ".NET Backend: OK";
             UpdateShellStatusTooltip();
 
-            _apiService?.Dispose();
+            if (_apiService != null)
+            {
+                _apiService.SettingsSaved -= OnSettingsSaved;
+                _apiService.Dispose();
+            }
             _apiService = new ApiService(backendSession);
+            _apiService.RequestFailed += (_, args) =>
+            {
+                var err = args.Error;
+                System.Diagnostics.Debug.WriteLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
+                GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
+            };
             _apiService.SettingsSaved += OnSettingsSaved;
 
+            if (_providerCatalogController != null)
+            {
+                await _providerCatalogController.DisposeAsync();
+            }
+            if (_groupedCatalogs != null)
+            {
+                await _groupedCatalogs.DisposeAsync();
+            }
             _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
             _groupedCatalogs = new GroupedProviderCatalogController(new ProviderCatalogService(_apiService));
             _providerCatalogController.SetPollingActive(true);
@@ -639,7 +674,10 @@ namespace RuApp
                 () => _backendProvider.Session != null,
                 _composition.IsHarness);
 
-            _agentController?.Dispose();
+            if (_agentController != null)
+            {
+                _agentController.Dispose();
+            }
             _agentController = _composition.CreateAgentRunController(this.DispatcherQueue);
 
             _chatView?.ReinitializeBackend(_apiService, _agentController, _providerCatalogController, _groupedCatalogs);
@@ -696,7 +734,7 @@ namespace RuApp
             });
         }
 
-        private async void OnWindowClosed(object sender, WindowEventArgs args)
+        private void OnWindowClosed(object sender, WindowEventArgs args)
         {
             if (_closed) return;
             _closed = true;
@@ -712,65 +750,86 @@ namespace RuApp
                 _apiService.SettingsSaved -= OnSettingsSaved;
             }
             // GUI owns Host lifetime: closing GUI should terminate the shared Host (and its Worker/Broker Job).
-            // Fire authenticated shutdown so Host can gracefully dispose the Job Object and descriptor.
+            // Shutdown POST runs first on a single chain, then disposal, so the
+            // HttpClient cannot be disposed while the shutdown request is in flight.
             if (_apiService != null)
             {
-                try
+                var shutdownService = _apiService;
+                _ = Task.Run(async () =>
                 {
-                    using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    await _apiService.ShutdownHostAsync(shutdownCts.Token);
-                }
-                catch { }
+                    try
+                    {
+                        using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                        await shutdownService.ShutdownHostAsync(shutdownCts.Token);
+                    }
+                    catch { }
+                    await DisposeWindowResourcesAsync();
+                });
             }
-            await _startupTask;
-            _startup.Dispose();
-            if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
-            _sessionsRefreshController = null;
-            if (_healthRefreshController != null) await _healthRefreshController.DisposeAsync();
-            _healthRefreshController = null;
-            if (_providerCatalogController != null)
+            else
             {
-                await _providerCatalogController.DisposeAsync();
-                _providerCatalogController = null;
+                _ = Task.Run(DisposeWindowResourcesAsync);
             }
-            if (_groupedCatalogs != null)
+        }
+
+        private async Task DisposeWindowResourcesAsync()
+        {
+            try
             {
-                await _groupedCatalogs.DisposeAsync();
-                _groupedCatalogs = null;
-            }
-            _observationTimer?.Stop();
-            _chatView?.Dispose();
-            _settingsView?.Dispose();
-            _voiceView?.Dispose();
-            _logView?.Dispose();
-            _diagnosticsView?.Dispose();
-            _subtitleOverlay?.Dispose();
-            _subtitlePresenter?.Dispose();
-            if (_voicePlayback != null)
-            {
-                try
+                await _startupTask;
+                _startup.Dispose();
+                if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
+                _sessionsRefreshController = null;
+                if (_healthRefreshController != null) await _healthRefreshController.DisposeAsync();
+                _healthRefreshController = null;
+                if (_providerCatalogController != null)
                 {
-                    await _voicePlayback.DisposeAsync();
+                    await _providerCatalogController.DisposeAsync();
+                    _providerCatalogController = null;
                 }
-                catch (Exception ex)
+                if (_groupedCatalogs != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MainWindow] Voice shutdown failed: {ex.Message}");
+                    await _groupedCatalogs.DisposeAsync();
+                    _groupedCatalogs = null;
                 }
+                _observationTimer?.Stop();
+                _chatView?.Dispose();
+                _settingsView?.Dispose();
+                _voiceView?.Dispose();
+                _logView?.Dispose();
+                _diagnosticsView?.Dispose();
+                _subtitleOverlay?.Dispose();
+                _subtitlePresenter?.Dispose();
+                if (_voicePlayback != null)
+                {
+                    try
+                    {
+                        await _voicePlayback.DisposeAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Voice shutdown failed: {ex.Message}");
+                    }
+                }
+                _apiService?.Dispose();
+                _healthStatusService = null;
+                _backendProvider.BackendExited -= OnBackendExited;
+                _agentController?.Dispose();
+                _agentController = null;
+                _policyController?.Dispose();
+                _policyController = null;
+                _policyControlPanel = null;
+                _auditPanel = null;
+                if (ReferenceEquals(Instance, this))
+                {
+                    Instance = null;
+                }
+                _composition.Dispose();
             }
-            _apiService?.Dispose();
-            _healthStatusService = null;
-            _backendProvider.BackendExited -= OnBackendExited;
-            _agentController?.Dispose();
-            _agentController = null;
-            _policyController?.Dispose();
-            _policyController = null;
-            _policyControlPanel = null;
-            _auditPanel = null;
-            if (ReferenceEquals(Instance, this))
+            catch (Exception ex)
             {
-                Instance = null;
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Shutdown error: {ex.Message}");
             }
-            _composition.Dispose();
         }
 
         private async Task LoadSessionsAsync()

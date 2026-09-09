@@ -48,6 +48,7 @@ public sealed class UnavailableWorkerV1RequestRouter : IWorkerV1RequestRouter
 public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
 {
     private const int MaxRuntimeBodyBytes = 8 * 1024 * 1024;
+    private const int MaxRuntimeBodyB64Chars = 12 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlySet<string> SensitiveKeys = new HashSet<string>(
         [
@@ -481,6 +482,34 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         var method = RequiredText(payload, "method", 16);
         var path = RequiredText(payload, "path_and_query", PrivateRuntimeRequestRouter.MaxPathAndQueryChars);
         var contentType = OptionalText(payload, "content_type", 256);
+        // Binary-safe transport: body_b64 is authoritative when present so binary
+        // TTS/VTS payloads are never corrupted by lossy UTF8 string coercion.
+        // Legacy `body` remains as fallback for older hosts.
+        var bodyB64 = ReadBodyB64(payload);
+        if (bodyB64 is not null)
+        {
+            byte[] decoded;
+            try
+            {
+                decoded = Convert.FromBase64String(bodyB64);
+            }
+            catch (FormatException ex)
+            {
+                throw new ArgumentException("Runtime body_b64 is malformed.", nameof(payload), ex);
+            }
+
+            if (decoded.Length > MaxRuntimeBodyBytes)
+            {
+                throw new ArgumentException("Runtime body is too large.", nameof(payload));
+            }
+
+            return new PrivateRuntimeRequest(
+                method,
+                path,
+                contentType,
+                decoded);
+        }
+
         var bodyText = OptionalText(payload, "body", MaxRuntimeBodyBytes) ?? string.Empty;
         if (StrictUtf8.GetByteCount(bodyText) > MaxRuntimeBodyBytes)
         {
@@ -492,6 +521,40 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
             path,
             contentType,
             StrictUtf8.GetBytes(bodyText));
+    }
+
+    private static string? ReadBodyB64(JsonObject payload)
+    {
+        if (!payload.TryGetPropertyValue("body_b64", out var node) || node is null)
+        {
+            return null;
+        }
+
+        if (node is not JsonValue value
+            || !value.TryGetValue<string>(out var text)
+            || text.Length > MaxRuntimeBodyB64Chars)
+        {
+            throw new ArgumentException("Runtime body_b64 field is invalid.", nameof(payload));
+        }
+
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        // Base64 alphabet has no control chars; reject whitespace/controls explicitly
+        // without reusing OptionalText (which is for human-readable fields).
+        foreach (var ch in text)
+        {
+            var isB64 = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+                || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '=';
+            if (!isB64)
+            {
+                throw new ArgumentException("Runtime body_b64 is malformed.", nameof(payload));
+            }
+        }
+
+        return text;
     }
 
     private static string RequiredText(JsonObject payload, string key, int maximum)

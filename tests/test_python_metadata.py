@@ -23,6 +23,8 @@ def test_voice_extra_declares_the_isolated_provider_consumers() -> None:
     assert any(requirement.startswith("torchaudio") for requirement in voice)
     assert any(requirement.startswith("omnivoice") for requirement in voice)
     assert any(requirement.startswith("flask") for requirement in voice)
+    assert any(requirement.startswith("numpy") for requirement in voice)
+    assert any(requirement.startswith("soundfile") for requirement in voice)
 
 
 def test_voice_torch_metadata_accepts_the_verified_cuda_provider_build() -> None:

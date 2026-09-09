@@ -22,53 +22,24 @@ public static class SttEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        if (context.Request.ContentLength is > MaxRequestBodyBytes)
+        var requestBody = await RuntimeEndpointRelay.ReadBoundedBodyAsync(
+            context.Request,
+            MaxRequestBodyBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (requestBody is null)
         {
-            await WriteJsonAsync(
-                context,
-                StatusCodes.Status422UnprocessableEntity,
-                new { detail = "Invalid STT request." },
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await context.Response.WriteAsJsonAsync(
+                new { detail = "Request body too large" },
                 cancellationToken).ConfigureAwait(false);
             return;
-        }
-
-        byte[] requestBody;
-        await using (var body = new MemoryStream())
-        {
-            var buffer = new byte[64 * 1024];
-            int read;
-            while ((read = await context.Request.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
-            {
-                var remaining = MaxRequestBodyBytes - body.Length;
-                if (remaining <= 0)
-                {
-                    await WriteJsonAsync(
-                        context,
-                        StatusCodes.Status422UnprocessableEntity,
-                        new { detail = "Invalid STT request." },
-                        cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                var count = (int)Math.Min(read, remaining);
-                await body.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
-                if (count < read)
-                {
-                    await WriteJsonAsync(
-                        context,
-                        StatusCodes.Status422UnprocessableEntity,
-                        new { detail = "Invalid STT request." },
-                        cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-            }
-            requestBody = body.ToArray();
         }
 
         var validation = Validate(requestBody);
         switch (validation)
         {
             case SttValidation.InvalidRequest:
+            case SttValidation.OutOfRangeSampleRate:
                 await WriteJsonAsync(
                     context,
                     StatusCodes.Status422UnprocessableEntity,
@@ -100,7 +71,7 @@ public static class SttEndpoints
                     context.Request.ContentType,
                     requestBody),
                 cancellationToken).ConfigureAwait(false);
-            await WriteWorkerResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
+            await RuntimeEndpointRelay.WriteWorkerResponseAsync(context, response, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -151,7 +122,7 @@ public static class SttEndpoints
                 : DefaultSampleRate;
             if (sampleRate < MinimumSampleRate || sampleRate > MaximumSampleRate)
             {
-                return SttValidation.InvalidRequest;
+                return SttValidation.OutOfRangeSampleRate;
             }
 
             if (string.IsNullOrWhiteSpace(audioBase64))
@@ -181,29 +152,6 @@ public static class SttEndpoints
         }
     }
 
-    private static async Task WriteWorkerResponseAsync(
-        HttpContext context,
-        RuntimeWorkerResponse response,
-        CancellationToken cancellationToken)
-    {
-        context.Response.StatusCode = response.StatusCode;
-        if (!string.IsNullOrWhiteSpace(response.ContentType))
-        {
-            context.Response.ContentType = response.ContentType;
-        }
-
-        if (response.Headers is not null)
-        {
-            foreach (var header in response.Headers)
-            {
-                context.Response.Headers[header.Key] = header.Value;
-            }
-        }
-
-        context.Response.ContentLength = response.Body.Length;
-        await context.Response.Body.WriteAsync(response.Body, cancellationToken).ConfigureAwait(false);
-    }
-
     private static async Task WriteJsonAsync<T>(
         HttpContext context,
         int statusCode,
@@ -218,6 +166,7 @@ public static class SttEndpoints
     {
         Valid,
         InvalidRequest,
+        OutOfRangeSampleRate,
         EmptyAudio,
         InvalidAudio,
     }

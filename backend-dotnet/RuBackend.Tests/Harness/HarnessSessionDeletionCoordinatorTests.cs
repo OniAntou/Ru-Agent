@@ -67,7 +67,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     }
 
     [Fact]
-    public async Task Harness_cleanup_failure_still_deletes_the_session_file()
+    public async Task Harness_cleanup_failure_still_deletes_the_session_file_but_reports_pending()
     {
         var trace = new List<string>();
         var artifacts = new RecordingArtifactStore(trace)
@@ -84,7 +84,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             "11111111111111111111111111111111",
             CancellationToken.None);
 
-        Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
+        Assert.Equal(HarnessSessionDeletionOutcome.ArtifactsPending, outcome);
         Assert.Equal(["harness", "session"], trace);
     }
 

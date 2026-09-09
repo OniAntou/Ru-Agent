@@ -28,6 +28,13 @@ public static class VoiceStreamEndpoint
             return;
         }
 
+        string? authToken = ExtractAuthToken(context);
+        if (string.IsNullOrWhiteSpace(authToken))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         using var connectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
@@ -83,6 +90,7 @@ public static class VoiceStreamEndpoint
 
                 using var receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                     connectionCancellation.Token);
+                receiveCancellation.CancelAfter(TimeSpan.FromSeconds(60));
                 var receiveTask = ReceiveAsync(socket, receiveCancellation.Token);
                 var completed = await Task.WhenAny(activeStream, receiveTask);
                 if (completed == activeStream)
@@ -116,18 +124,20 @@ public static class VoiceStreamEndpoint
                 }
                 if (control!.Type == "cancel" && control.RequestId == activeRequestId)
                 {
+                    using var cancelCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
                     await SendSignalBestEffortAsync(
                         protocol,
                         new WorkerVoiceSignal(activeRequestId!, "cancel"),
-                        connectionCancellation.Token);
+                        cancelCts.Token);
                 }
                 else if (control.Type == "playback" && control.RequestId == activeRequestId
                          && control.State is "started" or "ended" or "cancelled" or "failed")
                 {
+                    using var playbackCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
                     await SendSignalBestEffortAsync(
                         protocol,
                         new WorkerVoiceSignal(activeRequestId!, "playback", control.State),
-                        connectionCancellation.Token);
+                        playbackCts.Token);
                 }
                 else
                 {
@@ -457,6 +467,16 @@ public static class VoiceStreamEndpoint
             return result;
         }
         return value.TryGetValue<int>(out var integer) ? integer : null;
+    }
+
+    private static string? ExtractAuthToken(HttpContext context)
+    {
+        var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return authHeader["Bearer ".Length..].Trim();
+        }
+        return null;
     }
 
     private sealed record VoiceControl(

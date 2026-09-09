@@ -1,12 +1,47 @@
 # Verification
 
-> **Current as of 2026-09-08.** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-09.** Older dated entries below are history; only this table is current.
 
 | Surface | Current status |
 | --- | --- |
-| Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` |
-| .NET tests | 13 test projects discovered by `scripts/test_dotnet.ps1` (not run here); last-recorded full matrix 2,538 passed across 13 projects (2026-09-06) |
-| Python suite | Last-recorded 305 passed + 1 documentation-archive failure (2026-09-07); archive now removed, rerun pending |
+| Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
+| .NET tests | 13 test projects via `scripts/test_dotnet.ps1 -Configuration Debug`: 2,655 passed, 0 failed (Broker 559, Cli 133, Client 50, Connectors 3, Harness.Core 275, Harness.Persistence 103, Hosting 26, Protocol 22, Adapters 217, Runtime.Core 6, Worker 64, Backend 786, GUI 411) |
+| Python suite | 306 passed, 0 failed; `ruff check src tests scripts tools` passed; `mypy src` passed |
+| `git diff --check` | passed |
+
+## P0/P1 review remediation (2026-09-09)
+
+- Removed the dangling CI step invoking the retired
+  `scripts/aspnetcore_compatibility_harness.py` (deleted in `fd700244`);
+  the route-contract gate is `scripts/check_aspnetcore_route_matrix.py`,
+  pinned by `tests/test_ci_contract.py`.
+- `BrokerToolGateway.ReceiveReplyAsync` now loops fragmented WebSocket frames
+  to `EndOfMessage` with a 64 KiB cap, strict UTF-8 decoding, and explicit
+  `broker_frame_too_large` / `broker_invalid_utf8` / `broker_unexpected_frame`
+  transport errors.
+- WebSocket bearer travels via the `Authorization` header only:
+  `DesktopTokenMiddleware` and `VoiceStreamEndpoint.ExtractAuthToken` no longer
+  accept `?token=`; `VoiceStreamEndpointTests` now connect with the header and
+  assert a query-string bearer is rejected with 4401.
+- `BrokerHost.IsAuthorized` compares the expected bearer with
+  SHA-256 + `FixedTimeEquals`, matching `DesktopTokenMiddleware`.
+- SSE `GET /agent/v1/runs/{runId}/events` sets `text/event-stream` only after
+  the run lookup succeeds, so a missing run still returns plain JSON 404.
+- `POST /host/shutdown` stops the host on the next thread-pool yield instead
+  of a wall-clock delay, after the response is flushed.
+- `WorkerBrokerProcessManager` deletes only an owned `<logRoot>/agent/session`
+  root (leaf `session` under `agent`, non-reparse) instead of any configured
+  `sessionRoot`.
+- GUI: `App` releases/disposes the single-instance mutex on close;
+  `SettingsView` detaches named autosave handlers before re-init/dispose;
+  `VoiceView` stops the stale debounce timer before re-init.
+- Docs/hygiene: fixed the `agent-tools.md` checkpoint (20 `/agent/v1/*` HTTP,
+  not 19), added `skills/README.md` clarifying the runnable
+  `research.and_note` vs the unwired `calendar.*` example, and removed
+  redundant `.gitignore` entries shadowed by `artifacts/` + `*.db`.
+
+Focused gates: voice/auth 19/19, Agent SSE/status 126/126, Hosting
+worker-broker 7/7, Broker auth 31/31, Python contract/docs 11/11.
 
 Run heavyweight gates sequentially on Windows. Restore each .NET test project
 before using `--no-restore`; concurrent Python, frontend, and .NET builds can

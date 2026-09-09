@@ -13,8 +13,7 @@ public sealed class OwnedProcessTree : IDisposable
     {
         if (!OperatingSystem.IsWindows())
         {
-            _jobHandle = IntPtr.Zero;
-            return;
+            throw new PlatformNotSupportedException("OwnedProcessTree requires Windows Job Objects.");
         }
 
         _jobHandle = CreateJobObject(IntPtr.Zero, null);
@@ -66,7 +65,9 @@ public sealed class OwnedProcessTree : IDisposable
     public void Assign(IntPtr processHandle)
     {
         if (!OperatingSystem.IsWindows())
-            return;
+        {
+            throw new PlatformNotSupportedException("OwnedProcessTree requires Windows Job Objects.");
+        }
         if (_jobHandle == IntPtr.Zero || processHandle == IntPtr.Zero)
             throw new InvalidOperationException("Job not initialized.");
         if (!AssignProcessToJobObject(_jobHandle, processHandle))
@@ -84,7 +85,10 @@ public sealed class OwnedProcessTree : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        if (!OperatingSystem.IsWindows()) return;
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("OwnedProcessTree requires Windows Job Objects.");
+        }
         if (_jobHandle != IntPtr.Zero)
         {
             CloseHandle(_jobHandle);

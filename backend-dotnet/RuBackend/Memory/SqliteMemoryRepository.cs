@@ -96,10 +96,69 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
                 SELECT * FROM memories
                 WHERE status = $active_status AND (expires_at IS NULL OR expires_at > $now OR pinned = $pinned)
                 ORDER BY pinned DESC, updated_at DESC
+                LIMIT 200
                 """);
             command.Parameters.AddWithValue("$active_status", "active");
             command.Parameters.AddWithValue("$now", SerializeTimestamp(DateTimeOffset.UtcNow));
             command.Parameters.AddWithValue("$pinned", 1);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var records = new List<MemoryRecord>();
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                records.Add(ReadRecord(reader));
+            }
+
+            return records;
+        }
+        finally
+        {
+            CloseReadOnlyConnection();
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(int limit, string? cursor, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            EnsureOpen();
+            OpenReadOnlyConnectionIfNeeded();
+
+            var sql = """
+                SELECT * FROM memories
+                WHERE status = $active_status AND (expires_at IS NULL OR expires_at > $now OR pinned = $pinned)
+                """;
+
+            if (!string.IsNullOrWhiteSpace(cursor))
+            {
+                // Cursor format: "updated_at_ticks|id"
+                var parts = cursor.Split('|', 2);
+                if (parts.Length == 2 && long.TryParse(parts[0], out var cursorTicks))
+                {
+                    var cursorTime = new DateTimeOffset(cursorTicks, TimeSpan.Zero);
+                    sql += " AND (updated_at < $cursor_time OR (updated_at = $cursor_time AND id < $cursor_id)) ";
+                }
+            }
+
+            sql += " ORDER BY pinned DESC, updated_at DESC, id DESC LIMIT $limit";
+
+            await using var command = CreateCommand(sql);
+            command.Parameters.AddWithValue("$active_status", "active");
+            command.Parameters.AddWithValue("$now", SerializeTimestamp(DateTimeOffset.UtcNow));
+            command.Parameters.AddWithValue("$pinned", 1);
+            command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 500));
+
+            if (!string.IsNullOrWhiteSpace(cursor))
+            {
+                var parts = cursor.Split('|', 2);
+                if (parts.Length == 2 && long.TryParse(parts[0], out var cursorTicks))
+                {
+                    command.Parameters.AddWithValue("$cursor_time", SerializeTimestamp(new DateTimeOffset(cursorTicks, TimeSpan.Zero)));
+                    command.Parameters.AddWithValue("$cursor_id", parts[1]);
+                }
+            }
+
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             var records = new List<MemoryRecord>();
             while (await reader.ReadAsync(cancellationToken))

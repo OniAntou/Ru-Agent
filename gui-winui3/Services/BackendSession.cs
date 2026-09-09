@@ -40,8 +40,10 @@ public sealed record BackendSession
             throw new ArgumentException("WebSocket path must start with '/'.", nameof(path));
         }
 
+        // Auth travels via the Authorization header (see VoiceStreamClient).
+        // No token in the query string so secrets never land in logs.
         return new Uri(
-            $"ws://{HttpBaseUri.Host}:{HttpBaseUri.Port}{path}?token={Uri.EscapeDataString(AuthSecret)}");
+            $"ws://{HttpBaseUri.Host}:{HttpBaseUri.Port}{path}");
     }
 
     private static Uri ValidateHttpBaseUri(Uri uri)

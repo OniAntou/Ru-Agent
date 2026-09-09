@@ -211,6 +211,9 @@ public sealed class MemoryServiceTests
         public Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<MemoryRecord>>([]);
 
+        public Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(int limit, string? cursor, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<MemoryRecord>>([]);
+
         public Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(string query, int limit, int maxChars, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<MemoryRecord>>([]);
 

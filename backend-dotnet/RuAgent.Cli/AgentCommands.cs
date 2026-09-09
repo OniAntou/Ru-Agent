@@ -795,14 +795,14 @@ public sealed class AgentCommands
 
         var headerConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
         Tui.GrokHeader.Render(headerConsole, sessionId, canonicalWorkspace, backendName, activeModel, cmd.Preset);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  \\ xuống dòng · Tab complete · Up/Down history · Ctrl+C hủy")).ConfigureAwait(false);
         await _out.WriteLineAsync().ConfigureAwait(false);
         await _out.FlushAsync().ConfigureAwait(false);
 
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
         var lineReader = new Tui.InteractiveLineReader();
         string modelLabel = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
-        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan($"❯ {modelLabel} · {cmd.Preset} "));
+        await _out.WriteLineAsync(Tui.AnsiTheme.Gray($"{modelLabel} · {cmd.Preset}  ") + Tui.AnsiTheme.Dim("Tab:complete │ ↑/↓:history │ \\:continue │ Ctrl+c:cancel")).ConfigureAwait(false);
+        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("❯ "));
         string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
         int turn = 0;
         long? lastTotalTokens = null;

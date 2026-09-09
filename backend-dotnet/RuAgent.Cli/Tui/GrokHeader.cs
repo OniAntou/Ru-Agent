@@ -13,12 +13,10 @@ public static class GrokHeader
             return;
         }
 
-        var body = new Markup(
-            $"[bold]RuAgent[/] [dim]v2.0 · Autonomous Coding Agent[/]\n" +
-            $"[dim]Session:[/] [yellow]{Markup.Escape(sessionId)}[/]\n" +
-            $"[dim]Workspace:[/] {Markup.Escape(workspace)}\n" +
-            $"[dim]Backend · Model:[/] {Markup.Escape(backend)} · {Markup.Escape(model)} [dim]({Markup.Escape(preset)})[/]\n" +
-            $"[dim]/model /fork /rewind /stats /export /history /exit[/]");
-        console.Write(new Panel(body) { Header = new PanelHeader(" [cyan]❯ RuAgent[/] "), Border = BoxBorder.Rounded, Expand = true });
+        console.WriteLine(AnsiTheme.White(AnsiTheme.Bold("RuAgent")) + AnsiTheme.Gray(" v2.0 · Autonomous Coding Agent"));
+        console.WriteLine(AnsiTheme.Gray("Session:   ") + AnsiTheme.Silver(sessionId));
+        console.WriteLine(AnsiTheme.Gray("Workspace: ") + AnsiTheme.Silver(workspace));
+        console.WriteLine(AnsiTheme.Gray($"{backend} · {model} ({preset})"));
+        console.WriteLine(AnsiTheme.Dim("/model /fork /rewind /stats /export /history /exit"));
     }
 }

@@ -18,6 +18,7 @@ public sealed class GrokHeaderTests
         Assert.Contains("sess_12345678", output, StringComparison.Ordinal);
         Assert.Contains("D:\\repo", output, StringComparison.Ordinal);
         Assert.Contains("grok-4.5", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("╭", output, StringComparison.Ordinal);
     }
 
     [Fact]

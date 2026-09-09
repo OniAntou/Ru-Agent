@@ -17,6 +17,7 @@ public sealed class GrokStatusBarTests
         Assert.Contains("turn 3", output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("1500", output, StringComparison.Ordinal);
         Assert.Contains("grok-4.5", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("─", output, StringComparison.Ordinal);
     }
 
     [Fact]

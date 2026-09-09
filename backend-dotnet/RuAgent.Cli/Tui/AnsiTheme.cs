@@ -35,6 +35,12 @@ public static class AnsiTheme
     public const string BgBlueCode = "\u001b[44m";
     public const string BgDarkGrayCode = "\u001b[100m";
 
+    // Grok-faithful 256-color palette (see brainless grok-* sources).
+    public const string White15Code = "\u001b[38;5;15m";
+    public const string Silver7Code = "\u001b[38;5;7m";
+    public const string LightBlue111Code = "\u001b[38;5;111m";
+    public const string BrightGreen10Code = "\u001b[38;5;10m";
+
     public static string Color(string text, string ansiCode) =>
         IsEnabled ? $"{ansiCode}{text}{Reset}" : text;
 
@@ -47,6 +53,10 @@ public static class AnsiTheme
     public static string Magenta(string text) => Color(text, MagentaCode);
     public static string Cyan(string text) => Color(text, CyanCode);
     public static string Gray(string text) => Color(text, GrayCode);
+    public static string White(string text) => Color(text, White15Code);
+    public static string Silver(string text) => Color(text, Silver7Code);
+    public static string LightBlue(string text) => Color(text, LightBlue111Code);
+    public static string BrightGreen(string text) => Color(text, BrightGreen10Code);
 
     public static string Badge(string text, string code) =>
         IsEnabled ? $"{BoldCode}{code}[{text}]{Reset}" : $"[{text}]";

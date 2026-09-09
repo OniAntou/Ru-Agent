@@ -80,7 +80,7 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(toolEnvelope, sw2);
         var toolOutput = sw2.ToString();
-        Assert.Contains("◆ read src/main.rs", toolOutput, StringComparison.Ordinal);
+        Assert.Contains("read src/main.rs", toolOutput, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -215,7 +215,7 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(editEnv, sw);
         var outReq = sw.ToString();
-        Assert.Contains("◆ edit src/app.cs", outReq);
+        Assert.Contains("edit src/app.cs", outReq);
 
         using var sw2 = new StringWriter();
         var doneEnv = new HarnessSafeEventEnvelope(
@@ -231,7 +231,7 @@ public sealed class TuiInteractiveTests
 
         TuiEventRenderer.RenderEnvelope(doneEnv, sw2);
         var outDone = sw2.ToString();
-        Assert.Contains("✓ edit", outDone);
+        Assert.Contains("◆ edit", outDone);
         Assert.Contains("+new line", outDone);
         Assert.Contains("-old line", outDone);
     }

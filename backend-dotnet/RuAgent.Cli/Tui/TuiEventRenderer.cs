@@ -16,6 +16,10 @@ public sealed class TuiSessionRenderer
     private CancellationTokenSource? _spinnerCts;
     private Task? _spinnerTask;
     private static readonly string[] SpinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    private static readonly string[] ThinkingVerbs = ["Thinking", "Reticulating", "Computing", "Pondering", "Percolating"];
+
+    public static string PickThinkingVerb(TimeSpan elapsed) =>
+        ThinkingVerbs[(int)(elapsed.TotalSeconds / 5) % ThinkingVerbs.Length];
 
     public TuiSessionRenderer(TextWriter writer)
     {
@@ -38,7 +42,7 @@ public sealed class TuiSessionRenderer
 
         if (Console.IsOutputRedirected || _writer != Console.Out)
         {
-            _writer.WriteLine(AnsiTheme.Dim("  • Thinking..."));
+            _writer.WriteLine(AnsiTheme.Dim("  Thinking…"));
             _writer.Flush();
             return;
         }
@@ -55,11 +59,12 @@ public sealed class TuiSessionRenderer
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    var elapsed = _thinkingWatch?.Elapsed.TotalSeconds ?? 0;
+                    var elapsed = _thinkingWatch?.Elapsed ?? TimeSpan.Zero;
                     var frameChar = SpinnerFrames[frameIdx++ % SpinnerFrames.Length];
-                    _writer.Write($"\r  {AnsiTheme.Yellow(frameChar)} {AnsiTheme.Dim($"Thinking… ({elapsed:F1}s)")}  ");
+                    var verb = PickThinkingVerb(elapsed);
+                    _writer.Write($"\r  {AnsiTheme.White(frameChar)} {AnsiTheme.White(verb)}… {AnsiTheme.Silver($"({elapsed.TotalSeconds:F1}s)")}  ");
                     _writer.Flush();
-                    await Task.Delay(80, ct).ConfigureAwait(false);
+                    await Task.Delay(90, ct).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) { }
@@ -192,14 +197,14 @@ public sealed class TuiSessionRenderer
             case "tool.execution_requested":
                 var (reqVerb, reqDetail) = SplitToolLine(summary);
                 _writer.WriteLine();
-                _writer.WriteLine(AnsiTheme.Dim("◆ ") + AnsiTheme.Bold($"{reqVerb} ") + reqDetail);
+                _writer.WriteLine(AnsiTheme.Gray(reqVerb) + " " + AnsiTheme.LightBlue(reqDetail));
                 break;
 
             case "tool.executed":
                 var (doneVerb, doneDetail) = SplitToolLine(summary);
                 if (status == "succeeded")
                 {
-                    _writer.WriteLine(AnsiTheme.Green($"✓ {doneVerb} ") + doneDetail);
+                    _writer.WriteLine(AnsiTheme.BrightGreen("◆ ") + AnsiTheme.Silver(AnsiTheme.Bold($"{doneVerb} {doneDetail}")));
                     RenderDiffIfPresent(envelope.SafeSummary);
                 }
                 else
@@ -299,7 +304,7 @@ public sealed class TuiSessionRenderer
                 || line.StartsWith("+", StringComparison.Ordinal)
                 || line.StartsWith("-", StringComparison.Ordinal))
             {
-                _writer.WriteLine("    " + AnsiTheme.FormatDiffLine(line));
+                _writer.WriteLine(AnsiTheme.Gray("┃ ") + AnsiTheme.FormatDiffLine(line));
             }
         }
     }

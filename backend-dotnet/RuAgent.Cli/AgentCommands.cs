@@ -772,54 +772,40 @@ public sealed class AgentCommands
             }
         }
 
-        int bannerWidth = 76;
+        string backendName = "Kilo Gateway";
+        string activeModel = string.Empty;
         try
         {
-            if (!Console.IsOutputRedirected && Console.WindowWidth > 20)
+            var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
+            backendName = settings.TryGetProperty("backend", out var b) && !string.IsNullOrWhiteSpace(b.GetString())
+                ? b.GetString()!
+                : backendName;
+            activeModel = backendName switch
             {
-                bannerWidth = Math.Clamp(Console.WindowWidth - 2, 48, 76);
-            }
+                "Kilo Gateway" => settings.TryGetProperty("kilo_model", out var km) ? km.GetString() ?? "" : "",
+                "OpenCode Zen" => settings.TryGetProperty("opencode_model", out var om) ? om.GetString() ?? "" : "",
+                "Ollama" => settings.TryGetProperty("ollama_model", out var olm) ? olm.GetString() ?? "" : "",
+                "LM Studio" => settings.TryGetProperty("lmstudio_model", out var lmm) ? lmm.GetString() ?? "" : "",
+                "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
+                "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
+                _ => settings.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
+            };
         }
         catch { }
 
-        int innerWidth = bannerWidth - 2;
-        string topBorder = "╭" + new string('─', innerWidth) + "╮";
-        string botBorder = "╰" + new string('─', innerWidth) + "╯";
-
-        string PadBoxLine(string visibleContent, string renderedContent)
-        {
-            int pad = Math.Max(0, innerWidth - visibleContent.Length);
-            return Tui.AnsiTheme.Cyan("│") + renderedContent + new string(' ', pad) + Tui.AnsiTheme.Cyan("│");
-        }
-
-        string titleVis = "  RuAgent v2.0 • Autonomous Coding Agent";
-        string titleRen = "  " + Tui.AnsiTheme.Bold("RuAgent v2.0") + Tui.AnsiTheme.Dim(" • Autonomous Coding Agent");
-
-        string shortSession = sessionId.Length > Math.Max(10, innerWidth - 16) ? (sessionId[..Math.Max(0, innerWidth - 19)] + "...") : sessionId;
-        string sessVis = $"  Session:   {shortSession}";
-        string sessRen = $"  {Tui.AnsiTheme.Dim("Session:   ")}{Tui.AnsiTheme.Yellow(shortSession)}";
-
-        string shortWs = canonicalWorkspace.Length > Math.Max(10, innerWidth - 16) ? ("..." + canonicalWorkspace[^Math.Max(0, innerWidth - 19)..]) : canonicalWorkspace;
-        string wsVis = $"  Workspace: {shortWs}";
-        string wsRen = $"  {Tui.AnsiTheme.Dim("Workspace: ")}{Tui.AnsiTheme.Dim(shortWs)}";
-
-        string cmdVis = "  Commands:  /model, /tree, /fork, /rewind, /stats, /export, /history, /exit";
-        if (cmdVis.Length > innerWidth) cmdVis = "  Commands:  /model, /tree, /stats, /export, /exit";
-        string cmdRen = $"  {Tui.AnsiTheme.Dim(cmdVis[2..])}";
-
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan(topBorder)).ConfigureAwait(false);
-        await _out.WriteLineAsync(PadBoxLine(titleVis, titleRen)).ConfigureAwait(false);
-        await _out.WriteLineAsync(PadBoxLine(sessVis, sessRen)).ConfigureAwait(false);
-        await _out.WriteLineAsync(PadBoxLine(wsVis, wsRen)).ConfigureAwait(false);
-        await _out.WriteLineAsync(PadBoxLine(cmdVis, cmdRen)).ConfigureAwait(false);
-        await _out.WriteLineAsync(Tui.AnsiTheme.Cyan(botBorder)).ConfigureAwait(false);
+        var headerConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
+        Tui.GrokHeader.Render(headerConsole, sessionId, canonicalWorkspace, backendName, activeModel, cmd.Preset);
+        await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  \\ xuống dòng · Tab complete · Up/Down history · Ctrl+C hủy")).ConfigureAwait(false);
         await _out.WriteLineAsync().ConfigureAwait(false);
         await _out.FlushAsync().ConfigureAwait(false);
 
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
         var lineReader = new Tui.InteractiveLineReader();
-        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("ruagent ❯ "));
+        string modelLabel = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
+        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan($"❯ {modelLabel} · {cmd.Preset} "));
         string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
+        int turn = 0;
+        long? lastTotalTokens = null;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -953,6 +939,7 @@ public sealed class AgentCommands
                 continue;
             }
 
+            turn++;
             var idempotencyKey = Guid.NewGuid().ToString("N");
             var request = new CreateAgentRunRequest(
                 sessionId,
@@ -1008,10 +995,26 @@ public sealed class AgentCommands
                                 await _err.WriteLineAsync($"inline_approval_error: {ex.Message}").ConfigureAwait(false);
                             }
                         }
+
+                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"total_tokens\"", StringComparison.Ordinal))
+                        {
+                            try
+                            {
+                                var usageEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                                if (usageEnvelope?.TotalTokens is { } total)
+                                {
+                                    lastTotalTokens = total;
+                                }
+                            }
+                            catch { }
+                        }
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }
                 await _out.WriteLineAsync().ConfigureAwait(false);
+                var statusConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
+                Tui.GrokStatusBar.Render(statusConsole, canonicalWorkspace, backendName, activeModel, cmd.Preset, turn, lastTotalTokens);
+                await _out.FlushAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

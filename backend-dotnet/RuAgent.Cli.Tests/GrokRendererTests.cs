@@ -40,7 +40,7 @@ public sealed class GrokRendererTests
         Assert.Contains("◆", turn, StringComparison.Ordinal);
         Assert.Contains("Turn #4", turn, StringComparison.Ordinal);
 
-        var end = Render(Envelope("run.completed", "done", sequence: 9, status: "succeeded"));
+        var end = Render(Envelope("run.completed", "done", sequence: 9, status: "completed"));
         Assert.Contains("Turn completed in", end, StringComparison.Ordinal);
     }
 

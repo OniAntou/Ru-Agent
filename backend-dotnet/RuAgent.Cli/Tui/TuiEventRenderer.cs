@@ -246,7 +246,7 @@ public sealed class TuiSessionRenderer
 
             case "run.completed":
             case "run.failed":
-                if (status == "succeeded" && type != "run.failed")
+                if ((status == "succeeded" || status == "completed") && type != "run.failed")
                 {
                     var turnSecs = _turnWatch?.Elapsed.TotalSeconds ?? 0;
                     _turnWatch?.Reset();

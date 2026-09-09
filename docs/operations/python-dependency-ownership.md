@@ -16,7 +16,7 @@ This document records the consumer inventory, ownership boundaries, and version 
 | `soundfile` | `pyproject.toml` (`[dev]` and `[voice]`), `scripts/setup_omnivoice_env.ps1` | `scripts/benchmark_tts.py` (`OmniVoiceBenchmarkEngine.synthesize`) | **Active (Voice/Benchmark)**. Benchmark WAV writes only; `src/ru_runtime/voice/omnivoice_server.py::synthesize_fast` now writes stdlib `wave` bytes via `mkstemp` so production TTS no longer imports it. |
 | `httpx` | `pyproject.toml` (`[runtime]` extra) | `scripts/harness`, compatibility benchmark and acceptance tooling | **Active (Tooling/Harness)**. Production model HTTP client is C#. |
 | `keyring` | `pyproject.toml` (`[runtime]` extra) | `src/ru_runtime/persistence/credential_store.py` (lazy import) | **Active (Retained Python tooling)**. OS credential-store adapter, separate from managed provider bootstrap. |
-| `ddgs` / `duckduckgo_search` | *Removed from pyproject.toml* | None in Python | **Removed**. Managed web tools (`web.search`, `web.fetch`) are implemented in C# (`backend-dotnet/RuAgent.Broker/Tools/Web/`). |
+| `ddgs` / `duckduckgo_search` | *Removed from pyproject.toml* | None in Python | **Removed**. Managed web ops (`read` with `op=web_search`/`op=web_fetch`) are implemented in C# (`backend-dotnet/RuAgent.Broker/Tools/Web/`). |
 | `pytest`, `ruff`, `mypy` | `pyproject.toml` (`[dev]`) | CI, test runner, lint, typecheck | **Active (Dev/CI)**. `pytest-asyncio` is not declared by this project. |
 
 ## Torch Version Alignment and Compatibility Decision

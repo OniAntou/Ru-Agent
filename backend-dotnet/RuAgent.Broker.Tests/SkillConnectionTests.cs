@@ -27,7 +27,7 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
         {
-            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
+            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SystemRead, ToolScope.SkillExecute),
             ["skill_ids"] = new JsonArray("workspace.list.skill"),
         }), cancellation.Token);
         var opened = await ReceiveAsync(socket, cancellation.Token);
@@ -62,7 +62,7 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
         {
-            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
+            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SystemRead, ToolScope.SkillExecute),
             ["skill_ids"] = new JsonArray("workspace.list.skill"),
         }), cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);
@@ -96,7 +96,7 @@ public sealed class SkillConnectionTests
         _ = await ReceiveAsync(socket, cancellation.Token);
         await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
         {
-            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SkillExecute),
+            ["scopes"] = new JsonArray(ToolScope.WorkspaceRead, ToolScope.SystemRead, ToolScope.SkillExecute),
             ["skill_ids"] = new JsonArray("workspace.list.skill"),
         }), cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);

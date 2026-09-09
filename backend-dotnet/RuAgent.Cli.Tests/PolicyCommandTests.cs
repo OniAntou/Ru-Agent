@@ -56,11 +56,11 @@ public sealed class PolicyCommandTests
     [Fact]
     public void PolicyJsonCodec_NormalizesAndDisplaysMatchers()
     {
-        var json = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"files.read\",\"canonical_path_pattern\":\"a.txt\",\"operation_class\":\"read\"}}]}";
+        var json = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"read\",\"canonical_path_pattern\":\"a.txt\",\"operation_class\":\"read\"}}]}";
         var file = PolicyJsonCodec.Parse(json);
         var display = PolicyJsonCodec.NormalizeAndDisplay(file);
         Assert.Contains("allow", display);
-        Assert.Contains("files.read", display);
+        Assert.Contains("read", display);
         Assert.Contains("a.txt", display);
         // Normalized should be sorted keys
         Assert.Contains("canonical_path_pattern", display);
@@ -75,7 +75,7 @@ public sealed class PolicyCommandTests
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/policies"))
             {
-                var respJson = JsonSerializer.Serialize(new { items = new[] { new { rule_id = "rule_" + new string('a', 32), scope = "global", decision = "allow", matcher = new { tool_id = "files.read" } } } });
+                var respJson = JsonSerializer.Serialize(new { items = new[] { new { rule_id = "rule_" + new string('a', 32), scope = "global", decision = "allow", matcher = new { tool_id = "read" } } } });
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
@@ -96,7 +96,7 @@ public sealed class PolicyCommandTests
     {
         var session = CreateSession();
         var tempFile = Path.GetTempFileName();
-        var policyJson = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"files.read\",\"canonical_path_pattern\":\"src/app.ts\"}}]}";
+        var policyJson = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"read\",\"canonical_path_pattern\":\"src/app.ts\"}}]}";
         File.WriteAllText(tempFile, policyJson);
 
         bool headerChecked = false;
@@ -138,7 +138,7 @@ public sealed class PolicyCommandTests
     {
         var session = CreateSession();
         var tempFile = Path.GetTempFileName();
-        var policyJson = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"files.read\"}}]}";
+        var policyJson = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"read\"}}]}";
         File.WriteAllText(tempFile, policyJson);
 
         var handler = CreateFakeClient(req => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });

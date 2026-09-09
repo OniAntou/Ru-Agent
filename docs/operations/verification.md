@@ -311,7 +311,7 @@ unit tests replace only their external process boundary and never open RuApp.
   the local UI-theme preference reader is capped as well.
 - Watcher debounce timers remove themselves after firing, preventing a long-
   lived registration from retaining one timer per changed path indefinitely.
-- `files.read` now performs offset/window arithmetic in `Int64`, avoiding a
+- `read` with `op=read` now performs offset/window arithmetic in `Int64`, avoiding a
   2-GiB boundary overflow that could incorrectly clear the `truncated` flag;
   it also rechecks the open handle's final length so concurrent appends are
   reported as truncated instead of being mistaken for a complete read.
@@ -558,13 +558,12 @@ bounded 0.05 ms timing-jitter floor; it never loads a model or contacts a
 device.
 
 The Worker v2 model inventory is deterministic and should stay aligned with
-`AgentRuntimeCoordinatorFactory.RuntimeCapabilities`: `files.list`,
-`files.read`, `files.glob`, `files.search`, `files.write`, `files.edit`,
-`files.delete`, `files.restore`, `terminal.run`, and `terminal.shell`. The single
+`AgentRuntimeCoordinatorFactory.RuntimeCapabilities`: `read`, `write`, `edit`,
+and `bash`. The single
 Agent profile receives the advertised list; policy fallback behavior is
 verified separately. `files.apply_patch` remains unadvertised. Time, machine
 status, app discovery, and optional volume operations use terminal tools;
-notes use `files.write`.
+notes use `write` with `op=write`.
 Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
 Protocol parser and are covered by CLI/Host tests. Web search/fetch are
 enabled read-only managed capabilities backed by the fixed DuckDuckGo HTML

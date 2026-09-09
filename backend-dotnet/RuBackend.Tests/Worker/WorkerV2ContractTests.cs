@@ -99,7 +99,7 @@ public sealed class WorkerV2ContractTests
         var largeSchema = new string('a', 32 * 1024 + 1);
         var tool = new JsonObject
         {
-            ["tool_id"] = "files.read",
+            ["tool_id"] = "read",
             ["tool_version"] = "1.0.0",
             ["scopes"] = new JsonArray("workspace.read"),
             ["availability"] = "executable",
@@ -173,21 +173,22 @@ public sealed class WorkerV2ContractTests
     {
         var runtimeTools = RuBackend.Harness.Prompting.AgentToolRuntimeProjection.Select(
             new RuBackend.Harness.Prompting.AgentToolRuntimeAvailability(true, true));
-        Assert.Contains(runtimeTools, definition => definition.ToolId == "web.search");
-        Assert.Contains(runtimeTools, definition => definition.ToolId == "web.fetch");
+        var read = Assert.Single(runtimeTools, definition => definition.ToolId == "read");
+        Assert.Contains("web_search", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Contains("web_fetch", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]
     public void Rejects_oversized_arguments()
     {
-        var largeArgs = new JsonObject { ["path"] = new string('a', 64 * 1024 + 1) };
+        var largeArgs = new JsonObject { ["op"] = "read", ["path"] = new string('a', 64 * 1024 + 1) };
         var payload = new JsonObject
         {
             ["text"] = null,
             ["tool_calls"] = new JsonArray(new JsonObject
             {
                 ["provider_call_id"] = null,
-                ["tool_id"] = "files.read",
+                ["tool_id"] = "read",
                 ["tool_version"] = "1.0.0",
                 ["arguments"] = largeArgs,
             }),
@@ -260,7 +261,7 @@ public sealed class WorkerV2ContractTests
             payload["instruction_blocks"]!.AsArray()
                 .Select(item => item!["source_id"]!.GetValue<string>()));
         Assert.Equal(
-            ["files.read", "web.search"],
+            ["read"],
             payload["capabilities"]!.AsArray()
                 .Select(item => item!["id"]!.GetValue<string>()));
         Assert.Equal(
@@ -324,8 +325,7 @@ public sealed class WorkerV2ContractTests
                     content,
                     Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant())],
                 [
-                    Capability("files.read"),
-                    Capability("web.search"),
+                    Capability("read"),
                 ],
                 new PromptRuntimeContext(
                     "remembered preference",

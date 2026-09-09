@@ -51,11 +51,11 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 ┌───────────────────────────────┐     ┌──────────────────────────────────┐
 │   RuAgent.Runtime.Worker      │     │      RuAgent.Broker (Sandbox)    │
 │   (Port 8005 / 8006)          │     │   (Dynamic Loopback Port)        │
-│ - Worker v2: Model Step &     │     │ - files.list / glob / search     │
-│   Reasoning Orchestration     │     │ - files.read / write / edit      │
-│ - Worker v1: Voice Engine     │     │ - files.delete / restore         │
-│   (OmniVoice TTS, Google STT) │     │ - terminal.run / terminal.shell  │
-│ - VTube Studio & Subtitles    │     │ - web.search / web.fetch         │
+│ - Worker v2: Model Step &     │     │ - read (list/glob/search/    │
+│   Reasoning Orchestration     │     │   read/help/web_search/      │
+│ - Worker v1: Voice Engine     │     │   web_fetch)                 │
+│   (OmniVoice TTS, Google STT) │     │ - write / edit               │
+│ - VTube Studio & Subtitles    │     │ - bash (run/shell)           │
 │ - Screen Observation Analysis │     │ - Policy & Approval Engine       │
 └───────────────────────────────┘     └──────────────────────────────────┘
 ```
@@ -148,23 +148,23 @@ dotnet run --project backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -- agent chat
 
 ## 5. Hệ thống công cụ Agent (Tool Capabilities)
 
-Ru Agent được trang bị 13 công cụ cốt lõi được định nghĩa chặt chẽ theo Protocol chuẩn:
+Ru Agent được trang bị 4 công cụ cốt lõi được định nghĩa chặt chẽ theo Protocol chuẩn:
 
 | Nhóm công cụ | Tên công cụ (Tool ID) | Mô tả chức năng |
 | :--- | :--- | :--- |
-| **Duyệt tệp** | `files.list` | Liệt kê danh sách tệp/thư mục kèm metadata (kích thước, thời gian sửa đổi). |
-| | `files.glob` | Tìm kiếm tệp theo mẫu glob (ví dụ: `**/*.cs`, `src/**/*.ts`). |
-| | `files.search` | Tìm kiếm nội dung văn bản bên trong tệp (ripgrep-based regex search). |
-| **Thao tác tệp** | `files.read` | Đọc nội dung tệp (hỗ trợ phân trang và đọc theo khoảng dòng). |
-| | `files.write` | Tạo mới hoặc ghi đè toàn bộ nội dung tệp. |
-| | `files.edit` | Thay thế chính xác một khối nội dung trong tệp (atomic replacement). |
-| | `files.delete` | Xóa tệp có bảo hiểm (lưu preimage vào thùng rác an toàn để có thể phục hồi). |
-| | `files.restore` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
-| **Terminal** | `terminal.run` | Chạy lệnh trong shell PowerShell/cmd với giới hạn thời gian chờ. |
-| | `terminal.shell` | Mở phiên shell tương tác để quản lý tác vụ nền. |
-| **Tra cứu Web** | `web.search` | Tìm kiếm thông tin trên Web qua DuckDuckGo endpoint an toàn (cần phê duyệt mỗi lần dùng). |
-| | `web.fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
-| **Tài liệu** | `help.docs` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
+| **Duyệt tệp** | `read` + `op=list` | Liệt kê danh sách tệp/thư mục kèm metadata (kích thước, thời gian sửa đổi). |
+| | `read` + `op=glob` | Tìm kiếm tệp theo mẫu glob (ví dụ: `**/*.cs`, `src/**/*.ts`). |
+| | `read` + `op=search` | Tìm kiếm nội dung văn bản bên trong tệp (ripgrep-based regex search). |
+| **Thao tác tệp** | `read` + `op=read` | Đọc nội dung tệp (hỗ trợ phân trang và đọc theo khoảng dòng). |
+| | `write` + `op=write` | Tạo mới hoặc ghi đè toàn bộ nội dung tệp. |
+| | `edit` | Thay thế chính xác một khối nội dung trong tệp (atomic replacement). |
+| | `write` + `op=delete` | Xóa tệp có bảo hiểm (lưu preimage vào thùng rác an toàn để có thể phục hồi). |
+| | `write` + `op=restore` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
+| **Terminal** | `bash` + `mode=run` | Chạy lệnh trong shell PowerShell/cmd với giới hạn thời gian chờ. |
+| | `bash` + `mode=shell` | Mở phiên shell tương tác để quản lý tác vụ nền. |
+| **Tra cứu Web** | `read` + `op=web_search` | Tìm kiếm thông tin trên Web qua DuckDuckGo endpoint an toàn (cần phê duyệt mỗi lần dùng). |
+| | `read` + `op=web_fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
+| **Tài liệu** | `read` + `op=help` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
 
 ---
 

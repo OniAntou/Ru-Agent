@@ -131,7 +131,7 @@ Terminal calls
 still run as the current Windows user and may execute host code or open sockets;
 `network_intent` is audit metadata, not network isolation. Current time,
 machine/process status, application discovery, and optional volume commands use
-an advertised terminal tool. Note-file creation uses `files.write`.
+an advertised terminal tool. Note-file creation uses `write` with `op=write`.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
 and is not model-usable at this checkpoint. Any internal adapter or test fixture

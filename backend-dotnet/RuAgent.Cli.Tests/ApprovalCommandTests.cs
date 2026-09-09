@@ -41,7 +41,7 @@ public sealed class ApprovalCommandTests
                 {
                     approval_id = approvalId,
                     status = "authorized",
-                    matcher_preview = new { tool_id = "files.read", canonical_path = "probe.txt", scope = "once" },
+                    matcher_preview = new { tool_id = "read", canonical_path = "probe.txt", scope = "once" },
                     rule_saved = false
                 });
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
@@ -77,7 +77,7 @@ public sealed class ApprovalCommandTests
             {
                 approval_id = approvalId,
                 status = "authorized",
-                matcher_preview = new { tool_id = "files.read" },
+                matcher_preview = new { tool_id = "read" },
             });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
         });
@@ -102,7 +102,7 @@ public sealed class ApprovalCommandTests
             callCount++;
             if (callCount == 1)
             {
-                var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized", matcher_preview = new { tool_id = "files.read" } });
+                var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized", matcher_preview = new { tool_id = "read" } });
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
             }
             else

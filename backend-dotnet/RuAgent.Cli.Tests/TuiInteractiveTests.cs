@@ -75,12 +75,12 @@ public sealed class TuiInteractiveTests
             EventType: "tool.execution_requested",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "running",
-            SafeSummary: "files.read path: src/main.rs");
+            SafeSummary: "read op=read path: src/main.rs");
 
         TuiEventRenderer.RenderEnvelope(toolEnvelope, sw2);
         var toolOutput = sw2.ToString();
         Assert.Contains("Tool Request #2", toolOutput, StringComparison.Ordinal);
-        Assert.Contains("files.read", toolOutput, StringComparison.Ordinal);
+        Assert.Contains("read", toolOutput, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -211,7 +211,7 @@ public sealed class TuiInteractiveTests
             EventType: "tool.execution_requested",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "running",
-            SafeSummary: "files.edit path: src/app.cs");
+            SafeSummary: "edit path: src/app.cs");
 
         TuiEventRenderer.RenderEnvelope(editEnv, sw);
         var outReq = sw.ToString();
@@ -228,7 +228,7 @@ public sealed class TuiInteractiveTests
             EventType: "tool.executed",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "succeeded",
-            SafeSummary: "files.edit completed\n--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line");
+            SafeSummary: "edit completed\n--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line");
 
         TuiEventRenderer.RenderEnvelope(doneEnv, sw2);
         var outDone = sw2.ToString();

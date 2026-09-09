@@ -37,6 +37,14 @@ Last reviewed: 2026-09-06.
 - [x] Kept Worker v1 device/voice routes and OmniVoice because they still have
   live responsibilities; persisted-data importers were handled separately.
 
+## Completed Pi-style tool merge (2026-09-09)
+
+- [x] Merged the 13 model-visible tools into 4 (`read`, `write`, `edit`, `bash`)
+  with `op`/`mode` discriminators; policy matchers accept the old dotted IDs as
+  legacy aliases only.
+- [x] Migrated skill manifests (`research.and_note`), docs, and tests to the
+  merged IDs; `skills/README.md` lists `read`/`write` as the runnable bindings.
+
 ## Completed Agent tool retirement (2026-09-05)
 
 - [x] Reduced the canonical Agent catalog from 18 mixed-exposure definitions

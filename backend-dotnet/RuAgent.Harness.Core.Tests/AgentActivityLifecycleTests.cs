@@ -132,9 +132,9 @@ public sealed class AgentActivityLifecycleTests
             {
                 new ModelToolCall(
                     "provider-call",
-                    "files.read",
+                    "read",
                     "1",
-                    JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone()),
+                    JsonDocument.Parse("{\"op\":\"read\",\"path\":\"README.md\"}").RootElement.Clone()),
             },
             AssistantFinishReason.ToolCalls,
             16);

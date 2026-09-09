@@ -215,9 +215,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["tool_calls"] = new JsonArray(new JsonObject
                     {
                         ["provider_call_id"] = "call-1",
-                        ["tool_id"] = "files.read",
+                        ["tool_id"] = "read",
                         ["tool_version"] = "1.0.0",
-                        ["arguments"] = new JsonObject { ["path"] = "README.md" },
+                        ["arguments"] = new JsonObject { ["op"] = "read", ["path"] = "README.md" },
                     }),
                     ["finish_reason"] = "tool_calls",
                     ["prompt_receipt"] = PromptReceiptJson(),
@@ -242,7 +242,8 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(AssistantFinishReason.ToolCalls, result.Step.FinishReason);
         var call = Assert.Single(result.Step.ToolCalls);
         Assert.Equal("call-1", call.ProviderCallId);
-        Assert.Equal("files.read", call.ToolId);
+        Assert.Equal("read", call.ToolId);
+        Assert.Equal("read", call.Arguments.GetProperty("op").GetString());
         Assert.Equal("README.md", call.Arguments.GetProperty("path").GetString());
     }
 
@@ -618,29 +619,18 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             new[]
             {
-                "files.list", "files.read", "files.glob", "files.search",
-                "files.write", "files.edit", "files.delete", "files.restore",
-                "terminal.run", "terminal.shell", "help.docs", "web.search", "web.fetch",
+                "read", "write", "edit", "bash",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(
             ["workspace.read"],
-            tools["files.read"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+            tools["read"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Equal(
             ["workspace.write"],
-            tools["files.write"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+            tools["write"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Equal(
             ["terminal.execute"],
-            tools["terminal.run"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.Equal(
-            ["network.search"],
-            tools["web.search"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.Equal(
-            ["network.fetch"],
-            tools["web.fetch"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.Equal(
-            ["system.read"],
-            tools["help.docs"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+            tools["bash"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]

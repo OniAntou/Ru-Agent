@@ -53,9 +53,9 @@ public sealed class ModelContextSourceTests
             [
                 new ModelToolCall(
                     "provider-call-1",
-                    "files.read",
+                    "read",
                     "1",
-                    System.Text.Json.JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement),
+                    System.Text.Json.JsonDocument.Parse("{\"op\":\"read\",\"path\":\"README.md\"}").RootElement),
             ],
             AssistantFinishReason.ToolCalls,
             estimatedInputTokens: 42);

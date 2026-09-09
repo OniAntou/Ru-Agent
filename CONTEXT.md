@@ -96,7 +96,7 @@ example:
 ---
 name: pdf-analyzer
 description: Analyze and summarize PDF files
-allowed-tools: files.read, terminal.run
+allowed-tools: read, bash
 ---
 
 # PDF Analyzer
@@ -123,8 +123,8 @@ _Avoid_: global allowlist
 
 **Capability Profile**:
 The single session-scoped Agent preset. The model-visible
-Worker v2 list is the runtime projection of eleven core Protocol definitions
-(including offline `help.docs`) plus independently enabled `web.search`/`web.fetch`
+Worker v2 list is the runtime projection of four core Protocol definitions
+(`read`, `write`, `edit`, `bash`, including offline `read` with `op=help`) plus independently enabled `read` with `op=web_search`/`op=web_fetch`
 (approval-gated). The legacy `standard`/`full_access` wire values are accepted
 as compatibility metadata but map to the same policy; there is no second
 policy tier and no provider, model, protocol, or tool fallback.
@@ -169,9 +169,9 @@ _Avoid_: repository-marker trust
 **Workspace Terminal**:
 The non-admin terminal adapter constrained to the configured workspace,
 allowlisted executables, bounded output, cancellation, and process-tree
-cleanup. `terminal.run` auto-forms (read/test/build/lint/local-Git) run on an
+cleanup. `bash` with `mode=run` auto-forms (read/test/build/lint/local-Git) run on an
 authorization token; external mutation, deletion, extended timeouts, every
-`terminal.shell` script, and unknown executables require a one-time approval
+`bash` with `mode=shell` script, and unknown executables require a one-time approval
 token. Network use is audit metadata plus an approval classifier, never a
 separate scope gate.
 _Avoid_: unrestricted Bash/PowerShell access

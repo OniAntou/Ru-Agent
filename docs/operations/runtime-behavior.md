@@ -87,12 +87,11 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
 references are not appended as separate system messages.
 
-Host capabilities are the runtime projection of the 13 Protocol-owned tool
-definitions: eleven core model tools (including offline `help.docs`) plus
-independently gated `web.search` and `web.fetch`. Each capability includes its ID/version, description, canonical
+Host capabilities are the runtime projection of the 4 Protocol-owned tool
+definitions: four core model tools (`read`, `write`, `edit`, `bash`). Each capability includes its ID/version, description, canonical
 scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
 emits exactly one JSON object of the form
-`{"tool_id":"files.read","tool_version":"1.0.0","arguments":{"path":"README.md"}}`
+`{"tool_id":"read","tool_version":"1.0.0","arguments":{"op":"read","path":"README.md"}}`
 and makes no success claim until the durable result arrives. Ordinary answers
 remain ordinary text. The Worker rejects unknown, duplicate, or digest-mismatched
 contracts before provider execution.
@@ -107,7 +106,7 @@ only when it contains a case-insensitive `SKILL.md`. For example:
 ---
 name: pdf-analyzer
 description: Analyze and summarize PDF files
-allowed-tools: files.read, terminal.run
+allowed-tools: read, bash
 ---
 
 # PDF Analyzer
@@ -139,9 +138,9 @@ the exact context before committing model completion or dispatching tools, then
 stores the receipt as an `InternalOnly` payload. Public Agent SSE suppresses
 `model.prompt_composed` and its payload while advancing the durable cursor.
 Invalid context or receipt metadata fails closed with `prompt_contract_invalid`;
-there is no static-prompt fallback or reduced-context retry. The managed Host's
-enabled web executor advertises both `web.search` and `web.fetch`; no settings
-field controls their exposure.
+there is no static-prompt fallback or reduced-context retry. Managed runtime
+wiring enables the `web_search`/`web_fetch` ops on `read` by default;
+no settings field controls their exposure.
 
 Prompt composition is not a security boundary: Broker policy, workspace trust,
 approvals, protected paths, external-directory grants, and cancellation remain
@@ -151,7 +150,7 @@ system overrides, Chat compatibility, UI redesign, and the OS-enforced
 filesystem/network sandbox are outside this implementation.
 
 When Ru needs product knowledge about its own features, tools, configuration,
-providers, or operating boundaries, it selects `help.docs@1.0.0`. The tool
+providers, or operating boundaries, it selects `read` with `op=help` (`read@1.0.0`). The op
 searches only five explicitly embedded Markdown resources and returns bounded,
 stable document IDs and excerpts. It is offline, read-only, workspace-
 independent, and approval-free. Runtime context and advertised terminal tools
@@ -342,11 +341,9 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings advertise eleven core bindings (including offline
-`help.docs`) plus the runtime-enabled read-only Web bindings: `files.list`, `files.read`,
-`files.glob`, `files.search`, `files.write`, `files.edit`, `files.delete`,
-`files.restore`, `terminal.run`, `terminal.shell`, `help.docs`, `web.search`, and
-`web.fetch`. Broker policy automatically allows file tools in the trusted root
+The Worker v2 settings advertise four core bindings: `read` with
+`op=list|glob|search|read|help|web_search|web_fetch`, `write` with
+`op=write|delete|restore`, `edit`, and `bash` with `mode=run|shell`. Broker policy automatically allows file tools in the trusted root
 or a folder granted to the same live session and applies analyzer decisions to
 terminal requests. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
 not an OS-enforced filesystem/network sandbox. File tools may
@@ -356,8 +353,6 @@ shared with a new or forked session and disappears on restart. Terminal
 deletion, external mutation (network egress, package installs, push/fetch),
 extended timeouts beyond the standard window, shell scripts, web calls when
 approval-gated, and unknown executable launch require approval.
-`files.apply_patch`
-is not advertised or model-usable in the current runtime.
 The model selection channel is active for every Agent run: each step allows up
 to ten model-initiated tool calls through the Agent Broker pipeline. Selection
 JSON is never streamed into
@@ -377,12 +372,13 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 memory, reviewed examples, TTS, or VTS metadata.
 
-The eleven Worker v2 bindings above are the core model surface, and managed
-startup also advertises read-only `web.search`/`web.fetch` bindings. Managed
+The four Worker v2 bindings above are the core model surface, and managed
+startup also enables the `web_search`/`web_fetch` ops on `read`. Managed
 startup constructs an enabled WebOptions instance with the fixed
 `https://html.duckduckgo.com/html/` endpoint; their bounded responses carry an
-explicit `untrusted` marker and never become instructions. `files.search`
-searches the workspace, while `web.search` searches the public web. `help.docs`
+explicit `untrusted` marker and never become instructions. `read` with
+`op=search` searches the workspace, while `read` with `op=web_search` searches
+the public web. `read` with `op=help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
 Declarative Skills are added only from validated manifests explicitly included
@@ -394,8 +390,9 @@ temporary index and refusing dirty user index state. Other Git commands remain
 ordinary terminal requests governed by Broker policy. The
 GUI renders the actual `agent.session` grant received from the Host. Managed
 startup enables the bounded WebOptions instance with the fixed DuckDuckGo
-endpoint, so `web.search` and `web.fetch` are advertised as read-only managed
-capabilities without a settings flag or separate deployment switch; Broker
+endpoint, so `read` with `op=web_search` and `op=web_fetch` are advertised as
+read-only managed capabilities without a settings flag or separate deployment
+switch; Broker
 policy remains authoritative for each call. The tested MCP bridge and the
 mail/calendar/task connector libraries are not production-composed or
 advertised as Agent tools.
@@ -414,7 +411,8 @@ the other commands return bounded static or session-scoped data.
 
 The managed Agent constructs an enabled WebOptions object with the public
 DuckDuckGo HTML search endpoint `https://html.duckduckgo.com/html/`. It
-advertises `web.search` as `network.search` and `web.fetch` as `network.fetch`;
+maps `read` with `op=web_search` to `network.search` and `read` with
+`op=web_fetch` to `network.fetch`;
 the normal Harness policy remains authoritative for each read-only call.
 Redirects are disabled or validated at every hop, private/reserved targets are
 rejected, and response bytes, content types, UTF-8, sanitizer output, and

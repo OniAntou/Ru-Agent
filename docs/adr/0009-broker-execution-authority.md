@@ -8,7 +8,7 @@ date: 2026-08-29
 Ru had two parallel tool implementations: the in-process `HarnessToolGateway`
 (~4,300 lines inside the ASP.NET Core web host) and the process-isolated
 Broker adapters, forcing manual parity between them. We decided that every
-model-visible tool call (`files.*`, `terminal.*`, `web.*`, `help.docs`)
+model-visible tool call (`read`, `write`, `edit`, `bash`)
 executes only in RuAgentBroker, reached through the existing `IToolGateway`
 seam (`Evaluate → Prepare → Execute → Cancel`); the Host keeps auth, policy
 projection, approvals, and recovery persistence only.
@@ -58,10 +58,10 @@ approve.
     across adapters; both the in-process gateway and `BrokerToolGateway`
     subclassed it. Twenty-three facts run against the Broker adapter,
     including the migrated regression facts (preimage never in model
-    proposals, canonical `is_regex`, `help.docs` read-only lifecycle).
-  - All V2-wire tool families are conformance-locked: read-only file tools,
-    `files.write/edit/delete/restore` (Broker-captured preimage), and
-    `terminal.run/shell` (analyzer-safe forms allow; unrecognized forms ask).
+    proposals, canonical `is_regex`, `read` with `op=help` read-only lifecycle).
+  - All V2-wire tool families are conformance-locked: read-only file ops,
+    `write` with `op=write`/`edit`/`op=delete`/`op=restore` (Broker-captured preimage), and
+    `bash` with `mode=run`/`mode=shell` (analyzer-safe forms allow; unrecognized forms ask).
   - The Host projects its `PolicySnapshot` onto the wire via
     `PolicySnapshotMapper` (hash-identical to the Core canonicalizer) and
     `AgentRuntimeCoordinatorFactory` opens a per-run Broker lease through
@@ -77,8 +77,8 @@ approve.
     session-directory grant is the whole authorization, and the Broker lease
     rebind remains future work.
   - Web wiring: web options are defined once on the Host, forwarded to the
-    Broker process through the environment, and the v2 lease advertises
-    `web.search` / `web.fetch` only when enabled. Web tools always ask;
+    Broker process through the environment, and the v2 lease enables the
+    `web_search`/`web_fetch` ops on `read` only when enabled. Web ops always ask;
     explicit rules still deny first. Live-network acceptance
     stays separate per docs/operations/verification.md.
   - The v2 lease advertises the full authoritative tool set (16 bindings:

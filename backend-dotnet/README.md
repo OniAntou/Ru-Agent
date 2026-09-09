@@ -90,16 +90,17 @@ and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 and encrypted policy snapshots) is the current path. Worker v2 performs
 exactly one `generate_reply` per `agent.step.start` and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same eleven bindings in the single Agent profile (including offline
-`help.docs`): `files.list`/`files.glob`/
-`files.search`/`files.read` (offset/limit, streaming, bounded `truncated`),
-hash-guarded `files.write`/`files.edit`, recoverable
-`files.delete`/`files.restore` (one-time, `recovery_too_large` beyond 1 MiB,
-`recovery_consumed` on replay), and `terminal.run`/`terminal.shell`. The single
+the same four bindings in the single Agent profile: `read` with
+`op=list|glob|search|read|help|web_search|web_fetch` (offset/limit, streaming,
+bounded `truncated`),
+`write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
+`recovery_too_large` beyond 1 MiB,
+`recovery_consumed` on replay), and `bash` with `mode=run|shell`. The single
 profile automatically allows ordinary trusted-workspace file reads/creates/edits
 and applies single-verdict analyzer/rule/approval decisions to terminal requests:
-auto for recognized read/test/build/lint/local-Git `terminal.run` payloads,
-ask for deletion, external mutation, extended timeouts, every `terminal.shell`
+auto for recognized read/test/build/lint/local-Git `bash` with `mode=run` payloads,
+ask for deletion, external mutation, extended timeouts, every `bash`
+with `mode=shell`
 script, and unknown executables. Protected paths, hard invariants, and extended
 timeout thresholds remain gated. An explicit absolute path outside the trusted
 root
@@ -111,7 +112,7 @@ the current Windows user and may execute host code or open sockets;
 `network_intent` is
 audit/approval metadata, not network isolation. Time, machine status, app
 discovery, and optional volume commands use the terminal; notes use
-`files.write`. `files.apply_patch` is not advertised or model-usable. The
+`write` with `op=write`. `files.apply_patch` is not advertised or model-usable. The
 managed Git commit workflow is fully shipped with temporary index isolation,
 path rollback attribution, and refusal on dirty user state; other Git commands
 remain ordinary terminal requests governed by Broker policy.

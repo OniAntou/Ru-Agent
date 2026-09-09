@@ -148,6 +148,13 @@ public sealed class PublicHostStarter : IDisposable
                 Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe"),
                 Path.Combine(AppContext.BaseDirectory, "RuBackend.exe"),
             };
+            // When CLI runs outside the repo (eg ru.cmd pass-through from any workspace),
+            // fall back to the backend publish dir located next to the CLI publish dir.
+            for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null && dir.Parent is not null; dir = dir.Parent.Parent)
+            {
+                candidates = candidates.Append(Path.Combine(dir.FullName, "RuBackend", "bin", "Release", "net10.0", "win-x64", "publish", "RuBackend.exe")).ToArray();
+                candidates = candidates.Append(Path.Combine(dir.FullName, "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe")).ToArray();
+            }
             string? exe = candidates.FirstOrDefault(File.Exists);
             if (exe is null)
             {

@@ -13,7 +13,10 @@ public sealed record HarnessSafeEventEnvelope(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("safe_summary")] string SafeSummary,
     [property: JsonPropertyName("payload_ref")] string? PayloadRef = null,
-    [property: JsonPropertyName("approval_id")] string? ApprovalId = null)
+    [property: JsonPropertyName("approval_id")] string? ApprovalId = null,
+    [property: JsonPropertyName("input_tokens")] long? InputTokens = null,
+    [property: JsonPropertyName("output_tokens")] long? OutputTokens = null,
+    [property: JsonPropertyName("total_tokens")] long? TotalTokens = null)
 {
     public const int CurrentProtocolVersion = 1;
 

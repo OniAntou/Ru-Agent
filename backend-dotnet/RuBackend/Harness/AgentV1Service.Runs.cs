@@ -661,6 +661,27 @@ public sealed partial class AgentV1Service
         }
     }
 
+    /// <summary>
+    /// Đọc usage payload (kind ModelUsage) cho SSE enrich. Fail-closed: mọi lỗi
+    /// đều trả null, không throw, không log payload bytes.
+    /// </summary>
+    public async Task<RuAgent.Harness.Core.ModelUsage?> TryReadModelUsageAsync(string runIdRaw, string payloadIdRaw, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!IsRunId(runIdRaw) || !IsPayloadId(payloadIdRaw)) return null;
+            var content = await _payloadStore.ReadForClientAsync(new RunId(runIdRaw), new PayloadId(payloadIdRaw), cancellationToken).ConfigureAwait(false);
+            if (content.Encoding == HarnessPayloadEncoding.Opaque) return null;
+            if (content.Plaintext.Length > 4096) return null;
+            using var doc = JsonDocument.Parse(content.Plaintext);
+            return RuAgent.Harness.Core.ModelUsage.Read(doc.RootElement);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<AgentServiceResult> CancelAsync(string runIdRaw, CancellationToken cancellationToken)
     {
         if (!IsRunId(runIdRaw))

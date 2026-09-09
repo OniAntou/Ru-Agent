@@ -104,11 +104,11 @@ public sealed class SystemPromptComposerTests
     {
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext());
 
-        Assert.Contains("files.read@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("read@1.0.0", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("scope: workspace.read", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("input_schema:", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("example_arguments:", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("\"tool_id\": \"files.read\"", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("\"tool_id\": \"read\"", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("emit exactly one JSON object", snapshot.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Do not claim success", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Ordinary conversational answers must remain ordinary text", snapshot.Text, StringComparison.Ordinal);
@@ -118,12 +118,11 @@ public sealed class SystemPromptComposerTests
     public void Compose_mentions_only_available_tool_families()
     {
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(
-            capabilities: [PromptFixtures.Capability("files.read", "workspace.read")]));
+            capabilities: [PromptFixtures.Capability("read", "workspace.read")]));
 
-        Assert.Contains("files.read", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("help.docs for", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("terminal tools for", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("managed Web tools", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("read", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("op=help", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Use bash for", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,18 +131,17 @@ public sealed class SystemPromptComposerTests
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(
             capabilities:
             [
-                PromptFixtures.Capability("files.write", "workspace.write"),
-                PromptFixtures.Capability("terminal.shell", "terminal.execute"),
-                PromptFixtures.Capability("web.search", "network.search"),
-                PromptFixtures.Capability("help.docs", "system.read"),
+                PromptFixtures.Capability("write", "workspace.write"),
+                PromptFixtures.Capability("bash", "terminal.execute"),
+                PromptFixtures.Capability("read", "workspace.read"),
             ]));
 
-        Assert.Contains("Use help.docs for Ru product behavior", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use terminal tools for current time, machine or process status, application discovery, and optional volume commands.", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use files.write to create note files.", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use read with op=help for Ru product behavior", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use bash for current time, machine or process status, application discovery, and optional volume commands.", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use write with op=write to create note files.", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("shell scripts, external mutations, direct deletion", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Web tools always require one-time approval", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Do not invent aliases or fallback tools", snapshot.Text, StringComparison.Ordinal);
     }
 
@@ -194,7 +192,7 @@ public sealed class SystemPromptComposerTests
                 },
                 capabilities ?? new[]
                 {
-                    new PromptCapability("files.read", "1.0.0", "Read a file", "workspace.read", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}}}", new string('a', 64), "{\"path\":\"README.md\"}", "enabled"),
+                    new PromptCapability("read", "1.0.0", "Read a file", "workspace.read", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"op\":{\"type\":\"string\"},\"path\":{\"type\":\"string\"}}}", new string('a', 64), "{\"op\":\"read\",\"path\":\"README.md\"}", "enabled"),
                 },
                 runtime ?? new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
 

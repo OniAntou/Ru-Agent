@@ -68,7 +68,8 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(proposal);
-        var accessKind = AccessKindForTool(proposal.ToolId);
+        var proposalArgs = ParseArguments(proposal.Arguments);
+        var accessKind = AccessKindForTool(proposal.ToolId, proposalArgs);
         var argsKey = ApprovalArgsKey(proposal.ToolId, proposal.Arguments);
         if (_approvals is not null
             && _approvals.TryPeekAuthorizationToken(_runId, argsKey, out var storedToken)
@@ -87,7 +88,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
                 ["tool_id"] = proposal.ToolId,
                 ["tool_version"] = proposal.ToolVersion,
                 ["tool_call_id"] = proposal.ToolCallId.Value,
-                ["arguments"] = ParseArguments(proposal.Arguments),
+                ["arguments"] = (JsonNode)proposalArgs.DeepClone(),
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -155,7 +156,8 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(execution);
         cancellationToken.ThrowIfCancellationRequested();
-        var accessKind = AccessKindForTool(execution.Proposal.ToolId);
+        var preparedArgs = ParseArguments(execution.Proposal.Arguments);
+        var accessKind = AccessKindForTool(execution.Proposal.ToolId, preparedArgs);
         var canonicalToken = execution.CanonicalIntentToken;
         var authorizationToken = canonicalToken.StartsWith(AuthorizationTokenPrefix, StringComparison.Ordinal)
             ? canonicalToken[AuthorizationTokenPrefix.Length..]
@@ -307,9 +309,18 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
 
     private static string ApprovalArgsKey(string toolId, JsonElement arguments)
     {
-        var canonicalArguments = JsonNode.Parse(arguments.GetRawText())!.ToJsonString();
-        return toolId + "|" + canonicalArguments;
+        var canonicalArguments = CanonicalizeJson(JsonNode.Parse(arguments.GetRawText())!);
+        return toolId + "|" + canonicalArguments.ToJsonString();
     }
+
+    private static JsonNode CanonicalizeJson(JsonNode node) => node switch
+    {
+        JsonObject obj => new JsonObject(
+            obj.OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => KeyValuePair.Create<string, JsonNode?>(item.Key, CanonicalizeJson(item.Value!)))),
+        JsonArray array => new JsonArray(array.Select(item => (JsonNode?)CanonicalizeJson(item!)).ToArray()),
+        _ => node.DeepClone(),
+    };
 
     public async ValueTask DisposeAsync()
     {
@@ -492,12 +503,19 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
             contentEncoding: HarnessPayloadEncoding.Json);
     }
 
-    private static ToolAccessKind AccessKindForTool(string toolId) => toolId switch
+    private static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) => toolId switch
     {
-        "files.write" or "files.edit" or "files.delete" or "files.restore" => ToolAccessKind.Mutation,
-        "terminal.run" or "terminal.shell" => ToolAccessKind.Terminal,
+        "write" or "edit" => ToolAccessKind.Mutation,
+        "bash" => ToolAccessKind.Terminal,
+        "read" => IsWebOp(arguments) ? ToolAccessKind.Terminal : ToolAccessKind.ReadOnly,
         _ => ToolAccessKind.ReadOnly,
     };
+
+    private static bool IsWebOp(JsonObject? arguments)
+    {
+        var op = arguments?["op"]?.GetValue<string>();
+        return op is "web_search" or "web_fetch";
+    }
 
     private static ApprovalId InternalApprovalId(string brokerApprovalId)
     {

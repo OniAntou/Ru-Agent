@@ -38,19 +38,10 @@ public static class AgentToolDefinitionCatalog
 
     private static readonly IReadOnlyList<Entry> Entries =
     [
-        new("files.list", "List entries in a bounded directory." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "workspace", ["max_entries"] = 32 }),
-        new("files.glob", "Find files by a bounded glob pattern." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileGlobSchema, () => new JsonObject { ["path"] = "workspace", ["pattern"] = "*.txt" }),
-        new("files.search", "Search file contents; set is_regex only when the query is a valid regular expression." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileSearchSchema, () => new JsonObject { ["query"] = "search text", ["is_regex"] = false }),
-        new("files.read", "Read bounded UTF-8 file content." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileReadSchema, () => new JsonObject { ["path"] = "README.md", ["offset"] = 0, ["limit"] = 1024 }),
-        new("files.write", "Write file content; policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileWriteSchema, () => new JsonObject { ["path"] = "notes.txt", ["content"] = "new content" }),
-        new("files.edit", "Replace an exact non-empty string in a file." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
-        new("files.delete", "Delete one file after policy checks." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileDeleteSchema, () => new JsonObject { ["path"] = "obsolete.txt" }),
-        new("files.restore", "Restore a previously prepared file mutation by recovery ID.", AgentToolScopes.WorkspaceWrite, FileRestoreSchema, () => new JsonObject { ["recovery_id"] = "recovery-123" }),
-        new("terminal.run", "Run one bounded executable with an argument vector and explicit network intent.", AgentToolScopes.TerminalExecute, TerminalRunSchema, () => new JsonObject { ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = ".", ["network_intent"] = false }),
-        new("terminal.shell", "Run bounded shell script text after terminal policy and approval checks.", AgentToolScopes.TerminalExecute, TerminalShellSchema, () => new JsonObject { ["script"] = "Get-Date", ["working_directory"] = ".", ["network_intent"] = false }),
-        new("web.search", "Search the web with one bounded query when managed web search is enabled.", AgentToolScopes.NetworkSearch, WebSearchSchema, () => new JsonObject { ["query"] = "latest Ru release" }),
-        new("web.fetch", "Fetch one absolute HTTP(S) URL when managed web fetch is enabled.", AgentToolScopes.NetworkFetch, WebFetchSchema, () => new JsonObject { ["url"] = "https://example.com/" }),
-        new("help.docs", "Search bundled Ru documentation for product behavior, tools, configuration, and operating boundaries.", AgentToolScopes.SystemRead, HelpDocsSchema, () => new JsonObject { ["query"] = "how approvals work", ["max_results"] = 3 }),
+        new("read", "Read-only workspace, docs, and web operations. Set op to list, glob, search, read, help, web_search, or web_fetch." + FilePathGuidance, AgentToolScopes.WorkspaceRead, ReadSchema, () => new JsonObject { ["op"] = "read", ["path"] = "README.md" }),
+        new("write", "Write, delete, or restore a file; policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, WriteSchema, () => new JsonObject { ["op"] = "write", ["path"] = "notes.txt", ["content"] = "new content" }),
+        new("edit", "Replace an exact non-empty string in a file." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
+        new("bash", "Run one bounded executable or shell script with an argument vector and explicit network intent.", AgentToolScopes.TerminalExecute, BashSchema, () => new JsonObject { ["mode"] = "run", ["executable"] = "git", ["arguments"] = new JsonArray("status"), ["working_directory"] = "." }),
     ];
 
     private static readonly IReadOnlyList<AgentToolDefinition> Definitions = BuildDefinitions();
@@ -74,7 +65,7 @@ public static class AgentToolDefinitionCatalog
         {
             var entry = Entries[index];
             if (!keys.Add(Key(entry.Id, CurrentVersion))) throw new AgentProtocolException("duplicate_tool_definition");
-            if (!System.Text.RegularExpressions.Regex.IsMatch(entry.Id, "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$") || entry.Description.Length is 0 or > 2048 || !AgentToolScopes.All.Contains(entry.Scope)) throw new AgentProtocolException("invalid_tool_definition");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(entry.Id, "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$") || entry.Description.Length is 0 or > 2048 || !AgentToolScopes.All.Contains(entry.Scope)) throw new AgentProtocolException("invalid_tool_definition");
             var schema = entry.Schema();
             if (!IsStrictObjectSchema(schema)) throw new AgentProtocolException("invalid_tool_definition");
             var example = entry.Example?.Invoke();
@@ -104,6 +95,35 @@ public static class AgentToolDefinitionCatalog
         return true;
     }
 
+    private static JsonObject ReadSchema() => ObjectSchema(["op"], ReadSchemaProperties());
+    private static JsonObject WriteSchema() => ObjectSchema(["op"], WriteSchemaProperties());
+    private static JsonObject BashSchema() => ObjectSchema(["mode"], BashSchemaProperties());
+    private static (string Name, JsonObject Schema)[] ReadSchemaProperties() =>
+    [
+        ("op", EnumSchema(["list", "glob", "search", "read", "help", "web_search", "web_fetch"])),
+        ("path", StringSchema()), ("pattern", StringSchema()), ("query", StringSchema(512)),
+        ("url", StringSchema(2048)), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 256 * 1024)),
+        ("max_entries", IntegerSchema(1, 512)), ("max_results", IntegerSchema(1, 64)),
+        ("file_glob", StringSchema()), ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()),
+    ];
+    private static (string Name, JsonObject Schema)[] WriteSchemaProperties() =>
+    [
+        ("op", EnumSchema(["write", "delete", "restore"])),
+        ("path", StringSchema()), ("content", StringSchema()), ("overwrite", BooleanSchema()),
+        ("recovery_id", StringSchema(maxLength: 256)),
+    ];
+    private static (string Name, JsonObject Schema)[] BashSchemaProperties() =>
+    [
+        ("mode", EnumSchema(["run", "shell"])),
+        ("executable", StringSchema(TerminalLimits.MaxExecutableChars)),
+        ("arguments", ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars)),
+        ("script", StringSchema(TerminalLimits.MaxScriptChars)),
+        ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)),
+        ("timeout_ms", IntegerSchema(1, TerminalLimits.HardMaxTimeoutMs)),
+        ("network_intent", BooleanSchema()),
+        ("read_only", BooleanSchema()),
+        ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars)),
+    ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
     private static JsonObject FileGlobSchema() => ObjectSchema(["pattern"], [("path", StringSchema()), ("pattern", StringSchema()), ("max_results", IntegerSchema(1, 64))]);
     private static JsonObject FileSearchSchema() => ObjectSchema(["query"], [("path", StringSchema()), ("query", StringSchema()), ("file_glob", StringSchema()), ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()), ("max_results", IntegerSchema(1, 64))]);
@@ -134,6 +154,7 @@ public static class AgentToolDefinitionCatalog
     }
 
     private static JsonObject ArraySchema(int maxItems, int itemMaxLength) => new() { ["type"] = "array", ["items"] = StringSchema(itemMaxLength), ["maxItems"] = maxItems };
+    private static JsonObject EnumSchema(params string[] choices) => new() { ["type"] = "string", ["enum"] = new JsonArray(choices.Select(item => (JsonNode?)item).ToArray()) };
     private static (string Name, JsonObject Schema)[] TerminalWriteSetProperties() => [("read_only", BooleanSchema()), ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars))];
     private static JsonObject BooleanSchema() => new() { ["type"] = "boolean" };
     private static JsonObject IntegerSchema(int? minimum = null, int? maximum = null)

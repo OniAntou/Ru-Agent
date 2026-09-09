@@ -59,7 +59,9 @@ public sealed record PolicyContext(
     int? TimeoutMs = null,
     string SessionId = "",
     ResolvedPath? WorkingDirectory = null,
-    CommandAnalysis? TerminalAnalysis = null)
+    CommandAnalysis? TerminalAnalysis = null,
+    string? ToolOp = null,
+    string? BashMode = null)
 {
     public static readonly IReadOnlyList<string> EmptyArgv = Array.Empty<string>();
 }

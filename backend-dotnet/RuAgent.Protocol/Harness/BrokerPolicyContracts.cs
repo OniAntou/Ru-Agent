@@ -69,15 +69,16 @@ public static class BrokerPolicyContracts
     {
         return new[]
         {
-            "help.docs",
-            "files.list", "files.glob", "files.search", "files.read",
-            "files.write", "files.edit", "files.delete", "files.restore",
-            "terminal.run", "terminal.shell",
+            "read", "write", "edit", "bash",
         };
     }
 
     public static bool IsReadOnlyTool(string toolId) =>
-        toolId is "files.list" or "files.glob" or "files.search" or "files.read";
+        toolId is "read";
+
+    public static bool IsWebOp(string? op) =>
+        string.Equals(op, "web_search", StringComparison.Ordinal)
+        || string.Equals(op, "web_fetch", StringComparison.Ordinal);
 
     public static string CanonicalizePreset(string preset) => preset switch
     {

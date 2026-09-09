@@ -152,42 +152,11 @@ public sealed partial class ToolExecutionService : IToolInvoker
     {
         var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
-            ["help.docs"] = (_, arguments, cancellationToken) => Succeeded(
-                _helpDocs.Execute(arguments, cancellationToken),
-                "Bundled Ru documentation searched."),
-            ["files.list"] = (context, arguments, _) => Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
-                "Workspace entries listed."),
-            ["files.glob"] = (context, arguments, _) => Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(arguments),
-                "Workspace glob completed."),
-            ["files.search"] = (context, arguments, _) => Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).Search.Execute(arguments),
-                "Workspace search completed."),
-            ["files.read"] = (context, arguments, _) => Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
-                "Workspace file read."),
-            ["files.edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
-            ["files.write"] = (context, arguments, _) => Succeeded(
-                ExecuteFileWrite(context, arguments),
-                "Workspace file written."),
-            ["files.delete"] = (context, arguments, _) => Succeeded(
-                ExecuteDelete(context, arguments),
-                "Workspace file deleted."),
-            ["files.restore"] = (context, arguments, _) => ExecuteRestore(context, arguments),
-            ["terminal.run"] = ExecuteTerminalRunAsync,
-            ["terminal.shell"] = ExecuteTerminalShellAsync,
+            ["read"] = ExecuteReadOpAsync,
+            ["write"] = ExecuteWriteOpAsync,
+            ["edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
+            ["bash"] = ExecuteBashAsync,
         };
-
-        if (_webFetch is not null)
-        {
-            executors["web.fetch"] = ExecuteWebFetchAsync;
-        }
-
-        if (_webSearch is not null)
-        {
-            executors["web.search"] = ExecuteWebSearchAsync;
-        }
 
         return executors;
     }

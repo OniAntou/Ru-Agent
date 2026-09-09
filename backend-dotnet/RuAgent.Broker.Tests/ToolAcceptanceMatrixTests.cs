@@ -9,26 +9,12 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolAcceptanceMatrixTests
 {
     [Theory]
-    [InlineData(false, 11)]
-    [InlineData(true, 13)]
+    [InlineData(4)]
     public void Runtime_catalog_binds_every_available_canonical_definition(
-        bool webEnabled,
         int expectedBindings)
     {
         var executors = ToolBindingRegistryTests.ExecutableStubs();
-        WebOptions options;
-        if (webEnabled)
-        {
-            executors["web.search"] = Succeeded;
-            executors["web.fetch"] = Succeeded;
-            options = new WebOptions(
-                enabled: true,
-                searchEndpoint: new Uri("https://search.example.com/"));
-        }
-        else
-        {
-            options = new WebOptions();
-        }
+        var options = new WebOptions();
 
         var bindings = new ToolCatalog(executors, options).Registry.List();
 
@@ -46,7 +32,6 @@ public sealed class ToolAcceptanceMatrixTests
         }
 
         var expectedIds = AgentToolDefinitionCatalog.Get()
-            .Where(definition => webEnabled || !AgentModelToolContractCatalog.WebToolIds.Contains(definition.ToolId))
             .Select(definition => definition.ToolId)
             .OrderBy(id => id, StringComparer.Ordinal);
         Assert.Equal(expectedIds, bindings.Select(binding => binding.Manifest.Id));
@@ -59,7 +44,7 @@ public sealed class ToolAcceptanceMatrixTests
             .Select(definition => definition.ToolId)
             .ToArray();
 
-        Assert.Equal(13, expected.Length);
+        Assert.Equal(4, expected.Length);
         Assert.Equal(expected, AgentModelToolContractCatalog.ToolIds);
     }
 

@@ -31,25 +31,16 @@ public sealed record TerminalShellRequest(
 
 public static class TerminalManifests
 {
-    public static ToolManifest Run { get; } = new(
-        "terminal.run",
+    public static ToolManifest Bash { get; } = new(
+        "bash",
         "1.0.0",
         "terminal",
         RiskClass.Reversible,
         new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
-        AgentModelToolContractCatalog.Get("terminal.run", "1.0.0").InputSchema,
+        AgentModelToolContractCatalog.Get("bash", "1.0.0").InputSchema,
         new System.Text.Json.Nodes.JsonObject { ["type"] = "object" },
         120_000,
         256 * 1024,
         "builtin",
         RequiresApproval: true);
-
-    public static ToolManifest Shell { get; } = Run with
-    {
-        Id = "terminal.shell",
-        Risk = RiskClass.Destructive,
-        Scopes = new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
-        InputSchema = AgentModelToolContractCatalog.Get("terminal.shell", "1.0.0").InputSchema,
-        RequiresApproval = true,
-    };
 }

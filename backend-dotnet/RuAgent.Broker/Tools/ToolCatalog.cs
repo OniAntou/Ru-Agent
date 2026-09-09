@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
-using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools;
@@ -68,26 +67,10 @@ public sealed class ToolCatalog
 
     private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
-        yield return Manifest("help.docs", ToolScope.SystemRead, RiskClass.Read, "builtin", maxOutputBytes: 64 * 1024);
-        yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
-        yield return Manifest("files.glob", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
-        yield return Manifest("files.search", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
-        yield return Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
-        yield return Manifest("files.edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        yield return Manifest("files.delete", ToolScope.WorkspaceWrite, RiskClass.Destructive, "desktop", workspace: true, requiresApproval: true);
-        yield return Manifest("files.restore", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
-        yield return TerminalManifests.Run;
-        yield return TerminalManifests.Shell;
-        if (webOptions.FetchEnabled)
-        {
-            yield return Manifest("web.fetch", ToolScope.WebFetch, RiskClass.Read, "web", requiresApproval: true);
-        }
-
-        if (webOptions.SearchEnabled)
-        {
-            yield return Manifest("web.search", ToolScope.WebSearch, RiskClass.Read, "web", requiresApproval: true);
-        }
+        yield return Manifest("read", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead, ToolScope.WebSearch, ToolScope.WebFetch]);
+        yield return Manifest("write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
+        yield return Manifest("edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
+        yield return Manifest("bash", ToolScope.TerminalExecute, RiskClass.Reversible, "terminal", workspace: false, requiresApproval: true);
     }
 
     private static ToolManifest Manifest(
@@ -97,12 +80,13 @@ public sealed class ToolCatalog
         string adapter,
         bool workspace = false,
         bool requiresApproval = false,
-        int maxOutputBytes = 256 * 1024) => new(
+        int maxOutputBytes = 256 * 1024,
+        string[]? extraScopes = null) => new(
         id,
         "1.0.0",
         adapter,
         risk,
-        new HashSet<string>([scope], StringComparer.Ordinal),
+        new HashSet<string>([scope, .. extraScopes ?? []], StringComparer.Ordinal),
         AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)?.InputSchema
             ?? throw new AgentProtocolException("tool_contract_not_found"),
         new JsonObject { ["type"] = "object" },

@@ -8,9 +8,12 @@ public sealed class HelpDocsTests
 {
     private static readonly string[] CurrentToolIds =
     [
-        "files.list", "files.glob", "files.search", "files.read",
-        "files.write", "files.edit", "files.delete", "files.restore",
-        "terminal.run", "terminal.shell", "web.search", "web.fetch", "help.docs",
+        "read", "write", "edit", "bash",
+    ];
+
+    private static readonly string[] CurrentOps =
+    [
+        "op=read", "op=write", "op=web_search", "mode=run", "mode=shell",
     ];
 
     private static readonly string[] RetiredToolIds =
@@ -56,7 +59,7 @@ public sealed class HelpDocsTests
     {
         var tool = new HelpDocsTool(BundledHelpDocsCatalog.LoadDefault());
 
-        var output = tool.Execute(new JsonObject { ["query"] = "approvals" });
+        var output = tool.Execute(new JsonObject { ["op"] = "help", ["query"] = "approvals" });
 
         Assert.Equal("approvals", output["query"]!.GetValue<string>());
         var results = output["results"]!.AsArray();
@@ -73,6 +76,7 @@ public sealed class HelpDocsTests
     {
         var output = HelpDocsTool.CreateDefault().Execute(new JsonObject
         {
+            ["op"] = "help",
             ["query"] = query,
             ["max_results"] = 5,
         });
@@ -87,6 +91,7 @@ public sealed class HelpDocsTests
     {
         var output = HelpDocsTool.CreateDefault().Execute(new JsonObject
         {
+            ["op"] = "help",
             ["query"] = "current capability matrix",
             ["max_results"] = 5,
         });
@@ -94,6 +99,7 @@ public sealed class HelpDocsTests
         var excerpts = string.Join("\n", output["results"]!.AsArray()
             .Select(item => item!["excerpt"]!.GetValue<string>()));
         Assert.All(CurrentToolIds, toolId => Assert.Contains(toolId, excerpts, StringComparison.Ordinal));
+        Assert.All(CurrentOps, op => Assert.Contains(op, excerpts, StringComparison.Ordinal));
         Assert.All(RetiredToolIds, toolId => Assert.DoesNotContain(toolId, excerpts, StringComparison.Ordinal));
     }
 
@@ -102,8 +108,9 @@ public sealed class HelpDocsTests
     {
         var tool = new HelpDocsTool(BundledHelpDocsCatalog.LoadDefault());
 
-        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "   " }));
-        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "tools", ["path"] = "README.md" }));
+        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["op"] = "help", ["query"] = "   " }));
+        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["op"] = "read", ["query"] = "tools" }));
+        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "tools" }));
     }
 
     [Fact]

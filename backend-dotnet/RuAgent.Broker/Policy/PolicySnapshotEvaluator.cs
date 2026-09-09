@@ -154,8 +154,8 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
-        // Web tools always ask: network egress is never auto-allowed.
-        if (IsWebTool(context.ToolId))
+        // Web ops always ask: network egress is never auto-allowed.
+        if (IsWebOp(context))
         {
             return Ask("web_approval_required");
         }
@@ -186,11 +186,11 @@ public sealed class PolicySnapshotEvaluator
 
     private PolicyEvaluation TerminalFallback(PolicyContext context)
     {
-        // Single terminal verdict. terminal.shell always asks: arbitrary script
+        // Single terminal verdict. bash mode=shell always asks: arbitrary script
         // text cannot be auto-classified safe, so the AST verdict only feeds the
         // approval preview, never an allow. Keep in sync with TerminalAutoPolicy
         // (run payloads) and TerminalAdapter (execution leg).
-        if (string.Equals(context.ToolId, "terminal.shell", StringComparison.Ordinal))
+        if (IsShellMode(context))
         {
             var shellAnalysis = context.TerminalAnalysis
                 ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
@@ -227,9 +227,13 @@ public sealed class PolicySnapshotEvaluator
     private static PolicyEvaluation Allow(string reasonCode) =>
         new("allow", reasonCode, MatchedRuleId: null);
 
-    private static bool IsWebTool(string toolId) =>
-        string.Equals(toolId, "web.search", StringComparison.Ordinal)
-        || string.Equals(toolId, "web.fetch", StringComparison.Ordinal);
+    private static bool IsWebOp(PolicyContext context) =>
+        string.Equals(context.ToolId, "read", StringComparison.Ordinal)
+        && context.ToolOp is "web_search" or "web_fetch";
+
+    private static bool IsShellMode(PolicyContext context) =>
+        string.Equals(context.ToolId, "bash", StringComparison.Ordinal)
+        && string.Equals(context.BashMode, "shell", StringComparison.Ordinal);
 
     private static PolicyEvaluation Ask(string reasonCode, string? matchedRuleId = null) =>
         new("ask", reasonCode, matchedRuleId);

@@ -36,14 +36,15 @@ public static class AgentActivityProjector
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
+        var op = ReadOp(proposal);
         var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt);
-        var kind = proposal.ToolId switch
+        var kind = (proposal.ToolId, op) switch
         {
-            "files.list" or "files.glob" => AgentActivityKind.Explore,
-            "files.search" or "web.search" => AgentActivityKind.Search,
-            "files.read" => AgentActivityKind.Analyze,
-            "files.write" or "files.edit" or "files.delete" or "files.restore" => AgentActivityKind.Edit,
-            "terminal.run" or "terminal.shell" => AgentActivityKind.Terminal,
+            ("read", "list") or ("read", "glob") => AgentActivityKind.Explore,
+            ("read", "search") or ("read", "web_search") => AgentActivityKind.Search,
+            ("read", "read") => AgentActivityKind.Analyze,
+            ("write", _) or ("edit", _) => AgentActivityKind.Edit,
+            ("bash", _) => AgentActivityKind.Terminal,
             _ => AgentActivityKind.Status,
         };
 
@@ -52,17 +53,17 @@ public static class AgentActivityProjector
             metadata = ToolActivityMetadata.Empty;
         }
 
-        var toolDisplay = proposal.ToolId switch
+        var toolDisplay = (proposal.ToolId, op) switch
         {
-            "files.list" or "files.glob" => "Explore",
-            "files.search" or "web.search" => "Search",
-            "files.read" => "View",
-            "files.write" or "files.edit" => "Edit",
-            "files.delete" => "Delete",
-            "files.restore" => "Restore",
-            "terminal.run" or "terminal.shell" => "Terminal",
-            "web.fetch" => "Fetch",
-            "help.docs" => "Docs",
+            ("read", "list") or ("read", "glob") => "Explore",
+            ("read", "search") or ("read", "web_search") => "Search",
+            ("read", "read") => "View",
+            ("write", "write") or ("edit", _) => "Edit",
+            ("write", "delete") => "Delete",
+            ("write", "restore") => "Restore",
+            ("bash", _) => "Terminal",
+            ("read", "web_fetch") => "Fetch",
+            ("read", "help") => "Docs",
             _ => null,
         };
 
@@ -135,6 +136,23 @@ public static class AgentActivityProjector
         }
     }
 
+    private static string? ReadOp(ToolProposal proposal)
+    {
+        try
+        {
+            if (proposal.Arguments.TryGetProperty("op", out var op)
+                && op.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return op.GetString();
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
     private static string ActivityId(string sourceId)
     {
         var separator = sourceId.IndexOf('_');
@@ -188,25 +206,26 @@ public static class AgentActivityProjector
             try
             {
                 var arguments = proposal.Arguments;
-                var fileName = proposal.ToolId is "files.read" or "files.write" or "files.edit" or "files.delete" or "files.restore"
+                var op = ReadOp(proposal);
+                var fileName = (proposal.ToolId, op) is ("read", "read") or ("write", _) or ("edit", _)
                     ? ReadSafeFileName(arguments, "path")
                     : null;
                 var (lineStart, lineEnd) = ReadLineRange(arguments);
-                var symbol = proposal.ToolId is "files.search" or "web.search"
+                var symbol = (proposal.ToolId, op) is ("read", "search") or ("read", "web_search")
                     ? ReadSafeSymbol(arguments, "query")
                     : null;
                 var count = ReadReceiptInt(receipt, "count");
                 var added = ReadReceiptInt(receipt, "added");
                 var removed = ReadReceiptInt(receipt, "removed");
 
-                if (proposal.ToolId is "files.write" or "files.edit")
+                if (proposal.ToolId is "write" or "edit")
                 {
                     added ??= ReadLineBreakCount(arguments, "new_string")
                         ?? ReadLineBreakCount(arguments, "content");
                     removed ??= ReadLineBreakCount(arguments, "old_string");
                 }
 
-                if (proposal.ToolId is "files.read" or "files.edit" or "files.write")
+                if (proposal.ToolId is "read" or "edit" or "write")
                 {
                     (lineStart, lineEnd) = PreferReceiptLineRange(receipt, lineStart, lineEnd);
                 }

@@ -282,15 +282,9 @@ public sealed class BrokerSession
 
     private static IEnumerable<string> WorkspaceScopesFor(string toolId) => toolId switch
     {
-        "help.docs" => [ToolScope.SystemRead],
-        "files.list" or "files.glob" or "files.search" or "files.read"
-            => [ToolScope.WorkspaceRead],
-        "files.write" or "files.edit" or "files.delete" or "files.restore"
-            => [ToolScope.WorkspaceWrite],
-        "terminal.run" or "terminal.shell"
-            => [ToolScope.TerminalExecute],
-        "web.search" => [ToolScope.WebSearch],
-        "web.fetch" => [ToolScope.WebFetch],
+        "read" => [ToolScope.SystemRead, ToolScope.WorkspaceRead, ToolScope.WebSearch, ToolScope.WebFetch],
+        "write" or "edit" => [ToolScope.WorkspaceWrite],
+        "bash" => [ToolScope.TerminalExecute],
         _ => [ToolScope.WorkspaceRead],
     };
 

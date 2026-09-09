@@ -20,6 +20,20 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService : IToolInvoker
 {
+    private async ValueTask<ToolExecutionOutcome> ExecuteBashAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        var mode = ReadOptionalString(arguments, "mode") ?? "run";
+        if (string.Equals(mode, "shell", StringComparison.Ordinal))
+        {
+            return await ExecuteTerminalShellAsync(context, arguments, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await ExecuteTerminalRunAsync(context, arguments, cancellationToken).ConfigureAwait(false);
+    }
+
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(
         ToolExecutionContext context,
         JsonObject arguments,
@@ -97,7 +111,9 @@ public sealed partial class ToolExecutionService : IToolInvoker
     {
         try
         {
-            if (toolId == "terminal.shell")
+            var mode = ReadOptionalString(arguments, "mode")
+                ?? (toolId == "bash" ? "run" : null);
+            if (string.Equals(mode, "shell", StringComparison.Ordinal) || toolId == "terminal.shell")
             {
                 return tools.Terminal.CanonicalizeShell(new TerminalShellRequest(
                     ReadOptionalString(arguments, "shell") ?? "powershell",
@@ -107,7 +123,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
                     string.Empty)).IntentHash;
             }
 
-            return toolId == "terminal.run"
+            return toolId is "terminal.run" or "bash"
                 ? tools.Terminal.CanonicalizeRun(new TerminalRunRequest(
                     "powershell",
                     ReadOptionalString(arguments, "working_directory") ?? ".",

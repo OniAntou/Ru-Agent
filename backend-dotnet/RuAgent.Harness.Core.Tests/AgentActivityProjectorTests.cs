@@ -28,11 +28,11 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Theory]
-    [InlineData("files.list")]
-    [InlineData("files.glob")]
-    public void Discovery_tools_project_count_only(string toolId)
+    [InlineData("list")]
+    [InlineData("glob")]
+    public void Discovery_tools_project_count_only(string op)
     {
-        var proposal = Proposal(toolId, "{\"path\":\"D:\\\\LLM\"}");
+        var proposal = Proposal("read", "{\"op\":\"" + op + "\",\"path\":\"D:\\\\LLM\"}");
         var receipt = Receipt("{\"entries\":[{},{}],\"count\":2}");
 
         var activity = AgentActivityProjector.ProjectTool(
@@ -50,8 +50,8 @@ public sealed class AgentActivityProjectorTests
     public void Search_projection_keeps_safe_symbol_and_result_count()
     {
         var proposal = Proposal(
-            "files.search",
-            "{\"query\":\"OnChatInputPreviewKeyDown\",\"path\":\"D:\\\\LLM\"}");
+            "read",
+            "{\"op\":\"search\",\"query\":\"OnChatInputPreviewKeyDown\",\"path\":\"D:\\\\LLM\"}");
         var receipt = Receipt("{\"results\":[{\"path\":\"Views/ChatView.xaml.cs\",\"line\":150}],\"count\":1}");
 
         var activity = AgentActivityProjector.ProjectTool(
@@ -70,8 +70,8 @@ public sealed class AgentActivityProjectorTests
     public void Read_projection_uses_basename_and_validated_line_range()
     {
         var proposal = Proposal(
-            "files.read",
-            "{\"path\":\"D:\\\\LLM\\\\ChatView.xaml.cs\",\"line_start\":150,\"line_end\":200}");
+            "read",
+            "{\"op\":\"read\",\"path\":\"D:\\\\LLM\\\\ChatView.xaml.cs\",\"line_start\":150,\"line_end\":200}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -88,7 +88,7 @@ public sealed class AgentActivityProjectorTests
     public void Edit_projection_reports_only_bounded_line_counts()
     {
         var proposal = Proposal(
-            "files.edit",
+            "edit",
             "{\"path\":\"D:\\\\LLM\\\\ChatView.xaml\",\"old_string\":\"old\\ntext\",\"new_string\":\"new\\ntext\\nextra\",\"line_start\":10,\"line_end\":12}");
 
         var activity = AgentActivityProjector.ProjectTool(
@@ -106,13 +106,13 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Theory]
-    [InlineData("terminal.run")]
-    [InlineData("terminal.shell")]
-    public void Terminal_projection_is_generic_and_has_no_command_metadata(string toolId)
+    [InlineData("run")]
+    [InlineData("shell")]
+    public void Terminal_projection_is_generic_and_has_no_command_metadata(string mode)
     {
         var proposal = Proposal(
-            toolId,
-            "{\"command\":\"Get-ChildItem D:\\\\LLM\",\"cwd\":\"D:\\\\LLM\"}");
+            "bash",
+            "{\"mode\":\"" + mode + "\",\"command\":\"Get-ChildItem D:\\\\LLM\",\"cwd\":\"D:\\\\LLM\"}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -126,13 +126,13 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Theory]
-    [InlineData("files.delete", "Delete")]
-    [InlineData("files.restore", "Restore")]
-    public void Delete_and_restore_project_basename_with_label(string toolId, string label)
+    [InlineData("delete", "Delete")]
+    [InlineData("restore", "Restore")]
+    public void Delete_and_restore_project_basename_with_label(string op, string label)
     {
         var proposal = Proposal(
-            toolId,
-            "{\"path\":\"D:\\\\LLM\\\\obsolete.txt\"}");
+            "write",
+            "{\"op\":\"" + op + "\",\"path\":\"D:\\\\LLM\\\\obsolete.txt\"}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -148,8 +148,8 @@ public sealed class AgentActivityProjectorTests
     public void Web_search_projects_query_symbol_without_url()
     {
         var proposal = Proposal(
-            "web.search",
-            "{\"query\":\"latest_release\"}");
+            "read",
+            "{\"op\":\"web_search\",\"query\":\"latest_release\"}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -164,8 +164,8 @@ public sealed class AgentActivityProjectorTests
     public void Web_fetch_stays_generic_without_url_metadata()
     {
         var proposal = Proposal(
-            "web.fetch",
-            "{\"url\":\"https://example.com/secret\"}");
+            "read",
+            "{\"op\":\"web_fetch\",\"url\":\"https://example.com/secret\"}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -197,8 +197,8 @@ public sealed class AgentActivityProjectorTests
     public void Invalid_metadata_is_omitted_instead_of_becoming_a_fallback_payload()
     {
         var proposal = Proposal(
-            "files.read",
-            "{\"path\":\"CON\",\"line_start\":200,\"line_end\":100}");
+            "read",
+            "{\"op\":\"read\",\"path\":\"CON\",\"line_start\":200,\"line_end\":100}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -238,9 +238,9 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Fact]
-    public void ProjectTool_Maps_FilesRead_To_View_Label()
+    public void ProjectTool_Maps_Read_To_View_Label()
     {
-        var proposal = Proposal("files.read", "{\"path\":\"D:\\\\LLM\\\\a.txt\"}");
+        var proposal = Proposal("read", "{\"op\":\"read\",\"path\":\"D:\\\\LLM\\\\a.txt\"}");
         var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
         Assert.Equal(AgentActivityKind.Analyze, activity.Kind);
         Assert.Equal("View", activity.ToolDisplay);

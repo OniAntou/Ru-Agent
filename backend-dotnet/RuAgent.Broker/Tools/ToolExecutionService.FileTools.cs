@@ -20,6 +20,25 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService : IToolInvoker
 {
+    private async ValueTask<ToolExecutionOutcome> ExecuteWriteOpAsync(ToolExecutionContext context, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var op = ReadOptionalString(arguments, "op") ?? "write";
+        return op switch
+        {
+            "write" => ToolExecutionOutcome.Succeeded(
+                ExecuteFileWrite(context, arguments),
+                ToolVerificationStates.NotRequired,
+                "Workspace file written."),
+            "delete" => ToolExecutionOutcome.Succeeded(
+                ExecuteDelete(context, arguments),
+                ToolVerificationStates.NotRequired,
+                "Workspace file deleted."),
+            "restore" => await ExecuteRestore(context, arguments).ConfigureAwait(false),
+            _ => throw new ArgumentException("unknown_write_op"),
+        };
+    }
+
     private JsonObject ExecuteFileWrite(ToolExecutionContext context, JsonObject arguments)
     {
         var tools = ResolveTools(context, TargetPathOf(arguments));

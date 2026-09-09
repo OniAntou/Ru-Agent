@@ -22,8 +22,8 @@ public sealed partial class ToolExecutionService : IToolInvoker
 {
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
-        "terminal.shell" => "Run a terminal action in the workspace.",
-        "files.edit" => "Chỉnh sửa file.",
+        "bash" => "Run a terminal action in the workspace.",
+        "edit" => "Chỉnh sửa file.",
         _ => "Run an external or destructive Agent action.",
     };
 
@@ -38,10 +38,11 @@ public sealed partial class ToolExecutionService : IToolInvoker
 
             var preview = toolId switch
             {
-                "files.write" => ReadOptionalString(arguments, "content") ?? string.Empty,
-                "files.edit" => EditPreview(arguments, fileText),
-                "terminal.shell" => ReadOptionalString(arguments, "script") ?? string.Empty,
-                "terminal.run" => TerminalRunPreview(arguments),
+                "write" => ReadOptionalString(arguments, "content") ?? string.Empty,
+                "edit" => EditPreview(arguments, fileText),
+                "bash" => IsShellArgs(arguments)
+                    ? ReadOptionalString(arguments, "script") ?? string.Empty
+                    : TerminalRunPreview(arguments),
                 _ => string.Empty,
             };
             return preview.Length <= ApprovalPreviewFields.MaxLength
@@ -53,6 +54,9 @@ public sealed partial class ToolExecutionService : IToolInvoker
             return string.Empty;
         }
     }
+
+    private static bool IsShellArgs(JsonObject arguments) =>
+        string.Equals(arguments["mode"]?.GetValue<string>(), "shell", StringComparison.Ordinal);
 
     private static string Bound(string value) =>
         value.Length <= ApprovalPreviewFields.MaxLength / 2 ? value : value[..(ApprovalPreviewFields.MaxLength / 2)];

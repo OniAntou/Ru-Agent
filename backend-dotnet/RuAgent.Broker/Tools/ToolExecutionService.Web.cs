@@ -29,6 +29,40 @@ public sealed partial class ToolExecutionService : IToolInvoker
         return new HttpClient(handler, disposeHandler: true);
     }
 
+    private ValueTask<ToolExecutionOutcome> ExecuteReadOpAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        var op = ReadOptionalString(arguments, "op") ?? "read";
+        return op switch
+        {
+            "list" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+                ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
+                ToolVerificationStates.NotRequired,
+                "Workspace entries listed.")),
+            "glob" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+                ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(arguments),
+                ToolVerificationStates.NotRequired,
+                "Workspace glob completed.")),
+            "search" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+                ResolveTools(context, TargetPathOf(arguments)).Search.Execute(arguments),
+                ToolVerificationStates.NotRequired,
+                "Workspace search completed.")),
+            "read" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+                ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
+                ToolVerificationStates.NotRequired,
+                "Workspace file read.")),
+            "help" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+                _helpDocs.Execute(arguments, cancellationToken),
+                ToolVerificationStates.NotRequired,
+                "Bundled Ru documentation searched.")),
+            "web_search" => ExecuteWebSearchAsync(context, arguments, cancellationToken),
+            "web_fetch" => ExecuteWebFetchAsync(context, arguments, cancellationToken),
+            _ => throw new ArgumentException("unknown_read_op"),
+        };
+    }
+
     private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(
         ToolExecutionContext context,
         JsonObject arguments,

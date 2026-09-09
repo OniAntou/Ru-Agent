@@ -14,7 +14,7 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Chat)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Equal(new HashSet<string> { "files.list", "files.glob", "files.search", "files.read" }, ids);
+        Assert.Equal(new HashSet<string> { "read" }, ids);
     }
 
     [Fact]
@@ -23,10 +23,10 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Contains("files.write", ids);
-        Assert.Contains("help.docs", ids);
-        Assert.Contains("terminal.run", ids);
-        Assert.Contains("terminal.shell", ids);
+        Assert.Contains("write", ids);
+        Assert.Contains("edit", ids);
+        Assert.Contains("read", ids);
+        Assert.Contains("bash", ids);
         Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
     }
@@ -37,15 +37,14 @@ public sealed class ToolBindingRegistryTests
         var agent = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Contains("terminal.run", agent);
-        Assert.Contains("terminal.shell", agent);
+        Assert.Contains("bash", agent);
     }
 
     [Fact]
     public void Catalog_fails_when_a_manifest_has_no_executor()
     {
         var executors = ExecutableStubs();
-        executors.Remove("files.read");
+        executors.Remove("read");
 
         var error = Assert.Throws<InvalidOperationException>(() => new ToolCatalog(executors));
 
@@ -72,7 +71,7 @@ public sealed class ToolBindingRegistryTests
 
         Assert.Equal(new[]
         {
-            "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "help.docs", "terminal.run", "terminal.shell",
+            "bash", "edit", "read", "write",
         }, ids);
         Assert.DoesNotContain("app.open", ids);
         Assert.DoesNotContain("workspace.search", ids);
@@ -85,17 +84,10 @@ public sealed class ToolBindingRegistryTests
 
     internal static Dictionary<string, ToolExecutor> ExecutableStubs() => new(StringComparer.Ordinal)
     {
-        ["help.docs"] = Succeeded,
-        ["files.list"] = Succeeded,
-        ["files.glob"] = Succeeded,
-        ["files.search"] = Succeeded,
-        ["files.read"] = Succeeded,
-        ["files.edit"] = Succeeded,
-        ["files.write"] = Succeeded,
-        ["files.delete"] = Succeeded,
-        ["files.restore"] = Succeeded,
-        ["terminal.run"] = Succeeded,
-        ["terminal.shell"] = Succeeded,
+        ["read"] = Succeeded,
+        ["write"] = Succeeded,
+        ["edit"] = Succeeded,
+        ["bash"] = Succeeded,
     };
 
     private static ValueTask<ToolExecutionOutcome> Succeeded(

@@ -13,12 +13,12 @@ namespace RuAgent.Broker.Tests;
 public sealed class WebExecutorTests
 {
     [Fact]
-    public async Task Service_requires_approval_for_web_tools()
+    public async Task Service_requires_approval_for_web_ops()
     {
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
             "web-session",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
             new HashSet<string>());
         using var http = new HttpClient(new Handler());
         var service = new ToolExecutionService(
@@ -28,9 +28,9 @@ public sealed class WebExecutorTests
             webHttpClient: http);
 
         var search = await service.ExecuteAsync(Envelope(
-            "search", "web.search", new JsonObject { ["query"] = "ru" }), CancellationToken.None);
+            "search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }), CancellationToken.None);
         var fetch = await service.ExecuteAsync(Envelope(
-            "fetch", "web.fetch", new JsonObject { ["url"] = "https://93.184.216.34/page" }), CancellationToken.None);
+            "fetch", "read", new JsonObject { ["op"] = "web_fetch", ["url"] = "https://93.184.216.34/page" }), CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.ApprovalRequired, search.Status);
         Assert.False(search.AdapterInvoked);
@@ -51,7 +51,7 @@ public sealed class WebExecutorTests
             webHttpClient: http);
 
         var result = await service.ExecuteAsync(
-            Envelope("search", "web.search", new JsonObject { ["query"] = "ru" }), CancellationToken.None);
+            Envelope("search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }), CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Denied, result.Status);
         Assert.Equal("scope_missing", result.ErrorCode);
@@ -64,7 +64,7 @@ public sealed class WebExecutorTests
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
             "web-session",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WebSearch]),
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch]),
             new HashSet<string>());
         using var http = new HttpClient(new JsonHandler());
         var service = new ToolExecutionService(
@@ -74,7 +74,7 @@ public sealed class WebExecutorTests
             webHttpClient: http);
 
         var result = await service.ExecuteAsync(
-            Envelope("json-search", "web.search", new JsonObject { ["query"] = "ru" }),
+            Envelope("json-search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }),
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);

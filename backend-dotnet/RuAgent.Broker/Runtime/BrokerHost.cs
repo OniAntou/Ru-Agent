@@ -170,22 +170,7 @@ public sealed class BrokerHost : IAsyncDisposable
 
     private static IReadOnlyList<string> AdvertisedCapabilities(Configuration.WebOptions? web)
     {
-        var capabilities = new List<string>(
-            RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities());
-        if (web is { Enabled: true })
-        {
-            if (web.FetchEnabled)
-            {
-                capabilities.Add("web.fetch");
-            }
-
-            if (web.SearchEnabled)
-            {
-                capabilities.Add("web.search");
-            }
-        }
-
-        return capabilities;
+        return RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
     }
 
     private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteToolAsync(

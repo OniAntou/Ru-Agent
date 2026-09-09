@@ -20,9 +20,15 @@ public sealed class HelpDocsTool
     {
         ArgumentNullException.ThrowIfNull(arguments);
         cancellationToken.ThrowIfCancellationRequested();
+        var op = arguments["op"]?.GetValue<string>();
+        if (!string.Equals(op, "help", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("unknown_read_op");
+        }
+
         try
         {
-            ToolSchemaValidator.Validate(AgentToolDefinitionCatalog.Find("help.docs", AgentToolDefinitionCatalog.CurrentVersion)!.InputSchema, arguments);
+            ToolSchemaValidator.Validate(AgentToolDefinitionCatalog.Find("read", AgentToolDefinitionCatalog.CurrentVersion)!.InputSchema, arguments);
         }
         catch (ToolSchemaException error)
         {

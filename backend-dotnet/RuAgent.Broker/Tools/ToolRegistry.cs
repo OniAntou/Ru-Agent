@@ -5,7 +5,7 @@ namespace RuAgent.Broker.Tools;
 
 public sealed class ToolRegistry
 {
-    private static readonly Regex IdPattern = new("^[a-z][a-z0-9]*(?:\\.[a-z0-9][a-z0-9_-]*)+$", RegexOptions.Compiled);
+    private static readonly Regex IdPattern = new("^[a-z][a-z0-9_]*(?:\\.[a-z0-9][a-z0-9_-]*)*$", RegexOptions.Compiled);
     private static readonly Regex VersionPattern = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled);
     private static readonly IReadOnlySet<string> TrustedAdapters = new HashSet<string>(
         ["builtin", "desktop", "terminal", "web", "connector"],

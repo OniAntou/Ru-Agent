@@ -61,12 +61,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 ? objectNode
                 : throw new ToolExecutionException("invalid_arguments");
             var binding = _catalog.Registry.Get(toolId, toolVersion);
-            var decision = _policy.Evaluate(
-                new PolicyGrant(
-                    request.SessionId,
-                    _session.Scopes,
-                    _session.Descriptor.ExpiresAt),
-                binding.Manifest);
+            var decision = EvaluateWithOpScope(request.SessionId, binding.Manifest, arguments);
             if (!decision.Allowed)
             {
                 return Result(
@@ -105,7 +100,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
                 var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
-                var terminalApprovalToken = toolId is "terminal.shell" or "terminal.run"
+                var terminalApprovalToken = toolId == "bash"
                     ? _approvalTokens.Issue(
                         request.RequestId,
                         request.SessionId,
@@ -245,12 +240,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             }
 
             var binding = _catalog.Registry.Get(pending.Manifest.Id, pending.Manifest.Version);
-            var decision = _policy.Evaluate(
-                new PolicyGrant(
-                    pending.Request.SessionId,
-                    _session.Scopes,
-                    _session.Descriptor.ExpiresAt),
-                binding.Manifest);
+            var decision = EvaluateWithOpScope(pending.Request.SessionId, binding.Manifest, pending.Arguments);
             if (!decision.Allowed)
             {
                 return Result(
@@ -310,6 +300,13 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
         }
+    }
+
+    private ToolPolicyDecision EvaluateWithOpScope(string sessionId, ToolManifest manifest, JsonObject arguments)
+    {
+        return _policy.Evaluate(
+            new PolicyGrant(sessionId, _session.Scopes, _session.Descriptor.ExpiresAt),
+            manifest);
     }
 
     private async Task<ToolResult> ExecuteBindingAsync(

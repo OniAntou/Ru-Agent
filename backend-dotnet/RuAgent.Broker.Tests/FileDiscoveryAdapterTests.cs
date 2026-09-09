@@ -361,14 +361,12 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        var listCtx = factory.Create("files.list", "1.0.0", new JsonObject { ["path"] = "src" });
+        var listCtx = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "list", ["path"] = "src" });
         var listEval = evaluator.Evaluate(lease.Snapshot, listCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("allow", listEval.Decision);
 
-        var readCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "src/a.txt" });
-        // Need to create file for proper resolution
         File.WriteAllText(Path.Combine(_root, "src", "a.txt"), "x");
-        var readEval = evaluator.Evaluate(lease.Snapshot, factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "src/a.txt" }), PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+        var readEval = evaluator.Evaluate(lease.Snapshot, factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "src/a.txt" }), PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("allow", readEval.Decision);
     }
 
@@ -378,16 +376,16 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var lease = CreateLease("standard", _root);
         var factory = new PolicyContextFactory(lease);
 
-        foreach (var toolId in new[] { "files.list", "files.glob", "files.search" })
+        foreach (var op in new[] { "list", "glob", "search" })
         {
-            var arguments = toolId switch
+            var arguments = op switch
             {
-                "files.glob" => new JsonObject { ["pattern"] = "*.txt" },
-                "files.search" => new JsonObject { ["query"] = "needle" },
-                _ => new JsonObject(),
+                "glob" => new JsonObject { ["op"] = op, ["pattern"] = "*.txt" },
+                "search" => new JsonObject { ["op"] = op, ["query"] = "needle" },
+                _ => new JsonObject { ["op"] = op },
             };
 
-            var context = factory.Create(toolId, "1.0.0", arguments);
+            var context = factory.Create("read", "1.0.0", arguments);
 
             Assert.NotNull(context.Target);
             Assert.Equal(lease.CanonicalRoot, context.Target!.CanonicalPath);
@@ -400,10 +398,10 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var lease = CreateLease("standard", _root);
         var factory = new PolicyContextFactory(lease);
 
-        var searchA = factory.Create("files.search", "1.0.0", new JsonObject { ["query"] = "alpha" });
-        var searchB = factory.Create("files.search", "1.0.0", new JsonObject { ["query"] = "beta" });
-        var readA = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "src/a.txt", ["offset"] = 0, ["limit"] = 10 });
-        var readB = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "src/a.txt", ["offset"] = 10, ["limit"] = 10 });
+        var searchA = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "search", ["query"] = "alpha" });
+        var searchB = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "search", ["query"] = "beta" });
+        var readA = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "src/a.txt", ["offset"] = 0, ["limit"] = 10 });
+        var readB = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "src/a.txt", ["offset"] = 10, ["limit"] = 10 });
 
         Assert.NotEqual(searchA.IntentHash, searchB.IntentHash);
         Assert.NotEqual(readA.IntentHash, readB.IntentHash);
@@ -416,7 +414,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        var protectedCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
+        var protectedCtx = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = ".env.local" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protectedCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("deny", protEval.Decision);
         Assert.Equal("protected_path", protEval.ReasonCode);
@@ -425,7 +423,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         File.WriteAllText(outsidePath, "outside");
         try
         {
-            var outsideCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = outsidePath });
+            var outsideCtx = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = outsidePath });
             var outEval = evaluator.Evaluate(lease.Snapshot, outsideCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
             Assert.Equal("ask", outEval.Decision);
             Assert.Equal("external_directory_required", outEval.ReasonCode);
@@ -441,14 +439,14 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var evaluator = new PolicySnapshotEvaluator();
 
         // Compatibility presets cannot override protected paths.
-        var protCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
+        var protCtx = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = ".env.local" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("deny", protEval.Decision);
         Assert.Equal("protected_path", protEval.ReasonCode);
 
         // Malformed path should deny before adapter (invalid_path)
-        Assert.Throws<PolicyContextException>(() => factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "" }));
-        Assert.Throws<PolicyContextException>(() => factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "a\0b" }));
+        Assert.Throws<PolicyContextException>(() => factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "" }));
+        Assert.Throws<PolicyContextException>(() => factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "a\0b" }));
 
         // Adapter also denies if forced
         var ex = Assert.Throws<UnauthorizedAccessException>(() => _read.Execute(new JsonObject { ["path"] = ".env.local" }));

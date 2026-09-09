@@ -40,7 +40,7 @@ public sealed class PolicyContextFactory
         }
 
         var resolver = new CanonicalPathResolver(_canonicalRoot);
-        var operationClass = OperationClassFor(toolId);
+        var operationClass = OperationClassFor(toolId, arguments);
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
         int? timeoutMs = null;
         if (arguments.ContainsKey("timeout_ms"))
@@ -62,13 +62,14 @@ public sealed class PolicyContextFactory
         string? resolvedExecutable = null;
         CommandAnalysis? terminalAnalysis = null;
 
-        if (IsTargetFreeTool(toolId))
+        if (operationClass == PolicyOperationClasses.Terminal)
         {
-            // System and web tools carry no workspace target; their identity is
-            // the tool id plus the argument set captured in the intent hash.
-        }
-        else if (operationClass == PolicyOperationClasses.Terminal)
-        {
+            var mode = OptionalText(arguments, "mode") ?? "run";
+            if (mode is not ("run" or "shell"))
+            {
+                throw new PolicyContextException("malformed_call");
+            }
+
             var workingDirectory = OptionalText(arguments, "working_directory") ?? ".";
             try
             {
@@ -86,7 +87,7 @@ public sealed class PolicyContextFactory
                 throw new PolicyContextException("invalid_cwd", error);
             }
 
-            if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal))
+            if (string.Equals(mode, "run", StringComparison.Ordinal))
             {
                 resolvedExecutable = OptionalText(arguments, "executable")
                     ?? throw new PolicyContextException("malformed_call");
@@ -130,17 +131,32 @@ public sealed class PolicyContextFactory
                 throw new PolicyContextException("malformed_call");
             }
 
-            if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal))
+            if (string.Equals(mode, "run", StringComparison.Ordinal))
             {
                 terminalAnalysis = _commandAnalyzers.Analyze(resolvedExecutable, argv);
             }
         }
         else
         {
-            // Discovery tools operate on the workspace root when `path` is omitted;
-            // this mirrors their public schema and keeps the policy context identical
-            // between evaluate and execute.
-            if (operationClass == PolicyOperationClasses.Restore)
+            var op = toolId switch
+            {
+                "read" => OptionalText(arguments, "op") ?? throw new PolicyContextException("malformed_call"),
+                "write" => OptionalText(arguments, "op") ?? throw new PolicyContextException("malformed_call"),
+                "edit" => "edit",
+                _ => throw new PolicyContextException("malformed_call"),
+            };
+            if ((toolId == "read" && op is not ("list" or "glob" or "search" or "read" or "help" or "web_search" or "web_fetch"))
+                || (toolId == "write" && op is not ("write" or "delete" or "restore")))
+            {
+                throw new PolicyContextException("malformed_call");
+            }
+
+            if (IsTargetFreeOp(toolId, op))
+            {
+                // help + web ops carry no workspace target; their identity is the
+                // tool id + op + full argument set captured in the intent hash.
+            }
+            else if (string.Equals(op, "restore", StringComparison.Ordinal))
             {
                 // The runtime restore call is keyed by recovery_id, while the
                 // policy test/evaluation seam may still supply a path so that
@@ -208,7 +224,9 @@ public sealed class PolicyContextFactory
             TimeoutMs: timeoutMs,
             SessionId: _sessionId,
             WorkingDirectory: terminalWorkingDirectory,
-            TerminalAnalysis: terminalAnalysis);
+            TerminalAnalysis: terminalAnalysis,
+            ToolOp: toolId is "read" or "write" ? ReadOpOf(toolId, arguments) : null,
+            BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null);
     }
 
     private ResolvedPath ResolveNonTerminalTarget(string pathInput)
@@ -241,25 +259,40 @@ public sealed class PolicyContextFactory
         }
     }
 
-    private static string OperationClassFor(string toolId) => toolId switch
+    private static string OperationClassFor(string toolId, JsonObject arguments) => toolId switch
     {
-        "files.read" => PolicyOperationClasses.Read,
-        "files.list" => PolicyOperationClasses.List,
-        "files.glob" => PolicyOperationClasses.Glob,
-        "files.search" => PolicyOperationClasses.Search,
-        "files.write" => PolicyOperationClasses.Write,
-        "files.edit" => PolicyOperationClasses.Edit,
-        "files.apply_patch" => PolicyOperationClasses.Patch,
-        "files.delete" => PolicyOperationClasses.Delete,
-        "files.restore" => PolicyOperationClasses.Restore,
-        "terminal.run" => PolicyOperationClasses.Terminal,
-        "terminal.shell" => PolicyOperationClasses.Terminal,
-        "help.docs" or "web.search" or "web.fetch" => PolicyOperationClasses.Read,
+        "read" => ReadOpClass(OptionalText(arguments, "op")),
+        "write" => WriteOpClass(OptionalText(arguments, "op")),
+        "edit" => PolicyOperationClasses.Edit,
+        "bash" => PolicyOperationClasses.Terminal,
         _ => PolicyOperationClasses.Mutation,
     };
 
-    private static bool IsTargetFreeTool(string toolId) => toolId
-        is "help.docs" or "web.search" or "web.fetch";
+    private static string ReadOpClass(string? op) => op switch
+    {
+        "read" => PolicyOperationClasses.Read,
+        "list" => PolicyOperationClasses.List,
+        "glob" => PolicyOperationClasses.Glob,
+        "search" => PolicyOperationClasses.Search,
+        "help" or "web_search" or "web_fetch" => PolicyOperationClasses.Read,
+        _ => PolicyOperationClasses.Read,
+    };
+
+    private static string WriteOpClass(string? op) => op switch
+    {
+        "write" => PolicyOperationClasses.Write,
+        "delete" => PolicyOperationClasses.Delete,
+        "restore" => PolicyOperationClasses.Restore,
+        _ => PolicyOperationClasses.Write,
+    };
+
+    private static bool IsTargetFreeTool(string toolId) => false;
+
+    private static bool IsTargetFreeOp(string toolId, string op) =>
+        toolId == "read" && op is "help" or "web_search" or "web_fetch";
+
+    private static string? ReadOpOf(string toolId, JsonObject arguments) =>
+        toolId is "read" or "write" ? OptionalText(arguments, "op") : null;
 
     private static string? OptionalText(JsonObject arguments, string key)
     {

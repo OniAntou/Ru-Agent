@@ -26,7 +26,7 @@ public static class GrokHeader
         {
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(Color.Grey),
-            Expand = false,
+            Expand = true,
         });
     }
 

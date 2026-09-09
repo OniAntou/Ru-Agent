@@ -160,10 +160,9 @@ public sealed class GrokFaithfulTests
     }
 
     [Fact]
-    public void ComposerBox_Width_Is_Clamped()
+    public void ComposerBox_Width_Fills_Terminal()
     {
-        var width = InteractiveLineReader.ComputeBoxWidth();
-        Assert.InRange(width, 48, 76);
+        Assert.True(InteractiveLineReader.ComputeBoxWidth() >= 20);
     }
 
     [Fact]

@@ -62,9 +62,9 @@ public sealed class InteractiveLineReader
     {
         try
         {
-            if (!Console.IsOutputRedirected && Console.WindowWidth > 20)
+            if (!Console.IsOutputRedirected && Console.WindowWidth > 22)
             {
-                return Math.Clamp(Console.WindowWidth - 2, 48, 76);
+                return Console.WindowWidth - 2;
             }
         }
         catch { }

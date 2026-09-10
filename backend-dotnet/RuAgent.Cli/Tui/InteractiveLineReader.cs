@@ -425,12 +425,19 @@ public sealed class InteractiveLineReader
         {
             if (lastDropdownLines > 0)
             {
-                outWriter.Write($"\x1b[{1 + lastDropdownLines}A");
+                // Dropdown lives below the box: from mid step past the bottom
+                // border, clear each row moving down (no newlines: newline past
+                // the viewport bottom would scroll), then step back to mid.
+                outWriter.Write("\x1b[2B");
                 for (int i = 0; i < lastDropdownLines; i++)
                 {
-                    outWriter.Write("\r\x1b[2K\n");
+                    outWriter.Write("\r\x1b[2K");
+                    if (i < lastDropdownLines - 1)
+                    {
+                        outWriter.Write("\x1b[1B");
+                    }
                 }
-                outWriter.Write("\x1b[1B");
+                outWriter.Write($"\x1b[{lastDropdownLines + 1}A");
                 lastDropdownLines = 0;
             }
         }
@@ -464,12 +471,15 @@ public sealed class InteractiveLineReader
                 ClearDropdown();
             }
 
-            outWriter.Write($"\x1b[{1 + lines.Count}A");
+            // Draw below the box: step past the bottom border, write each row,
+            // then step back to mid. Near the viewport bottom the terminal
+            // scrolls (dropdown stays attached under the box) — accepted.
+            outWriter.Write("\x1b[2B");
             for (int i = 0; i < lines.Count; i++)
             {
                 outWriter.Write($"\r\x1b[2K{lines[i]}\n");
             }
-            outWriter.Write("\x1b[1B");
+            outWriter.Write($"\x1b[{lines.Count + 2}A");
             lastDropdownLines = lines.Count;
         }
 
@@ -477,8 +487,9 @@ public sealed class InteractiveLineReader
         {
             try
             {
-                int upLines = 1 + lastDropdownLines;
-                outWriter.Write($"\x1b[{upLines}A\r\x1b[J");
+                // Box top is one row above mid; clear down wipes the box plus
+                // the dropdown rows below it (empty space below is harmless).
+                outWriter.Write("\x1b[1A\r\x1b[J");
                 outWriter.Flush();
             }
             catch (IOException)
@@ -578,8 +589,9 @@ public sealed class InteractiveLineReader
 
             try
             {
-                int upLines = 1 + lastDropdownLines;
-                outWriter.Write($"\x1b[{upLines}A\r\x1b[J");
+                // Box top is one row above mid; clear down wipes the box plus
+                // the dropdown rows below it (empty space below is harmless).
+                outWriter.Write("\x1b[1A\r\x1b[J");
                 await outWriter.FlushAsync().ConfigureAwait(false);
             }
             catch (IOException)

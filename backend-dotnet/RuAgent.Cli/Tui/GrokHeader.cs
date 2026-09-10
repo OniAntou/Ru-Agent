@@ -68,7 +68,6 @@ public static class GrokHeader
             $"[grey]Engine:[/]    [bold yellow]{Markup.Escape(model)}[/] [grey]({Markup.Escape(backend)} · {Markup.Escape(preset)})[/]\n" +
             $"\n" +
             $"{shortcuts}\n" +
-            $"\n" +
             $"[grey]Type [/][bold cyan]/[/][grey] to view & auto-complete available commands[/]\n" +
             $"[grey](↑/↓ to choose, Tab to apply)[/]";
 

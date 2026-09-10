@@ -75,7 +75,7 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        Assert.Equal(4, capabilities.Count);
+        Assert.Equal(8, capabilities.Count);
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
 
         foreach (var binding in catalog.Registry.List())
@@ -201,19 +201,42 @@ public sealed class ToolCatalogTests
         var readSchema = catalog.Registry.Get("read", "1.0.0").Manifest.InputSchema;
         var properties = readSchema["properties"]!.AsObject();
 
-        foreach (var field in new[] { "op", "path", "pattern", "query", "url", "offset", "limit", "max_entries", "max_results" })
+        foreach (var field in new[] { "op", "path", "offset", "limit", "max_entries", "query", "max_results" })
         {
             Assert.True(properties.ContainsKey(field));
         }
+        Assert.False(properties.ContainsKey("url"));
+        Assert.False(properties.ContainsKey("pattern"));
 
         ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "list", ["path"] = "." });
         ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "read", ["path"] = "a.txt" });
-        ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "web_search", ["query"] = "hello" });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "glob", ["pattern"] = "*.cs" }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "search", ["query"] = "hello" }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "web_search", ["query"] = "hello" }));
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "." }));
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "unknown_op" }));
 
         // Catalog contract schemas match
         var contract = AgentModelToolContractCatalog.Get("read", "1.0.0");
         ToolSchemaValidator.Validate(contract.InputSchema, contract.ExampleArguments ?? new JsonObject());
+
+        var grepSchema = catalog.Registry.Get("grep", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello" });
+        ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["path"] = ".", ["file_glob"] = "*.cs", ["is_regex"] = true, ["max_results"] = 3 });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["path"] = "." }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 99 }));
+
+        var globSchema = catalog.Registry.Get("glob", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs" });
+        ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["path"] = ".", ["max_results"] = 3 });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(globSchema, new JsonObject { ["path"] = "." }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["max_results"] = 99 }));
+
+        var searchSchema = catalog.Registry.Get("web_search", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(searchSchema, new JsonObject { ["query"] = "hello" });
+        ToolSchemaValidator.Validate(searchSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 3 });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(searchSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 99 }));
+        var fetchSchema = catalog.Registry.Get("web_fetch", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(fetchSchema, new JsonObject { ["url"] = "https://example.com" });
     }
 }

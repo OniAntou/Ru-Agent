@@ -41,14 +41,6 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
                 ToolVerificationStates.NotRequired,
                 "Workspace entries listed.")),
-            "glob" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(arguments),
-                ToolVerificationStates.NotRequired,
-                "Workspace glob completed.")),
-            "search" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).Search.Execute(arguments),
-                ToolVerificationStates.NotRequired,
-                "Workspace search completed.")),
             "read" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
                 ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
                 ToolVerificationStates.NotRequired,
@@ -57,8 +49,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 _helpDocs.Execute(arguments, cancellationToken),
                 ToolVerificationStates.NotRequired,
                 "Bundled Ru documentation searched.")),
-            "web_search" => ExecuteWebSearchAsync(context, arguments, cancellationToken),
-            "web_fetch" => ExecuteWebFetchAsync(context, arguments, cancellationToken),
+            "web_search" or "web_fetch" => throw new ArgumentException("web_moved_to_standalone_tool"),
             _ => throw new ArgumentException("unknown_read_op"),
         };
     }
@@ -75,6 +66,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
 
         var citations = await _webSearch.SearchAsync(
             ReadString(arguments, "query"),
+            ReadMaxResults(arguments),
             cancellationToken).ConfigureAwait(false);
         var output = new JsonObject
         {
@@ -124,4 +116,9 @@ public sealed partial class ToolExecutionService : IToolInvoker
             ? null
             : citation.Snippet.Length <= 512 ? citation.Snippet : citation.Snippet[..512],
     };
+
+    private static int ReadMaxResults(JsonObject arguments) =>
+        ReadOptionalInt(arguments, "max_results") is { } value
+            ? Math.Clamp(value, 1, 10)
+            : 10;
 }

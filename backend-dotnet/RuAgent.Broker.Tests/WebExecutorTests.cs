@@ -29,9 +29,9 @@ public sealed class WebExecutorTests
 
         // The no-grant deny path is covered by Service_denies_web_scope_before_http_adapter.
         var search = await service.ExecuteAsync(Envelope(
-            "search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }), CancellationToken.None);
+            "search", "web_search", new JsonObject { ["query"] = "ru" }), CancellationToken.None);
         var fetch = await service.ExecuteAsync(Envelope(
-            "fetch", "read", new JsonObject { ["op"] = "web_fetch", ["url"] = "https://93.184.216.34/page" }), CancellationToken.None);
+            "fetch", "web_fetch", new JsonObject { ["url"] = "https://93.184.216.34/page" }), CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.ApprovalRequired, search.Status);
         Assert.False(search.AdapterInvoked);
@@ -52,7 +52,7 @@ public sealed class WebExecutorTests
             webHttpClient: http);
 
         var result = await service.ExecuteAsync(
-            Envelope("search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }), CancellationToken.None);
+            Envelope("search", "web_search", new JsonObject { ["query"] = "ru" }), CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Denied, result.Status);
         Assert.Equal("scope_missing", result.ErrorCode);
@@ -75,11 +75,36 @@ public sealed class WebExecutorTests
             webHttpClient: http);
 
         var result = await service.ExecuteAsync(
-            Envelope("json-search", "read", new JsonObject { ["op"] = "web_search", ["query"] = "ru" }),
+            Envelope("json-search", "web_search", new JsonObject { ["query"] = "ru" }),
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
         Assert.False(result.AdapterInvoked);
+    }
+
+    [Fact]
+    public async Task Service_falls_back_to_duckduckgo_when_google_parse_fails()
+    {
+        using var fixture = SessionFixture.Create();
+        fixture.Session.Open(
+            "web-session",
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
+            new HashSet<string>());
+        using var http = new HttpClient(new GoogleThenDuckHandler());
+        var service = new ToolExecutionService(
+            fixture.Session,
+            fixture.Root,
+            webOptions: new WebOptions(
+                true,
+                new Uri("https://93.184.216.34/google"),
+                new Uri("https://93.184.216.34/duckduckgo")),
+            webHttpClient: http);
+
+        var pending = await service.ExecuteAsync(
+            Envelope("fallback", "web_search", new JsonObject { ["query"] = "ru" }),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
     }
 
     private static AgentEnvelope Envelope(string requestId, string toolId, JsonObject arguments) =>
@@ -115,6 +140,23 @@ public sealed class WebExecutorTests
                 Content = new StringContent("{\"results\":[{\"title\":\"JSON result\",\"url\":\"https://93.184.216.34/result\",\"snippet\":\"bounded snippet\"}]}")
             };
             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class GoogleThenDuckHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var body = path.Contains("duckduckgo", StringComparison.Ordinal)
+                ? "<a class=\"result__a\" href=\"https://93.184.216.34/result\">Duck result</a>"
+                : "<html><body><p>consent page without result anchors</p></body></html>";
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body),
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/html");
             return Task.FromResult(response);
         }
     }

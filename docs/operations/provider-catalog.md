@@ -52,6 +52,17 @@ from a successful non-empty catalog stays visible once, disabled and labeled
 `Không còn khả dụng`; it is never replaced automatically and no fallback
 provider, model, key or protocol is tried.
 
+Signing out is a separate, explicit action: `POST /settings/provider/remove`
+takes one `backend_choice`, resolves it with the same alias normalization, and
+deletes only that provider's credential from Windows Credential Manager under
+the shared settings gate. It never touches other accounts, never rewrites
+`settings.json`, and is idempotent (`Provider is already signed out`). Unknown
+aliases return `Unknown provider`; local providers without a stored credential
+(`ollama`, `lmstudio`) succeed as a no-op. After removal the provider fails
+closed — the next catalog or run reports `catalog_unauthorized` rather than
+falling back — and a run already pinned by `AgentProviderSnapshotFactory` keeps
+its snapshot until it reaches a terminal state.
+
 ## Reasoning capability contract
 
 - OpenAI (`openai`, `openai_responses`, `https://api.openai.com/v1`): fixed

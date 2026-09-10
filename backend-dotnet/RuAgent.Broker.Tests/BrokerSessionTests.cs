@@ -95,7 +95,7 @@ public sealed class BrokerSessionTests
         Assert.True(session.TryOpenRunLease(lease, out var error));
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
-        Assert.Equal(new[] { "bash", "edit", "read", "write" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public sealed class BrokerSessionTests
     }
 
     [Fact]
-    public void Phase_one_snapshot_advertises_only_list_and_read()
+    public void Phase_one_snapshot_advertises_eight_pi_tools()
     {
         using var fixture = DescriptorFixture.Create();
         var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
@@ -174,8 +174,7 @@ public sealed class BrokerSessionTests
             new string('c', 64),
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
-        Assert.Equal(new[] { "bash", "edit", "read", "write" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
-        Assert.DoesNotContain("web_fetch", lease.AdvertisedCapabilities);
+        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
     [Fact]

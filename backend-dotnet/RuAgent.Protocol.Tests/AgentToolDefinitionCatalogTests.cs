@@ -9,9 +9,13 @@ public sealed class AgentToolDefinitionCatalogTests
     private static readonly string[] ExpectedOrder =
     [
         "read",
+        "grep",
+        "glob",
         "write",
         "edit",
         "bash",
+        "web_search",
+        "web_fetch",
     ];
 
     private static readonly string[] RetiredIds =
@@ -42,7 +46,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(4, definitions.Count);
+        Assert.Equal(8, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }
@@ -71,15 +75,24 @@ public sealed class AgentToolDefinitionCatalogTests
         }
 
         var read = Properties("read");
-        Assert.True(read.ContainsKey("is_regex"));
         Assert.False(read.ContainsKey("regex"));
 
         Assert.Equal(["op"], Required("write"));
         Assert.Equal(["op"], Required("read"));
 
         Assert.Equal(256 * 1024, read["limit"]!["maximum"]!.GetValue<int>());
-        Assert.Equal(1, read["max_results"]!["minimum"]!.GetValue<int>());
-        Assert.Equal(64, read["max_results"]!["maximum"]!.GetValue<int>());
+
+        var grep = Properties("grep");
+        Assert.True(grep.ContainsKey("is_regex"));
+        Assert.False(grep.ContainsKey("regex"));
+        Assert.Equal(["query"], Required("grep"));
+        Assert.Equal(1, grep["max_results"]!["minimum"]!.GetValue<int>());
+        Assert.Equal(64, grep["max_results"]!["maximum"]!.GetValue<int>());
+
+        var glob = Properties("glob");
+        Assert.Equal(["pattern"], Required("glob"));
+        Assert.Equal(1, glob["max_results"]!["minimum"]!.GetValue<int>());
+        Assert.Equal(64, glob["max_results"]!["maximum"]!.GetValue<int>());
     }
 
     [Fact]
@@ -124,8 +137,7 @@ public sealed class AgentToolDefinitionCatalogTests
     {
         Assert.Equal(ExpectedOrder, AgentModelToolContractCatalog.ToolIds);
         Assert.Equal(ExpectedOrder, AgentModelToolContractCatalog.Get().Select(item => item.ToolId));
-        Assert.Equal(["read"], AgentModelToolContractCatalog.WebToolIds);
-        Assert.Equal(["web_search", "web_fetch"], AgentModelToolContractCatalog.WebOps);
+        Assert.Equal(["web_fetch", "web_search"], AgentModelToolContractCatalog.WebToolIds.OrderBy(id => id, StringComparer.Ordinal));
 
         foreach (var retiredId in RetiredIds)
         {
@@ -138,7 +150,7 @@ public sealed class AgentToolDefinitionCatalogTests
     public void Read_write_descriptions_preserve_user_supplied_absolute_paths()
     {
         foreach (var definition in AgentToolDefinitionCatalog.Get()
-            .Where(definition => definition.ToolId is "read" or "write" or "edit"))
+            .Where(definition => definition.ToolId is "read" or "write" or "edit" or "grep" or "glob"))
         {
             Assert.Contains("absolute", definition.Description, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("preserve", definition.Description, StringComparison.OrdinalIgnoreCase);

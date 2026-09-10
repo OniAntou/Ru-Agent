@@ -9,7 +9,7 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolAcceptanceMatrixTests
 {
     [Theory]
-    [InlineData(4)]
+    [InlineData(8)]
     public void Runtime_catalog_binds_every_available_canonical_definition(
         int expectedBindings)
     {
@@ -44,7 +44,7 @@ public sealed class ToolAcceptanceMatrixTests
             .Select(definition => definition.ToolId)
             .ToArray();
 
-        Assert.Equal(4, expected.Length);
+        Assert.Equal(8, expected.Length);
         Assert.Equal(expected, AgentModelToolContractCatalog.ToolIds);
     }
 

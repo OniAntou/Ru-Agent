@@ -111,6 +111,14 @@ public static class SystemPromptComposer
         {
             lines.Add("Use read with op=help for Ru product behavior, architecture, configuration, tools, providers, and operating boundaries.");
         }
+        if (Has("grep"))
+        {
+            lines.Add("Use grep to search workspace file contents by text or regex (query, optional path/file_glob, case_sensitive, is_regex).");
+        }
+        if (Has("glob"))
+        {
+            lines.Add("Use glob to find workspace files by pattern (pattern, optional path).");
+        }
         if (Has("bash"))
         {
             lines.Add("Use bash for current time, machine or process status, application discovery, and optional volume commands.");
@@ -119,11 +127,11 @@ public static class SystemPromptComposer
         {
             lines.Add("Use write with op=write to create note files.");
         }
-        if (Has("read"))
+        if (Has("web_search") || Has("web_fetch"))
         {
-            lines.Add("Use read with op=web_search or op=web_fetch only when advertised and local or bundled information is insufficient.");
+            lines.Add("Use web_search or web_fetch only when advertised and local or bundled information is insufficient.");
         }
-        if (Has("read") || Has("write") || Has("edit") || Has("bash"))
+        if (Has("read") || Has("write") || Has("edit") || Has("bash") || Has("grep") || Has("glob"))
         {
             lines.Add("A folder grant applies only to this live session, covers that granted folder for its tools, is not shared with another session, and is lost on restart.");
         }

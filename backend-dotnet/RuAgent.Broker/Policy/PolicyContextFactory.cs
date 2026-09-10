@@ -143,9 +143,13 @@ public sealed class PolicyContextFactory
                 "read" => OptionalText(arguments, "op") ?? throw new PolicyContextException("malformed_call"),
                 "write" => OptionalText(arguments, "op") ?? throw new PolicyContextException("malformed_call"),
                 "edit" => "edit",
+                "grep" => "grep",
+                "glob" => "glob",
+                "web_search" => "web_search",
+                "web_fetch" => "web_fetch",
                 _ => throw new PolicyContextException("malformed_call"),
             };
-            if ((toolId == "read" && op is not ("list" or "glob" or "search" or "read" or "help" or "web_search" or "web_fetch"))
+            if ((toolId == "read" && op is not ("list" or "read" or "help"))
                 || (toolId == "write" && op is not ("write" or "delete" or "restore")))
             {
                 throw new PolicyContextException("malformed_call");
@@ -262,9 +266,12 @@ public sealed class PolicyContextFactory
     private static string OperationClassFor(string toolId, JsonObject arguments) => toolId switch
     {
         "read" => ReadOpClass(OptionalText(arguments, "op")),
+        "grep" => PolicyOperationClasses.Search,
+        "glob" => PolicyOperationClasses.Glob,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
         "edit" => PolicyOperationClasses.Edit,
         "bash" => PolicyOperationClasses.Terminal,
+        "web_search" or "web_fetch" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
 
@@ -272,9 +279,7 @@ public sealed class PolicyContextFactory
     {
         "read" => PolicyOperationClasses.Read,
         "list" => PolicyOperationClasses.List,
-        "glob" => PolicyOperationClasses.Glob,
-        "search" => PolicyOperationClasses.Search,
-        "help" or "web_search" or "web_fetch" => PolicyOperationClasses.Read,
+        "help" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Read,
     };
 
@@ -289,7 +294,8 @@ public sealed class PolicyContextFactory
     private static bool IsTargetFreeTool(string toolId) => false;
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
-        toolId == "read" && op is "help" or "web_search" or "web_fetch";
+        (toolId == "read" && op is "help")
+        || toolId is "web_search" or "web_fetch";
 
     private static string? ReadOpOf(string toolId, JsonObject arguments) =>
         toolId is "read" or "write" ? OptionalText(arguments, "op") : null;

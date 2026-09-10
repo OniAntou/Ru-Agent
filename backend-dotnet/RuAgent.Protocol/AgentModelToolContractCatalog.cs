@@ -22,9 +22,6 @@ public static class AgentModelToolContractCatalog
         Array.AsReadOnly(ModelDefinitions.Select(item => item.ToolId).ToArray());
 
     public static IReadOnlySet<string> WebToolIds { get; } =
-        new HashSet<string>(["read"], StringComparer.Ordinal);
-
-    public static IReadOnlySet<string> WebOps { get; } =
         new HashSet<string>(["web_search", "web_fetch"], StringComparer.Ordinal);
 
     public static IReadOnlyList<AgentModelToolContract> Get() =>

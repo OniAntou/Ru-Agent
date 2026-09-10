@@ -40,8 +40,8 @@ public static class AgentActivityProjector
         var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt);
         var kind = (proposal.ToolId, op) switch
         {
-            ("read", "list") or ("read", "glob") => AgentActivityKind.Explore,
-            ("read", "search") or ("read", "web_search") => AgentActivityKind.Search,
+            ("read", "list") or ("glob", _) => AgentActivityKind.Explore,
+            ("grep", _) or ("web_search", _) => AgentActivityKind.Search,
             ("read", "read") => AgentActivityKind.Analyze,
             ("write", _) or ("edit", _) => AgentActivityKind.Edit,
             ("bash", _) => AgentActivityKind.Terminal,
@@ -55,14 +55,14 @@ public static class AgentActivityProjector
 
         var toolDisplay = (proposal.ToolId, op) switch
         {
-            ("read", "list") or ("read", "glob") => "Explore",
-            ("read", "search") or ("read", "web_search") => "Search",
+            ("read", "list") or ("glob", _) => "Explore",
+            ("grep", _) or ("web_search", _) => "Search",
             ("read", "read") => "View",
             ("write", "write") or ("edit", _) => "Edit",
             ("write", "delete") => "Delete",
             ("write", "restore") => "Restore",
             ("bash", _) => "Terminal",
-            ("read", "web_fetch") => "Fetch",
+            ("web_fetch", _) => "Fetch",
             ("read", "help") => "Docs",
             _ => null,
         };
@@ -211,7 +211,7 @@ public static class AgentActivityProjector
                     ? ReadSafeFileName(arguments, "path")
                     : null;
                 var (lineStart, lineEnd) = ReadLineRange(arguments);
-                var symbol = (proposal.ToolId, op) is ("read", "search") or ("read", "web_search")
+                var symbol = (proposal.ToolId, op) is ("grep", _) or ("web_search", _)
                     ? ReadSafeSymbol(arguments, "query")
                     : null;
                 var count = ReadReceiptInt(receipt, "count");

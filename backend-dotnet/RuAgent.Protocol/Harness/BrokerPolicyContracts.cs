@@ -69,16 +69,16 @@ public static class BrokerPolicyContracts
     {
         return new[]
         {
-            "read", "write", "edit", "bash",
+            "read", "grep", "glob", "write", "edit", "bash", "web_search", "web_fetch",
         };
     }
 
     public static bool IsReadOnlyTool(string toolId) =>
-        toolId is "read";
+        toolId is "read" or "grep" or "glob";
 
-    public static bool IsWebOp(string? op) =>
-        string.Equals(op, "web_search", StringComparison.Ordinal)
-        || string.Equals(op, "web_fetch", StringComparison.Ordinal);
+    public static bool IsWebTool(string toolId) =>
+        string.Equals(toolId, "web_search", StringComparison.Ordinal)
+        || string.Equals(toolId, "web_fetch", StringComparison.Ordinal);
 
     public static string CanonicalizePreset(string preset) => preset switch
     {

@@ -13,9 +13,13 @@ public static class AgentToolRuntimeProjection
             .Where(definition => definition.ToolId switch
             {
                 "read" => true,
+                "grep" => true,
+                "glob" => true,
                 "write" => true,
                 "edit" => true,
                 "bash" => true,
+                "web_search" => availability.WebSearchEnabled,
+                "web_fetch" => availability.WebFetchEnabled,
                 _ => true,
             })
             .ToArray();

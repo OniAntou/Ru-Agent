@@ -318,12 +318,21 @@
                                                 <TextBlock Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <PasswordBox x:Name="OpenCodeApiKeyBox"
-                                                         Grid.Column="1"
-                                                         PlaceholderText="sk-opencode-..."
-                                                         Width="260"
-                                                         Height="36"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <PasswordBox x:Name="OpenCodeApiKeyBox"
+                                                             PlaceholderText="sk-opencode-..."
+                                                             Width="260"
+                                                             Height="36"
+                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                                <Button x:Name="OpenCodeSignOutButton"
+                                                        Content="Đăng xuất"
+                                                        Tag="opencode"
+                                                        Click="OnRemoveProviderClick"
+                                                        Height="36"
+                                                        MinWidth="96"
+                                                        AutomationProperties.AutomationId="SignOutProviderOpenCode"
+                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
 
@@ -335,12 +344,21 @@
                                                 <TextBlock Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="Connection key for Kilo Gateway" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <PasswordBox x:Name="KiloApiKeyBox"
-                                                         Grid.Column="1"
-                                                         PlaceholderText="sk-kilo-..."
-                                                         Width="260"
-                                                         Height="36"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <PasswordBox x:Name="KiloApiKeyBox"
+                                                             PlaceholderText="sk-kilo-..."
+                                                             Width="260"
+                                                             Height="36"
+                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                                <Button x:Name="KiloSignOutButton"
+                                                        Content="Đăng xuất"
+                                                        Tag="kilo"
+                                                        Click="OnRemoveProviderClick"
+                                                        Height="36"
+                                                        MinWidth="96"
+                                                        AutomationProperties.AutomationId="SignOutProviderKilo"
+                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
 
@@ -352,12 +370,21 @@
                                                 <TextBlock Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <PasswordBox x:Name="OpenAiApiKeyBox"
-                                                         Grid.Column="1"
-                                                         PlaceholderText="sk-..."
-                                                         Width="260"
-                                                         Height="36"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <PasswordBox x:Name="OpenAiApiKeyBox"
+                                                             PlaceholderText="sk-..."
+                                                             Width="260"
+                                                             Height="36"
+                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                                <Button x:Name="OpenAiSignOutButton"
+                                                        Content="Đăng xuất"
+                                                        Tag="openai"
+                                                        Click="OnRemoveProviderClick"
+                                                        Height="36"
+                                                        MinWidth="96"
+                                                        AutomationProperties.AutomationId="SignOutProviderOpenAi"
+                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
 
@@ -369,12 +396,21 @@
                                                 <TextBlock Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <PasswordBox x:Name="AnthropicApiKeyBox"
-                                                         Grid.Column="1"
-                                                         PlaceholderText="sk-ant-..."
-                                                         Width="260"
-                                                         Height="36"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <PasswordBox x:Name="AnthropicApiKeyBox"
+                                                             PlaceholderText="sk-ant-..."
+                                                             Width="260"
+                                                             Height="36"
+                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                                <Button x:Name="AnthropicSignOutButton"
+                                                        Content="Đăng xuất"
+                                                        Tag="anthropic"
+                                                        Click="OnRemoveProviderClick"
+                                                        Height="36"
+                                                        MinWidth="96"
+                                                        AutomationProperties.AutomationId="SignOutProviderAnthropic"
+                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
 
@@ -403,12 +439,21 @@
                                                 <TextBlock Text="Custom API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <PasswordBox x:Name="CustomApiKeyBox"
-                                                         Grid.Column="1"
-                                                         PlaceholderText="sk-..."
-                                                         Width="260"
-                                                         Height="36"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <PasswordBox x:Name="CustomApiKeyBox"
+                                                             PlaceholderText="sk-..."
+                                                             Width="260"
+                                                             Height="36"
+                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                                <Button x:Name="CustomSignOutButton"
+                                                        Content="Đăng xuất"
+                                                        Tag="custom"
+                                                        Click="OnRemoveProviderClick"
+                                                        Height="36"
+                                                        MinWidth="96"
+                                                        AutomationProperties.AutomationId="SignOutProviderCustom"
+                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
                                 </StackPanel>

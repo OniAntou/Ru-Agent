@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "input_schema": { "type": "object", "required": ["query"] },
   "output_schema": { "type": "object", "required": ["summary", "sources"] },
-  "required_tools": ["read", "write"],
-  "required_scopes": ["workspace.read", "workspace.write", "skill.execute"],
+  "required_tools": ["read", "write", "web_search", "web_fetch"],
+  "required_scopes": ["workspace.read", "workspace.write", "skill.execute", "network.search", "network.fetch"],
   "steps": [
-    { "kind": "call_tool", "name": "search", "tool_id": "read", "arguments": { "op": "web_search", "query": "" } },
-    { "kind": "call_tool", "name": "fetch", "tool_id": "read", "arguments": { "op": "web_fetch", "url": "" } },
+    { "kind": "call_tool", "name": "search", "tool_id": "web_search", "arguments": { "query": "" } },
+    { "kind": "call_tool", "name": "fetch", "tool_id": "web_fetch", "arguments": { "url": "" } },
     { "kind": "named_transform", "name": "summarize_with_citations" },
     { "kind": "call_tool", "name": "save_note", "tool_id": "write", "arguments": { "op": "write", "path": "notes.txt", "content": "" } }
   ],

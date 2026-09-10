@@ -28,11 +28,11 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Theory]
-    [InlineData("list")]
-    [InlineData("glob")]
-    public void Discovery_tools_project_count_only(string op)
+    [InlineData("read", "{\"op\":\"list\",\"path\":\"D:\\\\LLM\"}")]
+    [InlineData("glob", "{\"pattern\":\"**/*.cs\",\"path\":\"D:\\\\LLM\"}")]
+    public void Discovery_tools_project_count_only(string toolId, string argumentsJson)
     {
-        var proposal = Proposal("read", "{\"op\":\"" + op + "\",\"path\":\"D:\\\\LLM\"}");
+        var proposal = Proposal(toolId, argumentsJson);
         var receipt = Receipt("{\"entries\":[{},{}],\"count\":2}");
 
         var activity = AgentActivityProjector.ProjectTool(
@@ -50,8 +50,8 @@ public sealed class AgentActivityProjectorTests
     public void Search_projection_keeps_safe_symbol_and_result_count()
     {
         var proposal = Proposal(
-            "read",
-            "{\"op\":\"search\",\"query\":\"OnChatInputPreviewKeyDown\",\"path\":\"D:\\\\LLM\"}");
+            "grep",
+            "{\"query\":\"OnChatInputPreviewKeyDown\",\"path\":\"D:\\\\LLM\"}");
         var receipt = Receipt("{\"results\":[{\"path\":\"Views/ChatView.xaml.cs\",\"line\":150}],\"count\":1}");
 
         var activity = AgentActivityProjector.ProjectTool(
@@ -148,8 +148,8 @@ public sealed class AgentActivityProjectorTests
     public void Web_search_projects_query_symbol_without_url()
     {
         var proposal = Proposal(
-            "read",
-            "{\"op\":\"web_search\",\"query\":\"latest_release\"}");
+            "web_search",
+            "{\"query\":\"latest_release\"}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,
@@ -164,8 +164,8 @@ public sealed class AgentActivityProjectorTests
     public void Web_fetch_stays_generic_without_url_metadata()
     {
         var proposal = Proposal(
-            "read",
-            "{\"op\":\"web_fetch\",\"url\":\"https://example.com/secret\"}");
+            "web_fetch",
+            "{\"url\":\"https://example.com/secret\"}");
 
         var activity = AgentActivityProjector.ProjectTool(
             proposal,

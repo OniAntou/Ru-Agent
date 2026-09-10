@@ -16,6 +16,7 @@ public static class BusinessEndpoints
     {
         app.MapGet("/settings", GetSettingsAsync);
         app.MapPost("/settings", SaveSettingsAsync);
+        app.MapPost("/settings/provider/remove", RemoveProviderAsync);
         app.MapGet("/sessions", ListSessionsAsync);
         app.MapPost("/sessions/new", CreateSessionAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
@@ -106,6 +107,47 @@ public static class BusinessEndpoints
             {
                 status = "error",
                 message = "Runtime settings could not be applied.",
+            });
+        }
+    }
+
+    private static async Task<IResult> RemoveProviderAsync(
+        JsonObject payload,
+        ISettingsTransitionService transition,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var alias = payload["backend_choice"]?.GetValue<string>()?.Trim();
+            if (string.IsNullOrEmpty(alias))
+            {
+                return Results.Ok(new
+                {
+                    status = "error",
+                    message = "Provider alias is required.",
+                });
+            }
+
+            var result = await transition.RemoveProviderAsync(alias, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new
+            {
+                status = result.Success ? "success" : "error",
+                message = result.Message,
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            LogFailure(loggers, "provider remove", error);
+            return Results.Ok(new
+            {
+                status = "error",
+                message = "Provider could not be removed.",
             });
         }
     }

@@ -173,9 +173,19 @@ public sealed class WorkerV2ContractTests
     {
         var runtimeTools = RuBackend.Harness.Prompting.AgentToolRuntimeProjection.Select(
             new RuBackend.Harness.Prompting.AgentToolRuntimeAvailability(true, true));
-        var read = Assert.Single(runtimeTools, definition => definition.ToolId == "read");
-        Assert.Contains("web_search", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.Contains("web_fetch", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
+        var search = Assert.Single(runtimeTools, definition => definition.ToolId == "web_search");
+        var fetch = Assert.Single(runtimeTools, definition => definition.ToolId == "web_fetch");
+        Assert.Equal("network.search", search.Scope);
+        Assert.Equal("network.fetch", fetch.Scope);
+        Assert.True(search.InputSchema["properties"]!.AsObject().ContainsKey("max_results"));
+
+        var offlineTools = RuBackend.Harness.Prompting.AgentToolRuntimeProjection.Select(
+            new RuBackend.Harness.Prompting.AgentToolRuntimeAvailability(false, false));
+        Assert.DoesNotContain(offlineTools, definition => definition.ToolId == "web_search");
+        Assert.DoesNotContain(offlineTools, definition => definition.ToolId == "web_fetch");
+        var read = Assert.Single(offlineTools, definition => definition.ToolId == "read");
+        Assert.DoesNotContain("web_search", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.DoesNotContain("web_fetch", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]

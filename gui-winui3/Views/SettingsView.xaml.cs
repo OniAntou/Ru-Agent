@@ -261,6 +261,65 @@ namespace RuApp.Views
             }
         }
 
+        private async void OnRemoveProviderClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService is null)
+            {
+                return;
+            }
+
+            if (sender is not Button button
+                || button.Tag is not string alias
+                || string.IsNullOrWhiteSpace(alias))
+            {
+                return;
+            }
+
+            button.IsEnabled = false;
+            try
+            {
+                bool ok = await _apiService.RemoveProviderAsync(alias);
+                if (ok)
+                {
+                    ClearProviderKeyInput(alias);
+                    await LoadSettingsAsync();
+                }
+
+                AutoSaveStatusText.Text = ok ? "Provider signed out" : "Sign out failed";
+            }
+            catch (Exception ex)
+            {
+                AutoSaveStatusText.Text = "Sign out error";
+                System.Diagnostics.Debug.WriteLine($"[Settings] Sign out error: {ex.Message}");
+            }
+            finally
+            {
+                button.IsEnabled = true;
+            }
+        }
+
+        private void ClearProviderKeyInput(string alias)
+        {
+            switch (alias)
+            {
+                case "opencode":
+                    OpenCodeApiKeyBox.Password = string.Empty;
+                    break;
+                case "kilo":
+                    KiloApiKeyBox.Password = string.Empty;
+                    break;
+                case "openai":
+                    OpenAiApiKeyBox.Password = string.Empty;
+                    break;
+                case "anthropic":
+                    AnthropicApiKeyBox.Password = string.Empty;
+                    break;
+                case "custom":
+                    CustomApiKeyBox.Password = string.Empty;
+                    break;
+            }
+        }
+
         public void Dispose()
         {
             DisposeEventHandlers();

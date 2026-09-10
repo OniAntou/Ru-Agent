@@ -20,7 +20,8 @@ advertised Agent tools.
 >   `/agent/v1/*` (20 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
 >   This checkpoint exposes Broker-backed model tools (`read` with
->   `op=list|glob|search|read` plus offset/limit, `write` with `op=write`,
+>   `op=list|read|help` plus offset/limit, `glob`/`grep` for bounded discovery,
+>   `write` with `op=write`,
 >   `edit`, one-time `write` with `op=restore`) through a durable Core (state machines incl.
 >   `tool.execution_requested`, SQLite WAL `agent_harness.db`, AES-GCM
 >   payloads, idempotent conversation outbox, workspace trust,
@@ -54,9 +55,9 @@ advertised Agent tools.
 >   Protocol parser and do not become model history. Declarative Skills are
 >   session-granted and execute through the Broker's existing scope/approval
 >   boundary.
->   Managed startup enables `read` with `op=web_search` and `op=web_fetch` as
->   approval-gated capabilities backed by the fixed DuckDuckGo HTML endpoint;
->   results are bounded, sanitized, and explicitly untrusted.
+>   Managed startup enables standalone `web_search` and `web_fetch` as
+>   approval-gated capabilities backed by Google HTML search with DuckDuckGo
+>   HTML fallback; results are bounded, sanitized, and explicitly untrusted.
 >   Workspace coordination is now opt-in per workspace through the authenticated
 >   concurrency/activity/changes endpoints. Shared mode permits disjoint runs;
 >   active Ru runs hold renewable workspace membership leases, and external file
@@ -64,7 +65,7 @@ advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **63 HTTP plus 1 WebSocket** (42 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
+> - Public Contract is now **64 HTTP plus 1 WebSocket** (43 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
@@ -80,22 +81,35 @@ advertised Agent tools.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 4 model-visible definitions (`read`,
-`write`, `edit`, `bash`). `read` carries an `op` discriminator (`list`, `glob`,
-`search`, `read`, `help`, `web_search`, `web_fetch`); `write` carries `op`
-(`write`, `delete`, `restore`); `bash` carries `mode` (`run`, `shell`). The
-`web_search`/`web_fetch` ops are the runtime-enabled read-only web surface.
-Managed startup uses the fixed DuckDuckGo endpoint
-`https://html.duckduckgo.com/html/`. The `network_intent` argument on a
-bash request is descriptive input metadata, not a security boundary.
+The immutable Protocol catalog contains 8 model-visible definitions (`read`,
+`glob`, `grep`, `write`, `edit`, `bash`, `web_search`, `web_fetch`). `read`
+carries an `op` discriminator (`list`, `read`, `help`); `glob` takes `pattern`
+(required) plus optional `path` and `max_results` (1–64, default 64) and returns
+stable sorted relative paths without content access; `grep` takes `query`
+(1–512 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
+(default false), `is_regex` (default false) and `max_results` (1–64, default
+64), and returns bounded match locations without raw file content; `write`
+carries `op` (`write`, `delete`, `restore`); `bash` carries `mode`
+(`run`, `shell`).
+`web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
+default 10); `web_fetch` takes `url`. Both are standalone tools with their own
+`network.search`/`network.fetch` scopes and always require one-time approval.
+Google HTML (`https://www.google.com/search`) is the primary search engine
+with DuckDuckGo HTML (`https://html.duckduckgo.com/html/`) as automatic
+fallback; a consent/block page with no usable result anchors fails closed as
+`web_search_parse_failed` on the last engine. Fetch keeps the pre-existing
+bounded, sanitized, explicitly-untrusted behavior. The `network_intent`
+argument on a bash request is descriptive input metadata, not a security
+boundary.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `read` with `op=list`, `op=glob`, `op=search`, `op=read` | always advertised | automatic inside the trusted or session-granted root |
+| `glob`, `grep` | always advertised | automatic inside the trusted or session-granted root |
+| `read` with `op=list`, `op=read` | always advertised | automatic inside the trusted or session-granted root |
 | `write` with `op=write`, `edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
-| `read` with `op=web_search`, `op=web_fetch` | advertised when managed Web is enabled | approval-gated, bounded, sanitized, explicitly untrusted; search redirect targets are decoded and policy-validated |
+| `web_search`, `web_fetch` | advertised when managed Web is enabled | approval-gated (`web_approval_required`), bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
 | `read` with `op=help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
@@ -334,11 +348,12 @@ adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates
 
-For the managed Agent path, web tools are enabled with the fixed public
-DuckDuckGo HTML endpoint `https://html.duckduckgo.com/html/` and always
-require approval (`RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL=true`). `read` with
-`op=web_search` is advertised with `network.search`; `read` with `op=web_fetch`
-is advertised with `network.fetch`; the normal Harness policy remains authoritative. Automatic
+For the managed Agent path, web tools are enabled with Google HTML search
+`https://www.google.com/search` as primary and DuckDuckGo HTML
+`https://html.duckduckgo.com/html/` as automatic fallback, and always
+require approval (`RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL=true`). `web_search`
+is advertised with `network.search`; `web_fetch` is advertised with
+`network.fetch`; the normal Harness policy remains authoritative. Automatic
 redirects are disabled or validated hop-by-hop; private, loopback, link-local,
 multicast, reserved, and test-net targets are rejected. Responses enforce a
 configured byte cap, strict UTF-8/content-type checks, sanitizer limits, and

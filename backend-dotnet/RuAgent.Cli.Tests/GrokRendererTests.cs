@@ -36,7 +36,7 @@ public sealed class GrokRendererTests
     {
         AnsiTheme.IsEnabled = false;
 
-        var turn = Render(Envelope("model.turn_started", "x", sequence: 4));
+        var turn = Render(Envelope("model.step_started", "x", sequence: 4));
         Assert.Contains("◆", turn, StringComparison.Ordinal);
         Assert.Contains("Turn #4", turn, StringComparison.Ordinal);
 

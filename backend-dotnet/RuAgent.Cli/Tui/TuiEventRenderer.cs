@@ -325,7 +325,7 @@ public sealed class TuiSessionRenderer
         var summary = Escape(envelope.SafeSummary);
 
         // Filter out noisy state machine transitions
-        if (type is "run.state_changed" or "model.step_started" or "model.step_completed" or "prompt_receipt"
+        if (type is "run.state_changed" or "model.step_completed" or "prompt_receipt"
             or "model.usage_recorded")
             return;
 
@@ -337,7 +337,7 @@ public sealed class TuiSessionRenderer
 
         switch (type)
         {
-            case "model.turn_started":
+            case "model.step_started":
                 _turnWatch = System.Diagnostics.Stopwatch.StartNew();
                 _writer.WriteLine(AnsiTheme.Cyan($"┌─ ◆ Turn #{seq}"));
                 break;
@@ -348,7 +348,7 @@ public sealed class TuiSessionRenderer
                 _writer.WriteLine(AnsiTheme.Gray(reqVerb) + " " + AnsiTheme.LightBlue(reqDetail));
                 break;
 
-            case "tool.executed":
+            case "tool.execution_completed":
                 var (doneVerb, doneDetail) = SplitToolLine(summary);
                 if (status == "succeeded")
                 {

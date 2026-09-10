@@ -87,8 +87,8 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
 references are not appended as separate system messages.
 
-Host capabilities are the runtime projection of the 4 Protocol-owned tool
-definitions: four core model tools (`read`, `write`, `edit`, `bash`). Each capability includes its ID/version, description, canonical
+Host capabilities are the runtime projection of the 6 Protocol-owned tool
+definitions: model tools (`read`, `write`, `edit`, `bash`, `web_search`, `web_fetch`). Each capability includes its ID/version, description, canonical
 scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
 emits exactly one JSON object of the form
 `{"tool_id":"read","tool_version":"1.0.0","arguments":{"op":"read","path":"README.md"}}`
@@ -139,7 +139,7 @@ stores the receipt as an `InternalOnly` payload. Public Agent SSE suppresses
 `model.prompt_composed` and its payload while advancing the durable cursor.
 Invalid context or receipt metadata fails closed with `prompt_contract_invalid`;
 there is no static-prompt fallback or reduced-context retry. Managed runtime
-wiring enables the `web_search`/`web_fetch` ops on `read` by default;
+wiring enables the standalone `web_search`/`web_fetch` tools by default;
 no settings field controls their exposure.
 
 Prompt composition is not a security boundary: Broker policy, workspace trust,
@@ -341,9 +341,11 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings advertise four core bindings: `read` with
-`op=list|glob|search|read|help|web_search|web_fetch`, `write` with
-`op=write|delete|restore`, `edit`, and `bash` with `mode=run|shell`. Broker policy automatically allows file tools in the trusted root
+The Worker v2 settings advertise six bindings: `read` with
+`op=list|glob|search|read|help`, `write` with
+`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
+`web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
+`web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root
 or a folder granted to the same live session and applies analyzer decisions to
 terminal requests. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
 not an OS-enforced filesystem/network sandbox. File tools may
@@ -372,12 +374,13 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 memory, reviewed examples, TTS, or VTS metadata.
 
-The four Worker v2 bindings above are the core model surface, and managed
-startup also enables the `web_search`/`web_fetch` ops on `read`. Managed
-startup constructs an enabled WebOptions instance with the fixed
-`https://html.duckduckgo.com/html/` endpoint; their bounded responses carry an
+The six Worker v2 bindings above are the model surface, with standalone
+`web_search`/`web_fetch` tools managed by startup. Managed
+startup constructs an enabled WebOptions instance with Google HTML primary
+`https://www.google.com/search` and automatic DuckDuckGo HTML fallback
+`https://html.duckduckgo.com/html/`; their bounded responses carry an
 explicit `untrusted` marker and never become instructions. `read` with
-`op=search` searches the workspace, while `read` with `op=web_search` searches
+`op=search` searches the workspace, while `web_search` searches
 the public web. `read` with `op=help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
@@ -389,8 +392,8 @@ The managed Git commit workflow is shipped inside terminal execution, using a
 temporary index and refusing dirty user index state. Other Git commands remain
 ordinary terminal requests governed by Broker policy. The
 GUI renders the actual `agent.session` grant received from the Host. Managed
-startup enables the bounded WebOptions instance with the fixed DuckDuckGo
-endpoint, so `read` with `op=web_search` and `op=web_fetch` are advertised as
+startup enables the bounded WebOptions instance with Google primary and DuckDuckGo
+fallback, so standalone `web_search` and `web_fetch` are advertised as
 read-only managed capabilities without a settings flag or separate deployment
 switch; Broker
 policy remains authoritative for each call. The tested MCP bridge and the
@@ -409,10 +412,11 @@ the other commands return bounded static or session-scoped data.
 
 ### Web access
 
-The managed Agent constructs an enabled WebOptions object with the public
-DuckDuckGo HTML search endpoint `https://html.duckduckgo.com/html/`. It
-maps `read` with `op=web_search` to `network.search` and `read` with
-`op=web_fetch` to `network.fetch`;
+The managed Agent constructs an enabled WebOptions object with Google HTML
+primary `https://www.google.com/search` and DuckDuckGo HTML automatic fallback
+`https://html.duckduckgo.com/html/`. It
+maps standalone `web_search` to `network.search` and standalone
+`web_fetch` to `network.fetch`;
 the normal Harness policy remains authoritative for each read-only call.
 Redirects are disabled or validated at every hop, private/reserved targets are
 rejected, and response bytes, content types, UTF-8, sanitizer output, and

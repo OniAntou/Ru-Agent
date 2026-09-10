@@ -68,9 +68,13 @@ public sealed class ToolCatalog
     private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
         yield return Manifest("read", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
+        yield return Manifest("grep", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
+        yield return Manifest("glob", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return Manifest("edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return Manifest("bash", ToolScope.TerminalExecute, RiskClass.Reversible, "terminal", workspace: false, requiresApproval: true);
+        yield return Manifest("web_search", ToolScope.WebSearch, RiskClass.External, "web", workspace: false, requiresApproval: true);
+        yield return Manifest("web_fetch", ToolScope.WebFetch, RiskClass.External, "web", workspace: false, requiresApproval: true);
     }
 
     private static ToolManifest Manifest(

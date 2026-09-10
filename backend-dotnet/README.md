@@ -90,12 +90,14 @@ and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 and encrypted policy snapshots) is the current path. Worker v2 performs
 exactly one `generate_reply` per `agent.step.start` and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same four bindings in the single Agent profile: `read` with
-`op=list|glob|search|read|help|web_search|web_fetch` (offset/limit, streaming,
+the same six bindings in the single Agent profile: `read` with
+`op=list|glob|search|read|help` (offset/limit, streaming,
 bounded `truncated`),
 `write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
 `recovery_too_large` beyond 1 MiB,
-`recovery_consumed` on replay), and `bash` with `mode=run|shell`. The single
+`recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
+`web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
+Google HTML with DuckDuckGo fallback. The single
 profile automatically allows ordinary trusted-workspace file reads/creates/edits
 and applies single-verdict analyzer/rule/approval decisions to terminal requests:
 auto for recognized read/test/build/lint/local-Git `bash` with `mode=run` payloads,

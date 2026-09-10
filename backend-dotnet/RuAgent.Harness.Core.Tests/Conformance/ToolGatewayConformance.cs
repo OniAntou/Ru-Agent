@@ -253,8 +253,8 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task FilesGlob_returns_sorted_relative_matches()
     {
         var receipt = await ExecuteAllowedAsync(
-            "read",
-            new JsonObject { ["op"] = "glob", ["path"] = ".", ["pattern"] = "notes/*.txt" });
+            "glob",
+            new JsonObject { ["pattern"] = "notes/*.txt", ["path"] = "." });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         var output = ParseModelContent(receipt);
@@ -268,8 +268,8 @@ public abstract class ToolGatewayConformance : IDisposable
     public async Task FilesSearch_finds_substring_matches()
     {
         var receipt = await ExecuteAllowedAsync(
-            "read",
-            new JsonObject { ["op"] = "search", ["query"] = "beta" });
+            "grep",
+            new JsonObject { ["query"] = "beta" });
 
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         var output = ParseModelContent(receipt);

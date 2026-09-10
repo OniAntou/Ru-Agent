@@ -165,8 +165,8 @@ public sealed class HeadlessCodingLoopTests
             case "files.restore": id = "write"; node["op"] = "restore"; break;
             case "terminal.run": id = "bash"; node["mode"] = "run"; break;
             case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
-            case "web.search": id = "read"; node["op"] = "web_search"; break;
-            case "web.fetch": id = "read"; node["op"] = "web_fetch"; break;
+            case "web.search": id = "web_search"; node.Remove("op"); break;
+            case "web.fetch": id = "web_fetch"; node.Remove("op"); break;
             case "help.docs": id = "read"; node["op"] = "help"; break;
         }
         return (id, node.ToJsonString());

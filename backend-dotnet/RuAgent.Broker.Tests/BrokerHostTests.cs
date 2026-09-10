@@ -83,7 +83,7 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "read" }, ids);
+        Assert.Equal(new[] { "glob", "grep", "read" }, ids);
         Assert.Empty(hello.Payload["skills"]!.AsArray());
     }
 
@@ -632,7 +632,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task V2_run_open_advertises_only_read_capabilities()
+    public async Task V2_run_open_advertises_all_eight_capabilities()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -662,7 +662,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "bash", "edit", "read", "write" }, caps);
+        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write" }, caps);
     }
 
     [Fact]
@@ -699,7 +699,7 @@ public sealed class BrokerHostTests
         var opened = await ReceiveAsync(socket, cts.Token);
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "bash", "edit", "read", "write" }, caps);
+        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write" }, caps);
     }
 
     [Fact]
@@ -738,7 +738,7 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "bash", "edit", "read", "write" }, ids);
+        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "write" }, ids);
     }
 
     [Fact]
@@ -1387,11 +1387,9 @@ public sealed class BrokerHostTests
             cts.Token);
         _ = await ReceiveAsync(socket, cts.Token);
 
-        foreach (var toolId in new[] { "web.search", "totally.unknown" })
+        foreach (var toolId in new[] { "system.volume", "totally.unknown" })
         {
-            var (piId, piArgs) = toolId == "web.search"
-                ? ("read", new JsonObject { ["op"] = "web_search", ["path"] = "." })
-                : (toolId, new JsonObject { ["path"] = "." });
+            var (piId, piArgs) = (toolId, new JsonObject { ["path"] = "." });
             await SendAsync(
                 socket,
                 new AgentEnvelope(2, "evaluate-" + toolId, AgentMessageTypes.ToolEvaluate, "session-unadv", null, 10_000,
@@ -1403,17 +1401,23 @@ public sealed class BrokerHostTests
                     }),
                 cts.Token);
             var reply = await ReceiveAsync(socket, cts.Token);
-            if (toolId == "web.search")
-            {
-                Assert.Equal("ask", reply.Payload["decision"]!.GetValue<string>());
-                Assert.Equal("web_approval_required", reply.Payload["reason_code"]!.GetValue<string>());
-            }
-            else
-            {
-                Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
-                Assert.Equal("phase_not_available", reply.Payload["error_code"]!.GetValue<string>());
-            }
+            Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
+            Assert.Equal("phase_not_available", reply.Payload["error_code"]!.GetValue<string>());
         }
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "evaluate-web_search", AgentMessageTypes.ToolEvaluate, "session-unadv", null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = "run_unad111111111111111111111111111",
+                    ["tool_id"] = "web_search",
+                    ["arguments"] = new JsonObject { ["query"] = "ru" },
+                }),
+            cts.Token);
+        var webReply = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("ask", webReply.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("web_approval_required", webReply.Payload["reason_code"]!.GetValue<string>());
     }
 
     [Fact]
@@ -1695,8 +1699,8 @@ public sealed class BrokerHostTests
         switch (toolId)
         {
             case "files.list": piId = "read"; op = "list"; break;
-            case "files.glob": piId = "read"; op = "glob"; break;
-            case "files.search": piId = "read"; op = "search"; break;
+            case "files.glob": piId = "glob"; mapped.Remove("op"); break;
+            case "files.search": piId = "grep"; mapped.Remove("op"); break;
             case "files.read": piId = "read"; op = "read"; break;
             case "files.write": piId = "write"; op = "write"; break;
             case "files.edit": piId = "edit"; break;
@@ -1704,8 +1708,8 @@ public sealed class BrokerHostTests
             case "files.restore": piId = "write"; op = "restore"; break;
             case "terminal.run": piId = "bash"; mode = "run"; break;
             case "terminal.shell": piId = "bash"; mode = "shell"; break;
-            case "web.search": piId = "read"; op = "web_search"; break;
-            case "web.fetch": piId = "read"; op = "web_fetch"; break;
+            case "web.search": piId = "web_search"; mapped.Remove("op"); break;
+            case "web.fetch": piId = "web_fetch"; mapped.Remove("op"); break;
             case "help.docs": piId = "read"; op = "help"; break;
         }
 

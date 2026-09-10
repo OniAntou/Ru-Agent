@@ -53,8 +53,8 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 │   RuAgent.Runtime.Worker      │     │      RuAgent.Broker (Sandbox)    │
 │   (Port 8005 / 8006)          │     │   (Dynamic Loopback Port)        │
 │ - Worker v2: Model Step &     │     │ - read (list/glob/search/    │
-│   Reasoning Orchestration     │     │   read/help/web_search/      │
-│ - Worker v1: Voice Engine     │     │   web_fetch)                 │
+│   Reasoning Orchestration     │     │   read/help)                 │
+│ - Worker v1: Voice Engine     │     │ - web_search / web_fetch     │
 │   (OmniVoice TTS, Google STT) │     │ - write / edit               │
 │ - VTube Studio & Subtitles    │     │ - bash (run/shell)           │
 │ - Screen Observation Analysis │     │ - Policy & Approval Engine       │
@@ -149,7 +149,7 @@ dotnet run --project backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -- agent chat
 
 ## 5. Hệ thống công cụ Agent (Tool Capabilities)
 
-Ru Agent được trang bị 4 công cụ cốt lõi được định nghĩa chặt chẽ theo Protocol chuẩn:
+Ru Agent được trang bị 6 công cụ cốt lõi được định nghĩa chặt chẽ theo Protocol chuẩn:
 
 | Nhóm công cụ | Tên công cụ (Tool ID) | Mô tả chức năng |
 | :--- | :--- | :--- |
@@ -163,8 +163,8 @@ Ru Agent được trang bị 4 công cụ cốt lõi được định nghĩa ch�
 | | `write` + `op=restore` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
 | **Terminal** | `bash` + `mode=run` | Chạy lệnh trong shell PowerShell/cmd với giới hạn thời gian chờ. |
 | | `bash` + `mode=shell` | Mở phiên shell tương tác để quản lý tác vụ nền. |
-| **Tra cứu Web** | `read` + `op=web_search` | Tìm kiếm thông tin trên Web qua DuckDuckGo endpoint an toàn (cần phê duyệt mỗi lần dùng). |
-| | `read` + `op=web_fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
+| **Tra cứu Web** | `web_search` | Tìm kiếm thông tin trên Web — Google HTML là engine chính, DuckDuckGo HTML fallback tự động (cần phê duyệt mỗi lần dùng). Hỗ trợ `query` (1–512 ký tự) và `max_results` (1–10, mặc định 10). |
+| | `web_fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
 | **Tài liệu** | `read` + `op=help` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
 
 ---

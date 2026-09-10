@@ -45,18 +45,19 @@ agent policy remove <rule-id>
 
 ## Current model tool surface
 
-The Agent Worker v2 advertisement contains four core bindings: `read`
-with `op=list|glob|search|read|help|web_search|web_fetch`, `write` with
-`op=write|delete|restore`, `edit`, and `bash` with `mode=run|shell` in both
+The Agent Worker v2 advertisement contains six core bindings: `read`
+with `op=list|glob|search|read|help`, `write` with
+`op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
+`web_search` and `web_fetch` in both
 Standard and Full Access. Standard applies the stricter
 analyzer/rule/approval policy; Full Access normally uses its broader fallback
 for well-formed calls, but neither preset is an OS-enforced sandbox. Terminal
 calls run as the current Windows user and can execute host code or open
 sockets. Time, machine status, app discovery, and optional volume commands use
 the terminal; notes use `write` with `op=write`. `files.apply_patch`, connectors, and `app.open` are not
-model-usable. Managed startup enables `read` with `op=web_search` (`network.search`) and
-`read` with `op=web_fetch` (`network.fetch`) with the fixed DuckDuckGo HTML endpoint
-`https://html.duckduckgo.com/html/`; results are bounded and marked untrusted.
+model-usable. Managed startup enables standalone `web_search` (`network.search`) and
+`web_fetch` (`network.fetch`) with Google HTML primary and DuckDuckGo HTML fallback
+(`https://www.google.com/search` → `https://html.duckduckgo.com/html/`); results are bounded and marked untrusted.
 Declarative Skills appear only when explicitly granted and retain normal
 Broker policy/approval checks. Managed startup keeps skill package roots and
 skill bindings opt-in, so a caller still needs an explicit session grant before

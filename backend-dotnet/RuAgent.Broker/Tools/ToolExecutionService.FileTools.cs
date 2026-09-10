@@ -63,6 +63,28 @@ public sealed partial class ToolExecutionService : IToolInvoker
         return null;
     }
 
+    private static JsonObject TranslateGrepArguments(JsonObject arguments)
+    {
+        var translated = new JsonObject();
+        foreach (var property in arguments)
+        {
+            translated[property.Key] = property.Value?.DeepClone();
+        }
+
+        return translated;
+    }
+
+    private static JsonObject TranslateGlobArguments(JsonObject arguments)
+    {
+        var translated = new JsonObject();
+        foreach (var property in arguments)
+        {
+            translated[property.Key] = property.Value?.DeepClone();
+        }
+
+        return translated;
+    }
+
     /// <summary>
     /// Selects the adapter root for one files.* call. Lease-rooted targets
     /// behave exactly as before. Outside targets execute against the longest

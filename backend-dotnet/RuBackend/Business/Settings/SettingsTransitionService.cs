@@ -17,6 +17,10 @@ public interface ISettingsTransitionService
     Task<SettingsTransitionResult> ApplyAsync(
         JsonObject payload,
         CancellationToken cancellationToken);
+
+    Task<SettingsTransitionResult> RemoveProviderAsync(
+        string backendChoice,
+        CancellationToken cancellationToken);
 }
 
 public sealed class SettingsTransitionService : ISettingsTransitionService
@@ -140,6 +144,65 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
                     false,
                     "Runtime settings could not be applied.");
             }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<SettingsTransitionResult> RemoveProviderAsync(
+        string backendChoice,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(backendChoice);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var snapshots = new List<CredentialSnapshot>();
+        try
+        {
+            var current = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+            ProviderSelection selection;
+            try
+            {
+                selection = ProviderSelection.From(current, backendChoice);
+            }
+            catch (Exception error) when (error is UnknownProviderAliasException or ArgumentException)
+            {
+                return new SettingsTransitionResult(false, "Unknown provider.");
+            }
+
+            if (selection.Account is null)
+            {
+                return new SettingsTransitionResult(
+                    true,
+                    "This provider does not use a stored credential.");
+            }
+
+            var existing = await _credentials.GetAsync(
+                ServiceName,
+                selection.Account,
+                cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return new SettingsTransitionResult(true, "Provider is already signed out.");
+            }
+
+            snapshots.Add(new CredentialSnapshot(selection.Account, existing));
+            await _credentials.DeleteAsync(
+                ServiceName,
+                selection.Account,
+                cancellationToken).ConfigureAwait(false);
+            return new SettingsTransitionResult(true, "Provider signed out.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await RestoreCredentialsAsync(snapshots).ConfigureAwait(false);
+            throw;
+        }
+        catch
+        {
+            await RestoreCredentialsAsync(snapshots).ConfigureAwait(false);
+            return new SettingsTransitionResult(false, "Provider could not be removed.");
         }
         finally
         {

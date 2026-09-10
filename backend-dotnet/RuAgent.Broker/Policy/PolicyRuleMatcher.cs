@@ -235,8 +235,10 @@ public static class PolicyRuleMatcher
         (matcherToolId, contextToolId) switch
         {
             ("files.list", "read") => toolOp == "list",
-            ("files.glob", "read") => toolOp == "glob",
-            ("files.search", "read") => toolOp == "search",
+            ("files.glob", "glob") => true,
+            ("files.glob", "read") => toolOp == "list",
+            ("files.search", "grep") => true,
+            ("files.search", "read") => toolOp == "list",
             ("files.read", "read") => toolOp == "read",
             ("files.write", "write") => toolOp == "write",
             ("files.edit", "edit") => true,
@@ -246,6 +248,8 @@ public static class PolicyRuleMatcher
             ("terminal.shell", "bash") => bashMode == "shell",
             ("web.search", "read") => toolOp == "web_search",
             ("web.fetch", "read") => toolOp == "web_fetch",
+            ("web.search", "web_search") => true,
+            ("web.fetch", "web_fetch") => true,
             ("help.docs", "read") => toolOp == "help",
             _ => false,
         };

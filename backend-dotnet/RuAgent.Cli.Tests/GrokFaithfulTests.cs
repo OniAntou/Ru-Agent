@@ -90,7 +90,7 @@ public sealed class GrokFaithfulTests
         {
             using var sw = new StringWriter();
             TuiEventRenderer.RenderEnvelope(GrokEnvelope(
-                "tool.executed",
+                "tool.execution_completed",
                 "edit completed\n--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line",
                 11,
                 "succeeded"), sw);

@@ -2,7 +2,7 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-63 HTTP method/path pairs and one WebSocket route (`/voice/stream`). ASP.NET Core
+64 HTTP method/path pairs and one WebSocket route (`/voice/stream`). ASP.NET Core
 is the only public owner. The 20 Agent v1 routes under `/agent/v1/*` and the
 `POST /host/shutdown` route are active
 alongside the settings, session fork/rewind, activity, memory, runtime, and voice

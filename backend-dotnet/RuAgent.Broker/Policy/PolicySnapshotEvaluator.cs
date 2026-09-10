@@ -154,8 +154,8 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
-        // Web ops always ask: network egress is never auto-allowed.
-        if (IsWebOp(context))
+        // Web tools always ask: network egress is never auto-allowed.
+        if (IsWebTool(context))
         {
             return Ask("web_approval_required");
         }
@@ -227,9 +227,9 @@ public sealed class PolicySnapshotEvaluator
     private static PolicyEvaluation Allow(string reasonCode) =>
         new("allow", reasonCode, MatchedRuleId: null);
 
-    private static bool IsWebOp(PolicyContext context) =>
-        string.Equals(context.ToolId, "read", StringComparison.Ordinal)
-        && context.ToolOp is "web_search" or "web_fetch";
+    private static bool IsWebTool(PolicyContext context) =>
+        string.Equals(context.ToolId, "web_search", StringComparison.Ordinal)
+        || string.Equals(context.ToolId, "web_fetch", StringComparison.Ordinal);
 
     private static bool IsShellMode(PolicyContext context) =>
         string.Equals(context.ToolId, "bash", StringComparison.Ordinal)

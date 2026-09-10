@@ -78,7 +78,7 @@ approve.
     rebind remains future work.
   - Web wiring: web options are defined once on the Host, forwarded to the
     Broker process through the environment, and the v2 lease enables the
-    `web_search`/`web_fetch` ops on `read` only when enabled. Web ops always ask;
+    standalone `web_search`/`web_fetch` tools only when enabled. Web tools always ask;
     explicit rules still deny first. Live-network acceptance
     stays separate per docs/operations/verification.md.
   - The v2 lease advertises the full authoritative tool set (16 bindings:

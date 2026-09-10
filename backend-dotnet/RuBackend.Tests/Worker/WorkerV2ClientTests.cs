@@ -619,7 +619,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             new[]
             {
-                "read", "write", "edit", "bash",
+                "read", "grep", "glob", "write", "edit", "bash", "web_search", "web_fetch",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(
@@ -631,6 +631,12 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             ["terminal.execute"],
             tools["bash"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["network.search"],
+            tools["web_search"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["network.fetch"],
+            tools["web_fetch"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]

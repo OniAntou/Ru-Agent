@@ -439,12 +439,12 @@ public sealed partial class AgentV1Service
                 return null;
             }
 
-            if ((toolId is "read" or "write") && MapPiOp(toolId, op) is null)
+            if ((toolId is "read" or "write" or "grep" or "glob") && MapPiOp(toolId, op) is null)
             {
                 return null;
             }
 
-            if (toolId is "read" or "write" or "edit"
+            if (toolId is "read" or "write" or "edit" or "grep" or "glob"
                 && canonicalPath is null
                 && !IsTargetFreePiOp(toolId, op))
             {
@@ -479,12 +479,12 @@ public sealed partial class AgentV1Service
             var operationClass = (toolId, MapPiOp(toolId, op), isShellMode, isBash, mode) switch
             {
                 ("read", "list", _, _, _) => "list",
-                ("read", "glob", _, _, _) => "glob",
-                ("read", "search", _, _, _) => "search",
                 ("read", "read", _, _, _) => "read",
                 ("read", "help", _, _, _) => "read",
-                ("read", "web_search", _, _, _) => "read",
-                ("read", "web_fetch", _, _, _) => "read",
+                ("grep", _, _, _, _) => "search",
+                ("glob", _, _, _, _) => "glob",
+                ("web_search", _, _, _, _) => "search",
+                ("web_fetch", _, _, _, _) => "fetch",
                 ("write", "write", _, _, _) => "write",
                 ("write", "delete", _, _, _) => "delete",
                 ("write", "restore", _, _, _) => "restore",
@@ -631,12 +631,12 @@ public sealed partial class AgentV1Service
     private static string? MapPiOp(string toolId, string? op) => (toolId, op) switch
     {
         ("read", "list") => "list",
-        ("read", "glob") => "glob",
-        ("read", "search") => "search",
         ("read", "read") => "read",
         ("read", "help") => "help",
-        ("read", "web_search") => "web_search",
-        ("read", "web_fetch") => "web_fetch",
+        ("grep", _) => "grep",
+        ("glob", _) => "glob",
+        ("web_search", _) => "web_search",
+        ("web_fetch", _) => "web_fetch",
         ("write", "write") => "write",
         ("write", "delete") => "delete",
         ("write", "restore") => "restore",
@@ -644,8 +644,9 @@ public sealed partial class AgentV1Service
     };
 
     private static bool IsTargetFreePiOp(string toolId, string? op) =>
-        string.Equals(toolId, "read", StringComparison.Ordinal)
-        && op is "help" or "web_search" or "web_fetch";
+        string.Equals(toolId, "read", StringComparison.Ordinal) && string.Equals(op, "help", StringComparison.Ordinal)
+        || string.Equals(toolId, "web_search", StringComparison.Ordinal)
+        || string.Equals(toolId, "web_fetch", StringComparison.Ordinal);
 
     private static string? ReadString(JsonElement objectNode, string propertyName, int maxLength)
     {

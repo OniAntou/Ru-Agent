@@ -37,7 +37,8 @@ internal static class ManagedRuntimeBootstrapper
 {
     // Web tool configuration is defined once and shared: the Host executor uses
     // it directly, the Broker process receives it through the environment.
-    public const string BrokerWebSearchEndpoint = "https://html.duckduckgo.com/html/";
+    public const string BrokerWebSearchEndpoint = "https://www.google.com/search";
+    public const string BrokerWebFallbackEndpoint = "https://html.duckduckgo.com/html/";
 
     internal static async Task<ManagedRuntimeBootstrap> StartAsync(IConfiguration configuration, string projectRoot)
     {
@@ -120,6 +121,7 @@ internal static class ManagedRuntimeBootstrapper
         // alone must never auto-allow traffic outside the loopback boundary.
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_ENABLED", "true");
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT", BrokerWebSearchEndpoint);
+        Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_FALLBACK_ENDPOINT", BrokerWebFallbackEndpoint);
         Environment.SetEnvironmentVariable("RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL", "true");
 
         // Start Worker and Broker in one Job

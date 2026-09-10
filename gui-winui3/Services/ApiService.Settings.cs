@@ -80,6 +80,24 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<bool> RemoveProviderAsync(string backendChoice)
+        {
+            try
+            {
+                using var response = await _httpClient.PostAsJsonAsync(
+                    $"{_baseUrl}/settings/provider/remove",
+                    new { backend_choice = backendChoice });
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("RemoveProviderAsync", ex);
+                return false;
+            }
+        }
+
         public async Task<bool> SaveProviderModelSelectionAsync(string backend, string model)
         {
             var payload = new ProviderModelSelectionUpdateDto

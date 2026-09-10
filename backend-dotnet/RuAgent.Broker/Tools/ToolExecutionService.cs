@@ -104,7 +104,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             _webFetch = new WebFetchAdapter(webClient, webPolicy, sanitizer, _webOptions.MaxResponseBytes);
             if (_webOptions.SearchEndpoint is not null)
             {
-                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes);
+                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes, _webOptions.FallbackSearchEndpoint);
             }
         }
 
@@ -153,9 +153,23 @@ public sealed partial class ToolExecutionService : IToolInvoker
         var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
             ["read"] = ExecuteReadOpAsync,
+            ["grep"] = (context, arguments, token) => new ValueTask<ToolExecutionOutcome>(
+                ToolExecutionOutcome.Succeeded(
+                    ResolveTools(context, TargetPathOf(arguments)).Search.Execute(
+                        TranslateGrepArguments(arguments)),
+                    ToolVerificationStates.NotRequired,
+                    "Workspace search completed.")),
+            ["glob"] = (context, arguments, token) => new ValueTask<ToolExecutionOutcome>(
+                ToolExecutionOutcome.Succeeded(
+                    ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(
+                        TranslateGlobArguments(arguments)),
+                    ToolVerificationStates.NotRequired,
+                    "Workspace glob completed.")),
             ["write"] = ExecuteWriteOpAsync,
             ["edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
             ["bash"] = ExecuteBashAsync,
+            ["web_search"] = ExecuteWebSearchAsync,
+            ["web_fetch"] = ExecuteWebFetchAsync,
         };
 
         return executors;

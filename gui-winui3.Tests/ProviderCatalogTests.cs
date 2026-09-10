@@ -409,6 +409,69 @@ public sealed class ProviderCatalogTests
         Assert.Equal(1, notifications);
     }
 
+    [Fact]
+    public async Task Provider_removal_posts_only_the_backend_choice_and_notifies_on_success()
+    {
+        using var handler = new SaveHandler(new[] { "{\"status\":\"success\"}" });
+        using var api = new ApiService(
+            new BackendSession(new Uri("http://127.0.0.1:59999/"), "secret"),
+            handler);
+        var notifications = 0;
+        api.SettingsSaved += (_, _) => notifications++;
+
+        Assert.True(await api.RemoveProviderAsync("opencode"));
+        using (var document = JsonDocument.Parse(handler.LastBody))
+        {
+            var property = Assert.Single(document.RootElement.EnumerateObject());
+            Assert.Equal("backend_choice", property.Name);
+            Assert.Equal("opencode", property.Value.GetString());
+        }
+
+        Assert.Equal(1, notifications);
+    }
+
+    [Fact]
+    public async Task Failed_provider_removal_does_not_raise_settings_saved()
+    {
+        using var handler = new SaveHandler(new[] { "{\"status\":\"error\"}" });
+        using var api = new ApiService(
+            new BackendSession(new Uri("http://127.0.0.1:59999/"), "secret"),
+            handler);
+        var notifications = 0;
+        api.SettingsSaved += (_, _) => notifications++;
+
+        Assert.False(await api.RemoveProviderAsync("opencode"));
+        Assert.Equal(0, notifications);
+    }
+
+    [Fact]
+    public void SettingsView_exposes_a_sign_out_button_for_every_key_provider()
+    {
+        var settingsXamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml");
+        var settingsCodePath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml.cs");
+        if (!File.Exists(settingsXamlPath) || !File.Exists(settingsCodePath))
+        {
+            return;
+        }
+
+        var settingsXaml = File.ReadAllText(settingsXamlPath);
+        foreach (var buttonName in new[]
+                 {
+                     "OpenCodeSignOutButton",
+                     "KiloSignOutButton",
+                     "OpenAiSignOutButton",
+                     "AnthropicSignOutButton",
+                     "CustomSignOutButton",
+                 })
+        {
+            Assert.Contains($"x:Name=\"{buttonName}\"", settingsXaml, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("OnRemoveProviderClick", settingsXaml, StringComparison.Ordinal);
+        Assert.Contains("OnRemoveProviderClick", File.ReadAllText(settingsCodePath), StringComparison.Ordinal);
+        Assert.Contains("RemoveProviderAsync", File.ReadAllText(settingsCodePath), StringComparison.Ordinal);
+    }
+
     private sealed class TestClock : IProviderCatalogClock
     {
         public TestClock(DateTimeOffset utcNow) => UtcNow = utcNow;

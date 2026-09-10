@@ -1,12 +1,12 @@
 # Verification
 
-> **Current as of 2026-09-10 (HEAD `8c7a278c`).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-10 (HEAD `cfb52d54` + công việc chưa commit).** Older dated entries below are history; only this table is current.
 > Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals.
 
 | Surface | Current status |
 | --- | --- |
-| Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | GUI 415/415, Worker 64/64, Protocol 24/24 (Debug, HEAD worktree 2026-09-10). Full 13-project matrix: re-run `scripts/test_dotnet.ps1` and record the SHA + counts here before release. |
+| Public route | 64 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
+| .NET tests | GUI 418/418, Broker 571/571, Harness.Core 275/275, RuBackend 794/794, CLI 200/200, Protocol 24/24 (Debug, 2026-09-10 worktree). Full 13-project matrix: re-run `scripts/test_dotnet.ps1` and record the SHA + counts here before release. |
 | Python suite | 306 passed + 1 intentional failure: `test_completed_implementation_archives_are_not_kept_in_the_checkout` fails while the 3 active plans (78 unchecked steps) remain — see `docs/README.md`. `ruff` + `mypy src` (29 files) passed. |
 | `git diff --check` | passed |
 
@@ -54,23 +54,27 @@
   (`ToolRequest` + `ApprovalResponse` cùng đi qua `BrokerHost.ExecuteToolAsync`,
   rẽ trong service); xóa `_approvalHandler`/`ExecuteApprovalAsync` riêng lẻ.
 
-## Pi Phase 1: 13 tools → read/write/edit/bash (2026-09-09)
+## Pi Phase 1: 13 tools → read/write/edit/bash + standalone web_search/web_fetch (2026-09-09)
 
-- Protocol catalog is 4 definitions (`read` with `op=list|glob|search|read|help|web_search|web_fetch`,
-  `write` with `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`).
-  `AgentModelToolContractCatalog.WebToolIds={read}`, `WebOps={web_search,web_fetch}`.
-- Broker core migrated: `ToolCatalog` (4 manifests; `read` carries WorkspaceRead+SystemRead only),
-  `PolicyContextFactory` (op/mode routing, target-free help/web ops), `PolicySnapshotEvaluator.IsWebOp`
-  (`read`+`web_*`), `PolicyRuleMatcher.LegacyToolIdMatches` (old IDs in snapshots still match),
-  `BrokerSession.WorkspaceScopesFor` (4 tools), `AgentActivityProjector` (op-based kinds),
-  `TerminalAdapter` approval binding (`bash`), consolidated `ExecuteReadOp/WriteOp/Bash` executors.
-- V1 execution path is op-scoped (`EvaluateWithOpScope`): file ops check WorkspaceRead/SystemRead,
-  web ops additionally require their Web scope, `help` allows with file scopes, `write`/`bash`
+- Protocol catalog is 6 definitions (`read` with `op=list|glob|search|read|help`,
+  `write` with `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`,
+  standalone `web_search` with `query` (+ `max_results` 1–10) and standalone
+  `web_fetch` with `url`).
+  `AgentModelToolContractCatalog.WebToolIds={web_search,web_fetch}`.
+- Broker core migrated: `ToolCatalog` (6 manifests; `read` carries WorkspaceRead+SystemRead only,
+  web tools carry their own Web scopes with `External` risk), `PolicyContextFactory`
+  (tool-id routing, target-free help/web tools), `PolicySnapshotEvaluator.IsWebTool`
+  (`web_search`/`web_fetch` tool IDs), `PolicyRuleMatcher.LegacyToolIdMatches` (old IDs in snapshots still match),
+  `BrokerSession.WorkspaceScopesFor` (6 tools), `AgentActivityProjector` (tool-id kinds),
+  `TerminalAdapter` approval binding (`bash`), consolidated `ExecuteReadOp/WriteOp/Bash` executors
+  plus standalone web executors.
+- V1 execution path is scope-checked per tool: file ops check WorkspaceRead/SystemRead,
+  web tools require their own Web scope, `help` allows with file scopes, `write`/`bash`
   require WorkspaceWrite/TerminalExecute. Whole-manifest scope gate stays as the baseline.
-- `RuBackend` gateway migrated: `BrokerToolGateway.AccessKindForTool` (op-aware),
-  `AgentWebToolExecutor` (`read`+`op`), `AgentV1Service.Approvals.BuildApprovalBindingAsync`
-  (Pi op/mode + legacy fallback), `AgentToolRuntimeProjection` (4 tools).
-  `docs/operations/agent-tools.md` rewritten for the 4-tool matrix (embedded help docs rebuilt).
+- `RuBackend` gateway migrated: `BrokerToolGateway.AccessKindForTool` (standalone web → terminal-class approval UX),
+  `AgentWebToolExecutor` (standalone `web_search`/`web_fetch`), `AgentV1Service.Approvals.BuildApprovalBindingAsync`
+  (standalone web + legacy fallback), `AgentToolRuntimeProjection` (6 tools).
+  `docs/operations/agent-tools.md` rewritten for the 6-tool matrix (embedded help docs rebuilt).
 - Conformance (`ToolGatewayConformance`) migrated to Pi IDs: 23/23 pass through `BrokerToolGateway`.
 - Pre-existing failures (confirmed identical on clean HEAD via `git stash` isolate, not caused by
   this phase): 2 v1 terminal approval (`Approved_full_terminal_run`, `Nonzero_terminal_exit`),
@@ -574,15 +578,15 @@ device.
 
 The Worker v2 model inventory is deterministic and should stay aligned with
 `AgentRuntimeCoordinatorFactory.RuntimeCapabilities`: `read`, `write`, `edit`,
-and `bash`. The single
+`bash`, `web_search`, and `web_fetch`. The single
 Agent profile receives the advertised list; policy fallback behavior is
 verified separately. `files.apply_patch` remains unadvertised. Time, machine
 status, app discovery, and optional volume operations use terminal tools;
 notes use `write` with `op=write`.
 Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
 Protocol parser and are covered by CLI/Host tests. Web search/fetch are
-enabled read-only managed capabilities backed by the fixed DuckDuckGo HTML
-endpoint; each call remains bounded, redirect-safe, policy-checked, and marked
+enabled standalone managed capabilities backed by Google HTML primary with
+DuckDuckGo HTML automatic fallback; each call remains bounded, redirect-safe, policy-checked, and marked
 untrusted. Declarative Skills are explicit session grants with per-step policy
 checks. Connectors and `app.open` remain unadvertised.
 

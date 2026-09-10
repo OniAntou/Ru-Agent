@@ -40,7 +40,8 @@ public sealed class AgentWebToolExecutor
                 policy,
                 sanitizer,
                 _options.SearchEndpoint,
-                _options.MaxResponseBytes);
+                _options.MaxResponseBytes,
+                _options.FallbackSearchEndpoint);
         }
     }
 
@@ -58,14 +59,16 @@ public sealed class AgentWebToolExecutor
         ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
         ArgumentNullException.ThrowIfNull(arguments);
 
-        var op = arguments["op"]?.GetValue<string>();
+        if (toolId is not ("web_search" or "web_fetch"))
+        {
+            throw new ArgumentException("web_tool_not_supported", nameof(toolId));
+        }
+
         var definition = AgentModelToolContractCatalog.Find(
             toolId,
             AgentModelToolContractCatalog.CurrentVersion);
         if (definition is null
-            || !AgentModelToolContractCatalog.WebToolIds.Contains(toolId)
-            || op is null
-            || !AgentModelToolContractCatalog.WebOps.Contains(op))
+            || !AgentModelToolContractCatalog.WebToolIds.Contains(toolId))
         {
             throw new ArgumentException("web_tool_not_supported", nameof(toolId));
         }
@@ -84,7 +87,7 @@ public sealed class AgentWebToolExecutor
             throw new ArgumentException(error.Code, nameof(arguments), error);
         }
 
-        return op switch
+        return toolId switch
         {
             "web_search" => await ExecuteSearchAsync(boundedArguments, cancellationToken).ConfigureAwait(false),
             "web_fetch" => await ExecuteFetchAsync(boundedArguments, cancellationToken).ConfigureAwait(false),
@@ -103,6 +106,7 @@ public sealed class AgentWebToolExecutor
 
         var citations = await _search.SearchAsync(
             arguments["query"]!.GetValue<string>(),
+            ReadMaxResults(arguments),
             cancellationToken).ConfigureAwait(false);
         return new JsonObject
         {
@@ -145,4 +149,9 @@ public sealed class AgentWebToolExecutor
             ? null
             : citation.Snippet.Length <= 512 ? citation.Snippet : citation.Snippet[..512],
     };
+
+    private static int ReadMaxResults(JsonObject arguments) =>
+        arguments["max_results"] is JsonValue value && value.TryGetValue<int>(out var parsed)
+            ? Math.Clamp(parsed, 1, 10)
+            : 10;
 }

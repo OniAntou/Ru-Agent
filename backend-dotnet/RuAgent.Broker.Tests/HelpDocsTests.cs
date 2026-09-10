@@ -8,12 +8,12 @@ public sealed class HelpDocsTests
 {
     private static readonly string[] CurrentToolIds =
     [
-        "read", "write", "edit", "bash",
+        "read", "grep", "glob", "write", "edit", "bash", "web_search", "web_fetch",
     ];
 
     private static readonly string[] CurrentOps =
     [
-        "op=read", "op=write", "op=web_search", "mode=run", "mode=shell",
+        "op=read", "op=write", "mode=run", "mode=shell",
     ];
 
     private static readonly string[] RetiredToolIds =
@@ -59,7 +59,7 @@ public sealed class HelpDocsTests
     {
         var tool = new HelpDocsTool(BundledHelpDocsCatalog.LoadDefault());
 
-        var output = tool.Execute(new JsonObject { ["op"] = "help", ["query"] = "approvals" });
+        var output = tool.Execute(new JsonObject { ["op"] = "help", ["query"] = "approvals", ["path"] = "." });
 
         Assert.Equal("approvals", output["query"]!.GetValue<string>());
         var results = output["results"]!.AsArray();
@@ -78,6 +78,7 @@ public sealed class HelpDocsTests
         {
             ["op"] = "help",
             ["query"] = query,
+            ["path"] = ".",
             ["max_results"] = 5,
         });
 
@@ -93,6 +94,7 @@ public sealed class HelpDocsTests
         {
             ["op"] = "help",
             ["query"] = "current capability matrix",
+            ["path"] = ".",
             ["max_results"] = 5,
         });
 

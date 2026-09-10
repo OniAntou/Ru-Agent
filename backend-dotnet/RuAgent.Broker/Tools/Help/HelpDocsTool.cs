@@ -26,15 +26,6 @@ public sealed class HelpDocsTool
             throw new ArgumentException("unknown_read_op");
         }
 
-        try
-        {
-            ToolSchemaValidator.Validate(AgentToolDefinitionCatalog.Find("read", AgentToolDefinitionCatalog.CurrentVersion)!.InputSchema, arguments);
-        }
-        catch (ToolSchemaException error)
-        {
-            throw new ArgumentException(error.Code, error);
-        }
-
         var query = arguments["query"]?.GetValue<string>()?.Trim() ?? throw new ArgumentException("invalid_query");
         if (query.EnumerateRunes().Count() is < 1 or > 256)
         {

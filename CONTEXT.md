@@ -123,8 +123,10 @@ _Avoid_: global allowlist
 
 **Capability Profile**:
 The single session-scoped Agent preset. The model-visible
-Worker v2 list is the runtime projection of four core Protocol definitions
-(`read`, `write`, `edit`, `bash`, including offline `read` with `op=help`) plus independently enabled `read` with `op=web_search`/`op=web_fetch`
+Worker v2 list is the runtime projection of six Protocol definitions
+(`read`, `write`, `edit`, `bash`, including offline `read` with `op=help`, plus independently enabled standalone
+`web_search`/`web_fetch` tools with `network.search`/`network.fetch` scopes, Google HTML primary with DuckDuckGo
+HTML fallback)
 (approval-gated). The legacy `standard`/`full_access` wire values are accepted
 as compatibility metadata but map to the same policy; there is no second
 policy tier and no provider, model, protocol, or tool fallback.

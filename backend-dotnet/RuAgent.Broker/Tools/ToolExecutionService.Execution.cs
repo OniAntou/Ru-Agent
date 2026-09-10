@@ -311,7 +311,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             return decision;
         }
 
-        if (manifest.Id is "read" or "write" or "bash")
+        if (manifest.Id is "read" or "write" or "bash" or "grep" or "glob" or "web_search" or "web_fetch")
         {
             return EvaluateOpGrant(grant, manifest, arguments) ?? decision;
         }
@@ -321,23 +321,33 @@ public sealed partial class ToolExecutionService : IToolInvoker
 
     private ToolPolicyDecision? EvaluateOpGrant(PolicyGrant grant, ToolManifest manifest, JsonObject arguments)
     {
+        if (manifest.Id is "web_search" or "web_fetch")
+        {
+            var scope = manifest.Id == "web_search" ? ToolScope.WebSearch : ToolScope.WebFetch;
+            return grant.Scopes.Contains(scope)
+                ? new ToolPolicyDecision(true, true, "allowed")
+                : new ToolPolicyDecision(false, false, "scope_missing");
+        }
+
+        if (manifest.Id is "grep" or "glob")
+        {
+            var scopes = new HashSet<string>(manifest.Scopes, StringComparer.Ordinal);
+            scopes.Remove(ToolScope.WebSearch);
+            scopes.Remove(ToolScope.WebFetch);
+            return scopes.All(grant.Scopes.Contains)
+                ? new ToolPolicyDecision(true, false, "allowed")
+                : new ToolPolicyDecision(false, false, "scope_missing");
+        }
+
         var op = ReadOptionalString(arguments, "op");
         if (manifest.Id == "read")
         {
-            if (op is "web_search" or "web_fetch")
-            {
-                var scope = op == "web_search" ? ToolScope.WebSearch : ToolScope.WebFetch;
-                return grant.Scopes.Contains(scope)
-                    ? new ToolPolicyDecision(true, true, "allowed")
-                    : new ToolPolicyDecision(false, false, "scope_missing");
-            }
-
             if (op is "help")
             {
                 return new ToolPolicyDecision(true, false, "allowed");
             }
 
-            if (op is "list" or "glob" or "search" or "read")
+            if (op is "list" or "read")
             {
                 var manifestScopes = new HashSet<string>(manifest.Scopes, StringComparer.Ordinal);
                 manifestScopes.Remove(ToolScope.WebSearch);

@@ -239,12 +239,12 @@ public sealed class PolicyEvaluationTests
     public void Web_tools_always_ask()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
-        var arguments = new JsonObject { ["op"] = "web_search", ["query"] = "ru" };
+        var arguments = new JsonObject { ["query"] = "ru" };
 
         var gated = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry());
         var asked = gated.Evaluate(
             lease.Snapshot,
-            factory.Create("read", "1.0.0", arguments),
+            factory.Create("web_search", "1.0.0", arguments),
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("ask", asked.Decision);
@@ -258,14 +258,14 @@ public sealed class PolicyEvaluationTests
             PolicyEvalSnapshots.Rule(
                 "r-deny-web",
                 "deny",
-                PolicyEvalSnapshots.Matcher(toolId: "read")));
+                PolicyEvalSnapshots.Matcher(toolId: "web_search")));
         var (lease, factory) = Bind(snapshot);
-        var arguments = new JsonObject { ["op"] = "web_search", ["query"] = "ru" };
+        var arguments = new JsonObject { ["query"] = "ru" };
 
         var gated = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry());
         var denied = gated.Evaluate(
             lease.Snapshot,
-            factory.Create("read", "1.0.0", arguments),
+            factory.Create("web_search", "1.0.0", arguments),
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", denied.Decision);
@@ -343,8 +343,8 @@ public sealed class PolicyEvaluationTests
         var cases = new (string PiId, JsonObject Args)[]
         {
             ("read", new JsonObject { ["op"] = "list", ["path"] = "." }),
-            ("read", new JsonObject { ["op"] = "glob", ["pattern"] = "*.txt" }),
-            ("read", new JsonObject { ["op"] = "search", ["query"] = "x" }),
+            ("glob", new JsonObject { ["pattern"] = "*.txt", ["path"] = "." }),
+            ("grep", new JsonObject { ["query"] = "x", ["path"] = "." }),
             ("read", new JsonObject { ["op"] = "read", ["path"] = "src/read.txt" }),
             ("write", new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
             ("edit", new JsonObject { ["path"] = "src/edit.txt", ["old_string"] = "a" }),
@@ -637,8 +637,8 @@ public sealed class PolicyEvaluationTests
         switch (toolId)
         {
             case "files.list": piId = "read"; op = "list"; break;
-            case "files.glob": piId = "read"; op = "glob"; break;
-            case "files.search": piId = "read"; op = "search"; break;
+            case "files.glob": piId = "glob"; mapped.Remove("op"); break;
+            case "files.search": piId = "grep"; mapped.Remove("op"); break;
             case "files.read": piId = "read"; op = "read"; break;
             case "files.write": piId = "write"; op = "write"; break;
             case "files.edit": piId = "edit"; break;
@@ -646,13 +646,15 @@ public sealed class PolicyEvaluationTests
             case "files.restore": piId = "write"; op = "restore"; break;
             case "terminal.run": piId = "bash"; mode = "run"; break;
             case "terminal.shell": piId = "bash"; mode = "shell"; break;
-            case "web.search": piId = "read"; op = "web_search"; break;
-            case "web.fetch": piId = "read"; op = "web_fetch"; break;
+            case "web.search": piId = "web_search"; break;
+            case "web.fetch": piId = "web_fetch"; break;
             case "help.docs": piId = "read"; op = "help"; break;
         }
 
         if (op is not null) mapped["op"] = op;
         if (mode is not null) mapped["mode"] = mode;
+        if (piId is "web_search") mapped.Remove("op");
+        if (piId is "web_fetch") mapped.Remove("op");
         return (piId, mapped);
     }
 
@@ -660,21 +662,29 @@ public sealed class PolicyEvaluationTests
     {
         var (piId, op) = toolId switch
         {
-            "read" or "write" or "edit" or "bash" => (toolId, path),
+            "read" or "write" or "edit" or "bash" or "grep" or "glob" => (toolId, path),
             "files.list" => ("read", "list"),
-            "files.glob" => ("read", "glob"),
-            "files.search" => ("read", "search"),
+            "files.glob" => ("glob", "glob"),
+            "files.search" => ("grep", "grep"),
             "files.read" => ("read", "read"),
             "files.write" => ("write", "write"),
             "files.edit" => ("edit", "edit"),
             "files.delete" => ("write", "delete"),
             "files.restore" => ("write", "restore"),
             "help.docs" => ("read", "help"),
-            "web.search" => ("read", "web_search"),
-            "web.fetch" => ("read", "web_fetch"),
+            "web.search" => ("web_search", "web_search"),
+            "web.fetch" => ("web_fetch", "web_fetch"),
             _ => (toolId, path),
         };
-        var args = new JsonObject { ["op"] = op, ["path"] = path };
+        var args = piId is "web_search"
+            ? new JsonObject { ["query"] = path }
+            : piId is "web_fetch"
+                ? new JsonObject { ["url"] = path }
+                : piId is "grep"
+                    ? new JsonObject { ["query"] = path }
+                    : piId is "glob"
+                        ? new JsonObject { ["pattern"] = path }
+                        : new JsonObject { ["op"] = op, ["path"] = path };
         return factory.Create(piId, "1.0.0", args);
     }
 

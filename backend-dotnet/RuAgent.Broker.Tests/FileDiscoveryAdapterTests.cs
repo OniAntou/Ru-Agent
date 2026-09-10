@@ -376,20 +376,17 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var lease = CreateLease("standard", _root);
         var factory = new PolicyContextFactory(lease);
 
-        foreach (var op in new[] { "list", "glob", "search" })
-        {
-            var arguments = op switch
-            {
-                "glob" => new JsonObject { ["op"] = op, ["pattern"] = "*.txt" },
-                "search" => new JsonObject { ["op"] = op, ["query"] = "needle" },
-                _ => new JsonObject { ["op"] = op },
-            };
+        var listContext = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "list" });
+        Assert.NotNull(listContext.Target);
+        Assert.Equal(lease.CanonicalRoot, listContext.Target!.CanonicalPath);
 
-            var context = factory.Create("read", "1.0.0", arguments);
+        var globContext = factory.Create("glob", "1.0.0", new JsonObject { ["pattern"] = "*.txt" });
+        Assert.NotNull(globContext.Target);
+        Assert.Equal(lease.CanonicalRoot, globContext.Target!.CanonicalPath);
 
-            Assert.NotNull(context.Target);
-            Assert.Equal(lease.CanonicalRoot, context.Target!.CanonicalPath);
-        }
+        var grepContext = factory.Create("grep", "1.0.0", new JsonObject { ["query"] = "needle" });
+        Assert.NotNull(grepContext.Target);
+        Assert.Equal(lease.CanonicalRoot, grepContext.Target!.CanonicalPath);
     }
 
     [Fact]
@@ -398,8 +395,8 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var lease = CreateLease("standard", _root);
         var factory = new PolicyContextFactory(lease);
 
-        var searchA = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "search", ["query"] = "alpha" });
-        var searchB = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "search", ["query"] = "beta" });
+        var searchA = factory.Create("grep", "1.0.0", new JsonObject { ["query"] = "alpha" });
+        var searchB = factory.Create("grep", "1.0.0", new JsonObject { ["query"] = "beta" });
         var readA = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "src/a.txt", ["offset"] = 0, ["limit"] = 10 });
         var readB = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "src/a.txt", ["offset"] = 10, ["limit"] = 10 });
 

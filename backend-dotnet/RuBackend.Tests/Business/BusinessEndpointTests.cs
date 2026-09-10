@@ -47,6 +47,68 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task PostSettingsProviderRemove_deletes_only_the_named_provider_credential()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+        var credentials = new FakeCredentialStore();
+        credentials.Seed("Ru", "api_key", "private-opencode-key");
+        credentials.Seed("Ru", "openai_api_key", "private-openai-key");
+        using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings/provider/remove",
+            new { backend_choice = "opencode" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("success", payload.GetProperty("status").GetString());
+
+        using var settings = await client.GetAsync("/settings");
+        var raw = await settings.Content.ReadAsStringAsync();
+        var body = JsonNode.Parse(raw)!;
+        Assert.False(body["has_opencode_key"]!.GetValue<bool>());
+        Assert.True(body["has_openai_api_key"]!.GetValue<bool>());
+        Assert.DoesNotContain("private-opencode-key", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-openai-key", raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PostSettingsProviderRemove_is_idempotent_and_rejects_unknown_alias()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+        var credentials = new FakeCredentialStore();
+        credentials.Seed("Ru", "api_key", "private-opencode-key");
+        using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var unknown = await client.PostAsJsonAsync(
+            "/settings/provider/remove",
+            new { backend_choice = "banana" });
+        Assert.Equal(
+            "error",
+            (await unknown.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("status").GetString());
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var removed = await client.PostAsJsonAsync(
+                "/settings/provider/remove",
+                new { backend_choice = "opencode" });
+            Assert.Equal(
+                "success",
+                (await removed.Content.ReadFromJsonAsync<JsonElement>())
+                    .GetProperty("status").GetString());
+        }
+    }
+
+    [Fact]
     public async Task GetSettings_unknown_persisted_backend_never_reports_opencode()
     {
         using var data = TemporaryBusinessData.Create();

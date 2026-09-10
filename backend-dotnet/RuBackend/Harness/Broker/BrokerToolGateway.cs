@@ -506,16 +506,10 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
     private static ToolAccessKind AccessKindForTool(string toolId, JsonObject? arguments = null) => toolId switch
     {
         "write" or "edit" => ToolAccessKind.Mutation,
-        "bash" => ToolAccessKind.Terminal,
-        "read" => IsWebOp(arguments) ? ToolAccessKind.Terminal : ToolAccessKind.ReadOnly,
+        "bash" or "web_search" or "web_fetch" => ToolAccessKind.Terminal,
+        "read" or "grep" or "glob" => ToolAccessKind.ReadOnly,
         _ => ToolAccessKind.ReadOnly,
     };
-
-    private static bool IsWebOp(JsonObject? arguments)
-    {
-        var op = arguments?["op"]?.GetValue<string>();
-        return op is "web_search" or "web_fetch";
-    }
 
     private static ApprovalId InternalApprovalId(string brokerApprovalId)
     {

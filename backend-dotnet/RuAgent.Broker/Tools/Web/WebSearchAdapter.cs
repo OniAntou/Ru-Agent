@@ -8,15 +8,23 @@ namespace RuAgent.Broker.Tools.Web;
 
 public sealed class WebSearchAdapter
 {
+    private static readonly Regex GoogleResultPattern = new(
+        "<a[^>]+href=[\\\"'](?<url>/url\\?q=[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly Regex LinkPattern = new(
         "<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly Regex ResultLinkPattern = new(
         "<a\\b(?=[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__a\\b[^\\\"']*[\\\"'])[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly string[] GoogleUserAgents =
+    [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    ];
     private readonly HttpClient _http;
     private readonly WebPolicy _policy;
     private readonly Uri _endpoint;
+    private readonly Uri? _fallbackEndpoint;
     private readonly int _maxResponseBytes;
 
     public WebSearchAdapter(
@@ -24,12 +32,14 @@ public sealed class WebSearchAdapter
         WebPolicy policy,
         WebContentSanitizer sanitizer,
         Uri endpoint,
-        int maxResponseBytes = WebOptions.DefaultMaxResponseBytes)
+        int maxResponseBytes = WebOptions.DefaultMaxResponseBytes,
+        Uri? fallbackEndpoint = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         ArgumentNullException.ThrowIfNull(sanitizer);
         _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+        _fallbackEndpoint = fallbackEndpoint;
         if (maxResponseBytes is < 1 or > WebOptions.MaxConfiguredResponseBytes)
         {
             throw new ArgumentOutOfRangeException(nameof(maxResponseBytes));
@@ -38,16 +48,63 @@ public sealed class WebSearchAdapter
         _maxResponseBytes = maxResponseBytes;
     }
 
-    public async Task<IReadOnlyList<SourceCitation>> SearchAsync(string query, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<SourceCitation>> SearchAsync(string query, CancellationToken cancellationToken) =>
+        SearchAsync(query, 10, cancellationToken);
+
+    public async Task<IReadOnlyList<SourceCitation>> SearchAsync(string query, int maxResults, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Length > 512)
         {
             throw new ArgumentException("search_query_invalid", nameof(query));
         }
 
+        maxResults = Math.Clamp(maxResults, 1, 10);
+        Exception? primaryError = null;
+        IReadOnlyList<SourceCitation>? primary = null;
+        try
+        {
+            primary = await SearchEngineAsync(_endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
+            if (primary.Count > 0)
+            {
+                return primary;
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            if (_fallbackEndpoint is null || _fallbackEndpoint == _endpoint)
+            {
+                throw;
+            }
+
+            primaryError = error;
+        }
+
+        if (_fallbackEndpoint is not null && _fallbackEndpoint != _endpoint)
+        {
+            var fallback = await SearchEngineAsync(_fallbackEndpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
+            if (fallback.Count > 0)
+            {
+                return fallback;
+            }
+
+            if (primaryError is not null)
+            {
+                throw primaryError;
+            }
+        }
+
+        return Array.Empty<SourceCitation>();
+    }
+
+    private async Task<IReadOnlyList<SourceCitation>> SearchEngineAsync(
+        Uri endpoint,
+        string query,
+        int maxResults,
+        CancellationToken cancellationToken)
+    {
         var queryPart = "q=" + Uri.EscapeDataString(query);
-        var existingQuery = _endpoint.Query.TrimStart('?');
-        var current = new UriBuilder(_endpoint)
+        var existingQuery = endpoint.Query.TrimStart('?');
+        var current = new UriBuilder(endpoint)
         {
             Query = string.IsNullOrEmpty(existingQuery)
                 ? queryPart
@@ -57,6 +114,7 @@ public sealed class WebSearchAdapter
         {
             await _policy.ValidateAsync(current, cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            ApplyBrowserHeaders(request, endpoint);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if ((int)response.StatusCode is >= 300 and < 400)
             {
@@ -87,10 +145,10 @@ public sealed class WebSearchAdapter
 
             var body = await ReadBoundedAsync(response, _maxResponseBytes, cancellationToken).ConfigureAwait(false);
             var isJson = contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
-            var htmlResultAnchorCount = isJson ? 0 : ResultLinkPattern.Matches(body).Count;
+            var htmlResultAnchorCount = isJson ? 0 : CountResultAnchors(body, endpoint);
             var candidates = isJson
                 ? ParseJsonCandidates(body)
-                : ParseHtmlCandidates(body);
+                : ParseHtmlCandidates(body, endpoint);
             var results = new List<SourceCitation>();
             var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var candidate in candidates)
@@ -120,7 +178,7 @@ public sealed class WebSearchAdapter
                     ? "Search result"
                     : CleanText(candidate.Snippet, 512);
                 results.Add(new SourceCitation(Bound(title, 256), url, snippet));
-                if (results.Count == 10)
+                if (results.Count == maxResults)
                 {
                     break;
                 }
@@ -137,14 +195,49 @@ public sealed class WebSearchAdapter
         throw new InvalidDataException("web_redirect_limit");
     }
 
-    private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html)
+    private static void ApplyBrowserHeaders(HttpRequestMessage request, Uri endpoint)
+    {
+        if (endpoint.Host.EndsWith("google.com", StringComparison.OrdinalIgnoreCase))
+        {
+            request.Headers.TryAddWithoutValidation("User-Agent", GoogleUserAgents[0]);
+            request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+        }
+    }
+
+    private static int CountResultAnchors(string html, Uri endpoint) =>
+        IsGoogleEndpoint(endpoint)
+            ? GoogleResultPattern.Matches(html).Count
+            : ResultLinkPattern.Matches(html).Count;
+
+    private static bool IsGoogleEndpoint(Uri endpoint) =>
+        endpoint.Host.EndsWith("google.com", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html, Uri endpoint)
+    {
+        if (IsGoogleEndpoint(endpoint))
+        {
+            return GoogleResultPattern.Matches(html)
+                .Select(match => new SearchCandidate(
+                    WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
+                    WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
+                    null))
+                .ToArray();
+        }
+
+        return ParseGenericHtmlCandidates(html);
+    }
+
+    private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html) =>
+        ParseGenericHtmlCandidates(html);
+
+    private static IReadOnlyList<SearchCandidate> ParseGenericHtmlCandidates(string html)
     {
         var resultLinks = ResultLinkPattern.Matches(html);
         var links = resultLinks.Count > 0 ? resultLinks : LinkPattern.Matches(html);
         return links
             .Select(match => new SearchCandidate(
-                WebUtility.HtmlDecode(match.Groups["url"].Value),
-                match.Groups["title"].Value,
+                WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
+                WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
                 null))
             .ToArray();
     }
@@ -153,6 +246,19 @@ public sealed class WebSearchAdapter
     {
         url = null!;
         var decoded = WebUtility.HtmlDecode(rawUrl).Trim();
+        if (decoded.StartsWith("/url?q=", StringComparison.OrdinalIgnoreCase))
+        {
+            var target = ReadQueryValue(decoded[(decoded.IndexOf('?') + 1)..], "q");
+            if (target is null
+                || !Uri.TryCreate(target, UriKind.Absolute, out var google)
+                || google.Scheme is not ("http" or "https"))
+            {
+                return false;
+            }
+
+            url = google;
+            return true;
+        }
         if (!Uri.TryCreate(responseUri, decoded, out var candidate)
             || candidate.Scheme is not ("http" or "https"))
         {

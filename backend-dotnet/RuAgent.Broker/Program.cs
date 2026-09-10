@@ -24,11 +24,24 @@ static WebOptions? BuildWebOptions()
 
     Uri? searchEndpoint = null;
     var endpointRaw = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_SEARCH_ENDPOINT");
-    if (!string.IsNullOrWhiteSpace(endpointRaw)
-        && !Uri.TryCreate(endpointRaw, UriKind.Absolute, out searchEndpoint))
+    if (!string.IsNullOrWhiteSpace(endpointRaw))
     {
-        Console.Error.WriteLine("broker web disabled: search endpoint invalid");
-        return null;
+        if (!Uri.TryCreate(endpointRaw, UriKind.Absolute, out searchEndpoint))
+        {
+            Console.Error.WriteLine("broker web disabled: search endpoint invalid");
+            return null;
+        }
+    }
+
+    Uri? fallbackEndpoint = null;
+    var fallbackRaw = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_FALLBACK_ENDPOINT");
+    if (!string.IsNullOrWhiteSpace(fallbackRaw))
+    {
+        if (!Uri.TryCreate(fallbackRaw, UriKind.Absolute, out fallbackEndpoint))
+        {
+            Console.Error.WriteLine("broker web disabled: fallback endpoint invalid");
+            return null;
+        }
     }
 
     var maxResponseBytes = WebOptions.DefaultMaxResponseBytes;
@@ -50,6 +63,7 @@ static WebOptions? BuildWebOptions()
         return new WebOptions(
             enabled: true,
             searchEndpoint: searchEndpoint,
+            fallbackSearchEndpoint: fallbackEndpoint,
             maxResponseBytes: maxResponseBytes);
     }
     catch (ArgumentException error)

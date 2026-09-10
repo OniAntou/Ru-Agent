@@ -58,7 +58,7 @@ public sealed class TuiInteractiveTests
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 1,
-            EventType: "model.turn_started",
+            EventType: "model.step_started",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "running",
             SafeSummary: "Thinking about plan");
@@ -222,7 +222,7 @@ public sealed class TuiInteractiveTests
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 9,
-            EventType: "model.turn_started",
+            EventType: "model.step_started",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "running",
             SafeSummary: "next turn");
@@ -405,7 +405,7 @@ public sealed class TuiInteractiveTests
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 11,
-            EventType: "tool.executed",
+            EventType: "tool.execution_completed",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "succeeded",
             SafeSummary: "edit completed\n--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line");

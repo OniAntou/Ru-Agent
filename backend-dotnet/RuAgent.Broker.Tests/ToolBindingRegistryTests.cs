@@ -9,12 +9,28 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolBindingRegistryTests
 {
     [Fact]
-    public void Chat_profile_advertises_only_workspace_read()
+    public void Chat_profile_includes_read_and_web_scopes()
     {
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Chat)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Equal(new HashSet<string> { "read" }, ids);
+        Assert.Equal(new HashSet<string> { "read", "grep", "glob", "web_fetch", "web_search" }, ids);
+    }
+
+    [Fact]
+    public void Agent_profile_lists_web_bindings_with_their_own_scopes()
+    {
+        var registry = CatalogForTests();
+
+        var agent = registry.ListCapabilities(CapabilityProfile.Agent, new HashSet<string>(StringComparer.Ordinal))
+            .Select(capability => capability.ToolId).ToHashSet();
+        Assert.Contains("web_search", agent);
+        Assert.Contains("web_fetch", agent);
+
+        var webSearch = registry.ListCapabilities(CapabilityProfile.Agent).First(capability => capability.ToolId == "web_search");
+        var webFetch = registry.ListCapabilities(CapabilityProfile.Agent).First(capability => capability.ToolId == "web_fetch");
+        Assert.Contains(RuAgent.Broker.Policy.ToolScope.WebSearch, webSearch.Scopes);
+        Assert.Contains(RuAgent.Broker.Policy.ToolScope.WebFetch, webFetch.Scopes);
     }
 
     [Fact]
@@ -26,6 +42,8 @@ public sealed class ToolBindingRegistryTests
         Assert.Contains("write", ids);
         Assert.Contains("edit", ids);
         Assert.Contains("read", ids);
+        Assert.Contains("grep", ids);
+        Assert.Contains("glob", ids);
         Assert.Contains("bash", ids);
         Assert.DoesNotContain("system.volume", ids);
         Assert.DoesNotContain("app.list", ids);
@@ -71,7 +89,7 @@ public sealed class ToolBindingRegistryTests
 
         Assert.Equal(new[]
         {
-            "bash", "edit", "read", "write",
+            "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write",
         }, ids);
         Assert.DoesNotContain("app.open", ids);
         Assert.DoesNotContain("workspace.search", ids);
@@ -85,9 +103,13 @@ public sealed class ToolBindingRegistryTests
     internal static Dictionary<string, ToolExecutor> ExecutableStubs() => new(StringComparer.Ordinal)
     {
         ["read"] = Succeeded,
+        ["grep"] = Succeeded,
+        ["glob"] = Succeeded,
         ["write"] = Succeeded,
         ["edit"] = Succeeded,
         ["bash"] = Succeeded,
+        ["web_search"] = Succeeded,
+        ["web_fetch"] = Succeeded,
     };
 
     private static ValueTask<ToolExecutionOutcome> Succeeded(

@@ -349,6 +349,18 @@ def test_tts_stream_route_uses_bytes_without_temp_files(tmp_path, monkeypatch) -
         assert output.getframerate() == server.MODEL_SAMPLE_RATE
 
 
+def test_read_audio_bytes_bounded_rejects_concurrent_growth(tmp_path, monkeypatch) -> None:
+    small = tmp_path / "small.wav"
+    small.write_bytes(b"RIFF" + b"\0" * 100)
+    monkeypatch.setattr(server, "MAX_SYNTHESIZED_WAV_BYTES", 10)
+    try:
+        server._read_audio_bytes_bounded(str(small))
+    except RuntimeError as error:
+        assert "exceeds the size limit" in str(error)
+    else:
+        raise AssertionError("expected size-limit rejection")
+
+
 def test_completed_omnivoice_audio_is_written_as_a_mono_waveform() -> None:
     import numpy as np
 

@@ -31,7 +31,9 @@ def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:
     assert "dotnet test backend-dotnet/" not in dotnet_job
     assert "dotnet test gui-winui3.Tests/" not in dotnet_job
     assert "dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release" in workflow
-    assert "dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64" in workflow
+    assert "dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64 -p:Platform=x64 -p:SelfContained=true" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "git diff --check" in workflow
 
 
 def test_static_analysis_targets_the_minimum_supported_python() -> None:

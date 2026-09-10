@@ -2,7 +2,17 @@
 
 This directory contains only current operating documentation and accepted
 architecture decisions. Completed implementation plans and design drafts are
-kept in Git history instead of the working tree.
+kept in Git history instead of the working tree. Plans with unchecked steps
+under `docs/superpowers/plans/` and `docs/superpowers/specs/` are active work,
+not archives — see the verification note below before deleting them.
+
+> **Active plans (2026-09-10, unchecked steps remain):**
+> `plans/2026-09-10-tui-sticky-footer.md`,
+> `plans/2026-09-10-god-class-slice2.md`,
+> `specs/2026-09-10-tui-sticky-footer-design.md`.
+> The `test_completed_implementation_archives_are_not_kept_in_the_checkout`
+> guard fails while they exist; that failure is intentional until the plans
+> land, and only completed plans are removed afterwards.
 
 ## Current system
 

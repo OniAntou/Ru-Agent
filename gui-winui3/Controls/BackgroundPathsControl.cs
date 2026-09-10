@@ -244,7 +244,10 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
                 CompositionTarget.Rendering += OnRendering;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[BackgroundPathsControl] StartAnimations failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     public void StopAnimations()
@@ -258,7 +261,10 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
                 CompositionTarget.Rendering -= OnRendering;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[BackgroundPathsControl] StopAnimations failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private void UpdateBrushes()

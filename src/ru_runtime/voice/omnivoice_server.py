@@ -145,7 +145,10 @@ def voice_profile(profile: str) -> tuple[Path, str]:
         try:
             if REFERENCE_TEXT.stat().st_size > MAX_REFERENCE_TEXT_BYTES:
                 raise RuntimeError(f"OmniVoice reference transcript is too large: {REFERENCE_TEXT}")
-            transcript = REFERENCE_TEXT.read_text(encoding="utf-8").strip()
+            with REFERENCE_TEXT.open("r", encoding="utf-8") as stream:
+                transcript = stream.read(MAX_REFERENCE_TEXT_BYTES + 1).strip()
+            if len(transcript.encode("utf-8")) > MAX_REFERENCE_TEXT_BYTES:
+                raise RuntimeError(f"OmniVoice reference transcript is too large: {REFERENCE_TEXT}")
         except OSError as error:
             logger.error("OmniVoice reference transcript is missing: %s", REFERENCE_TEXT)
             raise RuntimeError(
@@ -167,7 +170,11 @@ def _read_audio_bytes_bounded(audio_path: str) -> bytes:
     try:
         if candidate.stat().st_size > MAX_SYNTHESIZED_WAV_BYTES:
             raise RuntimeError("OmniVoice audio file exceeds the size limit.")
-        return candidate.read_bytes()
+        with candidate.open("rb") as stream:
+            data = stream.read(MAX_SYNTHESIZED_WAV_BYTES + 1)
+        if len(data) > MAX_SYNTHESIZED_WAV_BYTES:
+            raise RuntimeError("OmniVoice audio file exceeds the size limit.")
+        return data
     except OSError as error:
         raise RuntimeError("OmniVoice did not create a readable audio file.") from error
 
@@ -437,6 +444,8 @@ def create_app(
         try:
             warm_model(profile)
             buffer = io.BytesIO()
+            total_frames = 0
+            max_frames = MAX_SYNTHESIZED_WAV_BYTES // 2
             with wave.open(buffer, "wb") as output:
                 output.setnchannels(1)
                 output.setsampwidth(2)
@@ -448,9 +457,18 @@ def create_app(
                         speed,
                         voice_style_id=style.id,
                     )
+                    if len(chunk_bytes) > MAX_SYNTHESIZED_WAV_BYTES:
+                        raise RuntimeError("OmniVoice chunk exceeds the size limit.")
                     with wave.open(io.BytesIO(chunk_bytes), "rb") as source:
-                        output.writeframes(source.readframes(source.getnframes()))
-            return Response(buffer.getvalue(), mimetype="audio/wav")
+                        frames = source.readframes(source.getnframes())
+                        total_frames += len(frames) // 2
+                        if total_frames > max_frames:
+                            raise RuntimeError("OmniVoice stream exceeds the size limit.")
+                        output.writeframes(frames)
+            streamed = buffer.getvalue()
+            if len(streamed) > MAX_SYNTHESIZED_WAV_BYTES:
+                raise RuntimeError("OmniVoice stream exceeds the size limit.")
+            return Response(streamed, mimetype="audio/wav")
         except Exception:
             logger.exception("OmniVoice /tts_stream failed")
             return jsonify({"error": "Synthesis failed. Check the server logs."}), 500

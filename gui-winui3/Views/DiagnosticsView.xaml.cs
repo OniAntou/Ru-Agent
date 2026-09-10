@@ -122,12 +122,14 @@ namespace RuApp.Views
             _refreshController.SetActive(_isActive);
             _ = _refreshController.RefreshAsync();
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-            _refreshTimer.Tick += async (_, __) =>
-            {
-                if (_refreshController != null) await _refreshController.RefreshAsync();
-                else await RefreshAsync();
-            };
+            _refreshTimer.Tick += OnRefreshTimerTick;
             _refreshTimer.Start();
+        }
+
+        private async void OnRefreshTimerTick(object? sender, object e)
+        {
+            if (_refreshController != null) await _refreshController.RefreshAsync();
+            else await RefreshAsync();
         }
 
         public void SetActive(bool active)
@@ -290,10 +292,11 @@ namespace RuApp.Views
                     ApplyFilter();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 WarningBanner.Visibility = Visibility.Visible;
                 WarningBannerText.Text = "Could not connect to backend diagnostics service.";
+                System.Diagnostics.Debug.WriteLine($"[DiagnosticsView] Refresh failed: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -520,10 +523,11 @@ namespace RuApp.Views
                     await Windows.Storage.FileIO.WriteTextAsync(file, ndjson);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 WarningBanner.Visibility = Visibility.Visible;
                 WarningBannerText.Text = "Exporting diagnostic logs failed.";
+                System.Diagnostics.Debug.WriteLine($"[DiagnosticsView] Export failed: {ex.GetType().Name}: {ex.Message}");
             }
             finally
             {
@@ -542,8 +546,12 @@ namespace RuApp.Views
 
         public void Dispose()
         {
-            _refreshTimer?.Stop();
-            _refreshTimer = null;
+            if (_refreshTimer != null)
+            {
+                _refreshTimer.Tick -= OnRefreshTimerTick;
+                _refreshTimer.Stop();
+                _refreshTimer = null;
+            }
             _isActive = false;
             _refreshController?.SetActive(false);
             if (_refreshController != null)

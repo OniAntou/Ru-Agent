@@ -46,22 +46,32 @@ namespace RuApp.Views
         private void SetupVts()
         {
             _vtsConfigDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-            _vtsConfigDebounce.Tick += async (_, __) =>
-            {
-                _vtsConfigDebounce.Stop();
-                await SaveVtsConfigAsync();
-                await LoadVtsConfigAsync();
-            };
+            _vtsConfigDebounce.Tick += OnVtsConfigDebounceTick;
 
             _vtsControlDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
-            _vtsControlDebounce.Tick += async (_, __) =>
-            {
-                _vtsControlDebounce.Stop();
-                await FlushPendingVtsControlAsync();
-            };
+            _vtsControlDebounce.Tick += OnVtsControlDebounceTick;
 
             _ = LoadVtsConfigAsync();
             _ = PollVtsStatusAsync();
+        }
+
+        private async void OnVtsConfigDebounceTick(object? sender, object e)
+        {
+            if (_vtsConfigDebounce != null)
+            {
+                _vtsConfigDebounce.Stop();
+            }
+            await SaveVtsConfigAsync();
+            await LoadVtsConfigAsync();
+        }
+
+        private async void OnVtsControlDebounceTick(object? sender, object e)
+        {
+            if (_vtsControlDebounce != null)
+            {
+                _vtsControlDebounce.Stop();
+            }
+            await FlushPendingVtsControlAsync();
         }
 
         private void SetupAutoSave()
@@ -70,11 +80,7 @@ namespace RuApp.Views
             {
                 Interval = TimeSpan.FromMilliseconds(800)
             };
-            _autoSaveTimer.Tick += async (_, __) =>
-            {
-                _autoSaveTimer.Stop();
-                await SaveSettingsAsync();
-            };
+            _autoSaveTimer.Tick += OnAutoSaveTimerTick;
 
             BackendComboBox.SelectionChanged += AutoSaveHandler;
             OpenCodeApiKeyBox.PasswordChanged += AutoSaveHandler;
@@ -86,6 +92,15 @@ namespace RuApp.Views
             CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
             SelfLearningToggle.Toggled += AutoSaveHandler;
             CloudMemoryConsentToggle.Toggled += AutoSaveHandler;
+        }
+
+        private async void OnAutoSaveTimerTick(object? sender, object e)
+        {
+            if (_autoSaveTimer != null)
+            {
+                _autoSaveTimer.Stop();
+            }
+            await SaveSettingsAsync();
         }
 
         private void ScheduleAutoSave()
@@ -274,12 +289,24 @@ namespace RuApp.Views
             CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
             SelfLearningToggle.Toggled -= AutoSaveHandler;
             CloudMemoryConsentToggle.Toggled -= AutoSaveHandler;
-            _autoSaveTimer?.Stop();
-            _autoSaveTimer = null;
-            _vtsConfigDebounce?.Stop();
-            _vtsConfigDebounce = null;
-            _vtsControlDebounce?.Stop();
-            _vtsControlDebounce = null;
+            if (_autoSaveTimer != null)
+            {
+                _autoSaveTimer.Tick -= OnAutoSaveTimerTick;
+                _autoSaveTimer.Stop();
+                _autoSaveTimer = null;
+            }
+            if (_vtsConfigDebounce != null)
+            {
+                _vtsConfigDebounce.Tick -= OnVtsConfigDebounceTick;
+                _vtsConfigDebounce.Stop();
+                _vtsConfigDebounce = null;
+            }
+            if (_vtsControlDebounce != null)
+            {
+                _vtsControlDebounce.Tick -= OnVtsControlDebounceTick;
+                _vtsControlDebounce.Stop();
+                _vtsControlDebounce = null;
+            }
         }
 
         private void AutoSaveHandler(object sender, RoutedEventArgs e) => ScheduleAutoSave();

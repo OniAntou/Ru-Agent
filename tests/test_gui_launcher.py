@@ -25,6 +25,8 @@ def test_startup_probe_rejects_only_an_early_nonzero_exit(
     def quote(value: Path) -> str:
         return "'" + str(value).replace("'", "''") + "'"
 
+    # The harness object must expose ExitCode as a plain property: the
+    # production script reads $process.ExitCode right after $process.HasExited.
     command = (
         "function Start-Process { param($FilePath, $WorkingDirectory, [switch]$PassThru) "
         f"[pscustomobject]@{{ HasExited = ${str(has_exited).lower()}; ExitCode = {exit_code} }} }}; "

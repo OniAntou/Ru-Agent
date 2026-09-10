@@ -35,11 +35,15 @@ namespace RuApp.Views
 
         public void Initialize(ApiService apiService)
         {
+            if (_refreshTimer != null)
+            {
+                return;
+            }
             _apiService = apiService;
             Rows.Clear();
             Rows.Add(new LogRow("--:--:--", "…", LogRowKind.Info, "Loading logs...", ""));
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-            _refreshTimer.Tick += async (_, __) => await RefreshAsync();
+            _refreshTimer.Tick += OnRefreshTimerTick;
             if (_isActive)
             {
                 _ = RefreshAsync();
@@ -61,6 +65,11 @@ namespace RuApp.Views
             }
         }
 
+        private async void OnRefreshTimerTick(object? sender, object e)
+        {
+            await RefreshAsync();
+        }
+
         private async Task RefreshAsync()
         {
             if (_apiService == null) return;
@@ -71,9 +80,9 @@ namespace RuApp.Views
                 _allEvents = events;
                 ApplyFilter();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Keep current list if network/API error.
+                System.Diagnostics.Debug.WriteLine($"[LogView] Refresh failed: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -308,8 +317,12 @@ namespace RuApp.Views
         public void Dispose()
         {
             _isActive = false;
-            _refreshTimer?.Stop();
-            _refreshTimer = null;
+            if (_refreshTimer != null)
+            {
+                _refreshTimer.Tick -= OnRefreshTimerTick;
+                _refreshTimer.Stop();
+                _refreshTimer = null;
+            }
             _apiService = null;
             _allEvents.Clear();
             Rows.Clear();

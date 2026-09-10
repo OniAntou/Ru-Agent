@@ -80,9 +80,9 @@ internal static class WorkerEntryPoint
         app.UseWebSockets();
         try
         {
-            // Single /worker endpoint (Pi-style). Device v1 traffic is an alias
-            // on the same socket until callers finish migrating off the
-            // dedicated device port; the v1 server enforces its own token.
+            // Dual-port compat: bind both URLs when the ports differ so legacy
+            // device-v1 callers keep working; /worker/v1 stays a valid alias
+            // on either socket and each server enforces its own token.
             app.Run(context => string.Equals(context.Request.Path, "/worker/v1", StringComparison.Ordinal)
                 ? composition.DeviceServer.HandleAsync(context)
                 : composition.AgentServer.HandleAsync(context));

@@ -1,23 +1,30 @@
 # Verification
 
-> **Current as of 2026-09-09 (Pi Phase 3+5 done).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-10 (HEAD `8c7a278c`).** Older dated entries below are history; only this table is current.
+> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals.
 
 | Surface | Current status |
 | --- | --- |
 | Public route | 63 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | Pi simplification, Security hardening, Perf & TUI autocomplete passed 100%: 2,287 passed, 0 failed across all 12 test projects (Protocol 24/24, Broker 564/564, Harness.Core 275/275, Worker 64/64, Persistence 103/103, Adapters 217/217, Runtime.Core 6/6, Hosting 26/26, Client 50/50, Cli 165/165, Connectors 3/3, RuBackend 790/790) + gui-winui3.Tests (411/411 passed) |
-| Python suite | 306 passed, 0 failed; `ruff check src tests scripts tools` passed; `mypy src` passed |
+| .NET tests | GUI 415/415, Worker 64/64, Protocol 24/24 (Debug, HEAD worktree 2026-09-10). Full 13-project matrix: re-run `scripts/test_dotnet.ps1` and record the SHA + counts here before release. |
+| Python suite | 306 passed + 1 intentional failure: `test_completed_implementation_archives_are_not_kept_in_the_checkout` fails while the 3 active plans (78 unchecked steps) remain — see `docs/README.md`. `ruff` + `mypy src` (29 files) passed. |
 | `git diff --check` | passed |
 
-## Pi Phase 3: worker single-port + /worker alias (2026-09-09)
+## Pi Phase 3: worker dual-port compat + /worker alias (2026-09-09, cập nhật 2026-09-10)
 
-- `Worker` bind 1 port duy nhất (`UseUrls($http://{host}:{port})`); `--device-port`
-  còn parse để tương thích CLI nhưng không bind listener thứ hai.
+> Ghi chú 2026-09-10: section này từng ghi "bind 1 port duy nhất" — đã sai sau
+> `fix(worker)` trong CHANGELOG (`RuAgent.Runtime.Worker/Program.cs:75-78` bind cả
+> `port` + `devicePort` khi khác nhau). Bản dưới đây là mô tả đúng code hiện tại.
+
+- `Worker` bind 1 URL khi `devicePort == 0 || devicePort == port`, ngược lại bind
+  cả hai (`UseUrls(port, devicePort)` trong `RuAgent.Runtime.Worker/Program.cs:75-78`)
+  để tương thích ngược `LoopbackWorkerClient` (device v1); `--device-port` là
+  compat flag, không phải dead flag.
 - `WorkerV2Server` chấp nhận `/worker`, `/worker/v1`, `/worker/v2`
   (`IsWorkerPath`); `/worker/v1` giữ cho device traffic, token v1/v2 riêng
   vẫn enforce ở từng server.
 - Test `Phase1WorkerIntegrationTests` bỏ assert GET `/worker/v1` → 404
-  (giờ là alias hợp lệ); Worker 64/64 xanh.
+  (giờ là alias hợp lệ); Worker 64/64 xanh (snapshot 2026-09-09, re-run trước release).
 
 ## Pi Phase 4: persistence — giữ SQLite, không làm JSONL (2026-09-09)
 
@@ -123,6 +130,10 @@ documentation archive guard because four dated Markdown plans remain under
 `docs/superpowers/plans`; those plans were intentionally preserved. No models,
 voice runtimes, app data, credentials, or user caches were removed.
 
+> Ghi chú 2026-09-10: hiện còn 3 files active (`plans/2026-09-10-tui-sticky-footer.md`,
+> `plans/2026-09-10-god-class-slice2.md`, `specs/2026-09-10-tui-sticky-footer-design.md`)
+> với 78 unchecked steps — guard fail là có chủ ý cho đến khi plans land. Xem `docs/README.md`.
+
 ## Task 5 verification (2026-09-07)
 
 Fresh sequential Debug checks on `main` passed all four requested managed test
@@ -142,6 +153,8 @@ passed, while `test_completed_implementation_archives_are_not_kept_in_the_checko
 failed because four dated Markdown plans remain under `docs/superpowers/plans`.
 Those files were not removed as part of verification. No live provider, audio,
 microphone, volume, or VTube Studio acceptance was run.
+
+> Ghi chú 2026-09-10: tương tự mục 2026-09-07 — xem `docs/README.md`, chỉ xóa khi plans hoàn thành.
 
 ## Legacy mirror and document retirement (2026-09-06)
 

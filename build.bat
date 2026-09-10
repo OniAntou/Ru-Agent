@@ -26,7 +26,7 @@ set "PUBLISH_DIR=%PROJECT_DIR%\bin\Release\net10.0-windows10.0.26100.0\win-x64\p
 set "OBJ_DIR=%PROJECT_DIR%\obj\x64\Release\net10.0-windows10.0.26100.0\win-x64"
 
 echo [1/13] Cleaning previous build...
-call dotnet clean "%CSPROJ%" -r win-x64 -c Release -p:Platform=x64 >nul 2>&1
+call dotnet clean "%CSPROJ%" -r win-x64 -c Release -p:Platform=x64
 if errorlevel 1 (
     echo CLEAN FAILED!
     exit /b 1
@@ -158,24 +158,43 @@ if errorlevel 1 (
 
 echo [11/13] Copying compiled XAML (.xbf) files...
 if not exist "%PUBLISH_DIR%\Views" mkdir "%PUBLISH_DIR%\Views"
+if not exist "%OBJ_DIR%\App.xbf" (
+    echo BUILD FAILED: Compiled XAML App.xbf was not created.
+    exit /b 1
+)
+if not exist "%OBJ_DIR%\MainWindow.xbf" (
+    echo BUILD FAILED: Compiled XAML MainWindow.xbf was not created.
+    exit /b 1
+)
+set "RU_XBF_FAIL=0"
 for %%f in (App.xbf MainWindow.xbf) do (
-    copy /Y "%OBJ_DIR%\%%f" "%PUBLISH_DIR%\" >nul 2>&1
-    if errorlevel 1 (
-        echo BUILD FAILED: Could not publish compiled XAML %%f.
-        exit /b 1
-    )
+    copy /Y "%OBJ_DIR%\%%f" "%PUBLISH_DIR%\"
+    if errorlevel 1 set "RU_XBF_FAIL=1"
+    if not exist "%PUBLISH_DIR%\%%f" set "RU_XBF_FAIL=1"
+)
+if "%RU_XBF_FAIL%"=="1" (
+    echo BUILD FAILED: Could not publish compiled XAML.
+    exit /b 1
 )
 if not exist "%OBJ_DIR%\Views\*.xbf" (
     echo BUILD FAILED: Compiled view XAML was not created.
     exit /b 1
 )
+set "RU_XBF_COUNT=0"
+set "RU_XBF_FAIL=0"
 for %%f in ("%OBJ_DIR%\Views\*.xbf") do (
-    copy /Y "%%f" "%PUBLISH_DIR%\Views\" >nul 2>&1
-    if errorlevel 1 (
-        echo BUILD FAILED: Could not publish compiled XAML %%~nxf.
-        exit /b 1
-    )
+    copy /Y "%%f" "%PUBLISH_DIR%\Views\"
+    if errorlevel 1 set "RU_XBF_FAIL=1"
+    if not exist "%PUBLISH_DIR%\Views\%%~nxf" set "RU_XBF_FAIL=1"
+    set /a RU_XBF_COUNT+=1
 )
+if "%RU_XBF_FAIL%"=="1" (
+    echo BUILD FAILED: Could not publish compiled view XAML.
+    exit /b 1
+)
+echo Published !RU_XBF_COUNT! view XAML files.
+
+call dotnet build-server shutdown >nul 2>&1
 
 echo [12/13] Building and testing native desktop overlay...
 call powershell -ExecutionPolicy Bypass -File "%~dp0scripts\build_ru_desktop_overlay.ps1"

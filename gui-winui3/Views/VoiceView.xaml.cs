@@ -32,13 +32,18 @@ namespace RuApp.Views
             _overlayService = overlayService;
 
             _speedDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
-            _speedDebounceTimer.Tick += async (_, __) =>
-            {
-                _speedDebounceTimer.Stop();
-                await SaveVoiceSettingsAsync();
-            };
+            _speedDebounceTimer.Tick += OnSpeedDebounceTimerTick;
 
             _ = LoadVoiceSettingsAsync();
+        }
+
+        private async void OnSpeedDebounceTimerTick(object? sender, object e)
+        {
+            if (_speedDebounceTimer != null)
+            {
+                _speedDebounceTimer.Stop();
+            }
+            await SaveVoiceSettingsAsync();
         }
 
         public void Dispose()
@@ -55,8 +60,12 @@ namespace RuApp.Views
 
         private void DisposeTimerOnly()
         {
-            _speedDebounceTimer?.Stop();
-            _speedDebounceTimer = null;
+            if (_speedDebounceTimer != null)
+            {
+                _speedDebounceTimer.Tick -= OnSpeedDebounceTimerTick;
+                _speedDebounceTimer.Stop();
+                _speedDebounceTimer = null;
+            }
         }
 
         private async Task LoadVoiceSettingsAsync()

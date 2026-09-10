@@ -413,6 +413,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _fadeTimer.Tick -= OnFadeTick;
         _fadeTimer.Stop();
         if (_hwnd != IntPtr.Zero)
         {

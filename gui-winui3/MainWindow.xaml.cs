@@ -289,15 +289,8 @@ namespace RuApp
                     projectRoot,
                     _providerCatalogController,
                     _groupedCatalogs);
-                _chatView.SessionOpened += (_, e) =>
-                {
-                    SyncSidebarSelection(e.SessionId);
-                };
-                _chatView.SessionForked += async (_, forkedSession) =>
-                {
-                    await LoadSessionsAsync();
-                    SyncSidebarSelection(forkedSession.Id);
-                };
+                _chatView.SessionOpened += OnChatSessionOpened;
+                _chatView.SessionForked += OnChatSessionForked;
 
                 _voiceView = new VoiceView();
                 _voiceView.Initialize(_apiService, _voicePlayback, _subtitleOverlay);
@@ -487,6 +480,17 @@ namespace RuApp
                 Environment.NewLine,
                 new[] { TextBackend.Text, TextWorker.Text, TextVts.Text }
                     .Where(value => !string.IsNullOrWhiteSpace(value)));
+        }
+
+        private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
+        {
+            SyncSidebarSelection(e.SessionId);
+        }
+
+        private async void OnChatSessionForked(object? sender, SessionInfo forkedSession)
+        {
+            await LoadSessionsAsync();
+            SyncSidebarSelection(forkedSession.Id);
         }
 
         private void OnSettingsSaved(object? sender, EventArgs e)
@@ -806,7 +810,13 @@ namespace RuApp
                     _groupedCatalogs = null;
                 }
                 _observationTimer?.Stop();
-                _chatView?.Dispose();
+                _observationTimer = null;
+                if (_chatView != null)
+                {
+                    _chatView.SessionOpened -= OnChatSessionOpened;
+                    _chatView.SessionForked -= OnChatSessionForked;
+                    _chatView.Dispose();
+                }
                 _settingsView?.Dispose();
                 _voiceView?.Dispose();
                 _logView?.Dispose();
@@ -831,8 +841,16 @@ namespace RuApp
                 _agentController = null;
                 _policyController?.Dispose();
                 _policyController = null;
-                _policyControlPanel = null;
-                _auditPanel = null;
+                if (_policyControlPanel != null)
+                {
+                    _policyControlPanel.Controller = null;
+                    _policyControlPanel = null;
+                }
+                if (_auditPanel != null)
+                {
+                    _auditPanel.Log = null;
+                    _auditPanel = null;
+                }
                 if (ReferenceEquals(Instance, this))
                 {
                     Instance = null;

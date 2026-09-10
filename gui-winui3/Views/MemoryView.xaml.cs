@@ -8,22 +8,25 @@ using RuApp.Services;
 
 namespace RuApp.Views
 {
-    public sealed partial class MemoryView : UserControl
+    public sealed partial class MemoryView : UserControl, IDisposable
     {
         private ApiService? _apiService;
+        private bool _disposed;
         public ObservableCollection<MemoryItemDto> Memories { get; } = new();
 
         public MemoryView()
         {
             this.InitializeComponent();
             MemoryListView.ItemsSource = Memories;
-            Memories.CollectionChanged += (s, e) =>
+            Memories.CollectionChanged += OnMemoriesChanged;
+        }
+
+        private void OnMemoriesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (EmptyMemoryPanel != null)
             {
-                if (EmptyMemoryPanel != null)
-                {
-                    EmptyMemoryPanel.Visibility = Memories.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-                }
-            };
+                EmptyMemoryPanel.Visibility = Memories.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
 
         public void Initialize(ApiService apiService)
@@ -77,6 +80,9 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+            Memories.CollectionChanged -= OnMemoriesChanged;
             _apiService = null;
             Memories.Clear();
         }

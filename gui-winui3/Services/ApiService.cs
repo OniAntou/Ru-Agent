@@ -129,6 +129,8 @@ namespace RuApp.Services
 
         public void Dispose()
         {
+            RequestFailed = null;
+            SettingsSaved = null;
             _httpClient.Dispose();
         }
     }

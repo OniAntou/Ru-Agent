@@ -34,8 +34,10 @@ retired in 2026-09-04; the current pending-approval model exposes
   scope before a process starts, but nothing at the operating-system layer
   prevents a spawned process from reaching the network. OS-level enforcement
   is deferred to the separate sandbox project.
-- The bounded model selection loop allows at most ten sequential tool calls;
-  approvals still gate mutations. The former Worker v1 conversational
+- The bounded model selection loop allows at most 128 model steps and 256
+  sequential tool calls per budget window (`AgentBudgetPolicy`); exhausting the
+  window moves the run to `WaitingUser` and an explicit Continue opens a fresh
+  window. Approvals still gate mutations. The former Worker v1 conversational
   generation branch is retired; Worker v1 now carries only runtime/device
   adapters.
 

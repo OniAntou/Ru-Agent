@@ -6,6 +6,26 @@ Operational invariants for generation, voice, STT, VTS, observation, and live
 acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
 
+## Coding core and plugins
+
+The coding core is the product: Public Host, Broker execution authority, the
+managed Agent v2 Worker, the durable Agent SSE stream, and the `RuApp`/`RuAgent.Cli`
+clients. The coding core never depends on a media surface.
+
+Voice/STT, VTube Studio, and the native desktop overlay are **optional plugins**.
+A host without their toolchains is fully functional for coding:
+
+| Plugin | Boundary | Enable |
+| --- | --- | --- |
+| Voice / STT | Python optional extra `[voice]` in `pyproject.toml`; `/voice/stream`, `/voice/*`, `/stt/*` map only when `RU_MEDIA_SURFACES` is unset or `1` | install the extra, keep `RU_MEDIA_SURFACES` enabled |
+| VTube Studio | private Worker v1 `vts.catalog` plus public `/vts/*`, mapped only when `RU_MEDIA_SURFACES` is unset or `1` | enable `RU_MEDIA_SURFACES` |
+| Native desktop overlay | separate CMake/Spout2 project at `tools/ru_desktop_overlay`, never referenced by the GUI build | `build.bat -WithOverlay` (or `RU_WITH_OVERLAY=1`) |
+
+With `RU_MEDIA_SURFACES=0` a headless coding host serves the route contract
+minus the media routes. `build.bat` skips the overlay plugin by default and
+reports `Overlay plugin: skipped`; the matching CI job is `continue-on-error`.
+Missing or broken plugin toolchains must never fail the coding build.
+
 ## Process topology
 
 Public Host (`RuBackend.exe --managed-runtime`, ASP.NET Core) owns the

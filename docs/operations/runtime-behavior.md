@@ -230,8 +230,11 @@ speaking state, and acknowledgement share the normal voice path. Missing
 credentials, stale events, or a busy Agent run must report a skip/error and must
 not pretend that capture, reaction, or audio playback occurred.
 
-`RuDesktopOverlay` is an optional separate Spout2 receiver. It does not own
-RuApp, VTube Studio, the model, VTS actions, or voice. Building the receiver may
+`RuDesktopOverlay` is an optional plugin — a separate Spout2 receiver. It does not own
+RuApp, VTube Studio, the model, VTS actions, or voice, and the coding core never
+references it. `build.bat` skips it by default and only builds it with
+`-WithOverlay`/`RU_WITH_OVERLAY=1`, so a missing plugin toolchain cannot fail the
+coding build. Building the receiver may
 use a local vcpkg cache; the cache is build infrastructure, not application
 data or a distributable artifact.
 
@@ -285,7 +288,10 @@ driven by typed `agent.activity` SSE frames. It renders only safe state,
 basename/line-range, symbol/count,
 edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
-frames do not enter durable history or audit. Agent payloads and raw tool output
+frames do not enter durable history or audit. The projector covers nine kinds,
+including `compaction` (bounded covered-entry count and elapsed time) and
+`retry` (bounded read-only tool transport retry attempt), plus a generic
+`status` fallback. Agent payloads and raw tool output
 never enter TTS, VTS metadata, memory, or automation names.
 Assistant text is delivered separately as a typed `assistant.delta` transient
 frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
@@ -355,8 +361,11 @@ shared with a new or forked session and disappears on restart. Terminal
 deletion, external mutation (network egress, package installs, push/fetch),
 extended timeouts beyond the standard window, shell scripts, web calls when
 approval-gated, and unknown executable launch require approval.
-The model selection channel is active for every Agent run: each step allows up
-to ten model-initiated tool calls through the Agent Broker pipeline. Selection
+The model selection channel is active for every Agent run: one budget window
+allows up to 128 model steps and 256 model-initiated tool calls through the
+Agent Broker pipeline (`AgentBudgetPolicy.ModelStepLimit`/`ToolCallLimit`).
+Exhausting a window moves the run to `WaitingUser`; only an explicit Continue
+opens a fresh window. Selection
 JSON is never streamed into
 the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.

@@ -8,9 +8,9 @@ public sealed class AgentBudgetTests
         new(2026, 8, 24, 8, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void Thirty_second_model_step_is_allowed_and_next_attempt_enters_waiting_user()
+    public void Last_model_step_in_the_window_is_allowed_and_next_attempt_enters_waiting_user()
     {
-        var run = Run(modelSteps: 31);
+        var run = Run(modelSteps: AgentBudgetPolicy.ModelStepLimit - 1);
 
         var lastAllowed = AgentBudgetPolicy.ReserveModelStep(run, Now.AddSeconds(1));
         var exhausted = AgentBudgetPolicy.ReserveModelStep(
@@ -18,18 +18,19 @@ public sealed class AgentBudgetTests
             Now.AddSeconds(2));
 
         Assert.True(lastAllowed.Granted);
-        Assert.Equal(32, lastAllowed.NextRun.ModelStepsInWindow);
+        Assert.Equal(AgentBudgetPolicy.ModelStepLimit, lastAllowed.NextRun.ModelStepsInWindow);
         Assert.Equal(HarnessRunState.Running, lastAllowed.NextRun.State);
         Assert.False(exhausted.Granted);
         Assert.Equal("model_step_budget_exhausted", exhausted.ErrorCode);
         Assert.Equal(HarnessRunState.WaitingUser, exhausted.NextRun.State);
-        Assert.Equal(32, exhausted.NextRun.ModelStepsInWindow);
+        Assert.Equal(AgentBudgetPolicy.ModelStepLimit, exhausted.NextRun.ModelStepsInWindow);
     }
 
     [Fact]
-    public void Sixty_fourth_tool_call_is_allowed_and_batch_reservation_is_atomic()
+    public void Last_tool_call_in_the_window_is_allowed_and_batch_reservation_is_atomic()
     {
-        var run = Run(toolCalls: 63);
+        var limit = AgentBudgetPolicy.ToolCallLimit;
+        var run = Run(toolCalls: limit - 1);
 
         var lastAllowed = AgentBudgetPolicy.ReserveToolCalls(run, 1, Now.AddSeconds(1));
         var exhausted = AgentBudgetPolicy.ReserveToolCalls(
@@ -37,17 +38,26 @@ public sealed class AgentBudgetTests
             1,
             Now.AddSeconds(2));
         var oversizedBatch = AgentBudgetPolicy.ReserveToolCalls(
-            Run(toolCalls: 63),
+            Run(toolCalls: limit - 1),
             2,
             Now.AddSeconds(1));
 
         Assert.True(lastAllowed.Granted);
-        Assert.Equal(64, lastAllowed.NextRun.ToolCallsInWindow);
+        Assert.Equal(limit, lastAllowed.NextRun.ToolCallsInWindow);
         Assert.False(exhausted.Granted);
         Assert.Equal("tool_call_budget_exhausted", exhausted.ErrorCode);
         Assert.Equal(HarnessRunState.WaitingUser, exhausted.NextRun.State);
         Assert.False(oversizedBatch.Granted);
-        Assert.Equal(63, oversizedBatch.NextRun.ToolCallsInWindow);
+        Assert.Equal(limit - 1, oversizedBatch.NextRun.ToolCallsInWindow);
+    }
+
+    [Fact]
+    public void A_window_allows_a_long_coding_run_before_asking_the_user_to_continue()
+    {
+        // Regression guard for coding autonomy: a single window must comfortably fit
+        // many exploratory tool calls plus edit/verify cycles, not just a few steps.
+        Assert.True(AgentBudgetPolicy.ModelStepLimit >= 128);
+        Assert.True(AgentBudgetPolicy.ToolCallLimit >= 256);
     }
 
     [Fact]
@@ -72,8 +82,8 @@ public sealed class AgentBudgetTests
         var run = Run(
             status: HarnessRunState.WaitingUser,
             budgetWindow: 2,
-            modelSteps: 32,
-            toolCalls: 64);
+            modelSteps: AgentBudgetPolicy.ModelStepLimit,
+            toolCalls: AgentBudgetPolicy.ToolCallLimit);
 
         var continued = AgentBudgetPolicy.Continue(run, Now.AddSeconds(1));
 

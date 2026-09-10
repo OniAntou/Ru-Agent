@@ -1,13 +1,14 @@
 # Verification
 
-> **Current as of 2026-09-10 (HEAD `cfb52d54` + công việc chưa commit).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-10 (HEAD `71b5fabe` + công việc chưa commit).** Older dated entries below are history; only this table is current.
 > Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals.
 
 | Surface | Current status |
 | --- | --- |
 | Public route | 64 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | GUI 418/418, Broker 571/571, Harness.Core 275/275, RuBackend 794/794, CLI 200/200, Protocol 24/24 (Debug, 2026-09-10 worktree). Full 13-project matrix: re-run `scripts/test_dotnet.ps1` and record the SHA + counts here before release. |
+| .NET tests | GUI 420/420, Broker 571/571, Harness.Core 280/280, Client 50/50, RuBackend 794/794, CLI 202/202, Protocol 24/24 (Debug, 2026-09-10 worktree). Full 13-project matrix: re-run `scripts/test_dotnet.ps1` and record the SHA + counts here before release. |
 | Python suite | 306 passed + 1 intentional failure: `test_completed_implementation_archives_are_not_kept_in_the_checkout` fails while the 3 active plans (78 unchecked steps) remain — see `docs/README.md`. `ruff` + `mypy src` (29 files) passed. |
+| Plugins | voice/STT, VTube Studio, native overlay là plugin tùy chọn; coding core không phụ thuộc. `build.bat` skip overlay mặc định (in `Overlay plugin: skipped`), dùng `-WithOverlay` để build; CI job `native-overlay` là `continue-on-error`. Xem `docs/architecture.md` mục "Coding core and plugins". |
 | `git diff --check` | passed |
 
 ## Pi Phase 3: worker dual-port compat + /worker alias (2026-09-09, cập nhật 2026-09-10)

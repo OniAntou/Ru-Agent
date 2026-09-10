@@ -2,8 +2,12 @@ namespace RuAgent.Harness.Core;
 
 public static class AgentBudgetPolicy
 {
-    public const int ModelStepLimit = 32;
-    public const int ToolCallLimit = 64;
+    // Bounds one budget window. A window is large enough for a real coding task
+    // (many exploratory tool calls plus edit/verify cycles) without letting a
+    // runaway loop spend without limit: when a window is exhausted the run moves
+    // to WaitingUser and only an explicit Continue opens a fresh window.
+    public const int ModelStepLimit = 128;
+    public const int ToolCallLimit = 256;
 
     public static AgentBudgetReservation ReserveModelStep(
         AgentRun run,

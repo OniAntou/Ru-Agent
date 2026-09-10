@@ -3,9 +3,21 @@ setlocal enabledelayedexpansion
 echo ============================================
 echo  Ru Desktop - Build + PRI Generation Script
 echo  .NET 10 + ASP.NET Core + WinUI 3 (Unpackaged Self-Contained)
-echo  Agent-only runtime (63 HTTP + 1 WS, managed C# Worker, CLI tracer)
+echo  Coding core: 64 HTTP + 1 WS, managed C# Worker, CLI tracer
+echo  Plugins (optional): voice/STT, VTube Studio, desktop overlay
 echo ============================================
 echo.
+
+rem Optional plugins. The coding core never depends on a plugin, so a missing
+rem plugin toolchain must not fail this build. Enable the native overlay with
+rem `build.bat -WithOverlay` or RU_WITH_OVERLAY=1.
+set "WITH_OVERLAY=0"
+for %%a in (%*) do (
+    if /I "%%a"=="-WithOverlay" set "WITH_OVERLAY=1"
+    if /I "%%a"=="--with-overlay" set "WITH_OVERLAY=1"
+    if /I "%%a"=="-WithPlugins" set "WITH_OVERLAY=1"
+)
+if /I "%RU_WITH_OVERLAY%"=="1" set "WITH_OVERLAY=1"
 
 set "PROJECT_DIR=%~dp0gui-winui3"
 set "CSPROJ=%PROJECT_DIR%\RuApp.csproj"
@@ -196,18 +208,25 @@ echo Published !RU_XBF_COUNT! view XAML files.
 
 call dotnet build-server shutdown >nul 2>&1
 
-echo [12/13] Building and testing native desktop overlay...
+echo [12/13] Native desktop overlay plugin (optional)...
+if not "%WITH_OVERLAY%"=="1" goto :overlay_skipped
 call powershell -ExecutionPolicy Bypass -File "%~dp0scripts\build_ru_desktop_overlay.ps1"
 if errorlevel 1 (
     echo.
-    echo NATIVE OVERLAY BUILD FAILED!
+    echo NATIVE OVERLAY PLUGIN BUILD FAILED!
     exit /b 1
 )
 if not exist "%~dp0tools\ru_desktop_overlay\out\build\Release\RuDesktopOverlay.exe" (
     echo.
-    echo NATIVE OVERLAY BUILD FAILED: RuDesktopOverlay.exe was not created.
+    echo NATIVE OVERLAY PLUGIN BUILD FAILED: RuDesktopOverlay.exe was not created.
     exit /b 1
 )
+echo Native overlay plugin built.
+goto :overlay_done
+:overlay_skipped
+echo   SKIPPED: native desktop overlay is an optional plugin.
+echo   Enable it with:  build.bat -WithOverlay   (needs Visual Studio C++ + vcpkg)
+:overlay_done
 
 call dotnet build-server shutdown >nul 2>&1
 echo [13/13] Build complete!
@@ -224,6 +243,11 @@ echo  Broker:             %BROKER_PUBLISH_DIR%\RuAgent.Broker.exe
 echo  Backend:            %BACKEND_PUBLISH_DIR%\RuBackend.exe
 echo  Output:             %PUBLISH_DIR%\RuApp.exe
 for %%I in ("%PUBLISH_DIR%\RuApp.exe") do echo  Published:          %%~tI
+if "%WITH_OVERLAY%"=="1" (
+    echo  Overlay plugin:      built
+) else (
+    echo  Overlay plugin:      skipped ^(optional; build.bat -WithOverlay^)
+)
 echo  Launch:             start_dev.bat
 echo ============================================
 echo.

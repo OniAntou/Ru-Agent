@@ -70,6 +70,7 @@ def _run_build_script(
     gui_publish_exists: bool = True,
     missing_artifact: str = "",
     missing_xaml: str = "",
+    with_overlay: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_root = tmp_path / "checkout"
@@ -111,8 +112,11 @@ def _run_build_script(
     env = os.environ.copy()
     env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
     env["RU_BUILD_TEST_ROOT"] = str(build_root)
+    arguments = ["cmd", "/d", "/c", str(build_root / "build.bat")]
+    if with_overlay:
+        arguments.append("-WithOverlay")
     return subprocess.run(
-        ["cmd", "/d", "/c", str(build_root / "build.bat")],
+        arguments,
         cwd=build_root,
         env=env,
         text=True,
@@ -122,8 +126,41 @@ def _run_build_script(
     )
 
 
-def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) -> None:
+def test_overlay_plugin_is_skipped_by_default_and_core_build_still_succeeds(
+    tmp_path: Path,
+) -> None:
     result = _run_build_script(tmp_path, overlay_exists=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Build complete" in result.stdout
+    assert "SKIPPED" in result.stdout
+    assert "Overlay plugin:      skipped" in result.stdout
+    assert not (tmp_path / "checkout" / "powershell.invocations").exists()
+
+
+def test_broken_overlay_toolchain_cannot_fail_the_default_core_build(
+    tmp_path: Path,
+) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, native_failure=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Build complete" in result.stdout
+    assert not (tmp_path / "checkout" / "powershell.invocations").exists()
+
+
+def test_with_overlay_flag_builds_the_plugin(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, with_overlay=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    invocations = (tmp_path / "checkout" / "powershell.invocations").read_text(
+        encoding="utf-8"
+    )
+    assert "build_ru_desktop_overlay.ps1" in invocations
+    assert "Overlay plugin:      built" in result.stdout
+
+
+def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, with_overlay=True)
 
     assert result.returncode == 0, result.stdout + result.stderr
     invocations = (tmp_path / "checkout" / "powershell.invocations").read_text(
@@ -148,7 +185,9 @@ def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) ->
 def test_missing_runtime_publish_artifact_stops_release_before_native_build(
     tmp_path: Path, missing_artifact: str,
 ) -> None:
-    result = _run_build_script(tmp_path, overlay_exists=True, missing_artifact=missing_artifact)
+    result = _run_build_script(
+        tmp_path, overlay_exists=True, missing_artifact=missing_artifact, with_overlay=True
+    )
     assert result.returncode != 0
     expected_diagnostic = {
         "worker": "RuAgent.Runtime.Worker.exe was not created.",
@@ -159,8 +198,8 @@ def test_missing_runtime_publish_artifact_stops_release_before_native_build(
     assert not (tmp_path / "checkout/powershell.invocations").exists()
 
 
-def test_native_build_failure_stops_release_build(tmp_path: Path) -> None:
-    result = _run_build_script(tmp_path, overlay_exists=True, native_failure=True)
+def test_native_build_failure_stops_release_build_when_plugin_is_enabled(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, native_failure=True, with_overlay=True)
 
     assert result.returncode != 0
     assert "Build complete" not in result.stdout
@@ -179,7 +218,7 @@ def test_release_copies_x64_compiled_xaml(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("missing_xaml", ["App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"])
 def test_missing_compiled_xaml_stops_release(tmp_path: Path, missing_xaml: str) -> None:
-    result = _run_build_script(tmp_path, overlay_exists=True, missing_xaml=missing_xaml)
+    result = _run_build_script(tmp_path, overlay_exists=True, missing_xaml=missing_xaml, with_overlay=True)
     assert result.returncode != 0
     assert "Build complete" not in result.stdout
     assert "was not created" in result.stdout
@@ -191,6 +230,7 @@ def test_missing_gui_publish_fails_before_overlay_build(tmp_path: Path) -> None:
         tmp_path,
         overlay_exists=True,
         gui_publish_exists=False,
+        with_overlay=True,
     )
 
     assert result.returncode != 0

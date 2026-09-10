@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core.Context;
@@ -12,16 +11,6 @@ using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
 
-/// <summary>
-/// Implemented by gateways that own live tool processes. Lets the coordinator forward
-/// run-scoped cancellation so in-flight terminal executions terminate their whole
-/// process tree and return cancelled receipts instead of being abandoned.
-/// </summary>
-public interface IToolRunCancellation
-{
-    Task CancelRunAsync(RunId runId, CancellationToken cancellationToken);
-}
-
 public sealed class AgentRunCoordinator
 {
     private readonly IModelStepRunner _model;
@@ -32,15 +21,12 @@ public sealed class AgentRunCoordinator
     private readonly TransientFrameBuffer _frames;
     private readonly ITransientContentRedactor _transientRedactor;
     private readonly AgentToolExecutionPipeline _tools;
-    private readonly IToolRunCancellation? _cancellation;
-    private readonly ReconciliationInspectionGate? _inspectionGate;
-    private readonly IModelContextLimitProvider? _contextLimit;
+    private readonly AgentRunCompaction _compaction;
+    private readonly AgentRunLifecycle _lifecycle;
+    private readonly ISystemPromptContextProvider _promptContextProvider;
     private readonly IAgentActivitySink? _activitySink;
     private readonly IAgentReplyPolicy _replyPolicy;
     private readonly IAgentReplyEffectSink _replyEffects;
-    private readonly ISystemPromptContextProvider _promptContextProvider;
-    private readonly ContextBudgetPolicy _contextBudgetPolicy;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _compactionGates = new(StringComparer.Ordinal);
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -69,14 +55,18 @@ public sealed class AgentRunCoordinator
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
         _transientRedactor = transientRedactor
             ?? PassthroughTransientContentRedactor.Instance;
-        _contextLimit = contextLimit;
-        _inspectionGate = inspectionGate;
         _activitySink = activitySink;
         _replyPolicy = replyPolicy ?? new PassthroughAgentReplyPolicy();
         _replyEffects = replyEffects ?? new NoopAgentReplyEffectSink();
         _promptContextProvider = promptContextProvider
             ?? throw new ArgumentNullException(nameof(promptContextProvider));
-        _contextBudgetPolicy = contextBudgetPolicy ?? new ContextBudgetPolicy();
+        _compaction = new AgentRunCompaction(
+            _store,
+            _contextAssembler,
+            _ids,
+            _time,
+            contextLimit,
+            contextBudgetPolicy ?? new ContextBudgetPolicy());
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -87,7 +77,12 @@ public sealed class AgentRunCoordinator
             _transientRedactor,
             inspectionGate,
             activitySink);
-        _cancellation = gateway as IToolRunCancellation;
+        _lifecycle = new AgentRunLifecycle(
+            _store,
+            _ids,
+            _time,
+            inspectionGate,
+            gateway as IToolRunCancellation);
     }
 
     public async Task<AgentRunStepResult> RunOneStepAsync(
@@ -103,7 +98,7 @@ public sealed class AgentRunCoordinator
         var context = await _contextAssembler
             .AssembleAsync(runId, cancellationToken)
             .ConfigureAwait(false);
-        var preflight = await PreflightContextAsync(
+        var preflight = await _compaction.PreflightContextAsync(
                 run,
                 context,
                 cancellationToken)
@@ -502,217 +497,54 @@ public sealed class AgentRunCoordinator
         return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
-    public async Task<AgentRun> AcknowledgeHistoryAsync(
+    public Task<AgentRun> AcknowledgeHistoryAsync(
         RunId runId,
         HistoryWaitKind historyWaitKind,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (run.State != HarnessRunState.WaitingHistory
-            || run.HistoryWaitKind != historyWaitKind)
-        {
-            throw new InvalidOperationException("history_wait_mismatch");
-        }
+        CancellationToken cancellationToken) =>
+        _lifecycle.AcknowledgeHistoryAsync(runId, historyWaitKind, cancellationToken);
 
-        var transition = historyWaitKind == HistoryWaitKind.UserBeforeFirstStep
-            ? HarnessRunTransition.AcknowledgeUserHistory
-            : HarnessRunTransition.AcknowledgeFinalHistory;
-        var stateChange = AgentRunStateMachine.TryTransition(run.Status, transition);
-        if (!stateChange.Accepted)
-        {
-            throw new InvalidOperationException(stateChange.ErrorCode);
-        }
-
-        var next = run.Advance(
-            stateChange.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            1,
-            _time.UtcNow);
-        return await CommitAsync(
-                run,
-                next,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.RunStateChanged,
-                        safeCode: StateCode(next.State)),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    public async Task<AgentRun> FailAsync(
+    public Task<AgentRun> FailAsync(
         RunId runId,
         string errorCode,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        var stateChange = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.Fail);
-        if (!stateChange.Accepted)
-        {
-            throw new InvalidOperationException(stateChange.ErrorCode);
-        }
+        CancellationToken cancellationToken) =>
+        _lifecycle.FailAsync(runId, errorCode, cancellationToken);
 
-        var failure = new HarnessEventIntent(
-            _ids.NewEventId(),
-            HarnessEventKind.RunFailed,
-            safeCode: errorCode);
-        var next = run.Advance(
-            stateChange.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            1,
-            _time.UtcNow,
-            errorCode);
-        return await CommitAsync(
-                run,
-                next,
-                new[] { failure },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    public async Task<AgentRun> ContinueAsync(
+    public Task<AgentRun> ContinueAsync(
         RunId runId,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        var next = AgentBudgetPolicy.Continue(run, _time.UtcNow);
-        return await CommitAsync(
-                run,
-                next,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.ContinueRequested,
-                        safeCode: "continued"),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
+        CancellationToken cancellationToken) =>
+        _lifecycle.ContinueAsync(runId, cancellationToken);
 
-    public async Task<ContextCompactionResult> CompactAsync(
+    public Task<ContextCompactionResult> CompactAsync(
         RunId runId,
         ContextCompactionStrategy strategy,
         ContextCompactionReason reason,
-        CancellationToken cancellationToken)
-    {
-        if (!Enum.IsDefined(strategy))
-        {
-            throw new ArgumentOutOfRangeException(nameof(strategy));
-        }
-
-        if (!Enum.IsDefined(reason))
-        {
-            throw new ArgumentOutOfRangeException(nameof(reason));
-        }
-
-        var gate = _compactionGates.GetOrAdd(runId.Value, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-            if (run.State.IsTerminal())
-            {
-                return ContextCompactionResult.NoOp(run, strategy);
-            }
-
-            var providerLimit = _contextLimit?.MaxPromptTokens(runId);
-            if (providerLimit is not { } limitTokens)
-            {
-                return ContextCompactionResult.NotAvailable(run, strategy);
-            }
-
-            var context = await _contextAssembler
-                .AssembleAsync(runId, cancellationToken)
-                .ConfigureAwait(false);
-            return await CompactSnapshotLockedAsync(
-                    run,
-                    context,
-                    limitTokens,
-                    strategy,
-                    reason,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
+        CancellationToken cancellationToken) =>
+        _compaction.CompactAsync(runId, strategy, reason, cancellationToken);
 
     /// <summary>
     /// Moves a Running run to WaitingApproval without consuming any budget counter.
     /// </summary>
-    public async Task<AgentRun> EnterApprovalWaitAsync(
+    public Task<AgentRun> EnterApprovalWaitAsync(
         RunId runId,
         ApprovalId approvalId,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        var waiting = AgentBudgetPolicy.EnterApprovalWait(run, _time.UtcNow);
-        return await CommitAsync(
-                run,
-                waiting,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.ApprovalRequested,
-                        approvalId: approvalId,
-                        safeCode: "approval_required"),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
+        CancellationToken cancellationToken) =>
+        _lifecycle.EnterApprovalWaitAsync(runId, approvalId, cancellationToken);
 
     /// <summary>
     /// Returns a WaitingApproval run to Running after an approve/deny/typed-expiry
     /// decision. Budget counters remain untouched: waits never consume budget.
     /// </summary>
-    public async Task<AgentRun> ResumeAfterApprovalAsync(
+    public Task<AgentRun> ResumeAfterApprovalAsync(
         RunId runId,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        var resumed = AgentBudgetPolicy.ResumeAfterApproval(run, _time.UtcNow);
-        return await CommitAsync(
-                run,
-                resumed,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.RunStateChanged,
-                        safeCode: "approval_resolved"),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
+        CancellationToken cancellationToken) =>
+        _lifecycle.ResumeAfterApprovalAsync(runId, cancellationToken);
 
     /// <summary>
     /// Forwards run-scoped cancellation to the gateway so in-flight terminal processes
     /// are killed through their Job Object. Safe to call when nothing is running.
     /// </summary>
     public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken) =>
-        _cancellation?.CancelRunAsync(runId, cancellationToken) ?? Task.CompletedTask;
+        _lifecycle.CancelRunningToolsAsync(runId, cancellationToken);
 
     /// <summary>
     /// Applies the typed user reconciliation decision to a run in the
@@ -720,200 +552,11 @@ public sealed class AgentRunCoordinator
     /// resumes evaluation while the mutation gate denies non-read-only calls until one
     /// durable read-only inspection receipt is committed.
     /// </summary>
-    public async Task<AgentRun> ApplyReconciliationAsync(
+    public Task<AgentRun> ApplyReconciliationAsync(
         RunId runId,
         ReconciliationCommand command,
-        CancellationToken cancellationToken)
-    {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (run.State != HarnessRunState.ReconciliationRequired)
-        {
-            throw new InvalidOperationException("invalid_run_state");
-        }
-
-        var stateChange = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.ApplyReconciliation);
-        if (!stateChange.Accepted)
-        {
-            throw new InvalidOperationException(stateChange.ErrorCode);
-        }
-
-        if (command.Kind == ReconciliationCommandKind.UnknownContinue)
-        {
-            _inspectionGate?.Activate(runId);
-        }
-
-        var next = run.Advance(
-            stateChange.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            1,
-            _time.UtcNow);
-        return await CommitAsync(
-                run,
-                next,
-                new[]
-                {
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.ReconciliationResolved,
-                        safeCode: command.ToWireToken()),
-                },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task<ContextPreflightResult> PreflightContextAsync(
-        AgentRun run,
-        ModelContextSnapshot context,
-        CancellationToken cancellationToken)
-    {
-        var providerLimit = _contextLimit?.MaxPromptTokens(run.RunId);
-        if (providerLimit is not { } limitTokens)
-        {
-            return new ContextPreflightResult(run, context, null);
-        }
-
-        var gate = _compactionGates.GetOrAdd(
-            run.RunId.Value,
-            _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var decision = _contextBudgetPolicy.Evaluate(
-                ModelContextSizeEstimator.EstimateTokens(context),
-                limitTokens,
-                ContextCompactionStrategy.Normal);
-            if (decision.NeedsCompaction)
-            {
-                var compaction = await CompactSnapshotLockedAsync(
-                        run,
-                        context,
-                        limitTokens,
-                        ContextCompactionStrategy.Normal,
-                        ContextCompactionReason.Automatic,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (compaction.Outcome == ContextCompactionOutcome.Committed)
-                {
-                    run = compaction.Run!;
-                    context = await _contextAssembler
-                        .AssembleAsync(run.RunId, cancellationToken)
-                        .ConfigureAwait(false);
-                    decision = _contextBudgetPolicy.Evaluate(
-                        ModelContextSizeEstimator.EstimateTokens(context),
-                        limitTokens,
-                        ContextCompactionStrategy.Normal);
-                }
-                else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
-                    or ContextCompactionOutcome.RunNotFound)
-                {
-                    return new ContextPreflightResult(
-                        compaction.Run ?? run,
-                        null,
-                        compaction.ErrorCode ?? "commit_conflict");
-                }
-            }
-
-            return ModelContextSizeEstimator.EstimateTokens(context) > decision.UsablePromptTokens
-                ? new ContextPreflightResult(run, null, "context_limit_reached")
-                : new ContextPreflightResult(run, context, null);
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
-
-    private async Task<ContextCompactionResult> CompactSnapshotLockedAsync(
-        AgentRun run,
-        ModelContextSnapshot context,
-        long limitTokens,
-        ContextCompactionStrategy strategy,
-        ContextCompactionReason reason,
-        CancellationToken cancellationToken)
-    {
-        var decision = _contextBudgetPolicy.Evaluate(
-            ModelContextSizeEstimator.EstimateTokens(context),
-            limitTokens,
-            strategy);
-        var eventId = _ids.NewEventId();
-        var plan = ContextCompactionPlanner.Plan(
-            context,
-            decision,
-            "compact-" + eventId.Value,
-            reason);
-        if (plan is null)
-        {
-            return ContextCompactionResult.NoOp(run, strategy);
-        }
-
-        var summaryBytes = Encoding.UTF8.GetBytes(plan.SummaryText);
-        var summaryPayload = new HarnessPayloadIntent(
-            _ids.NewPayloadId(),
-            HarnessPayloadKind.ModelContextSummary,
-            HarnessPayloadAudience.ModelContext,
-            HarnessPayloadEncoding.Utf8Text,
-            Math.Max(summaryBytes.Length, 1),
-            summaryBytes);
-        var compactedEvent = new HarnessEventIntent(
-            eventId,
-            HarnessEventKind.ContextCompacted,
-            safeCount: checked((int)plan.CoveredEntries.Count),
-            safeCode: "context_compacted");
-        var next = run.Advance(
-            run.Status,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            appendedEventCount: 1,
-            updatedAt: _time.UtcNow);
-        var commit = await _store.CommitAsync(
-                new HarnessCommit(
-                    run.RunId,
-                    run.Version,
-                    next,
-                    [compactedEvent],
-                    [summaryPayload],
-                    Array.Empty<ConversationOutboxIntent>(),
-                    new ContextCompactionIntent(
-                        run.RunId,
-                        plan.CompactionId,
-                        summaryPayload.PayloadId,
-                        strategy,
-                        reason,
-                        plan.CoveredRanges,
-                        plan.BeforeTokens,
-                        plan.AfterTokens,
-                        plan.InputHash)),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return commit.Outcome switch
-        {
-            HarnessCommitOutcome.Committed => new ContextCompactionResult(
-                ContextCompactionOutcome.Committed,
-                commit.Run,
-                strategy,
-                plan.CompactionId,
-                plan.BeforeTokens,
-                plan.AfterTokens),
-            HarnessCommitOutcome.VersionConflict => new ContextCompactionResult(
-                ContextCompactionOutcome.CommitConflict,
-                commit.Run,
-                strategy,
-                ErrorCode: "commit_conflict"),
-            HarnessCommitOutcome.RunNotFound => new ContextCompactionResult(
-                ContextCompactionOutcome.RunNotFound,
-                null,
-                strategy,
-                ErrorCode: "run_not_found"),
-            _ => throw new InvalidOperationException("unknown_commit_outcome"),
-        };
-    }
+        CancellationToken cancellationToken) =>
+        _lifecycle.ApplyReconciliationAsync(runId, command, cancellationToken);
 
     private async Task<AgentRun> CommitContextLimitAsync(
         AgentRun run,
@@ -1167,7 +810,7 @@ public sealed class AgentRunCoordinator
         ModelStepId modelStepId,
         DateTimeOffset startedAt)
     {
-        await FailAsync(
+        await _lifecycle.FailAsync(
                 run.RunId,
                 "prompt_contract_invalid",
                 CancellationToken.None)
@@ -1231,15 +874,4 @@ public sealed class AgentRunCoordinator
         };
     }
 
-    private static string StateCode(HarnessRunState state) => state switch
-    {
-        HarnessRunState.Running => "running",
-        HarnessRunState.Completed => "completed",
-        _ => "state_changed",
-    };
-
-    private sealed record ContextPreflightResult(
-        AgentRun? Run,
-        ModelContextSnapshot? Context,
-        string? ErrorCode);
 }

@@ -432,14 +432,18 @@ public sealed class TuiInteractiveTests
         try
         {
             var echo = InteractiveLineReader.BuildSubmitEcho("Ê");
+            var rows = echo.Split('\n');
 
+            Assert.Equal(3, rows.Length);
             Assert.Contains("Ê", echo);
             Assert.Contains(">", echo);
             Assert.Contains("\x1b[100m", echo); // dark-gray fill like the sample bar
             Assert.DoesNotContain("│", echo);
             Assert.DoesNotContain("╭", echo);
-            Assert.DoesNotContain("\n", echo);
-            Assert.Equal(80, InteractiveLineReader.StripAnsi(echo).Length);
+            foreach (var row in rows)
+            {
+                Assert.Equal(80, InteractiveLineReader.StripAnsi(row).Length);
+            }
         }
         finally
         {
@@ -455,9 +459,11 @@ public sealed class TuiInteractiveTests
         try
         {
             var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
+            var rows = echo.Split('\n');
 
-            Assert.DoesNotContain("\n", echo);
-            Assert.Contains("a b", echo);
+            Assert.Equal(3, rows.Length);
+            Assert.Contains("a b", rows[1]);
+            Assert.DoesNotContain("a\nb", echo);
         }
         finally
         {

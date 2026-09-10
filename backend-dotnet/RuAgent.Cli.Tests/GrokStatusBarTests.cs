@@ -11,12 +11,13 @@ public sealed class GrokStatusBarTests
     {
         using var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(writer) });
-        GrokStatusBar.Render(console, "D:\\repo", "Kilo Gateway", "grok-4.5", "standard", 3, 1500);
+        GrokStatusBar.Render(console, "D:\\repo", "standard", 3, 1500);
         var output = writer.ToString();
 
         Assert.Contains("turn 3", output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("1500", output, StringComparison.Ordinal);
-        Assert.Contains("grok-4.5", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("grok-4.5", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Kilo Gateway", output, StringComparison.Ordinal);
         Assert.DoesNotContain("─", output, StringComparison.Ordinal);
     }
 
@@ -25,7 +26,7 @@ public sealed class GrokStatusBarTests
     {
         using var writer = new StringWriter();
         var console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(writer) });
-        GrokStatusBar.Render(console, "D:\\repo", "Kilo Gateway", "grok-4.5", "standard", 1, null);
+        GrokStatusBar.Render(console, "D:\\repo", "standard", 1, null);
         var output = writer.ToString();
 
         Assert.Contains("turn 1", output, StringComparison.OrdinalIgnoreCase);

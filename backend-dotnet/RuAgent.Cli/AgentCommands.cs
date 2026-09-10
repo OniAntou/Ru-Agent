@@ -1222,7 +1222,7 @@ public sealed class AgentCommands
                 {
                     // No live console; Spectre keeps its default width.
                 }
-                Tui.GrokStatusBar.Render(statusConsole, canonicalWorkspace, backendName, activeModel, cmd.Preset, turn, lastTotalTokens);
+                Tui.GrokStatusBar.Render(statusConsole, canonicalWorkspace, cmd.Preset, turn, lastTotalTokens);
                 await _out.FlushAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)

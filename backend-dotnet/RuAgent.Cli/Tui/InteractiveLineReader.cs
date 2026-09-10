@@ -225,8 +225,8 @@ public sealed class InteractiveLineReader
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
 
     /// <summary>
-    /// Echo kiểu thanh bar theo mẫu (nền xám mờ full-width, ">" accent, text trắng).
-    /// Text nhiều dòng gộp phẳng giữ đúng 1 dòng logic (terminal tự wrap).
+    /// Echo kiểu thanh bar theo mẫu: 3 dòng nền xám full-width (trống + content
+    /// + trống), ">" accent, text trắng. Text nhiều dòng gộp phẳng.
     /// </summary>
     public static string BuildSubmitEcho(string text)
     {
@@ -236,13 +236,15 @@ public sealed class InteractiveLineReader
             return "> " + body;
         }
         int width = Math.Max(10, ComputeBoxWidth());
+        var blankRow = AnsiTheme.BgDarkGrayCode + new string(' ', width) + AnsiTheme.Reset;
         var inner = "> " + body;
         int pad = Math.Max(0, width - 2 - StripAnsi(inner).Length);
-        return AnsiTheme.BgDarkGrayCode
+        var contentRow = AnsiTheme.BgDarkGrayCode
             + "  "
             + AnsiTheme.CyanCode + "> "
             + AnsiTheme.White15Code + body + new string(' ', pad)
             + AnsiTheme.Reset;
+        return blankRow + "\n" + contentRow + "\n" + blankRow;
     }
 
     public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash)

@@ -25,8 +25,7 @@ public sealed class AgentRunCoordinator
     private readonly AgentRunLifecycle _lifecycle;
     private readonly ISystemPromptContextProvider _promptContextProvider;
     private readonly IAgentActivitySink? _activitySink;
-    private readonly IAgentReplyPolicy _replyPolicy;
-    private readonly IAgentReplyEffectSink _replyEffects;
+    private readonly AgentRunStepHandlers _steps;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -56,8 +55,6 @@ public sealed class AgentRunCoordinator
         _transientRedactor = transientRedactor
             ?? PassthroughTransientContentRedactor.Instance;
         _activitySink = activitySink;
-        _replyPolicy = replyPolicy ?? new PassthroughAgentReplyPolicy();
-        _replyEffects = replyEffects ?? new NoopAgentReplyEffectSink();
         _promptContextProvider = promptContextProvider
             ?? throw new ArgumentNullException(nameof(promptContextProvider));
         _compaction = new AgentRunCompaction(
@@ -83,6 +80,14 @@ public sealed class AgentRunCoordinator
             _time,
             inspectionGate,
             gateway as IToolRunCancellation);
+        _steps = new AgentRunStepHandlers(
+            _store,
+            _ids,
+            _time,
+            replyPolicy ?? new PassthroughAgentReplyPolicy(),
+            replyEffects ?? new NoopAgentReplyEffectSink(),
+            activitySink,
+            _tools);
     }
 
     public async Task<AgentRunStepResult> RunOneStepAsync(
@@ -320,7 +325,7 @@ public sealed class AgentRunCoordinator
         {
             if (ConsecutiveToolCallGuard.IsRepeated(context, step.ToolCalls))
             {
-                return await HandleRepeatedToolStepAsync(
+                return await _steps.HandleRepeatedToolStepAsync(
                         run,
                         modelStepId,
                         step,
@@ -330,7 +335,7 @@ public sealed class AgentRunCoordinator
                     .ConfigureAwait(false);
             }
 
-            return await HandleToolStepAsync(
+            return await _steps.HandleToolStepAsync(
                     run,
                     modelStepId,
                     step,
@@ -343,7 +348,7 @@ public sealed class AgentRunCoordinator
 
         if (FailedToolCompletionGuard.TryGetFailure(context, out var failureCode))
         {
-            return await HandleUnverifiedFailureStepAsync(
+            return await _steps.HandleUnverifiedFailureStepAsync(
                     run,
                     modelStepId,
                     step,
@@ -355,7 +360,7 @@ public sealed class AgentRunCoordinator
                 .ConfigureAwait(false);
         }
 
-        return await HandleFinalStepAsync(
+        return await _steps.HandleFinalStepAsync(
                 run,
                 modelStepId,
                 step,
@@ -364,137 +369,6 @@ public sealed class AgentRunCoordinator
                 promptComposedEvent,
                 cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private async Task<AgentRunStepResult> HandleUnverifiedFailureStepAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        AssistantStep step,
-        string errorCode,
-        int droppedCount,
-        HarnessPayloadIntent promptReceiptPayload,
-        HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
-    {
-        const string stepErrorCode = "unverified_after_tool_failure";
-        var transition = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.Fail);
-        if (!transition.Accepted)
-        {
-            throw new InvalidOperationException(transition.ErrorCode);
-        }
-
-        var assistantPayloadId = _ids.NewPayloadId();
-        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
-        var assistantPayload = new HarnessPayloadIntent(
-            assistantPayloadId,
-            HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.InternalOnly,
-            HarnessPayloadEncoding.Json,
-            Math.Max(assistantBytes.Length, 1),
-            assistantBytes);
-        var events = new List<HarnessEventIntent>
-        {
-            promptComposedEvent,
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.ModelStepCompleted,
-                modelStepId: modelStepId,
-                payloadId: assistantPayloadId,
-                safeCode: stepErrorCode),
-        };
-        if (droppedCount > 0)
-        {
-            events.Add(new HarnessEventIntent(
-                _ids.NewEventId(),
-                HarnessEventKind.TransientFramesDropped,
-                modelStepId: modelStepId,
-                safeCount: droppedCount));
-        }
-        events.Add(new HarnessEventIntent(
-            _ids.NewEventId(),
-            HarnessEventKind.RunFailed,
-            safeCode: errorCode));
-
-        var next = run.Advance(
-            transition.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            events.Count,
-            _time.UtcNow,
-            errorCode);
-        var committed = await CommitAsync(
-                run,
-                next,
-                events,
-                [promptReceiptPayload, assistantPayload],
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return AgentRunStepResult.Blocked(committed, errorCode);
-    }
-
-    private async Task<AgentRunStepResult> HandleRepeatedToolStepAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        AssistantStep step,
-        HarnessPayloadIntent promptReceiptPayload,
-        HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
-    {
-        const string errorCode = "repeated_tool_call";
-        var transition = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.Fail);
-        if (!transition.Accepted)
-        {
-            throw new InvalidOperationException(transition.ErrorCode);
-        }
-
-        var assistantPayloadId = _ids.NewPayloadId();
-        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
-        var assistantPayload = new HarnessPayloadIntent(
-            assistantPayloadId,
-            HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.AuthenticatedClient
-                | HarnessPayloadAudience.ModelContext,
-            HarnessPayloadEncoding.Json,
-            Math.Max(assistantBytes.Length, 1),
-            assistantBytes);
-        var events = new HarnessEventIntent[]
-        {
-            promptComposedEvent,
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.ModelStepCompleted,
-                modelStepId: modelStepId,
-                payloadId: assistantPayloadId,
-                safeCount: step.ToolCalls.Count,
-                safeCode: errorCode),
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.RunFailed,
-                safeCode: errorCode),
-        };
-        var next = run.Advance(
-            transition.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            events.Length,
-            _time.UtcNow,
-            errorCode);
-        var committed = await CommitAsync(
-                run,
-                next,
-                events,
-                [promptReceiptPayload, assistantPayload],
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
     public Task<AgentRun> AcknowledgeHistoryAsync(
@@ -590,204 +464,6 @@ public sealed class AgentRunCoordinator
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private async Task<AgentRunStepResult> HandleToolStepAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        AssistantStep step,
-        int modelDroppedCount,
-        HarnessPayloadIntent promptReceiptPayload,
-        HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
-    {
-        var reservation = AgentBudgetPolicy.ReserveToolCalls(
-            run,
-            step.ToolCalls.Count,
-            _time.UtcNow);
-        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
-        var assistantPayloadId = _ids.NewPayloadId();
-        var modelPayload = new HarnessPayloadIntent(
-            assistantPayloadId,
-            HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.AuthenticatedClient
-                | HarnessPayloadAudience.ModelContext,
-            HarnessPayloadEncoding.Json,
-            Math.Max(assistantBytes.Length, 1),
-            assistantBytes);
-
-        // ReserveToolCalls computes counters for a one-event commit. The prompt
-        // receipt is persisted beside the model completion, so advance the same
-        // counters with the complete two-event write set.
-        var reservationNext = run.Advance(
-            reservation.NextRun.Status,
-            reservation.NextRun.BudgetWindow,
-            reservation.NextRun.ModelStepsInWindow,
-            reservation.NextRun.ToolCallsInWindow,
-            appendedEventCount: 2,
-            updatedAt: _time.UtcNow,
-            terminalErrorCode: reservation.NextRun.TerminalErrorCode);
-        run = await CommitAsync(
-                run,
-                reservationNext,
-                new[]
-                {
-                    promptComposedEvent,
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        reservation.Granted
-                            ? HarnessEventKind.ModelStepCompleted
-                            : HarnessEventKind.ContinueRequested,
-                        modelStepId: modelStepId,
-                        payloadId: assistantPayloadId,
-                        safeCount: step.ToolCalls.Count,
-                        safeCode: reservation.ErrorCode),
-                },
-                new[] { promptReceiptPayload, modelPayload },
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!reservation.Granted)
-        {
-            return AgentRunStepResult.Blocked(run, reservation.ErrorCode!);
-        }
-
-        var result = await _tools.ExecuteAsync(
-                run,
-                modelStepId,
-                step.ToolCalls,
-                modelDroppedCount,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
-    }
-
-    private async Task<AgentRunStepResult> HandleFinalStepAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        AssistantStep step,
-        int droppedCount,
-        HarnessPayloadIntent promptReceiptPayload,
-        HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrEmpty(step.Text))
-        {
-            throw new InvalidOperationException("model_final_text_missing");
-        }
-
-        var stateChange = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.BeginFinalHistory);
-        if (!stateChange.Accepted)
-        {
-            throw new InvalidOperationException(stateChange.ErrorCode);
-        }
-
-        var reply = await _replyPolicy
-            .PrepareAsync(run, step.Text, cancellationToken)
-            .ConfigureAwait(false);
-        var payloadId = _ids.NewPayloadId();
-        var bytes = Encoding.UTF8.GetBytes(reply.VisibleText);
-        var payload = new HarnessPayloadIntent(
-            payloadId,
-            HarnessPayloadKind.AssistantText,
-            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
-            HarnessPayloadEncoding.Utf8Text,
-            Math.Max(bytes.Length, 1),
-            bytes);
-        var payloads = new List<HarnessPayloadIntent> { promptReceiptPayload, payload };
-        PayloadId? usagePayloadId = null;
-        if (step.Usage is not null)
-        {
-            var usageBytes = SerializeUsage(step.Usage);
-            usagePayloadId = _ids.NewPayloadId();
-            payloads.Add(new HarnessPayloadIntent(
-                usagePayloadId.Value,
-                HarnessPayloadKind.ModelUsage,
-                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
-                HarnessPayloadEncoding.Json,
-                Math.Max(usageBytes.Length, 1),
-                usageBytes));
-        }
-        var events = new List<HarnessEventIntent>
-        {
-            promptComposedEvent,
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.ModelStepCompleted,
-                modelStepId: modelStepId,
-                payloadId: payloadId),
-        };
-        if (usagePayloadId is { } usageId)
-        {
-            events.Add(new HarnessEventIntent(
-                _ids.NewEventId(),
-                HarnessEventKind.ModelUsageRecorded,
-                modelStepId: modelStepId,
-                payloadId: usageId,
-                safeCode: "reported"));
-        }
-        if (droppedCount > 0)
-        {
-            events.Add(new HarnessEventIntent(
-                _ids.NewEventId(),
-                HarnessEventKind.TransientFramesDropped,
-                modelStepId: modelStepId,
-                safeCount: droppedCount));
-        }
-
-        var next = run.Advance(
-            stateChange.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            events.Count,
-            _time.UtcNow);
-        run = await CommitAsync(
-                run,
-                next,
-                events,
-                payloads,
-                new[]
-                {
-                    new ConversationOutboxIntent(
-                        _ids.NewEventId(),
-                        run.SessionId,
-                        payloadId,
-                        ConversationOutboxRole.Assistant,
-                        HistoryWaitKind.FinalBeforeCompletion),
-                },
-                cancellationToken)
-                .ConfigureAwait(false);
-        try
-        {
-            await _replyEffects
-                .ApplyAsync(run, reply, modelStepId, CancellationToken.None)
-                .ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectModelStep(
-                    modelStepId,
-                    AgentActivityState.Failed,
-                    safeCode: "reply_effect_failed"));
-        }
-        return new AgentRunStepResult(run, Array.Empty<ToolExecutionReceipt>());
-    }
-
-    private static byte[] SerializeUsage(ModelUsage usage)
-    {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            usage.WriteTo(writer);
-        }
-
-        return stream.ToArray();
     }
 
     private static ValueTask PublishAssistantDelta(

@@ -13,6 +13,7 @@ public sealed class TuiSessionRenderer
     private System.Diagnostics.Stopwatch? _turnWatch;
     private string _lineBuf = string.Empty;
     private bool _inToolBlock;
+    private bool _atLineStart = true;
 
     private CancellationTokenSource? _spinnerCts;
     private Task? _spinnerTask;
@@ -34,6 +35,7 @@ public sealed class TuiSessionRenderer
         _isThinking = false;
         _lineBuf = string.Empty;
         _inToolBlock = false;
+        _atLineStart = true;
         _thinkingWatch?.Reset();
         _turnWatch?.Reset();
     }
@@ -161,6 +163,7 @@ public sealed class TuiSessionRenderer
                 _writer.WriteLine();
                 _writer.Write(AnsiTheme.Bold(AnsiTheme.Cyan("✦ RuAgent: ")));
                 _hasStreamedDelta = true;
+                _atLineStart = false;
             }
 
             RenderDeltaText(delta.Text);
@@ -191,62 +194,112 @@ public sealed class TuiSessionRenderer
     }
 
     /// <summary>
-    /// Streams assistant text line by line so tool-call payloads can be
-    /// restyled (dim gutter, markers swallowed) instead of passing as chat.
-    /// A remainder is held only while it could still become a block marker
-    /// (contains '<'); anything else flushes immediately, so normal text
-    /// paints exactly as before.
+    /// Streams assistant text while restyling tool-call payloads (dim gutter,
+    /// markers swallowed) wherever they appear — the model often glues
+    /// &lt;tool_call&gt; onto the end of a chat sentence, so markers are
+    /// scanned inline, not just as whole lines. Only a trailing partial
+    /// marker (at most 11 chars) is held back for the next chunk; everything
+    /// else paints immediately, byte-identical to before.
     /// </summary>
     private void RenderDeltaText(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
         _lineBuf += text;
-        int nl;
-        while ((nl = _lineBuf.IndexOf('\n')) >= 0)
-        {
-            RenderDeltaLine(_lineBuf[..nl]);
-            _writer.WriteLine();
-            _lineBuf = _lineBuf[(nl + 1)..];
-        }
-        if (_lineBuf.Length > 0 && !_lineBuf.Contains('<'))
-        {
-            var rest = _lineBuf;
-            _lineBuf = string.Empty;
-            if (_inToolBlock)
-            {
-                _writer.Write(AnsiTheme.Dim("┃ " + rest));
-            }
-            else
-            {
-                _writer.Write(rest);
-            }
-        }
+        var hold = PartialMarkerSuffixLength(_lineBuf);
+        var emitLength = _lineBuf.Length - hold;
+        if (emitLength <= 0) return;
+        var emit = _lineBuf[..emitLength];
+        _lineBuf = _lineBuf[emitLength..];
+        RenderStyled(emit);
         _writer.Flush();
     }
 
-    private void RenderDeltaLine(string line)
+    private const string ToolCallOpen = "<tool_call>";
+    private const string ToolCallClose = "</tool_call>";
+
+    private static int PartialMarkerSuffixLength(string buffer)
     {
-        var marker = line.Trim();
-        if (marker == "<tool_call>")
+        var max = Math.Min(buffer.Length, Math.Max(ToolCallOpen.Length, ToolCallClose.Length) - 1);
+        for (var len = max; len >= 1; len--)
         {
-            if (!_inToolBlock)
+            var tail = buffer[^len..];
+            if (ToolCallOpen.StartsWith(tail, StringComparison.Ordinal)
+                || ToolCallClose.StartsWith(tail, StringComparison.Ordinal))
+            {
+                return len;
+            }
+        }
+        return 0;
+    }
+
+    private void RenderStyled(string segment)
+    {
+        var rest = segment;
+        while (rest.Length > 0)
+        {
+            var openIndex = rest.IndexOf(ToolCallOpen, StringComparison.Ordinal);
+            var closeIndex = rest.IndexOf(ToolCallClose, StringComparison.Ordinal);
+            int markerIndex;
+            bool isOpen;
+            if (openIndex >= 0 && (closeIndex < 0 || openIndex < closeIndex))
+            {
+                markerIndex = openIndex;
+                isOpen = true;
+            }
+            else if (closeIndex >= 0)
+            {
+                markerIndex = closeIndex;
+                isOpen = false;
+            }
+            else
+            {
+                WriteStyledText(rest);
+                return;
+            }
+
+            if (markerIndex > 0)
+            {
+                WriteStyledText(rest[..markerIndex]);
+            }
+            if (!_atLineStart)
             {
                 _writer.WriteLine();
+                _atLineStart = true;
             }
-            _inToolBlock = true;
-            return;
+            _inToolBlock = isOpen;
+            rest = rest[(markerIndex + (isOpen ? ToolCallOpen.Length : ToolCallClose.Length))..];
         }
-        if (marker == "</tool_call>")
+    }
+
+    private void WriteStyledText(string text)
+    {
+        if (text.Length == 0) return;
+        if (!_inToolBlock)
         {
-            _inToolBlock = false;
+            _writer.Write(text);
+            _atLineStart = text.EndsWith('\n');
             return;
         }
-        if (_inToolBlock)
+        var start = 0;
+        while (true)
         {
-            _writer.Write(AnsiTheme.Dim("┃ " + line));
-            return;
+            var nl = text.IndexOf('\n', start);
+            var line = nl < 0 ? text[start..] : text[start..nl];
+            if (line.Length > 0)
+            {
+                if (_atLineStart)
+                {
+                    _writer.Write(AnsiTheme.Dim("┃ "));
+                }
+                _writer.Write(AnsiTheme.Dim(line));
+                _atLineStart = false;
+            }
+            if (nl < 0) return;
+            _writer.WriteLine();
+            _atLineStart = true;
+            start = nl + 1;
+            if (start >= text.Length) return;
         }
-        _writer.Write(line);
     }
 
     /// <summary>
@@ -259,20 +312,7 @@ public sealed class TuiSessionRenderer
         if (_lineBuf.Length == 0) return;
         var rest = _lineBuf;
         _lineBuf = string.Empty;
-        var marker = rest.Trim();
-        if (marker is "<tool_call>" or "</tool_call>")
-        {
-            RenderDeltaLine(rest);
-            return;
-        }
-        if (_inToolBlock)
-        {
-            _writer.Write(AnsiTheme.Dim("┃ " + rest));
-        }
-        else
-        {
-            _writer.Write(rest);
-        }
+        RenderStyled(rest);
         _writer.Flush();
     }
 

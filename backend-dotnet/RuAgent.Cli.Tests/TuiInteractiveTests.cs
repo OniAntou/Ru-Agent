@@ -157,6 +157,25 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public void TuiSessionRenderer_StylesInlineMarker_GluedToChatText()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(DeltaFrame("Dạ, để em kiểm tra nhé!<tool_call>\n", 1));
+        renderer.RenderFrame(DeltaFrame("<tool_id>\n<args>\n<op>list</op>\n</args>\n", 2));
+        renderer.RenderFrame(DeltaFrame("</tool_call>\n", 3));
+
+        var output = sw.ToString();
+        Assert.Contains("Dạ, để em kiểm tra nhé!", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
+        Assert.Contains("┃", output, StringComparison.Ordinal);
+        Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TuiSessionRenderer_StylesSplitMarker_AcrossChunks()
     {
         AnsiTheme.IsEnabled = false;

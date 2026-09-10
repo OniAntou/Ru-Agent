@@ -417,6 +417,13 @@ the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
 `duration_ms`, and bounded `safe_code`. It does not advance the durable event
 cursor, append to the Harness event store, or enter session history.
 
+The feed projects nine kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
+`terminal`, `compaction`, `retry`, and a generic `status` fallback. `compaction`
+reports the bounded number of covered context entries and the elapsed time of a
+context compaction (the summary text never crosses the sink boundary); `retry`
+reports a bounded read-only tool transport retry attempt. Completed tool kinds
+carry a bounded `duration_ms` measured from the scheduled execution.
+
 Assistant text uses a separate typed `assistant.delta` transient frame. The
 client validates its bounded UTF-8 text and step/execution identities, then
 delivers it on the UI dispatcher with `(run, model_step, transient_sequence)`
@@ -430,6 +437,12 @@ duration after completion. File edits and analysis show a basename and optional
 line range; search and exploration show bounded symbols or counts. The temporary
 user prompt and activity items use separate collections, so durable assistant
 history remains unchanged when the feed is cleared.
+
+The desktop surface renders every kind. The TUI renders `thinking` through the
+inline spinner and `compaction`, `retry` and non-`frames_dropped` `status` kinds
+as transient status lines; tool kinds stay owned by the durable tool events,
+which remain authoritative when transient frames are dropped. Completed tool
+kinds additionally expose their bounded `duration_ms` on the desktop item.
 
 Before an Agent final reply is persisted, the reply policy strips private
 metadata and accepts VTS codes only from the current catalog. The resulting

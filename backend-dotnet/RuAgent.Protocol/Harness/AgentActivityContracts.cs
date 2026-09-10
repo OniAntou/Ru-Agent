@@ -11,6 +11,8 @@ public enum AgentActivityKind
     Analyze,
     Edit,
     Terminal,
+    Compaction,
+    Retry,
     Status,
 }
 

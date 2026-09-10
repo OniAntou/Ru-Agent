@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using RuAgent.Harness.Core.Persistence;
@@ -272,9 +273,15 @@ internal sealed class AgentToolExecutionPipeline
         }
 
         var droppedBeforeExecution = _frames.DroppedCount;
+        var toolDurations = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
         var rawReceipts = await _scheduler.ExecuteAsync(
                 prepared,
-                (call, token) => ExecuteWithRetryAsync(run.RunId, call, token),
+                (call, token) => ExecuteTimedAsync(
+                    run.RunId,
+                    call,
+                    proposals,
+                    toolDurations,
+                    token),
                 cancellationToken)
             .ConfigureAwait(false);
         var executionDropped = checked((int)(_frames.DroppedCount - droppedBeforeExecution));
@@ -416,7 +423,10 @@ internal sealed class AgentToolExecutionPipeline
                     AgentActivityProjector.ProjectTool(
                         proposal,
                         activityState,
-                        receipt));
+                        receipt,
+                        durationMs: toolDurations.TryGetValue(call.ExecutionId.Value, out var elapsedMs)
+                            ? elapsedMs
+                            : null));
             }
 
             var next = run.Advance(
@@ -510,9 +520,43 @@ internal sealed class AgentToolExecutionPipeline
         HarnessPayloadIntent Payload,
         ToolExecutionReceipt Receipt);
 
+    /// <summary>
+    /// Times one scheduled tool call so the completion activity can report a bounded
+    /// duration. Timing is observational only: a clock going backwards, or an elapsed
+    /// value outside the wire range, simply leaves the duration unreported.
+    /// </summary>
+    private async Task<ToolExecutionReceipt> ExecuteTimedAsync(
+        RunId runId,
+        PreparedToolExecution execution,
+        IReadOnlyDictionary<int, ToolProposal> proposals,
+        ConcurrentDictionary<string, int> durations,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = _time.UtcNow;
+        try
+        {
+            return await ExecuteWithRetryAsync(
+                    runId,
+                    execution,
+                    proposals,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            var elapsed = _time.UtcNow - startedAt;
+            var milliseconds = elapsed.TotalMilliseconds;
+            if (milliseconds is >= 0 and <= 86_400_000)
+            {
+                durations[execution.ExecutionId.Value] = (int)milliseconds;
+            }
+        }
+    }
+
     private async Task<ToolExecutionReceipt> ExecuteWithRetryAsync(
         RunId runId,
         PreparedToolExecution execution,
+        IReadOnlyDictionary<int, ToolProposal> proposals,
         CancellationToken cancellationToken)
     {
         const int maximumAttempts = 2;
@@ -541,6 +585,13 @@ internal sealed class AgentToolExecutionPipeline
                 execution.AccessKind == ToolAccessKind.ReadOnly
                 && attempt < maximumAttempts)
             {
+                if (proposals.TryGetValue(execution.ModelOrder, out var retryProposal))
+                {
+                    AgentActivityProjector.PublishSafe(
+                        _activitySink,
+                        runId,
+                        AgentActivityProjector.ProjectRetry(retryProposal, attempt + 1));
+                }
             }
             catch (ToolTransportException)
             {

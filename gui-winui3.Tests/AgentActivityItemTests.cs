@@ -131,6 +131,60 @@ public sealed class AgentActivityItemTests
         Assert.Equal(completed, done.DisplayText);
     }
 
+    [Fact]
+    public void Item_renders_compaction_and_retry_kinds()
+    {
+        var compactionStarted = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Compaction,
+            count: 12));
+        Assert.Equal("Compacting 12 context items", compactionStarted.DisplayText);
+
+        var compactionSingle = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Compaction,
+            count: 1));
+        Assert.Equal("Compacting 1 context item", compactionSingle.DisplayText);
+
+        var compactionCompleted = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Compaction,
+            count: 12,
+            durationMs: 1200));
+        Assert.Equal("Compacted 12 context items", compactionCompleted.DisplayText);
+        Assert.Equal("1.2s", compactionCompleted.MetadataText);
+
+        var compactionFailed = new AgentActivityItem(Activity(
+            AgentActivityState.Failed,
+            kind: AgentActivityKind.Compaction,
+            safeCode: "commit_conflict"));
+        Assert.Equal("Failed · commit_conflict", compactionFailed.DisplayText);
+
+        var retryStarted = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Retry,
+            count: 2));
+        Assert.Equal("Retrying (attempt 2)", retryStarted.DisplayText);
+
+        var retryCompleted = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Retry,
+            count: 2));
+        Assert.Equal("Retried", retryCompleted.DisplayText);
+    }
+
+    [Fact]
+    public void Item_adds_tool_duration_to_metadata()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Analyze,
+            fileName: "README.md",
+            durationMs: 250));
+
+        Assert.Equal("README.md · 250ms", item.MetadataText);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,

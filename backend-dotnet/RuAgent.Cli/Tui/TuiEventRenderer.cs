@@ -189,9 +189,76 @@ public sealed class TuiSessionRenderer
                     _writer.WriteLine(AnsiTheme.Red("  ◆ Model thinking failed."));
                     _writer.Flush();
                 }
+
+                return;
             }
+
+            RenderActivityLine(activity);
         }
     }
+
+    /// <summary>
+    /// Renders activity kinds that have no durable envelope equivalent. Tool activity
+    /// (explore/search/analyze/edit/terminal) is deliberately left to the durable tool
+    /// events, which stay authoritative when transient frames are dropped.
+    /// </summary>
+    private void RenderActivityLine(AgentActivityModel activity)
+    {
+        Flush();
+
+        switch (activity.Kind)
+        {
+            case AgentActivityKind.Compaction when activity.State == AgentActivityState.Failed:
+                _writer.WriteLine(AnsiTheme.Red($"  ✗ Compaction failed ({activity.SafeCode})"));
+                break;
+
+            case AgentActivityKind.Compaction:
+                _writer.WriteLine(
+                    AnsiTheme.Magenta("  ✦ Compacted context") + CompactedDetail(activity));
+                break;
+
+            case AgentActivityKind.Retry:
+                _writer.WriteLine(AnsiTheme.Yellow($"  ↻ Retrying {RetryTarget(activity)}…"));
+                break;
+
+            case AgentActivityKind.Status when activity.SafeCode != "frames_dropped":
+                _writer.WriteLine(AnsiTheme.Dim($"  • {activity.SafeCode}"));
+                break;
+
+            default:
+                return;
+        }
+
+        _writer.Flush();
+    }
+
+    private static string CompactedDetail(AgentActivityModel activity)
+    {
+        var parts = new List<string>();
+        if (activity.Count is { } count)
+        {
+            parts.Add(count == 1 ? "1 item" : $"{count} items");
+        }
+
+        if (activity.DurationMs is { } duration)
+        {
+            parts.Add(FormatDuration(duration));
+        }
+
+        return parts.Count == 0
+            ? string.Empty
+            : " " + AnsiTheme.Silver(string.Join(" · ", parts));
+    }
+
+    private static string RetryTarget(AgentActivityModel activity) =>
+        activity.FileName is { Length: > 0 } fileName
+            ? fileName
+            : activity.Symbol is { Length: > 0 } symbol
+                ? symbol
+                : "tool";
+
+    private static string FormatDuration(int durationMs) =>
+        durationMs < 1000 ? $"{durationMs}ms" : $"{durationMs / 1000d:0.#}s";
 
     /// <summary>
     /// Streams assistant text while restyling tool-call payloads (dim gutter,

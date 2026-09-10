@@ -256,6 +256,51 @@ public sealed class TuiInteractiveTests
         Assert.Equal(string.Empty, sw.ToString());
     }
 
+    private static SseFrame ActivityFrame(string innerJson, long seq = 1) => new(
+        null,
+        "transient",
+        JsonSerializer.Serialize(new
+        {
+            kind = "agent.activity",
+            data = innerJson,
+        }),
+        true,
+        seq);
+
+    [Fact]
+    public void TuiSessionRenderer_RendersCompactionAndRetryActivities()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(ActivityFrame(
+            "{\"activity_id\":\"act_77777777777777777777777777777777\",\"kind\":\"compaction\",\"state\":\"completed\",\"count\":12,\"duration_ms\":1200,\"safe_code\":\"succeeded\"}",
+            1));
+        renderer.RenderFrame(ActivityFrame(
+            "{\"activity_id\":\"act_88888888888888888888888888888888_retry\",\"kind\":\"retry\",\"state\":\"completed\",\"count\":2,\"safe_code\":\"retrying\",\"file_name\":\"README.md\"}",
+            2));
+
+        var output = sw.ToString();
+        Assert.Contains("Compacted context", output, StringComparison.Ordinal);
+        Assert.Contains("12 items", output, StringComparison.Ordinal);
+        Assert.Contains("Retrying README.md", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TuiSessionRenderer_LeavesToolActivitiesToDurableEvents()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(ActivityFrame(
+            "{\"activity_id\":\"act_99999999999999999999999999999999\",\"kind\":\"analyze\",\"state\":\"completed\",\"file_name\":\"README.md\",\"safe_code\":\"succeeded\"}",
+            1));
+
+        Assert.Equal(string.Empty, sw.ToString());
+    }
+
     [Fact]
     public void Parser_ParsesChatAndReplCommands()
     {

@@ -46,6 +46,7 @@ public sealed class AgentActivityLifecycleTests
             {
                 Assert.Equal(AgentActivityKind.Analyze, toolCompleted.Activity.Kind);
                 Assert.Equal(AgentActivityState.Completed, toolCompleted.Activity.State);
+                Assert.True(toolCompleted.Activity.DurationMs > 0);
             });
 
         Assert.DoesNotContain(
@@ -106,6 +107,33 @@ public sealed class AgentActivityLifecycleTests
         Assert.Equal("policy_denied", failed.Activity.SafeCode);
         Assert.Equal("README.md", failed.Activity.FileName);
         Assert.DoesNotContain("arguments", failed.Activity.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Read_only_transport_retry_publishes_a_retry_activity_before_succeeding()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway(transportFailures: 1);
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var retry = Assert.Single(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Retry).Activity;
+        Assert.Equal(AgentActivityState.Completed, retry.State);
+        Assert.Equal("retrying", retry.SafeCode);
+        Assert.Equal(2, retry.Count);
+        Assert.Equal("README.md", retry.FileName);
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
+        Assert.Contains(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Analyze
+                && item.Activity.State == AgentActivityState.Completed);
     }
 
     private static AgentRunCoordinator Coordinator(

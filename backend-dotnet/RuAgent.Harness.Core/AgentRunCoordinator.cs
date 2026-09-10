@@ -52,7 +52,8 @@ public sealed class AgentRunCoordinator
             _ids,
             _time,
             contextLimit,
-            contextBudgetPolicy ?? new ContextBudgetPolicy());
+            contextBudgetPolicy ?? new ContextBudgetPolicy(),
+            activitySink);
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,

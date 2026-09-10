@@ -52,6 +52,8 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
         CoreActivityKind.Analyze => ProtocolActivityKind.Analyze,
         CoreActivityKind.Edit => ProtocolActivityKind.Edit,
         CoreActivityKind.Terminal => ProtocolActivityKind.Terminal,
+        CoreActivityKind.Compaction => ProtocolActivityKind.Compaction,
+        CoreActivityKind.Retry => ProtocolActivityKind.Retry,
         CoreActivityKind.Status => ProtocolActivityKind.Status,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };

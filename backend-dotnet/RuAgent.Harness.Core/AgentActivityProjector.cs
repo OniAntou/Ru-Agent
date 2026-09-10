@@ -53,19 +53,7 @@ public static class AgentActivityProjector
             metadata = ToolActivityMetadata.Empty;
         }
 
-        var toolDisplay = (proposal.ToolId, op) switch
-        {
-            ("read", "list") or ("glob", _) => "Explore",
-            ("grep", _) or ("web_search", _) => "Search",
-            ("read", "read") => "View",
-            ("write", "write") or ("edit", _) => "Edit",
-            ("write", "delete") => "Delete",
-            ("write", "restore") => "Restore",
-            ("bash", _) => "Terminal",
-            ("web_fetch", _) => "Fetch",
-            ("read", "help") => "Docs",
-            _ => null,
-        };
+        var toolDisplay = ToolDisplayFor(proposal);
 
         return new AgentActivity(
             ActivityId(proposal.ToolCallId.Value),
@@ -81,6 +69,54 @@ public static class AgentActivityProjector
             ClampDuration(durationMs),
             SafeCodeFor(state, safeCode ?? receipt?.Code),
             ToolDisplay: toolDisplay);
+    }
+
+    /// <summary>
+    /// Projects completed context compaction. Only the bounded number of covered context
+    /// entries and the elapsed time cross the sink boundary; summary text never does.
+    /// </summary>
+    public static AgentActivity ProjectCompaction(
+        EventId compactionEventId,
+        AgentActivityState state,
+        int? coveredEntries = null,
+        int? durationMs = null,
+        string? safeCode = null) =>
+        new(
+            ActivityId(compactionEventId.Value),
+            AgentActivityKind.Compaction,
+            state,
+            Count: ClampCount(coveredEntries),
+            DurationMs: ClampDuration(durationMs),
+            SafeCode: SafeCodeFor(state, safeCode),
+            ToolDisplay: null);
+
+    /// <summary>
+    /// Projects a tool retry attempt. The activity carries the same bounded metadata as
+    /// the tool it belongs to, plus the attempt number, and never the failure text.
+    /// </summary>
+    public static AgentActivity ProjectRetry(
+        ToolProposal proposal,
+        int attempt,
+        AgentActivityState state = AgentActivityState.Completed,
+        int? durationMs = null)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+
+        var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt: null);
+        return new AgentActivity(
+            ActivityId(proposal.ToolCallId.Value) + "_retry",
+            AgentActivityKind.Retry,
+            state,
+            metadata.FileName,
+            metadata.LineStart,
+            metadata.LineEnd,
+            metadata.Symbol,
+            ClampCount(attempt),
+            metadata.Added,
+            metadata.Removed,
+            ClampDuration(durationMs),
+            SafeCodeFor(state, "retrying"),
+            ToolDisplay: ToolDisplayFor(proposal));
     }
 
     public static AgentActivity ProjectStatus(
@@ -136,6 +172,21 @@ public static class AgentActivityProjector
         }
     }
 
+    private static string? ToolDisplayFor(ToolProposal proposal) =>
+        (proposal.ToolId, ReadOp(proposal)) switch
+        {
+            ("read", "list") or ("glob", _) => "Explore",
+            ("grep", _) or ("web_search", _) => "Search",
+            ("read", "read") => "View",
+            ("write", "write") or ("edit", _) => "Edit",
+            ("write", "delete") => "Delete",
+            ("write", "restore") => "Restore",
+            ("bash", _) => "Terminal",
+            ("web_fetch", _) => "Fetch",
+            ("read", "help") => "Docs",
+            _ => null,
+        };
+
     private static string? ReadOp(ToolProposal proposal)
     {
         try
@@ -175,6 +226,9 @@ public static class AgentActivityProjector
 
     private static int? ClampDuration(int? durationMs) =>
         durationMs is >= 0 and <= MaximumDurationMilliseconds ? durationMs : null;
+
+    private static int? ClampCount(int? value) =>
+        value is >= 0 and <= MaximumCount ? value : null;
 
     private static bool IsSafeCode(string? value) =>
         value is { Length: >= 1 and <= 64 }

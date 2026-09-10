@@ -150,11 +150,47 @@ public sealed class ContextCompactionCoordinatorTests
         Assert.Empty(store.Commits);
     }
 
+    [Fact]
+    public async Task Automatic_preflight_publishes_a_bounded_compaction_activity()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new AssistantStep(
+            "done",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            estimatedInputTokens: 16));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var source = new ReloadingSource(
+            Snapshot(
+                ModelContextEntry.Text("history-a", 1, ModelContextRole.User, new string('a', 1_800)),
+                ModelContextEntry.Text("history-b", 2, ModelContextRole.User, new string('b', 1_800)),
+                ModelContextEntry.Text("current", 3, ModelContextRole.User, "current request")),
+            Snapshot(
+                ModelContextEntry.Summary(
+                    "compact-test",
+                    1,
+                    "summarized history",
+                    [new ContextEntryRange("history-a", 1, 1), new ContextEntryRange("history-b", 2, 2)]),
+                ModelContextEntry.Text("current", 3, ModelContextRole.User, "current request")));
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, store, source, limitTokens: 1_000, sink);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var activity = Assert.Single(sink.Items, item => item.Activity.Kind == AgentActivityKind.Compaction).Activity;
+        Assert.Equal(AgentActivityState.Completed, activity.State);
+        Assert.True(activity.Count > 0);
+        Assert.True(activity.DurationMs > 0);
+        Assert.DoesNotContain("summarized history", activity.ToString(), StringComparison.Ordinal);
+    }
+
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         InMemoryHarnessEventStore store,
         IModelContextSource source,
-        long? limitTokens) =>
+        long? limitTokens,
+        IAgentActivitySink? activitySink = null) =>
         new(
             model,
             new FakeToolGateway(),
@@ -165,7 +201,15 @@ public sealed class ContextCompactionCoordinatorTests
             new ToolCallScheduler(),
             new TransientFrameBuffer(32),
             contextLimit: new StaticModelContextLimitProvider(limitTokens),
+            activitySink: activitySink,
             promptContextProvider: new FakeSystemPromptContextProvider());
+
+    private sealed class RecordingSink : IAgentActivitySink
+    {
+        public List<(RunId RunId, AgentActivity Activity)> Items { get; } = new();
+
+        public void Publish(RunId runId, AgentActivity activity) => Items.Add((runId, activity));
+    }
 
     private static ModelContextSourceSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(Array.Empty<ModelContextEntry>(), entries);

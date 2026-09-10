@@ -128,6 +128,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             _ => "Editing",
         },
         AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Running {ToolDisplay} task" : "Running terminal task",
+        AgentActivityKind.Compaction => Count is { } compacting
+            ? (compacting == 1 ? "Compacting 1 context item" : $"Compacting {compacting} context items")
+            : "Compacting context",
+        AgentActivityKind.Retry => Count is { } attempt ? $"Retrying (attempt {attempt})" : "Retrying",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         _ => "Working…",
     };
@@ -145,6 +149,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             _ => "Edited",
         },
         AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Completed {ToolDisplay} task" : "Completed terminal task",
+        AgentActivityKind.Compaction => Count is { } compacted
+            ? (compacted == 1 ? "Compacted 1 context item" : $"Compacted {compacted} context items")
+            : "Compacted context",
+        AgentActivityKind.Retry => "Retried",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
         _ => "Completed",
     };
@@ -190,6 +198,11 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             if (Kind == AgentActivityKind.Edit && (Added is not null || Removed is not null))
             {
                 parts.Add($"+{Added ?? 0} −{Removed ?? 0}");
+            }
+
+            if (Kind != AgentActivityKind.Thinking && DurationMs is { } elapsed)
+            {
+                parts.Add(FormatDuration(elapsed));
             }
 
             return string.Join(" · ", parts);
@@ -255,6 +268,11 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
         return Symbol is { Length: > 0 } ? $"{prefix} for {Symbol}" : prefix;
     }
+
+    private static string FormatDuration(int durationMs) =>
+        durationMs < 1000
+            ? $"{durationMs}ms"
+            : $"{durationMs / 1000d:0.#}s";
 
     private string DurationText()
     {

@@ -19,6 +19,7 @@ internal sealed class AgentRunCompaction
     private readonly ITimeProvider _time;
     private readonly IModelContextLimitProvider? _contextLimit;
     private readonly ContextBudgetPolicy _contextBudgetPolicy;
+    private readonly IAgentActivitySink? _activitySink;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
 
     public AgentRunCompaction(
@@ -27,7 +28,8 @@ internal sealed class AgentRunCompaction
         IIdGenerator ids,
         ITimeProvider time,
         IModelContextLimitProvider? contextLimit,
-        ContextBudgetPolicy contextBudgetPolicy)
+        ContextBudgetPolicy contextBudgetPolicy,
+        IAgentActivitySink? activitySink = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _contextAssembler = contextAssembler
@@ -37,6 +39,7 @@ internal sealed class AgentRunCompaction
         _contextLimit = contextLimit;
         _contextBudgetPolicy = contextBudgetPolicy
             ?? throw new ArgumentNullException(nameof(contextBudgetPolicy));
+        _activitySink = activitySink;
     }
 
     public async Task<ContextCompactionResult> CompactAsync(
@@ -159,6 +162,7 @@ internal sealed class AgentRunCompaction
         ContextCompactionReason reason,
         CancellationToken cancellationToken)
     {
+        var startedAt = _time.UtcNow;
         var decision = _contextBudgetPolicy.Evaluate(
             ModelContextSizeEstimator.EstimateTokens(context),
             limitTokens,
@@ -214,7 +218,7 @@ internal sealed class AgentRunCompaction
                         plan.InputHash)),
                 cancellationToken)
             .ConfigureAwait(false);
-        return commit.Outcome switch
+        var result = commit.Outcome switch
         {
             HarnessCommitOutcome.Committed => new ContextCompactionResult(
                 ContextCompactionOutcome.Committed,
@@ -235,6 +239,45 @@ internal sealed class AgentRunCompaction
                 ErrorCode: "run_not_found"),
             _ => throw new InvalidOperationException("unknown_commit_outcome"),
         };
+        PublishCompactionActivity(
+            run.RunId,
+            eventId,
+            result.Outcome == ContextCompactionOutcome.Committed,
+            plan.CoveredEntries.Count,
+            result.ErrorCode,
+            startedAt);
+        return result;
+    }
+
+    /// <summary>
+    /// Compaction is a real agent action that has no other client-visible rendering, so
+    /// it is projected as a bounded activity. The summary text and covered ranges never
+    /// cross the sink boundary.
+    /// </summary>
+    private void PublishCompactionActivity(
+        RunId runId,
+        EventId eventId,
+        bool committed,
+        int coveredEntries,
+        string? errorCode,
+        DateTimeOffset startedAt)
+    {
+        if (_activitySink is null)
+        {
+            return;
+        }
+
+        var elapsed = _time.UtcNow - startedAt;
+        var milliseconds = elapsed.TotalMilliseconds;
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            runId,
+            AgentActivityProjector.ProjectCompaction(
+                eventId,
+                committed ? AgentActivityState.Completed : AgentActivityState.Failed,
+                coveredEntries,
+                milliseconds is >= 0 and <= 86_400_000 ? (int)milliseconds : null,
+                errorCode));
     }
 
     private async Task<AgentRun> RequireRunAsync(

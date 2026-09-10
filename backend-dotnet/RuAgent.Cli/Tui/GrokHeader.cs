@@ -4,6 +4,12 @@ namespace RuAgent.Cli.Tui;
 
 public static class GrokHeader
 {
+    private const int MinConsoleWidth = 10;
+    private const int MinPanelWidth = 20;
+    private const int WideShortcutsWidth = 105;
+    private const int MediumShortcutsWidth = 75;
+    private const int MaxDividerWidth = 1000;
+
     public static void Render(IAnsiConsole console, string sessionId, string workspace, string backend, string model, string preset)
     {
         ArgumentNullException.ThrowIfNull(console);
@@ -13,21 +19,68 @@ public static class GrokHeader
             return;
         }
 
-        var body = new Markup(
+        int width = console.Profile.Width;
+        try
+        {
+            if (!Console.IsOutputRedirected && Console.WindowWidth > MinConsoleWidth)
+            {
+                width = Math.Max(MinPanelWidth, Console.WindowWidth - 2);
+                console.Profile.Width = width;
+            }
+        }
+        catch (IOException)
+        {
+            // No live console; keep the profile width Spectre was created with.
+        }
+
+        string shortcuts;
+        if (width >= WideShortcutsWidth)
+        {
+            shortcuts =
+                $"{MenuRow("/model", "switch model")}  {MenuRow("/fork", "branch session")}  {MenuRow("/stats", "usage stats")}\n" +
+                $"{MenuRow("/clear", "clear screen")}  {MenuRow("/help", "all commands")}    {MenuRow("/exit", "quit")}";
+        }
+        else if (width >= MediumShortcutsWidth)
+        {
+            shortcuts =
+                $"{MenuRow("/model", "switch model")}  {MenuRow("/fork", "branch session")}\n" +
+                $"{MenuRow("/stats", "usage stats")}   {MenuRow("/exit", "quit")}\n" +
+                $"{MenuRow("/clear", "clear screen")}  {MenuRow("/help", "all commands")}";
+        }
+        else
+        {
+            shortcuts =
+                $"{MenuRow("/model", "switch model")}\n" +
+                $"{MenuRow("/fork", "branch session")}\n" +
+                $"{MenuRow("/stats", "usage stats")}\n" +
+                $"{MenuRow("/clear", "clear screen")}\n" +
+                $"{MenuRow("/exit", "quit")}";
+        }
+
+        int dividerWidth = Math.Clamp(width - 6, MinPanelWidth, MaxDividerWidth);
+        var divider = new string('─', dividerWidth);
+
+        var infoText =
             $"[bold cyan]✦ RuAgent v2.0[/] [grey]· Autonomous Coding Agent[/]\n" +
-            $"[grey]Session:[/] [bold white]{Markup.Escape(ShortId(sessionId))}[/] [grey]· Workspace:[/] [silver]{Markup.Escape(workspace)}[/]\n" +
-            $"[grey]Engine:[/] [bold yellow]{Markup.Escape(model)}[/] [grey]({Markup.Escape(backend)} · {Markup.Escape(preset)})[/]\n" +
+            $"[teal]{divider}[/]\n" +
+            $"[grey]Session:[/]   [bold white]{Markup.Escape(ShortId(sessionId))}[/]\n" +
+            $"[grey]Workspace:[/] [silver]{Markup.Escape(workspace)}[/]\n" +
+            $"[grey]Engine:[/]    [bold yellow]{Markup.Escape(model)}[/] [grey]({Markup.Escape(backend)} · {Markup.Escape(preset)})[/]\n" +
             $"\n" +
-            $"{MenuRow("/model", "switch model")}  {MenuRow("/fork", "branch session")}\n" +
-            $"{MenuRow("/stats", "usage stats")}   {MenuRow("/exit", "quit")}\n" +
+            $"{shortcuts}\n" +
             $"\n" +
-            $"[grey]Type [/][bold cyan]/[/][grey] to view & auto-complete available commands (↑/↓ to choose, Tab to apply)[/]");
-        console.Write(new Panel(body)
+            $"[grey]Type [/][bold cyan]/[/][grey] to view & auto-complete available commands[/]\n" +
+            $"[grey](↑/↓ to choose, Tab to apply)[/]";
+
+        var panel = new Panel(new Markup(infoText))
         {
             Border = BoxBorder.Rounded,
             BorderStyle = new Style(Color.Teal),
             Expand = true,
-        });
+            Width = width,
+        };
+
+        console.Write(panel);
     }
 
     private static string MenuRow(string command, string hint) =>

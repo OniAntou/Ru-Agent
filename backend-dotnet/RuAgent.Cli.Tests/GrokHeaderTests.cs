@@ -24,6 +24,8 @@ public sealed class GrokHeaderTests
             Assert.Contains("/model", output, StringComparison.Ordinal);
             Assert.Contains("/exit", output, StringComparison.Ordinal);
             Assert.Contains("╭", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("⡫", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("⣼", output, StringComparison.Ordinal);
         }
         finally
         {

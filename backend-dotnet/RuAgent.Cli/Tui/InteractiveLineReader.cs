@@ -29,10 +29,28 @@ public sealed class InteractiveLineReader
 
     private static readonly string[] DefaultSlashCommands = KnownCommands.Select(c => c.Command).ToArray();
 
+    private const int MinBoxWidth = 10;
+    private const int MaxBoxWidth = 1000;
+    private const int MinDropdownWidth = 24;
+    private const int CommandColumnWidth = 11;
+    private const int ResizeDebounceMs = 120;
+    private const int KeyPollMs = 20;
+    private const int DefaultBoxWidth = 80;
+    private const int MinConsoleWidth = 10;
+    private const int PushBottomRows = 4;
+    private const int MinConsoleHeight = 5;
+    private const int DefaultConsoleHeight = 24;
+
     public IReadOnlyList<string> History => _history;
 
     /// <summary>Legend gắn ở cạnh dưới composer box (vd "model · preset").</summary>
     public string Legend { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Callback được gọi khi cửa sổ terminal thay đổi kích cỡ (resize) và đã debounce ổn định.
+    /// Giúp re-render toàn bộ màn hình một cách sạch sẽ, tránh vỡ viền hoặc reflow rác.
+    /// </summary>
+    public Func<Task>? OnScreenRefreshedAsync { get; set; }
 
     public static IReadOnlyList<SlashCommandInfo> FindMatches(string input)
     {
@@ -51,7 +69,7 @@ public sealed class InteractiveLineReader
 
     public static string BuildTop(int width, bool isSlash)
     {
-        var w = Math.Clamp(width, 10, 200);
+        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
         var border = "╭" + new string('─', w - 2) + "╮";
         return isSlash ? AnsiTheme.Cyan(border) : AnsiTheme.Gray(border);
     }
@@ -62,21 +80,58 @@ public sealed class InteractiveLineReader
 
     public static string BuildMid(int width, string prompt, string buffer, string ghostText, bool isSlash)
     {
-        var w = Math.Clamp(width, 10, 200);
-        var visibleLen = StripAnsi(prompt).Length + (buffer?.Length ?? 0) + (ghostText?.Length ?? 0);
-        var pad = Math.Max(0, w - 2 - 2 - visibleLen);
+        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
+        string promptClean = prompt ?? string.Empty;
+        string text = buffer ?? string.Empty;
+        string ghost = ghostText ?? string.Empty;
+
+        int promptLen = StripAnsi(promptClean).Length;
+        int innerWidth = Math.Max(1, w - 4); // trừ 2 viền "│ " và " │"
+        int availableForText = Math.Max(1, innerWidth - promptLen);
+
+        string visibleText = text;
+        string visibleGhost = ghost;
+
+        if (text.Length + ghost.Length > availableForText)
+        {
+            if (ghost.Length > 0)
+            {
+                int maxGhost = Math.Max(0, availableForText - text.Length);
+                visibleGhost = maxGhost > 0 ? ghost[..Math.Min(ghost.Length, maxGhost)] : "";
+            }
+
+            if (text.Length + visibleGhost.Length > availableForText)
+            {
+                visibleGhost = "";
+                int start = Math.Max(0, text.Length - availableForText);
+                visibleText = text[start..];
+            }
+        }
+
+        var visibleLen = promptLen + visibleText.Length + visibleGhost.Length;
+        var pad = Math.Max(0, innerWidth - visibleLen);
+
         var left = isSlash ? AnsiTheme.Cyan("│ ") : AnsiTheme.Gray("│ ");
         var right = isSlash ? AnsiTheme.Cyan(" │") : AnsiTheme.Gray(" │");
-        var ghost = string.IsNullOrEmpty(ghostText) ? "" : AnsiTheme.Gray(ghostText);
-        return left + prompt + (buffer ?? string.Empty) + ghost + new string(' ', pad) + right;
+        var styledGhost = string.IsNullOrEmpty(visibleGhost) ? "" : AnsiTheme.Gray(visibleGhost);
+
+        return left + promptClean + visibleText + styledGhost + new string(' ', pad) + right;
     }
 
     public static string BuildBottom(int width, string legend) => BuildBottom(width, legend, false);
 
     public static string BuildBottom(int width, string legend, bool isSlash)
     {
-        var w = Math.Clamp(width, 10, 200);
+        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
         var label = string.IsNullOrWhiteSpace(legend) ? "" : " " + legend.Trim() + " ";
+        int maxLabelLen = Math.Max(0, w - 4);
+        var plainLabel = StripAnsi(label);
+        if (plainLabel.Length > maxLabelLen)
+        {
+            // Truncate by display width. A styled label degrades to plain text
+            // here so an ANSI sequence is never cut in half.
+            label = maxLabelLen <= 1 ? plainLabel[..maxLabelLen] : plainLabel[..(maxLabelLen - 1)] + "…";
+        }
         var fill = Math.Max(0, w - 2 - StripAnsi(label).Length);
         var border = isSlash
             ? AnsiTheme.Cyan("╰" + new string('─', fill)) + label + AnsiTheme.Cyan("╯")
@@ -86,7 +141,7 @@ public sealed class InteractiveLineReader
 
     public static string BuildDropdownTop(int width)
     {
-        var w = Math.Clamp(width, 24, 200);
+        var w = Math.Clamp(width, MinDropdownWidth, MaxBoxWidth);
         var title = " Gợi ý lệnh ";
         var fill = Math.Max(0, w - 2 - title.Length);
         return AnsiTheme.Cyan("╭" + title + new string('─', fill) + "╮");
@@ -94,9 +149,9 @@ public sealed class InteractiveLineReader
 
     public static string BuildDropdownRow(int width, SlashCommandInfo item, bool isSelected)
     {
-        var w = Math.Clamp(width, 24, 200);
+        var w = Math.Clamp(width, MinDropdownWidth, MaxBoxWidth);
         var prefix = isSelected ? "❯ " : "  ";
-        var cmd = item.Command.PadRight(11);
+        var cmd = item.Command.PadRight(CommandColumnWidth);
         var desc = item.Description;
         var syntax = string.IsNullOrWhiteSpace(item.Syntax) ? "" : " " + item.Syntax;
 
@@ -128,7 +183,7 @@ public sealed class InteractiveLineReader
 
     public static string BuildDropdownBottom(int width, int current, int total)
     {
-        var w = Math.Clamp(width, 24, 200);
+        var w = Math.Clamp(width, MinDropdownWidth, MaxBoxWidth);
         var hint = $" [{current + 1}/{total}] ↑/↓: chọn · Tab: điền · Esc: đóng ";
         var fill = Math.Max(0, w - 2 - hint.Length);
         return AnsiTheme.Cyan("╰" + hint + new string('─', fill) + "╯");
@@ -142,8 +197,25 @@ public sealed class InteractiveLineReader
 
     public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor, string ghostText, bool isSlash)
     {
-        var mid = BuildMid(width, prompt, buffer ?? string.Empty, ghostText, isSlash);
-        var col = 2 + StripAnsi(prompt).Length + Math.Max(0, cursor);
+        var mid = BuildMid(width, prompt, buffer, ghostText, isSlash);
+        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
+        string text = buffer ?? string.Empty;
+        int promptLen = StripAnsi(prompt ?? string.Empty).Length;
+        int innerWidth = Math.Max(1, w - 4);
+        int availableForText = Math.Max(1, innerWidth - promptLen);
+
+        int displayCursor = cursor;
+        if (text.Length > availableForText)
+        {
+            int start = Math.Max(0, text.Length - availableForText);
+            displayCursor = Math.Clamp(cursor - start, 0, availableForText);
+        }
+        else
+        {
+            displayCursor = Math.Clamp(cursor, 0, availableForText);
+        }
+
+        int col = 2 + promptLen + displayCursor;
         return "\r" + mid + "\r\x1b[" + col + "C";
     }
 
@@ -162,13 +234,16 @@ public sealed class InteractiveLineReader
     {
         try
         {
-            if (!Console.IsOutputRedirected && Console.WindowWidth > 22)
+            if (!Console.IsOutputRedirected && Console.WindowWidth > MinConsoleWidth)
             {
-                return Console.WindowWidth - 2;
+                return Math.Max(MinBoxWidth, Console.WindowWidth - 2);
             }
         }
-        catch { }
-        return 76;
+        catch (IOException)
+        {
+            // No live console (redirected/closed). Fall through to the default width.
+        }
+        return DefaultBoxWidth;
     }
 
     public void AddToHistory(string line)
@@ -254,6 +329,32 @@ public sealed class InteractiveLineReader
         return await ReadInteractiveKeyLoopAsync(outWriter, prompt, cancellationToken).ConfigureAwait(false);
     }
 
+    public static async Task PushToBottomAsync(TextWriter outWriter)
+    {
+        try
+        {
+            if (!Console.IsOutputRedirected && Console.WindowHeight > MinConsoleHeight)
+            {
+                int winHeight = Console.WindowHeight;
+                int cursorTop = Console.CursorTop;
+                int targetRow = winHeight - PushBottomRows;
+                if (cursorTop < targetRow && cursorTop > 0)
+                {
+                    int pushLines = targetRow - cursorTop;
+                    for (int i = 0; i < pushLines; i++)
+                    {
+                        await outWriter.WriteLineAsync().ConfigureAwait(false);
+                    }
+                    await outWriter.FlushAsync().ConfigureAwait(false);
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Console vanished mid-push. The box still renders at the current row.
+        }
+    }
+
     private async Task<string?> ReadInteractiveKeyLoopAsync(
         TextWriter outWriter,
         string prompt,
@@ -271,14 +372,9 @@ public sealed class InteractiveLineReader
         int lastDropdownLines = 0;
         bool dropdownDismissed = false;
 
-        // Dự trữ trước không gian bên dưới để terminal tự cuộn nếu ở sát đáy viewport
-        for (int i = 0; i < 8; i++)
-        {
-            await outWriter.WriteLineAsync().ConfigureAwait(false);
-        }
-        await outWriter.WriteAsync("\x1b[8A").ConfigureAwait(false);
-
+        await PushToBottomAsync(outWriter).ConfigureAwait(false);
         await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, defaultLegend, false)).ConfigureAwait(false);
+        outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, "", 0, "", false));
         await outWriter.FlushAsync().ConfigureAwait(false);
 
         (string ghost, string legend, IReadOnlyList<SlashCommandInfo> matches) ComputeAutocomplete()
@@ -292,7 +388,7 @@ public sealed class InteractiveLineReader
             var matches = FindMatches(text);
             if (matches.Count == 0)
             {
-                return ("", AnsiTheme.Gray("✦ Không tìm thấy lệnh phù hợp"), matches);
+                return ("", defaultLegend, matches);
             }
 
             if (selectedIndex >= matches.Count) selectedIndex = 0;
@@ -305,41 +401,19 @@ public sealed class InteractiveLineReader
                 ghost = chosen[text.Length..];
             }
 
-            var sbLegend = new StringBuilder();
-            sbLegend.Append(AnsiTheme.Cyan("✦ "));
-            int displayCount = Math.Min(matches.Count, 4);
-            for (int i = 0; i < displayCount; i++)
-            {
-                if (i > 0) sbLegend.Append(' ');
-                if (i == selectedIndex)
-                {
-                    sbLegend.Append(AnsiTheme.Bold(AnsiTheme.Cyan($"[{matches[i].Command}]")));
-                }
-                else
-                {
-                    sbLegend.Append(AnsiTheme.Gray(matches[i].Command));
-                }
-            }
-            if (matches.Count > displayCount)
-            {
-                sbLegend.Append(AnsiTheme.Gray($" +{matches.Count - displayCount}"));
-            }
-            sbLegend.Append(AnsiTheme.Dim(" (Tab: điền · ↑/↓: chọn)"));
-
-            return (ghost, sbLegend.ToString(), matches);
+            return (ghost, defaultLegend, matches);
         }
 
         void ClearDropdown()
         {
             if (lastDropdownLines > 0)
             {
-                outWriter.Write("\x1b[2B");
+                outWriter.Write($"\x1b[{1 + lastDropdownLines}A");
                 for (int i = 0; i < lastDropdownLines; i++)
                 {
-                    outWriter.Write("\r\x1b[2K");
-                    if (i < lastDropdownLines - 1) outWriter.Write("\n");
+                    outWriter.Write("\r\x1b[2K\n");
                 }
-                outWriter.Write($"\x1b[{2 + lastDropdownLines - 1}A");
+                outWriter.Write("\x1b[1B");
                 lastDropdownLines = 0;
             }
         }
@@ -373,18 +447,54 @@ public sealed class InteractiveLineReader
                 ClearDropdown();
             }
 
-            outWriter.Write("\x1b[2B");
+            outWriter.Write($"\x1b[{1 + lines.Count}A");
             for (int i = 0; i < lines.Count; i++)
             {
-                outWriter.Write($"\r\x1b[2K{lines[i]}");
-                if (i < lines.Count - 1) outWriter.Write("\n");
+                outWriter.Write($"\r\x1b[2K{lines[i]}\n");
             }
-            outWriter.Write($"\x1b[{2 + lines.Count - 1}A");
+            outWriter.Write("\x1b[1B");
             lastDropdownLines = lines.Count;
+        }
+
+        void RedrawBoxClean()
+        {
+            try
+            {
+                int upLines = 1 + lastDropdownLines;
+                outWriter.Write($"\x1b[{upLines}A\r\x1b[J");
+                outWriter.Flush();
+            }
+            catch (IOException)
+            {
+                // Output went away mid-redraw. Continue rebuilding state; next writes retry.
+            }
+
+            lastDropdownLines = 0;
+            boxWidth = ComputeBoxWidth();
+
+            var text = buffer.ToString();
+            bool isSlash = text.StartsWith('/') && !text.Contains(' ');
+            var (ghost, leg, matches) = ComputeAutocomplete();
+
+            outWriter.Write(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash));
+            if (isSlash && !dropdownDismissed && matches.Count > 0)
+            {
+                RenderDropdown(matches, selectedIndex);
+            }
+            outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
+            outWriter.Flush();
+            lastIsSlash = isSlash;
         }
 
         void Refresh()
         {
+            int curWidth = ComputeBoxWidth();
+            if (curWidth != boxWidth)
+            {
+                RedrawBoxClean();
+                return;
+            }
+
             var text = buffer.ToString();
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();
@@ -393,15 +503,10 @@ public sealed class InteractiveLineReader
             {
                 if (isSlash != lastIsSlash)
                 {
-                    outWriter.Write($"\x1b[1A\r{BuildTop(boxWidth, isSlash)}");
-                    outWriter.Write($"\x1b[1B\r{BuildMid(boxWidth, boxPrompt, text, ghost, isSlash)}");
-                    outWriter.Write($"\x1b[1B\r{BuildBottom(boxWidth, leg, isSlash)}");
+                    outWriter.Write("\x1b[1A\r\x1b[2K" + BuildTop(boxWidth, isSlash));
+                    outWriter.Write("\x1b[2B\r\x1b[2K" + BuildBottom(boxWidth, leg, isSlash));
                     outWriter.Write("\x1b[1A");
                     lastIsSlash = isSlash;
-                }
-                else
-                {
-                    outWriter.Write($"\x1b[1B\r{BuildBottom(boxWidth, leg, isSlash)}\x1b[1A");
                 }
 
                 if (isSlash && !dropdownDismissed && matches.Count > 0)
@@ -416,7 +521,10 @@ public sealed class InteractiveLineReader
                 outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
                 outWriter.Flush();
             }
-            catch { }
+            catch (IOException)
+            {
+                // A failed frame must not kill the input loop; the next keypress redraws.
+            }
         }
 
         void LeaveBox()
@@ -424,20 +532,115 @@ public sealed class InteractiveLineReader
             try
             {
                 ClearDropdown();
-                outWriter.Write($"\x1b[1B\r{BuildBottom(boxWidth, defaultLegend, false)}\x1b[1B");
+                var text = buffer.ToString();
+                outWriter.Write("\r\x1b[2K" + BuildMid(boxWidth, boxPrompt, text, "", false));
+                outWriter.Write("\x1b[1B\r\x1b[2K" + BuildBottom(boxWidth, defaultLegend, false));
+                outWriter.WriteLine();
                 outWriter.Flush();
             }
-            catch { }
+            catch (IOException)
+            {
+                // Teardown best-effort only; the submitted line is already captured in buffer.
+            }
         }
 
         Refresh();
+
+        int lastWidth = ComputeBoxWidth();
+        int lastHeight = Console.IsOutputRedirected ? DefaultConsoleHeight : Console.WindowHeight;
+        bool resizePending = false;
+        var resizeDebounceWatch = new System.Diagnostics.Stopwatch();
+
+        async Task ApplyPendingResizeAsync()
+        {
+            resizePending = false;
+            resizeDebounceWatch.Reset();
+
+            try
+            {
+                int upLines = 1 + lastDropdownLines;
+                outWriter.Write($"\x1b[{upLines}A\r\x1b[J");
+                await outWriter.FlushAsync().ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                // Output went away mid-resize. Continue rebuilding state; next writes retry.
+            }
+
+            lastDropdownLines = 0;
+            boxWidth = ComputeBoxWidth();
+
+            if (OnScreenRefreshedAsync != null)
+            {
+                try
+                {
+                    await OnScreenRefreshedAsync().ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // A failing refresh callback must not kill the input loop.
+                }
+            }
+
+            await PushToBottomAsync(outWriter).ConfigureAwait(false);
+
+            var text = buffer.ToString();
+            bool isSlash = text.StartsWith('/') && !text.Contains(' ');
+            var (ghost, leg, matches) = ComputeAutocomplete();
+
+            await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash)).ConfigureAwait(false);
+            if (isSlash && !dropdownDismissed && matches.Count > 0)
+            {
+                RenderDropdown(matches, selectedIndex);
+            }
+            outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
+            await outWriter.FlushAsync().ConfigureAwait(false);
+            lastIsSlash = isSlash;
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {
             while (!Console.KeyAvailable)
             {
                 if (cancellationToken.IsCancellationRequested) return null;
-                await Task.Delay(20, cancellationToken).ConfigureAwait(false);
+
+                if (!Console.IsOutputRedirected)
+                {
+                    try
+                    {
+                        int curWidth = ComputeBoxWidth();
+                        int curHeight = Console.WindowHeight;
+                        if (curWidth != lastWidth || curHeight != lastHeight)
+                        {
+                            lastWidth = curWidth;
+                            lastHeight = curHeight;
+                            resizePending = true;
+                            resizeDebounceWatch.Restart();
+                        }
+                        else if (resizePending && resizeDebounceWatch.ElapsedMilliseconds >= ResizeDebounceMs)
+                        {
+                            await ApplyPendingResizeAsync().ConfigureAwait(false);
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // Console dimension probe failed mid-poll. Retry on the next tick.
+                    }
+                }
+
+                await Task.Delay(KeyPollMs, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (resizePending)
+            {
+                try
+                {
+                    await ApplyPendingResizeAsync().ConfigureAwait(false);
+                }
+                catch (IOException)
+                {
+                    // Resize apply failed; the next keypress redraws from current state.
+                }
             }
 
             var key = Console.ReadKey(intercept: true);
@@ -445,8 +648,13 @@ public sealed class InteractiveLineReader
             bool isSlash = curText.StartsWith('/') && !curText.Contains(' ');
             var (_, _, currentMatches) = isSlash ? ComputeAutocomplete() : default;
 
-            if (key.Key == ConsoleKey.Enter)
+            if (key.Key == ConsoleKey.Enter || key.KeyChar is '\r' or '\n')
             {
+                if (buffer.Length == 0)
+                {
+                    continue;
+                }
+
                 if (isSlash && !dropdownDismissed && currentMatches != null && currentMatches.Count > 0)
                 {
                     var chosen = currentMatches[selectedIndex].Command;
@@ -455,10 +663,7 @@ public sealed class InteractiveLineReader
                         buffer.Clear().Append(chosen);
                     }
                 }
-                ClearDropdown();
                 LeaveBox();
-                await outWriter.WriteLineAsync().ConfigureAwait(false);
-                await outWriter.FlushAsync().ConfigureAwait(false);
                 return buffer.ToString();
             }
 
@@ -649,7 +854,7 @@ public sealed class InteractiveLineReader
         return null;
     }
 
-    private static string StripAnsi(string text)
+    public static string StripAnsi(string text)
     {
         if (string.IsNullOrEmpty(text)) return string.Empty;
         return Regex.Replace(text, @"\x1b\[[0-9;]*[a-zA-Z]", "");

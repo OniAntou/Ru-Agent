@@ -135,12 +135,12 @@ public sealed class InteractiveLineReaderTests
     [Fact]
     public void BuildDropdownTop_And_Bottom_Render_Correct_Frame()
     {
-        var top = InteractiveLineReader.BuildDropdownTop(50);
+        var top = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildDropdownTop(50));
         Assert.StartsWith("╭", top);
         Assert.EndsWith("╮", top);
         Assert.Contains("Gợi ý lệnh", top);
 
-        var bottom = InteractiveLineReader.BuildDropdownBottom(50, 0, 5);
+        var bottom = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildDropdownBottom(50, 0, 5));
         Assert.StartsWith("╰", bottom);
         Assert.EndsWith("╯", bottom);
         Assert.Contains("[1/5]", bottom);
@@ -156,5 +156,26 @@ public sealed class InteractiveLineReaderTests
         Assert.Contains("❯ /model", selectedRow);
         Assert.Contains("  /model", unselectedRow);
         Assert.Contains("Đổi mô hình", selectedRow);
+    }
+
+    [Fact]
+    public void BuildBottom_With_Empty_Legend_Renders_Clean_Border_Without_Tooltips()
+    {
+        var cleanBottom = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildBottom(40, string.Empty));
+        Assert.Equal("╰" + new string('─', 38) + "╯", cleanBottom);
+    }
+
+    [Fact]
+    public void BuildTop_And_BuildBottom_Scale_To_Fullscreen_Width()
+    {
+        int fullscreenWidth = 200;
+        var top = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildTop(fullscreenWidth));
+        var bottom = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildBottom(fullscreenWidth, "model · fast"));
+
+        Assert.Equal(fullscreenWidth, top.Length);
+        Assert.Equal("╭" + new string('─', fullscreenWidth - 2) + "╮", top);
+        Assert.StartsWith("╰", bottom);
+        Assert.EndsWith("╯", bottom);
+        Assert.Contains("model · fast", bottom);
     }
 }

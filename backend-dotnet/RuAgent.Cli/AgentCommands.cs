@@ -50,6 +50,26 @@ public sealed class AgentCommands
         return new AgentCommands(session, httpClient, outWriter, errWriter);
     }
 
+    private static string ReadReasoningEffort(System.Text.Json.JsonElement settings)
+    {
+        if (settings.TryGetProperty("reasoning_effort", out var direct) && !string.IsNullOrWhiteSpace(direct.GetString()))
+        {
+            return direct.GetString()!;
+        }
+        if (settings.TryGetProperty("thinking_effort", out var thinking) && !string.IsNullOrWhiteSpace(thinking.GetString()))
+        {
+            return thinking.GetString()!;
+        }
+        if (settings.TryGetProperty("reasoning", out var reasoning)
+            && reasoning.ValueKind == System.Text.Json.JsonValueKind.Object
+            && reasoning.TryGetProperty("effort", out var effort)
+            && !string.IsNullOrWhiteSpace(effort.GetString()))
+        {
+            return effort.GetString()!;
+        }
+        return string.Empty;
+    }
+
     public async Task<int> RunAsync(RunCommand cmd, CancellationToken cancellationToken)
     {
         string canonicalWorkspace;
@@ -132,6 +152,48 @@ public sealed class AgentCommands
         await _out.WriteLineAsync($"run_id: {resp.RunId}").ConfigureAwait(false);
 
         string runId = resp.RunId;
+        if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase))
+        {
+            var trustRequestId = resp.TrustRequestId;
+            var displayHash = resp.DisplayIdentityHash;
+            if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+            {
+                var run = await _agentClient.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+                trustRequestId = run.TrustRequestId;
+                displayHash = run.DisplayIdentityHash;
+            }
+
+            if (!string.IsNullOrWhiteSpace(trustRequestId) && !string.IsNullOrWhiteSpace(displayHash) && !cmd.Json && _in == Console.In && !Console.IsInputRedirected)
+            {
+                await _out.WriteAsync($"Untrusted workspace: {canonicalWorkspace}\nTrust this workspace? [1: Approve / 2: Deny] (default: 1): ").ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                var normalized = string.IsNullOrWhiteSpace(answer) ? "1" : answer.Trim().ToLowerInvariant();
+
+                bool approve = normalized is "1" or "trust" or "yes" or "y" or "approve";
+                var decision = approve ? "approve" : "deny";
+                try
+                {
+                    var trustReq = new TrustAgentRunRequest(trustRequestId, displayHash, decision);
+                    await _agentClient.TrustAsync(runId, trustReq, cancellationToken).ConfigureAwait(false);
+                    if (!approve)
+                    {
+                        await _out.WriteLineAsync("Workspace trust denied.").ConfigureAwait(false);
+                        return 1;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                    return 1;
+                }
+            }
+            else
+            {
+                await _out.WriteLineAsync($"waiting_workspace_trust: run 'ru agent trust {runId} --approve' to proceed.").ConfigureAwait(false);
+            }
+        }
+
         try
         {
             await StreamEventsAsync(runId, cmd.Json, cancellationToken).ConfigureAwait(false);
@@ -143,7 +205,10 @@ public sealed class AgentCommands
                 await _agentClient.CancelAsync(runId, CancellationToken.None).ConfigureAwait(false);
                 await _out.WriteLineAsync("cancelled").ConfigureAwait(false);
             }
-            catch { }
+            catch (Exception)
+            {
+                // Best-effort cancel during shutdown; teardown continues regardless.
+            }
             return 130;
         }
         catch (AgentApiException ex)
@@ -774,6 +839,7 @@ public sealed class AgentCommands
 
         string backendName = "Kilo Gateway";
         string activeModel = string.Empty;
+        string reasoningEffort = string.Empty;
         try
         {
             var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
@@ -790,23 +856,73 @@ public sealed class AgentCommands
                 "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
                 _ => settings.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
             };
+            reasoningEffort = ReadReasoningEffort(settings);
         }
-        catch { }
+        catch (Exception)
+        {
+            // Settings backend unreachable; header falls back to startup values below.
+        }
+
+        if (_out == Console.Out && !Console.IsOutputRedirected)
+        {
+            try { Console.Clear(); } catch (IOException) { /* No live console to clear. */ }
+        }
 
         var headerConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
+        try
+        {
+            if (!Console.IsOutputRedirected && Console.WindowWidth > 10)
+            {
+                headerConsole.Profile.Width = Math.Max(20, Console.WindowWidth - 2);
+            }
+        }
+        catch (IOException)
+        {
+            // No live console; Spectre keeps its default width.
+        }
         Tui.GrokHeader.Render(headerConsole, sessionId, canonicalWorkspace, backendName, activeModel, cmd.Preset);
         await _out.WriteLineAsync().ConfigureAwait(false);
         await _out.FlushAsync().ConfigureAwait(false);
 
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
         var lineReader = new Tui.InteractiveLineReader();
-        string modelLabel = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
-        lineReader.Legend = $"{modelLabel} · {cmd.Preset}";
-        await _out.WriteLineAsync(Tui.AnsiTheme.Gray($"{modelLabel} · {cmd.Preset}  ") + Tui.AnsiTheme.Cyan("✦ Gõ / để gợi ý lệnh") + Tui.AnsiTheme.Dim(" │ Tab: điền │ ↑/↓: chọn │ \\: tiếp dòng │ Ctrl+c: hủy")).ConfigureAwait(false);
-        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("❯ "));
-        string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
+
+        async Task UpdateLegendAsync()
+        {
+            try
+            {
+                var s = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
+                var bName = s.TryGetProperty("backend", out var bProp) && !string.IsNullOrWhiteSpace(bProp.GetString())
+                    ? bProp.GetString()!
+                    : backendName;
+                var curModel = bName switch
+                {
+                    "Kilo Gateway" => s.TryGetProperty("kilo_model", out var km) ? km.GetString() ?? "" : "",
+                    "OpenCode Zen" => s.TryGetProperty("opencode_model", out var om) ? om.GetString() ?? "" : "",
+                    "Ollama" => s.TryGetProperty("ollama_model", out var olm) ? olm.GetString() ?? "" : "",
+                    "LM Studio" => s.TryGetProperty("lmstudio_model", out var lmm) ? lmm.GetString() ?? "" : "",
+                    "OpenAI" => s.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
+                    "Anthropic" => s.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
+                    _ => s.TryGetProperty("model", out var mProp) ? mProp.GetString() ?? "" : "",
+                };
+                string effort = ReadReasoningEffort(s);
+
+                string mLbl = string.IsNullOrWhiteSpace(curModel) ? (string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel) : curModel;
+                lineReader.Legend = string.IsNullOrWhiteSpace(effort) ? mLbl : $"{mLbl} · {effort}";
+            }
+            catch (Exception)
+            {
+                // Live refresh failed; legend keeps the last known values.
+                string mLbl = string.IsNullOrWhiteSpace(activeModel) ? "model" : activeModel;
+                lineReader.Legend = string.IsNullOrWhiteSpace(reasoningEffort) ? mLbl : $"{mLbl} · {reasoningEffort}";
+            }
+        }
+
         int turn = 0;
         long? lastTotalTokens = null;
+        await UpdateLegendAsync().ConfigureAwait(false);
+        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("❯ "));
+        string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -873,11 +989,31 @@ public sealed class AgentCommands
                 }
                 if (slashCmd is "/clear")
                 {
-                    try { Console.Clear(); } catch { }
+                    turn = 0;
+                    lastTotalTokens = null;
+                    if (_out == Console.Out && !Console.IsOutputRedirected)
+                    {
+                        try { Console.Clear(); } catch (IOException) { /* No live console to clear. */ }
+                    }
+                    try
+                    {
+                        if (!Console.IsOutputRedirected && Console.WindowWidth > 10)
+                        {
+                            headerConsole.Profile.Width = Math.Max(20, Console.WindowWidth - 2);
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // No live console; Spectre keeps its default width.
+                    }
+                    Tui.GrokHeader.Render(headerConsole, sessionId, canonicalWorkspace, backendName, activeModel, cmd.Preset);
+                    await _out.WriteLineAsync().ConfigureAwait(false);
+                    await _out.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
                 if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
                 {
+                    await UpdateLegendAsync().ConfigureAwait(false);
                     continue;
                 }
                 if (slashCmd is "/fork")
@@ -954,6 +1090,64 @@ public sealed class AgentCommands
             {
                 sessionRenderer.Reset();
                 var resp = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
+
+                if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase)
+                    || (!string.IsNullOrEmpty(resp.TrustRequestId) && !string.IsNullOrEmpty(resp.DisplayIdentityHash)))
+                {
+                    var trustRequestId = resp.TrustRequestId;
+                    var displayHash = resp.DisplayIdentityHash;
+                    if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+                    {
+                        var run = await _agentClient.GetRunAsync(resp.RunId, cancellationToken).ConfigureAwait(false);
+                        trustRequestId = run.TrustRequestId;
+                        displayHash = run.DisplayIdentityHash;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(trustRequestId) && !string.IsNullOrWhiteSpace(displayHash))
+                    {
+                        // Fail closed: never prompt (and never default-approve) when stdin
+                        // is a redirected real console or output is JSON. A redirected
+                        // Console.In yields null answers that would otherwise default to
+                        // "1" and auto-approve trust. An explicitly injected reader
+                        // (_in != Console.In) is a deliberate caller/test seam and stays
+                        // promptable.
+                        if (cmd.Json || (_in == Console.In && Console.IsInputRedirected))
+                        {
+                            await _out.WriteLineAsync($"waiting_workspace_trust: run 'ru agent trust {resp.RunId} --approve' to proceed.").ConfigureAwait(false);
+                            continue;
+                        }
+
+                        await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Yellow($"\n  ⚠ Untrusted workspace: {canonicalWorkspace}\n  ❯ Trust this workspace? [1: Approve (Trust) / 2: Deny] (default: 1): "))).ConfigureAwait(false);
+                        await _out.FlushAsync().ConfigureAwait(false);
+                        var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                        var normalized = string.IsNullOrWhiteSpace(answer) ? "1" : answer.Trim().ToLowerInvariant();
+
+                        bool approve = normalized is "1" or "trust" or "yes" or "y" or "approve";
+                        var decision = approve ? "approve" : "deny";
+                        try
+                        {
+                            var trustReq = new TrustAgentRunRequest(trustRequestId, displayHash, decision);
+                            await _agentClient.TrustAsync(resp.RunId, trustReq, cancellationToken).ConfigureAwait(false);
+                            if (approve)
+                            {
+                                await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Workspace trusted. Resuming execution...\n")).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                await _out.WriteLineAsync(Tui.AnsiTheme.Red("  ✗ Workspace trust denied. Execution aborted.\n")).ConfigureAwait(false);
+                                await _out.FlushAsync().ConfigureAwait(false);
+                                continue;
+                            }
+                            await _out.FlushAsync().ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                            continue;
+                        }
+                    }
+                }
+
                 await foreach (var frame in _sseClient.ReadEventsAsync(resp.RunId, afterSequence: 0, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -1007,13 +1201,27 @@ public sealed class AgentCommands
                                     lastTotalTokens = total;
                                 }
                             }
-                            catch { }
+                            catch (System.Text.Json.JsonException)
+                            {
+                                // Non-conforming frame payload; token tally keeps its last value.
+                            }
                         }
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }
                 await _out.WriteLineAsync().ConfigureAwait(false);
                 var statusConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
+                try
+                {
+                    if (!Console.IsOutputRedirected && Console.WindowWidth > 10)
+                    {
+                        statusConsole.Profile.Width = Console.WindowWidth;
+                    }
+                }
+                catch (IOException)
+                {
+                    // No live console; Spectre keeps its default width.
+                }
                 Tui.GrokStatusBar.Render(statusConsole, canonicalWorkspace, backendName, activeModel, cmd.Preset, turn, lastTotalTokens);
                 await _out.FlushAsync().ConfigureAwait(false);
             }

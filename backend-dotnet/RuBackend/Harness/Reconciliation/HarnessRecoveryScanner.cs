@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -27,6 +28,15 @@ public sealed class HarnessRecoveryScanner(
     Func<CancellationToken, Task<IReadOnlyList<RunId>>>? pendingRunSource = null)
 {
     private static readonly TimeSpan WorkspaceTrustTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// True when a run waits on an approval that has outlived the approval
+    /// lifetime: every resolution attempt is refused as stale, so the run can
+    /// never leave the wait through a client.
+    /// </summary>
+    public static bool IsExpiredApprovalWait(AgentRun run, DateTimeOffset now) =>
+        run.State == HarnessRunState.WaitingApproval
+        && ApprovalState.IsExpired(run.UpdatedAt, now);
 
     public async Task<IReadOnlyList<RecoveredRunSummary>> ScanPendingRunsAsync(
         CancellationToken cancellationToken)
@@ -81,6 +91,11 @@ public sealed class HarnessRecoveryScanner(
             && run.UpdatedAt <= time.UtcNow - WorkspaceTrustTimeout)
         {
             return await CancelExpiredWorkspaceTrustAsync(run, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (IsExpiredApprovalWait(run, time.UtcNow))
+        {
+            return await FailExpiredApprovalAsync(run, cancellationToken).ConfigureAwait(false);
         }
 
         if (run.State != HarnessRunState.Running)
@@ -217,9 +232,27 @@ public sealed class HarnessRecoveryScanner(
             ? new RecoveredRunSummary(run.RunId, safeCode switch
             {
                 "recovery_read_only_incomplete" => "failed_read_only_incomplete",
+                "approval_expired" => "failed_approval_expired",
                 _ => "failed_pre_dispatch",
             })
             : null;
+    }
+
+    /// <summary>
+    /// Fails an abandoned approval wait so its workspace's active-run lock is
+    /// released. The approval gate is pre-execution: the gated tool call was never
+    /// dispatched, so failing the run cannot roll back a tool side effect.
+    /// </summary>
+    public async Task<RecoveredRunSummary?> FailExpiredApprovalAsync(
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (!IsExpiredApprovalWait(run, time.UtcNow))
+        {
+            return null;
+        }
+
+        return await FailRunAsync(run, "approval_expired", cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<RecoveredRunSummary?> CancelExpiredWorkspaceTrustAsync(

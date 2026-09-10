@@ -92,6 +92,8 @@ public sealed class AgentRunIdempotencyTests
 
         using var r1 = await client.PostAsJsonAsync("/agent/v1/runs", body1);
         Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
+        var created = await r1.Content.ReadFromJsonAsync<JsonElement>();
+        var blockingRunId = created.GetProperty("run_id").GetString();
 
         var body2 = new
         {
@@ -106,6 +108,10 @@ public sealed class AgentRunIdempotencyTests
         Assert.Equal((HttpStatusCode)409, r2.StatusCode);
         var j = await r2.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("workspace_busy", j.GetProperty("error_code").GetString());
+        // The client needs the owning run to point the operator at the exact run to
+        // cancel or attach to instead of only reporting a bare busy code.
+        Assert.Equal(blockingRunId, j.GetProperty("blocking_run_id").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(j.GetProperty("blocking_run_status").GetString()));
     }
 
     [Fact]

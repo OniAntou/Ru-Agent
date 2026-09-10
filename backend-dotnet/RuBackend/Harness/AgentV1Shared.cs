@@ -20,6 +20,13 @@ internal static class AgentV1Shared
     internal static AgentServiceResult BoundedError(int status, string code, string message) =>
         new(status, new AgentErrorResponse(code, message));
 
+    /// <summary>
+    /// A busy conflict carries the run that holds the resource so a client can tell
+    /// the operator exactly which run to cancel instead of only reporting a code.
+    /// </summary>
+    internal static AgentServiceResult BusyConflict(string code, string message, AgentRun blocking) =>
+        new(409, new AgentErrorResponse(code, message, blocking.RunId.Value, MapRunState(blocking.Status)));
+
     internal static string MapHistoryWaitKind(HistoryWaitKind? kind) => kind switch
     {
         HistoryWaitKind.UserBeforeFirstStep => "user_before_first_step",

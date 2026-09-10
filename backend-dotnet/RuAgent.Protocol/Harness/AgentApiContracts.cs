@@ -82,7 +82,12 @@ public sealed record DispatchAgentCommandResponse(
 
 public sealed record AgentErrorResponse(
     [property: JsonPropertyName("error_code")] string ErrorCode,
-    [property: JsonPropertyName("message")] string? Message = null);
+    [property: JsonPropertyName("message")] string? Message = null,
+    /// <summary>Run that already holds the conflicting workspace/session, on a busy conflict.</summary>
+    [property: JsonPropertyName("blocking_run_id")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunId = null,
+    [property: JsonPropertyName("blocking_run_status")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? BlockingRunStatus = null);
 
 public sealed record SessionRunsResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<GetAgentRunResponse> Items,

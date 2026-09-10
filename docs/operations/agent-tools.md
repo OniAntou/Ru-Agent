@@ -206,7 +206,15 @@ The desktop session switch also waits for the previous Harness run's
 cancellation commit before creating a run for the replacement session. A
 workspace-trust run that was abandoned past its ten-minute trust window is
 cancelled during startup recovery, so an interrupted prompt cannot keep the
-workspace's active-run lock indefinitely.
+workspace's active-run lock indefinitely. The same rule covers approvals: a run
+still parked in `WaitingApproval` past the 30-minute approval lifetime fails as
+`approval_expired` (startup recovery and the running host's drive loop), because
+no client can resolve an older approval — the endpoint refuses it as
+`approval_stale`. The gated tool call is pre-dispatch, so failing that run cannot
+roll back a side effect. A `409 workspace_busy` (or the session-scoped variant)
+names the run that owns the resource in `blocking_run_id`/`blocking_run_status`,
+so a client can point the operator at the exact run to cancel
+(`ru agent cancel <run-id>`) or attach to (`ru agent attach <run-id>`).
 
 While a run is actively driven, a dedicated heartbeat renews its workspace
 membership independently of model and tool step duration. A failed renewal

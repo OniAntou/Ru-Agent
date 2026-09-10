@@ -70,7 +70,13 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
         if ((int)resp.StatusCode == 409)
         {
-            throw new AgentApiException(ExtractErrorCode(body) ?? "conflict", body, (int)resp.StatusCode);
+            var blocking = ExtractBlockingRun(body);
+            throw new AgentApiException(
+                ExtractErrorCode(body) ?? "conflict",
+                ExtractErrorMessage(body) ?? body,
+                (int)resp.StatusCode,
+                blockingRunId: blocking.RunId,
+                blockingRunStatus: blocking.Status);
         }
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(
@@ -585,6 +591,31 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         }
         catch { }
         return null;
+    }
+
+    /// <summary>
+    /// Busy conflicts name the run that holds the workspace or session so callers
+    /// can point the operator at the exact run to cancel or attach to.
+    /// </summary>
+    private static (string? RunId, string? Status) ExtractBlockingRun(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var runId = doc.RootElement.TryGetProperty("blocking_run_id", out var id)
+                && id.ValueKind == JsonValueKind.String
+                ? id.GetString()
+                : null;
+            var status = doc.RootElement.TryGetProperty("blocking_run_status", out var runStatus)
+                && runStatus.ValueKind == JsonValueKind.String
+                ? runStatus.GetString()
+                : null;
+            return (runId, status);
+        }
+        catch
+        {
+            return (null, null);
+        }
     }
 
     private static void ValidateRunId(string runId)

@@ -152,7 +152,7 @@ public sealed partial class AgentV1Service
         }
 
         if (pendingApprovalEvent is null
-            || _time.UtcNow - pendingApprovalEvent.OccurredAt > TimeSpan.FromMinutes(30))
+            || ApprovalState.IsExpired(pendingApprovalEvent.OccurredAt, _time.UtcNow))
         {
             return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
         }

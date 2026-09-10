@@ -145,6 +145,9 @@ public sealed partial class AgentV1Service
     private static AgentServiceResult BoundedError(int status, string code, string message) =>
         AgentV1Shared.BoundedError(status, code, message);
 
+    private static AgentServiceResult BusyConflict(string code, string message, AgentRun blocking) =>
+        AgentV1Shared.BusyConflict(code, message, blocking);
+
     public static string MapHistoryWaitKind(HistoryWaitKind? kind) => AgentV1Shared.MapHistoryWaitKind(kind);
 
     public static string MapRunState(HarnessRunStatus status) => AgentV1Shared.MapRunState(status);

@@ -150,6 +150,22 @@ public static class ApprovalState
 {
     public const int DefaultExpiryMinutes = 30;
 
+    /// <summary>
+    /// The lifetime a durable approval is bound to. A resolution that arrives after
+    /// this window is refused, so a run still waiting past it can only be released
+    /// by cancelling or failing it.
+    /// </summary>
+    public static readonly TimeSpan DefaultLifetime =
+        TimeSpan.FromMinutes(DefaultExpiryMinutes);
+
+    /// <summary>
+    /// True once the approval requested at <paramref name="requestedAt"/> can no
+    /// longer be resolved by any client. Callers use this to fail an abandoned
+    /// waiting run instead of leaving it parked with its workspace lock.
+    /// </summary>
+    public static bool IsExpired(DateTimeOffset requestedAt, DateTimeOffset now) =>
+        now - requestedAt > DefaultLifetime;
+
     public static PendingToolApproval Issue(string approvalId, ToolApprovalBinding binding) =>
         PendingToolApproval.Issue(approvalId, binding);
 

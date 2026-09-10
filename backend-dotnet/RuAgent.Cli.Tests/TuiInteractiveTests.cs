@@ -737,6 +737,58 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public async Task ChatAsync_ReportsBlockingRun_WhenWorkspaceIsBusy()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var blockingRunId = "run_" + new string('e', 32);
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/sessions/new"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"session_id\":\"sess_123\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs"))
+            {
+                var busyJson = JsonSerializer.Serialize(new
+                {
+                    error_code = "workspace_busy",
+                    message = "Workspace busy.",
+                    blocking_run_id = blockingRunId,
+                    blocking_run_status = "waiting_approval",
+                });
+                return new HttpResponseMessage(HttpStatusCode.Conflict) { Content = new StringContent(busyJson, Encoding.UTF8, "application/json") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        var httpClient = new HttpClient(handler);
+
+        var inReader = new StringReader("hello\n/exit\n");
+        var commands = new AgentCommands(session, httpClient, outWriter, errWriter, inReader);
+        var cmd = new ChatCommand("C:\\busy\\workspace", "sess_123", "standard", false);
+
+        var exit = await commands.ChatAsync(cmd, CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        var errStr = errWriter.ToString();
+        Assert.Contains(blockingRunId, errStr, StringComparison.Ordinal);
+        Assert.Contains("waiting_approval", errStr, StringComparison.Ordinal);
+        Assert.Contains($"ru agent cancel {blockingRunId}", errStr, StringComparison.Ordinal);
+        // The raw error envelope must never reach the transcript.
+        Assert.DoesNotContain("error_code", errStr, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InteractiveLineReader_BuildBottom_NeverSplitsAnsi_OnLongStyledLegend()
     {
         int width = 40;

@@ -10,6 +10,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
+using RuBackend.Harness.Reconciliation;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness;
@@ -294,6 +295,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly HarnessRecoveryScanner _recoveryScanner;
 
     public AgentRuntimeLoopService(
         AgentConversationOutboxDispatcher dispatcher,
@@ -317,6 +319,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
         _brokerGateways = brokerGateways;
+        _recoveryScanner = new HarnessRecoveryScanner(_store, new SystemTimeProvider());
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -398,10 +401,21 @@ public sealed class AgentRuntimeLoopService : BackgroundService
             var run = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
             if (run is null || run.State != HarnessRunState.Running)
             {
-                if (run is { } loaded && loaded.State.IsTerminal())
+                if (run is { } loaded)
                 {
-                    _summaryPublisher?.TryPublishSummary(loaded);
-                    _roots.Remove(new RunId(runIdValue));
+                    if (loaded.State.IsTerminal())
+                    {
+                        _summaryPublisher?.TryPublishSummary(loaded);
+                        _roots.Remove(new RunId(runIdValue));
+                    }
+                    else if (HarnessRecoveryScanner.IsExpiredApprovalWait(loaded, DateTimeOffset.UtcNow))
+                    {
+                        // The durable approval is past its lifetime, so no client can
+                        // resolve it any more. Fail the run now instead of leaving it
+                        // parked with the workspace's unique active-run lock.
+                        await ReleaseExpiredApprovalAsync(runIdValue, loaded, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
 
                 return;
@@ -419,6 +433,35 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     {
         _roots.Remove(runId);
         _brokerGateways?.CloseRun(runId.Value);
+    }
+
+    private async Task ReleaseExpiredApprovalAsync(
+        string runIdValue,
+        AgentRun waitingRun,
+        CancellationToken cancellationToken)
+    {
+        var runId = new RunId(runIdValue);
+        RecoveredRunSummary? released;
+        try
+        {
+            released = await _recoveryScanner
+                .FailExpiredApprovalAsync(waitingRun, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning(error, "failed to release expired approval of run {RunId}", runIdValue);
+            return;
+        }
+
+        if (released is null)
+        {
+            return;
+        }
+
+        _logger.LogWarning("run {RunId} failed because its approval expired", runIdValue);
+        await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+        RemoveRunRegistration(runId);
     }
 
     private async Task<AgentRun?> LoadRunAsync(string runIdValue, CancellationToken cancellationToken) =>

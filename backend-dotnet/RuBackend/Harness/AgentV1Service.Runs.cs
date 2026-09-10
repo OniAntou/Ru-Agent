@@ -472,8 +472,8 @@ public sealed partial class AgentV1Service
         return code switch
         {
             "idempotency_conflict" => BoundedError(409, "idempotency_conflict", "Idempotency key conflict."),
-            "workspace_busy" => BoundedError(409, "workspace_busy", "Workspace busy."),
-            "session_busy" => BoundedError(409, "workspace_busy", "Session busy."),
+            "workspace_busy" => BusyConflict("workspace_busy", "Workspace busy.", storeResult.Run),
+            "session_busy" => BusyConflict("workspace_busy", "Session busy.", storeResult.Run),
             "preset_mismatch" => BoundedError(409, "preset_mismatch", "Preset mismatch."),
             "preset_selection_required" => BoundedError(409, "preset_mismatch", "Preset selection required."),
             "preset_version_conflict" => BoundedError(409, "preset_mismatch", "Preset version conflict."),

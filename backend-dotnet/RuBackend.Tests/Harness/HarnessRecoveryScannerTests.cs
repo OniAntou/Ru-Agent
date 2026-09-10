@@ -114,7 +114,7 @@ public sealed class HarnessRecoveryScannerTests
     }
 
     [Fact]
-    public async Task Waiting_approval_and_terminal_runs_are_never_touched()
+    public async Task Fresh_approval_wait_and_terminal_runs_are_never_touched()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
         try
@@ -133,6 +133,34 @@ public sealed class HarnessRecoveryScannerTests
 
             Assert.DoesNotContain(summaries, item => item.RunId == waiting.RunId);
             Assert.DoesNotContain(summaries, item => item.RunId == completed.RunId);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Expired_approval_wait_is_failed_so_it_cannot_keep_the_workspace_locked()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var tracked = new List<RunId>();
+            var run = await CreateDistinctRunAsync(
+                fixture,
+                new HarnessRunStatus(HarnessRunState.WaitingApproval),
+                "run_55555555555555555555555555555555");
+            tracked.Add(run.RunId);
+
+            var summaries = await ScanAsync(fixture, tracked, Timestamp.AddMinutes(31));
+
+            var summary = Assert.Single(summaries);
+            Assert.Equal(run.RunId, summary.RunId);
+            Assert.Equal("failed_approval_expired", summary.Action);
+            var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Failed, after!.State);
+            Assert.Equal("approval_expired", after.TerminalErrorCode);
         }
         finally
         {

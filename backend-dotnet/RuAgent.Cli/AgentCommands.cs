@@ -1318,6 +1318,11 @@ public sealed class AgentCommands
                 sessionRenderer.EndTurn();
                 await _out.WriteLineAsync(Tui.AnsiTheme.Yellow("Run interrupted by user.")).ConfigureAwait(false);
             }
+            catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
+            {
+                sessionRenderer.EndTurn();
+                await WriteBusyConflictAsync(ex).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 sessionRenderer.EndTurn();
@@ -1327,6 +1332,27 @@ public sealed class AgentCommands
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// A busy workspace is operator-recoverable: name the run that owns it and how to
+    /// release it instead of printing the raw error envelope.
+    /// </summary>
+    private async Task WriteBusyConflictAsync(AgentApiException error)
+    {
+        var blockingRunId = error.BlockingRunId;
+        if (string.IsNullOrWhiteSpace(blockingRunId))
+        {
+            await _err.WriteLineAsync(Tui.AnsiTheme.Red("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
+            await _err.WriteLineAsync(Tui.AnsiTheme.Dim("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
+        var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
+        await _err.WriteLineAsync(Tui.AnsiTheme.Red($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
+        await _err.WriteLineAsync(Tui.AnsiTheme.Dim($"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.")).ConfigureAwait(false);
+        await _err.FlushAsync().ConfigureAwait(false);
     }
 
     public async Task<int> SessionListAsync(SessionListCommand cmd, CancellationToken cancellationToken)

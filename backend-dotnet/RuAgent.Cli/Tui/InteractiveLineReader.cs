@@ -588,6 +588,9 @@ public sealed class InteractiveLineReader
                 outWriter.Write("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[2B\r\x1b[2K");
                 outWriter.Write(BuildSubmitEcho(text));
                 outWriter.WriteLine();
+                // Breathing room: one blank row between the echo bar and the
+                // thinking line / agent output that follows every submit.
+                outWriter.WriteLine();
                 outWriter.Flush();
             }
             catch (IOException)

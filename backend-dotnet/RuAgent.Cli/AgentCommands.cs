@@ -1212,6 +1212,7 @@ public sealed class AgentCommands
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }
+                sessionRenderer.Flush();
                 await _out.WriteLineAsync().ConfigureAwait(false);
                 var statusConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
                 try

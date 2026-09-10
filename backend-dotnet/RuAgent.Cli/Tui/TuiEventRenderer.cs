@@ -11,6 +11,8 @@ public sealed class TuiSessionRenderer
     private bool _isThinking;
     private System.Diagnostics.Stopwatch? _thinkingWatch;
     private System.Diagnostics.Stopwatch? _turnWatch;
+    private string _lineBuf = string.Empty;
+    private bool _inToolBlock;
 
     private CancellationTokenSource? _spinnerCts;
     private Task? _spinnerTask;
@@ -30,6 +32,8 @@ public sealed class TuiSessionRenderer
         StopThinkingSpinner(showSummary: false);
         _hasStreamedDelta = false;
         _isThinking = false;
+        _lineBuf = string.Empty;
+        _inToolBlock = false;
         _thinkingWatch?.Reset();
         _turnWatch?.Reset();
     }
@@ -159,8 +163,7 @@ public sealed class TuiSessionRenderer
                 _hasStreamedDelta = true;
             }
 
-            _writer.Write(delta.Text);
-            _writer.Flush();
+            RenderDeltaText(delta.Text);
             return;
         }
 
@@ -187,8 +190,95 @@ public sealed class TuiSessionRenderer
         }
     }
 
+    /// <summary>
+    /// Streams assistant text line by line so tool-call payloads can be
+    /// restyled (dim gutter, markers swallowed) instead of passing as chat.
+    /// A remainder is held only while it could still become a block marker
+    /// (contains '<'); anything else flushes immediately, so normal text
+    /// paints exactly as before.
+    /// </summary>
+    private void RenderDeltaText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        _lineBuf += text;
+        int nl;
+        while ((nl = _lineBuf.IndexOf('\n')) >= 0)
+        {
+            RenderDeltaLine(_lineBuf[..nl]);
+            _writer.WriteLine();
+            _lineBuf = _lineBuf[(nl + 1)..];
+        }
+        if (_lineBuf.Length > 0 && !_lineBuf.Contains('<'))
+        {
+            var rest = _lineBuf;
+            _lineBuf = string.Empty;
+            if (_inToolBlock)
+            {
+                _writer.Write(AnsiTheme.Dim("┃ " + rest));
+            }
+            else
+            {
+                _writer.Write(rest);
+            }
+        }
+        _writer.Flush();
+    }
+
+    private void RenderDeltaLine(string line)
+    {
+        var marker = line.Trim();
+        if (marker == "<tool_call>")
+        {
+            if (!_inToolBlock)
+            {
+                _writer.WriteLine();
+            }
+            _inToolBlock = true;
+            return;
+        }
+        if (marker == "</tool_call>")
+        {
+            _inToolBlock = false;
+            return;
+        }
+        if (_inToolBlock)
+        {
+            _writer.Write(AnsiTheme.Dim("┃ " + line));
+            return;
+        }
+        _writer.Write(line);
+    }
+
+    /// <summary>
+    /// Emits any buffered remainder (a marker split across chunks, or trailing
+    /// text without a newline). Called on every durable envelope and at turn
+    /// end so text is never stuck buffered.
+    /// </summary>
+    public void Flush()
+    {
+        if (_lineBuf.Length == 0) return;
+        var rest = _lineBuf;
+        _lineBuf = string.Empty;
+        var marker = rest.Trim();
+        if (marker is "<tool_call>" or "</tool_call>")
+        {
+            RenderDeltaLine(rest);
+            return;
+        }
+        if (_inToolBlock)
+        {
+            _writer.Write(AnsiTheme.Dim("┃ " + rest));
+        }
+        else
+        {
+            _writer.Write(rest);
+        }
+        _writer.Flush();
+    }
+
     public void RenderEnvelope(HarnessSafeEventEnvelope envelope)
     {
+        Flush();
         var seq = envelope.Sequence;
         var type = envelope.EventType;
         var status = envelope.Status;

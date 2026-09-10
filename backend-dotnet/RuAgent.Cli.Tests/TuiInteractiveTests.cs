@@ -121,6 +121,102 @@ public sealed class TuiInteractiveTests
         Assert.Contains("Run #6 FAILED", sw2.ToString(), StringComparison.Ordinal);
     }
 
+    private static SseFrame DeltaFrame(string text, long seq = 1) => new(
+        null,
+        "assistant.delta",
+        JsonSerializer.Serialize(new
+        {
+            kind = "assistant.delta",
+            data = JsonSerializer.Serialize(new
+            {
+                text,
+                model_step_id = "step_0123456789abcdef0123456789abcdef",
+            }),
+        }),
+        true,
+        seq);
+
+    [Fact]
+    public void TuiSessionRenderer_StylesToolCallBlock_WithGutter()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(DeltaFrame("<tool_call>\n", 1));
+        renderer.RenderFrame(DeltaFrame("<tool_id>\n", 2));
+        renderer.RenderFrame(DeltaFrame("{\"tool_id\": \"read\"}\n", 3));
+        renderer.RenderFrame(DeltaFrame("</tool_call>\n", 4));
+
+        var output = sw.ToString();
+        Assert.Contains("✦ RuAgent:", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
+        Assert.Contains("┃", output, StringComparison.Ordinal);
+        Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TuiSessionRenderer_StylesSplitMarker_AcrossChunks()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(DeltaFrame("<tool_c", 1));
+        renderer.RenderFrame(DeltaFrame("all>\n<tool_id>\n", 2));
+        renderer.RenderFrame(DeltaFrame("</tool_call>\n", 3));
+
+        var output = sw.ToString();
+        Assert.DoesNotContain("<tool_c", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("all>", output, StringComparison.Ordinal);
+        Assert.Contains("┃", output, StringComparison.Ordinal);
+        Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TuiSessionRenderer_StreamsNormalText_Verbatim()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(DeltaFrame("Hello, ", 1));
+        renderer.RenderFrame(DeltaFrame("world!\n", 2));
+
+        var output = sw.ToString();
+        Assert.Contains("Hello, world!", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("┃", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TuiSessionRenderer_FlushesRemainder_OnDurableEnvelope()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+
+        renderer.RenderFrame(DeltaFrame("tail-no-newline", 1));
+        var env = new HarnessSafeEventEnvelope(
+            ProtocolVersion: 1,
+            EventId: "evt_9",
+            RunId: "run_1",
+            SessionId: "sess_1",
+            Sequence: 9,
+            EventType: "model.turn_started",
+            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+            Status: "running",
+            SafeSummary: "next turn");
+        renderer.RenderEnvelope(env);
+
+        var output = sw.ToString();
+        Assert.Contains("tail-no-newline", output, StringComparison.Ordinal);
+        Assert.Contains("Turn #9", output, StringComparison.Ordinal);
+        Assert.True(
+            output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("Turn #9", StringComparison.Ordinal),
+            "buffered tail must print before the envelope output");
+    }
+
     [Fact]
     public void TuiEventRenderer_FiltersInternalUsageRecordedEvents()
     {

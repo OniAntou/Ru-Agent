@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuBackend.Harness.Reconciliation;
@@ -344,6 +345,61 @@ public sealed class HarnessRecoveryScannerTests
         }
 
         return events;
+    }
+
+    [Fact]
+    public async Task Poisoned_run_does_not_abort_recovery_of_other_runs()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var tracked = new List<RunId>();
+            var poison = await SeedRunningAsync(fixture, tracked);
+            var good = await SeedRunningAsync(fixture, tracked);
+
+            var store = new FaultingReadStore(fixture.EventStore, poison.RunId);
+            var summaries = await new HarnessRecoveryScanner(
+                store,
+                new FixedTime(Timestamp),
+                _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).ScanPendingRunsAsync(CancellationToken.None);
+
+            var summary = Assert.Single(summaries);
+            Assert.Equal(good.RunId, summary.RunId);
+            Assert.Equal("failed_pre_dispatch", summary.Action);
+            var after = await fixture.EventStore.GetRunAsync(good.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Failed, after!.State);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private sealed class FaultingReadStore(IHarnessEventStore inner, RunId poison) : IHarnessEventStore
+    {
+        public Task<CreateRunResult> TryCreateRunAsync(NewAgentRun request, CancellationToken cancellationToken) =>
+            inner.TryCreateRunAsync(request, cancellationToken);
+
+        public Task<AgentRun?> GetRunAsync(RunId runId, CancellationToken cancellationToken) =>
+            inner.GetRunAsync(runId, cancellationToken);
+
+        public Task<HarnessCommitResult> CommitAsync(HarnessCommit commit, CancellationToken cancellationToken) =>
+            inner.CommitAsync(commit, cancellationToken);
+
+        public async IAsyncEnumerable<HarnessEventEnvelope> ReadEventsAsync(
+            RunId runId,
+            long afterSequence,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            if (runId == poison)
+            {
+                throw new InvalidOperationException("poisoned event stream");
+            }
+            await foreach (var envelope in inner.ReadEventsAsync(runId, afterSequence, cancellationToken).ConfigureAwait(false))
+            {
+                yield return envelope;
+            }
+        }
     }
 
     private static async Task<IReadOnlyList<RecoveredRunSummary>> ScanAsync(

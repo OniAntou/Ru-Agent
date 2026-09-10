@@ -37,7 +37,22 @@ public sealed class HarnessRecoveryScanner(
             : Array.Empty<RunId>();
         foreach (var runId in runIds)
         {
-            var summary = await ScanRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            RecoveredRunSummary? summary;
+            try
+            {
+                summary = await ScanRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // One unreadable run (corrupt events, store fault) must not
+                // abort recovery of every other run: it stays non-terminal and
+                // is retried on the next boot.
+                continue;
+            }
             if (summary is { } recovered)
             {
                 summaries.Add(recovered);
@@ -284,6 +299,23 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         try
         {
             var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
+            await ScanRunsStageAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            await ReconcileMembershipsStageAsync(stoppingToken).ConfigureAwait(false);
+            await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "startup recovery scan failed");
+        }
+    }
+
+    private async Task ScanRunsStageAsync(IReadOnlyList<RunId> pendingRunIds, CancellationToken stoppingToken)
+    {
+        try
+        {
             var scanner = new HarnessRecoveryScanner(
                 _store,
                 new SystemTimeProvider(),
@@ -296,32 +328,48 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
                     summary.RunId.Value,
                     summary.Action);
             }
-
-            if (_workspaceCoordinatorStore is not null)
-            {
-                var reconciled = await _workspaceCoordinatorStore
-                    .ReconcileExpiredAsync(DateTimeOffset.UtcNow, stoppingToken)
-                    .ConfigureAwait(false);
-                if (reconciled.ExpiredMemberships > 0
-                    || reconciled.ExpiredClaims > 0
-                    || reconciled.RejectedPreparedChanges > 0)
-                {
-                    _logger.LogWarning(
-                        "workspace recovery reconciled memberships={Memberships} claims={Claims} prepared_changes={PreparedChanges}",
-                        reconciled.ExpiredMemberships,
-                        reconciled.ExpiredClaims,
-                        reconciled.RejectedPreparedChanges);
-                }
-            }
-
-            await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            throw;
         }
         catch (Exception error)
         {
-            _logger.LogError(error, "startup recovery scan failed");
+            // The run scan must not skip workspace membership reconciliation:
+            // stale leases alone can keep every workspace locked.
+            _logger.LogError(error, "startup recovery run scan failed");
+        }
+    }
+
+    private async Task ReconcileMembershipsStageAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            if (_workspaceCoordinatorStore is null)
+            {
+                return;
+            }
+            var reconciled = await _workspaceCoordinatorStore
+                .ReconcileExpiredAsync(DateTimeOffset.UtcNow, stoppingToken)
+                .ConfigureAwait(false);
+            if (reconciled.ExpiredMemberships > 0
+                || reconciled.ExpiredClaims > 0
+                || reconciled.RejectedPreparedChanges > 0)
+            {
+                _logger.LogWarning(
+                    "workspace recovery reconciled memberships={Memberships} claims={Claims} prepared_changes={PreparedChanges}",
+                    reconciled.ExpiredMemberships,
+                    reconciled.ExpiredClaims,
+                    reconciled.RejectedPreparedChanges);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "startup recovery membership reconcile failed");
         }
     }
 

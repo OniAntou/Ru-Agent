@@ -386,6 +386,38 @@ public sealed class TuiInteractiveTests
     }
 
     [Theory]
+    // Màn hình trống (header ~7 dòng): không đệm, khung nằm ngay dưới nội dung.
+    [InlineData(7, 30, 0)]
+    [InlineData(1, 30, 0)]
+    [InlineData(15, 30, 0)]
+    // Output gần đầy màn hình (cách đáy <= 4 dòng): đệm nốt để ghim khung xuống đáy.
+    [InlineData(24, 30, 2)]
+    [InlineData(22, 30, 4)]
+    [InlineData(25, 30, 1)]
+    // Đã chạm/quá đáy hoặc không có console: không đệm.
+    [InlineData(26, 30, 0)]
+    [InlineData(40, 30, 0)]
+    [InlineData(0, 30, 0)]
+    [InlineData(-1, 30, 0)]
+    public void InteractiveLineReader_ComputePushLines_PadsOnlyNearBottom(int cursorTop, int windowHeight, int expected)
+    {
+        Assert.Equal(expected, InteractiveLineReader.ComputePushLines(cursorTop, windowHeight));
+    }
+
+    [Fact]
+    public void InteractiveLineReader_BuildSubmitEcho_IsSingleLineWithoutBoxChrome()
+    {
+        var echo = InteractiveLineReader.BuildSubmitEcho("Ê");
+
+        Assert.Contains("Ê", echo);
+        Assert.Contains("❯", echo);
+        Assert.DoesNotContain("╭", echo);
+        Assert.DoesNotContain("╰", echo);
+        Assert.DoesNotContain("│", echo);
+        Assert.DoesNotContain("\n", echo);
+    }
+
+    [Theory]
     [InlineData(40)]
     [InlineData(80)]
     [InlineData(120)]

@@ -40,6 +40,9 @@ public sealed class InteractiveLineReader
     private const int PushBottomRows = 4;
     private const int MinConsoleHeight = 5;
     private const int DefaultConsoleHeight = 24;
+    /// <summary>Số dòng trắng tối đa được đệm khi ghim khung nhập xuống đáy.
+    /// Khoảng trống lớn hơn mức này thì giữ khung ngay dưới nội dung (màn hình trống không bị đẩy đáy).</summary>
+    private const int MaxPushPadLines = 4;
 
     public IReadOnlyList<string> History => _history;
 
@@ -221,6 +224,13 @@ public sealed class InteractiveLineReader
 
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
 
+    /// <summary>
+    /// Echo 1 dòng cho prompt vừa gửi (vd "❯ hello"). Dùng thay cho cả box 3 dòng
+    /// để màn hình không bao giờ có 2 khung nhập giống nhau gây nhầm lẫn.
+    /// </summary>
+    public static string BuildSubmitEcho(string text) =>
+        AnsiTheme.Dim("❯ ") + AnsiTheme.White(text ?? string.Empty);
+
     public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash)
     {
         var nl = Environment.NewLine;
@@ -329,24 +339,31 @@ public sealed class InteractiveLineReader
         return await ReadInteractiveKeyLoopAsync(outWriter, prompt, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Tính số dòng trắng cần đệm để ghim khung nhập xuống đáy viewport.
+    /// Chỉ đệm khi output đã dài gần đầy màn hình (cách đáy không quá
+    /// <c>MaxPushPadLines</c> dòng); màn hình còn trống thì trả 0 để khung
+    /// nằm ngay dưới nội dung. Pure function nên unit test được.
+    /// </summary>
+    public static int ComputePushLines(int cursorTop, int windowHeight)
+    {
+        if (cursorTop <= 0) return 0;
+        int pushLines = (windowHeight - PushBottomRows) - cursorTop;
+        return pushLines is > 0 and <= MaxPushPadLines ? pushLines : 0;
+    }
+
     public static async Task PushToBottomAsync(TextWriter outWriter)
     {
         try
         {
             if (!Console.IsOutputRedirected && Console.WindowHeight > MinConsoleHeight)
             {
-                int winHeight = Console.WindowHeight;
-                int cursorTop = Console.CursorTop;
-                int targetRow = winHeight - PushBottomRows;
-                if (cursorTop < targetRow && cursorTop > 0)
+                int pushLines = ComputePushLines(Console.CursorTop, Console.WindowHeight);
+                for (int i = 0; i < pushLines; i++)
                 {
-                    int pushLines = targetRow - cursorTop;
-                    for (int i = 0; i < pushLines; i++)
-                    {
-                        await outWriter.WriteLineAsync().ConfigureAwait(false);
-                    }
-                    await outWriter.FlushAsync().ConfigureAwait(false);
+                    await outWriter.WriteLineAsync().ConfigureAwait(false);
                 }
+                await outWriter.FlushAsync().ConfigureAwait(false);
             }
         }
         catch (IOException)
@@ -533,8 +550,11 @@ public sealed class InteractiveLineReader
             {
                 ClearDropdown();
                 var text = buffer.ToString();
-                outWriter.Write("\r\x1b[2K" + BuildMid(boxWidth, boxPrompt, text, "", false));
-                outWriter.Write("\x1b[1B\r\x1b[2K" + BuildBottom(boxWidth, defaultLegend, false));
+                // Xóa cả box 3 dòng (top/mid/bottom), in lại echo 1 dòng để không
+                // bao giờ có 2 khung nhập giống nhau trên màn hình. Cursor đang ở
+                // dòng mid: lên top xóa, xuống bottom xóa, in echo tại đó.
+                outWriter.Write("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[2B\r\x1b[2K");
+                outWriter.Write(BuildSubmitEcho(text));
                 outWriter.WriteLine();
                 outWriter.Flush();
             }

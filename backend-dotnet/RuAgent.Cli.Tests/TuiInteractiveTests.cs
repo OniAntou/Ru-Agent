@@ -122,6 +122,26 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
+    public void TuiEventRenderer_FiltersInternalUsageRecordedEvents()
+    {
+        AnsiTheme.IsEnabled = false;
+        using var sw = new StringWriter();
+        var env = new HarnessSafeEventEnvelope(
+            ProtocolVersion: 1,
+            EventId: "evt_7",
+            RunId: "run_1",
+            SessionId: "sess_1",
+            Sequence: 6,
+            EventType: "model.usage_recorded",
+            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+            Status: "reported",
+            SafeSummary: "reported");
+
+        TuiEventRenderer.RenderEnvelope(env, sw);
+        Assert.Equal(string.Empty, sw.ToString());
+    }
+
+    [Fact]
     public void Parser_ParsesChatAndReplCommands()
     {
         var res1 = AgentCliParser.Parse(["agent", "chat", "--workspace", "C:\\temp", "--preset", "standard"]);

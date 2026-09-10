@@ -141,7 +141,11 @@ public sealed class ProviderCatalogController : IAsyncDisposable
 
     private async Task<bool> RestartAfterCancellationAsync(Task<bool> previous, bool force)
     {
-        try { await previous.ConfigureAwait(false); } catch { }
+        try { await previous.ConfigureAwait(false); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ProviderCatalog] Cancel wait failed: {ex.Message}");
+        }
         lock (_gate)
         {
             _restartAfterCancellation = null;
@@ -293,7 +297,11 @@ public sealed class ProviderCatalogController : IAsyncDisposable
         Cancel(toCancel);
         if (flight is not null)
         {
-            try { await flight.ConfigureAwait(false); } catch { }
+            try { await flight.ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ProviderCatalog] Dispose wait failed: {ex.Message}");
+            }
         }
     }
 

@@ -56,6 +56,12 @@ namespace RuApp.Views
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
         private const double ReadingColumnMaxWidth = 820;
+        private const double NarrowWidthThreshold = 900;
+        private const double MediumWidthThreshold = 1280;
+        private const double NarrowHorizontalInset = 24;
+        private const double MediumHorizontalInset = 48;
+        private const double WideHorizontalInset = 96;
+        private const double MinAvailableInputWidth = 160;
         private const int MaxImageAttachmentBytes = Services.ChatAttachmentPolicy.MaxImageAttachmentBytes;
         private const int MaxTextAttachmentBytes = Services.ChatAttachmentPolicy.MaxTextAttachmentBytes;
 
@@ -182,7 +188,7 @@ namespace RuApp.Views
                     contextHoverTimer?.Stop();
                     contextHoverTimer = new DispatcherTimer
                     {
-                        Interval = TimeSpan.FromMilliseconds(120)
+                        Interval = Services.UiTiming.ChatFlash
                     };
                     contextHoverTimer.Tick += (_, _) =>
                     {
@@ -287,7 +293,7 @@ namespace RuApp.Views
             _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
-            _typingDebounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            _typingDebounce = new DispatcherTimer { Interval = Services.UiTiming.TypingDebounce };
             _typingDebounce.Tick += (_, __) =>
             {
                 _typingDebounce.Stop();
@@ -638,7 +644,7 @@ namespace RuApp.Views
         {
             ChatModelSaveStatusText.Text = "Could not save selected model.";
             ChatModelSaveStatusText.Visibility = Visibility.Visible;
-            _modelSaveFailureTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _modelSaveFailureTimer ??= new DispatcherTimer { Interval = Services.UiTiming.ModelSaveFailure };
             _modelSaveFailureTimer.Stop();
             _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
             _modelSaveFailureTimer.Tick += OnModelSaveFailureTimerTick;
@@ -1169,7 +1175,7 @@ namespace RuApp.Views
             if (_waveTimer == null)
             {
                 _waveTimer = DispatcherQueue.CreateTimer();
-                _waveTimer.Interval = TimeSpan.FromMilliseconds(33); // ~30 FPS
+                _waveTimer.Interval = Services.UiTiming.WaveFrame; // ~30 FPS
                 _waveTimer.Tick += OnWaveTimerTick;
             }
 
@@ -1277,49 +1283,11 @@ namespace RuApp.Views
             tb.Foreground = brush;
         }
 
-        private static Windows.UI.Color SampleAuroraColor(double u, double center, Windows.UI.Color baseColor)
-        {
-            double dist = Math.Abs(u - center);
-            const double radius = 0.35;
-            if (dist >= radius)
-            {
-                return baseColor;
-            }
+        private static Windows.UI.Color SampleAuroraColor(double u, double center, Windows.UI.Color baseColor) =>
+            Services.AgentActivityPalette.SampleAuroraColor(u, center, baseColor);
 
-            // Smooth bell-shaped intensity around the beam center
-            double intensity = (1.0 - Math.Cos((1.0 - dist / radius) * Math.PI)) / 2.0;
-
-            // Subtle Cyan-Violet Aurora palette:
-            // Leading edge: soft ethereal cyan (#38BDF8)
-            // Trailing edge: soft elegant indigo/violet (#818CF8)
-            // Peak core: soft bright luminous shimmer (#E0F2FE)
-            var cCyan = Windows.UI.Color.FromArgb(255, 56, 189, 248);
-            var cViolet = Windows.UI.Color.FromArgb(255, 129, 140, 248);
-            var cGlow = Windows.UI.Color.FromArgb(255, 224, 242, 254);
-
-            Windows.UI.Color auroraTint;
-            if (u < center)
-            {
-                double t = (center - u) / radius;
-                auroraTint = LerpColor(cGlow, cCyan, t);
-            }
-            else
-            {
-                double t = (u - center) / radius;
-                auroraTint = LerpColor(cGlow, cViolet, t);
-            }
-
-            return LerpColor(baseColor, auroraTint, intensity * 0.85);
-        }
-
-        private static Windows.UI.Color LerpColor(Windows.UI.Color from, Windows.UI.Color to, double progress)
-        {
-            double smooth = (1.0 - Math.Cos(progress * Math.PI)) / 2.0;
-            byte r = (byte)(from.R + (to.R - from.R) * smooth);
-            byte g = (byte)(from.G + (to.G - from.G) * smooth);
-            byte b = (byte)(from.B + (to.B - from.B) * smooth);
-            return Windows.UI.Color.FromArgb(255, r, g, b);
-        }
+        private static Windows.UI.Color LerpColor(Windows.UI.Color from, Windows.UI.Color to, double progress) =>
+            Services.AgentActivityPalette.LerpColor(from, to, progress);
 
         private void ClearAgentRunSummary()
         {
@@ -2437,7 +2405,7 @@ namespace RuApp.Views
             {
                 while (!cancellationToken.IsCancellationRequested && _agentController is not null)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                    await Task.Delay(Services.UiTiming.AgentRetryDelay, cancellationToken);
                     if (_agentController.CurrentRun is null)
                     {
                         return;
@@ -2649,12 +2617,12 @@ namespace RuApp.Views
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
 
-            double horizontalInset = RootGrid.ActualWidth < 900
-                ? 24
-                : RootGrid.ActualWidth < 1280
-                    ? 48
-                    : 96;
-            double availableWidth = Math.Max(160, RootGrid.ActualWidth - horizontalInset);
+            double horizontalInset = RootGrid.ActualWidth < NarrowWidthThreshold
+                ? NarrowHorizontalInset
+                : RootGrid.ActualWidth < MediumWidthThreshold
+                    ? MediumHorizontalInset
+                    : WideHorizontalInset;
+            double availableWidth = Math.Max(MinAvailableInputWidth, RootGrid.ActualWidth - horizontalInset);
             double targetWidth = Math.Min(ReadingColumnMaxWidth, availableWidth);
 
             if (WelcomeHeroPanel != null)

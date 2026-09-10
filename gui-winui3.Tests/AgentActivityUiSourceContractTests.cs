@@ -161,10 +161,12 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.Contains("SampleAuroraColor", codeBehind, StringComparison.Ordinal);
         Assert.Contains("UpdateWaveTextBlock", codeBehind, StringComparison.Ordinal);
 
-        // Subtle Cyan-Violet Aurora palette
-        Assert.Contains("56, 189, 248", codeBehind, StringComparison.Ordinal); // Soft Cyan
-        Assert.Contains("129, 140, 248", codeBehind, StringComparison.Ordinal); // Soft Violet / Indigo
-        Assert.Contains("224, 242, 254", codeBehind, StringComparison.Ordinal); // Luminous Glow
+        // Subtle Cyan-Violet Aurora palette (slice 2: owned by AgentActivityPalette)
+        var palette = File.ReadAllText(FindSource("Services", "AgentActivityPalette.cs"));
+        Assert.Contains("56, 189, 248", palette, StringComparison.Ordinal); // Soft Cyan
+        Assert.Contains("129, 140, 248", palette, StringComparison.Ordinal); // Soft Violet / Indigo
+        Assert.Contains("224, 242, 254", palette, StringComparison.Ordinal); // Luminous Glow
+        Assert.Contains("AgentActivityPalette.SampleAuroraColor", codeBehind, StringComparison.Ordinal);
     }
 
     private static string FindSource(params string[] parts)

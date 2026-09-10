@@ -45,7 +45,11 @@ public partial class App : Application
         _window = new MainWindow(composition);
         _window.Closed += (_, _) =>
         {
-            try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+            try { _singleInstanceMutex?.ReleaseMutex(); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[App] Mutex release failed: {ex.Message}");
+            }
             _singleInstanceMutex?.Dispose();
             _singleInstanceMutex = null;
         };
@@ -103,7 +107,10 @@ public partial class App : Application
                 SetForegroundWindow(targetHwnd);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[App] Activate existing instance failed: {ex.Message}");
+        }
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]

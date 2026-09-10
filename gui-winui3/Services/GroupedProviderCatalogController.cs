@@ -152,9 +152,10 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
             var results = await Task.WhenAll(childTasks).ConfigureAwait(false);
             applied = results.Any(success => success);
         }
-        catch
+        catch (Exception ex)
         {
             // One child failure must not throw away another child result.
+            System.Diagnostics.Debug.WriteLine($"[GroupedCatalog] Child refresh failed: {ex.Message}");
         }
         finally
         {
@@ -219,7 +220,11 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
 
         if (flight is not null)
         {
-            try { await flight.ConfigureAwait(false); } catch { }
+            try { await flight.ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[GroupedCatalog] Dispose wait failed: {ex.Message}");
+            }
         }
     }
 }

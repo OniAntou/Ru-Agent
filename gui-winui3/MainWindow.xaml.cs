@@ -83,7 +83,10 @@ namespace RuApp
                     var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
                     _appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[MainWindow] TitleBar setup failed: {ex.Message}");
+                }
 
                 ApplyTheme(_themePreferenceStore.Load());
                 InitializeSidebarHoverEffects();
@@ -349,7 +352,7 @@ namespace RuApp
                 _healthRefreshController.SetActive(true);
                 await _startup.RunAsync(_ => _healthRefreshController.RefreshAsync());
 
-                _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                _sessionsTimer = new DispatcherTimer { Interval = Services.UiTiming.SessionsPoll };
                 _sessionsTimer.Tick += async (_, __) =>
                 {
                     if (_sessionsPollInFlight) return;
@@ -358,9 +361,16 @@ namespace RuApp
                     {
                         if (_sessionsRefreshController != null) await _sessionsRefreshController.RefreshAsync();
                         else await LoadSessionsAsync();
-                        try { await UpdateHealthStatusAsync(); } catch { }
+                        try { await UpdateHealthStatusAsync(); }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[MainWindow] Health poll failed: {ex.Message}");
+                        }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Sessions poll failed: {ex.Message}");
+                    }
                     finally
                     {
                         _sessionsPollInFlight = false;
@@ -370,7 +380,7 @@ namespace RuApp
 
                 if (!_composition.IsHarness)
                 {
-                    _observationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    _observationTimer = new DispatcherTimer { Interval = Services.UiTiming.ObservationPoll };
                     _observationTimer.Tick += OnObservationTimerTick;
                     _observationTimer.Start();
                 }
@@ -593,7 +603,7 @@ namespace RuApp
             if (_closed || _reconnecting || _composition.IsHarness) return;
             if (_reconnectTimer == null)
             {
-                _reconnectTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                _reconnectTimer = new DispatcherTimer { Interval = Services.UiTiming.ReconnectPoll };
                 _reconnectTimer.Tick += async (_, __) => await TryReconnectBackendAsync();
             }
             if (!_reconnectTimer.IsEnabled)
@@ -762,7 +772,10 @@ namespace RuApp
                         using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                         await shutdownService.ShutdownHostAsync(shutdownCts.Token);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Host shutdown failed: {ex.Message}");
+                    }
                     await DisposeWindowResourcesAsync();
                 });
             }
@@ -916,7 +929,7 @@ namespace RuApp
                     && !string.Equals(_lastSeenReactionId, status.LastReactionId, StringComparison.Ordinal))
                 {
                     if (status.LastReactionAt is double reactionAt
-                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0 - reactionAt > 15.0)
+                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0 - reactionAt > Services.UiTiming.StaleReactionSeconds)
                     {
                         _lastSeenReactionId = status.LastReactionId;
                         _ = _apiService.AcknowledgeObservationAsync(
@@ -936,7 +949,10 @@ namespace RuApp
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Observation poll failed: {ex.Message}");
+            }
             finally
             {
                 _observationPollInFlight = false;
@@ -1243,7 +1259,7 @@ namespace RuApp
             if (SidebarResizerLine != null)
             {
                 SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
-                SidebarResizerLine.Opacity = 0.85;
+                SidebarResizerLine.Opacity = Services.UiTiming.ResizerActiveOpacity;
                 SidebarResizerLine.Width = 2;
             }
         }

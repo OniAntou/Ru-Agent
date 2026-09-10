@@ -275,7 +275,11 @@ public sealed class RefreshController<T> : IAsyncDisposable
 
         if (operation is not null)
         {
-            try { await operation.ConfigureAwait(false); } catch { }
+            try { await operation.ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[RefreshController] Cancel wait failed: {ex.Message}");
+            }
         }
 
         // RunRefreshAsync owns disposal after its final operation completion. This

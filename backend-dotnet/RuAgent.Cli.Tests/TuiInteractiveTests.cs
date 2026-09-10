@@ -705,6 +705,125 @@ public sealed class TuiInteractiveTests
         Assert.Equal(escCount, seqCount);
     }
 
+    [Fact]
+    public async Task AttachAsync_ResumesStream_AfterTransportBreak()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+
+        var runId = "run_" + new string('a', 32);
+        var eventUris = new List<string>();
+        var getRunCalls = 0;
+
+        string DurableData(int seq, string summary) => JsonSerializer.Serialize(new
+        {
+            protocol_version = 1,
+            event_id = $"evt_resume_{seq}",
+            run_id = runId,
+            session_id = "sess_123",
+            sequence = seq,
+            event_type = "run.state_changed",
+            occurred_at = "2026-09-10T00:00:00Z",
+            status = "running",
+            safe_summary = summary,
+        });
+
+        string RunJson(string status, string? terminalAt, long lastSequence) => JsonSerializer.Serialize(new
+        {
+            run_id = runId,
+            session_id = "sess_123",
+            workspace_id = "ws_test",
+            status,
+            history_wait_kind = (string?)null,
+            preset = "standard",
+            policy_snapshot_version = 1,
+            policy_snapshot_sha256 = new string('d', 64),
+            version = 1L,
+            last_sequence = lastSequence,
+            created_at = "2026-09-10T00:00:00Z",
+            updated_at = "2026-09-10T00:00:00Z",
+            terminal_at = terminalAt,
+            terminal_error_code = (string?)null,
+        });
+
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                eventUris.Add(uri);
+                if (uri.Contains("after_sequence=0"))
+                {
+                    var frame1 = $"id: 1\ndata: {DurableData(1, "first-chunk")}\n\n";
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StreamContent(new BreakingStream(Encoding.UTF8.GetBytes(frame1)))
+                        {
+                            Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") },
+                        },
+                    };
+                }
+                var frame2 = $"id: 2\ndata: {DurableData(2, "second-chunk")}\n\n";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(frame2, Encoding.UTF8, "text/event-stream") };
+            }
+            if (req.Method == HttpMethod.Get && uri.EndsWith(runId, StringComparison.Ordinal))
+            {
+                getRunCalls++;
+                var terminal = getRunCalls > 1;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        RunJson(terminal ? "completed" : "running", terminal ? "2026-09-10T00:00:01Z" : null, terminal ? 2L : 1L),
+                        Encoding.UTF8,
+                        "application/json"),
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
+        });
+
+        var outWriter = new StringWriter();
+        var errWriter = new StringWriter();
+        var httpClient = new HttpClient(handler);
+
+        var commands = new AgentCommands(session, httpClient, outWriter, errWriter, new StringReader(string.Empty));
+        var exit = await commands.AttachAsync(new AttachCommand(runId, true), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.Equal(2, eventUris.Count);
+        Assert.Contains("after_sequence=1", eventUris[1], StringComparison.Ordinal);
+        var outStr = outWriter.ToString();
+        Assert.Contains("first-chunk", outStr, StringComparison.Ordinal);
+        Assert.Contains("second-chunk", outStr, StringComparison.Ordinal);
+        Assert.DoesNotContain("run_error", errWriter.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("stream_interrupted", errWriter.ToString(), StringComparison.Ordinal);
+    }
+
+    private sealed class BreakingStream : MemoryStream
+    {
+        public BreakingStream(byte[] data) : base(data, writable: false)
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (Position >= Length)
+            {
+                throw new IOException("Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host.");
+            }
+            return base.Read(buffer, offset, count);
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Position >= Length)
+            {
+                throw new IOException("Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host.");
+            }
+            return await base.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private sealed class FakeHandler : HttpMessageHandler    {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
         public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;

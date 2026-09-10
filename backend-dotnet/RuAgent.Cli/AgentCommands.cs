@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -793,11 +794,92 @@ public sealed class AgentCommands
         }
     }
 
-    private async Task StreamEventsAsync(string runId, bool json, CancellationToken ct)
+    private const int MaxStreamResumes = 3;
+    private static readonly TimeSpan StreamResumeDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Streams run events, transparently resuming from the last durable
+    /// sequence when the transport breaks mid-stream (bounded retries). A
+    /// clean stream end only finishes the turn when the run itself is
+    /// terminal; otherwise the server closed early and we resume like a
+    /// break. Durable frames never duplicate (cursor-based); transient frames
+    /// published during the outage may leave a small gap in live text.
+    /// </summary>
+    private async Task StreamRunEventsResumedAsync(
+        string runId,
+        Func<SseFrame, CancellationToken, Task> onFrameAsync,
+        CancellationToken ct)
     {
-        await foreach (var frame in _sseClient.ReadEventsAsync(runId, afterSequence: 0, cancellationToken: ct).ConfigureAwait(false))
+        var afterSequence = 0L;
+        var resumes = 0;
+        while (true)
         {
             ct.ThrowIfCancellationRequested();
+            try
+            {
+                await foreach (var frame in _sseClient.ReadEventsAsync(runId, afterSequence, ct).ConfigureAwait(false))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (frame.DurableSequence is { } seq && seq > afterSequence)
+                    {
+                        afterSequence = seq;
+                    }
+                    await onFrameAsync(frame, ct).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or HttpRequestException && !ct.IsCancellationRequested)
+            {
+                resumes++;
+                if (resumes > MaxStreamResumes)
+                {
+                    throw new AgentApiException("stream_interrupted", $"event stream broke {resumes} times; last error: {ex.Message}", inner: ex);
+                }
+                await Task.Delay(StreamResumeDelay, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            if (await IsRunTerminalAsync(runId, ct).ConfigureAwait(false) != false)
+            {
+                return;
+            }
+            resumes++;
+            if (resumes > MaxStreamResumes)
+            {
+                throw new AgentApiException("stream_interrupted", "event stream ended before the run reached a terminal state");
+            }
+            await Task.Delay(StreamResumeDelay, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <returns>
+    /// True when the run is provably terminal, false when provably still
+    /// active, null when the status check itself failed (inconclusive — the
+    /// caller keeps the historical behavior of treating a clean stream end
+    /// as done rather than spinning on an unreachable backend).
+    /// </returns>
+    private async Task<bool?> IsRunTerminalAsync(string runId, CancellationToken ct)
+    {
+        GetAgentRunResponse run;
+        try
+        {
+            run = await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        return run.TerminalAt is not null
+            || string.Equals(run.Status, "completed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(run.Status, "failed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(run.Status, "cancelled", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(run.Status, "interrupted", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task StreamEventsAsync(string runId, bool json, CancellationToken ct)
+    {
+        await StreamRunEventsResumedAsync(runId, async (frame, frameCt) =>
+        {
+            frameCt.ThrowIfCancellationRequested();
             if (json)
             {
                 NdjsonEventRenderer.RenderFrame(frame, _out);
@@ -807,7 +889,7 @@ public sealed class AgentCommands
                 SafeEventRenderer.RenderFrame(frame, _out);
             }
             await _out.FlushAsync().ConfigureAwait(false);
-        }
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<int> ChatAsync(ChatCommand cmd, CancellationToken cancellationToken)
@@ -1151,7 +1233,7 @@ public sealed class AgentCommands
                     }
                 }
 
-                await foreach (var frame in _sseClient.ReadEventsAsync(resp.RunId, afterSequence: 0, cancellationToken: cancellationToken).ConfigureAwait(false))
+                async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (cmd.Json)
@@ -1212,6 +1294,7 @@ public sealed class AgentCommands
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }
+                await StreamRunEventsResumedAsync(resp.RunId, OnFrameAsync, cancellationToken).ConfigureAwait(false);
                 sessionRenderer.Flush();
                 await _out.WriteLineAsync().ConfigureAwait(false);
                 var statusConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });

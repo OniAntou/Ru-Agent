@@ -12,6 +12,7 @@ namespace RuBackend.Harness.Broker;
 public sealed class BrokerApprovalState
 {
     private const string KeySeparator = "|";
+    private const int MaxAuthorizationTokenChars = 4_096;
 
     private sealed class RunState
     {
@@ -50,14 +51,29 @@ public sealed class BrokerApprovalState
 
     public void StoreAuthorizationToken(string runId, string argsKey, string token, DateTimeOffset expiresAt)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(argsKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(token);
+        if (token.Length > MaxAuthorizationTokenChars)
+        {
+            throw new ArgumentOutOfRangeException(nameof(token), "Authorization token exceeds the size limit.");
+        }
+
         Run(runId).Tokens[argsKey] = (token, expiresAt);
     }
 
     public bool TryPeekAuthorizationToken(string runId, string argsKey, out string? token)
     {
         token = null;
+        if (string.IsNullOrWhiteSpace(runId) || string.IsNullOrWhiteSpace(argsKey))
+        {
+            return false;
+        }
+
         if (!_runs.TryGetValue(runId, out var run)
             || !run.Tokens.TryGetValue(argsKey, out var entry)
+            || string.IsNullOrWhiteSpace(entry.Token)
+            || entry.Token.Length > MaxAuthorizationTokenChars
             || entry.ExpiresAt <= DateTimeOffset.UtcNow)
         {
             return false;
@@ -65,6 +81,19 @@ public sealed class BrokerApprovalState
 
         token = entry.Token;
         return true;
+    }
+
+    /// <summary>
+    /// Drops cached authorization tokens for one run. Call when the policy
+    /// snapshot rotates (N+1 invalidates pending N decisions) so a token
+    /// issued under the old snapshot cannot authorize the new one.
+    /// </summary>
+    public void InvalidateRunTokens(string runId)
+    {
+        if (_runs.TryGetValue(runId, out var run))
+        {
+            run.Tokens.Clear();
+        }
     }
 
     public void ClearRun(string runId)

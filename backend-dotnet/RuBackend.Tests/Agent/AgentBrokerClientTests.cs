@@ -1,3 +1,5 @@
+extern alias Broker;
+
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RuAgent.Protocol;
 using RuBackend.Agent;
+using BrokerCapabilityProfile = Broker::RuAgent.Broker.Policy.CapabilityProfile;
 using Xunit;
 
 namespace RuBackend.Tests.Agent;
@@ -23,7 +26,7 @@ public sealed class AgentBrokerClientTests
         await using var client = fixture.Client;
 
         var capabilities = await client.GetCapabilitiesAsync(
-            CapabilityProfile.Agent,
+            BrokerCapabilityProfile.Agent,
             CancellationToken.None);
         var fileWrite = Assert.Single(capabilities);
         Assert.Equal("files.write", fileWrite.ToolId);
@@ -51,7 +54,7 @@ public sealed class AgentBrokerClientTests
                 "tool",
                 new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                 2_000),
-            CapabilityProfile.Agent,
+            BrokerCapabilityProfile.Agent,
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
@@ -69,7 +72,7 @@ public sealed class AgentBrokerClientTests
     {
         await using var fixture = await ClientFixture.StartAsync();
         await using var client = fixture.Client;
-        _ = await client.GetCapabilitiesAsync(CapabilityProfile.Agent, CancellationToken.None);
+        _ = await client.GetCapabilitiesAsync(BrokerCapabilityProfile.Agent, CancellationToken.None);
         _ = await client.OpenSessionAsync(
             "session-1",
             new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
@@ -89,7 +92,7 @@ public sealed class AgentBrokerClientTests
                 "tool",
                 new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                 2_000),
-            CapabilityProfile.Agent,
+            BrokerCapabilityProfile.Agent,
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
@@ -123,7 +126,7 @@ public sealed class AgentBrokerClientTests
                 "tool",
                 new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                 2_000),
-            CapabilityProfile.Agent,
+            BrokerCapabilityProfile.Agent,
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
@@ -157,7 +160,7 @@ public sealed class AgentBrokerClientTests
         await using var client = fixture.Client;
 
         var error = await Assert.ThrowsAsync<AgentBrokerException>(() =>
-            client.GetCapabilitiesAsync(CapabilityProfile.Agent, CancellationToken.None));
+            client.GetCapabilitiesAsync(BrokerCapabilityProfile.Agent, CancellationToken.None));
 
         Assert.Equal("invalid_capabilities", error.Code);
     }
@@ -204,7 +207,7 @@ public sealed class AgentBrokerClientTests
                     "tool",
                     new Dictionary<string, object?> { ["path"] = "notes.txt", ["content"] = "hello" },
                     2_000),
-                CapabilityProfile.Agent,
+                BrokerCapabilityProfile.Agent,
                 CancellationToken.None));
 
         Assert.Equal("invalid_tool_result", error.Code);

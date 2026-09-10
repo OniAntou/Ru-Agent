@@ -35,53 +35,10 @@ public sealed class HarnessPolicySnapshotService
 
     public static BrokerPolicySnapshotWire ToWire(PolicySnapshot snapshot)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
-        var wirePreset = snapshot.Preset == AgentPermissionPreset.FullAccess
-            ? BrokerPolicyContracts.FullAccessPresetWireValue
-            : BrokerPolicyContracts.StandardPresetWireValue;
-
-        var wireWorkspace = new BrokerPolicyWorkspaceIdentityWire(
-            snapshot.Workspace.WorkspaceId.Value,
-            snapshot.Workspace.VolumeSerialNumber,
-            snapshot.Workspace.RootFileId,
-            snapshot.Workspace.DisplayIdentityHash);
-
-        var wireRules = snapshot.OrderedRules.Select(rule => new BrokerPolicyRuleWire(
-            RuleId: rule.RuleId.Value,
-            Scope: rule.Scope switch
-            {
-                PolicyRuleScope.Global => BrokerPolicyContracts.GlobalScopeWireValue,
-                PolicyRuleScope.Project => BrokerPolicyContracts.ProjectScopeWireValue,
-                PolicyRuleScope.Run => BrokerPolicyContracts.RunScopeWireValue,
-                PolicyRuleScope.Once => BrokerPolicyContracts.OnceScopeWireValue,
-                _ => throw new ArgumentOutOfRangeException(nameof(rule.Scope)),
-            },
-            Decision: rule.Decision switch
-            {
-                PolicyDecision.Allow => BrokerPolicyContracts.AllowWireValue,
-                PolicyDecision.Ask => BrokerPolicyContracts.AskWireValue,
-                PolicyDecision.Deny => BrokerPolicyContracts.DenyWireValue,
-                _ => throw new ArgumentOutOfRangeException(nameof(rule.Decision)),
-            },
-            Matcher: new BrokerPolicyMatcherWire(
-                ToolId: rule.Matcher.ToolId,
-                ToolVersion: rule.Matcher.ToolVersion,
-                CanonicalPathPattern: rule.Matcher.CanonicalPathPattern,
-                ResolvedExecutable: rule.Matcher.ResolvedExecutable,
-                ArgvPattern: rule.Matcher.ArgvPattern,
-                CwdPattern: rule.Matcher.CwdPattern,
-                OperationClass: rule.Matcher.OperationClass,
-                NetworkIntent: rule.Matcher.NetworkIntent),
-            CreationOrder: rule.CreationOrder,
-            ExpiresAt: rule.ExpiresAt?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)))
-            .ToList();
-
-        return new BrokerPolicySnapshotWire(
-            Version: snapshot.Version,
-            Preset: wirePreset,
-            Workspace: wireWorkspace,
-            OrderedRules: wireRules,
-            CreatedAt: snapshot.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        // Single source of truth: PolicySnapshotMapper owns the Host -> Broker
+        // wire projection so hash-compatible mapping cannot drift.
+        // Kept here only for existing callers/tests.
+        return Harness.Broker.PolicySnapshotMapper.ToWire(snapshot);
     }
 
     public static string ComputeProtocolHash(PolicySnapshot snapshot)

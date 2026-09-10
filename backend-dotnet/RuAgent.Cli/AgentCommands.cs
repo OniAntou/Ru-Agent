@@ -1088,7 +1088,7 @@ public sealed class AgentCommands
 
             try
             {
-                sessionRenderer.Reset();
+                sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
 
                 if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase)
@@ -1114,6 +1114,7 @@ public sealed class AgentCommands
                         if (cmd.Json || (_in == Console.In && Console.IsInputRedirected))
                         {
                             await _out.WriteLineAsync($"waiting_workspace_trust: run 'ru agent trust {resp.RunId} --approve' to proceed.").ConfigureAwait(false);
+                            sessionRenderer.EndTurn();
                             continue;
                         }
 
@@ -1136,6 +1137,7 @@ public sealed class AgentCommands
                             {
                                 await _out.WriteLineAsync(Tui.AnsiTheme.Red("  ✗ Workspace trust denied. Execution aborted.\n")).ConfigureAwait(false);
                                 await _out.FlushAsync().ConfigureAwait(false);
+                                sessionRenderer.EndTurn();
                                 continue;
                             }
                             await _out.FlushAsync().ConfigureAwait(false);
@@ -1143,6 +1145,7 @@ public sealed class AgentCommands
                         catch (Exception ex)
                         {
                             await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                            sessionRenderer.EndTurn();
                             continue;
                         }
                     }
@@ -1224,13 +1227,16 @@ public sealed class AgentCommands
                 }
                 Tui.GrokStatusBar.Render(statusConsole, canonicalWorkspace, cmd.Preset, turn, lastTotalTokens);
                 await _out.FlushAsync().ConfigureAwait(false);
+                sessionRenderer.EndTurn();
             }
             catch (OperationCanceledException)
             {
+                sessionRenderer.EndTurn();
                 await _out.WriteLineAsync(Tui.AnsiTheme.Yellow("Run interrupted by user.")).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                sessionRenderer.EndTurn();
                 await _err.WriteLineAsync(Tui.AnsiTheme.Red($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
             await _out.FlushAsync().ConfigureAwait(false);

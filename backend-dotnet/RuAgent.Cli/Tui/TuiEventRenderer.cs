@@ -34,6 +34,24 @@ public sealed class TuiSessionRenderer
         _turnWatch?.Reset();
     }
 
+    /// <summary>
+    /// Starts the thinking indicator immediately (right after submit, before
+    /// the run is even created) so Enter never meets dead air. The first real
+    /// activity frame or delta takes over seamlessly (double-start guarded);
+    /// <see cref="EndTurn"/> stops it on paths that never stream a frame.
+    /// </summary>
+    public void BeginTurn()
+    {
+        Reset();
+        StartThinkingSpinner();
+    }
+
+    /// <summary>Silent stop for turns that ended without streaming frames. No-op when already stopped.</summary>
+    public void EndTurn()
+    {
+        StopThinkingSpinner(showSummary: false);
+    }
+
     private void StartThinkingSpinner()
     {
         _isThinking = true;

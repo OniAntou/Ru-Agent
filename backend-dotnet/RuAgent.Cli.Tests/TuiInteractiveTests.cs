@@ -425,25 +425,44 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_IsSingleLineMiniBox()
+    public void InteractiveLineReader_BuildSubmitEcho_IsFilledBar()
     {
-        var echo = InteractiveLineReader.BuildSubmitEcho("Ê");
+        bool prev = AnsiTheme.IsEnabled;
+        AnsiTheme.IsEnabled = true;
+        try
+        {
+            var echo = InteractiveLineReader.BuildSubmitEcho("Ê");
 
-        Assert.Contains("Ê", echo);
-        Assert.Contains("❯", echo);
-        Assert.Contains("│", echo);
-        Assert.DoesNotContain("╭", echo);
-        Assert.DoesNotContain("╰", echo);
-        Assert.DoesNotContain("\n", echo);
+            Assert.Contains("Ê", echo);
+            Assert.Contains(">", echo);
+            Assert.Contains("\x1b[100m", echo); // dark-gray fill like the sample bar
+            Assert.DoesNotContain("│", echo);
+            Assert.DoesNotContain("╭", echo);
+            Assert.DoesNotContain("\n", echo);
+            Assert.Equal(80, InteractiveLineReader.StripAnsi(echo).Length);
+        }
+        finally
+        {
+            AnsiTheme.IsEnabled = prev;
+        }
     }
 
     [Fact]
     public void InteractiveLineReader_BuildSubmitEcho_FlattensMultiline()
     {
-        var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
+        bool prev = AnsiTheme.IsEnabled;
+        AnsiTheme.IsEnabled = true;
+        try
+        {
+            var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
 
-        Assert.DoesNotContain("\n", echo);
-        Assert.Contains("a b", echo);
+            Assert.DoesNotContain("\n", echo);
+            Assert.Contains("a b", echo);
+        }
+        finally
+        {
+            AnsiTheme.IsEnabled = prev;
+        }
     }
 
     [Theory]

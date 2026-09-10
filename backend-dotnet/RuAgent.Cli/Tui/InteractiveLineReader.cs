@@ -225,13 +225,24 @@ public sealed class InteractiveLineReader
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
 
     /// <summary>
-    /// Echo mini 1 dòng cho prompt vừa gửi: khung ôm sát chữ (vd "│ ❯ hello │").
-    /// Khác hẳn composer 3 dòng nên không gây nhầm; text nhiều dòng gộp phẳng.
+    /// Echo kiểu thanh bar theo mẫu (nền xám mờ full-width, ">" accent, text trắng).
+    /// Text nhiều dòng gộp phẳng giữ đúng 1 dòng logic (terminal tự wrap).
     /// </summary>
     public static string BuildSubmitEcho(string text)
     {
         var body = (text ?? string.Empty).Replace("\r", " ").Replace("\n", " ");
-        return AnsiTheme.Gray("│ ") + AnsiTheme.Cyan("❯ ") + AnsiTheme.White(body) + AnsiTheme.Gray(" │");
+        if (!AnsiTheme.IsEnabled)
+        {
+            return "> " + body;
+        }
+        int width = Math.Max(10, ComputeBoxWidth());
+        var inner = "> " + body;
+        int pad = Math.Max(0, width - 2 - StripAnsi(inner).Length);
+        return AnsiTheme.BgDarkGrayCode
+            + "  "
+            + AnsiTheme.CyanCode + "> "
+            + AnsiTheme.White15Code + body + new string(' ', pad)
+            + AnsiTheme.Reset;
     }
 
     public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash)

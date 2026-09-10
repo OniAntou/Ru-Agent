@@ -225,8 +225,8 @@ public sealed class InteractiveLineReader
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
 
     /// <summary>
-    /// Echo kiểu thanh bar theo mẫu: 3 dòng nền xám full-width (trống + content
-    /// + trống), ">" accent, text trắng. Text nhiều dòng gộp phẳng.
+    /// Echo kiểu thanh bar theo mẫu: 3 dòng nền xám đậm, thụt lề 1 cột mỗi bên
+    /// (trống + content + trống), ">" accent, text trắng. Text gộp phẳng.
     /// </summary>
     public static string BuildSubmitEcho(string text)
     {
@@ -235,15 +235,16 @@ public sealed class InteractiveLineReader
         {
             return "> " + body;
         }
-        int width = Math.Max(10, ComputeBoxWidth());
-        var blankRow = AnsiTheme.BgDarkGrayCode + new string(' ', width) + AnsiTheme.Reset;
+        int width = Math.Max(12, ComputeBoxWidth());
+        int fillWidth = width - 2;
+        var blankRow = " " + AnsiTheme.BgSubtleCode + new string(' ', fillWidth) + AnsiTheme.Reset + " ";
         var inner = "> " + body;
-        int pad = Math.Max(0, width - 2 - StripAnsi(inner).Length);
-        var contentRow = AnsiTheme.BgDarkGrayCode
+        int pad = Math.Max(0, fillWidth - 2 - StripAnsi(inner).Length);
+        var contentRow = " " + AnsiTheme.BgSubtleCode
             + "  "
             + AnsiTheme.CyanCode + "> "
             + AnsiTheme.White15Code + body + new string(' ', pad)
-            + AnsiTheme.Reset;
+            + AnsiTheme.Reset + " ";
         return blankRow + "\n" + contentRow + "\n" + blankRow;
     }
 

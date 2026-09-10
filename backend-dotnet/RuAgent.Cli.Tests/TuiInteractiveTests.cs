@@ -437,7 +437,7 @@ public sealed class TuiInteractiveTests
             Assert.Equal(3, rows.Length);
             Assert.Contains("Ê", echo);
             Assert.Contains(">", echo);
-            Assert.Contains("\x1b[100m", echo); // dark-gray fill like the sample bar
+            Assert.Contains("\x1b[48;5;236m", echo); // subtle dark fill like the sample bar
             Assert.DoesNotContain("│", echo);
             Assert.DoesNotContain("╭", echo);
             foreach (var row in rows)

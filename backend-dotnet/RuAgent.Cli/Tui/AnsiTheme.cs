@@ -34,6 +34,9 @@ public static class AnsiTheme
 
     public const string BgBlueCode = "\u001b[44m";
     public const string BgDarkGrayCode = "\u001b[100m";
+    // Subtle dark fill for the submit-echo bar (256-color #303030: renders the
+    // same on every theme, unlike bright-black which washes out on some terms).
+    public const string BgSubtleCode = "\u001b[48;5;236m";
 
     // Grok-faithful 256-color palette (see brainless grok-* sources).
     public const string White15Code = "\u001b[38;5;15m";

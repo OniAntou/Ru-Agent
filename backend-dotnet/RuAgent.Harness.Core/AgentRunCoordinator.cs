@@ -13,19 +13,15 @@ namespace RuAgent.Harness.Core;
 
 public sealed class AgentRunCoordinator
 {
-    private readonly IModelStepRunner _model;
     private readonly IHarnessEventStore _store;
     private readonly AgentContextAssembler _contextAssembler;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
-    private readonly TransientFrameBuffer _frames;
-    private readonly ITransientContentRedactor _transientRedactor;
     private readonly AgentToolExecutionPipeline _tools;
     private readonly AgentRunCompaction _compaction;
     private readonly AgentRunLifecycle _lifecycle;
-    private readonly ISystemPromptContextProvider _promptContextProvider;
-    private readonly IAgentActivitySink? _activitySink;
     private readonly AgentRunStepHandlers _steps;
+    private readonly AgentModelInvocation _invocation;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -45,18 +41,11 @@ public sealed class AgentRunCoordinator
         ISystemPromptContextProvider? promptContextProvider = null,
         ContextBudgetPolicy? contextBudgetPolicy = null)
     {
-        _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _contextAssembler = contextAssembler
             ?? throw new ArgumentNullException(nameof(contextAssembler));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
-        _frames = frames ?? throw new ArgumentNullException(nameof(frames));
-        _transientRedactor = transientRedactor
-            ?? PassthroughTransientContentRedactor.Instance;
-        _activitySink = activitySink;
-        _promptContextProvider = promptContextProvider
-            ?? throw new ArgumentNullException(nameof(promptContextProvider));
         _compaction = new AgentRunCompaction(
             _store,
             _contextAssembler,
@@ -71,7 +60,7 @@ public sealed class AgentRunCoordinator
             time,
             scheduler ?? throw new ArgumentNullException(nameof(scheduler)),
             frames,
-            _transientRedactor,
+            transientRedactor ?? PassthroughTransientContentRedactor.Instance,
             inspectionGate,
             activitySink);
         _lifecycle = new AgentRunLifecycle(
@@ -88,6 +77,15 @@ public sealed class AgentRunCoordinator
             replyEffects ?? new NoopAgentReplyEffectSink(),
             activitySink,
             _tools);
+        _invocation = new AgentModelInvocation(
+            model ?? throw new ArgumentNullException(nameof(model)),
+            promptContextProvider ?? throw new ArgumentNullException(nameof(promptContextProvider)),
+            frames ?? throw new ArgumentNullException(nameof(frames)),
+            transientRedactor ?? PassthroughTransientContentRedactor.Instance,
+            activitySink,
+            _ids,
+            _time,
+            _lifecycle);
     }
 
     public async Task<AgentRunStepResult> RunOneStepAsync(
@@ -151,175 +149,16 @@ public sealed class AgentRunCoordinator
             return AgentRunStepResult.Blocked(run, reservation.ErrorCode!);
         }
 
-        var thinkingStartedAt = _time.UtcNow;
-        AgentActivityProjector.PublishSafe(
-            _activitySink,
-            run.RunId,
-            AgentActivityProjector.ProjectModelStep(
+        var invocation = await _invocation.InvokeAsync(
+                run,
+                context,
                 modelStepId,
-                AgentActivityState.Started,
-                safeCode: "in_progress"));
-
-        SystemPromptContext promptContext;
-        try
-        {
-            promptContext = await _promptContextProvider
-                .BuildAsync(run, context, cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("prompt_context_null");
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectModelStep(
-                    modelStepId,
-                    AgentActivityState.Failed,
-                    ElapsedMilliseconds(thinkingStartedAt),
-                    safeCode: "cancelled"));
-            throw;
-        }
-        catch (Exception)
-        {
-            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
-                .ConfigureAwait(false);
-            throw new InvalidOperationException("prompt_contract_invalid");
-        }
-
-        var request = new ModelStepRequest(
-            run.RunId,
-            modelStepId,
-            context,
-            promptContext,
-            run.Preset,
-            run.PolicySnapshotVersion,
-            run.PolicySnapshotSha256);
-        var droppedBefore = _frames.DroppedCount;
-        var assistantStream = new TransientContentStream(
-            _frames,
-            _transientRedactor,
-            run.RunId,
-            TransientFrameKind.AssistantDelta,
-            modelStepId: modelStepId);
-        ModelStepResult modelResult;
-        try
-        {
-            modelResult = await _model.RunStepAsync(
-                    request,
-                    delta => PublishAssistantDelta(modelStepId, assistantStream, delta),
-                    cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("model_step_returned_null");
-        }
-        catch (OperationCanceledException)
-        {
-            assistantStream.Complete();
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectModelStep(
-                    modelStepId,
-                    AgentActivityState.Failed,
-                    ElapsedMilliseconds(thinkingStartedAt),
-                    safeCode: "cancelled"));
-            throw;
-        }
-        catch (Exception)
-        {
-            assistantStream.Complete();
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectModelStep(
-                    modelStepId,
-                    AgentActivityState.Failed,
-                    ElapsedMilliseconds(thinkingStartedAt),
-                    safeCode: "model_failed"));
-            throw;
-        }
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            modelResult.PromptReceipt.ValidateAgainst(promptContext);
-        }
-        catch (OperationCanceledException)
-        {
-            assistantStream.Complete();
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectModelStep(
-                    modelStepId,
-                    AgentActivityState.Failed,
-                    ElapsedMilliseconds(thinkingStartedAt),
-                    safeCode: "cancelled"));
-            throw;
-        }
-        catch (ArgumentException)
-        {
-            assistantStream.Complete();
-            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
-                .ConfigureAwait(false);
-            throw new InvalidOperationException("prompt_contract_invalid");
-        }
-
-        HarnessPayloadIntent promptReceiptPayload;
-        try
-        {
-            var receiptBytes = PromptReceiptPayloadCodec.Serialize(modelResult.PromptReceipt);
-            promptReceiptPayload = new HarnessPayloadIntent(
-                _ids.NewPayloadId(),
-                HarnessPayloadKind.PromptReceipt,
-                HarnessPayloadAudience.InternalOnly,
-                HarnessPayloadEncoding.Json,
-                PromptReceiptPayloadCodec.MaximumBytes,
-                receiptBytes);
-        }
-        catch (Exception)
-        {
-            assistantStream.Complete();
-            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
-                .ConfigureAwait(false);
-            throw new InvalidOperationException("prompt_contract_invalid");
-        }
-
-        var promptComposedEvent = new HarnessEventIntent(
-            _ids.NewEventId(),
-            HarnessEventKind.ModelPromptComposed,
-            modelStepId: modelStepId,
-            payloadId: promptReceiptPayload.PayloadId,
-            safeCode: "composed");
-        var step = modelResult.Step;
-        if (step.Usage is null && modelResult.Usage is not null)
-        {
-            step = new AssistantStep(
-                step.Text,
-                step.ToolCalls,
-                step.FinishReason,
-                step.EstimatedInputTokens,
-                modelResult.Usage);
-        }
-        assistantStream.Complete();
-        AgentActivityProjector.PublishSafe(
-            _activitySink,
-            run.RunId,
-            AgentActivityProjector.ProjectModelStep(
-                modelStepId,
-                AgentActivityState.Completed,
-                ElapsedMilliseconds(thinkingStartedAt),
-                safeCode: "succeeded"));
-        var modelDroppedCount = checked((int)(_frames.DroppedCount - droppedBefore));
-        if (modelDroppedCount > 0)
-        {
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectDropped(
-                    modelStepId,
-                    toolFrames: false,
-                    droppedCount: modelDroppedCount));
-        }
+                cancellationToken)
+            .ConfigureAwait(false);
+        var step = invocation.Step;
+        var promptReceiptPayload = invocation.PromptReceiptPayload;
+        var promptComposedEvent = invocation.PromptComposedEvent;
+        var modelDroppedCount = invocation.ModelDroppedCount;
 
         if (step.ToolCalls.Count > 0)
         {
@@ -464,55 +303,6 @@ public sealed class AgentRunCoordinator
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private static ValueTask PublishAssistantDelta(
-        ModelStepId expectedStepId,
-        TransientContentStream stream,
-        AssistantDelta delta)
-    {
-        ArgumentNullException.ThrowIfNull(delta);
-        if (delta.ModelStepId != expectedStepId)
-        {
-            throw new InvalidOperationException("model_delta_identity_mismatch");
-        }
-
-        stream.Append(delta.Content);
-        return ValueTask.CompletedTask;
-    }
-
-    private async Task MarkPromptContractFailureAsync(
-        AgentRun run,
-        ModelStepId modelStepId,
-        DateTimeOffset startedAt)
-    {
-        await _lifecycle.FailAsync(
-                run.RunId,
-                "prompt_contract_invalid",
-                CancellationToken.None)
-            .ConfigureAwait(false);
-        AgentActivityProjector.PublishSafe(
-            _activitySink,
-            run.RunId,
-            AgentActivityProjector.ProjectModelStep(
-                modelStepId,
-                AgentActivityState.Failed,
-                ElapsedMilliseconds(startedAt),
-                safeCode: "prompt_contract_invalid"));
-    }
-
-    private int? ElapsedMilliseconds(DateTimeOffset startedAt)
-    {
-        var elapsed = _time.UtcNow - startedAt;
-        if (elapsed < TimeSpan.Zero)
-        {
-            return null;
-        }
-
-        var milliseconds = elapsed.TotalMilliseconds;
-        return milliseconds is >= 0 and <= 86_400_000
-            ? (int)milliseconds
-            : null;
     }
 
     private async Task<AgentRun> RequireRunAsync(

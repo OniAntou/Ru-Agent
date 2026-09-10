@@ -13,7 +13,14 @@ if ([string]::IsNullOrWhiteSpace($RepositoryShortcutPath)) {
     $RepositoryShortcutPath = Join-Path $project 'Ru Assistant.lnk'
 }
 $repositoryShortcut = [System.IO.Path]::GetFullPath($RepositoryShortcutPath)
-$executable = Join-Path $project 'gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe'
+$publishRoot = Join-Path $project 'gui-winui3\bin\Release'
+$executable = Get-ChildItem -LiteralPath $publishRoot -Filter 'RuApp.exe' -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match '\\publish\\RuApp\.exe$' } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+if ([string]::IsNullOrWhiteSpace($executable)) {
+    $executable = Join-Path $project 'gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe'
+}
 
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     Write-Error "Published RuApp.exe was not found: $executable"

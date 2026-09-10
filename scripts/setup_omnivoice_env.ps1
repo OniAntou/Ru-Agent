@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ModelCache = "D:\LLM\models\omnivoice",
+    [string]$ModelCache = "",
     [string]$SourcePython = "",
     [switch]$ConfirmModelDownload,
     [switch]$WhatIf
@@ -8,6 +8,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$modelCache = if ($ModelCache.Trim()) {
+    $ModelCache
+} else {
+    Join-Path $projectRoot "models\omnivoice"
+}
 $sourcePython = if ($SourcePython.Trim()) {
     $SourcePython
 } else {
@@ -29,7 +34,7 @@ if (-not (Test-Path -LiteralPath $sourcePython -PathType Leaf)) {
 
 if ($WhatIf) {
     Write-Output "Preflight only: would create $environmentPath"
-    Write-Output "Preflight only: would confine OmniVoice cache to $ModelCache"
+    Write-Output "Preflight only: would confine OmniVoice cache to $modelCache"
     Write-Output "Preflight only: would confine pip cache to $pipCache"
     Write-Output "Preflight only: would confine installer temporary files to $temporaryDirectory"
     Write-Output "Preflight only: would install CUDA Torch and OmniVoice only after -ConfirmModelDownload"
@@ -40,15 +45,15 @@ if (-not $ConfirmModelDownload) {
     throw "Pass -ConfirmModelDownload before installing OmniVoice or downloading its dependencies."
 }
 
-New-Item -ItemType Directory -Path $ModelCache -Force | Out-Null
+New-Item -ItemType Directory -Path $modelCache -Force | Out-Null
 New-Item -ItemType Directory -Path $pipCache -Force | Out-Null
 New-Item -ItemType Directory -Path $temporaryDirectory -Force | Out-Null
 if (-not (Test-Path -LiteralPath $environmentPython -PathType Leaf)) {
     & $sourcePython -m venv $environmentPath
 }
 
-$env:HF_HOME = $ModelCache
-$env:HF_HUB_CACHE = Join-Path $ModelCache "hub"
+$env:HF_HOME = $modelCache
+$env:HF_HUB_CACHE = Join-Path $modelCache "hub"
 $env:PIP_CACHE_DIR = $pipCache
 $env:TEMP = $temporaryDirectory
 $env:TMP = $temporaryDirectory

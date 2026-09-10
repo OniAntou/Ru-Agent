@@ -12,6 +12,8 @@ SPEECH_ENGINE_LABELS = {
     "Google (online)": SPEECH_ENGINE_GOOGLE,
 }
 _RECOGNITION_TIMEOUT_SECONDS = 15.0
+_MAX_TRANSCRIPT_CHARS = 100_000
+_MAX_MODEL_DIR_CHARS = 1_024
 
 
 class SpeechRecognitionError(RuntimeError):
@@ -53,6 +55,8 @@ class SpeechRecognizer(Protocol):
 
 
 def normalize_transcript(text: str) -> str:
+    if len(text) > _MAX_TRANSCRIPT_CHARS:
+        raise SpeechConfigurationError("Provider transcript exceeds the size limit.")
     normalized = " ".join(text.split())
     if not normalized:
         raise SpeechNoMatchError("Could not understand audio.")
@@ -109,7 +113,12 @@ def speech_settings_from_mapping(settings: Mapping[str, object]) -> SpeechEngine
     elif engine_id != SPEECH_ENGINE_GOOGLE:
         raise SpeechConfigurationError(f"Unsupported speech engine: {engine_id!r}.")
     model_dir_value = settings.get("speech_model_dir")
-    model_dir = Path(model_dir_value) if isinstance(model_dir_value, str) and model_dir_value.strip() else None
+    model_dir: Path | None = None
+    if isinstance(model_dir_value, str) and model_dir_value.strip():
+        cleaned = model_dir_value.strip()
+        if len(cleaned) > _MAX_MODEL_DIR_CHARS or "\x00" in cleaned:
+            raise SpeechConfigurationError("Invalid speech model directory.")
+        model_dir = Path(cleaned)
     return SpeechEngineConfig(engine_id=engine_id, model_dir=model_dir)
 
 

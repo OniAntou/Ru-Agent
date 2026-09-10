@@ -60,3 +60,9 @@ data/evaluations/
 resources.pri.xml
 *.lnk
 test_settings.json
+
+# Local experiment scratch (untracked by design)
+scythe_*.png
+candidate_logos.png
+render_candidates.py
+test_concepts.py

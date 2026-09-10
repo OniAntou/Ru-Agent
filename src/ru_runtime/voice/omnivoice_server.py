@@ -85,6 +85,8 @@ AI_VY_TEXT = (
 # so a missing reference_text.txt never breaks the server import.
 MODEL_SAMPLE_RATE = 24_000
 MAX_TTS_TEXT_CHARS = 10_000
+MAX_REFERENCE_TEXT_BYTES = 64 * 1_024
+MAX_SYNTHESIZED_WAV_BYTES = 50 * 1_024 * 1_024
 DEFAULT_SERVER_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 5_052
 VOICE_PROFILES = {
@@ -141,6 +143,8 @@ def voice_profile(profile: str) -> tuple[Path, str]:
         raise ValueError(f"Unsupported OmniVoice voice profile: {profile}") from error
     if transcript is None:
         try:
+            if REFERENCE_TEXT.stat().st_size > MAX_REFERENCE_TEXT_BYTES:
+                raise RuntimeError(f"OmniVoice reference transcript is too large: {REFERENCE_TEXT}")
             transcript = REFERENCE_TEXT.read_text(encoding="utf-8").strip()
         except OSError as error:
             logger.error("OmniVoice reference transcript is missing: %s", REFERENCE_TEXT)
@@ -150,6 +154,22 @@ def voice_profile(profile: str) -> tuple[Path, str]:
     if not audio.is_file():
         raise FileNotFoundError(f"OmniVoice voice asset is missing: {audio}")
     return audio, transcript
+
+
+def _require_voice_profile(value: object) -> str:
+    if not isinstance(value, str) or value not in VOICE_PROFILES:
+        raise ValueError(f"Unsupported OmniVoice voice profile: {value!r}")
+    return value
+
+
+def _read_audio_bytes_bounded(audio_path: str) -> bytes:
+    candidate = Path(audio_path)
+    try:
+        if candidate.stat().st_size > MAX_SYNTHESIZED_WAV_BYTES:
+            raise RuntimeError("OmniVoice audio file exceeds the size limit.")
+        return candidate.read_bytes()
+    except OSError as error:
+        raise RuntimeError("OmniVoice did not create a readable audio file.") from error
 
 
 def warm_model(profile: str = "ru") -> dict[str, bool]:
@@ -328,7 +348,11 @@ def create_app(
         if data is None:
             return jsonify({"error": "Request body must be JSON."}), 400
         try:
-            return jsonify(warm_model(data.get("voice_profile", "ru")))
+            profile = _require_voice_profile(data.get("voice_profile", "ru"))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        try:
+            return jsonify(warm_model(profile))
         except Exception:
             logger.exception("OmniVoice /warmup failed")
             return jsonify({"error": "Model warm-up failed. Check the server logs."}), 500
@@ -345,7 +369,10 @@ def create_app(
             return jsonify({"error": "Request body must be JSON."}), 400
         raw_text = data.get("text")
         text = raw_text.strip() if isinstance(raw_text, str) else ""
-        profile = data.get("voice_profile", "ru")
+        try:
+            profile = _require_voice_profile(data.get("voice_profile", "ru"))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
         speed = clamp_voice_speed(data.get("speed", DEFAULT_VOICE_SPEED))
         try:
             style = _voice_style_from_request(data)
@@ -362,7 +389,7 @@ def create_app(
                 audio_path = synthesize(text, profile, speed, style.id)
                 if not isinstance(audio_path, str) or not Path(audio_path).is_file():
                     raise RuntimeError("OmniVoice did not create a playable audio file.")
-                audio_bytes = Path(audio_path).read_bytes()
+                audio_bytes = _read_audio_bytes_bounded(audio_path)
             else:
                 audio_bytes = synthesize_fast_bytes(
                     text,
@@ -394,7 +421,10 @@ def create_app(
             return jsonify({"error": "Request body must be JSON."}), 400
         raw_text = data.get("text")
         text = raw_text.strip() if isinstance(raw_text, str) else ""
-        profile = data.get("voice_profile", "ru")
+        try:
+            profile = _require_voice_profile(data.get("voice_profile", "ru"))
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
         speed = clamp_voice_speed(data.get("speed", DEFAULT_VOICE_SPEED))
         try:
             style = _voice_style_from_request(data)

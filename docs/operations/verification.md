@@ -359,7 +359,8 @@ unit tests replace only their external process boundary and never open RuApp.
   cannot race the live writer's current-day append handle on Windows.
 - Sequential `scripts/test_dotnet.ps1 -NoRestore`: `2,392 passed` across all
   13 test projects; Python suite: `413 passed`; route contract: `62 HTTP + 1
-  WebSocket`; documentation/route checks: `8 passed`; `git diff --check` clean.
+  WebSocket` (historical snapshot — current contract is 63 HTTP + 1 WebSocket
+  per `backend-dotnet/public-route-contract.json`); documentation/route checks: `8 passed`; `git diff --check` clean.
 
 ### Test-suite cleanup evidence (2026-08-31)
 
@@ -370,7 +371,8 @@ unit tests replace only their external process boundary and never open RuApp.
   `633` and GUI `252`. The GUI reduction from `339` removes cosmetic snapshots,
   retaining three focused resource/accessibility contracts and behavior tests.
 - Ruff, Mypy (`39` source files), `pip check`, and the
-  `56 HTTP + 1 WebSocket` public route contract all passed.
+  `56 HTTP + 1 WebSocket` public route contract all passed (historical snapshot —
+  current contract is 63 HTTP + 1 WebSocket per `backend-dotnet/public-route-contract.json`).
 - The first .NET run encountered a business-fixture JSONL cleanup lock. Only
   those business tests now inject a discarding diagnostic emitter; the `89`
   focused business/diagnostics tests and subsequent full matrix passed.

@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 _SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _ID_SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
+_MAX_MANIFEST_BYTES = 1 << 20
+_MAX_BENCHMARK_TEXT_CHARS = 10_000
 
 
 class BenchmarkConfigurationError(ValueError):
@@ -62,6 +64,8 @@ _EXPECTED_LANGUAGE_COUNTS = {"vi": 6, "en": 3, "vi-en": 3}
 
 def load_manifest(path: Path) -> list[BenchmarkUtterance]:
     try:
+        if path.stat().st_size > _MAX_MANIFEST_BYTES:
+            raise BenchmarkConfigurationError(f"Benchmark manifest too large: {path}")
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as error:
         raise BenchmarkConfigurationError(f"Could not read benchmark manifest: {path}") from error
@@ -90,6 +94,8 @@ def load_manifest(path: Path) -> list[BenchmarkUtterance]:
             raise BenchmarkConfigurationError(f"Unsupported benchmark language: {language!r}.")
         if not text.strip():
             raise BenchmarkConfigurationError(f"Benchmark text must not be blank: {utterance_id}.")
+        if len(text) > _MAX_BENCHMARK_TEXT_CHARS:
+            raise BenchmarkConfigurationError(f"Benchmark text too long: {utterance_id}.")
         seen_ids.add(utterance_id)
         utterances.append(BenchmarkUtterance(utterance_id, language, text))
 

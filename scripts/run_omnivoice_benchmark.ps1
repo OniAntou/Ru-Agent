@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$OutputRoot = (Join-Path "D:\LLM\eval_results\omnivoice" (Get-Date -Format "yyyyMMdd-HHmmss")),
+    [string]$OutputRoot = "",
     [switch]$ConfirmModelDownload,
     [switch]$OverwriteOutput,
     [switch]$WhatIf
@@ -8,6 +8,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if (-not $OutputRoot.Trim()) {
+    $OutputRoot = Join-Path $projectRoot ("eval_results\omnivoice\" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+}
 $mainPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $omniPython = Join-Path $projectRoot "omnivoice_env\Scripts\python.exe"
 $referenceAudio = Join-Path $projectRoot "tyc_talk.wav"

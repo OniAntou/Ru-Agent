@@ -30,16 +30,17 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-One entry intentionally has empty `winui_callers`:
+21 entries intentionally have empty `winui_callers`:
 
 - `POST /observation/preflight` — internal harness/validation preflight for observation; WinUI polls via `GET /observation/status` and `POST /observation/start|stop|react|ack` (`ApiService.GetObservationStatusAsync` etc.).
+- 20 additive `POST|GET|PUT|DELETE /agent/v1/*` routes — Agent v2 run/policy/workspace surface driven through the Agent harness flow rather than direct WinUI callers.
 
 Empty `winui_callers` is therefore expected for these reserved lifecycle routes and is not a dead-route signal.
 
 ## Verification
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
+& (Join-Path $env:RU_ROOT ".venv\Scripts\python.exe") scripts\check_aspnetcore_route_matrix.py
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore `
   --filter FullyQualifiedName~PublicRouteContractTests
 ```

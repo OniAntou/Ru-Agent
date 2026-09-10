@@ -25,6 +25,11 @@ class BenchmarkItem:
     expected_text: str
 
 
+_MAX_MANIFEST_BYTES = 1 << 20
+_MAX_MANIFEST_ITEMS = 128
+_MAX_EXPECTED_TEXT_CHARS = 10_000
+
+
 def load_wav(path: Path) -> CapturedAudio:
     try:
         with wave.open(str(path), "rb") as input_wav:
@@ -95,12 +100,19 @@ def run_benchmark(
 def load_manifest(path: Path) -> list[BenchmarkItem]:
     items: list[BenchmarkItem] = []
     try:
+        if path.stat().st_size > _MAX_MANIFEST_BYTES:
+            raise SpeechConfigurationError(f"Benchmark manifest too large: {path}")
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as error:
         raise SpeechConfigurationError(f"Could not read benchmark manifest: {path}") from error
+    base_dir = path.parent.resolve()
     for line_number, line in enumerate(lines, start=1):
         if not line.strip():
             continue
+        if len(items) >= _MAX_MANIFEST_ITEMS:
+            raise SpeechConfigurationError(
+                f"Benchmark manifest has too many items (max {_MAX_MANIFEST_ITEMS})."
+            )
         try:
             value = json.loads(line)
             audio_path = value["audio_path"]
@@ -109,13 +121,28 @@ def load_manifest(path: Path) -> list[BenchmarkItem]:
             raise SpeechConfigurationError(f"Invalid manifest item on line {line_number}.") from error
         if not isinstance(audio_path, str) or not isinstance(expected_text, str):
             raise SpeechConfigurationError(f"Invalid manifest item on line {line_number}.")
+        if not audio_path.strip() or len(audio_path) > 1024:
+            raise SpeechConfigurationError(f"Invalid manifest item on line {line_number}.")
+        if len(expected_text) > _MAX_EXPECTED_TEXT_CHARS:
+            raise SpeechConfigurationError(f"Invalid manifest item on line {line_number}.")
         candidate_path = Path(audio_path)
-        items.append(
-            BenchmarkItem(
-                candidate_path if candidate_path.is_absolute() else path.parent / candidate_path,
-                expected_text,
-            )
+        resolved = (
+            candidate_path
+            if candidate_path.is_absolute()
+            else (base_dir / candidate_path)
         )
+        try:
+            normalized = resolved.resolve()
+        except OSError as error:
+            raise SpeechConfigurationError(f"Invalid manifest item on line {line_number}.") from error
+        if not candidate_path.is_absolute():
+            try:
+                normalized.relative_to(base_dir)
+            except ValueError as error:
+                raise SpeechConfigurationError(
+                    f"Invalid manifest item on line {line_number}."
+                ) from error
+        items.append(BenchmarkItem(normalized, expected_text))
     return items
 
 

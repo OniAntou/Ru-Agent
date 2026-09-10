@@ -244,6 +244,31 @@ public sealed class AgentSseReconnectTests
         Assert.DoesNotContain("workspace_path", sse, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Sse_live_tail_closes_cleanly_when_run_terminates_midstream()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(client, session, tmp.Path, "prompt live", "key-live-" + Guid.NewGuid().ToString("N"));
+
+        // Live tail (default live=1) on the still-active run; cancel concurrently
+        // so the tail observes termination mid-stream. It must close gracefully
+        // with a final snapshot, never abort the connection (a TCP RST surfaces
+        // on clients as an opaque transport error with no resume cursor).
+        var sseTask = GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        await Task.Delay(500);
+        using var cancel = await client.PostAsync($"/agent/v1/runs/{runId}/cancel", null);
+        Assert.True(cancel.StatusCode == HttpStatusCode.OK || cancel.StatusCode == HttpStatusCode.Conflict);
+        var sse = await sseTask.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.Contains("id: 1", sse);
+        Assert.Contains("cancelled", sse, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("event: final_snapshot", sse, StringComparison.Ordinal);
+    }
+
     private static async Task<string> GetSseAsync(HttpClient client, string url)
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);

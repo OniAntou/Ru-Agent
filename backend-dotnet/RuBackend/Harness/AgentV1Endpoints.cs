@@ -473,6 +473,22 @@ try
         {
             // client disconnected
         }
+        catch (Exception)
+        {
+            // Any other mid-stream failure (store, mapper, writer) must not
+            // reset the connection: a TCP RST surfaces on clients as an
+            // opaque transport error with no resume cursor. Best-effort flush
+            // what was already written and close the response cleanly; the
+            // client re-attaches with after_sequence when the run is live.
+            try
+            {
+                await context.Response.Body.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Client already gone; nothing left to salvage.
+            }
+        }
         finally
         {
             if (hubLease is { } activeLease)

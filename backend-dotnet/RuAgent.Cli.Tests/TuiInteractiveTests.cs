@@ -425,16 +425,25 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_IsSingleLineWithoutBoxChrome()
+    public void InteractiveLineReader_BuildSubmitEcho_IsSingleLineMiniBox()
     {
         var echo = InteractiveLineReader.BuildSubmitEcho("Ê");
 
         Assert.Contains("Ê", echo);
         Assert.Contains("❯", echo);
+        Assert.Contains("│", echo);
         Assert.DoesNotContain("╭", echo);
         Assert.DoesNotContain("╰", echo);
-        Assert.DoesNotContain("│", echo);
         Assert.DoesNotContain("\n", echo);
+    }
+
+    [Fact]
+    public void InteractiveLineReader_BuildSubmitEcho_FlattensMultiline()
+    {
+        var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
+
+        Assert.DoesNotContain("\n", echo);
+        Assert.Contains("a b", echo);
     }
 
     [Theory]

@@ -225,11 +225,14 @@ public sealed class InteractiveLineReader
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
 
     /// <summary>
-    /// Echo 1 dòng cho prompt vừa gửi (vd "❯ hello"). Dùng thay cho cả box 3 dòng
-    /// để màn hình không bao giờ có 2 khung nhập giống nhau gây nhầm lẫn.
+    /// Echo mini 1 dòng cho prompt vừa gửi: khung ôm sát chữ (vd "│ ❯ hello │").
+    /// Khác hẳn composer 3 dòng nên không gây nhầm; text nhiều dòng gộp phẳng.
     /// </summary>
-    public static string BuildSubmitEcho(string text) =>
-        AnsiTheme.Dim("❯ ") + AnsiTheme.White(text ?? string.Empty);
+    public static string BuildSubmitEcho(string text)
+    {
+        var body = (text ?? string.Empty).Replace("\r", " ").Replace("\n", " ");
+        return AnsiTheme.Gray("│ ") + AnsiTheme.Cyan("❯ ") + AnsiTheme.White(body) + AnsiTheme.Gray(" │");
+    }
 
     public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash)
     {
@@ -389,6 +392,10 @@ public sealed class InteractiveLineReader
         int lastDropdownLines = 0;
         bool dropdownDismissed = false;
 
+        // One blank row above every composer open: breathing room after the
+        // header, transcript, or status bar. Pushed before PushToBottom so the
+        // box itself lands in the same rows as before.
+        await outWriter.WriteLineAsync().ConfigureAwait(false);
         await PushToBottomAsync(outWriter).ConfigureAwait(false);
         await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, defaultLegend, false)).ConfigureAwait(false);
         outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, "", 0, "", false));

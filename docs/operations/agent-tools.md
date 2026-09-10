@@ -447,10 +447,15 @@ user prompt and activity items use separate collections, so durable assistant
 history remains unchanged when the feed is cleared.
 
 The desktop surface renders every kind. The TUI renders `thinking` through the
-inline spinner and `compaction`, `retry` and non-`frames_dropped` `status` kinds
-as transient status lines; tool kinds stay owned by the durable tool events,
-which remain authoritative when transient frames are dropped. Completed tool
-kinds additionally expose their bounded `duration_ms` on the desktop item.
+live status row and `compaction`, `retry` and non-`frames_dropped` `status` kinds
+as transient status lines; tool kinds are settled by the durable tool events,
+which remain authoritative when transient frames are dropped. Because the
+durable `safe_summary` for a tool event is a bounded safe code rather than a
+name, the TUI keeps the activity captured for each tool and prints one row per
+tool when the durable completion arrives (`verb`, basename, line range and
+`duration_ms` when the activity was delivered); a dropped frame degrades to a
+code-only row instead of duplicating the event. Completed tool kinds
+additionally expose their bounded `duration_ms` on the desktop item.
 
 Before an Agent final reply is persisted, the reply policy strips private
 metadata and accepts VTS codes only from the current catalog. The resulting

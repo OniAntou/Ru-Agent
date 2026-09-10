@@ -121,7 +121,8 @@ public sealed record ChatCommand(
     string WorkspacePath,
     string? SessionId,
     string Preset,
-    bool Json) : AgentCommand(CliCommandKind.Chat, Json);
+    bool Json,
+    bool Classic = false) : AgentCommand(CliCommandKind.Chat, Json);
 
 public sealed record SessionListCommand(
     bool Json) : AgentCommand(CliCommandKind.SessionList, Json);
@@ -933,6 +934,8 @@ public static class AgentCliParser
         bool sessionSeen = false;
         bool json = false;
         bool jsonSeen = false;
+        bool classic = false;
+        bool classicSeen = false;
 
         for (int i = startIndex; i < args.Length; i++)
         {
@@ -1001,6 +1004,14 @@ public static class AgentCliParser
                 jsonSeen = true;
                 continue;
             }
+            if (token == "--classic")
+            {
+                if (classicSeen)
+                    return Fail("duplicate_switch", "Duplicate --classic.");
+                classic = true;
+                classicSeen = true;
+                continue;
+            }
             if (token.StartsWith("-", StringComparison.Ordinal))
             {
                 return Fail("unknown_switch", $"Unknown switch '{token}' for chat.");
@@ -1008,7 +1019,7 @@ public static class AgentCliParser
             return Fail("too_many_arguments", $"Unexpected argument '{token}' for chat.");
         }
 
-        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json));
+        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json, classic));
     }
 
     private static AgentCliParseResult ParseSession(string[] args, int startIndex)

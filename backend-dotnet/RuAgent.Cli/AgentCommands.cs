@@ -950,24 +950,301 @@ public sealed class AgentCommands
             try { Console.Clear(); } catch (IOException) { /* No live console to clear. */ }
         }
 
-        var headerConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
-        try
-        {
-            if (!Console.IsOutputRedirected && Console.WindowWidth > 10)
-            {
-                headerConsole.Profile.Width = Math.Max(20, Console.WindowWidth - 2);
-            }
-        }
-        catch (IOException)
-        {
-            // No live console; Spectre keeps its default width.
-        }
-        Tui.GrokHeader.Render(headerConsole, sessionId, canonicalWorkspace, backendName, activeModel, cmd.Preset);
+        var headerSurface = new Tui.TuiSurface(_out);
+        Tui.TuiHeader.Render(
+            headerSurface,
+            Tui.TuiViewport.Width(),
+            canonicalWorkspace,
+            backendName,
+            activeModel,
+            cmd.Preset,
+            sessionId,
+            empty: string.IsNullOrEmpty(cmd.SessionId));
         await _out.WriteLineAsync().ConfigureAwait(false);
         await _out.FlushAsync().ConfigureAwait(false);
 
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
         var lineReader = new Tui.InteractiveLineReader();
+
+        // Sticky footer: while a turn runs the live row and composer stay pinned to the bottom
+        // rows and agent output scrolls above them. Redirected output, --json and --classic keep
+        // the sequential layout.
+        var sticky = new Tui.TuiStickyRegion(sessionRenderer.Surface);
+        bool stickyEnabled = !cmd.Json
+            && !cmd.Classic
+            && Tui.TuiViewport.IsLiveConsole
+            && !string.Equals(Environment.GetEnvironmentVariable("TERM"), "dumb", StringComparison.OrdinalIgnoreCase);
+
+        // Type-ahead: keystrokes captured during a turn feed the one-slot queue, and a pending
+        // approval takes the keyboard over the same pinned footer.
+        var pendingPrompt = new PendingPromptSlot();
+        var typeAhead = new Tui.TypeAheadSession(pendingPrompt);
+        string? queuedLine = null;
+        CancellationTokenSource? turnCts = null;
+        CancellationTokenSource? typeAheadCts = null;
+        Task? typeAheadLoop = null;
+        bool typeAheadLive = false;
+
+        // Slash-command surfaces: the pickers run through the same key loop as the composer.
+        _slashCommands.PanelWidth = Tui.TuiViewport.Width();
+        _slashCommands.Picker = (list, ct) => cmd.Json
+            ? Task.FromResult<string?>(null)
+            : lineReader.ReadChoiceAsync(list, _out, ct);
+
+        void RenderHeader(bool empty) => Tui.TuiHeader.Render(
+            headerSurface,
+            Tui.TuiViewport.Width(),
+            canonicalWorkspace,
+            backendName,
+            activeModel,
+            cmd.Preset,
+            sessionId,
+            empty);
+
+        // The composer reopens its own frame after a settled resize; this rebuilds everything
+        // around it (region, header, transcript tail) so the new width applies end to end.
+        lineReader.OnScreenRefreshedAsync = () =>
+        {
+            if (stickyEnabled)
+            {
+                RedrawScreenForResize();
+            }
+            else
+            {
+                RenderHeader(empty: false);
+            }
+
+            return Task.CompletedTask;
+        };
+
+        /// <summary>
+        /// Recovery for a settled resize. A terminal that changed size has already reflowed the
+        /// rows this UI addressed absolutely, so patching the frame can never be reliable; the
+        /// deterministic answer is to reset the scrolling region, clear the screen, and rebuild
+        /// from the top. The visible transcript is restored from the bounded line history, so a
+        /// resize never blanks what the operator was reading.
+        /// </summary>
+        void RedrawScreenForResize()
+        {
+            sticky.Exit();
+            sessionRenderer.Status.InFooter = false;
+            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[2J\u001b[H"));
+            RenderHeader(empty: false);
+
+            var rows = Tui.TuiViewport.Height();
+            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
+                rows,
+                typeAhead.FooterHeight(Tui.TuiViewport.Width()));
+            var headerHeight = Tui.TuiHeader.Compose(
+                Tui.TuiViewport.Width(),
+                canonicalWorkspace,
+                backendName,
+                activeModel,
+                cmd.Preset,
+                sessionId,
+                empty: false).Count;
+            var budget = Math.Max(0, rows - headerHeight - footerHeight - 2);
+            var tail = sessionRenderer.Surface.SnapshotTail(budget, Tui.TuiViewport.Width());
+            foreach (var line in tail)
+            {
+                _out.WriteLine(line);
+            }
+
+            _out.Flush();
+            Tui.TuiDebug.Log(
+                "layout",
+                $"redraw rows={rows} width={Tui.TuiViewport.Width()} tail={tail.Count} budget={budget}");
+        }
+
+        void PaintStickyFooter()
+        {
+            if (!sticky.Active)
+            {
+                return;
+            }
+
+            var footerWidth = Tui.TuiViewport.Width();
+            var footer = new List<string> { sessionRenderer.Status.Compose(footerWidth) };
+            if (typeAhead.Approval is { } approval)
+            {
+                footer.AddRange(approval.Render(footerWidth));
+            }
+
+            footer.AddRange(Tui.ComposerBox.Compose(
+                footerWidth,
+                typeAhead.State,
+                "❯ ",
+                typeAhead.Buffer,
+                string.Empty,
+                lineReader.Legend,
+                typeAhead.Hint,
+                typeAhead.TopLabel));
+
+            // While the operator is typing, the hardware cursor belongs in the composer: IME
+            // candidate windows otherwise open wherever the transcript left the cursor.
+            var caretRow = typeAheadLive && !typeAhead.IsApprovalActive ? footer.Count - 1 : (int?)null;
+            var caretColumn = Tui.ComposerBox.CursorColumn(footerWidth, "❯ ", typeAhead.Buffer);
+            sticky.Paint(footer, footerWidth, caretRow, caretColumn);
+        }
+
+        /// <summary>
+        /// Rebuilds the pinned layout for the viewport as it is right now, resetting any
+        /// previous scrolling region first. Called at turn start and after a settled resize;
+        /// when the window is too short for a pinned footer it leaves sticky mode cleanly so
+        /// the transcript keeps scrolling normally.
+        /// </summary>
+        bool ApplyFooterLayout(bool repaint)
+        {
+            if (!stickyEnabled)
+            {
+                return false;
+            }
+
+            var rows = Tui.TuiViewport.Height();
+            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(rows, typeAhead.FooterHeight(Tui.TuiViewport.Width()));
+            if (footerHeight == 0)
+            {
+                sticky.Exit();
+                sessionRenderer.Status.InFooter = false;
+                sessionRenderer.LiveRowRepaintHook = null;
+                return false;
+            }
+
+            var applied = !sticky.Active
+                ? sticky.Enter(rows, footerHeight)
+                : sticky.Rows == rows && sticky.FooterHeight == footerHeight
+                    ? true
+                    : sticky.Reapply(rows, footerHeight);
+
+            if (!applied)
+            {
+                sessionRenderer.Status.InFooter = false;
+                sessionRenderer.LiveRowRepaintHook = null;
+                return false;
+            }
+
+            sessionRenderer.Status.InFooter = true;
+            sessionRenderer.LiveRowRepaintHook = PaintStickyFooter;
+            Tui.TuiDebug.Log(
+                "layout",
+                $"applied rows={rows} footer={footerHeight} first={sticky.FooterFirst} sticky={sticky.Active}");
+            if (repaint)
+            {
+                PaintStickyFooter();
+            }
+
+            return true;
+        }
+
+        async Task StartTypeAheadAsync()
+        {
+            if (!sticky.Active || _in != Console.In || Console.IsInputRedirected)
+            {
+                return;
+            }
+
+            typeAheadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            typeAheadLive = true;
+            typeAheadLoop = lineReader.RunTypeAheadAsync(
+                typeAhead,
+                PaintStickyFooter,
+                onCancel: () => turnCts?.Cancel(),
+                onExpand: () => sessionRenderer.ToggleExpand(),
+                onResize: () =>
+                {
+                    // A settled resize: the terminal has reflowed the rows this layout was
+                    // pinned to, so rebuild the whole screen instead of patching the frame.
+                    Tui.TuiDebug.Log(
+                        "layout",
+                        $"onResize rows={Tui.TuiViewport.Height()} width={Tui.TuiViewport.Width()} wasRows={sticky.Rows}");
+                    RedrawScreenForResize();
+                    sessionRenderer.Width = Tui.TuiViewport.Width();
+                    if (ApplyFooterLayout(repaint: true))
+                    {
+                        Tui.TuiDebug.Log("layout", "footer rebuilt after resize");
+                    }
+                },
+                typeAheadCts.Token);
+            await Task.CompletedTask.ConfigureAwait(false);
+        }
+
+        async Task StopTypeAheadAsync()
+        {
+            if (typeAheadCts is null)
+            {
+                return;
+            }
+
+            typeAheadCts.Cancel();
+            if (typeAheadLoop is not null)
+            {
+                try
+                {
+                    await typeAheadLoop.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected: the loop only ends when its token fires.
+                }
+            }
+
+            typeAheadCts.Dispose();
+            typeAheadCts = null;
+            typeAheadLoop = null;
+            typeAheadLive = false;
+            typeAhead.Buffer = string.Empty;
+            typeAhead.QueueRejected = false;
+            typeAhead.Approval = null;
+        }
+
+        /// <summary>
+        /// Answers one approval. Inside the pinned footer the choice list owns the keyboard;
+        /// the sequential layout keeps the numbered stdin prompt. Cancelling the run releases
+        /// the wait instead of leaving the frame callback blocked on an unanswered choice.
+        /// </summary>
+        async Task<string> RequestApprovalAsync(Tui.ApprovalPrompt prompt, CancellationToken approvalToken)
+        {
+            if (typeAheadLive && sticky.Active)
+            {
+                using var registration = approvalToken.Register(() => prompt.Decision.TrySetCanceled(approvalToken));
+                typeAhead.Approval = prompt;
+                ApplyFooterLayout(repaint: false);
+                PaintStickyFooter();
+                try
+                {
+                    return await prompt.Decision.Task.ConfigureAwait(false);
+                }
+                finally
+                {
+                    typeAhead.Approval = null;
+                    ApplyFooterLayout(repaint: false);
+                    PaintStickyFooter();
+                }
+            }
+
+            await _out.WriteAsync(Tui.TuiPalette.BoldPaint("\n  ❯ Approve? [1: once / 2: deny] (default: 2): ")).ConfigureAwait(false);
+            await _out.FlushAsync().ConfigureAwait(false);
+            var answer = await _in.ReadLineAsync(approvalToken).ConfigureAwait(false);
+            var normalized = string.IsNullOrWhiteSpace(answer) ? "2" : answer.Trim().ToLowerInvariant();
+            return normalized is "1" or "once" or "yes" or "y"
+                ? Tui.ApprovalPrompt.AllowOnce
+                : Tui.ApprovalPrompt.Deny;
+        }
+
+        async Task FinishTurnAsync()
+        {
+            // Stop capturing keystrokes first, then drain the queue so a prompt typed during
+            // this turn becomes the next turn's input.
+            await StopTypeAheadAsync().ConfigureAwait(false);
+            queuedLine ??= pendingPrompt.Take();
+            Tui.TuiDebug.Log("layout", $"finish turn rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
+            sessionRenderer.LiveRowRepaintHook = null;
+            sessionRenderer.Status.InFooter = false;
+            sticky.Exit();
+            sessionRenderer.EndTurn();
+            turnCts?.Dispose();
+            turnCts = null;
+        }
 
         async Task UpdateLegendAsync()
         {
@@ -1002,13 +1279,25 @@ public sealed class AgentCommands
 
         int turn = 0;
         long? lastTotalTokens = null;
+        _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
+            SessionId: sessionId,
+            Preset: cmd.Preset,
+            Backend: backendName,
+            Model: activeModel,
+            Workspace: canonicalWorkspace,
+            Turn: turn,
+            TotalTokens: lastTotalTokens,
+            ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
+            ApiKeyConfigured: null);
         await UpdateLegendAsync().ConfigureAwait(false);
-        string prompt = Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("❯ "));
-        string contPrompt = Tui.AnsiTheme.Dim("    ... ❯ ");
+        string prompt = Tui.TuiPalette.BoldPaint("❯ ");
+        string contPrompt = Tui.TuiPalette.DimPaint("    ... ❯ ");
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var line = await lineReader.ReadLineWithContinuationAsync(_in, _out, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
+            // A prompt typed while the previous turn streamed is sent without a second Enter.
+            var line = queuedLine ?? await lineReader.ReadLineWithContinuationAsync(_in, _out, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
+            queuedLine = null;
             if (line is null) break;
             line = line.Trim().Trim('"', '\'');
             if (string.IsNullOrEmpty(line)) continue;
@@ -1021,49 +1310,23 @@ public sealed class AgentCommands
 
                 if (slashCmd is "/exit" or "/quit")
                 {
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Dim("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
+                    await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
                     await _out.FlushAsync().ConfigureAwait(false);
                     return 0;
-                }
-                if (slashCmd is "/help")
-                {
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("RuAgent Interactive Console Commands:"))).ConfigureAwait(false);
-                    await _out.WriteLineAsync().ConfigureAwait(false);
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Session & Branching:")).ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/tree") + "            - Display ASCII Session Tree (DAG)").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/status") + "          - Display session details & preset").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/stats, /tokens") + "  - Display session token & backend statistics").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/export [file]") + "   - Export conversation history to Markdown").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/fork [title]") + "    - Fork session into a new branch").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/rewind <index>") + "  - Rewind session to specified message index").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/history") + "         - Show prompt history in current session").ConfigureAwait(false);
-                    await _out.WriteLineAsync().ConfigureAwait(false);
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Model & Backend:")).ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/model [name]") + "    - Display or switch current LLM model").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/backend <name>") + "  - Switch backend provider (kilo, opencode, etc.)").ConfigureAwait(false);
-                    await _out.WriteLineAsync().ConfigureAwait(false);
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Terminal & Controls:")).ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/clear") + "           - Clear terminal screen").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/help") + "            - Show this command reference").ConfigureAwait(false);
-                    await _out.WriteLineAsync("  " + Tui.AnsiTheme.Cyan("/exit, /quit") + "     - Exit interactive terminal session").ConfigureAwait(false);
-                    await _out.WriteLineAsync().ConfigureAwait(false);
-                    await _out.WriteLineAsync(Tui.AnsiTheme.Dim("Tips: Press Tab to autocomplete • Up/Down arrows for history • End with '\\' for multiline.")).ConfigureAwait(false);
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    continue;
                 }
                 if (slashCmd is "/history")
                 {
                     var history = lineReader.History;
                     if (history.Count == 0)
                     {
-                        await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  (No prompt history yet)")).ConfigureAwait(false);
+                        await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
                     }
                     else
                     {
-                        await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Prompt History:")).ConfigureAwait(false);
+                        await _out.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
                         for (int i = 0; i < history.Count; i++)
                         {
-                            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
+                            await _out.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
                         }
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
@@ -1077,18 +1340,15 @@ public sealed class AgentCommands
                     {
                         try { Console.Clear(); } catch (IOException) { /* No live console to clear. */ }
                     }
-                    try
-                    {
-                        if (!Console.IsOutputRedirected && Console.WindowWidth > 10)
-                        {
-                            headerConsole.Profile.Width = Math.Max(20, Console.WindowWidth - 2);
-                        }
-                    }
-                    catch (IOException)
-                    {
-                        // No live console; Spectre keeps its default width.
-                    }
-                    Tui.GrokHeader.Render(headerConsole, sessionId, canonicalWorkspace, backendName, activeModel, cmd.Preset);
+                    Tui.TuiHeader.Render(
+                        headerSurface,
+                        Tui.TuiViewport.Width(),
+                        canonicalWorkspace,
+                        backendName,
+                        activeModel,
+                        cmd.Preset,
+                        sessionId,
+                        empty: false);
                     await _out.WriteLineAsync().ConfigureAwait(false);
                     await _out.FlushAsync().ConfigureAwait(false);
                     continue;
@@ -1106,7 +1366,7 @@ public sealed class AgentCommands
                         if (forked.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
                         {
                             sessionId = newId.GetString()!;
-                            await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Forked to new branch: {sessionId}")).ConfigureAwait(false);
+                            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Forked to new branch: {sessionId}")).ConfigureAwait(false);
                         }
                         else
                         {
@@ -1134,7 +1394,7 @@ public sealed class AgentCommands
                     try
                     {
                         await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
-                        await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
+                        await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
                     }
                     catch (AgentApiException ex)
                     {
@@ -1147,13 +1407,6 @@ public sealed class AgentCommands
                     await _out.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
-                if (slashCmd is "/status")
-                {
-                    await _out.WriteLineAsync($"Current Session: {sessionId} (Preset: {cmd.Preset})").ConfigureAwait(false);
-                    await _out.FlushAsync().ConfigureAwait(false);
-                    continue;
-                }
-
                 await _err.WriteLineAsync($"unknown_command: {slashCmd}. Type /help for assistance.").ConfigureAwait(false);
                 continue;
             }
@@ -1170,8 +1423,16 @@ public sealed class AgentCommands
 
             try
             {
-                sessionRenderer.BeginTurn();
-                var resp = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
+                turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                sessionRenderer.Width = Tui.TuiViewport.Width();
+                sessionRenderer.Status.SetCounters(turn, lastTotalTokens, 0);
+                if (ApplyFooterLayout(repaint: true))
+                {
+                    await StartTypeAheadAsync().ConfigureAwait(false);
+                }
+
+                sessionRenderer.BeginTurn(turn);
+                var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
                 if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase)
                     || (!string.IsNullOrEmpty(resp.TrustRequestId) && !string.IsNullOrEmpty(resp.DisplayIdentityHash)))
@@ -1196,11 +1457,11 @@ public sealed class AgentCommands
                         if (cmd.Json || (_in == Console.In && Console.IsInputRedirected))
                         {
                             await _out.WriteLineAsync($"waiting_workspace_trust: run 'ru agent trust {resp.RunId} --approve' to proceed.").ConfigureAwait(false);
-                            sessionRenderer.EndTurn();
+                            await FinishTurnAsync().ConfigureAwait(false);
                             continue;
                         }
 
-                        await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Yellow($"\n  ⚠ Untrusted workspace: {canonicalWorkspace}\n  ❯ Trust this workspace? [1: Approve (Trust) / 2: Deny] (default: 1): "))).ConfigureAwait(false);
+                        await _out.WriteAsync(Tui.TuiPalette.BoldPaint(Tui.TuiPalette.Warn($"\n  ⚠ Untrusted workspace: {canonicalWorkspace}\n  ❯ Trust this workspace? [1: Approve (Trust) / 2: Deny] (default: 1): "))).ConfigureAwait(false);
                         await _out.FlushAsync().ConfigureAwait(false);
                         var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                         var normalized = string.IsNullOrWhiteSpace(answer) ? "1" : answer.Trim().ToLowerInvariant();
@@ -1213,13 +1474,13 @@ public sealed class AgentCommands
                             await _agentClient.TrustAsync(resp.RunId, trustReq, cancellationToken).ConfigureAwait(false);
                             if (approve)
                             {
-                                await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Workspace trusted. Resuming execution...\n")).ConfigureAwait(false);
+                                await _out.WriteLineAsync(Tui.TuiPalette.Ok("  ✓ Workspace trusted. Resuming execution...\n")).ConfigureAwait(false);
                             }
                             else
                             {
-                                await _out.WriteLineAsync(Tui.AnsiTheme.Red("  ✗ Workspace trust denied. Execution aborted.\n")).ConfigureAwait(false);
+                                await _out.WriteLineAsync(Tui.TuiPalette.Err("  ✗ Workspace trust denied. Execution aborted.\n")).ConfigureAwait(false);
                                 await _out.FlushAsync().ConfigureAwait(false);
-                                sessionRenderer.EndTurn();
+                                await FinishTurnAsync().ConfigureAwait(false);
                                 continue;
                             }
                             await _out.FlushAsync().ConfigureAwait(false);
@@ -1227,7 +1488,7 @@ public sealed class AgentCommands
                         catch (Exception ex)
                         {
                             await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
-                            sessionRenderer.EndTurn();
+                            await FinishTurnAsync().ConfigureAwait(false);
                             continue;
                         }
                     }
@@ -1252,23 +1513,27 @@ public sealed class AgentCommands
                                 if (envelope is not null && envelope.EventType == "approval.requested" && !string.IsNullOrEmpty(envelope.ApprovalId))
                                 {
                                     var targetRunId = !string.IsNullOrEmpty(envelope.RunId) ? envelope.RunId : resp.RunId;
-                                    await _out.WriteAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.White("\n  ❯ Approve? [1: once / 2: deny] (default: 2): "))).ConfigureAwait(false);
-                                    await _out.FlushAsync().ConfigureAwait(false);
-                                    var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                                    var normalized = string.IsNullOrWhiteSpace(answer) ? "2" : answer.Trim().ToLowerInvariant();
+                                    var decision = await RequestApprovalAsync(Tui.ApprovalPrompt.For(envelope.SafeSummary), frameCt).ConfigureAwait(false);
 
-                                    if (normalized is "1" or "once" or "yes" or "y")
+                                    if (decision == Tui.ApprovalPrompt.Deny)
                                     {
-                                        await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, "once", cancellationToken).ConfigureAwait(false);
-                                        await _out.WriteLineAsync(Tui.AnsiTheme.Green("  ✓ Approved (scope: once). Resuming execution...")).ConfigureAwait(false);
+                                        await _agentClient.DenyAsync(targetRunId, envelope.ApprovalId, frameCt).ConfigureAwait(false);
+                                        sessionRenderer.Note("denied · this tool call aborts", Tui.TuiToken.Err);
                                     }
                                     else
                                     {
-                                        await _agentClient.DenyAsync(targetRunId, envelope.ApprovalId, cancellationToken).ConfigureAwait(false);
-                                        await _out.WriteLineAsync(Tui.AnsiTheme.Red("  ✗ Denied. Execution will abort this tool.")).ConfigureAwait(false);
+                                        await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, decision, frameCt).ConfigureAwait(false);
+                                        var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session" : "once";
+                                        sessionRenderer.Note("approved · " + scope, Tui.TuiToken.Ok);
                                     }
+
                                     await _out.FlushAsync().ConfigureAwait(false);
                                 }
+                            }
+                            catch (OperationCanceledException) when (frameCt.IsCancellationRequested)
+                            {
+                                // The operator cancelled the turn while the approval was open.
+                                throw;
                             }
                             catch (Exception ex)
                             {
@@ -1284,6 +1549,7 @@ public sealed class AgentCommands
                                 if (usageEnvelope?.TotalTokens is { } total)
                                 {
                                     lastTotalTokens = total;
+                                    sessionRenderer.Status.SetCounters(turn, lastTotalTokens, 0);
                                 }
                             }
                             catch (System.Text.Json.JsonException)
@@ -1294,39 +1560,25 @@ public sealed class AgentCommands
                     }
                     await _out.FlushAsync().ConfigureAwait(false);
                 }
-                await StreamRunEventsResumedAsync(resp.RunId, OnFrameAsync, cancellationToken).ConfigureAwait(false);
+                await StreamRunEventsResumedAsync(resp.RunId, OnFrameAsync, turnCts.Token).ConfigureAwait(false);
                 sessionRenderer.Flush();
-                await _out.WriteLineAsync().ConfigureAwait(false);
-                var statusConsole = Spectre.Console.AnsiConsole.Create(new Spectre.Console.AnsiConsoleSettings { Out = new Spectre.Console.AnsiConsoleOutput(_out) });
-                try
-                {
-                    if (!Console.IsOutputRedirected && Console.WindowWidth > 10)
-                    {
-                        statusConsole.Profile.Width = Console.WindowWidth;
-                    }
-                }
-                catch (IOException)
-                {
-                    // No live console; Spectre keeps its default width.
-                }
-                Tui.GrokStatusBar.Render(statusConsole, canonicalWorkspace, cmd.Preset, turn, lastTotalTokens);
                 await _out.FlushAsync().ConfigureAwait(false);
-                sessionRenderer.EndTurn();
+                await FinishTurnAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                sessionRenderer.EndTurn();
-                await _out.WriteLineAsync(Tui.AnsiTheme.Yellow("Run interrupted by user.")).ConfigureAwait(false);
+                await FinishTurnAsync().ConfigureAwait(false);
+                await _out.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
             }
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {
-                sessionRenderer.EndTurn();
+                await FinishTurnAsync().ConfigureAwait(false);
                 await WriteBusyConflictAsync(ex).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                sessionRenderer.EndTurn();
-                await _err.WriteLineAsync(Tui.AnsiTheme.Red($"run_error: {ex.Message}")).ConfigureAwait(false);
+                await FinishTurnAsync().ConfigureAwait(false);
+                await _err.WriteLineAsync(Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
             await _out.FlushAsync().ConfigureAwait(false);
         }
@@ -1343,15 +1595,15 @@ public sealed class AgentCommands
         var blockingRunId = error.BlockingRunId;
         if (string.IsNullOrWhiteSpace(blockingRunId))
         {
-            await _err.WriteLineAsync(Tui.AnsiTheme.Red("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
-            await _err.WriteLineAsync(Tui.AnsiTheme.Dim("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
+            await _err.WriteLineAsync(Tui.TuiPalette.Err("workspace_busy: another Agent run still owns this workspace.")).ConfigureAwait(false);
+            await _err.WriteLineAsync(Tui.TuiPalette.DimPaint("  release the blocking run with 'ru agent cancel <run-id>'.")).ConfigureAwait(false);
             await _err.FlushAsync().ConfigureAwait(false);
             return;
         }
 
         var status = string.IsNullOrWhiteSpace(error.BlockingRunStatus) ? "active" : error.BlockingRunStatus;
-        await _err.WriteLineAsync(Tui.AnsiTheme.Red($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
-        await _err.WriteLineAsync(Tui.AnsiTheme.Dim($"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.")).ConfigureAwait(false);
+        await _err.WriteLineAsync(Tui.TuiPalette.Err($"workspace_busy: run {blockingRunId} ({status}) still owns this workspace.")).ConfigureAwait(false);
+        await _err.WriteLineAsync(Tui.TuiPalette.DimPaint($"  answer it with 'ru agent attach {blockingRunId}', or release it with 'ru agent cancel {blockingRunId}'.")).ConfigureAwait(false);
         await _err.FlushAsync().ConfigureAwait(false);
     }
 
@@ -1366,7 +1618,7 @@ public sealed class AgentCommands
                 return 0;
             }
 
-            await _out.WriteLineAsync(Tui.AnsiTheme.Bold("Active Sessions:")).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.BoldPaint("Active Sessions:")).ConfigureAwait(false);
             if (element.TryGetProperty("sessions", out var array) && array.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in array.EnumerateArray())
@@ -1374,7 +1626,7 @@ public sealed class AgentCommands
                     var id = item.GetProperty("id").GetString();
                     var title = item.GetProperty("title").GetString();
                     var msgCount = item.TryGetProperty("message_count", out var mc) ? mc.GetInt32() : 0;
-                    await _out.WriteLineAsync($"  • {Tui.AnsiTheme.Cyan(id ?? "")} - {title} ({msgCount} messages)").ConfigureAwait(false);
+                    await _out.WriteLineAsync($"  • {Tui.TuiPalette.Accent(id ?? "")} - {title} ({msgCount} messages)").ConfigureAwait(false);
                 }
             }
             return 0;
@@ -1399,7 +1651,7 @@ public sealed class AgentCommands
 
             if (element.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
             {
-                await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Successfully forked session to: {newId.GetString()}")).ConfigureAwait(false);
+                await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Successfully forked session to: {newId.GetString()}")).ConfigureAwait(false);
                 return 0;
             }
             await _err.WriteLineAsync("session_fork_failed: invalid server response").ConfigureAwait(false);
@@ -1423,7 +1675,7 @@ public sealed class AgentCommands
                 return 0;
             }
 
-            await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Successfully rewound session {cmd.SessionId} to message {cmd.ToMessageIndex}")).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Successfully rewound session {cmd.SessionId} to message {cmd.ToMessageIndex}")).ConfigureAwait(false);
             return 0;
         }
         catch (Exception ex)

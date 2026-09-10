@@ -12,113 +12,99 @@ namespace RuAgent.Cli.Tests;
 public sealed class TuiInteractiveTests
 {
     [Fact]
-    public void AnsiTheme_ProducesColor_WhenEnabled()
+    public void CliOutput_UsesTheAuroraPalette_WhenColourIsOn()
     {
-        AnsiTheme.IsEnabled = true;
+        TuiPalette.Level = TuiColorLevel.Palette256;
         try
         {
-            var colored = AnsiTheme.Green("hello");
-            Assert.Contains("\u001b[32mhello\u001b[0m", colored, StringComparison.Ordinal);
+            var ok = TuiPalette.Ok("hello");
+            Assert.Contains($"{TuiPalette.Code(TuiToken.Ok)}hello{TuiPalette.Reset}", ok, StringComparison.Ordinal);
 
-            var diffAdded = AnsiTheme.FormatDiffLine("+ public void Run()");
-            Assert.Contains("\u001b[32m", diffAdded, StringComparison.Ordinal);
-
-            var diffRemoved = AnsiTheme.FormatDiffLine("- public void Stop()");
-            Assert.Contains("\u001b[31m", diffRemoved, StringComparison.Ordinal);
-
-            var diffHeader = AnsiTheme.FormatDiffLine("@@ -1,5 +1,6 @@");
-            Assert.Contains("\u001b[36m", diffHeader, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Err), TuiPalette.Err("boom"), StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Warn), TuiPalette.Warn("careful"), StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Brand), TuiPalette.Accent("/help"), StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Meta), TuiPalette.Quiet("meta"), StringComparison.Ordinal);
         }
         finally
         {
-            AnsiTheme.IsEnabled = false;
+            TuiPalette.Level = TuiColorLevel.None;
         }
     }
 
     [Fact]
-    public void AnsiTheme_DisablesColor_WhenDisabled()
+    public void CliOutput_IsPlain_WhenColourIsOff()
     {
-        AnsiTheme.IsEnabled = false;
-        var text = AnsiTheme.Green("hello");
-        Assert.Equal("hello", text);
+        TuiPalette.Level = TuiColorLevel.None;
 
-        var diff = AnsiTheme.FormatDiffLine("+ added line");
-        Assert.Equal("+ added line", diff);
+        Assert.Equal("hello", TuiPalette.Ok("hello"));
+        Assert.Equal("hello", TuiPalette.BoldPaint("hello"));
+        Assert.Equal("hello", TuiPalette.DimPaint("hello"));
+        Assert.Equal("+ added line", TuiPalette.Ok("+ added line"));
     }
 
     [Fact]
-    public void TuiEventRenderer_RendersTurnStarted_AndToolExecution()
+    public void TuiEventRenderer_RendersOneSettledToolLine()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
 
-        var envelope = new HarnessSafeEventEnvelope(
+        var request = new HarnessSafeEventEnvelope(
             ProtocolVersion: 1,
             EventId: "evt_1",
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 1,
-            EventType: "model.step_started",
+            EventType: "tool.execution_requested",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "running",
-            SafeSummary: "Thinking about plan");
+            SafeSummary: "read_only");
+        TuiEventRenderer.RenderEnvelope(request, sw);
 
-        TuiEventRenderer.RenderEnvelope(envelope, sw);
-        var output = sw.ToString();
-        Assert.Contains("◆", output, StringComparison.Ordinal);
-        Assert.Contains("Turn #1", output, StringComparison.Ordinal);
-
-        using var sw2 = new StringWriter();
-        var toolEnvelope = new HarnessSafeEventEnvelope(
+        var completion = new HarnessSafeEventEnvelope(
             ProtocolVersion: 1,
             EventId: "evt_2",
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 2,
-            EventType: "tool.execution_requested",
+            EventType: "tool.execution_completed",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "running",
-            SafeSummary: "read op=read path: src/main.rs");
+            Status: "succeeded",
+            SafeSummary: "ok");
+        TuiEventRenderer.RenderEnvelope(completion, sw);
 
-        TuiEventRenderer.RenderEnvelope(toolEnvelope, sw2);
-        var toolOutput = sw2.ToString();
-        Assert.Contains("read src/main.rs", toolOutput, StringComparison.Ordinal);
+        var output = sw.ToString();
+        Assert.Contains("✓", output, StringComparison.Ordinal);
+        Assert.Contains("tool", output, StringComparison.Ordinal);
+        // The request line must never be echoed again by the completion.
+        Assert.Single(output.Split('\n'), line => line.Contains('✓'));
     }
 
     [Fact]
-    public void TuiEventRenderer_RendersRunCompleted_SuccessAndFailure()
+    public void TuiEventRenderer_RendersFailedTurnWithRemedy()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+        renderer.BeginTurn(6);
 
-        var successEnv = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_5",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 5,
-            EventType: "run.completed",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "succeeded",
-            SafeSummary: "Task completed successfully");
-
-        TuiEventRenderer.RenderEnvelope(successEnv, sw);
-        Assert.Contains("Turn completed in", sw.ToString(), StringComparison.Ordinal);
-
-        using var sw2 = new StringWriter();
         var failEnv = new HarnessSafeEventEnvelope(
             ProtocolVersion: 1,
             EventId: "evt_6",
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 6,
-            EventType: "run.completed",
+            EventType: "run.failed",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "failed",
-            SafeSummary: "Timeout exceeded");
+            SafeSummary: "provider_rate_limited");
+        renderer.RenderEnvelope(failEnv);
+        renderer.EndTurn();
 
-        TuiEventRenderer.RenderEnvelope(failEnv, sw2);
-        Assert.Contains("Run #6 FAILED", sw2.ToString(), StringComparison.Ordinal);
+        var output = sw.ToString();
+        Assert.Contains("✗", output, StringComparison.Ordinal);
+        Assert.Contains("turn 6", output, StringComparison.Ordinal);
+        Assert.Contains("provider_rate_limited", output, StringComparison.Ordinal);
+        Assert.Contains("/model", output, StringComparison.Ordinal);
     }
 
     private static SseFrame DeltaFrame(string text, long seq = 1) => new(
@@ -139,7 +125,7 @@ public sealed class TuiInteractiveTests
     [Fact]
     public void TuiSessionRenderer_StylesToolCallBlock_WithGutter()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
@@ -149,17 +135,17 @@ public sealed class TuiInteractiveTests
         renderer.RenderFrame(DeltaFrame("</tool_call>\n", 4));
 
         var output = sw.ToString();
-        Assert.Contains("✦ RuAgent:", output, StringComparison.Ordinal);
+        Assert.Contains("✦", output, StringComparison.Ordinal);
         Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
         Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
-        Assert.Contains("┃", output, StringComparison.Ordinal);
+        Assert.Contains("│", output, StringComparison.Ordinal);
         Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TuiSessionRenderer_StylesInlineMarker_GluedToChatText()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
@@ -171,14 +157,14 @@ public sealed class TuiInteractiveTests
         Assert.Contains("Dạ, để em kiểm tra nhé!", output, StringComparison.Ordinal);
         Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
         Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
-        Assert.Contains("┃", output, StringComparison.Ordinal);
+        Assert.Contains("│", output, StringComparison.Ordinal);
         Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TuiSessionRenderer_StylesSplitMarker_AcrossChunks()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
@@ -189,14 +175,14 @@ public sealed class TuiInteractiveTests
         var output = sw.ToString();
         Assert.DoesNotContain("<tool_c", output, StringComparison.Ordinal);
         Assert.DoesNotContain("all>", output, StringComparison.Ordinal);
-        Assert.Contains("┃", output, StringComparison.Ordinal);
+        Assert.Contains("│", output, StringComparison.Ordinal);
         Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TuiSessionRenderer_StreamsNormalText_Verbatim()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
@@ -205,13 +191,13 @@ public sealed class TuiInteractiveTests
 
         var output = sw.ToString();
         Assert.Contains("Hello, world!", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("┃", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("│", output, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TuiSessionRenderer_FlushesRemainder_OnDurableEnvelope()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
@@ -222,24 +208,95 @@ public sealed class TuiInteractiveTests
             RunId: "run_1",
             SessionId: "sess_1",
             Sequence: 9,
-            EventType: "model.step_started",
+            EventType: "reconciliation.required",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "running",
-            SafeSummary: "next turn");
+            SafeSummary: "recovery_ambiguous");
         renderer.RenderEnvelope(env);
 
         var output = sw.ToString();
         Assert.Contains("tail-no-newline", output, StringComparison.Ordinal);
-        Assert.Contains("Turn #9", output, StringComparison.Ordinal);
+        Assert.Contains("recovery_ambiguous", output, StringComparison.Ordinal);
         Assert.True(
-            output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("Turn #9", StringComparison.Ordinal),
+            output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("recovery_ambiguous", StringComparison.Ordinal),
             "buffered tail must print before the envelope output");
     }
 
     [Fact]
+    public void TuiSessionRenderer_RendersCompactionAndRetryActivities()
+    {
+        TuiPalette.Level = TuiColorLevel.None;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+        renderer.BeginTurn(1);
+
+        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
+        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md"));
+
+        var output = sw.ToString();
+        Assert.Contains("context compacted", output, StringComparison.Ordinal);
+        Assert.Contains("12 items", output, StringComparison.Ordinal);
+        Assert.Contains("1.4s", output, StringComparison.Ordinal);
+        Assert.Contains("retrying README.md", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TuiSessionRenderer_ToolActivityDrivesTheLiveRowNotTheTranscript()
+    {
+        TuiPalette.Level = TuiColorLevel.None;
+        using var sw = new StringWriter();
+        var renderer = new TuiSessionRenderer(sw);
+        renderer.BeginTurn(1);
+
+        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Started, fileName: "app.cs"));
+        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Completed, fileName: "app.cs", durationMs: 120));
+        renderer.RenderEnvelope(new HarnessSafeEventEnvelope(
+            ProtocolVersion: 1,
+            EventId: "evt_7",
+            RunId: "run_1",
+            SessionId: "sess_1",
+            Sequence: 7,
+            EventType: "tool.execution_completed",
+            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+            Status: "succeeded",
+            SafeSummary: "read_only"));
+
+        var toolRow = Assert.Single(sw.ToString().Split('\n'), row => row.Contains('✓'));
+        Assert.Contains("app.cs", toolRow, StringComparison.Ordinal);
+        Assert.Contains("120ms", toolRow, StringComparison.Ordinal);
+    }
+
+    private static SseFrame ActivityFrame(
+        AgentActivityKind kind,
+        AgentActivityState state,
+        string? fileName = null,
+        int? count = null,
+        int? durationMs = null,
+        string? toolDisplay = null) => new(
+        null,
+        "agent.activity",
+        JsonSerializer.Serialize(new
+        {
+            kind = "agent.activity",
+            data = JsonSerializer.Serialize(new
+            {
+                activity_id = "act_1234567890abcdef1234567890abcdef",
+                kind = kind.ToString().ToLowerInvariant(),
+                state = state.ToString().ToLowerInvariant(),
+                file_name = fileName,
+                count,
+                duration_ms = durationMs,
+                safe_code = "succeeded",
+                tool_display = toolDisplay,
+            }),
+        }),
+        true,
+        1);
+
+    [Fact]
     public void TuiEventRenderer_FiltersInternalUsageRecordedEvents()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var env = new HarnessSafeEventEnvelope(
             ProtocolVersion: 1,
@@ -268,40 +325,6 @@ public sealed class TuiInteractiveTests
         seq);
 
     [Fact]
-    public void TuiSessionRenderer_RendersCompactionAndRetryActivities()
-    {
-        AnsiTheme.IsEnabled = false;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
-
-        renderer.RenderFrame(ActivityFrame(
-            "{\"activity_id\":\"act_77777777777777777777777777777777\",\"kind\":\"compaction\",\"state\":\"completed\",\"count\":12,\"duration_ms\":1200,\"safe_code\":\"succeeded\"}",
-            1));
-        renderer.RenderFrame(ActivityFrame(
-            "{\"activity_id\":\"act_88888888888888888888888888888888_retry\",\"kind\":\"retry\",\"state\":\"completed\",\"count\":2,\"safe_code\":\"retrying\",\"file_name\":\"README.md\"}",
-            2));
-
-        var output = sw.ToString();
-        Assert.Contains("Compacted context", output, StringComparison.Ordinal);
-        Assert.Contains("12 items", output, StringComparison.Ordinal);
-        Assert.Contains("Retrying README.md", output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void TuiSessionRenderer_LeavesToolActivitiesToDurableEvents()
-    {
-        AnsiTheme.IsEnabled = false;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
-
-        renderer.RenderFrame(ActivityFrame(
-            "{\"activity_id\":\"act_99999999999999999999999999999999\",\"kind\":\"analyze\",\"state\":\"completed\",\"file_name\":\"README.md\",\"safe_code\":\"succeeded\"}",
-            1));
-
-        Assert.Equal(string.Empty, sw.ToString());
-    }
-
-    [Fact]
     public void Parser_ParsesChatAndReplCommands()
     {
         var res1 = AgentCliParser.Parse(["agent", "chat", "--workspace", "C:\\temp", "--preset", "standard"]);
@@ -321,6 +344,22 @@ public sealed class TuiInteractiveTests
         Assert.True(res3.Success);
         var cmd3 = Assert.IsType<ChatCommand>(res3.Command);
         Assert.Equal("full_access", cmd3.Preset);
+    }
+
+    [Fact]
+    public void Parser_ClassicSwitchesChatToTheSequentialLayout()
+    {
+        var plain = AgentCliParser.Parse(["chat"]);
+        Assert.True(plain.Success);
+        Assert.False(Assert.IsType<ChatCommand>(plain.Command).Classic);
+
+        var classic = AgentCliParser.Parse(["chat", "--classic"]);
+        Assert.True(classic.Success);
+        Assert.True(Assert.IsType<ChatCommand>(classic.Command).Classic);
+
+        var duplicate = AgentCliParser.Parse(["chat", "--classic", "--classic"]);
+        Assert.False(duplicate.Success);
+        Assert.Equal("duplicate_switch", duplicate.ErrorCode);
     }
 
     [Fact]
@@ -402,7 +441,7 @@ public sealed class TuiInteractiveTests
         int width = 40;
         string longInput = new string('x', 100);
         var mid = InteractiveLineReader.BuildMid(width, "❯ ", longInput, false);
-        var stripped = InteractiveLineReader.StripAnsi(mid);
+        var stripped = TuiText.Strip(mid);
 
         Assert.Equal(width, stripped.Length);
         Assert.StartsWith("│ ❯ ", stripped, StringComparison.Ordinal);
@@ -415,7 +454,7 @@ public sealed class TuiInteractiveTests
         int width = 40;
         string longLegend = new string('L', 100);
         var bottom = InteractiveLineReader.BuildBottom(width, longLegend, false);
-        var stripped = InteractiveLineReader.StripAnsi(bottom);
+        var stripped = TuiText.Strip(bottom);
 
         Assert.Equal(width, stripped.Length);
         Assert.StartsWith("╰", stripped, StringComparison.Ordinal);
@@ -423,27 +462,11 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void TuiEventRenderer_RendersToolIcons_And_Diffs()
+    public void TuiEventRenderer_RendersDiffsUnderTheSettledToolLine()
     {
-        AnsiTheme.IsEnabled = false;
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
 
-        var editEnv = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_edit",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 10,
-            EventType: "tool.execution_requested",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "running",
-            SafeSummary: "edit path: src/app.cs");
-
-        TuiEventRenderer.RenderEnvelope(editEnv, sw);
-        var outReq = sw.ToString();
-        Assert.Contains("edit src/app.cs", outReq);
-
-        using var sw2 = new StringWriter();
         var doneEnv = new HarnessSafeEventEnvelope(
             ProtocolVersion: 1,
             EventId: "evt_done",
@@ -453,13 +476,15 @@ public sealed class TuiInteractiveTests
             EventType: "tool.execution_completed",
             OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
             Status: "succeeded",
-            SafeSummary: "edit completed\n--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line");
+            SafeSummary: "--- a/file.cs\n+++ b/file.cs\n@@ -1,2 +1,2 @@\n-old line\n+new line");
 
-        TuiEventRenderer.RenderEnvelope(doneEnv, sw2);
-        var outDone = sw2.ToString();
-        Assert.Contains("◆ edit", outDone);
-        Assert.Contains("+new line", outDone);
-        Assert.Contains("-old line", outDone);
+        TuiEventRenderer.RenderEnvelope(doneEnv, sw);
+
+        var output = sw.ToString();
+        Assert.Contains("✓", output, StringComparison.Ordinal);
+        Assert.Contains("@@ -1,2 +1,2 @@", output, StringComparison.Ordinal);
+        Assert.Contains("+new line", output, StringComparison.Ordinal);
+        Assert.Contains("-old line", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -585,64 +610,46 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void TuiSessionRenderer_BeginEndTurn_PrintsThinking_WithoutHanging()
+    public void TuiSessionRenderer_BeginEndTurn_PrintsTheTurnHeader_WithoutHanging()
     {
+        TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
-        renderer.BeginTurn();
+        renderer.BeginTurn(4);
         renderer.EndTurn();
         renderer.EndTurn(); // second stop must no-op safely
 
-        Assert.Contains("Thinking", sw.ToString(), StringComparison.Ordinal);
+        Assert.Contains("turn 4", sw.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_IsFilledBar()
+    public void InteractiveLineReader_BuildSubmitEcho_IsOneDimLine()
     {
-        bool prev = AnsiTheme.IsEnabled;
-        AnsiTheme.IsEnabled = true;
+        TuiPalette.Level = TuiColorLevel.TrueColor;
         try
         {
-            var echo = InteractiveLineReader.BuildSubmitEcho("Ê");
-            var rows = echo.Split('\n');
+            var echo = InteractiveLineReader.BuildSubmitEcho("sửa lỗi busy");
 
-            Assert.Equal(3, rows.Length);
-            Assert.Contains("Ê", echo);
-            Assert.Contains(">", echo);
-            Assert.Contains("\x1b[48;5;236m", echo); // subtle dark fill like the sample bar
-            Assert.DoesNotContain("│", echo);
-            Assert.DoesNotContain("╭", echo);
-            Assert.DoesNotContain("╰", echo);
-            foreach (var row in rows)
-            {
-                Assert.Equal(80, InteractiveLineReader.StripAnsi(row).Length);
-            }
+            Assert.DoesNotContain("\n", echo, StringComparison.Ordinal);
+            Assert.Contains("❯ sửa lỗi busy", TuiText.Strip(echo), StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Dim, echo, StringComparison.Ordinal);
+            Assert.DoesNotContain(TuiPalette.Bold, echo, StringComparison.Ordinal);
         }
         finally
         {
-            AnsiTheme.IsEnabled = prev;
+            TuiPalette.ResetLevel();
         }
     }
 
     [Fact]
     public void InteractiveLineReader_BuildSubmitEcho_FlattensMultiline()
     {
-        bool prev = AnsiTheme.IsEnabled;
-        AnsiTheme.IsEnabled = true;
-        try
-        {
-            var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
-            var rows = echo.Split('\n');
+        TuiPalette.Level = TuiColorLevel.None;
+        var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
 
-            Assert.Equal(3, rows.Length);
-            Assert.Contains("a b", rows[1]);
-            Assert.DoesNotContain("a\nb", echo);
-        }
-        finally
-        {
-            AnsiTheme.IsEnabled = prev;
-        }
+        Assert.DoesNotContain("\n", echo, StringComparison.Ordinal);
+        Assert.Contains("a b", echo, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -794,7 +801,7 @@ public sealed class TuiInteractiveTests
         int width = 40;
         string styledLegend = "\x1b[36m" + new string('L', 100) + "\x1b[0m";
         var bottom = InteractiveLineReader.BuildBottom(width, styledLegend, false);
-        var stripped = InteractiveLineReader.StripAnsi(bottom);
+        var stripped = TuiText.Strip(bottom);
 
         Assert.Equal(width, stripped.Length);
         int escCount = System.Text.RegularExpressions.Regex.Matches(bottom, "\x1b").Count;

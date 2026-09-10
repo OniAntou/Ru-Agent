@@ -16,6 +16,18 @@ public sealed class AgentSlashCommands
     private readonly TextWriter _err;
     private readonly SessionApiClient? _sessionClient;
 
+    /// <summary>
+    /// Runs an interactive picker under the composer. Wired by the CLI to the line reader;
+    /// when absent (or not interactive) the handler falls back to a text listing, which is
+    /// also what --json and redirected runs get.
+    /// </summary>
+    public Func<Tui.ChoiceList, CancellationToken, Task<string?>>? Picker { get; set; }
+
+    /// <summary>Live run counters for the status card. Wired by the CLI; may be absent in tests.</summary>
+    public Func<Tui.TuiStatusSnapshot?>? SnapshotProvider { get; set; }
+
+    public int PanelWidth { get; set; } = Tui.TuiViewport.FallbackWidth;
+
     public AgentSlashCommands(SettingsApiClient settingsClient, TextWriter outWriter, TextWriter errWriter)
         : this(settingsClient, null, outWriter, errWriter)
     {
@@ -53,9 +65,16 @@ public sealed class AgentSlashCommands
             return true;
         }
 
-        if (slashCmd is "/stats" or "/tokens")
+        if (slashCmd is "/status" or "/stats" or "/tokens")
         {
             await HandleStatsAsync(currentSessionId, preset, workspacePath, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (slashCmd is "/help")
+        {
+            WriteHelpPanel();
+            await _out.FlushAsync().ConfigureAwait(false);
             return true;
         }
 
@@ -68,15 +87,84 @@ public sealed class AgentSlashCommands
         return false;
     }
 
+    private static readonly (string Backend, string Field, string HasKeyField)[] KnownBackends =
+    [
+        ("Kilo Gateway", "kilo_model", "has_kilo_key"),
+        ("OpenCode Zen", "opencode_model", "has_opencode_key"),
+        ("Ollama", "ollama_model", ""),
+        ("LM Studio", "lmstudio_model", ""),
+        ("OpenAI", "openai_model", "has_openai_api_key"),
+        ("Anthropic", "anthropic_model", "has_anthropic_api_key"),
+    ];
+
+    private static string ModelFieldFor(string? backend) =>
+        KnownBackends.FirstOrDefault(b => string.Equals(b.Backend, backend, StringComparison.OrdinalIgnoreCase)).Field
+        ?? "model";
+
+    private static string? ReadModel(JsonElement settings, string? backend)
+    {
+        var field = ModelFieldFor(backend);
+        return settings.TryGetProperty(field, out var value) ? value.GetString() : null;
+    }
+
+    private static bool? ReadApiKeyState(JsonElement settings, string? backend)
+    {
+        var field = KnownBackends.FirstOrDefault(b => string.Equals(b.Backend, backend, StringComparison.OrdinalIgnoreCase)).HasKeyField;
+        if (string.IsNullOrEmpty(field))
+        {
+            return null;
+        }
+
+        return settings.TryGetProperty(field, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
+    }
+
+    private static string? ReadBackend(JsonElement settings) =>
+        settings.TryGetProperty("backend", out var backend) ? backend.GetString() : null;
+
     private async Task HandleBackendAsync(string? arg, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(arg))
         {
-            await _out.WriteLineAsync("Usage: /backend <kilo|opencode|ollama|lmstudio|openai|anthropic>").ConfigureAwait(false);
-            await _out.FlushAsync().ConfigureAwait(false);
-            return;
+            // No argument: offer the picker instead of making the operator recall the names.
+            var current = await ReadBackendAsync(cancellationToken).ConfigureAwait(false);
+            var list = new Tui.ChoiceList("backend", Tui.TuiSurfaces.BackendChoices(current));
+            var picked = Picker is null ? null : await Picker(list, cancellationToken).ConfigureAwait(false);
+            if (picked is null)
+            {
+                // Cancelled (nothing to add) or not interactive (list the options).
+                if (Picker is null || !IsInteractiveConsole())
+                {
+                    WriteBackendPanel(current);
+                }
+
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
+            arg = picked;
         }
 
+        await SwitchBackendAsync(arg, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsInteractiveConsole() => !Console.IsInputRedirected && !Console.IsOutputRedirected;
+
+    private void WriteBackendPanel(string? current)
+    {
+        var rows = Tui.TuiSurfaces.BackendChoices(current)
+            .Select(item => new Tui.PanelRow(item.Label, item.Detail))
+            .ToList();
+
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "backend", [new Tui.PanelSection(null, rows)], "/backend <name>"))
+        {
+            _out.WriteLine(line);
+        }
+    }
+
+    private async Task SwitchBackendAsync(string arg, CancellationToken cancellationToken)
+    {
         try
         {
             var targetBackend = arg.Trim().ToLowerInvariant() switch
@@ -92,7 +180,7 @@ public sealed class AgentSlashCommands
 
             var saveBody = new JsonObject { ["backend"] = targetBackend };
             await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Switched backend to: {targetBackend}")).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched backend to: {targetBackend}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -106,59 +194,53 @@ public sealed class AgentSlashCommands
         await _out.FlushAsync().ConfigureAwait(false);
     }
 
+    private async Task<string?> ReadBackendAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
+            return ReadBackend(settings);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private async Task HandleModelAsync(string? arg, CancellationToken cancellationToken)
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(arg))
-            {
-                var current = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-                var curBackend = current.TryGetProperty("backend", out var b) ? b.GetString() : "Kilo Gateway";
-                var modelField = curBackend switch
-                {
-                    "Kilo Gateway" => "kilo_model",
-                    "OpenCode Zen" => "opencode_model",
-                    "Ollama" => "ollama_model",
-                    "LM Studio" => "lmstudio_model",
-                    "OpenAI" => "openai_model",
-                    "Anthropic" => "anthropic_model",
-                    _ => "model",
-                };
-
-                var saveBody = new JsonObject { [modelField] = arg };
-                await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
-                await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Switched active model to: {arg}")).ConfigureAwait(false);
-            }
-            else
+            if (string.IsNullOrWhiteSpace(arg))
             {
                 var root = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-                var backend = root.TryGetProperty("backend", out var b) ? b.GetString() : "Unknown";
-                var model = backend switch
-                {
-                    "Kilo Gateway" => root.TryGetProperty("kilo_model", out var km) ? km.GetString() : "",
-                    "OpenCode Zen" => root.TryGetProperty("opencode_model", out var om) ? om.GetString() : "",
-                    "Ollama" => root.TryGetProperty("ollama_model", out var olm) ? olm.GetString() : "",
-                    "LM Studio" => root.TryGetProperty("lmstudio_model", out var lmm) ? lmm.GetString() : "",
-                    "OpenAI" => root.TryGetProperty("openai_model", out var oam) ? oam.GetString() : "",
-                    "Anthropic" => root.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() : "",
-                    _ => root.TryGetProperty("model", out var m) ? m.GetString() : "",
-                };
-                var hasKey = backend switch
-                {
-                    "Kilo Gateway" => root.TryGetProperty("has_kilo_key", out var hk) && hk.GetBoolean(),
-                    "OpenCode Zen" => root.TryGetProperty("has_opencode_key", out var hok) && hok.GetBoolean(),
-                    "OpenAI" => root.TryGetProperty("has_openai_api_key", out var hoak) && hoak.GetBoolean(),
-                    "Anthropic" => root.TryGetProperty("has_anthropic_api_key", out var haak) && haak.GetBoolean(),
-                    _ => true,
-                };
+                var backend = ReadBackend(root);
+                var configured = KnownBackends
+                    .Select(b => (b.Backend, ReadModel(root, b.Backend)))
+                    .ToList();
+                var candidates = Tui.TuiSurfaces.ModelChoices(backend, configured);
 
-                await _out.WriteLineAsync(Tui.AnsiTheme.Cyan($"  • Backend Provider: {backend}")).ConfigureAwait(false);
-                await _out.WriteLineAsync(Tui.AnsiTheme.Cyan($"  • Active Model:     {model}")).ConfigureAwait(false);
-                await _out.WriteLineAsync(hasKey
-                    ? Tui.AnsiTheme.Green("  • API Key:          Configured (OK)")
-                    : Tui.AnsiTheme.Red("  • API Key:          MISSING (Please configure in RuApp or settings)")).ConfigureAwait(false);
-                await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  • Tip: Use '/model <name>' to switch models on the fly.")).ConfigureAwait(false);
+                // Fewer than two candidates means there is nothing to choose between: show
+                // the card instead of a one-row picker.
+                if (candidates.Count > 1 && Picker is not null)
+                {
+                    var list = new Tui.ChoiceList("model", candidates);
+                    var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
+                    if (picked is not null)
+                    {
+                        await SetModelAsync(root, backend, picked, cancellationToken).ConfigureAwait(false);
+                        await _out.FlushAsync().ConfigureAwait(false);
+                        return;
+                    }
+                }
+
+                WriteModelCard(root, backend);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
             }
+
+            var current = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
+            await SetModelAsync(current, ReadBackend(current), arg, cancellationToken).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -170,6 +252,34 @@ public sealed class AgentSlashCommands
         }
 
         await _out.FlushAsync().ConfigureAwait(false);
+    }
+
+    private async Task SetModelAsync(JsonElement settings, string? backend, string model, CancellationToken cancellationToken)
+    {
+        var saveBody = new JsonObject { [ModelFieldFor(backend)] = model };
+        await _settingsClient.UpdateAsync(saveBody, cancellationToken).ConfigureAwait(false);
+        await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Switched active model to: {model}")).ConfigureAwait(false);
+    }
+
+    private void WriteModelCard(JsonElement settings, string? backend)
+    {
+        var model = ReadModel(settings, backend) ?? string.Empty;
+        var hasKey = ReadApiKeyState(settings, backend);
+        var rows = new List<Tui.PanelRow>
+        {
+            new("backend", string.IsNullOrWhiteSpace(backend) ? "unknown" : backend),
+            new("model", string.IsNullOrWhiteSpace(model) ? "not set" : model),
+        };
+
+        if (hasKey is { } configured)
+        {
+            rows.Add(new Tui.PanelRow("api key", configured ? "configured" : "missing"));
+        }
+
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", [new Tui.PanelSection(null, rows)], "/model <name>"))
+        {
+            _out.WriteLine(line);
+        }
     }
 
     private async Task HandleTreeAsync(string? currentSessionId, CancellationToken cancellationToken)
@@ -185,7 +295,7 @@ public sealed class AgentSlashCommands
             var listJson = await _sessionClient.ListAsync(cancellationToken).ConfigureAwait(false);
             if (!listJson.TryGetProperty("sessions", out var sessionsProp) || sessionsProp.ValueKind != JsonValueKind.Array)
             {
-                await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  (No sessions found)")).ConfigureAwait(false);
+                await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
                 return;
             }
 
@@ -201,11 +311,11 @@ public sealed class AgentSlashCommands
 
             if (sessions.Count == 0)
             {
-                await _out.WriteLineAsync(Tui.AnsiTheme.Dim("  (No sessions found)")).ConfigureAwait(false);
+                await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No sessions found)")).ConfigureAwait(false);
                 return;
             }
 
-            await _out.WriteLineAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("Session Tree (DAG):"))).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.BoldPaint(Tui.TuiPalette.Accent("Session Tree (DAG):"))).ConfigureAwait(false);
 
             var sessionMap = sessions.ToDictionary(s => s.Id);
             var childrenMap = new Dictionary<string, List<SessionTreeNode>>();
@@ -232,11 +342,11 @@ public sealed class AgentSlashCommands
             {
                 var marker = isLast ? "└── " : "├── ";
                 bool isCurrent = string.Equals(node.Id, currentSessionId, StringComparison.Ordinal);
-                var currentTag = isCurrent ? Tui.AnsiTheme.Green(" * (current)") : "";
+                var currentTag = isCurrent ? Tui.TuiPalette.Ok(" * (current)") : "";
                 var shortId = node.Id.Length > 8 ? node.Id[..8] : node.Id;
                 var titleText = string.IsNullOrWhiteSpace(node.Title) ? "Untitled" : node.Title;
 
-                var line = $"{indent}{marker}{Tui.AnsiTheme.Bold(shortId)} - {titleText} ({node.MessageCount} msgs){currentTag}";
+                var line = $"{indent}{marker}{Tui.TuiPalette.BoldPaint(shortId)} - {titleText} ({node.MessageCount} msgs){currentTag}";
                 _out.WriteLine(line);
 
                 if (childrenMap.TryGetValue(node.Id, out var children))
@@ -267,37 +377,54 @@ public sealed class AgentSlashCommands
 
     private async Task HandleStatsAsync(string? currentSessionId, string? preset, string? workspacePath, CancellationToken cancellationToken)
     {
+        JsonElement? settings = null;
         try
         {
-            var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-            var backend = settings.TryGetProperty("backend", out var b) ? b.GetString() : "Unknown";
-            var model = backend switch
-            {
-                "Kilo Gateway" => settings.TryGetProperty("kilo_model", out var km) ? km.GetString() : "",
-                "OpenCode Zen" => settings.TryGetProperty("opencode_model", out var om) ? om.GetString() : "",
-                "Ollama" => settings.TryGetProperty("ollama_model", out var olm) ? olm.GetString() : "",
-                "LM Studio" => settings.TryGetProperty("lmstudio_model", out var lmm) ? lmm.GetString() : "",
-                "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() : "",
-                "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() : "",
-                _ => settings.TryGetProperty("model", out var m) ? m.GetString() : "",
-            };
-
-            await _out.WriteLineAsync(Tui.AnsiTheme.Bold(Tui.AnsiTheme.Cyan("Session & Token Stats:"))).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  • Session ID:       ") + (currentSessionId ?? "N/A")).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  • Preset:           ") + (preset ?? "standard")).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  • Backend Provider: ") + backend).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  • Model:            ") + model).ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(workspacePath))
-            {
-                await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  • Workspace:        ") + workspacePath).ConfigureAwait(false);
-            }
-            await _out.WriteLineAsync(Tui.AnsiTheme.Dim($"  • Status:           ") + Tui.AnsiTheme.Green("Active & Connected")).ConfigureAwait(false);
+            settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            await _err.WriteLineAsync($"stats_error: {ex.Message}").ConfigureAwait(false);
+            // The card falls back to the cached snapshot the CLI provides.
         }
+
+        WriteStatusCard(currentSessionId, preset, workspacePath, settings);
         await _out.FlushAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One card for <c>/status</c>, <c>/stats</c> and <c>/tokens</c>: what the session is, what
+    /// it is running on, and what this run has done so far.
+    /// </summary>
+    private void WriteStatusCard(string? currentSessionId, string? preset, string? workspacePath, JsonElement? settings)
+    {
+        var backend = settings is { } s ? ReadBackend(s) : null;
+        var model = settings is { } s2 ? ReadModel(s2, backend) : null;
+        var hasKey = settings is { } s3 ? ReadApiKeyState(s3, backend) : null;
+        var snapshot = SnapshotProvider?.Invoke();
+
+        var card = new Tui.TuiStatusSnapshot(
+            SessionId: currentSessionId ?? "—",
+            Preset: preset ?? "standard",
+            Backend: backend ?? snapshot?.Backend ?? "unknown",
+            Model: model ?? snapshot?.Model ?? string.Empty,
+            Workspace: workspacePath ?? snapshot?.Workspace ?? string.Empty,
+            Turn: snapshot?.Turn ?? 0,
+            TotalTokens: snapshot?.TotalTokens,
+            ToolsSettled: snapshot?.ToolsSettled ?? 0,
+            ApiKeyConfigured: hasKey ?? snapshot?.ApiKeyConfigured);
+
+        foreach (var line in Tui.TuiSurfaces.Status(PanelWidth, card))
+        {
+            _out.WriteLine(line);
+        }
+    }
+
+    private void WriteHelpPanel()
+    {
+        foreach (var line in Tui.TuiSurfaces.Help(PanelWidth))
+        {
+            _out.WriteLine(line);
+        }
     }
 
     private async Task HandleExportAsync(string? arg, string? currentSessionId, CancellationToken cancellationToken)
@@ -358,7 +485,7 @@ public sealed class AgentSlashCommands
             }
 
             await File.WriteAllTextAsync(exportPath, sb.ToString(), cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.AnsiTheme.Green($"✓ Conversation exported to: {exportPath}")).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Conversation exported to: {exportPath}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {

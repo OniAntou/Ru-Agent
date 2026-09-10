@@ -1,129 +1,86 @@
+using System.Diagnostics;
 using System.Text.Json;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli.Tui;
 
+/// <summary>
+/// Frame entry point for one interactive session. Parses SSE frames, hands them to the
+/// transcript, and owns the live-row timer so the spinner never writes from its own
+/// uncoordinated task.
+/// </summary>
 public sealed class TuiSessionRenderer
 {
-    private readonly TextWriter _writer;
-    private bool _hasStreamedDelta;
-    private bool _isThinking;
-    private System.Diagnostics.Stopwatch? _thinkingWatch;
-    private System.Diagnostics.Stopwatch? _turnWatch;
-    private string _lineBuf = string.Empty;
-    private bool _inToolBlock;
-    private bool _atLineStart = true;
-
-    private CancellationTokenSource? _spinnerCts;
-    private Task? _spinnerTask;
-    private static readonly string[] SpinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    private static readonly string[] ThinkingVerbs = ["Thinking", "Reticulating", "Computing", "Pondering", "Percolating"];
-
-    public static string PickThinkingVerb(TimeSpan elapsed) =>
-        ThinkingVerbs[(int)(elapsed.TotalSeconds / 5) % ThinkingVerbs.Length];
+    private readonly TuiSurface _surface;
+    private readonly TuiStatusLine _status;
+    private readonly TuiTranscript _transcript;
+    private CancellationTokenSource? _liveCancellation;
+    private Task? _liveTask;
+    private Stopwatch? _liveWatch;
 
     public TuiSessionRenderer(TextWriter writer)
     {
-        _writer = writer ?? throw new ArgumentNullException(nameof(writer));
+        ArgumentNullException.ThrowIfNull(writer);
+        _surface = new TuiSurface(writer)
+        {
+            SuppressRepaints = Console.IsOutputRedirected || !ReferenceEquals(writer, Console.Out),
+        };
+        _status = new TuiStatusLine(_surface);
+        _transcript = new TuiTranscript(_surface, _status);
     }
 
-    public void Reset()
+    public TuiSurface Surface => _surface;
+
+    public TuiStatusLine Status => _status;
+
+    public TuiTranscript Transcript => _transcript;
+
+    /// <summary>Current viewport width, refreshed from the console when one is attached.</summary>
+    public int Width
     {
-        StopThinkingSpinner(showSummary: false);
-        _hasStreamedDelta = false;
-        _isThinking = false;
-        _lineBuf = string.Empty;
-        _inToolBlock = false;
-        _atLineStart = true;
-        _thinkingWatch?.Reset();
-        _turnWatch?.Reset();
+        get => _transcript.Width;
+        set => _transcript.Width = value;
     }
 
     /// <summary>
-    /// Starts the thinking indicator immediately (right after submit, before
-    /// the run is even created) so Enter never meets dead air. The first real
-    /// activity frame or delta takes over seamlessly (double-start guarded);
-    /// <see cref="EndTurn"/> stops it on paths that never stream a frame.
+    /// When set, the ticker asks the caller to repaint the live row (sticky footer) instead of
+    /// repainting the row at the transcript cursor.
     /// </summary>
-    public void BeginTurn()
+    public Action? LiveRowRepaintHook { get; set; }
+
+    public void Reset()
     {
-        Reset();
-        StartThinkingSpinner();
+        StopLiveRow();
+        _status.Reset();
+        _status.SetState(TuiRunState.Idle);
     }
 
-    /// <summary>Silent stop for turns that ended without streaming frames. No-op when already stopped.</summary>
+    public void BeginTurn(int turn = 0)
+    {
+        _transcript.BeginTurn(turn);
+        _status.SetState(TuiRunState.Thinking);
+        StartLiveRow();
+    }
+
     public void EndTurn()
     {
-        StopThinkingSpinner(showSummary: false);
+        StopLiveRow();
+        _transcript.EndTurn();
     }
 
-    private void StartThinkingSpinner()
+    public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
     {
-        _isThinking = true;
-        _thinkingWatch = System.Diagnostics.Stopwatch.StartNew();
-
-        if (Console.IsOutputRedirected || _writer != Console.Out)
-        {
-            _writer.WriteLine(AnsiTheme.Dim("  Thinking…"));
-            _writer.Flush();
-            return;
-        }
-
-        _spinnerCts?.Cancel();
-        _spinnerCts?.Dispose();
-        _spinnerCts = new CancellationTokenSource();
-        var ct = _spinnerCts.Token;
-
-        _spinnerTask = Task.Run(async () =>
-        {
-            int frameIdx = 0;
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    var elapsed = _thinkingWatch?.Elapsed ?? TimeSpan.Zero;
-                    var frameChar = SpinnerFrames[frameIdx++ % SpinnerFrames.Length];
-                    var verb = PickThinkingVerb(elapsed);
-                    _writer.Write($"\r  {AnsiTheme.White(frameChar)} {AnsiTheme.White(verb)}… {AnsiTheme.Silver($"({elapsed.TotalSeconds:F1}s)")}  ");
-                    _writer.Flush();
-                    await Task.Delay(90, ct).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) { }
-        }, ct);
+        StopLiveRow();
+        _transcript.EndTurn(outcome, errorCode);
     }
 
-    private void StopThinkingSpinner(bool showSummary = true)
-    {
-        if (!_isThinking) return;
-        _isThinking = false;
+    public void Flush() => _transcript.Flush();
 
-        if (_spinnerCts != null)
-        {
-            _spinnerCts.Cancel();
-            try { _spinnerTask?.Wait(200); } catch { }
-            _spinnerCts.Dispose();
-            _spinnerCts = null;
-            _spinnerTask = null;
+    public void ToggleExpand() => _transcript.ToggleExpand();
 
-            if (!Console.IsOutputRedirected && _writer == Console.Out)
-            {
-                _writer.Write("\r                                        \r");
-                _writer.Flush();
-            }
-        }
-
-        if (showSummary)
-        {
-            var elapsed = _thinkingWatch?.Elapsed.TotalSeconds ?? 0;
-            if (elapsed >= 0.4)
-            {
-                _writer.WriteLine(AnsiTheme.Dim($"  ◆ Thought for {elapsed:F1}s"));
-                _writer.Flush();
-            }
-        }
-    }
+    /// <summary>Prints an operator-facing one-liner into the transcript.</summary>
+    public void Note(string text, TuiToken token) => _transcript.Note(text, token);
 
     public void RenderFrame(SseFrame frame)
     {
@@ -136,406 +93,153 @@ public sealed class TuiSessionRenderer
         }
 
         if (frame.DurableSequence is null)
+        {
             return;
+        }
 
         HarnessSafeEventEnvelope? envelope;
         try
         {
             envelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
         }
-        catch
+        catch (JsonException)
         {
             return;
         }
 
-        if (envelope is null) return;
+        if (envelope is null)
+        {
+            return;
+        }
+
         RenderEnvelope(envelope);
     }
 
     private void RenderTransient(SseFrame frame)
     {
-        // 1. Assistant text streaming (stream tokens directly like real chat)
         if (AgentAssistantDeltaModel.TryParse(frame, out var delta) && delta is not null)
         {
-            if (!_hasStreamedDelta)
-            {
-                StopThinkingSpinner(showSummary: true);
-                _writer.WriteLine();
-                _writer.Write(AnsiTheme.Bold(AnsiTheme.Cyan("✦ RuAgent: ")));
-                _hasStreamedDelta = true;
-                _atLineStart = false;
-            }
-
-            RenderDeltaText(delta.Text);
+            _transcript.AppendAssistant(delta.Text);
             return;
         }
 
-        // 2. Activity status (thinking indicator)
         if (AgentActivityModel.TryParse(frame, out var activity) && activity is not null)
         {
-            if (activity.Kind == AgentActivityKind.Thinking)
-            {
-                if (activity.State == AgentActivityState.Started && !_isThinking && !_hasStreamedDelta)
-                {
-                    StartThinkingSpinner();
-                }
-                else if (activity.State == AgentActivityState.Completed)
-                {
-                    StopThinkingSpinner(showSummary: true);
-                }
-                else if (activity.State == AgentActivityState.Failed)
-                {
-                    StopThinkingSpinner(showSummary: false);
-                    _writer.WriteLine(AnsiTheme.Red("  ◆ Model thinking failed."));
-                    _writer.Flush();
-                }
-
-                return;
-            }
-
-            RenderActivityLine(activity);
-        }
-    }
-
-    /// <summary>
-    /// Renders activity kinds that have no durable envelope equivalent. Tool activity
-    /// (explore/search/analyze/edit/terminal) is deliberately left to the durable tool
-    /// events, which stay authoritative when transient frames are dropped.
-    /// </summary>
-    private void RenderActivityLine(AgentActivityModel activity)
-    {
-        Flush();
-
-        switch (activity.Kind)
-        {
-            case AgentActivityKind.Compaction when activity.State == AgentActivityState.Failed:
-                _writer.WriteLine(AnsiTheme.Red($"  ✗ Compaction failed ({activity.SafeCode})"));
-                break;
-
-            case AgentActivityKind.Compaction:
-                _writer.WriteLine(
-                    AnsiTheme.Magenta("  ✦ Compacted context") + CompactedDetail(activity));
-                break;
-
-            case AgentActivityKind.Retry:
-                _writer.WriteLine(AnsiTheme.Yellow($"  ↻ Retrying {RetryTarget(activity)}…"));
-                break;
-
-            case AgentActivityKind.Status when activity.SafeCode != "frames_dropped":
-                _writer.WriteLine(AnsiTheme.Dim($"  • {activity.SafeCode}"));
-                break;
-
-            default:
-                return;
-        }
-
-        _writer.Flush();
-    }
-
-    private static string CompactedDetail(AgentActivityModel activity)
-    {
-        var parts = new List<string>();
-        if (activity.Count is { } count)
-        {
-            parts.Add(count == 1 ? "1 item" : $"{count} items");
-        }
-
-        if (activity.DurationMs is { } duration)
-        {
-            parts.Add(FormatDuration(duration));
-        }
-
-        return parts.Count == 0
-            ? string.Empty
-            : " " + AnsiTheme.Silver(string.Join(" · ", parts));
-    }
-
-    private static string RetryTarget(AgentActivityModel activity) =>
-        activity.FileName is { Length: > 0 } fileName
-            ? fileName
-            : activity.Symbol is { Length: > 0 } symbol
-                ? symbol
-                : "tool";
-
-    private static string FormatDuration(int durationMs) =>
-        durationMs < 1000 ? $"{durationMs}ms" : $"{durationMs / 1000d:0.#}s";
-
-    /// <summary>
-    /// Streams assistant text while restyling tool-call payloads (dim gutter,
-    /// markers swallowed) wherever they appear — the model often glues
-    /// &lt;tool_call&gt; onto the end of a chat sentence, so markers are
-    /// scanned inline, not just as whole lines. Only a trailing partial
-    /// marker (at most 11 chars) is held back for the next chunk; everything
-    /// else paints immediately, byte-identical to before.
-    /// </summary>
-    private void RenderDeltaText(string text)
-    {
-        if (string.IsNullOrEmpty(text)) return;
-        _lineBuf += text;
-        var hold = PartialMarkerSuffixLength(_lineBuf);
-        var emitLength = _lineBuf.Length - hold;
-        if (emitLength <= 0) return;
-        var emit = _lineBuf[..emitLength];
-        _lineBuf = _lineBuf[emitLength..];
-        RenderStyled(emit);
-        _writer.Flush();
-    }
-
-    private const string ToolCallOpen = "<tool_call>";
-    private const string ToolCallClose = "</tool_call>";
-
-    private static int PartialMarkerSuffixLength(string buffer)
-    {
-        var max = Math.Min(buffer.Length, Math.Max(ToolCallOpen.Length, ToolCallClose.Length) - 1);
-        for (var len = max; len >= 1; len--)
-        {
-            var tail = buffer[^len..];
-            if (ToolCallOpen.StartsWith(tail, StringComparison.Ordinal)
-                || ToolCallClose.StartsWith(tail, StringComparison.Ordinal))
-            {
-                return len;
-            }
-        }
-        return 0;
-    }
-
-    private void RenderStyled(string segment)
-    {
-        var rest = segment;
-        while (rest.Length > 0)
-        {
-            var openIndex = rest.IndexOf(ToolCallOpen, StringComparison.Ordinal);
-            var closeIndex = rest.IndexOf(ToolCallClose, StringComparison.Ordinal);
-            int markerIndex;
-            bool isOpen;
-            if (openIndex >= 0 && (closeIndex < 0 || openIndex < closeIndex))
-            {
-                markerIndex = openIndex;
-                isOpen = true;
-            }
-            else if (closeIndex >= 0)
-            {
-                markerIndex = closeIndex;
-                isOpen = false;
-            }
-            else
-            {
-                WriteStyledText(rest);
-                return;
-            }
-
-            if (markerIndex > 0)
-            {
-                WriteStyledText(rest[..markerIndex]);
-            }
-            if (!_atLineStart)
-            {
-                _writer.WriteLine();
-                _atLineStart = true;
-            }
-            _inToolBlock = isOpen;
-            rest = rest[(markerIndex + (isOpen ? ToolCallOpen.Length : ToolCallClose.Length))..];
-        }
-    }
-
-    private void WriteStyledText(string text)
-    {
-        if (text.Length == 0) return;
-        if (!_inToolBlock)
-        {
-            _writer.Write(text);
-            _atLineStart = text.EndsWith('\n');
+            _transcript.ApplyActivity(activity);
             return;
         }
-        var start = 0;
-        while (true)
+
+        if (TryParseRunSummary(frame, out var summary) && summary is not null)
         {
-            var nl = text.IndexOf('\n', start);
-            var line = nl < 0 ? text[start..] : text[start..nl];
-            if (line.Length > 0)
+            _transcript.ApplySummary(summary);
+        }
+    }
+
+    public void RenderEnvelope(HarnessSafeEventEnvelope envelope) => _transcript.ApplyDurable(envelope);
+
+    /// <summary>Parses the transient <c>agent.summary</c> frame into its typed wire contract.</summary>
+    public static bool TryParseRunSummary(SseFrame frame, out AgentRunSummaryWire? summary)
+    {
+        summary = null;
+        if (!frame.IsTransient || string.IsNullOrWhiteSpace(frame.Data))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(frame.Data);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("kind", out var kind)
+                || kind.ValueKind != JsonValueKind.String
+                || !string.Equals(kind.GetString(), "agent.summary", StringComparison.Ordinal)
+                || !document.RootElement.TryGetProperty("data", out var data)
+                || data.ValueKind != JsonValueKind.String)
             {
-                if (_atLineStart)
-                {
-                    _writer.Write(AnsiTheme.Dim("┃ "));
-                }
-                _writer.Write(AnsiTheme.Dim(line));
-                _atLineStart = false;
+                return false;
             }
-            if (nl < 0) return;
-            _writer.WriteLine();
-            _atLineStart = true;
-            start = nl + 1;
-            if (start >= text.Length) return;
-        }
-    }
 
-    /// <summary>
-    /// Emits any buffered remainder (a marker split across chunks, or trailing
-    /// text without a newline). Called on every durable envelope and at turn
-    /// end so text is never stuck buffered.
-    /// </summary>
-    public void Flush()
-    {
-        if (_lineBuf.Length == 0) return;
-        var rest = _lineBuf;
-        _lineBuf = string.Empty;
-        RenderStyled(rest);
-        _writer.Flush();
-    }
-
-    public void RenderEnvelope(HarnessSafeEventEnvelope envelope)
-    {
-        Flush();
-        var seq = envelope.Sequence;
-        var type = envelope.EventType;
-        var status = envelope.Status;
-        var summary = Escape(envelope.SafeSummary);
-
-        // Filter out noisy state machine transitions
-        if (type is "run.state_changed" or "model.step_completed" or "prompt_receipt"
-            or "model.usage_recorded")
-            return;
-
-        if (_hasStreamedDelta)
-        {
-            _writer.WriteLine();
-            _hasStreamedDelta = false;
-        }
-
-        switch (type)
-        {
-            case "model.step_started":
-                _turnWatch = System.Diagnostics.Stopwatch.StartNew();
-                _writer.WriteLine(AnsiTheme.Cyan($"┌─ ◆ Turn #{seq}"));
-                break;
-
-            case "tool.execution_requested":
-                var (reqVerb, reqDetail) = SplitToolLine(summary);
-                _writer.WriteLine();
-                _writer.WriteLine(AnsiTheme.Gray(reqVerb) + " " + AnsiTheme.LightBlue(reqDetail));
-                break;
-
-            case "tool.execution_completed":
-                var (doneVerb, doneDetail) = SplitToolLine(summary);
-                if (status == "succeeded")
-                {
-                    _writer.WriteLine(AnsiTheme.BrightGreen("◆ ") + AnsiTheme.Silver(AnsiTheme.Bold($"{doneVerb} {doneDetail}")));
-                    RenderDiffIfPresent(envelope.SafeSummary);
-                }
-                else
-                {
-                    _writer.WriteLine(AnsiTheme.Red($"✗ {doneVerb} ") + doneDetail + $" ({status})");
-                }
-                break;
-
-            case "approval.requested":
-                _writer.WriteLine();
-                var gutter = AnsiTheme.Gray("┃ ");
-                _writer.WriteLine(gutter + AnsiTheme.Silver(AnsiTheme.Bold(summary)));
-                _writer.WriteLine(gutter + AnsiTheme.Gray($"Run: {envelope.RunId}"));
-                _writer.WriteLine(gutter + AnsiTheme.White(AnsiTheme.Bold("1 (●) ")) + AnsiTheme.Silver("Yes, proceed (once)"));
-                _writer.WriteLine(gutter + AnsiTheme.Gray("2 (○) No, deny"));
-                _writer.WriteLine(AnsiTheme.Dim("  1/2:select │ Ctrl+c:cancel"));
-                break;
-
-            case "reconciliation.required":
-            case "reconciliation.resolved":
-                _writer.WriteLine(AnsiTheme.Magenta($"  ✦ Reconciliation: ") + summary);
-                break;
-
-            case "transient.frames_dropped":
-                _writer.WriteLine(AnsiTheme.Red($"  ⚠ Dropped frames: ") + summary);
-                break;
-
-            case "run.completed":
-            case "run.failed":
-                if ((status == "succeeded" || status == "completed") && type != "run.failed")
-                {
-                    var turnSecs = _turnWatch?.Elapsed.TotalSeconds ?? 0;
-                    _turnWatch?.Reset();
-                    _writer.WriteLine();
-                    _writer.WriteLine(AnsiTheme.Green("◆stop"));
-                    _writer.WriteLine(AnsiTheme.Dim($"Turn completed in {turnSecs:F1}s ") + summary);
-                }
-                else
-                {
-                    _writer.WriteLine();
-                    _writer.WriteLine(AnsiTheme.Red($"└─ [Run #{seq} FAILED] ") + summary);
-                    if (summary.Contains("rate_limited"))
-                    {
-                        _writer.WriteLine(AnsiTheme.Yellow("  [Tip] Model provider rate limit exceeded (HTTP 429). Please wait a moment or switch to another model."));
-                    }
-                    else if (summary.Contains("auth"))
-                    {
-                        _writer.WriteLine(AnsiTheme.Yellow("  [Tip] Model provider authentication failed. Please verify your API key (/model)."));
-                    }
-                    else if (summary.Contains("timeout"))
-                    {
-                        _writer.WriteLine(AnsiTheme.Yellow("  [Tip] Model provider timed out. The upstream server may be overloaded."));
-                    }
-                    else if (summary.Contains("worker") || summary.Contains("provider") || summary.Contains("generation_failed") || summary.Contains("drive_failed"))
-                    {
-                        _writer.WriteLine(AnsiTheme.Yellow("  [Tip] Model provider execution failed. Run '/model' or check API settings in RuApp."));
-                    }
-                }
-                break;
-
-            default:
-                _writer.WriteLine(AnsiTheme.Dim($"  • [{seq}] {type}: {summary}"));
-                break;
-        }
-        _writer.Flush();
-    }
-
-    private void RenderDiffIfPresent(string text)
-    {
-        if (string.IsNullOrEmpty(text)) return;
-        if (!text.Contains("+++") && !text.Contains("---") && !text.Contains("@@") && !text.Contains("\n+") && !text.Contains("\n-"))
-            return;
-
-        var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-        foreach (var line in lines)
-        {
-            if (line.StartsWith("+++", StringComparison.Ordinal)
-                || line.StartsWith("---", StringComparison.Ordinal)
-                || line.StartsWith("@@", StringComparison.Ordinal)
-                || line.StartsWith("+", StringComparison.Ordinal)
-                || line.StartsWith("-", StringComparison.Ordinal))
+            var payload = data.GetString();
+            if (string.IsNullOrWhiteSpace(payload))
             {
-                _writer.WriteLine(AnsiTheme.Gray("┃ ") + AnsiTheme.FormatDiffLine(line));
+                return false;
             }
+
+            summary = AgentRunSummaryWireCodec.Parse(payload);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
         }
     }
 
-    private static (string Verb, string Detail) SplitToolLine(string text)
+    private void StartLiveRow()
     {
-        var lower = text.ToLowerInvariant();
-        string verb = lower.Contains("edit") || lower.Contains("patch") ? "edit"
-            : lower.Contains("write") ? "write"
-            : lower.Contains("read") ? "read"
-            : lower.Contains("terminal") || lower.Contains("bash") || lower.Contains("shell") || lower.Contains("cmd") || lower.Contains("run") ? "bash"
-            : lower.Contains("search") || lower.Contains("find") || lower.Contains("grep") || lower.Contains("list") ? "search"
-            : "tool";
-        var detail = text;
-        var pathIdx = text.IndexOf("path:", StringComparison.OrdinalIgnoreCase);
-        if (pathIdx >= 0)
+        StopLiveRow();
+        if (_surface.SuppressRepaints)
         {
-            detail = text[(pathIdx + 5)..].Trim();
+            return;
         }
 
-        if (detail.Length > 120)
-        {
-            detail = detail[..117] + "...";
-        }
+        _status.IsLive = true;
+        _liveWatch = Stopwatch.StartNew();
+        _liveCancellation = new CancellationTokenSource();
+        var token = _liveCancellation.Token;
 
-        return (verb, detail);
+        _liveTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    _status.Tick();
+                    _status.SetElapsed(_liveWatch.Elapsed.TotalSeconds);
+                    if (LiveRowRepaintHook is { } hook)
+                    {
+                        hook();
+                    }
+                    else
+                    {
+                        _status.Render(Width);
+                    }
+
+                    await Task.Delay(120, token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Turn ended; the row is cleared by StopLiveRow.
+            }
+        }, token);
     }
 
-    private static string Escape(string s)
+    private void StopLiveRow()
     {
-        if (string.IsNullOrEmpty(s)) return string.Empty;
-        if (s.Length > 500) s = s.Substring(0, 500) + "...";
-        return s.Replace("\n", " ").Replace("\r", " ");
+        if (_liveCancellation is null)
+        {
+            return;
+        }
+
+        _liveCancellation.Cancel();
+        try
+        {
+            _liveTask?.Wait(200);
+        }
+        catch (AggregateException)
+        {
+            // Cancellation raced the loop; the row state below is authoritative.
+        }
+
+        _liveCancellation.Dispose();
+        _liveCancellation = null;
+        _liveTask = null;
+        _liveWatch = null;
+        _status.Clear(Width);
     }
 }
 

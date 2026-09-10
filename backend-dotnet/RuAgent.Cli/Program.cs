@@ -122,7 +122,7 @@ public static class Program
     {
         Console.Error.WriteLine("Usage:");
         Console.Error.WriteLine("  agent run [--preset standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--json]");
-        Console.Error.WriteLine("  agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json]");
+        Console.Error.WriteLine("  agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json] [--classic]");
         Console.Error.WriteLine("  agent session list [--json]");
         Console.Error.WriteLine("  agent session fork <session-id> [--index <n>] [--title <title>] [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");

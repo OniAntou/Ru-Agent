@@ -5,7 +5,7 @@ Thin headless client for the Agent v2 headless coding loop (Phase 3). Delegates 
 ## Commands
 
 ```text
-agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json]
+agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json] [--classic]
 agent session list [--json]
 agent session fork <session-id> [--index <n>] [--title <title>] [--json]
 agent session rewind <session-id> --index <n> [--json]
@@ -25,7 +25,12 @@ agent policy import --global FILE
 agent policy remove <rule-id>
 ```
 
-- `chat` (or `repl`) launches an interactive Terminal User Interface (TUI) with real-time ANSI-styled streaming, command history (Up/Down arrow navigation), Tab autocompletion for slash commands, live animated thinking spinner, multiline prompt continuation (`\`), inline tool approvals (`approval.requested`), and slash commands (`/model`, `/backend`, `/fork`, `/rewind`, `/status`, `/history`, `/clear`, `/help`, `/exit`).
+- `chat` (or `repl`) launches an interactive Terminal User Interface (TUI) with real-time ANSI-styled streaming, command history (Up/Down arrow navigation), Tab autocompletion for slash commands, a live status row (state, current activity, elapsed, turn/token/tool counters), multiline prompt continuation (`\`), inline tool approvals (`approval.requested`), and slash commands (`/model`, `/backend`, `/fork`, `/rewind`, `/status`, `/history`, `/clear`, `/help`, `/exit`).
+- While a turn streams, keystrokes are captured in the pinned footer: Enter queues one prompt (`PendingPromptSlot`) and sends it when the turn ends, Escape clears the draft then cancels the run, `Ctrl+O` expands the last collapsed tool/diff block. A pending approval takes over the footer with a choice list (`↑↓`/digits to move, Enter to confirm, Escape to deny).
+- `--classic` opts out of the sticky footer and keeps the sequential layout where the composer only appears between turns. The sticky footer is also disabled automatically when stdout is redirected, when `TERM=dumb`, and with `--json`.
+- Information surfaces share one framed panel: `/help` lists every command grouped by area (generated from the reader's own command table), and `/status` (also `/stats`, `/tokens`) prints the session card — session id, preset, backend, model, API-key state, turns, tools, tokens and the workspace leaf.
+- `/model` and `/backend` without an argument open a picker (`↑↓`, digits, `Enter`, `Esc`) listing the models configured on this machine, or the six backends; choosing one updates the settings immediately. With no interactive console they print the same information as a panel, and `Esc` cancels silently.
+- Terminal resizes are debounced (180 ms); once the window settles the whole screen is rebuilt (region reset, fresh header, transcript tail reprinted from a bounded line history) rather than patched, because the terminal has already reflowed the rows the UI addressed absolutely. Nothing is drawn while the layout is known to be stale, and a window too short for a footer leaves sticky mode instead of painting rows that do not exist. `RU_TUI_DEBUG=<path>` writes a layout trace for diagnosing this on a real terminal.
 - `session list`, `session fork`, and `session rewind` provide explicit command-line controls for managing session branch trees and time-travel rewinds.
 - `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
 - `--preset full_access` (alias `full`) shows an interactive warning and requires confirmation; it changes the session's stored preset via `POST /agent/v1/policies` with `kind=session_preset` and requires header `X-Interactive-Confirmed: true`. `--json` cannot be used with `full_access`; the preset change affects the next run only and is not sticky across new sessions.

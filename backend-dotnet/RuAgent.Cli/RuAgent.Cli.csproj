@@ -9,7 +9,4 @@
     <ProjectReference Include="..\RuAgent.Client\RuAgent.Client.csproj" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
-  </ItemGroup>
 </Project>

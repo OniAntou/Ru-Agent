@@ -115,53 +115,56 @@ public sealed class InteractiveLineReaderTests
     [Fact]
     public void BuildTop_And_BuildBottom_Support_Slash_Mode_Styling()
     {
-        AnsiTheme.IsEnabled = true;
+        TuiPalette.Level = TuiColorLevel.TrueColor;
         try
         {
             var normalTop = InteractiveLineReader.BuildTop(40, isSlash: false);
             var slashTop = InteractiveLineReader.BuildTop(40, isSlash: true);
-            Assert.Contains(AnsiTheme.CyanCode, slashTop, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Brand), slashTop, StringComparison.Ordinal);
 
             var normalBottom = InteractiveLineReader.BuildBottom(40, "legend", isSlash: false);
             var slashBottom = InteractiveLineReader.BuildBottom(40, "legend", isSlash: true);
-            Assert.Contains(AnsiTheme.CyanCode, slashBottom, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Brand), slashBottom, StringComparison.Ordinal);
+            _ = normalTop;
+            _ = normalBottom;
         }
         finally
         {
-            AnsiTheme.IsEnabled = false;
+            TuiPalette.ResetLevel();
         }
     }
 
     [Fact]
     public void BuildDropdownTop_And_Bottom_Render_Correct_Frame()
     {
-        var top = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildDropdownTop(50));
+        var top = TuiText.Strip(InteractiveLineReader.BuildDropdownTop(50));
         Assert.StartsWith("╭", top);
         Assert.EndsWith("╮", top);
-        Assert.Contains("Gợi ý lệnh", top);
+        Assert.Contains("commands", top);
 
-        var bottom = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildDropdownBottom(50, 0, 5));
+        var bottom = TuiText.Strip(InteractiveLineReader.BuildDropdownBottom(50, 0, 5));
         Assert.StartsWith("╰", bottom);
         Assert.EndsWith("╯", bottom);
-        Assert.Contains("[1/5]", bottom);
+        Assert.Contains("1/5", bottom);
+        Assert.Contains("↑↓ select", bottom);
     }
 
     [Fact]
     public void BuildDropdownRow_Highlights_Selected_Item()
     {
-        var item = new InteractiveLineReader.SlashCommandInfo("/model", "Đổi mô hình", "/model [name]");
+        var item = new InteractiveLineReader.SlashCommandInfo("/model", "Switch model", "/model [name]");
         var selectedRow = InteractiveLineReader.BuildDropdownRow(60, item, isSelected: true);
         var unselectedRow = InteractiveLineReader.BuildDropdownRow(60, item, isSelected: false);
 
         Assert.Contains("❯ /model", selectedRow);
         Assert.Contains("  /model", unselectedRow);
-        Assert.Contains("Đổi mô hình", selectedRow);
+        Assert.Contains("Switch model", selectedRow);
     }
 
     [Fact]
     public void BuildBottom_With_Empty_Legend_Renders_Clean_Border_Without_Tooltips()
     {
-        var cleanBottom = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildBottom(40, string.Empty));
+        var cleanBottom = TuiText.Strip(InteractiveLineReader.BuildBottom(40, string.Empty));
         Assert.Equal("╰" + new string('─', 38) + "╯", cleanBottom);
     }
 
@@ -169,8 +172,8 @@ public sealed class InteractiveLineReaderTests
     public void BuildTop_And_BuildBottom_Scale_To_Fullscreen_Width()
     {
         int fullscreenWidth = 200;
-        var top = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildTop(fullscreenWidth));
-        var bottom = InteractiveLineReader.StripAnsi(InteractiveLineReader.BuildBottom(fullscreenWidth, "model · fast"));
+        var top = TuiText.Strip(InteractiveLineReader.BuildTop(fullscreenWidth));
+        var bottom = TuiText.Strip(InteractiveLineReader.BuildBottom(fullscreenWidth, "model · fast"));
 
         Assert.Equal(fullscreenWidth, top.Length);
         Assert.Equal("╭" + new string('─', fullscreenWidth - 2) + "╮", top);

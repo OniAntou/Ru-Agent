@@ -11,20 +11,20 @@ public sealed class InteractiveLineReader
 
     public static readonly SlashCommandInfo[] KnownCommands =
     [
-        new("/model", "Đổi hoặc xem mô hình LLM", "/model [name]"),
-        new("/backend", "Chuyển backend (kilo, opencode, ollama...)", "/backend <name>"),
-        new("/fork", "Rẽ nhánh phiên hội thoại hiện tại", "/fork [title]"),
-        new("/tree", "Xem cây lịch sử phân nhánh (DAG)", "/tree"),
-        new("/stats", "Xem thống kê tokens & phiên làm việc", "/stats"),
-        new("/tokens", "Xem chi tiết token tiêu thụ", "/tokens"),
-        new("/export", "Xuất lịch sử chat ra tệp Markdown", "/export [filename]"),
-        new("/status", "Xem trạng thái session & preset", "/status"),
-        new("/rewind", "Quay ngược lại tin nhắn trước", "/rewind <index>"),
-        new("/history", "Xem lịch sử câu lệnh đã nhập", "/history"),
-        new("/clear", "Xóa màn hình terminal", "/clear"),
-        new("/help", "Xem danh sách hướng dẫn lệnh", "/help"),
-        new("/exit", "Thoát chương trình", "/exit"),
-        new("/quit", "Thoát chương trình", "/quit"),
+        new("/model", "Switch or show the active model", "/model [name]"),
+        new("/backend", "Switch provider backend (kilo, opencode, ollama...)", "/backend <name>"),
+        new("/fork", "Branch this conversation", "/fork [title]"),
+        new("/tree", "Show the session tree", "/tree"),
+        new("/stats", "Show token and session stats", "/stats"),
+        new("/tokens", "Show detailed token usage", "/tokens"),
+        new("/export", "Export the transcript to Markdown", "/export [filename]"),
+        new("/status", "Show session status and preset", "/status"),
+        new("/rewind", "Rewind to an earlier message", "/rewind <index>"),
+        new("/history", "Show entered prompt history", "/history"),
+        new("/clear", "Clear the screen", "/clear"),
+        new("/help", "Show every command", "/help"),
+        new("/exit", "Quit", "/exit"),
+        new("/quit", "Quit", "/quit"),
     ];
 
     private static readonly string[] DefaultSlashCommands = KnownCommands.Select(c => c.Command).ToArray();
@@ -70,127 +70,37 @@ public sealed class InteractiveLineReader
 
     public static string BuildTop(int width) => BuildTop(width, false);
 
-    public static string BuildTop(int width, bool isSlash)
-    {
-        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
-        var border = "╭" + new string('─', w - 2) + "╮";
-        return isSlash ? AnsiTheme.Cyan(border) : AnsiTheme.Gray(border);
-    }
+    public static string BuildTop(int width, bool isSlash) =>
+        ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, string.Empty, string.Empty, null)[0];
 
     public static string BuildMid(int width, string prompt, string buffer) => BuildMid(width, prompt, buffer, "", false);
 
     public static string BuildMid(int width, string prompt, string buffer, bool isSlash) => BuildMid(width, prompt, buffer, "", isSlash);
 
-    public static string BuildMid(int width, string prompt, string buffer, string ghostText, bool isSlash)
-    {
-        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
-        string promptClean = prompt ?? string.Empty;
-        string text = buffer ?? string.Empty;
-        string ghost = ghostText ?? string.Empty;
-
-        int promptLen = StripAnsi(promptClean).Length;
-        int innerWidth = Math.Max(1, w - 4); // trừ 2 viền "│ " và " │"
-        int availableForText = Math.Max(1, innerWidth - promptLen);
-
-        string visibleText = text;
-        string visibleGhost = ghost;
-
-        if (text.Length + ghost.Length > availableForText)
-        {
-            if (ghost.Length > 0)
-            {
-                int maxGhost = Math.Max(0, availableForText - text.Length);
-                visibleGhost = maxGhost > 0 ? ghost[..Math.Min(ghost.Length, maxGhost)] : "";
-            }
-
-            if (text.Length + visibleGhost.Length > availableForText)
-            {
-                visibleGhost = "";
-                int start = Math.Max(0, text.Length - availableForText);
-                visibleText = text[start..];
-            }
-        }
-
-        var visibleLen = promptLen + visibleText.Length + visibleGhost.Length;
-        var pad = Math.Max(0, innerWidth - visibleLen);
-
-        var left = isSlash ? AnsiTheme.Cyan("│ ") : AnsiTheme.Gray("│ ");
-        var right = isSlash ? AnsiTheme.Cyan(" │") : AnsiTheme.Gray(" │");
-        var styledGhost = string.IsNullOrEmpty(visibleGhost) ? "" : AnsiTheme.Gray(visibleGhost);
-
-        return left + promptClean + visibleText + styledGhost + new string(' ', pad) + right;
-    }
+    public static string BuildMid(int width, string prompt, string buffer, string ghostText, bool isSlash) =>
+        ComposerBox.Compose(width, StateFor(isSlash), prompt, buffer, ghostText, string.Empty, string.Empty, null)[1];
 
     public static string BuildBottom(int width, string legend) => BuildBottom(width, legend, false);
 
-    public static string BuildBottom(int width, string legend, bool isSlash)
-    {
-        var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
-        var label = string.IsNullOrWhiteSpace(legend) ? "" : " " + legend.Trim() + " ";
-        int maxLabelLen = Math.Max(0, w - 4);
-        var plainLabel = StripAnsi(label);
-        if (plainLabel.Length > maxLabelLen)
-        {
-            // Truncate by display width. A styled label degrades to plain text
-            // here so an ANSI sequence is never cut in half.
-            label = maxLabelLen <= 1 ? plainLabel[..maxLabelLen] : plainLabel[..(maxLabelLen - 1)] + "…";
-        }
-        var fill = Math.Max(0, w - 2 - StripAnsi(label).Length);
-        var border = isSlash
-            ? AnsiTheme.Cyan("╰" + new string('─', fill)) + label + AnsiTheme.Cyan("╯")
-            : AnsiTheme.Gray("╰" + new string('─', fill)) + label + AnsiTheme.Gray("╯");
-        return border;
-    }
+    public static string BuildBottom(int width, string legend, bool isSlash) =>
+        ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, legend, string.Empty, null)[2];
 
-    public static string BuildDropdownTop(int width)
-    {
-        var w = Math.Clamp(width, MinDropdownWidth, MaxBoxWidth);
-        var title = " Gợi ý lệnh ";
-        var fill = Math.Max(0, w - 2 - title.Length);
-        return AnsiTheme.Cyan("╭" + title + new string('─', fill) + "╮");
-    }
+    private static ComposerState StateFor(bool isSlash) => isSlash ? ComposerState.Slash : ComposerState.Idle;
 
-    public static string BuildDropdownRow(int width, SlashCommandInfo item, bool isSelected)
-    {
-        var w = Math.Clamp(width, MinDropdownWidth, MaxBoxWidth);
-        var prefix = isSelected ? "❯ " : "  ";
-        var cmd = item.Command.PadRight(CommandColumnWidth);
-        var desc = item.Description;
-        var syntax = string.IsNullOrWhiteSpace(item.Syntax) ? "" : " " + item.Syntax;
+    public static string BuildDropdownTop(int width) =>
+        SlashDropdown.Compose(width, "commands", Array.Empty<DropdownItem>(), 0, 1, null)[0];
 
-        var innerWidth = w - 4; // trừ 2 viền '│ ' và ' │'
-        var textContent = prefix + cmd + " " + desc + syntax;
-        if (textContent.Length > innerWidth)
-        {
-            textContent = prefix + cmd + " " + desc;
-            if (textContent.Length > innerWidth)
-            {
-                textContent = textContent[..(innerWidth - 1)] + "…";
-            }
-        }
-        var pad = Math.Max(0, innerWidth - textContent.Length);
+    public static string BuildDropdownRow(int width, SlashCommandInfo item, bool isSelected) =>
+        SlashDropdown.Compose(
+            width,
+            "commands",
+            [new DropdownItem(item.Command, item.Description, item.Syntax)],
+            isSelected ? 0 : -1,
+            1,
+            null)[1];
 
-        string innerStyled;
-        if (isSelected)
-        {
-            innerStyled = AnsiTheme.Bold(AnsiTheme.Cyan(prefix + cmd)) + " " + AnsiTheme.White(desc) + AnsiTheme.Gray(syntax) + new string(' ', pad);
-        }
-        else
-        {
-            innerStyled = AnsiTheme.Cyan(prefix + cmd) + " " + AnsiTheme.Gray(desc + syntax) + new string(' ', pad);
-        }
-
-        var border = isSelected ? AnsiTheme.Cyan("│") : AnsiTheme.Gray("│");
-        return border + " " + innerStyled + " " + border;
-    }
-
-    public static string BuildDropdownBottom(int width, int current, int total)
-    {
-        var w = Math.Clamp(width, MinDropdownWidth, MaxBoxWidth);
-        var hint = $" [{current + 1}/{total}] ↑/↓: chọn · Tab: điền · Esc: đóng ";
-        var fill = Math.Max(0, w - 2 - hint.Length);
-        return AnsiTheme.Cyan("╰" + hint + new string('─', fill) + "╯");
-    }
+    public static string BuildDropdownBottom(int width, int current, int total) =>
+        SlashDropdown.Footer(width, "↑↓ select · tab apply · esc close", current + 1, total);
 
     public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor) =>
         BuildMidRewrite(width, prompt, buffer, cursor, "", false);
@@ -203,7 +113,7 @@ public sealed class InteractiveLineReader
         var mid = BuildMid(width, prompt, buffer, ghostText, isSlash);
         var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
         string text = buffer ?? string.Empty;
-        int promptLen = StripAnsi(prompt ?? string.Empty).Length;
+        int promptLen = TuiText.VisibleWidth(prompt);
         int innerWidth = Math.Max(1, w - 4);
         int availableForText = Math.Max(1, innerWidth - promptLen);
 
@@ -225,51 +135,38 @@ public sealed class InteractiveLineReader
     public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
 
     /// <summary>
-    /// Echo kiểu thanh bar theo mẫu: 3 dòng nền xám đậm, thụt lề 1 cột mỗi bên
-    /// (trống + content + trống), ">" accent, text trắng. Text gộp phẳng.
+    /// Submitted prompts echo as a single dim line: the transcript stays quiet and the
+    /// three-row composer remains the only frame on screen.
     /// </summary>
     public static string BuildSubmitEcho(string text)
     {
         var body = (text ?? string.Empty).Replace("\r", " ").Replace("\n", " ");
-        if (!AnsiTheme.IsEnabled)
-        {
-            return "> " + body;
-        }
-        int width = Math.Max(12, ComputeBoxWidth());
-        int fillWidth = width - 2;
-        var blankRow = " " + AnsiTheme.BgSubtleCode + new string(' ', fillWidth) + AnsiTheme.Reset + " ";
-        var inner = "> " + body;
-        int pad = Math.Max(0, fillWidth - 2 - StripAnsi(inner).Length);
-        var contentRow = " " + AnsiTheme.BgSubtleCode
-            + "  "
-            + AnsiTheme.CyanCode + "> "
-            + AnsiTheme.White15Code + body + new string(' ', pad)
-            + AnsiTheme.Reset + " ";
-        return blankRow + "\n" + contentRow + "\n" + blankRow;
+        return TuiPalette.DimPaint("  ❯ " + body);
     }
 
     public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash)
     {
-        var nl = Environment.NewLine;
-        return BuildTop(width, isSlash) + nl
-            + (isSlash ? AnsiTheme.Cyan("│ ") : AnsiTheme.Gray("│ ")) + prompt + nl
-            + BuildBottom(width, legend, isSlash) + nl
-            + "\x1b[2A";
+        var newline = Environment.NewLine;
+        var lines = ComposerBox.Compose(
+            width,
+            StateFor(isSlash),
+            prompt,
+            string.Empty,
+            string.Empty,
+            legend,
+            string.Empty,
+            null);
+        return lines[0] + newline + lines[1] + newline + lines[2] + newline + "\x1b[2A";
     }
 
     public static int ComputeBoxWidth()
     {
-        try
+        if (TuiViewport.TryReadLiveSize(out var columns, out _))
         {
-            if (!Console.IsOutputRedirected && Console.WindowWidth > MinConsoleWidth)
-            {
-                return Math.Max(MinBoxWidth, Console.WindowWidth - 2);
-            }
+            // Fit the live terminal: the box may never be wider than the screen it draws into.
+            return Math.Clamp(TuiViewport.UsableWidth(columns, MinBoxWidth), 1, columns);
         }
-        catch (IOException)
-        {
-            // No live console (redirected/closed). Fall through to the default width.
-        }
+
         return DefaultBoxWidth;
     }
 
@@ -357,6 +254,26 @@ public sealed class InteractiveLineReader
     }
 
     /// <summary>
+    /// Runs a picker under the composer using the shared selection behaviour. Returns the
+    /// chosen value, or null when the operator cancelled — and also when stdin/stdout is not
+    /// interactive, so callers fall back to a plain text listing.
+    /// </summary>
+    public async Task<string?> ReadChoiceAsync(
+        ChoiceList list,
+        TextWriter outWriter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(list);
+        ArgumentNullException.ThrowIfNull(outWriter);
+        if (Console.IsInputRedirected || Console.IsOutputRedirected || !ReferenceEquals(outWriter, Console.Out))
+        {
+            return null;
+        }
+
+        return await ReadInteractiveKeyLoopAsync(outWriter, string.Empty, cancellationToken, list).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Tính số dòng trắng cần đệm để ghim khung nhập xuống đáy viewport.
     /// Chỉ đệm khi output đã dài gần đầy màn hình (cách đáy không quá
     /// <c>MaxPushPadLines</c> dòng); màn hình còn trống thì trả 0 để khung
@@ -389,10 +306,31 @@ public sealed class InteractiveLineReader
         }
     }
 
+    /// <summary>
+    /// Escape sequence that erases the composer and everything below it, ready for a rebuild.
+    /// The hardware cursor normally rests on the frame's middle row, so one row up clears the
+    /// whole box — but a terminal reflow can leave the frame a row lower than we think, which
+    /// strands a piece of the old border on screen. When the cursor has room, the clear
+    /// therefore reaches one row higher, into the blank row that always precedes the frame.
+    /// Pure so the geometry can be tested without a console.
+    /// </summary>
+    public static string ComposeBoxClear(int cursorTop, int windowRows)
+    {
+        if (windowRows < 1)
+        {
+            return string.Empty;
+        }
+
+        // Rows 1 and 2 are the top of the screen: going up there would eat the header.
+        var ups = cursorTop >= 3 ? 2 : 1;
+        return $"\u001b[{ups}A\r\u001b[J";
+    }
+
     private async Task<string?> ReadInteractiveKeyLoopAsync(
         TextWriter outWriter,
         string prompt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ChoiceList? choice = null)
     {
         var buffer = new StringBuilder();
         int cursor = 0;
@@ -405,6 +343,13 @@ public sealed class InteractiveLineReader
         string defaultLegend = Legend;
         int lastDropdownLines = 0;
         bool dropdownDismissed = false;
+
+        // Picker mode: the list owns the keyboard and the composer is just its frame.
+        bool choosing = choice is not null;
+        if (choosing)
+        {
+            defaultLegend = choice!.Title;
+        }
 
         // One blank row above every composer open: breathing room after the
         // header, transcript, or status bar. Pushed before PushToBottom so the
@@ -463,6 +408,31 @@ public sealed class InteractiveLineReader
             }
         }
 
+        void RenderBelow(IReadOnlyList<string> lines)
+        {
+            if (lines.Count == 0)
+            {
+                ClearDropdown();
+                return;
+            }
+
+            if (lastDropdownLines > lines.Count)
+            {
+                ClearDropdown();
+            }
+
+            // Draw below the box: step past the bottom border, write each row,
+            // then step back to mid. Near the viewport bottom the terminal
+            // scrolls (the list stays attached under the box) — accepted.
+            outWriter.Write("\x1b[2B");
+            for (int i = 0; i < lines.Count; i++)
+            {
+                outWriter.Write($"\r\x1b[2K{lines[i]}\n");
+            }
+            outWriter.Write($"\x1b[{lines.Count + 2}A");
+            lastDropdownLines = lines.Count;
+        }
+
         void RenderDropdown(IReadOnlyList<SlashCommandInfo> matches, int selected)
         {
             if (matches.Count == 0 || dropdownDismissed)
@@ -478,8 +448,10 @@ public sealed class InteractiveLineReader
                 startIndex = Math.Clamp(selected - maxItems / 2, 0, matches.Count - maxItems);
             }
 
-            var lines = new List<string>();
-            lines.Add(BuildDropdownTop(boxWidth));
+            var lines = new List<string>
+            {
+                BuildDropdownTop(boxWidth),
+            };
             for (int i = 0; i < maxItems; i++)
             {
                 int idx = startIndex + i;
@@ -487,30 +459,41 @@ public sealed class InteractiveLineReader
             }
             lines.Add(BuildDropdownBottom(boxWidth, selected, matches.Count));
 
-            if (lastDropdownLines > lines.Count)
+            RenderBelow(lines);
+        }
+
+        /// <summary>Renders whichever list is active: the picker, or the slash suggestions.</summary>
+        void RenderCurrentList(bool isSlash, IReadOnlyList<SlashCommandInfo> matches)
+        {
+            if (choosing)
+            {
+                RenderBelow(choice!.Render(boxWidth));
+                return;
+            }
+
+            if (isSlash && !dropdownDismissed && matches.Count > 0)
+            {
+                RenderDropdown(matches, selectedIndex);
+            }
+            else
             {
                 ClearDropdown();
             }
-
-            // Draw below the box: step past the bottom border, write each row,
-            // then step back to mid. Near the viewport bottom the terminal
-            // scrolls (dropdown stays attached under the box) — accepted.
-            outWriter.Write("\x1b[2B");
-            for (int i = 0; i < lines.Count; i++)
-            {
-                outWriter.Write($"\r\x1b[2K{lines[i]}\n");
-            }
-            outWriter.Write($"\x1b[{lines.Count + 2}A");
-            lastDropdownLines = lines.Count;
         }
 
         void RedrawBoxClean()
         {
             try
             {
-                // Box top is one row above mid; clear down wipes the box plus
-                // the dropdown rows below it (empty space below is harmless).
-                outWriter.Write("\x1b[1A\r\x1b[J");
+                // The clear reaches past the frame when there is room, so a reflowed frame
+                // cannot leave a piece of the previous border behind (empty space below is
+                // harmless: the rebuild repaints the blank row and the whole box).
+                if (TuiViewport.TryReadLiveSize(out _, out var rows))
+                {
+                    outWriter.Write(ComposeBoxClear(Console.CursorTop, rows));
+                    outWriter.WriteLine();
+                }
+
                 outWriter.Flush();
             }
             catch (IOException)
@@ -526,10 +509,7 @@ public sealed class InteractiveLineReader
             var (ghost, leg, matches) = ComputeAutocomplete();
 
             outWriter.Write(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash));
-            if (isSlash && !dropdownDismissed && matches.Count > 0)
-            {
-                RenderDropdown(matches, selectedIndex);
-            }
+            RenderCurrentList(isSlash, matches);
             outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
             outWriter.Flush();
             lastIsSlash = isSlash;
@@ -558,14 +538,7 @@ public sealed class InteractiveLineReader
                     lastIsSlash = isSlash;
                 }
 
-                if (isSlash && !dropdownDismissed && matches.Count > 0)
-                {
-                    RenderDropdown(matches, selectedIndex);
-                }
-                else
-                {
-                    ClearDropdown();
-                }
+                RenderCurrentList(isSlash, matches);
 
                 outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
                 outWriter.Flush();
@@ -576,7 +549,7 @@ public sealed class InteractiveLineReader
             }
         }
 
-        void LeaveBox()
+        void LeaveBox(bool echo = true)
         {
             try
             {
@@ -586,10 +559,11 @@ public sealed class InteractiveLineReader
                 // bao giờ có 2 khung nhập giống nhau trên màn hình. Cursor đang ở
                 // dòng mid: lên top xóa, xuống bottom xóa, in echo tại đó.
                 outWriter.Write("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[2B\r\x1b[2K");
-                outWriter.Write(BuildSubmitEcho(text));
-                outWriter.WriteLine();
-                // Breathing room: one blank row between the echo bar and the
-                // thinking line / agent output that follows every submit.
+                if (echo)
+                {
+                    outWriter.Write(BuildSubmitEcho(text));
+                }
+
                 outWriter.WriteLine();
                 outWriter.Flush();
             }
@@ -611,20 +585,17 @@ public sealed class InteractiveLineReader
             resizePending = false;
             resizeDebounceWatch.Reset();
 
-            try
-            {
-                // Box top is one row above mid; clear down wipes the box plus
-                // the dropdown rows below it (empty space below is harmless).
-                outWriter.Write("\x1b[1A\r\x1b[J");
-                await outWriter.FlushAsync().ConfigureAwait(false);
-            }
-            catch (IOException)
-            {
-                // Output went away mid-resize. Continue rebuilding state; next writes retry.
-            }
+            var cursorTop = Console.CursorTop;
 
+            // A terminal that changed size has already reflowed every row this composer was
+            // addressed at, so patching the frame cannot be reliable. The host rebuilds the
+            // screen through this callback (region reset, clear, header, transcript tail); the
+            // frame is then reopened at the cursor it leaves behind.
             lastDropdownLines = 0;
             boxWidth = ComputeBoxWidth();
+            TuiDebug.Log(
+                "composer",
+                $"resize apply cursorTop={cursorTop} boxWidth={boxWidth} rows={TuiViewport.Height()}");
 
             if (OnScreenRefreshedAsync != null)
             {
@@ -645,10 +616,7 @@ public sealed class InteractiveLineReader
             var (ghost, leg, matches) = ComputeAutocomplete();
 
             await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash)).ConfigureAwait(false);
-            if (isSlash && !dropdownDismissed && matches.Count > 0)
-            {
-                RenderDropdown(matches, selectedIndex);
-            }
+            RenderCurrentList(isSlash, matches);
             outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
             await outWriter.FlushAsync().ConfigureAwait(false);
             lastIsSlash = isSlash;
@@ -668,6 +636,9 @@ public sealed class InteractiveLineReader
                         int curHeight = Console.WindowHeight;
                         if (curWidth != lastWidth || curHeight != lastHeight)
                         {
+                            TuiDebug.Log(
+                                "composer",
+                                $"resize detected {lastWidth}x{lastHeight} -> {curWidth}x{curHeight}");
                             lastWidth = curWidth;
                             lastHeight = curHeight;
                             resizePending = true;
@@ -703,6 +674,25 @@ public sealed class InteractiveLineReader
             var curText = buffer.ToString();
             bool isSlash = curText.StartsWith('/') && !curText.Contains(' ');
             var (_, _, currentMatches) = isSlash ? ComputeAutocomplete() : default;
+
+            if (choosing)
+            {
+                switch (choice!.HandleKey(key))
+                {
+                    case ChoiceOutcome.Confirmed:
+                        var picked = choice.Current.Value;
+                        LeaveBox(echo: false);
+                        return picked;
+
+                    case ChoiceOutcome.Cancelled:
+                        LeaveBox(echo: false);
+                        return null;
+
+                    default:
+                        Refresh();
+                        continue;
+                }
+            }
 
             if (key.Key == ConsoleKey.Enter || key.KeyChar is '\r' or '\n')
             {
@@ -910,9 +900,162 @@ public sealed class InteractiveLineReader
         return null;
     }
 
-    public static string StripAnsi(string text)
+    /// <summary>
+    /// Captures keystrokes while a turn streams. Enter hands the buffer to the one-slot queue,
+    /// a pending approval owns the keyboard (arrows, digits, Enter, Escape), Escape cancels the
+    /// turn, and Ctrl+O expands the last collapsed block. Every change repaints through
+    /// <paramref name="repaint"/>; the loop returns only when the token is cancelled.
+    /// </summary>
+    /// <remarks>
+    /// Terminal resizes are debounced through <see cref="TuiResizeWatcher"/>:
+    /// <paramref name="onResize"/> runs once the window has settled, never during the drag,
+    /// because repainting into a half-built window is what corrupts the pinned layout.
+    /// </remarks>
+    public async Task RunTypeAheadAsync(
+        TypeAheadSession session,
+        Action repaint,
+        Action? onCancel = null,
+        Action? onExpand = null,
+        Action? onResize = null,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(text)) return string.Empty;
-        return Regex.Replace(text, @"\x1b\[[0-9;]*[a-zA-Z]", "");
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(repaint);
+
+        // The first observation applies the layout for the viewport we start in.
+        var resizeWatcher = new TuiResizeWatcher();
+        if (TuiViewport.TryReadLiveSize(out var startColumns, out var startRows))
+        {
+            resizeWatcher.Observe(startColumns, startRows, Environment.TickCount64);
+        }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (Console.KeyAvailable)
+                {
+                    HandleTypeAheadKey(session, Console.ReadKey(intercept: true), onCancel, onExpand);
+                    repaint();
+                    continue;
+                }
+
+                if (TuiViewport.TryReadLiveSize(out var columns, out var rows)
+                    && resizeWatcher.Observe(columns, rows, Environment.TickCount64))
+                {
+                    onResize?.Invoke();
+                    repaint();
+                }
+            }
+            catch (IOException)
+            {
+                // Output vanished mid-frame; the next tick retries.
+            }
+            catch (InvalidOperationException)
+            {
+                // Input is no longer a live console (window closed mid-run).
+                return;
+            }
+
+            await Task.Delay(KeyPollMs, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Routes one keystroke for the pinned composer: a pending approval owns the keyboard,
+    /// otherwise the buffer is edited and Enter queues. Exposed for direct unit testing.
+    /// </summary>
+    public static void HandleTypeAheadKey(
+        TypeAheadSession session,
+        ConsoleKeyInfo key,
+        Action? onCancel = null,
+        Action? onExpand = null)
+    {
+        if (session.Approval is { } approval)
+        {
+            // A pending approval owns the keyboard until it is answered.
+            switch (approval.HandleKey(key))
+            {
+                case ChoiceOutcome.Confirmed:
+                    approval.Resolve(approval.Current.Decision);
+                    return;
+                case ChoiceOutcome.Cancelled:
+                    approval.Resolve(ApprovalPrompt.Deny);
+                    return;
+                default:
+                    return;
+            }
+        }
+
+        if (key.Key == ConsoleKey.Enter || key.KeyChar is '\r' or '\n')
+        {
+            var text = session.Buffer.Trim();
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            if (session.Queue.TryQueue(text))
+            {
+                session.Buffer = string.Empty;
+                session.QueueRejected = false;
+            }
+            else
+            {
+                session.QueueRejected = true;
+            }
+
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Escape)
+        {
+            // First Escape clears the draft, a second cancels the running turn.
+            if (session.Buffer.Length > 0 || session.QueueRejected)
+            {
+                session.Buffer = string.Empty;
+                session.QueueRejected = false;
+                return;
+            }
+
+            onCancel?.Invoke();
+            return;
+        }
+
+        bool control = key.Modifiers.HasFlag(ConsoleModifiers.Control);
+        if (control && key.Key == ConsoleKey.O)
+        {
+            onExpand?.Invoke();
+            return;
+        }
+
+        if (control && key.Key == ConsoleKey.C)
+        {
+            onCancel?.Invoke();
+            return;
+        }
+
+        if (control && key.Key == ConsoleKey.U)
+        {
+            session.Buffer = string.Empty;
+            session.QueueRejected = false;
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Backspace)
+        {
+            if (session.Buffer.Length > 0)
+            {
+                session.Buffer = session.Buffer[..^1];
+            }
+
+            return;
+        }
+
+        if (!char.IsControl(key.KeyChar))
+        {
+            session.QueueRejected = false;
+            session.Buffer += key.KeyChar;
+        }
     }
 }

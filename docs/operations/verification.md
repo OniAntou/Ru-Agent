@@ -1,13 +1,13 @@
 # Verification
 
-> **Current as of 2026-09-10 (HEAD `71b5fabe` + công việc chưa commit).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-11 (HEAD `bb87c1ca` + công việc chưa commit trên `fix/tui-turn-resize`).** Older dated entries below are history; only this table is current.
 > Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals.
 
 | Surface | Current status |
 | --- | --- |
 | Public route | 64 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | GUI 420/420, Broker 571/571, Harness.Core 280/280, Client 50/50, RuBackend 794/794, CLI 202/202, Protocol 24/24 (Debug, 2026-09-10 worktree). Full 13-project matrix: re-run `scripts/test_dotnet.ps1` and record the SHA + counts here before release. |
-| Python suite | 306 passed + 1 intentional failure: `test_completed_implementation_archives_are_not_kept_in_the_checkout` fails while the 3 active plans (78 unchecked steps) remain — see `docs/README.md`. `ruff` + `mypy src` (29 files) passed. |
+| .NET tests | Full 13-project matrix via `scripts/test_dotnet.ps1 -Configuration Debug` (2026-09-11 worktree, chưa commit): **3,122 passed / 0 failed / 0 skipped** — Broker 588, CLI 545, Client 50, Connectors 3, Harness.Core 281, Harness.Persistence 103, Hosting 26, Protocol 24, Runtime.Adapters 217, Runtime.Core 6, Runtime.Worker 64, RuBackend 795, GUI 420. Record the commit SHA here at release. |
+| Python suite | 310 passed, 0 failed. `ruff check src tests scripts tools`, `mypy src` (29 files), and `pip check` passed. |
 | Plugins | voice/STT, VTube Studio, native overlay là plugin tùy chọn; coding core không phụ thuộc. `build.bat` skip overlay mặc định (in `Overlay plugin: skipped`), dùng `-WithOverlay` để build; CI job `native-overlay` là `continue-on-error`. Xem `docs/architecture.md` mục "Coding core and plugins". |
 | `git diff --check` | passed |
 

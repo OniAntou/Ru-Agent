@@ -108,7 +108,7 @@ boundary.
 | `read` with `op=list`, `op=read` | always advertised | automatic inside the trusted or session-granted root |
 | `write` with `op=write`, `edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion and unknown executables require one-time approval |
+| `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion, unknown executables, git `-C` directory overrides, non-inert `git -c key=value` config overrides, and `git config --global`/`--system`/`--file`/`--edit` require one-time approval |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | approval-gated (`web_approval_required`), bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
 | `read` with `op=help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
@@ -135,8 +135,11 @@ globally.
 
 Only `bash` commands with `mode=run` that perform destructive deletion, external mutation
 (network egress, package installs, push/fetch/pull), run longer than the
-standard timeout window, or launch an unknown executable ask for a one-time
-terminal approval; every `bash` script with `mode=shell` asks. Recognized read-only,
+standard timeout window, launch an unknown executable, override the git
+directory (`-C`), pass a non-inert `git -c key=value` override, or write
+external git configuration (`git config --global`/`--system`/`--file`/`--edit`)
+ask for a one-time terminal approval; every `bash` script with `mode=shell`
+asks. Recognized read-only,
 test,
 build, lint, and local Git run commands are not dangerous solely by command name
 (see `TerminalAutoPolicy`, consumed by the evaluator fallback and enforced by

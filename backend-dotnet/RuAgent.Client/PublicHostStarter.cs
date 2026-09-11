@@ -108,6 +108,11 @@ public sealed class PublicHostStarter : IDisposable
         }
     }
 
+    private static readonly HttpClient HealthProbeClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(2),
+    };
+
     private static async Task<bool> DefaultHealthProbeAsync(string baseUrl, CancellationToken ct)
     {
         try
@@ -124,11 +129,10 @@ public sealed class PublicHostStarter : IDisposable
             if (string.IsNullOrWhiteSpace(bearer))
                 return false;
 
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
             var url = baseUrl.TrimEnd('/') + "/settings";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
-            using var resp = await client.SendAsync(req, ct).ConfigureAwait(false);
+            using var resp = await HealthProbeClient.SendAsync(req, ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode;
         }
         catch

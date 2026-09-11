@@ -30,9 +30,13 @@ public sealed class RequestSizeMiddleware
             return;
         }
 
-        if (HttpMethods.IsPost(context.Request.Method)
-            || HttpMethods.IsPut(context.Request.Method)
-            || HttpMethods.IsPatch(context.Request.Method))
+        // A declared Content-Length is enforced by the server's frame handling,
+        // so only bodies without one (chunked) need the measured pass. This
+        // avoids buffering and reading every request body twice.
+        if (context.Request.ContentLength is null
+            && (HttpMethods.IsPost(context.Request.Method)
+                || HttpMethods.IsPut(context.Request.Method)
+                || HttpMethods.IsPatch(context.Request.Method)))
         {
             context.Request.EnableBuffering();
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);

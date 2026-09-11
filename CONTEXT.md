@@ -173,9 +173,10 @@ The non-admin terminal adapter constrained to the configured workspace,
 allowlisted executables, bounded output, cancellation, and process-tree
 cleanup. `bash` with `mode=run` auto-forms (read/test/build/lint/local-Git) run on an
 authorization token; external mutation, deletion, extended timeouts, every
-`bash` with `mode=shell` script, and unknown executables require a one-time approval
-token. Network use is audit metadata plus an approval classifier, never a
-separate scope gate.
+`bash` with `mode=shell` script, unknown executables, a git directory override
+(`-C`), a non-inert `git -c key=value` config override, and global/system git
+config writes require a one-time approval token. Network use is audit metadata
+plus an approval classifier, never a separate scope gate.
 _Avoid_: unrestricted Bash/PowerShell access
 
 **Connector Adapter**:

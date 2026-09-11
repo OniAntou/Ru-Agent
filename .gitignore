@@ -63,6 +63,9 @@ test_settings.json
 
 # Local experiment scratch (untracked by design)
 scythe_*.png
+
+# Superpowers agent state (local brainstorm/sdd scratch, never committed)
+.superpowers/
 candidate_logos.png
 render_candidates.py
 test_concepts.py

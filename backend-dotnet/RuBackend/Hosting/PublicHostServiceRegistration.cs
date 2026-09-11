@@ -24,6 +24,7 @@ using RuBackend.Speech;
 using RuBackend.Vts;
 using RuBackend.Worker;
 using RuAgent.Broker.Configuration;
+using RuAgent.Broker.Tools.Web;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
@@ -95,6 +96,7 @@ internal static class PublicHostServiceRegistration
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
             MaxConnectionsPerServer = 10,
+            ConnectCallback = WebConnectionPolicy.CreateConnectCallback(),
         });
         services.AddSingleton<AgentWebToolExecutor>(services =>
             new AgentWebToolExecutor(

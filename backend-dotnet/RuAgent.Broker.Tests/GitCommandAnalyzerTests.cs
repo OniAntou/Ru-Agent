@@ -113,4 +113,57 @@ public sealed class GitCommandAnalyzerTests
             _analyzer.Analyze(@"C:\tools\git.exe", ["-c", "user.name=x", "commit"]).OperationClass);
         Assert.Equal("none", _analyzer.Analyze(@"C:\tools\git.exe", ["commit", "-m", "m"]).NetworkIntent);
     }
+
+    [Fact]
+    public void Directory_overrides_require_approval()
+    {
+        Assert.Equal(
+            TerminalOperationClass.Unknown,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["-C", @"C:\other-repo", "log"]).OperationClass);
+        Assert.Equal(
+            TerminalOperationClass.Unknown,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["-C", ".", "status"]).OperationClass);
+        Assert.Equal(
+            "git_directory_override_requires_approval",
+            _analyzer.Analyze(@"C:\tools\git.exe", ["-C", ".", "status"]).ReasonCode);
+    }
+
+    [Theory]
+    [InlineData("diff.external=C:\\probe-evil.exe")]
+    [InlineData("core.hooksPath=C:\\probe-hooks")]
+    [InlineData("core.fsmonitor=true")]
+    [InlineData("include.path=C:\\outside.gitconfig")]
+    [InlineData("alias.x=!calc")]
+    public void Config_overrides_that_can_select_programs_require_approval(string assignment)
+    {
+        var analysis = _analyzer.Analyze(@"C:\tools\git.exe", ["-c", assignment, "log"]);
+
+        Assert.Equal(TerminalOperationClass.Unknown, analysis.OperationClass);
+        Assert.Equal("git_config_override_requires_approval", analysis.ReasonCode);
+    }
+
+    [Fact]
+    public void Inert_config_overrides_keep_the_automatic_path()
+    {
+        Assert.Equal(
+            TerminalOperationClass.ReadOnly,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["-c", "core.quotepath=false", "log"]).OperationClass);
+    }
+
+    [Fact]
+    public void External_config_mutations_require_approval()
+    {
+        Assert.Equal(
+            TerminalOperationClass.ExternalMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["config", "--global", "core.hooksPath", @"C:\probe-hooks"]).OperationClass);
+        Assert.Equal(
+            TerminalOperationClass.ExternalMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["config", "--system", "core.fsmonitor", "true"]).OperationClass);
+        Assert.Equal(
+            TerminalOperationClass.ExternalMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["config", "--edit"]).OperationClass);
+        Assert.Equal(
+            TerminalOperationClass.GitMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["config", "user.name", "x"]).OperationClass);
+    }
 }

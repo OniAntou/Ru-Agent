@@ -20,14 +20,8 @@ namespace RuAgent.Broker.Tools;
 
 public sealed partial class ToolExecutionService : IToolInvoker
 {
-    private static HttpClient CreateWebHttpClient()
-    {
-        var handler = new HttpClientHandler
-        {
-            AllowAutoRedirect = false,
-        };
-        return new HttpClient(handler, disposeHandler: true);
-    }
+    private static HttpClient CreateWebHttpClient() =>
+        new(WebConnectionPolicy.CreateHandler(), disposeHandler: true);
 
     private ValueTask<ToolExecutionOutcome> ExecuteReadOpAsync(
         ToolExecutionContext context,

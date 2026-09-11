@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Policy.Commands;
@@ -11,6 +12,19 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
     public const string AnalyzerVersion = "1";
 
     public string Version => AnalyzerVersion;
+
+    private static readonly FrozenSet<string> InertConfigKeys =
+        new[]
+        {
+            "user.name",
+            "user.email",
+            "core.quotepath",
+            "core.autocrlf",
+            "core.safecrlf",
+            "core.ignorecase",
+            "core.filemode",
+            "core.abbrev",
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     public CommandAnalysis Analyze(string resolvedExecutable, IReadOnlyList<string> argv)
     {
@@ -28,10 +42,24 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
                 continue;
             }
 
-            if ((string.Equals(argv[index], "-c", StringComparison.Ordinal)
-                 || string.Equals(argv[index], "-C", StringComparison.Ordinal))
-                && index + 1 < argv.Count)
+            if (string.Equals(argv[index], "-C", StringComparison.Ordinal) && index + 1 < argv.Count)
             {
+                // A directory override binds the command to a repository the
+                // policy context cannot resolve: the terminal intent keeps the
+                // caller's working directory, so `git -C <path>` could read or
+                // mutate any repository on the machine while still looking like
+                // a workspace-local read. Every override asks; callers set the
+                // tool's working_directory instead.
+                return Unknown("git_directory_override_requires_approval");
+            }
+
+            if (string.Equals(argv[index], "-c", StringComparison.Ordinal) && index + 1 < argv.Count)
+            {
+                if (!IsInertConfigOverride(argv[index + 1]))
+                {
+                    return Unknown("git_config_override_requires_approval");
+                }
+
                 index += 2;
                 continue;
             }
@@ -80,6 +108,11 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
             case "remote":
                 return new(AnalyzerVersion, TerminalOperationClass.ExternalMutation, "declared", "git_network_external");
 
+            case "config":
+                return IsExternalConfigForm(rest)
+                    ? new(AnalyzerVersion, TerminalOperationClass.ExternalMutation, "none", "git_config_external_mutation")
+                    : new(AnalyzerVersion, TerminalOperationClass.GitMutation, "none", "git_mutation");
+
             default:
                 return IsKnownLocalMutation(verb)
                     ? new(AnalyzerVersion, TerminalOperationClass.GitMutation, "none", "git_mutation")
@@ -98,6 +131,45 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
         "prune" or "replace" or "notes" or "filter-branch" or "format-patch" => true,
         _ => false,
     };
+
+    private static bool IsExternalConfigForm(IReadOnlyList<string> arguments)
+    {
+        // User/system configuration and arbitrary config files outlive the run
+        // and can select programs (hooks, editors, credential helpers), so they
+        // never take the automatic path. Repository-local configuration stays a
+        // workspace-scoped GitMutation.
+        foreach (var argument in arguments)
+        {
+            switch (argument)
+            {
+                case "--global":
+                case "--system":
+                case "--edit":
+                case "-e":
+                case "--file":
+                case "-f":
+                    return true;
+            }
+
+            if (argument.StartsWith("--file=", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsInertConfigOverride(string assignment)
+    {
+        // `-c key=value` can point git at programs it then executes
+        // (`diff.external`, `core.fsmonitor`, `core.hooksPath`, `include.path`,
+        // aliases, ...). Only keys that cannot select a program keep the
+        // automatic path; everything else fails closed to Unknown (ask).
+        var separator = assignment.IndexOf('=');
+        return separator > 0
+            && InertConfigKeys.Contains(assignment[..separator]);
+    }
 
     private static bool IsGitExecutable(string resolvedExecutable) =>
         BaseName(resolvedExecutable) is "git";

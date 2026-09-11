@@ -265,8 +265,9 @@ public sealed class CanonicalPathResolver
                 current = root;
             }
 
-            foreach (var segment in segments)
+            for (var index = 0; index < segments.Length; index++)
             {
+                var segment = segments[index];
                 current = Path.Combine(current, segment);
                 FileSystemInfo info;
                 if (Directory.Exists(current))
@@ -288,9 +289,10 @@ public sealed class CanonicalPathResolver
                     var resolved = info.ResolveLinkTarget(true)?.FullName;
                     if (!string.IsNullOrWhiteSpace(resolved))
                     {
-                        // Need to append remaining segments after this link
-                        var idx = Array.IndexOf(segments, segment);
-                        var remaining = idx + 1 < segments.Length ? Path.Combine(segments[(idx + 1)..]) : string.Empty;
+                        // Need to append remaining segments after this link.
+                        var remaining = index + 1 < segments.Length
+                            ? Path.Combine(segments[(index + 1)..])
+                            : string.Empty;
                         if (string.IsNullOrEmpty(remaining))
                         {
                             return resolved;

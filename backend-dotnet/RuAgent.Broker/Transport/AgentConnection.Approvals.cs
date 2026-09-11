@@ -140,16 +140,20 @@ public sealed partial class AgentConnection
                     ["safe_summary"] = "directory grant is not available for this approval",
                 }));
             }
+        }
 
-            if (lease.Snapshot.Version != pending.Binding.SnapshotVersion)
+        // A policy snapshot bump between the request and the decision invalidates
+        // every pending allow: the decision must be re-evaluated against the new
+        // snapshot instead of authorizing an intent the current rules never saw.
+        if ((command is ApprovalCommandV2.AllowOnce or ApprovalCommandV2.AllowSessionDirectory)
+            && lease.Snapshot.Version != pending.Binding.SnapshotVersion)
+        {
+            return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
             {
-                return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
-                {
-                    ["status"] = ToolResultStatuses.Denied,
-                    ["error_code"] = "approval_stale",
-                    ["safe_summary"] = "approval is bound to an older snapshot",
-                }));
-            }
+                ["status"] = ToolResultStatuses.Denied,
+                ["error_code"] = "approval_stale",
+                ["safe_summary"] = "approval is bound to an older snapshot",
+            }));
         }
 
         // Build expected binding: by default use pending's binding, but if payload supplies overrides, use those to trigger stale.

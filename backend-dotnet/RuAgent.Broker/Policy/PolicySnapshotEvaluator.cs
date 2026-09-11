@@ -21,8 +21,6 @@ public sealed record BoundPolicySnapshot(
     DateTimeOffset CreatedAt,
     string Sha256)
 {
-    public bool HasInvalidMatcher => OrderedRules.Any(rule => !rule.IsValid);
-
     public static BoundPolicySnapshot Parse(BrokerPolicySnapshotWire snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -114,11 +112,6 @@ public sealed class PolicySnapshotEvaluator
         if (!invariants.IntentHashValid)
         {
             return Deny("intent_hash_invalid");
-        }
-
-        if (snapshot.HasInvalidMatcher)
-        {
-            return Deny("matcher_invalid");
         }
 
         var boundary = context.Target ?? context.WorkingDirectory;

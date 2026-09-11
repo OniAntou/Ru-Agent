@@ -5,12 +5,13 @@ namespace RuAgent.Harness.Core.Context;
 public interface IModelContextLimitProvider
 {
     /// <summary>Provider-declared maximum prompt tokens for the run, or null when unlimited.</summary>
-    long? MaxPromptTokens(RunId runId);
+    ValueTask<long?> MaxPromptTokensAsync(RunId runId, CancellationToken cancellationToken);
 }
 
 public sealed class StaticModelContextLimitProvider(long? limitTokens) : IModelContextLimitProvider
 {
-    public long? MaxPromptTokens(RunId runId) => limitTokens;
+    public ValueTask<long?> MaxPromptTokensAsync(RunId runId, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(limitTokens);
 }
 
 /// <summary>

@@ -16,7 +16,7 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     }
 
-    public long? MaxPromptTokens(RunId runId)
+    public async ValueTask<long?> MaxPromptTokensAsync(RunId runId, CancellationToken cancellationToken)
     {
         try
         {
@@ -32,7 +32,7 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
 
             if (snapshot is null)
             {
-                snapshot = _settings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult();
+                snapshot = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
                 lock (_lock)
                 {
                     _cache = (now.AddSeconds(5), snapshot);
@@ -43,8 +43,14 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
 
             return ResolveLimitForModel(model, snapshot.Backend);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
+            // A failing settings read must not fail the run: keep a conservative
+            // window so compaction still bounds the prompt.
             return 32_768;
         }
     }

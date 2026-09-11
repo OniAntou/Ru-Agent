@@ -5,52 +5,19 @@ using RuAgent.Protocol.Harness;
 namespace RuAgent.Broker.Policy;
 
 /// <summary>
-/// A single matcher pattern compiled from wire text. Unknown or malformed patterns fail closed:
-/// <see cref="IsValid"/> stays false and the evaluator must deny rather than skip the rule.
+/// A single matcher pattern compiled from wire text. Structural validity is enforced while
+/// the snapshot is bound — a malformed value throws before a lease can carry the snapshot —
+/// so every matcher the evaluator sees is matchable.
 /// </summary>
-public sealed record MatcherSpec
-{
-    public static readonly MatcherSpec Always = new();
-
-    private MatcherSpec()
-    {
-        ArgvPattern = Array.Empty<string>();
-        IsValid = true;
-    }
-
-    public MatcherSpec(
-        string? toolId,
-        string? toolVersion,
-        string? canonicalPathPattern,
-        string? resolvedExecutable,
-        IReadOnlyList<string>? argvPattern,
-        string? cwdPattern,
-        string? operationClass,
-        string? networkIntent,
-        bool isValid)
-    {
-        ToolId = toolId;
-        ToolVersion = toolVersion;
-        CanonicalPathPattern = canonicalPathPattern;
-        ResolvedExecutable = resolvedExecutable;
-        ArgvPattern = argvPattern ?? Array.Empty<string>();
-        CwdPattern = cwdPattern;
-        OperationClass = operationClass;
-        NetworkIntent = networkIntent;
-        IsValid = isValid;
-    }
-
-    public string? ToolId { get; }
-    public string? ToolVersion { get; }
-    public string? CanonicalPathPattern { get; }
-    public string? ResolvedExecutable { get; }
-    public IReadOnlyList<string> ArgvPattern { get; }
-    public string? CwdPattern { get; }
-    public string? OperationClass { get; }
-    public string? NetworkIntent { get; }
-
-    public bool IsValid { get; }
-}
+public sealed record MatcherSpec(
+    string? ToolId,
+    string? ToolVersion,
+    string? CanonicalPathPattern,
+    string? ResolvedExecutable,
+    IReadOnlyList<string> ArgvPattern,
+    string? CwdPattern,
+    string? OperationClass,
+    string? NetworkIntent);
 
 public sealed record PolicyRuleSpec(
     string RuleId,
@@ -58,17 +25,13 @@ public sealed record PolicyRuleSpec(
     string Decision,
     MatcherSpec Matcher,
     long CreationOrder,
-    DateTimeOffset? ExpiresAt,
-    string? InvalidReason)
-{
-    public bool IsValid => InvalidReason is null;
-}
+    DateTimeOffset? ExpiresAt);
 
 public static class PolicyRuleMatcher
 {
     /// <summary>
     /// Parses a wire rule into a spec. Structural validation already happened at snapshot
-    /// validation; this compiles patterns and records (never swallows) any invalid value.
+    /// validation; this compiles matcher patterns and throws on any malformed value.
     /// </summary>
     public static PolicyRuleSpec Parse(BrokerPolicyRuleWire rule) =>
         new(
@@ -77,8 +40,7 @@ public static class PolicyRuleMatcher
             rule.Decision,
             CompileMatcher(rule.Matcher),
             rule.CreationOrder,
-            ParseTimestampOrNull(rule.ExpiresAt),
-            InvalidReason: null);
+            ParseTimestampOrNull(rule.ExpiresAt));
 
     public static bool Matches(PolicyRuleSpec rule, PolicyContext context, DateTimeOffset now)
     {
@@ -92,11 +54,6 @@ public static class PolicyRuleMatcher
 
     public static bool MatchesMatcher(MatcherSpec matcher, PolicyContext context)
     {
-        if (!matcher.IsValid)
-        {
-            return false;
-        }
-
         if (matcher.ToolId is not null
             && !string.Equals(matcher.ToolId, context.ToolId, StringComparison.Ordinal)
             && !LegacyToolIdMatches(matcher.ToolId, context.ToolId, context.ToolOp, context.BashMode))
@@ -290,29 +247,23 @@ public static class PolicyRuleMatcher
 
     private static MatcherSpec CompileMatcher(BrokerPolicyMatcherWire matcher)
     {
-        var isValid = true;
-        isValid &= IsNullOrWellFormed(matcher.ToolId, 128);
-        isValid &= IsNullOrWellFormed(matcher.ToolVersion, 32);
-        isValid &= IsNullOrWellFormed(matcher.CanonicalPathPattern, 4096);
-        isValid &= IsNullOrWellFormed(matcher.ResolvedExecutable, 256);
-        isValid &= IsNullOrWellFormed(matcher.CwdPattern, 4096);
+        RequireWellFormed(matcher.ToolId, 128);
+        RequireWellFormed(matcher.ToolVersion, 32);
+        RequireWellFormed(matcher.CanonicalPathPattern, 4096);
+        RequireWellFormed(matcher.ResolvedExecutable, 256);
+        RequireWellFormed(matcher.CwdPattern, 4096);
 
         if (matcher.ArgvPattern is { } argv)
         {
             if (argv.Count > 64)
             {
-                isValid = false;
+                throw new AgentProtocolException("invalid_snapshot_rule");
             }
 
             foreach (var element in argv)
             {
-                isValid &= IsNullOrWellFormed(element, 4096);
+                RequireWellFormed(element, 4096);
             }
-        }
-
-        if (!isValid)
-        {
-            throw new AgentProtocolException("invalid_snapshot_rule");
         }
 
         return new MatcherSpec(
@@ -320,15 +271,19 @@ public static class PolicyRuleMatcher
             matcher.ToolVersion,
             matcher.CanonicalPathPattern,
             matcher.ResolvedExecutable,
-            matcher.ArgvPattern,
+            matcher.ArgvPattern ?? Array.Empty<string>(),
             matcher.CwdPattern,
             matcher.OperationClass,
-            matcher.NetworkIntent,
-            isValid: true);
+            matcher.NetworkIntent);
     }
 
-    private static bool IsNullOrWellFormed(string? value, int maximumLength) =>
-        value is null || (!string.IsNullOrWhiteSpace(value) && value.Length <= maximumLength);
+    private static void RequireWellFormed(string? value, int maximumLength)
+    {
+        if (value is not null && (string.IsNullOrWhiteSpace(value) || value.Length > maximumLength))
+        {
+            throw new AgentProtocolException("invalid_snapshot_rule");
+        }
+    }
 
     private static DateTimeOffset? ParseTimestampOrNull(string? value)
     {

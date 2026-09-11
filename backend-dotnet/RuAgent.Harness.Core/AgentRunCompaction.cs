@@ -68,7 +68,9 @@ internal sealed class AgentRunCompaction
                 return ContextCompactionResult.NoOp(run, strategy);
             }
 
-            var providerLimit = _contextLimit?.MaxPromptTokens(runId);
+            long? providerLimit = _contextLimit is null
+                ? null
+                : await _contextLimit.MaxPromptTokensAsync(runId, cancellationToken).ConfigureAwait(false);
             if (providerLimit is not { } limitTokens)
             {
                 return ContextCompactionResult.NotAvailable(run, strategy);
@@ -97,7 +99,9 @@ internal sealed class AgentRunCompaction
         ModelContextSnapshot context,
         CancellationToken cancellationToken)
     {
-        var providerLimit = _contextLimit?.MaxPromptTokens(run.RunId);
+        long? providerLimit = _contextLimit is null
+            ? null
+            : await _contextLimit.MaxPromptTokensAsync(run.RunId, cancellationToken).ConfigureAwait(false);
         if (providerLimit is not { } limitTokens)
         {
             return new ContextPreflightResult(run, context, null);

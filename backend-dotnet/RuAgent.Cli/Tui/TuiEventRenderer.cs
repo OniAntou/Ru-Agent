@@ -188,6 +188,7 @@ public sealed class TuiSessionRenderer
 
         _status.IsLive = true;
         _liveWatch = Stopwatch.StartNew();
+        var watch = _liveWatch;
         _liveCancellation = new CancellationTokenSource();
         var token = _liveCancellation.Token;
 
@@ -198,7 +199,7 @@ public sealed class TuiSessionRenderer
                 while (!token.IsCancellationRequested)
                 {
                     _status.Tick();
-                    _status.SetElapsed(_liveWatch.Elapsed.TotalSeconds);
+                    _status.SetElapsed(watch.Elapsed.TotalSeconds);
                     if (LiveRowRepaintHook is { } hook)
                     {
                         hook();
@@ -215,6 +216,10 @@ public sealed class TuiSessionRenderer
             {
                 // Turn ended; the row is cleared by StopLiveRow.
             }
+            catch (Exception)
+            {
+                // Background tick failure must not bubble unobserved
+            }
         }, token);
     }
 
@@ -225,20 +230,26 @@ public sealed class TuiSessionRenderer
             return;
         }
 
-        _liveCancellation.Cancel();
-        try
-        {
-            _liveTask?.Wait(200);
-        }
-        catch (AggregateException)
-        {
-            // Cancellation raced the loop; the row state below is authoritative.
-        }
-
-        _liveCancellation.Dispose();
+        var cts = _liveCancellation;
+        var task = _liveTask;
         _liveCancellation = null;
         _liveTask = null;
         _liveWatch = null;
+
+        try
+        {
+            cts.Cancel();
+            task?.Wait(200);
+        }
+        catch (Exception)
+        {
+            // Cancellation raced the loop; the row state below is authoritative.
+        }
+        finally
+        {
+            cts.Dispose();
+        }
+
         _status.Clear(Width);
     }
 }

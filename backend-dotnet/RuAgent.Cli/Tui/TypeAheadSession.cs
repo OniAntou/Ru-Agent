@@ -50,8 +50,11 @@ public sealed class TypeAheadSession
                 ? "queued · sent when this run ends"
                 : "enter queues · esc cancels · ctrl+o expands";
 
-    /// <summary>Composer top label: the queued prompt, or nothing.</summary>
+    /// <summary>Default top label showing workspace path and preset when no prompt is queued.</summary>
+    public string? WorkspaceLabel { get; set; }
+
+    /// <summary>Composer top label: the queued prompt, or workspace label.</summary>
     public string? TopLabel => Queue.Value is { } queued
         ? "queued · " + TuiText.Truncate(queued.ReplaceLineEndings(" "), 60)
-        : null;
+        : WorkspaceLabel;
 }

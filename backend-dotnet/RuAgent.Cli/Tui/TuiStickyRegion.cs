@@ -72,7 +72,7 @@ public sealed class TuiStickyRegion
         FooterHeight = footerHeight;
         FooterFirst = bottom + 1;
         Active = true;
-        Write($"\u001b[1;{bottom}r");
+        Write($"\u001b[1;{bottom}r\u001b[{bottom};1H");
         TuiDebug.Log("sticky", $"enter rows={rows} footer={footerHeight} first={FooterFirst} bottom={bottom}");
         return true;
     }
@@ -106,7 +106,7 @@ public sealed class TuiStickyRegion
         var builder = new StringBuilder();
         builder.Append("\u001b[r");
         AppendClearDown(builder, Math.Min(previousFirst, FooterFirst));
-        builder.Append($"\u001b[1;{bottom}r");
+        builder.Append($"\u001b[1;{bottom}r\u001b[{bottom};1H");
         Write(builder.ToString());
         TuiDebug.Log("sticky", $"reapply rows={rows} footer={footerHeight} first={FooterFirst} prevFirst={previousFirst}");
         return true;
@@ -133,9 +133,28 @@ public sealed class TuiStickyRegion
         var builder = new StringBuilder();
         builder.Append("\u001b[r");
         AppendClearDown(builder, first);
-        builder.Append($"\u001b[{Math.Max(1, first - 1)};1H");
+        builder.Append($"\u001b[{first};1H");
         Write(builder.ToString());
         TuiDebug.Log("sticky", $"exit first={first}");
+    }
+
+    /// <summary>Moves the hardware cursor to the last transcript row so appends land in the scrolling region.</summary>
+    public void RestoreTranscriptCursor(TextWriter? writer = null)
+    {
+        if (!Active || FooterFirst <= 1)
+        {
+            return;
+        }
+
+        var seq = $"\u001b[{Math.Max(1, FooterFirst - 1)};1H";
+        if (writer is not null)
+        {
+            writer.Write(seq);
+        }
+        else
+        {
+            Write(seq);
+        }
     }
 
     /// <summary>
@@ -222,25 +241,19 @@ public sealed class TuiStickyRegion
     }
 
     /// <summary>
-    /// Escape sequence that erases the footer and everything below it, starting from the row
-    /// the cursor should end up on. Pure so the geometry can be tested without a console.
+    /// Escape sequence that erases the footer and everything below it, starting from the first
+    /// footer row. Pure so the geometry can be tested without a console.
     /// Returns nothing when there is no footer row to clear — in particular when the footer
     /// sits below a shrunken viewport, where erasing would eat a line of transcript.
     /// </summary>
     public static string ComposeClearDown(int firstFooterRow, int liveRows)
     {
-        if (firstFooterRow <= 1 || liveRows < 1)
+        if (firstFooterRow <= 1 || liveRows < 1 || firstFooterRow > liveRows)
         {
             return string.Empty;
         }
 
-        var row = firstFooterRow - 1;
-        if (row >= liveRows)
-        {
-            return string.Empty;
-        }
-
-        return $"\u001b[{row};1H\u001b[J";
+        return $"\u001b[{firstFooterRow};1H\u001b[J";
     }
 
     /// <summary>Erases the footer area. Nothing is emitted when there is no live screen.</summary>

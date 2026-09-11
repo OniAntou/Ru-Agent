@@ -180,13 +180,25 @@ public sealed class TuiStatusLine
     {
         if (seconds < 60)
         {
-            return $"{seconds:0.0}s";
+            return seconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s";
         }
 
         var whole = (int)seconds;
         return $"{whole / 60}m{whole % 60:00}s";
     }
 
-    public static string FormatTokens(long tokens) =>
-        tokens < 1000 ? tokens.ToString() : $"{tokens / 1000d:0.#}k";
+    public static string FormatTokens(long tokens)
+    {
+        if (tokens < 1000)
+        {
+            return tokens.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (tokens >= 1_000_000)
+        {
+            return (tokens / 1_000_000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "M";
+        }
+
+        return (tokens / 1000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "k";
+    }
 }

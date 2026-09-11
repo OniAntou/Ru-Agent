@@ -83,10 +83,6 @@ public sealed class TuiTranscript
         _turnWatch.Restart();
 
         _surface.Line();
-        WriteLines(
-            TuiPalette.Paint("  ◆ ", TuiToken.Brand)
-            + TuiPalette.Paint($"{DateTime.Now:HH:mm}", TuiToken.Meta),
-            TuiPalette.Paint("  │", TuiToken.Line));
     }
 
     // ------------------------------------------------------------------
@@ -103,9 +99,12 @@ public sealed class TuiTranscript
         if (!_hasStreamedDelta)
         {
             _hasStreamedDelta = true;
-            _atLineStart = false;
             _status.Clear(Width);
-            _surface.Write(TuiPalette.Paint("  ✦ ", TuiToken.Brand));
+            if (_toolsSettled > 0 && _atLineStart)
+            {
+                _surface.Line();
+            }
+            _atLineStart = false;
         }
 
         _lineBuffer += text;
@@ -411,15 +410,20 @@ public sealed class TuiTranscript
         var summary = Escape(envelope.SafeSummary);
 
         if (type is "run.state_changed" or "model.step_started" or "model.step_completed"
-            or "prompt_receipt" or "model.usage_recorded")
+            or "prompt_receipt" or "model.usage_recorded" or "tool.proposed" or "continue.requested")
         {
             return;
         }
 
         if (_hasStreamedDelta)
         {
+            if (!_atLineStart)
+            {
+                _surface.Line();
+            }
             _surface.Line();
             _hasStreamedDelta = false;
+            _atLineStart = true;
         }
 
         switch (type)
@@ -727,8 +731,13 @@ public sealed class TuiTranscript
 
         if (_hasStreamedDelta)
         {
+            if (!_atLineStart)
+            {
+                _surface.Line();
+            }
             _surface.Line();
             _hasStreamedDelta = false;
+            _atLineStart = true;
         }
 
         _turnWatch.Reset();
@@ -741,8 +750,17 @@ public sealed class TuiTranscript
         Flush();
         if (_hasStreamedDelta)
         {
+            if (!_atLineStart)
+            {
+                _surface.Line();
+            }
             _surface.Line();
             _hasStreamedDelta = false;
+            _atLineStart = true;
+        }
+        else if (_toolsSettled > 0 && _atLineStart)
+        {
+            _surface.Line();
         }
 
         var seconds = _turnWatch.Elapsed.TotalSeconds;

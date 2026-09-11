@@ -47,7 +47,15 @@ public sealed class InteractiveLineReader
     public IReadOnlyList<string> History => _history;
 
     /// <summary>Legend gắn ở cạnh dưới composer box (vd "model · preset").</summary>
+    public const string DefaultHints = "/ commands · ↑↓ history · tab complete · ctrl+o expand · ctrl+c stop";
+
     public string Legend { get; set; } = string.Empty;
+
+    /// <summary>Top label displayed on the top border of the composer box (e.g. workspace path and preset).</summary>
+    public string TopLabel { get; set; } = string.Empty;
+
+    /// <summary>Keyboard shortcut hints rendered below the composer box.</summary>
+    public string Hints { get; set; } = DefaultHints;
 
     /// <summary>
     /// Callback được gọi khi cửa sổ terminal thay đổi kích cỡ (resize) và đã debounce ổn định.
@@ -68,10 +76,12 @@ public sealed class InteractiveLineReader
             .ToList();
     }
 
-    public static string BuildTop(int width) => BuildTop(width, false);
+    public static string BuildTop(int width) => BuildTop(width, false, null);
 
-    public static string BuildTop(int width, bool isSlash) =>
-        ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, string.Empty, string.Empty, null)[0];
+    public static string BuildTop(int width, bool isSlash) => BuildTop(width, isSlash, null);
+
+    public static string BuildTop(int width, bool isSlash, string? topLabel) =>
+        ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, string.Empty, string.Empty, topLabel)[0];
 
     public static string BuildMid(int width, string prompt, string buffer) => BuildMid(width, prompt, buffer, "", false);
 
@@ -102,6 +112,64 @@ public sealed class InteractiveLineReader
     public static string BuildDropdownBottom(int width, int current, int total) =>
         SlashDropdown.Footer(width, "↑↓ select · tab apply · esc close", current + 1, total);
 
+    /// <summary>
+    /// Builds the ANSI escape sequence to render dropdown lines below the composer box.
+    /// Steps 2 rows down from Mid (past bottom border to hints row), writes each line,
+    /// and steps back up to Mid without trailing newlines that would cause spurious scrolling.
+    /// </summary>
+    public static string BuildDropdownRenderSequence(IReadOnlyList<string> lines)
+    {
+        if (lines == null || lines.Count == 0) return string.Empty;
+        var sb = new StringBuilder();
+        sb.Append("\x1b[2B");
+        for (int i = 0; i < lines.Count; i++)
+        {
+            sb.Append("\r\x1b[2K").Append(lines[i]);
+            if (i < lines.Count - 1)
+            {
+                sb.Append('\n');
+            }
+        }
+        sb.Append($"\r\x1b[{lines.Count + 1}A");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the ANSI escape sequence to clear dropdown lines and restore hints text below the composer box.
+    /// Steps 2 rows down from Mid (to the hints row), restores hints text, clears all lower dropdown rows,
+    /// and steps back up to Mid so the net vertical displacement is zero.
+    /// </summary>
+    public static string BuildDropdownClearSequence(int count, int boxWidth, string? hintsText = null)
+    {
+        if (count <= 0) return string.Empty;
+        var sb = new StringBuilder();
+        sb.Append("\x1b[2B\r\x1b[2K");
+        if (!string.IsNullOrWhiteSpace(hintsText))
+        {
+            var h = TuiPalette.Paint(TuiText.Truncate("  " + hintsText.Trim(), boxWidth), TuiToken.Line);
+            sb.Append(h);
+        }
+
+        for (int i = 1; i < count; i++)
+        {
+            sb.Append("\x1b[1B\r\x1b[2K");
+        }
+
+        sb.Append($"\r\x1b[{count + 1}A");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Checks whether rendering dropdown lines below the composer box will exceed the viewport
+    /// height and force the terminal to scroll.
+    /// </summary>
+    public static bool DidDropdownScroll(int cursorTop, int linesCount, int windowRows)
+    {
+        if (windowRows <= 0 || linesCount <= 0) return false;
+        int available = windowRows - 2 - cursorTop;
+        return linesCount > available;
+    }
+
     public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor) =>
         BuildMidRewrite(width, prompt, buffer, cursor, "", false);
 
@@ -116,35 +184,274 @@ public sealed class InteractiveLineReader
         int promptLen = TuiText.VisibleWidth(prompt);
         int innerWidth = Math.Max(1, w - 4);
         int availableForText = Math.Max(1, innerWidth - promptLen);
+        int safeCursor = Math.Clamp(cursor, 0, text.Length);
 
-        int displayCursor = cursor;
-        if (text.Length > availableForText)
+        int displayCursor;
+        if (TuiText.VisibleWidth(text) <= availableForText)
         {
-            int start = Math.Max(0, text.Length - availableForText);
-            displayCursor = Math.Clamp(cursor - start, 0, availableForText);
+            displayCursor = TuiText.VisibleWidth(text[..safeCursor]);
         }
         else
         {
-            displayCursor = Math.Clamp(cursor, 0, availableForText);
+            var shown = TuiText.Tail(text, availableForText);
+            var tailStart = Math.Max(0, text.Length - Math.Max(0, shown.Length - 1));
+            if (safeCursor <= tailStart)
+            {
+                displayCursor = 1;
+            }
+            else
+            {
+                displayCursor = 1 + TuiText.VisibleWidth(text[tailStart..safeCursor]);
+            }
         }
 
+        displayCursor = Math.Clamp(displayCursor, 0, availableForText);
         int col = 2 + promptLen + displayCursor;
         return "\r" + mid + "\r\x1b[" + col + "C";
     }
 
-    public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false);
+    public static string BuildBoxOpen(int width, string prompt, string legend) => BuildBoxOpen(width, prompt, legend, false, null, null);
 
     /// <summary>
-    /// Submitted prompts echo as a single dim line: the transcript stays quiet and the
-    /// three-row composer remains the only frame on screen.
+    /// Submitted prompts echo cleanly in a modern elevated dark container card with a cyan chevron
+    /// and embedded timestamp, matching modern CLI style (Claude Code / Cursor).
+    /// Flexible across single-line and multiline inputs without rigid wireframe boxes or redundant labels.
     /// </summary>
-    public static string BuildSubmitEcho(string text)
+    /// <summary>
+    /// Formats the single prompt row with brand chevron, text, and right-aligned timestamp within an elevated card.
+    /// </summary>
+    public static string BuildPromptRow(string line, string timestamp, int width)
     {
-        var body = (text ?? string.Empty).Replace("\r", " ").Replace("\n", " ");
-        return TuiPalette.DimPaint("  ❯ " + body);
+        var w = width > 0 ? width : TuiViewport.Width();
+        w = Math.Clamp(w, 20, 1000);
+
+        var bg = TuiPalette.SurfaceBgCode();
+        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
+
+        if (!hasColor)
+        {
+            return $"> {line} · {timestamp}";
+        }
+
+        const string margin = " ";
+        var cardWidth = Math.Max(18, w - margin.Length);
+        var innerWidth = cardWidth - 2; // 1 space padding left, 1 right
+
+        var brandCode = TuiPalette.Bold + TuiPalette.Code(TuiToken.Brand);
+        var textCode = TuiPalette.Bold;
+        var metaCode = TuiPalette.Code(TuiToken.Meta);
+        var reset = TuiPalette.Reset;
+
+        const int prefixWidth = 2;
+        var timeStr = timestamp;
+        var timeWidth = timeStr.Length;
+        var textWidth = TuiText.VisibleWidth(line);
+
+        if (prefixWidth + textWidth + 2 + timeWidth <= innerWidth)
+        {
+            var gap = Math.Max(1, innerWidth - (prefixWidth + textWidth + timeWidth));
+            return margin
+                + bg
+                + " "
+                + brandCode + ">" + reset + bg
+                + " "
+                + textCode + line + reset + bg
+                + new string(' ', gap)
+                + metaCode + timeStr + reset + bg
+                + " "
+                + reset;
+        }
+        else
+        {
+            var availableForText = Math.Max(4, innerWidth - prefixWidth - timeWidth - 2);
+            var shown = TuiText.Truncate(line, availableForText);
+            var gap = Math.Max(1, innerWidth - (prefixWidth + TuiText.VisibleWidth(shown) + timeWidth));
+            return margin
+                + bg
+                + " "
+                + brandCode + ">" + reset + bg
+                + " "
+                + textCode + shown + reset + bg
+                + new string(' ', gap)
+                + metaCode + timeStr + reset + bg
+                + " "
+                + reset;
+        }
     }
 
-    public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash)
+    /// <summary>
+    /// Formats the submitted prompt into an elevated container card with top/bottom padding
+    /// matching the Claude Code terminal style.
+    /// </summary>
+    public static string BuildSubmitEcho(string text, string? time = null, int width = 0)
+    {
+        var timestamp = time ?? DateTime.Now.ToString("HH:mm");
+        var clean = text?.Trim('\r', '\n') ?? string.Empty;
+        var rawLines = clean.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        if (rawLines.Length == 0 || (rawLines.Length == 1 && string.IsNullOrWhiteSpace(rawLines[0])))
+        {
+            rawLines = [string.Empty];
+        }
+
+        var w = width > 0 ? width : TuiViewport.Width();
+        w = Math.Clamp(w, 20, 1000);
+
+        var bg = TuiPalette.SurfaceBgCode();
+        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
+
+        if (!hasColor)
+        {
+            var monoLines = new List<string>();
+            for (var i = 0; i < rawLines.Length; i++)
+            {
+                var line = rawLines[i];
+                if (i == 0)
+                {
+                    monoLines.Add($"> {line} · {timestamp}");
+                }
+                else
+                {
+                    monoLines.Add($"  {line}");
+                }
+            }
+            return string.Join("\n", monoLines);
+        }
+
+        // Modern elevated container card with top and bottom padding
+        const string margin = " ";
+        var cardWidth = Math.Max(18, w - margin.Length);
+        var padRow = margin + bg + new string(' ', cardWidth) + TuiPalette.Reset;
+
+        var lines = new List<string> { padRow };
+        for (var i = 0; i < rawLines.Length; i++)
+        {
+            var line = rawLines[i];
+            if (i == 0)
+            {
+                lines.Add(BuildPromptRow(line, timestamp, w));
+            }
+            else
+            {
+                lines.Add(BuildContinuationEcho(line, w));
+            }
+        }
+        lines.Add(padRow);
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// Formats a continuation row for a multiline prompt card with the elevated dark background.
+    /// </summary>
+    public static string BuildContinuationEcho(string text, int width)
+    {
+        var w = width > 0 ? width : TuiViewport.Width();
+        w = Math.Clamp(w, 20, 1000);
+
+        var bg = TuiPalette.SurfaceBgCode();
+        bool hasColor = !string.IsNullOrEmpty(bg) && TuiPalette.Level != TuiColorLevel.None;
+
+        if (!hasColor)
+        {
+            return "  " + text;
+        }
+
+        const string margin = " ";
+        var cardWidth = Math.Max(18, w - margin.Length);
+        var innerWidth = cardWidth - 2;
+        const int indentWidth = 2;
+        var textWidth = TuiText.VisibleWidth(text);
+        var available = Math.Max(1, innerWidth - indentWidth);
+        var shown = textWidth > available ? TuiText.Truncate(text, available) : text;
+        var pad = Math.Max(0, innerWidth - indentWidth - TuiText.VisibleWidth(shown));
+
+        return margin
+            + bg
+            + "   "
+            + TuiPalette.Bold + shown + TuiPalette.Reset + bg
+            + new string(' ', pad)
+            + " "
+            + TuiPalette.Reset;
+    }
+
+    /// <summary>
+    /// Resizes a previously rendered submit echo line to match a new terminal width (e.g. on fullscreen/resize).
+    /// If the line is not an echo card, it is safely clipped with TuiText.Truncate.
+    /// </summary>
+    public static string ResizeEchoLine(string line, int newWidth)
+    {
+        if (string.IsNullOrEmpty(line) || newWidth <= 0)
+        {
+            return line ?? string.Empty;
+        }
+
+        var bg = TuiPalette.SurfaceBgCode();
+        if (string.IsNullOrEmpty(bg)
+            || (!line.Contains(bg, StringComparison.Ordinal)
+                && !line.Contains("\u001b[48;5;236m", StringComparison.Ordinal)))
+        {
+            return TuiText.Truncate(line, newWidth);
+        }
+
+        var stripped = TuiText.Strip(line);
+        var trimmed = stripped.Trim();
+
+        // Check if this is a blank padding row: pure spaces inside container
+        if (trimmed.Length == 0)
+        {
+            const string margin = " ";
+            var cardWidth = Math.Max(18, newWidth - margin.Length);
+            return margin + bg + new string(' ', cardWidth) + TuiPalette.Reset;
+        }
+
+        // Check if this is a primary prompt row: starts with '>'
+        if (trimmed.StartsWith('>') && trimmed.Length >= 2 && trimmed[1] == ' ')
+        {
+            var content = trimmed[2..].Trim();
+            string time;
+            string prompt;
+
+            if (content.Length == 5
+                && content[2] == ':'
+                && char.IsDigit(content[0])
+                && char.IsDigit(content[1])
+                && char.IsDigit(content[3])
+                && char.IsDigit(content[4]))
+            {
+                time = content;
+                prompt = string.Empty;
+            }
+            else if (content.Length >= 6
+                && content[^3] == ':'
+                && char.IsDigit(content[^1])
+                && char.IsDigit(content[^2])
+                && char.IsDigit(content[^4])
+                && char.IsDigit(content[^5]))
+            {
+                time = content[^5..];
+                prompt = content[..^5].Trim();
+            }
+            else
+            {
+                time = DateTime.Now.ToString("HH:mm");
+                prompt = content;
+            }
+
+            return BuildPromptRow(prompt, time, newWidth);
+        }
+
+        // Check if this is a continuation multiline row: leading spaces inside container
+        if (stripped.StartsWith("   ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(trimmed))
+        {
+            return BuildContinuationEcho(trimmed, newWidth);
+        }
+
+        return TuiText.Truncate(line, newWidth);
+    }
+
+    public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash) => BuildBoxOpen(width, prompt, legend, isSlash, null, null);
+
+    public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash, string? topLabel, string? hints = null)
     {
         var newline = Environment.NewLine;
         var lines = ComposerBox.Compose(
@@ -155,8 +462,18 @@ public sealed class InteractiveLineReader
             string.Empty,
             legend,
             string.Empty,
-            null);
-        return lines[0] + newline + lines[1] + newline + lines[2] + newline + "\x1b[2A";
+            topLabel);
+
+        var hintsLine = !string.IsNullOrWhiteSpace(hints)
+            ? TuiPalette.Paint(TuiText.Truncate("  " + hints.Trim(), width), TuiToken.Line)
+            : string.Empty;
+
+        if (hintsLine.Length > 0)
+        {
+            return lines[0] + newline + lines[1] + newline + lines[2] + newline + hintsLine + "\x1b[2A";
+        }
+
+        return lines[0] + newline + lines[1] + newline + lines[2] + "\x1b[1A";
     }
 
     public static int ComputeBoxWidth()
@@ -341,14 +658,19 @@ public sealed class InteractiveLineReader
         bool lastIsSlash = false;
         int selectedIndex = 0;
         string defaultLegend = Legend;
+        string topLabelText = TopLabel;
+        string hintsText = Hints;
         int lastDropdownLines = 0;
         bool dropdownDismissed = false;
+        bool scrolledForDropdown = false;
 
         // Picker mode: the list owns the keyboard and the composer is just its frame.
         bool choosing = choice is not null;
         if (choosing)
         {
             defaultLegend = choice!.Title;
+            topLabelText = string.Empty;
+            hintsText = "↑↓ select · enter confirm · esc cancel";
         }
 
         // One blank row above every composer open: breathing room after the
@@ -356,7 +678,7 @@ public sealed class InteractiveLineReader
         // box itself lands in the same rows as before.
         await outWriter.WriteLineAsync().ConfigureAwait(false);
         await PushToBottomAsync(outWriter).ConfigureAwait(false);
-        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, defaultLegend, false)).ConfigureAwait(false);
+        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, defaultLegend, false, topLabelText, hintsText)).ConfigureAwait(false);
         outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, "", 0, "", false));
         await outWriter.FlushAsync().ConfigureAwait(false);
 
@@ -391,19 +713,7 @@ public sealed class InteractiveLineReader
         {
             if (lastDropdownLines > 0)
             {
-                // Dropdown lives below the box: from mid step past the bottom
-                // border, clear each row moving down (no newlines: newline past
-                // the viewport bottom would scroll), then step back to mid.
-                outWriter.Write("\x1b[2B");
-                for (int i = 0; i < lastDropdownLines; i++)
-                {
-                    outWriter.Write("\r\x1b[2K");
-                    if (i < lastDropdownLines - 1)
-                    {
-                        outWriter.Write("\x1b[1B");
-                    }
-                }
-                outWriter.Write($"\x1b[{lastDropdownLines + 1}A");
+                outWriter.Write(BuildDropdownClearSequence(lastDropdownLines, boxWidth, hintsText));
                 lastDropdownLines = 0;
             }
         }
@@ -421,15 +731,15 @@ public sealed class InteractiveLineReader
                 ClearDropdown();
             }
 
-            // Draw below the box: step past the bottom border, write each row,
-            // then step back to mid. Near the viewport bottom the terminal
-            // scrolls (the list stays attached under the box) — accepted.
-            outWriter.Write("\x1b[2B");
-            for (int i = 0; i < lines.Count; i++)
+            if (!Console.IsOutputRedirected && TuiViewport.TryReadLiveSize(out _, out var rows))
             {
-                outWriter.Write($"\r\x1b[2K{lines[i]}\n");
+                if (DidDropdownScroll(Console.CursorTop, lines.Count, rows))
+                {
+                    scrolledForDropdown = true;
+                }
             }
-            outWriter.Write($"\x1b[{lines.Count + 2}A");
+
+            outWriter.Write(BuildDropdownRenderSequence(lines));
             lastDropdownLines = lines.Count;
         }
 
@@ -502,20 +812,21 @@ public sealed class InteractiveLineReader
             }
 
             lastDropdownLines = 0;
+            scrolledForDropdown = false;
             boxWidth = ComputeBoxWidth();
 
             var text = buffer.ToString();
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();
 
-            outWriter.Write(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash));
+            outWriter.Write(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash, topLabelText, hintsText));
             RenderCurrentList(isSlash, matches);
             outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
             outWriter.Flush();
             lastIsSlash = isSlash;
         }
 
-        void Refresh()
+        async Task RefreshAsync()
         {
             int curWidth = ComputeBoxWidth();
             if (curWidth != boxWidth)
@@ -528,11 +839,19 @@ public sealed class InteractiveLineReader
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();
 
+            if (scrolledForDropdown && !choosing && (!isSlash || dropdownDismissed || matches.Count == 0))
+            {
+                ClearDropdown();
+                scrolledForDropdown = false;
+                await ApplyPendingResizeAsync().ConfigureAwait(false);
+                return;
+            }
+
             try
             {
                 if (isSlash != lastIsSlash)
                 {
-                    outWriter.Write("\x1b[1A\r\x1b[2K" + BuildTop(boxWidth, isSlash));
+                    outWriter.Write("\x1b[1A\r\x1b[2K" + BuildTop(boxWidth, isSlash, topLabelText));
                     outWriter.Write("\x1b[2B\r\x1b[2K" + BuildBottom(boxWidth, leg, isSlash));
                     outWriter.Write("\x1b[1A");
                     lastIsSlash = isSlash;
@@ -549,22 +868,26 @@ public sealed class InteractiveLineReader
             }
         }
 
-        void LeaveBox(bool echo = true)
+        void LeaveBox(bool echo = false)
         {
             try
             {
                 ClearDropdown();
                 var text = buffer.ToString();
-                // Xóa cả box 3 dòng (top/mid/bottom), in lại echo 1 dòng để không
-                // bao giờ có 2 khung nhập giống nhau trên màn hình. Cursor đang ở
-                // dòng mid: lên top xóa, xuống bottom xóa, in echo tại đó.
+                // Xóa cả box 3 dòng (top/mid/bottom) và dòng gợi ý phím tắt bên dưới (nếu có).
+                // Cursor đang ở dòng mid: lên top xóa, xuống bottom xóa, xóa hints (nếu có),
+                // quay lại top để giải phóng toàn bộ không gian của composer.
                 outWriter.Write("\r\x1b[2K\x1b[1A\r\x1b[2K\x1b[2B\r\x1b[2K");
+                if (!string.IsNullOrWhiteSpace(hintsText))
+                {
+                    outWriter.Write("\x1b[1B\r\x1b[2K\x1b[1A");
+                }
+                outWriter.Write("\x1b[2A\r");
                 if (echo)
                 {
-                    outWriter.Write(BuildSubmitEcho(text));
+                    outWriter.WriteLine(BuildSubmitEcho(text, width: boxWidth));
                 }
 
-                outWriter.WriteLine();
                 outWriter.Flush();
             }
             catch (IOException)
@@ -573,32 +896,16 @@ public sealed class InteractiveLineReader
             }
         }
 
-        Refresh();
+        await RefreshAsync().ConfigureAwait(false);
 
-        int lastWidth = ComputeBoxWidth();
-        int lastHeight = Console.IsOutputRedirected ? DefaultConsoleHeight : Console.WindowHeight;
-        int appliedWidth = lastWidth;
-        int appliedHeight = lastHeight;
-        bool resizePending = false;
-        var resizeDebounceWatch = new System.Diagnostics.Stopwatch();
+        var resizeWatcher = new TuiResizeWatcher(ResizeDebounceMs);
+        if (TuiViewport.TryReadLiveSize(out var initCols, out var initRows))
+        {
+            resizeWatcher.Observe(initCols, initRows, Environment.TickCount64);
+        }
 
         async Task ApplyPendingResizeAsync()
         {
-            resizePending = false;
-            resizeDebounceWatch.Reset();
-
-            var settledWidth = ComputeBoxWidth();
-            var settledHeight = Console.IsOutputRedirected ? DefaultConsoleHeight : Console.WindowHeight;
-            if (settledWidth == appliedWidth && settledHeight == appliedHeight)
-            {
-                // The spam ended where the layout already is: reopening the frame and
-                // rebuilding the screen would only flash identical content.
-                return;
-            }
-
-            appliedWidth = settledWidth;
-            appliedHeight = settledHeight;
-
             var cursorTop = Console.CursorTop;
 
             // A terminal that changed size has already reflowed every row this composer was
@@ -606,6 +913,7 @@ public sealed class InteractiveLineReader
             // screen through this callback (region reset, clear, header, transcript tail); the
             // frame is then reopened at the cursor it leaves behind.
             lastDropdownLines = 0;
+            scrolledForDropdown = false;
             boxWidth = ComputeBoxWidth();
             TuiDebug.Log(
                 "composer",
@@ -631,7 +939,7 @@ public sealed class InteractiveLineReader
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();
 
-            await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash)).ConfigureAwait(false);
+            await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash, topLabelText, hintsText)).ConfigureAwait(false);
             RenderCurrentList(isSlash, matches);
             outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
             await outWriter.FlushAsync().ConfigureAwait(false);
@@ -642,47 +950,28 @@ public sealed class InteractiveLineReader
         {
             while (!Console.KeyAvailable)
             {
-                if (cancellationToken.IsCancellationRequested) return null;
-
-                if (!Console.IsOutputRedirected)
+                if (cancellationToken.IsCancellationRequested)
                 {
-                    try
+                    LeaveBox(echo: false);
+                    return null;
+                }
+
+                if (!Console.IsOutputRedirected && TuiViewport.TryReadLiveSize(out var curCols, out var curRows))
+                {
+                    if (resizeWatcher.Observe(curCols, curRows, Environment.TickCount64))
                     {
-                        int curWidth = ComputeBoxWidth();
-                        int curHeight = Console.WindowHeight;
-                        if (curWidth != lastWidth || curHeight != lastHeight)
-                        {
-                            TuiDebug.Log(
-                                "composer",
-                                $"resize detected {lastWidth}x{lastHeight} -> {curWidth}x{curHeight}");
-                            lastWidth = curWidth;
-                            lastHeight = curHeight;
-                            resizePending = true;
-                            resizeDebounceWatch.Restart();
-                        }
-                        else if (resizePending && resizeDebounceWatch.ElapsedMilliseconds >= ResizeDebounceMs)
-                        {
-                            await ApplyPendingResizeAsync().ConfigureAwait(false);
-                        }
-                    }
-                    catch (IOException)
-                    {
-                        // Console dimension probe failed mid-poll. Retry on the next tick.
+                        await ApplyPendingResizeAsync().ConfigureAwait(false);
                     }
                 }
 
-                await Task.Delay(KeyPollMs, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (resizePending)
-            {
                 try
                 {
-                    await ApplyPendingResizeAsync().ConfigureAwait(false);
+                    await Task.Delay(KeyPollMs, cancellationToken).ConfigureAwait(false);
                 }
-                catch (IOException)
+                catch (OperationCanceledException)
                 {
-                    // Resize apply failed; the next keypress redraws from current state.
+                    LeaveBox(echo: false);
+                    return null;
                 }
             }
 
@@ -705,7 +994,7 @@ public sealed class InteractiveLineReader
                         return null;
 
                     default:
-                        Refresh();
+                        await RefreshAsync().ConfigureAwait(false);
                         continue;
                 }
             }
@@ -725,7 +1014,7 @@ public sealed class InteractiveLineReader
                         buffer.Clear().Append(chosen);
                     }
                 }
-                LeaveBox();
+                LeaveBox(echo: false);
                 return buffer.ToString();
             }
 
@@ -735,7 +1024,7 @@ public sealed class InteractiveLineReader
                 {
                     dropdownDismissed = true;
                     ClearDropdown();
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                     continue;
                 }
 
@@ -743,14 +1032,14 @@ public sealed class InteractiveLineReader
                 cursor = 0;
                 selectedIndex = 0;
                 dropdownDismissed = false;
-                Refresh();
+                await RefreshAsync().ConfigureAwait(false);
                 continue;
             }
 
             if (key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control))
             {
                 ClearDropdown();
-                LeaveBox();
+                LeaveBox(echo: false);
                 await outWriter.WriteLineAsync("^C").ConfigureAwait(false);
                 await outWriter.FlushAsync().ConfigureAwait(false);
                 return string.Empty;
@@ -761,10 +1050,11 @@ public sealed class InteractiveLineReader
                 dropdownDismissed = false;
                 if (cursor > 0)
                 {
-                    buffer.Remove(cursor - 1, 1);
-                    cursor--;
+                    var deleteCount = cursor >= 2 && char.IsSurrogatePair(buffer[cursor - 2], buffer[cursor - 1]) ? 2 : 1;
+                    buffer.Remove(cursor - deleteCount, deleteCount);
+                    cursor -= deleteCount;
                     selectedIndex = 0;
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -774,9 +1064,10 @@ public sealed class InteractiveLineReader
                 dropdownDismissed = false;
                 if (cursor < buffer.Length)
                 {
-                    buffer.Remove(cursor, 1);
+                    var deleteCount = cursor + 1 < buffer.Length && char.IsSurrogatePair(buffer[cursor], buffer[cursor + 1]) ? 2 : 1;
+                    buffer.Remove(cursor, deleteCount);
                     selectedIndex = 0;
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -785,8 +1076,9 @@ public sealed class InteractiveLineReader
             {
                 if (cursor > 0)
                 {
-                    cursor--;
-                    Refresh();
+                    var step = cursor >= 2 && char.IsSurrogatePair(buffer[cursor - 2], buffer[cursor - 1]) ? 2 : 1;
+                    cursor -= step;
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -795,8 +1087,9 @@ public sealed class InteractiveLineReader
             {
                 if (cursor < buffer.Length)
                 {
-                    cursor++;
-                    Refresh();
+                    var step = cursor + 1 < buffer.Length && char.IsSurrogatePair(buffer[cursor], buffer[cursor + 1]) ? 2 : 1;
+                    cursor += step;
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 else if (isSlash && currentMatches != null && currentMatches.Count > 0)
                 {
@@ -805,7 +1098,7 @@ public sealed class InteractiveLineReader
                     cursor = buffer.Length;
                     dropdownDismissed = true;
                     ClearDropdown();
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -813,14 +1106,14 @@ public sealed class InteractiveLineReader
             if (key.Key == ConsoleKey.Home)
             {
                 cursor = 0;
-                Refresh();
+                await RefreshAsync().ConfigureAwait(false);
                 continue;
             }
 
             if (key.Key == ConsoleKey.End)
             {
                 cursor = buffer.Length;
-                Refresh();
+                await RefreshAsync().ConfigureAwait(false);
                 continue;
             }
 
@@ -829,7 +1122,7 @@ public sealed class InteractiveLineReader
                 if (isSlash && currentMatches != null && currentMatches.Count > 0)
                 {
                     selectedIndex = (selectedIndex - 1 + currentMatches.Count) % currentMatches.Count;
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                     continue;
                 }
 
@@ -843,7 +1136,7 @@ public sealed class InteractiveLineReader
                     buffer.Clear().Append(_history[historyIndex]);
                     cursor = buffer.Length;
                     selectedIndex = 0;
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -853,7 +1146,7 @@ public sealed class InteractiveLineReader
                 if (isSlash && currentMatches != null && currentMatches.Count > 0)
                 {
                     selectedIndex = (selectedIndex + 1) % currentMatches.Count;
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                     continue;
                 }
 
@@ -870,7 +1163,7 @@ public sealed class InteractiveLineReader
                     }
                     cursor = buffer.Length;
                     selectedIndex = 0;
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -885,7 +1178,7 @@ public sealed class InteractiveLineReader
                     selectedIndex = 0;
                     dropdownDismissed = true;
                     ClearDropdown();
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                     continue;
                 }
 
@@ -897,7 +1190,7 @@ public sealed class InteractiveLineReader
                     cursor = buffer.Length;
                     dropdownDismissed = true;
                     ClearDropdown();
-                    Refresh();
+                    await RefreshAsync().ConfigureAwait(false);
                 }
                 continue;
             }
@@ -909,7 +1202,7 @@ public sealed class InteractiveLineReader
                 buffer.Insert(cursor, key.KeyChar);
                 cursor++;
                 selectedIndex = 0;
-                Refresh();
+                await RefreshAsync().ConfigureAwait(false);
             }
         }
 
@@ -1062,7 +1355,8 @@ public sealed class InteractiveLineReader
         {
             if (session.Buffer.Length > 0)
             {
-                session.Buffer = session.Buffer[..^1];
+                var deleteCount = session.Buffer.Length >= 2 && char.IsSurrogatePair(session.Buffer[^2], session.Buffer[^1]) ? 2 : 1;
+                session.Buffer = session.Buffer[..^deleteCount];
             }
 
             return;

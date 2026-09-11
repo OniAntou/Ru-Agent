@@ -314,14 +314,13 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void BeginTurn_PrintsOneTurnHeader()
+    public void BeginTurn_DoesNotEmitLegacyTurnHeader()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
 
         var rows = Rows(output);
-        var header = Assert.Single(rows, row => row.Contains("◆", StringComparison.Ordinal));
-        Assert.DoesNotContain("turn", header, StringComparison.Ordinal);
+        Assert.DoesNotContain(rows, row => row.Contains("◆", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -334,9 +333,33 @@ public sealed class TuiTranscriptTests
         transcript.EndTurn();
 
         var all = Rows(output).ToList();
-        var lastHeader = all.FindLastIndex(row => row.Contains("◆", StringComparison.Ordinal));
-        Assert.True(lastHeader >= 0, "turn header missing");
-        Assert.DoesNotContain(all.Skip(lastHeader + 1), row => row.Contains("boom", StringComparison.Ordinal));
+        Assert.DoesNotContain(all, row => row.Contains("boom", StringComparison.Ordinal));
         _ = Empty;
+    }
+
+    [Theory]
+    [InlineData("tool.proposed")]
+    [InlineData("continue.requested")]
+    public void ApplyDurable_IgnoresInternalEvents(string eventType)
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable(eventType, "running", "internal payload"));
+
+        var rows = Rows(output);
+        Assert.DoesNotContain(rows, row => row.Contains(eventType, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AppendAssistant_AddsSpacingAfterSettledTool()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "read_only"));
+        transcript.AppendAssistant("Hello there!");
+        transcript.Flush();
+
+        var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+        Assert.Contains("\n\nHello there!", text, StringComparison.Ordinal);
     }
 }

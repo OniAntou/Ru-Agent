@@ -81,4 +81,31 @@ public sealed class TuiHeaderTests
 
         Assert.True(TuiText.VisibleWidth(shortened) <= 10);
     }
+
+    [Theory]
+    [InlineData(40)]
+    [InlineData(80)]
+    [InlineData(120)]
+    public void ComposeLandingScreen_FitsViewportWidthAndContainsOverviewCard(int width)
+    {
+        var lines = TuiHeader.ComposeLandingScreen(width, @"D:\LLM", "Kilo Gateway", "gpt-5-codex", "standard");
+
+        var text = string.Join("\n", lines);
+        Assert.Contains("✦ RUAGENT", text, StringComparison.Ordinal);
+        Assert.Contains("System Overview", text, StringComparison.Ordinal);
+        Assert.Contains("Workspace", text, StringComparison.Ordinal);
+        Assert.Contains("Engine", text, StringComparison.Ordinal);
+        Assert.Contains("Shortcuts", text, StringComparison.Ordinal);
+        Assert.Contains("/help", text, StringComparison.Ordinal);
+
+        var boxLines = lines.Where(l => l.StartsWith("╭") || l.StartsWith("│") || l.StartsWith("╰")).ToList();
+        Assert.NotEmpty(boxLines);
+        Assert.All(boxLines, l => Assert.Equal(width, TuiText.VisibleWidth(l)));
+    }
+
+    [Fact]
+    public void ComposeLandingScreen_ZeroWidthReturnsNothing()
+    {
+        Assert.Empty(TuiHeader.ComposeLandingScreen(0, "w", "b", "m", "p"));
+    }
 }

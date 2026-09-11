@@ -34,7 +34,13 @@ public sealed class ChoiceList
 
         Title = string.IsNullOrWhiteSpace(title) ? "select" : title.Trim();
         _items = [.. items];
-        Selected = Math.Clamp(selected, 0, _items.Count - 1);
+        var clamped = Math.Clamp(selected, 0, _items.Count - 1);
+        if (!_items[clamped].Enabled)
+        {
+            var firstEnabled = _items.FindIndex(i => i.Enabled);
+            clamped = firstEnabled >= 0 ? firstEnabled : clamped;
+        }
+        Selected = clamped;
         Footer = footer;
     }
 
@@ -48,18 +54,42 @@ public sealed class ChoiceList
 
     public ChoiceItem Current => _items[Math.Clamp(Selected, 0, _items.Count - 1)];
 
-    /// <summary>Walk the list, wrapping at both ends.</summary>
+    /// <summary>Walk the list, wrapping at both ends and skipping disabled items.</summary>
     public void Move(int delta)
     {
-        if (_items.Count == 0)
+        if (_items.Count == 0 || delta == 0)
         {
             return;
         }
 
-        Selected = ((Selected + delta) % _items.Count + _items.Count) % _items.Count;
+        var step = delta > 0 ? 1 : -1;
+        var totalSteps = Math.Abs(delta);
+
+        for (var s = 0; s < totalSteps; s++)
+        {
+            var attempts = 0;
+            var next = Selected;
+            var found = false;
+            while (attempts < _items.Count)
+            {
+                next = ((next + step) % _items.Count + _items.Count) % _items.Count;
+                attempts++;
+                if (_items[next].Enabled)
+                {
+                    Selected = next;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                break;
+            }
+        }
     }
 
-    /// <summary>Jump to a 1-based digit if the list is long enough. Returns false otherwise.</summary>
+    /// <summary>Jump to a 1-based digit if the list is long enough and the item is enabled. Returns false otherwise.</summary>
     public bool TrySelectDigit(char digit)
     {
         if (digit is < '1' or > '9')
@@ -68,7 +98,7 @@ public sealed class ChoiceList
         }
 
         var index = digit - '1';
-        if (index >= _items.Count)
+        if (index >= _items.Count || !_items[index].Enabled)
         {
             return false;
         }
@@ -94,7 +124,7 @@ public sealed class ChoiceList
                 return ChoiceOutcome.Moved;
 
             case ConsoleKey.Enter:
-                return ChoiceOutcome.Confirmed;
+                return Current.Enabled ? ChoiceOutcome.Confirmed : ChoiceOutcome.None;
 
             case ConsoleKey.Escape:
                 return ChoiceOutcome.Cancelled;
@@ -102,7 +132,7 @@ public sealed class ChoiceList
             default:
                 if (key.KeyChar == '\r' || key.KeyChar == '\n')
                 {
-                    return ChoiceOutcome.Confirmed;
+                    return Current.Enabled ? ChoiceOutcome.Confirmed : ChoiceOutcome.None;
                 }
 
                 if (TrySelectDigit(key.KeyChar))

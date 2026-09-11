@@ -39,7 +39,7 @@ public sealed class TuiStickyRegionTests
 
         Assert.True(region.Enter(30, 4, 40));
 
-        Assert.Equal("\u001b[1;26r", writer.ToString());
+        Assert.Equal("\u001b[1;26r\u001b[26;1H", writer.ToString());
         Assert.True(region.Active);
     }
 
@@ -68,17 +68,17 @@ public sealed class TuiStickyRegionTests
 
         var text = writer.ToString();
         Assert.StartsWith("\u001b[r", text, StringComparison.Ordinal);
-        Assert.Contains("\u001b[26;1H", text, StringComparison.Ordinal);
+        Assert.Contains("\u001b[27;1H", text, StringComparison.Ordinal);
         Assert.False(region.Active);
         Assert.Equal(0, region.FooterFirst);
     }
 
     [Theory]
-    [InlineData(27, 40, "\u001b[26;1H\u001b[J")]
-    [InlineData(27, 30, "\u001b[26;1H\u001b[J")]
-    [InlineData(4, 30, "\u001b[3;1H\u001b[J")]
-    [InlineData(20, 20, "\u001b[19;1H\u001b[J")]
-    public void ComposeClearDown_StartsOnTheRowAboveTheFooter(int firstFooterRow, int liveRows, string expected)
+    [InlineData(27, 40, "\u001b[27;1H\u001b[J")]
+    [InlineData(27, 30, "\u001b[27;1H\u001b[J")]
+    [InlineData(4, 30, "\u001b[4;1H\u001b[J")]
+    [InlineData(20, 20, "\u001b[20;1H\u001b[J")]
+    public void ComposeClearDown_StartsOnFirstFooterRow(int firstFooterRow, int liveRows, string expected)
     {
         Assert.Equal(expected, TuiStickyRegion.ComposeClearDown(firstFooterRow, liveRows));
     }
@@ -103,8 +103,33 @@ public sealed class TuiStickyRegionTests
 
         region.Exit();
 
-        // Footer owned rows 27..30 (transcript ends at 26), so the next append lands on 26.
-        Assert.Contains("\u001b[26;1H", writer.ToString(), StringComparison.Ordinal);
+        // Footer owned rows 27..30, so cursor parks at first footer row 27.
+        Assert.Contains("\u001b[27;1H", writer.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RestoreTranscriptCursor_MovesCursorToTranscriptBottomRow_WhenActive()
+    {
+        var writer = new StringWriter();
+        var region = Create(writer);
+        region.Enter(30, 4, 40);
+        writer.GetStringBuilder().Clear();
+
+        region.RestoreTranscriptCursor();
+
+        // Footer starts at row 27, so transcript bottom row is 26.
+        Assert.Equal("\u001b[26;1H", writer.ToString());
+    }
+
+    [Fact]
+    public void RestoreTranscriptCursor_DoesNothing_WhenInactive()
+    {
+        var writer = new StringWriter();
+        var region = Create(writer);
+
+        region.RestoreTranscriptCursor();
+
+        Assert.Equal(string.Empty, writer.ToString());
     }
 
     [Fact]
@@ -119,7 +144,7 @@ public sealed class TuiStickyRegionTests
 
         var text = writer.ToString();
         Assert.StartsWith("\u001b[r", text, StringComparison.Ordinal);
-        Assert.EndsWith("\u001b[1;16r", text, StringComparison.Ordinal);
+        Assert.EndsWith("\u001b[1;16r\u001b[16;1H", text, StringComparison.Ordinal);
         Assert.Equal(20, region.Rows);
         Assert.Equal(17, region.FooterFirst);
     }
@@ -149,7 +174,7 @@ public sealed class TuiStickyRegionTests
 
         Assert.True(region.Reapply(24, 3, 40));
 
-        Assert.Equal("\u001b[1;21r", writer.ToString());
+        Assert.Equal("\u001b[1;21r\u001b[21;1H", writer.ToString());
     }
 
     [Fact]

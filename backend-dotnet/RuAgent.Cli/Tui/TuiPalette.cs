@@ -155,6 +155,17 @@ public static class TuiPalette
 
     public static string Quiet(string? text) => Paint(text, TuiToken.Meta);
 
+    /// <summary>
+    /// Background escape sequence for elevated surface cards (e.g. user prompt container).
+    /// Returns empty string when color is disabled (None or Basic16).
+    /// </summary>
+    public static string SurfaceBgCode() => Level switch
+    {
+        TuiColorLevel.TrueColor => "\u001b[48;2;31;34;42m",
+        TuiColorLevel.Palette256 => "\u001b[48;5;236m",
+        _ => string.Empty,
+    };
+
     private static string TrueColorParts(TuiToken token) => token switch
     {
         TuiToken.Brand => "56;189;248",

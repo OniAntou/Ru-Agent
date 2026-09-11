@@ -959,24 +959,17 @@ public sealed class AgentCommands
 
         if (_out == Console.Out && !Console.IsOutputRedirected)
         {
-            try { Console.Clear(); } catch (IOException) { /* No live console to clear. */ }
+            try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
         }
 
-        var headerSurface = new Tui.TuiSurface(_out);
-        Tui.TuiHeader.Render(
-            headerSurface,
-            Tui.TuiViewport.Width(),
-            canonicalWorkspace,
-            backendName,
-            activeModel,
-            cmd.Preset,
-            sessionId,
-            empty: string.IsNullOrEmpty(cmd.SessionId));
-        await _out.WriteLineAsync().ConfigureAwait(false);
-        await _out.FlushAsync().ConfigureAwait(false);
+        var ws = Tui.TuiHeader.ShortenWorkspace(canonicalWorkspace, 48);
+        var workspaceLabel = string.IsNullOrWhiteSpace(cmd.Preset) ? ws : $"{ws} · {cmd.Preset}";
 
         var sessionRenderer = new Tui.TuiSessionRenderer(_out);
-        var lineReader = new Tui.InteractiveLineReader();
+        var lineReader = new Tui.InteractiveLineReader
+        {
+            TopLabel = workspaceLabel,
+        };
 
         // Sticky footer: while a turn runs the live row and composer stay pinned to the bottom
         // rows and agent output scrolls above them. Redirected output, --json and --classic keep
@@ -990,7 +983,10 @@ public sealed class AgentCommands
         // Type-ahead: keystrokes captured during a turn feed the one-slot queue, and a pending
         // approval takes the keyboard over the same pinned footer.
         var pendingPrompt = new PendingPromptSlot();
-        var typeAhead = new Tui.TypeAheadSession(pendingPrompt);
+        var typeAhead = new Tui.TypeAheadSession(pendingPrompt)
+        {
+            WorkspaceLabel = workspaceLabel,
+        };
         string? queuedLine = null;
         CancellationTokenSource? turnCts = null;
         CancellationTokenSource? typeAheadCts = null;
@@ -1003,6 +999,9 @@ public sealed class AgentCommands
             ? Task.FromResult<string?>(null)
             : lineReader.ReadChoiceAsync(list, _out, ct);
 
+        int turn = 0;
+        bool landingScreenVisible = true;
+
         // The composer reopens its own frame after a settled resize; this rebuilds everything
         // around it (region, header, transcript tail) so the new width applies end to end.
         // Always the full in-place rebuild, even without a sticky region: reprinting the
@@ -1012,6 +1011,43 @@ public sealed class AgentCommands
             RedrawScreenForResize();
             return Task.CompletedTask;
         };
+
+        void RenderLandingScreen()
+        {
+            if (cmd.Json || cmd.Classic || !Tui.TuiViewport.IsLiveConsole)
+            {
+                return;
+            }
+
+            var rows = Tui.TuiViewport.Height();
+            var width = Tui.TuiViewport.Width();
+            var landingLines = Tui.TuiHeader.ComposeLandingScreen(
+                width,
+                canonicalWorkspace,
+                backendName,
+                activeModel,
+                cmd.Preset);
+
+            foreach (var line in landingLines)
+            {
+                _out.WriteLine(line);
+            }
+
+            if (!typeAheadLive)
+            {
+                var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
+                    ? Tui.ComposerBox.Height + 1
+                    : Tui.ComposerBox.Height;
+                var boxTop = Math.Max(1, rows - boxHeight + 1);
+                var cursorRow = landingLines.Count + 1;
+                for (var i = cursorRow; i < boxTop; i++)
+                {
+                    _out.WriteLine();
+                }
+            }
+
+            _out.Flush();
+        }
 
         /// <summary>
         /// Recovery for a settled resize. A terminal that changed size has already reflowed the
@@ -1024,37 +1060,30 @@ public sealed class AgentCommands
         {
             sticky.Exit();
             sessionRenderer.Status.InFooter = false;
-            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[2J\u001b[H"));
+            if (_out == Console.Out && !Console.IsOutputRedirected)
+            {
+                try { Console.Clear(); } catch (IOException) { }
+            }
+            sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[3J\u001b[2J\u001b[H"));
 
-            // One capture per rebuild: the live size can keep moving mid-drag, and
-            // mixing widths across header/tail/footer is what shreds the frame.
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
             sessionRenderer.Width = width;
-            var header = Tui.TuiHeader.Compose(
-                width,
-                canonicalWorkspace,
-                backendName,
-                activeModel,
-                cmd.Preset,
-                sessionId,
-                empty: false);
-            // Volatile: reprints must not enter the surface history, or the next
-            // SnapshotTail would replay them and every rebuild would add headers.
-            foreach (var line in header)
+
+            if (landingScreenVisible && turn == 0)
             {
-                sessionRenderer.Surface.WriteLineVolatile(line);
+                RenderLandingScreen();
+                return;
             }
 
             var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
                 rows,
                 typeAhead.FooterHeight(width));
-            var headerHeight = header.Count;
-            var budget = Math.Max(0, rows - headerHeight - footerHeight - 2);
+            var budget = Math.Max(0, rows - footerHeight - 2);
             var tail = sessionRenderer.Surface.SnapshotTail(budget, width);
             foreach (var line in tail)
             {
-                _out.WriteLine(line);
+                _out.WriteLine(Tui.InteractiveLineReader.ResizeEchoLine(line, width));
             }
 
             // Pin the reopened composer to the bottom without scrolling: pad with
@@ -1062,11 +1091,17 @@ public sealed class AgentCommands
             // history). Newlines only scroll past the last viewport row, so this
             // never grows the scrollback. PushToBottomAsync must stay out of this
             // path: it unconditionally emits newlines at the bottom row.
-            var boxTop = Math.Max(1, rows - Tui.ComposerBox.Height + 1);
-            var cursorRow = headerHeight + tail.Count + 1;
-            for (var i = cursorRow; i < boxTop; i++)
+            if (!typeAheadLive)
             {
-                _out.WriteLine();
+                var boxHeight = !string.IsNullOrWhiteSpace(lineReader.Hints)
+                    ? Tui.ComposerBox.Height + 1
+                    : Tui.ComposerBox.Height;
+                var boxTop = Math.Max(1, rows - boxHeight + 1);
+                var cursorRow = tail.Count + 1;
+                for (var i = cursorRow; i < boxTop; i++)
+                {
+                    _out.WriteLine();
+                }
             }
 
             _out.Flush();
@@ -1297,7 +1332,6 @@ public sealed class AgentCommands
             }
         }
 
-        int turn = 0;
         long? lastTotalTokens = null;
         _slashCommands.SnapshotProvider = () => new Tui.TuiStatusSnapshot(
             SessionId: sessionId,
@@ -1310,10 +1344,13 @@ public sealed class AgentCommands
             ToolsSettled: sessionRenderer.Transcript.ToolsSettled,
             ApiKeyConfigured: null);
         await UpdateLegendAsync().ConfigureAwait(false);
+        RenderLandingScreen();
         string prompt = Tui.TuiPalette.BoldPaint("❯ ");
         string contPrompt = Tui.TuiPalette.DimPaint("    ... ❯ ");
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
         {
             // A prompt typed while the previous turn streamed is sent without a second Enter.
             var line = queuedLine ?? await lineReader.ReadLineWithContinuationAsync(_in, _out, prompt, contPrompt, cancellationToken).ConfigureAwait(false);
@@ -1324,6 +1361,11 @@ public sealed class AgentCommands
 
             if (line.StartsWith("/", StringComparison.Ordinal))
             {
+                if (landingScreenVisible && !line.StartsWith("/clear", StringComparison.OrdinalIgnoreCase))
+                {
+                    landingScreenVisible = false;
+                }
+                await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
                 var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
                 var slashCmd = parts[0].ToLowerInvariant();
                 var arg = parts.Length > 1 ? parts[1].Trim() : null;
@@ -1355,21 +1397,13 @@ public sealed class AgentCommands
                 if (slashCmd is "/clear")
                 {
                     turn = 0;
+                    landingScreenVisible = true;
                     lastTotalTokens = null;
                     if (_out == Console.Out && !Console.IsOutputRedirected)
                     {
-                        try { Console.Clear(); } catch (IOException) { /* No live console to clear. */ }
+                        try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                     }
-                    Tui.TuiHeader.Render(
-                        headerSurface,
-                        Tui.TuiViewport.Width(),
-                        canonicalWorkspace,
-                        backendName,
-                        activeModel,
-                        cmd.Preset,
-                        sessionId,
-                        empty: false);
-                    await _out.WriteLineAsync().ConfigureAwait(false);
+                    RenderLandingScreen();
                     await _out.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
@@ -1432,6 +1466,14 @@ public sealed class AgentCommands
             }
 
             turn++;
+            if (landingScreenVisible)
+            {
+                landingScreenVisible = false;
+                if (_out == Console.Out && !Console.IsOutputRedirected)
+                {
+                    try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
+                }
+            }
             var idempotencyKey = Guid.NewGuid().ToString("N");
             var request = new CreateAgentRunRequest(
                 sessionId,
@@ -1451,6 +1493,11 @@ public sealed class AgentCommands
                     await StartTypeAheadAsync().ConfigureAwait(false);
                 }
 
+                if (sticky.Active)
+                {
+                    sticky.RestoreTranscriptCursor();
+                }
+                sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: sessionRenderer.Width));
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
@@ -1523,7 +1570,15 @@ public sealed class AgentCommands
                     }
                     else
                     {
+                        if (sticky.Active)
+                        {
+                            sticky.RestoreTranscriptCursor();
+                        }
                         sessionRenderer.RenderFrame(frame);
+                        if (sticky.Active && typeAheadLive)
+                        {
+                            PaintStickyFooter();
+                        }
 
                         if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"approval.requested\"", StringComparison.Ordinal))
                         {
@@ -1601,6 +1656,13 @@ public sealed class AgentCommands
                 await _err.WriteLineAsync(Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }
             await _out.FlushAsync().ConfigureAwait(false);
+        }
+        }
+        finally
+        {
+            await StopTypeAheadAsync().ConfigureAwait(false);
+            sticky.Exit();
+            sessionRenderer.Surface.Repaint(w => w.Write("\u001b[r"));
         }
 
         return 0;

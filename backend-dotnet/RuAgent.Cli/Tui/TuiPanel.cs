@@ -57,14 +57,15 @@ public static class TuiPanel
     private static string ComposeRow(int width, PanelRow row)
     {
         var inner = Math.Max(1, width - 4);
-        var label = TuiText.Pad(row.Label, Math.Min(LabelColumn, inner));
+        var contentBudget = Math.Max(1, inner - 2);
+        var label = TuiText.Pad(row.Label, Math.Min(LabelColumn, contentBudget));
         var labelWidth = TuiText.VisibleWidth(label);
-        var detailWidth = inner - labelWidth - 1;
+        var detailWidth = contentBudget - labelWidth - 1;
         var detail = string.IsNullOrWhiteSpace(row.Detail) || detailWidth < MinDetailWidth
             ? string.Empty
             : TuiText.Truncate(row.Detail!.Trim(), detailWidth);
 
-        var content = labelWidth >= inner
+        var content = labelWidth >= contentBudget
             ? TuiPalette.Paint(label, TuiToken.Meta)
             : TuiPalette.Paint(label, TuiToken.Meta)
                 + " "

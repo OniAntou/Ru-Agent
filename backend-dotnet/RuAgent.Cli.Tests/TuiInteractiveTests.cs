@@ -135,7 +135,7 @@ public sealed class TuiInteractiveTests
         renderer.RenderFrame(DeltaFrame("</tool_call>\n", 4));
 
         var output = sw.ToString();
-        Assert.Contains("✦", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("✦", output, StringComparison.Ordinal);
         Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
         Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
         Assert.Contains("│", output, StringComparison.Ordinal);
@@ -620,22 +620,33 @@ public sealed class TuiInteractiveTests
         renderer.EndTurn();
         renderer.EndTurn(); // second stop must no-op safely
 
-        Assert.Contains("◆", sw.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("◆", sw.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("turn", sw.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_IsOneDimLine()
+    public void InteractiveLineReader_BuildSubmitEcho_FormatsWithBrandChevronAndTimestamp()
     {
         TuiPalette.Level = TuiColorLevel.TrueColor;
         try
         {
-            var echo = InteractiveLineReader.BuildSubmitEcho("sửa lỗi busy");
+            var echo = InteractiveLineReader.BuildSubmitEcho("sửa lỗi busy", "21:35");
 
-            Assert.DoesNotContain("\n", echo, StringComparison.Ordinal);
-            Assert.Contains("❯ sửa lỗi busy", TuiText.Strip(echo), StringComparison.Ordinal);
-            Assert.Contains(TuiPalette.Dim, echo, StringComparison.Ordinal);
-            Assert.DoesNotContain(TuiPalette.Bold, echo, StringComparison.Ordinal);
+            var stripped = TuiText.Strip(echo);
+            Assert.Contains("> ", stripped, StringComparison.Ordinal);
+            Assert.Contains("sửa lỗi busy", stripped, StringComparison.Ordinal);
+            Assert.Contains("21:35", stripped, StringComparison.Ordinal);
+            Assert.DoesNotContain("You", stripped, StringComparison.Ordinal);
+            Assert.DoesNotContain("╭", stripped, StringComparison.Ordinal);
+            Assert.DoesNotContain("╰", stripped, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Brand), echo, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Bold, echo, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.Code(TuiToken.Meta), echo, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), echo, StringComparison.Ordinal);
+
+            var lines = echo.Split('\n');
+            Assert.Equal(3, lines.Length);
+            Assert.Equal(lines[0], lines[2]);
         }
         finally
         {
@@ -644,13 +655,101 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public void InteractiveLineReader_BuildSubmitEcho_FlattensMultiline()
+    public void InteractiveLineReader_BuildSubmitEcho_SupportsMultiline()
     {
         TuiPalette.Level = TuiColorLevel.None;
-        var echo = InteractiveLineReader.BuildSubmitEcho("a\nb");
+        var echo = InteractiveLineReader.BuildSubmitEcho("a\nb", "10:00");
 
-        Assert.DoesNotContain("\n", echo, StringComparison.Ordinal);
-        Assert.Contains("a b", echo, StringComparison.Ordinal);
+        var lines = echo.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("> a · 10:00", lines[0], StringComparison.Ordinal);
+        Assert.Contains("  b", lines[1], StringComparison.Ordinal);
+        Assert.DoesNotContain("You", echo, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InteractiveLineReader_BuildSubmitEcho_SupportsMultiline_TrueColor()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var echo = InteractiveLineReader.BuildSubmitEcho("a\nb", "10:00", width: 60);
+
+            var lines = echo.Split('\n');
+            Assert.Equal(4, lines.Length);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[0]);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[1]);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[2]);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), lines[3]);
+            Assert.Contains("a", lines[1]);
+            Assert.Contains("b", lines[2]);
+            Assert.Contains("10:00", lines[1]);
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
+    public void InteractiveLineReader_ResizeEchoLine_ExpandsToFullscreenWidth()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var echo80 = InteractiveLineReader.BuildSubmitEcho("Hello", "22:26", width: 80);
+            var lines80 = echo80.Split('\n');
+            Assert.Equal(3, lines80.Length);
+            Assert.All(lines80, l => Assert.Equal(80, TuiText.VisibleWidth(l)));
+
+            // Operator fullscreens the window to 142 columns
+            var resizedLines = lines80.Select(l => InteractiveLineReader.ResizeEchoLine(l, 142)).ToList();
+            Assert.Equal(3, resizedLines.Count);
+            Assert.All(resizedLines, l => Assert.Equal(142, TuiText.VisibleWidth(l)));
+
+            var stripped = TuiText.Strip(resizedLines[1]);
+            Assert.Contains("> Hello", stripped, StringComparison.Ordinal);
+            Assert.Contains("22:26", stripped, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), resizedLines[1], StringComparison.Ordinal);
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
+    public void InteractiveLineReader_ResizeEchoLine_ShrinksDownCleanly()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var echo140 = InteractiveLineReader.BuildSubmitEcho("sửa lỗi terminal", "15:30", width: 140);
+            var lines140 = echo140.Split('\n');
+            Assert.Equal(3, lines140.Length);
+            Assert.All(lines140, l => Assert.Equal(140, TuiText.VisibleWidth(l)));
+
+            // Operator shrinks the window down to 60 columns
+            var resizedLines = lines140.Select(l => InteractiveLineReader.ResizeEchoLine(l, 60)).ToList();
+            Assert.Equal(3, resizedLines.Count);
+            Assert.All(resizedLines, l => Assert.Equal(60, TuiText.VisibleWidth(l)));
+
+            var stripped = TuiText.Strip(resizedLines[1]);
+            Assert.Contains("sửa lỗi terminal", stripped, StringComparison.Ordinal);
+            Assert.Contains("15:30", stripped, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
+    public void InteractiveLineReader_ResizeEchoLine_LeavesNormalProseUnchanged()
+    {
+        var prose = "✦ Hello! I'm your assistant.";
+        var result = InteractiveLineReader.ResizeEchoLine(prose, 120);
+        Assert.Equal(prose, result);
     }
 
     [Theory]

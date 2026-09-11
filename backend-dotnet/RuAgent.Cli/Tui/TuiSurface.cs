@@ -81,6 +81,18 @@ public sealed class TuiSurface
     {
         lock (Gate)
         {
+            if (text.Contains('\n'))
+            {
+                var parts = text.Replace("\r", "").Split('\n');
+                for (var i = 0; i < parts.Length; i++)
+                {
+                    ClearCurrentRow(Writer);
+                    Writer.WriteLine(parts[i]);
+                    CompleteLine(parts[i]);
+                }
+                return;
+            }
+
             ClearCurrentRow(Writer);
             Writer.WriteLine(text);
             CompleteLine(text);
@@ -97,6 +109,17 @@ public sealed class TuiSurface
     {
         lock (Gate)
         {
+            if (text.Contains('\n'))
+            {
+                var parts = text.Replace("\r", "").Split('\n');
+                for (var i = 0; i < parts.Length; i++)
+                {
+                    ClearCurrentRow(Writer);
+                    Writer.WriteLine(parts[i]);
+                }
+                return;
+            }
+
             ClearCurrentRow(Writer);
             Writer.WriteLine(text);
         }
@@ -193,6 +216,22 @@ public sealed class TuiSurface
                 Writer.Write(SyncEnd);
             }
 
+            Writer.Flush();
+        }
+    }
+
+    /// <summary>
+    /// Holds the write gate across a whole multi-step screen rebuild (clear, header,
+    /// transcript tail, footer, composer): a streaming append landing mid-rebuild would
+    /// overflow the viewport and scroll the fresh frame into the scrollback. The body
+    /// must be synchronous — never await inside. Reentrant: surface calls nest freely.
+    /// </summary>
+    public void Rebuild(Action<TextWriter> build)
+    {
+        ArgumentNullException.ThrowIfNull(build);
+        lock (Gate)
+        {
+            build(Writer);
             Writer.Flush();
         }
     }

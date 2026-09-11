@@ -18,6 +18,15 @@ public sealed class TuiSurfaceTests
     }
 
     [Fact]
+    public void WriteLine_WithMultilineText_SplitsIntoSeparateHistoryEntries()
+    {
+        var surface = new TuiSurface(new StringWriter()) { SynchronizedOutput = false };
+        surface.WriteLine("card_top\ncard_body\ncard_bottom");
+
+        Assert.Equal(["card_top", "card_body", "card_bottom"], surface.SnapshotTail(10, 80));
+    }
+
+    [Fact]
     public void WriteLineVolatile_StaysOutOfTheRebuildHistory()
     {
         var surface = new TuiSurface(new StringWriter()) { SynchronizedOutput = false };

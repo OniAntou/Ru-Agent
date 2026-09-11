@@ -201,28 +201,61 @@ public static class TuiText
             return text;
         }
 
-        var start = text.Length;
-        var used = 0;
         var budget = width - 1;
-        while (start > 0)
+        var tokens = new List<(int Start, int Length, int RuneWidth)>();
+        var index = 0;
+        while (index < text.Length)
         {
-            var previous = start - 1;
-            if (char.IsLowSurrogate(text[previous]) && previous > 0 && char.IsHighSurrogate(text[previous - 1]))
+            if (text[index] == '\u001b')
             {
-                previous--;
+                var next = SkipAnsi(text, index);
+                tokens.Add((index, next - index, 0));
+                index = next;
+                continue;
             }
 
-            var runeWidth = RuneWidth(char.ConvertToUtf32(text, previous));
-            if (used + runeWidth > budget)
+            var start = index;
+            int codePoint;
+            if (char.IsSurrogatePair(text, index))
+            {
+                codePoint = char.ConvertToUtf32(text, index);
+                index += 2;
+            }
+            else if (!char.IsSurrogate(text[index]))
+            {
+                codePoint = text[index];
+                index += 1;
+            }
+            else
+            {
+                codePoint = 0xFFFD;
+                index += 1;
+            }
+
+            tokens.Add((start, index - start, RuneWidth(codePoint)));
+        }
+
+        var used = 0;
+        var cutTokenIndex = tokens.Count;
+        for (var i = tokens.Count - 1; i >= 0; i--)
+        {
+            var w = tokens[i].RuneWidth;
+            if (used + w > budget)
             {
                 break;
             }
 
-            used += runeWidth;
-            start = previous;
+            used += w;
+            cutTokenIndex = i;
         }
 
-        return "…" + text[start..];
+        if (cutTokenIndex >= tokens.Count)
+        {
+            return "…";
+        }
+
+        var startChar = tokens[cutTokenIndex].Start;
+        return "…" + text[startChar..];
     }
 
     /// <summary>Truncates then right-pads so the result occupies exactly <paramref name="width"/> cells.</summary>
@@ -275,6 +308,13 @@ public static class TuiText
                 while (VisibleWidth(remaining) > width)
                 {
                     var take = TakeWidth(remaining, width);
+                    if (take.Length == 0)
+                    {
+                        var idx = 0;
+                        ReadCodePoint(remaining, ref idx);
+                        take = remaining[..idx];
+                    }
+
                     lines.Add(take);
                     remaining = remaining[take.Length..];
                 }
@@ -302,6 +342,11 @@ public static class TuiText
             var runeWidth = RuneWidth(codePoint);
             if (used + runeWidth > width)
             {
+                if (start == 0)
+                {
+                    return text[..index];
+                }
+
                 return text[..start];
             }
 

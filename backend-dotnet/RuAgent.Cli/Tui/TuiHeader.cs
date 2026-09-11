@@ -69,6 +69,92 @@ public static class TuiHeader
         }
     }
 
+    /// <summary>
+    /// Composes the main landing/home screen rendered at startup and after /clear before chat begins.
+    /// Features Cyberpunk-themed brand banner and a rounded System Overview card.
+    /// </summary>
+    public static IReadOnlyList<string> ComposeLandingScreen(
+        int width,
+        string workspace,
+        string backend,
+        string model,
+        string preset)
+    {
+        if (width <= 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var w = Math.Clamp(width, 20, 1000);
+        var lines = new List<string>();
+
+        lines.Add(string.Empty);
+        var banner = "  "
+            + TuiPalette.Paint("✦ RUAGENT", TuiToken.Brand)
+            + TuiPalette.Paint(" · Intelligent Coding Assistant", TuiToken.Meta)
+            + TuiPalette.Paint(" [v2.0]", TuiToken.Brand2);
+        lines.Add(banner);
+        lines.Add(string.Empty);
+
+        var inner = w - 2;
+        var title = "─ System Overview ";
+        var titleVisible = TuiText.VisibleWidth(title);
+        var topFill = Math.Max(0, inner - titleVisible);
+
+        var topBorder = TuiPalette.Paint("╭", TuiToken.Brand)
+            + TuiPalette.Paint("─ ", TuiToken.Brand)
+            + TuiPalette.Paint("System Overview", TuiToken.Brand2)
+            + TuiPalette.Paint(" ", TuiToken.Brand)
+            + TuiPalette.Paint(new string('─', topFill), TuiToken.Brand)
+            + TuiPalette.Paint("╮", TuiToken.Brand);
+        lines.Add(topBorder);
+
+        var bodyInner = Math.Max(1, w - 4);
+
+        string FormatRow(string label, string val, TuiToken valToken = TuiToken.Ink)
+        {
+            var lblPart = label + " : ";
+            var lblWidth = TuiText.VisibleWidth(lblPart);
+            var valBudget = Math.Max(1, bodyInner - lblWidth);
+            var valShort = TuiText.Truncate(val, valBudget);
+            var rowContent = TuiPalette.Paint(lblPart, TuiToken.Meta)
+                + TuiPalette.Paint(valShort, valToken);
+            var pad = Math.Max(0, bodyInner - lblWidth - TuiText.VisibleWidth(valShort));
+            return TuiPalette.Paint("│ ", TuiToken.Brand)
+                + rowContent
+                + new string(' ', pad)
+                + TuiPalette.Paint(" │", TuiToken.Brand);
+        }
+
+        var wsText = string.IsNullOrWhiteSpace(workspace) ? "(none)" : workspace;
+        lines.Add(FormatRow("Workspace", wsText));
+
+        var engineText = Join(backend, model);
+        if (!string.IsNullOrWhiteSpace(preset))
+        {
+            engineText += $" · {preset}";
+        }
+        if (string.IsNullOrWhiteSpace(engineText))
+        {
+            engineText = "(default)";
+        }
+        lines.Add(FormatRow("Engine   ", engineText, TuiToken.Brand2));
+
+        var shortcuts = "/help · /model · ↑↓ history · Tab · Ctrl+C";
+        lines.Add(FormatRow("Shortcuts", shortcuts, TuiToken.Line));
+
+        var status = "Ready · Waiting for prompt...";
+        lines.Add(FormatRow("Status   ", status, TuiToken.Ok));
+
+        var bottomBorder = TuiPalette.Paint("╰" + new string('─', inner) + "╯", TuiToken.Brand);
+        lines.Add(bottomBorder);
+
+        lines.Add(string.Empty);
+        lines.Add(TuiPalette.Paint("  Type a request below to start, or /help for all commands.", TuiToken.Meta));
+
+        return lines;
+    }
+
     private static string TwoColumn(string left, string right, int width)
     {
         if (right.Length == 0)

@@ -167,14 +167,13 @@ public sealed class TuiTurnSnapshotTests
         var rows = Rows(output);
         var indexOf = new Func<string, int>(needle => rows.ToList().FindIndex(row => row.Contains(needle, StringComparison.Ordinal)));
 
-        var turnHeader = indexOf("◆");
         var prose = indexOf("Để em xem renderer trước nhé.");
         var read = indexOf("✓ view");
         var edit = indexOf("✓ edit");
         var footer = rows.ToList().FindLastIndex(row => row.Contains("✓", StringComparison.Ordinal) && row.Contains("2 tools", StringComparison.Ordinal));
 
-        Assert.True(turnHeader >= 0, "turn header missing");
-        Assert.True(turnHeader < prose, "prose must follow the turn header");
+        Assert.DoesNotContain(rows, row => row.Contains("◆", StringComparison.Ordinal));
+        Assert.True(prose >= 0, "prose missing");
         Assert.True(prose < read, "the first tool row must follow the prose");
         Assert.True(read < edit, "tool rows keep their order");
         Assert.True(edit < footer, "the footer closes the turn");

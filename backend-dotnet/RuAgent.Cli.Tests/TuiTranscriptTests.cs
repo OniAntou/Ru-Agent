@@ -61,6 +61,22 @@ public sealed class TuiTranscriptTests
         new("act_1", kind, state, fileName, lineStart, lineEnd, symbol, count, added, removed, durationMs, safeCode, toolDisplay, null, null);
 
     [Fact]
+    public void Tool_line_keeps_width_with_accent_bar()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var line = TuiTranscript.ComposeToolLine(ToolLineStatus.Ok, "read", "app.cs:12-40", "+12 −4 · 340ms", 100);
+            Assert.Equal(100, TuiText.VisibleWidth(line));
+            Assert.Contains(TuiPalette.Paint("▌", TuiToken.Line), line);
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
     public void ComposeToolLine_FillsTheWidthAndAlignsColumns()
     {
         var line = TuiTranscript.ComposeToolLine(ToolLineStatus.Ok, "edit", "src/app.cs:12-40", "+12 -4 340ms", 80);

@@ -517,6 +517,8 @@ public sealed class TuiTranscript
         };
 
         var head = "  "
+            + TuiPalette.Paint("▌", TuiToken.Line)
+            + " "
             + TuiPalette.Paint(glyph, token)
             + " "
             + TuiPalette.Paint(verb.PadRight(VerbColumn), TuiToken.Brand2);

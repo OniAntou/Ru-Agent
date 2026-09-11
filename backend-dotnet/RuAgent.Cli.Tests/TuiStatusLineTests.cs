@@ -29,6 +29,26 @@ public sealed class TuiStatusLineTests
     }
 
     [Fact]
+    public void Thinking_row_uses_brand_frame_and_line_elapsed()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var status = new TuiStatusLine(new TuiSurface(new StringWriter()));
+            status.IsLive = true;
+            status.SetState(TuiRunState.Thinking);
+            status.SetElapsed(1.5);
+            var row = status.Compose(80);
+            Assert.Equal(80, TuiText.VisibleWidth(row));
+            Assert.Contains(TuiPalette.Code(TuiToken.Brand), row);
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
     public void LiveRow_IsSuppressedInsideTheStickyFooter()
     {
         var status = Create();

@@ -161,7 +161,7 @@ public sealed class TypeAheadSessionTests
 
         Assert.Equal(ComposerState.Queued, session.State);
         Assert.Contains("fix the parser", session.TopLabel, StringComparison.Ordinal);
-        Assert.Contains("sent when this turn ends", session.Hint, StringComparison.Ordinal);
+        Assert.Contains("sent when this run ends", session.Hint, StringComparison.Ordinal);
     }
 
     [Fact]

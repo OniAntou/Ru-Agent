@@ -137,7 +137,7 @@ public sealed class TuiStatusLine
             case TuiRunState.WaitingApproval:
                 return TuiPalette.Paint("▲ ", TuiToken.Warn) + TuiPalette.Paint("approval needed", TuiToken.Warn);
             case TuiRunState.Failed:
-                return TuiPalette.Paint("✗ ", TuiToken.Err) + TuiPalette.Paint("last turn failed", TuiToken.Err);
+                return TuiPalette.Paint("✗ ", TuiToken.Err) + TuiPalette.Paint("last run failed", TuiToken.Err);
             default:
                 var idle = TuiPalette.Paint("✓ ", TuiToken.Ok) + TuiPalette.Paint("idle", TuiToken.Meta);
                 if (_elapsedSeconds > 0)

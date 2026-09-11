@@ -145,7 +145,7 @@ public sealed class TuiStatusLineTests
         Assert.Contains("▲ approval needed", status.Compose(80), StringComparison.Ordinal);
 
         status.SetState(TuiRunState.Failed);
-        Assert.Contains("✗ last turn failed", status.Compose(80), StringComparison.Ordinal);
+        Assert.Contains("✗ last run failed", status.Compose(80), StringComparison.Ordinal);
     }
 
     [Theory]

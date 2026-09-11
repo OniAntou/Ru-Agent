@@ -47,7 +47,7 @@ public sealed class TypeAheadSession
         : QueueRejected
             ? "queue full · enter retries"
             : Queue.HasValue
-                ? "queued · sent when this turn ends"
+                ? "queued · sent when this run ends"
                 : "enter queues · esc cancels · ctrl+o expands";
 
     /// <summary>Composer top label: the queued prompt, or nothing.</summary>

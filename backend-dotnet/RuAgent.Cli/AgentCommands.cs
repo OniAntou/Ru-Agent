@@ -924,6 +924,18 @@ public sealed class AgentCommands
         string reasoningEffort = string.Empty;
         try
         {
+            var exePath = Environment.ProcessPath;
+            var exeStamp = exePath is not null && File.Exists(exePath)
+                ? File.GetLastWriteTimeUtc(exePath).ToString("O")
+                : "unknown";
+            Tui.TuiDebug.Log("build", $"exe={exePath} stamp={exeStamp}");
+        }
+        catch (Exception)
+        {
+            // Build stamp is diagnostics-only.
+        }
+        try
+        {
             var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
             backendName = settings.TryGetProperty("backend", out var b) && !string.IsNullOrWhiteSpace(b.GetString())
                 ? b.GetString()!
@@ -1060,7 +1072,7 @@ public sealed class AgentCommands
             _out.Flush();
             Tui.TuiDebug.Log(
                 "layout",
-                $"redraw rows={rows} width={width} tail={tail.Count} budget={budget}");
+                $"redraw rows={rows} width={width} tail={tail.Count} budget={budget} history={sessionRenderer.Surface.HistoryCount}");
         }
 
         void PaintStickyFooter()

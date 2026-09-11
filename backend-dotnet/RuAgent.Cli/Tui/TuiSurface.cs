@@ -16,6 +16,11 @@ public sealed class TuiSurface
     /// <summary>Lines kept so a rebuilt screen can show what it had on it.</summary>
     public const int HistoryCapacity = 2000;
 
+    /// <summary>Recorded lines, for rebuild diagnostics.</summary>
+    public int HistoryCount
+    {
+        get { lock (Gate) { return _history.Count; } }
+    }
     // One process, one console: a single gate serializes every component.
     private static readonly object Gate = new();
 

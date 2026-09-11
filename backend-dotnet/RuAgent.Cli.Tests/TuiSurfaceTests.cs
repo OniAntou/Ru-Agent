@@ -29,6 +29,30 @@ public sealed class TuiSurfaceTests
     }
 
     [Fact]
+    public void RepeatedRebuilds_DoNotGrowHistoryWithReprints()
+    {
+        // Simulates RedrawScreenForResize: volatile header reprint plus a raw
+        // tail replay must never feed copies back into the rebuild history,
+        // or every resize would print more headers than the last one.
+        var writer = new StringWriter();
+        var surface = new TuiSurface(writer) { SynchronizedOutput = false };
+
+        surface.WriteLine("◆ 19:46");
+        surface.WriteLine("Hello!");
+
+        for (var i = 0; i < 5; i++)
+        {
+            surface.WriteLineVolatile("✦ Ru · coding agent");
+            foreach (var line in surface.SnapshotTail(100, 80))
+            {
+                writer.WriteLine(line);
+            }
+        }
+
+        Assert.Equal(["◆ 19:46", "Hello!"], surface.SnapshotTail(1000, 80));
+    }
+
+    [Fact]
     public void SnapshotTail_ReturnsOnlyTheRequestedTail()
     {
         var surface = new TuiSurface(new StringWriter()) { SynchronizedOutput = false };

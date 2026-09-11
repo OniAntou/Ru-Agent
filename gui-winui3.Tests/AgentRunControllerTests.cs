@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
@@ -460,4 +461,104 @@ public sealed class AgentRunControllerTests
         Assert.False(controller.IsBusy);
         Assert.False(controller.CanCancel);
     }
+
+    [Fact]
+    public void Durable_approval_event_parses_the_approval_id_from_the_envelope()
+    {
+        const string approvalId = "apr_cccccccccccccccccccccccccccccccc";
+        var envelope = new HarnessSafeEventEnvelope(
+            ProtocolVersion: HarnessSafeEventEnvelope.CurrentProtocolVersion,
+            EventId: "evt_approval",
+            RunId: RunId,
+            SessionId: "sess_1",
+            Sequence: 4,
+            EventType: "approval.requested",
+            OccurredAt: "2026",
+            Status: "waiting_approval",
+            SafeSummary: "external_directory_required",
+            PayloadRef: null,
+            ApprovalId: approvalId);
+        var frame = new SseFrame(4, "message", JsonSerializer.Serialize(envelope), IsTransient: false, TransientSequence: null);
+
+        var model = AgentEventModel.FromSseFrame(frame);
+
+        Assert.Equal("approval.requested", model.EventType);
+        Assert.Equal(approvalId, model.ApprovalId);
+        Assert.False(model.IsTransient);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_tracks_a_pending_approval_while_the_run_waits()
+    {
+        const string approvalId = "apr_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingApprovalRun() };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-approval",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "approval.requested",
+            OccurredAt: "2026",
+            Status: "waiting_approval",
+            SafeSummary: "external_directory_required",
+            PayloadRef: null,
+            ApprovalId: approvalId,
+            Sequence: 3,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-approval"));
+
+        Assert.True(controller.HasPendingApproval);
+        Assert.Equal(approvalId, controller.PendingApprovalId);
+        Assert.Equal("external_directory_required", controller.PendingApprovalSummary);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_clears_a_pending_approval_when_the_run_reports_it_resolved()
+    {
+        const string approvalId = "apr_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingApprovalRun() };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-approval",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "approval.requested",
+            OccurredAt: "2026",
+            Status: "waiting_approval",
+            SafeSummary: "external_directory_required",
+            PayloadRef: null,
+            ApprovalId: approvalId,
+            Sequence: 3,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-resolved",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "run.state_changed",
+            OccurredAt: "2026",
+            Status: "running",
+            SafeSummary: "approval_resolved",
+            PayloadRef: null,
+            ApprovalId: null,
+            Sequence: 4,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-approval-resolved"));
+
+        Assert.False(controller.HasPendingApproval);
+        Assert.Null(controller.PendingApprovalSummary);
+    }
+
+    private static AgentRunModel WaitingApprovalRun() =>
+        AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
+            RunId, "sess_1", "ws_1", "waiting_approval", "standard", "2026", "2026"));
 }

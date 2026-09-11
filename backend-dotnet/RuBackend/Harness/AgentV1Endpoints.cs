@@ -448,14 +448,28 @@ try
 
                     if (!ct.IsCancellationRequested && !isTerminal)
                     {
-                        // Wait for next transient frame or cancellation instead of busy-polling
+                        // Wait for the next transient frame, but never indefinitely: a
+                        // durable event can be committed while the run has nothing live to
+                        // publish (the approval request parks the run in WaitingApproval
+                        // right after the last activity frame), and the client must still
+                        // receive it. Bound the wait by the poll interval and re-check the
+                        // durable store when it elapses.
                         if (hubLease is { } activeLease)
                         {
-                            await activeLease.Reader.WaitToReadAsync(ct);
+                            using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                            pollCts.CancelAfter(pollInterval);
+                            try
+                            {
+                                await activeLease.Reader.WaitToReadAsync(pollCts.Token);
+                            }
+                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                            {
+                                // Poll interval elapsed with no live frame; loop to flush durables.
+                            }
                         }
                         else
                         {
-                            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+                            await Task.Delay(pollInterval, ct);
                         }
                     }
                 }

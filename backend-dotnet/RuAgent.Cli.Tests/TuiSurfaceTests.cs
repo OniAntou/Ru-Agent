@@ -18,6 +18,17 @@ public sealed class TuiSurfaceTests
     }
 
     [Fact]
+    public void WriteLineVolatile_StaysOutOfTheRebuildHistory()
+    {
+        var surface = new TuiSurface(new StringWriter()) { SynchronizedOutput = false };
+
+        surface.WriteLine("kept");
+        surface.WriteLineVolatile("reprint");
+
+        Assert.Equal(["kept"], surface.SnapshotTail(10, 80));
+    }
+
+    [Fact]
     public void SnapshotTail_ReturnsOnlyTheRequestedTail()
     {
         var surface = new TuiSurface(new StringWriter()) { SynchronizedOutput = false };

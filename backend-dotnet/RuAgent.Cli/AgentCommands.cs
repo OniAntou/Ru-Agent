@@ -991,16 +991,6 @@ public sealed class AgentCommands
             ? Task.FromResult<string?>(null)
             : lineReader.ReadChoiceAsync(list, _out, ct);
 
-        void RenderHeader(bool empty) => Tui.TuiHeader.Render(
-            headerSurface,
-            Tui.TuiViewport.Width(),
-            canonicalWorkspace,
-            backendName,
-            activeModel,
-            cmd.Preset,
-            sessionId,
-            empty);
-
         // The composer reopens its own frame after a settled resize; this rebuilds everything
         // around it (region, header, transcript tail) so the new width applies end to end.
         // Always the full in-place rebuild, even without a sticky region: reprinting the
@@ -1023,24 +1013,31 @@ public sealed class AgentCommands
             sticky.Exit();
             sessionRenderer.Status.InFooter = false;
             sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[2J\u001b[H"));
-            RenderHeader(empty: false);
 
             // One capture per rebuild: the live size can keep moving mid-drag, and
             // mixing widths across header/tail/footer is what shreds the frame.
             var rows = Tui.TuiViewport.Height();
             var width = Tui.TuiViewport.Width();
             sessionRenderer.Width = width;
-            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
-                rows,
-                typeAhead.FooterHeight(width));
-            var headerHeight = Tui.TuiHeader.Compose(
+            var header = Tui.TuiHeader.Compose(
                 width,
                 canonicalWorkspace,
                 backendName,
                 activeModel,
                 cmd.Preset,
                 sessionId,
-                empty: false).Count;
+                empty: false);
+            // Volatile: reprints must not enter the surface history, or the next
+            // SnapshotTail would replay them and every rebuild would add headers.
+            foreach (var line in header)
+            {
+                sessionRenderer.Surface.WriteLineVolatile(line);
+            }
+
+            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
+                rows,
+                typeAhead.FooterHeight(width));
+            var headerHeight = header.Count;
             var budget = Math.Max(0, rows - headerHeight - footerHeight - 2);
             var tail = sessionRenderer.Surface.SnapshotTail(budget, width);
             foreach (var line in tail)

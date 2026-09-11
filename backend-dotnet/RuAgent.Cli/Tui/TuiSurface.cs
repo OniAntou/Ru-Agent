@@ -82,6 +82,21 @@ public sealed class TuiSurface
         }
     }
 
+    /// <summary>
+    /// Whole-line write that stays out of the rebuild history. Resize rebuilds reprint the
+    /// header and the transcript tail: recording those reprints would feed copies back into
+    /// <see cref="SnapshotTail"/>, so every rebuild would print more headers than the last
+    /// and grow the scrollback without bound.
+    /// </summary>
+    public void WriteLineVolatile(string text)
+    {
+        lock (Gate)
+        {
+            ClearCurrentRow(Writer);
+            Writer.WriteLine(text);
+        }
+    }
+
     public void Line()
     {
         lock (Gate)

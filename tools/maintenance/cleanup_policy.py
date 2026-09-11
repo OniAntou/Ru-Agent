@@ -188,6 +188,14 @@ def classify_path(
         or any(part in {"bin", "obj", "__pycache__", ".pytest_cache"} for part in parts)
         or any(part.endswith(".egg-info") for part in parts)
     ):
+        # A "bin"/"obj" name is not proof of generated content: `bin/ru.cmd` is
+        # tracked source, and deleting it is not recoverable by rebuilding.
+        if tracked:
+            return CleanupDecision(
+                CleanupCategory.PROTECTED,
+                "contains_tracked_paths",
+                "preserve",
+            )
         return CleanupDecision(CleanupCategory.REBUILDABLE, "generated_output", "rebuild")
 
     if any(_at_or_below(relative, root) for root in _LEGACY_ROOTS) or _LEGACY_NAME.search(

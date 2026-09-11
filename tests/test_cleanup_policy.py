@@ -113,6 +113,13 @@ def test_generated_paths_are_rebuildable(relative: str) -> None:
     assert decision.category is CleanupCategory.REBUILDABLE
 
 
+def test_generated_path_containing_tracked_content_is_protected() -> None:
+    for relative in ("bin", "bin/ru.cmd"):
+        decision = classify_path(relative, tracked=True, dirty_paths=frozenset())
+        assert decision.category is CleanupCategory.PROTECTED
+        assert decision.reason == "contains_tracked_paths"
+
+
 def test_vcpkg_requires_review_while_overlay_build_references_it() -> None:
     decision = classify_path(".tmp/vcpkg", tracked=False, dirty_paths=frozenset())
     assert decision.category is CleanupCategory.REVIEW_REQUIRED

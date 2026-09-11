@@ -8,7 +8,7 @@ namespace RuAgent.Cli.Tui;
 /// </summary>
 public sealed class TuiResizeWatcher
 {
-    public const int DefaultSettleMilliseconds = 180;
+    public const int DefaultSettleMilliseconds = 350;
 
     private readonly int _settleMilliseconds;
     private int _candidateColumns;

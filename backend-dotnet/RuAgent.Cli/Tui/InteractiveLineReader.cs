@@ -33,7 +33,7 @@ public sealed class InteractiveLineReader
     private const int MaxBoxWidth = 1000;
     private const int MinDropdownWidth = 24;
     private const int CommandColumnWidth = 11;
-    private const int ResizeDebounceMs = 120;
+    private const int ResizeDebounceMs = 250;
     private const int KeyPollMs = 20;
     private const int DefaultBoxWidth = 80;
     private const int MinConsoleWidth = 10;
@@ -577,6 +577,8 @@ public sealed class InteractiveLineReader
 
         int lastWidth = ComputeBoxWidth();
         int lastHeight = Console.IsOutputRedirected ? DefaultConsoleHeight : Console.WindowHeight;
+        int appliedWidth = lastWidth;
+        int appliedHeight = lastHeight;
         bool resizePending = false;
         var resizeDebounceWatch = new System.Diagnostics.Stopwatch();
 
@@ -584,6 +586,18 @@ public sealed class InteractiveLineReader
         {
             resizePending = false;
             resizeDebounceWatch.Reset();
+
+            var settledWidth = ComputeBoxWidth();
+            var settledHeight = Console.IsOutputRedirected ? DefaultConsoleHeight : Console.WindowHeight;
+            if (settledWidth == appliedWidth && settledHeight == appliedHeight)
+            {
+                // The spam ended where the layout already is: reopening the frame and
+                // rebuilding the screen would only flash identical content.
+                return;
+            }
+
+            appliedWidth = settledWidth;
+            appliedHeight = settledHeight;
 
             var cursorTop = Console.CursorTop;
 

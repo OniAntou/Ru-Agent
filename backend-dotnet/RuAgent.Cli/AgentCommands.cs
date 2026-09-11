@@ -1031,12 +1031,16 @@ public sealed class AgentCommands
             sessionRenderer.Surface.Repaint(writer => writer.Write("\u001b[r\u001b[2J\u001b[H"));
             RenderHeader(empty: false);
 
+            // One capture per rebuild: the live size can keep moving mid-drag, and
+            // mixing widths across header/tail/footer is what shreds the frame.
             var rows = Tui.TuiViewport.Height();
+            var width = Tui.TuiViewport.Width();
+            sessionRenderer.Width = width;
             var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(
                 rows,
-                typeAhead.FooterHeight(Tui.TuiViewport.Width()));
+                typeAhead.FooterHeight(width));
             var headerHeight = Tui.TuiHeader.Compose(
-                Tui.TuiViewport.Width(),
+                width,
                 canonicalWorkspace,
                 backendName,
                 activeModel,
@@ -1044,7 +1048,7 @@ public sealed class AgentCommands
                 sessionId,
                 empty: false).Count;
             var budget = Math.Max(0, rows - headerHeight - footerHeight - 2);
-            var tail = sessionRenderer.Surface.SnapshotTail(budget, Tui.TuiViewport.Width());
+            var tail = sessionRenderer.Surface.SnapshotTail(budget, width);
             foreach (var line in tail)
             {
                 _out.WriteLine(line);
@@ -1053,7 +1057,7 @@ public sealed class AgentCommands
             _out.Flush();
             Tui.TuiDebug.Log(
                 "layout",
-                $"redraw rows={rows} width={Tui.TuiViewport.Width()} tail={tail.Count} budget={budget}");
+                $"redraw rows={rows} width={width} tail={tail.Count} budget={budget}");
         }
 
         void PaintStickyFooter()
@@ -1101,7 +1105,8 @@ public sealed class AgentCommands
             }
 
             var rows = Tui.TuiViewport.Height();
-            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(rows, typeAhead.FooterHeight(Tui.TuiViewport.Width()));
+            var width = Tui.TuiViewport.Width();
+            var footerHeight = Tui.TuiStickyRegion.ResolveFooterHeight(rows, typeAhead.FooterHeight(width));
             if (footerHeight == 0)
             {
                 sticky.Exit();
@@ -1111,10 +1116,10 @@ public sealed class AgentCommands
             }
 
             var applied = !sticky.Active
-                ? sticky.Enter(rows, footerHeight)
-                : sticky.Rows == rows && sticky.FooterHeight == footerHeight
+                ? sticky.Enter(rows, footerHeight, width)
+                : sticky.Rows == rows && sticky.Width == width && sticky.FooterHeight == footerHeight
                     ? true
-                    : sticky.Reapply(rows, footerHeight);
+                    : sticky.Reapply(rows, footerHeight, width);
 
             if (!applied)
             {

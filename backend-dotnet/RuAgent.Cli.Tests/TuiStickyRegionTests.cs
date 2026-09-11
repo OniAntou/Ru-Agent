@@ -37,7 +37,7 @@ public sealed class TuiStickyRegionTests
         var writer = new StringWriter();
         var region = Create(writer);
 
-        Assert.True(region.Enter(30, 4));
+        Assert.True(region.Enter(30, 4, 40));
 
         Assert.Equal("\u001b[1;26r", writer.ToString());
         Assert.True(region.Active);
@@ -49,7 +49,7 @@ public sealed class TuiStickyRegionTests
         var writer = new StringWriter();
         var region = Create(writer);
 
-        Assert.False(region.Enter(5, 4));
+        Assert.False(region.Enter(5, 4, 40));
 
         Assert.Equal(string.Empty, writer.ToString());
         Assert.False(region.Active);
@@ -60,7 +60,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Exit();
@@ -98,7 +98,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Exit();
@@ -112,10 +112,10 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
-        Assert.True(region.Reapply(20, 4));
+        Assert.True(region.Reapply(20, 4, 40));
 
         var text = writer.ToString();
         Assert.StartsWith("\u001b[r", text, StringComparison.Ordinal);
@@ -129,10 +129,10 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
-        Assert.False(region.Reapply(4, 4));
+        Assert.False(region.Reapply(4, 4, 40));
 
         Assert.False(region.Active);
         Assert.Contains("\u001b[r", writer.ToString(), StringComparison.Ordinal);
@@ -143,11 +143,11 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         region.Exit();
         writer.GetStringBuilder().Clear();
 
-        Assert.True(region.Reapply(24, 3));
+        Assert.True(region.Reapply(24, 3, 40));
 
         Assert.Equal("\u001b[1;21r", writer.ToString());
     }
@@ -157,7 +157,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         region.Exit();
         writer.GetStringBuilder().Clear();
 
@@ -171,7 +171,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Paint(["a"], 40);
@@ -188,7 +188,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Paint(["row-a", "row-b"], 40);
@@ -206,7 +206,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Paint([new string('x', 100)], 20);
@@ -222,7 +222,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Paint(["status", "composer", "hint"], 40, caretRowInFooter: 2, caretColumn: 9);
@@ -235,7 +235,7 @@ public sealed class TuiStickyRegionTests
     {
         var writer = new StringWriter();
         var region = Create(writer);
-        region.Enter(30, 4);
+        region.Enter(30, 4, 40);
         writer.GetStringBuilder().Clear();
 
         region.Paint(["status"], 40, caretRowInFooter: 99, caretColumn: 3);
@@ -244,13 +244,44 @@ public sealed class TuiStickyRegionTests
     }
 
     [Theory]
-    [InlineData(30, true, 30, false)]
-    [InlineData(30, true, 47, true)]
-    [InlineData(30, true, 20, true)]
-    [InlineData(30, false, 0, false)]
-    public void LayoutIsStale_ComparesTheRegionWithTheLiveHeight(int regionRows, bool hasLiveSize, int liveRows, bool expected)
+    [InlineData(30, 80, true, 30, 80, false)]
+    [InlineData(30, 80, true, 47, 80, true)]
+    [InlineData(30, 80, true, 20, 80, true)]
+    [InlineData(30, 80, true, 30, 100, true)]
+    [InlineData(30, 80, true, 30, 60, true)]
+    [InlineData(30, 80, false, 0, 0, false)]
+    public void LayoutIsStale_ComparesTheRegionWithTheLiveSize(int regionRows, int regionCols, bool hasLiveSize, int liveRows, int liveCols, bool expected)
     {
-        Assert.Equal(expected, TuiStickyRegion.LayoutIsStale(regionRows, hasLiveSize, liveRows));
+        Assert.Equal(expected, TuiStickyRegion.LayoutIsStale(regionRows, regionCols, hasLiveSize, liveRows, liveCols));
+    }
+
+    [Fact]
+    public void Paint_SkipsLinesComposedForAnotherWidth()
+    {
+        var writer = new StringWriter();
+        var region = Create(writer);
+        region.Enter(30, 4, 40);
+        writer.GetStringBuilder().Clear();
+
+        region.Paint(["row"], 80);
+
+        Assert.Equal(string.Empty, writer.ToString());
+    }
+
+    [Fact]
+    public void Reapply_TracksTheRebuiltWidth()
+    {
+        var writer = new StringWriter();
+        var region = Create(writer);
+        region.Enter(30, 4, 40);
+
+        Assert.True(region.Reapply(30, 4, 100));
+        Assert.Equal(100, region.Width);
+
+        writer.GetStringBuilder().Clear();
+        region.Paint(["row"], 120);
+
+        Assert.Equal(string.Empty, writer.ToString());
     }
 
     [Fact]

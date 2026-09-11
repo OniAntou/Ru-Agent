@@ -27,6 +27,10 @@ public sealed class TuiStickyRegion
     /// <summary>Rows the region was built for.</summary>
     public int Rows { get; private set; }
 
+    /// <summary>Columns the region was built for. A width-only resize also
+    /// invalidates the pinned rows: old-width lines wrap mid-drag.</summary>
+    public int Width { get; private set; }
+
     public int FooterHeight { get; private set; }
 
     /// <summary>First row owned by the footer, or zero when inactive.</summary>
@@ -54,7 +58,7 @@ public sealed class TuiStickyRegion
     }
 
     /// <summary>Enters the region for a fresh layout. Does not clear the screen.</summary>
-    public bool Enter(int rows, int footerHeight)
+    public bool Enter(int rows, int footerHeight, int width)
     {
         var (_, bottom) = Compute(rows, footerHeight);
         if (bottom == 0)
@@ -64,6 +68,7 @@ public sealed class TuiStickyRegion
         }
 
         Rows = rows;
+        Width = width;
         FooterHeight = footerHeight;
         FooterFirst = bottom + 1;
         Active = true;
@@ -77,7 +82,7 @@ public sealed class TuiStickyRegion
     /// reset, whatever the old footer painted is erased, and the new region is installed.
     /// Never addresses a row below the live viewport.
     /// </summary>
-    public bool Reapply(int rows, int footerHeight)
+    public bool Reapply(int rows, int footerHeight, int width)
     {
         var (_, bottom) = Compute(rows, footerHeight);
         if (bottom == 0)
@@ -88,11 +93,12 @@ public sealed class TuiStickyRegion
 
         if (!Active)
         {
-            return Enter(rows, footerHeight);
+            return Enter(rows, footerHeight, width);
         }
 
         var previousFirst = FooterFirst;
         Rows = rows;
+        Width = width;
         FooterHeight = footerHeight;
         FooterFirst = bottom + 1;
         Active = true;
@@ -120,6 +126,7 @@ public sealed class TuiStickyRegion
         var first = FooterFirst;
         Active = false;
         Rows = 0;
+        Width = 0;
         FooterHeight = 0;
         FooterFirst = 0;
 
@@ -132,12 +139,13 @@ public sealed class TuiStickyRegion
     }
 
     /// <summary>
-    /// True when the region was built for a different terminal height than the live one. While
-    /// that holds, nothing may paint: the window has already moved underneath the layout, and a
-    /// window that grew leaves the old bottom rows in the middle of the transcript.
+    /// True when the region was built for a different terminal size than the live one.
+    /// While that holds, nothing may paint: the window has already moved underneath the
+    /// layout, and a window that grew leaves the old bottom rows in the middle of the
+    /// transcript. Width counts too: old-width rows wrap mid-drag and shred the frame.
     /// </summary>
-    public static bool LayoutIsStale(int regionRows, bool hasLiveSize, int liveRows) =>
-        hasLiveSize && liveRows != regionRows;
+    public static bool LayoutIsStale(int regionRows, int regionCols, bool hasLiveSize, int liveRows, int liveCols) =>
+        hasLiveSize && (liveRows != regionRows || liveCols != regionCols);
 
     /// <summary>
     /// Draws every footer row at its fixed position and restores the transcript cursor. When
@@ -157,9 +165,17 @@ public sealed class TuiStickyRegion
             return;
         }
 
-        if (LayoutIsStale(Rows, TuiViewport.TryReadLiveSize(out _, out var liveRows), liveRows))
+        if (LayoutIsStale(Rows, Width, TuiViewport.TryReadLiveSize(out var liveCols, out var liveRows), liveRows, liveCols))
         {
-            TuiDebug.Log("sticky", $"paint skipped stale rows={Rows} live={liveRows}");
+            TuiDebug.Log("sticky", $"paint skipped stale rows={Rows} cols={Width} live={liveCols}x{liveRows}");
+            return;
+        }
+
+        if (width > Width)
+        {
+            // Lines composed wider than the built region would wrap mid-frame.
+            // Narrower lines are harmless and keep the footer alive.
+            TuiDebug.Log("sticky", $"paint skipped width mismatch built={Width} got={width}");
             return;
         }
 

@@ -623,8 +623,10 @@ public sealed class InteractiveLineReader
                 }
             }
 
-            await PushToBottomAsync(outWriter).ConfigureAwait(false);
-
+            // The rebuild below repaints in place from the top (clear, header,
+            // transcript tail) and reopens the frame where it leaves the cursor:
+            // pushing extra newlines here would scroll a copy of the screen into
+            // the scrollback on every settled resize (see RedrawScreenForResize).
             var text = buffer.ToString();
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();

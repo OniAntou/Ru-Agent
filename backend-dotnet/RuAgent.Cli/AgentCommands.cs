@@ -1003,17 +1003,11 @@ public sealed class AgentCommands
 
         // The composer reopens its own frame after a settled resize; this rebuilds everything
         // around it (region, header, transcript tail) so the new width applies end to end.
+        // Always the full in-place rebuild, even without a sticky region: reprinting the
+        // header as appended lines is what used to grow the scrollback on every resize.
         lineReader.OnScreenRefreshedAsync = () =>
         {
-            if (stickyEnabled)
-            {
-                RedrawScreenForResize();
-            }
-            else
-            {
-                RenderHeader(empty: false);
-            }
-
+            RedrawScreenForResize();
             return Task.CompletedTask;
         };
 
@@ -1052,6 +1046,18 @@ public sealed class AgentCommands
             foreach (var line in tail)
             {
                 _out.WriteLine(line);
+            }
+
+            // Pin the reopened composer to the bottom without scrolling: pad with
+            // blank rows up to the box top via raw writes (kept out of the surface
+            // history). Newlines only scroll past the last viewport row, so this
+            // never grows the scrollback. PushToBottomAsync must stay out of this
+            // path: it unconditionally emits newlines at the bottom row.
+            var boxTop = Math.Max(1, rows - Tui.ComposerBox.Height + 1);
+            var cursorRow = headerHeight + tail.Count + 1;
+            for (var i = cursorRow; i < boxTop; i++)
+            {
+                _out.WriteLine();
             }
 
             _out.Flush();

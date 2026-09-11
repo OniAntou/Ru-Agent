@@ -24,6 +24,15 @@ public sealed class TuiHeaderTests
     }
 
     [Fact]
+    public void NonEmpty_header_keeps_four_rows_and_exact_width()
+    {
+        var lines = TuiHeader.Compose(100, @"D:\LLM", "opencode", "gpt-sol", "standard", "abcdef123456", empty: false);
+
+        Assert.Equal(4, lines.Count);
+        Assert.All(lines, line => Assert.Equal(100, TuiText.VisibleWidth(line)));
+    }
+
+    [Fact]
     public void Compose_RendersIdentityContextRuleAndHints()
     {
         var lines = TuiHeader.Compose(100, @"D:\LLM", "Kilo Gateway", "gpt-5-codex", "standard", "a2026184", empty: false);

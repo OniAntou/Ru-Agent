@@ -38,7 +38,7 @@ public static class TuiHeader
         }
 
         var left = TuiPalette.Paint("✦ Ru", TuiToken.Brand) + TuiPalette.Paint(" · coding agent", TuiToken.Meta);
-        var session = string.IsNullOrWhiteSpace(sessionId) ? string.Empty : TuiPalette.Paint(ShortSession(sessionId), TuiToken.Line);
+        var session = string.IsNullOrWhiteSpace(sessionId) ? string.Empty : TuiPalette.Paint(ShortSession(sessionId), TuiToken.Meta);
         lines.Add(TwoColumn(left, session, width));
 
         var context = ShortenWorkspace(workspace, Math.Max(8, width / 2));

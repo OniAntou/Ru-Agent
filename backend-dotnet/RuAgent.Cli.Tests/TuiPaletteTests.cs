@@ -51,7 +51,7 @@ public sealed class TuiPaletteTests
         {
             Assert.Equal("\u001b[94m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[96m", TuiPalette.Code(TuiToken.Brand2));
-            Assert.Equal("\u001b[90m", TuiPalette.Code(TuiToken.Meta));
+            Assert.Equal("\u001b[37m", TuiPalette.Code(TuiToken.Meta));
             Assert.Equal("\u001b[90m", TuiPalette.Code(TuiToken.Line));
             Assert.Equal("\u001b[92m", TuiPalette.Code(TuiToken.Ok));
             Assert.Equal("\u001b[93m", TuiPalette.Code(TuiToken.Warn));
@@ -106,6 +106,23 @@ public sealed class TuiPaletteTests
         finally
         {
             TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
+    public void Line_token_is_deeper_than_meta_at_all_levels()
+    {
+        foreach (var level in new[] { TuiColorLevel.TrueColor, TuiColorLevel.Palette256, TuiColorLevel.Basic16 })
+        {
+            TuiPalette.Level = level;
+            try
+            {
+                Assert.NotEqual(TuiPalette.Code(TuiToken.Line), TuiPalette.Code(TuiToken.Meta));
+            }
+            finally
+            {
+                TuiPalette.ResetLevel();
+            }
         }
     }
 

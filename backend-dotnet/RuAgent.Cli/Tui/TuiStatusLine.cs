@@ -23,7 +23,6 @@ public sealed class TuiStatusLine
     private string? _activity;
     private string? _detail;
     private double _elapsedSeconds;
-    private int _turn;
     private long? _tokens;
     private int _tools;
 
@@ -51,9 +50,8 @@ public sealed class TuiStatusLine
 
     public void SetElapsed(double seconds) => _elapsedSeconds = seconds < 0 ? 0 : seconds;
 
-    public void SetCounters(int turn, long? tokens, int tools)
+    public void SetCounters(long? tokens, int tools)
     {
-        _turn = turn;
         _tokens = tokens;
         _tools = tools;
     }
@@ -159,11 +157,6 @@ public sealed class TuiStatusLine
     private string ComposeRight(int width)
     {
         var parts = new List<string>();
-        if (_turn > 0)
-        {
-            parts.Add($"turn {_turn}");
-        }
-
         if (_tokens is { } tokens)
         {
             parts.Add("⇣" + FormatTokens(tokens));

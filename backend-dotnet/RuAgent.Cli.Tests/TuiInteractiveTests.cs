@@ -85,7 +85,7 @@ public sealed class TuiInteractiveTests
         TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
-        renderer.BeginTurn(6);
+        renderer.BeginTurn();
 
         var failEnv = new HarnessSafeEventEnvelope(
             ProtocolVersion: 1,
@@ -102,7 +102,7 @@ public sealed class TuiInteractiveTests
 
         var output = sw.ToString();
         Assert.Contains("✗", output, StringComparison.Ordinal);
-        Assert.Contains("turn 6", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("turn ", output, StringComparison.Ordinal);
         Assert.Contains("provider_rate_limited", output, StringComparison.Ordinal);
         Assert.Contains("/model", output, StringComparison.Ordinal);
     }
@@ -228,7 +228,7 @@ public sealed class TuiInteractiveTests
         TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
-        renderer.BeginTurn(1);
+        renderer.BeginTurn();
 
         renderer.RenderFrame(ActivityFrame(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
         renderer.RenderFrame(ActivityFrame(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md"));
@@ -246,7 +246,7 @@ public sealed class TuiInteractiveTests
         TuiPalette.Level = TuiColorLevel.None;
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
-        renderer.BeginTurn(1);
+        renderer.BeginTurn();
 
         renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Started, fileName: "app.cs"));
         renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Completed, fileName: "app.cs", durationMs: 120));
@@ -616,11 +616,12 @@ public sealed class TuiInteractiveTests
         using var sw = new StringWriter();
         var renderer = new TuiSessionRenderer(sw);
 
-        renderer.BeginTurn(4);
+        renderer.BeginTurn();
         renderer.EndTurn();
         renderer.EndTurn(); // second stop must no-op safely
 
-        Assert.Contains("turn 4", sw.ToString(), StringComparison.Ordinal);
+        Assert.Contains("◆", sw.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("turn", sw.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

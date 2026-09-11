@@ -113,10 +113,10 @@ public sealed class TuiTranscriptTests
     [Fact]
     public void ComposeFailure_AddsOneActionableRemedyLine()
     {
-        var lines = TuiTranscript.ComposeFailure(3, 6.1, "provider_rate_limited");
+        var lines = TuiTranscript.ComposeFailure(6.1, "provider_rate_limited");
 
         Assert.Equal(2, lines.Count);
-        Assert.Contains("turn 3", lines[0], StringComparison.Ordinal);
+        Assert.DoesNotContain("turn", lines[0], StringComparison.Ordinal);
         Assert.Contains("6.1s", lines[0], StringComparison.Ordinal);
         Assert.Contains("provider_rate_limited", lines[0], StringComparison.Ordinal);
         Assert.Contains("/model", lines[1], StringComparison.Ordinal);
@@ -125,7 +125,7 @@ public sealed class TuiTranscriptTests
     [Fact]
     public void ComposeFailure_StaysSingleLineForUnknownCodes()
     {
-        Assert.Single(TuiTranscript.ComposeFailure(1, 0.5, "some_new_code"));
+        Assert.Single(TuiTranscript.ComposeFailure(0.5, "some_new_code"));
     }
 
     [Theory]
@@ -138,11 +138,11 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void BuildFooter_JoinsTurnFactsWithTheSummaryDetail()
+    public void BuildFooter_JoinsFactsWithTheSummaryDetail()
     {
-        var footer = TuiTranscript.BuildFooter(3, 18.4, 4, "3 files changed · verified");
+        var footer = TuiTranscript.BuildFooter(18.4, 4, "3 files changed · verified");
 
-        Assert.Contains("turn 3", footer, StringComparison.Ordinal);
+        Assert.DoesNotContain("turn", footer, StringComparison.Ordinal);
         Assert.Contains("18.4s", footer, StringComparison.Ordinal);
         Assert.Contains("4 tools", footer, StringComparison.Ordinal);
         Assert.Contains("3 files changed · verified", footer, StringComparison.Ordinal);
@@ -160,7 +160,7 @@ public sealed class TuiTranscriptTests
     public void SettledTool_UsesTheCapturedActivityDetail()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyActivity(Activity(AgentActivityKind.Edit, AgentActivityState.Started, "src/app.cs", 12, 40, added: 12, removed: 4, toolDisplay: "Edit"));
         transcript.ApplyActivity(Activity(AgentActivityKind.Edit, AgentActivityState.Completed, "src/app.cs", 12, 40, added: 12, removed: 4, durationMs: 340, toolDisplay: "Edit"));
         transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok"));
@@ -177,7 +177,7 @@ public sealed class TuiTranscriptTests
     public void SettledTool_DegradesToTheSafeCodeWhenNoActivityWasCaptured()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "read_only"));
 
         var toolRow = Assert.Single(Rows(output), row => row.Contains('✓'));
@@ -189,7 +189,7 @@ public sealed class TuiTranscriptTests
     public void SettledTool_MarksFailuresFromEitherStream()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Started, toolDisplay: "Terminal"));
         transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Failed, durationMs: 2300, toolDisplay: "Terminal"));
         transcript.ApplyDurable(Durable("tool.execution_completed", "failed", "exit_1"));
@@ -201,7 +201,7 @@ public sealed class TuiTranscriptTests
     public void DurableCompletionWithoutASettledToolNeverLosesTheRecord()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok"));
         transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "ok", sequence: 6));
 
@@ -212,7 +212,7 @@ public sealed class TuiTranscriptTests
     public void DiffBlock_IsBoundedAndOffersExpansion()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         var diff = string.Join("\n", Enumerable.Range(0, 20).Select(i => $"+line {i}"));
         transcript.ApplyDiffText(diff, 80);
 
@@ -241,14 +241,13 @@ public sealed class TuiTranscriptTests
     public void RunSummary_FeedsTheTurnFooter()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(3);
+        transcript.BeginTurn();
         transcript.ApplySummary(new AgentRunSummaryWire("completed", "verified", "LLM", 40, 3, 1, 0));
         transcript.ApplyDurable(Durable("run.completed", "succeeded", "ok"));
         transcript.EndTurn();
 
         Assert.Contains(Rows(output), row =>
-            row.Contains("turn 3", StringComparison.Ordinal)
-            && row.Contains("3 files changed", StringComparison.Ordinal)
+            row.Contains("3 files changed", StringComparison.Ordinal)
             && row.Contains("1 created", StringComparison.Ordinal)
             && row.Contains("verified", StringComparison.Ordinal));
     }
@@ -257,12 +256,12 @@ public sealed class TuiTranscriptTests
     public void FailedTurn_PrintsTheCodeAndRemedy()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(3);
+        transcript.BeginTurn();
         transcript.ApplyDurable(Durable("run.failed", "failed", "provider_rate_limited"));
         transcript.EndTurn();
 
         var rows = Rows(output);
-        Assert.Contains(rows, row => row.Contains("✗ turn 3", StringComparison.Ordinal) && row.Contains("provider_rate_limited", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains('✗') && row.Contains("provider_rate_limited", StringComparison.Ordinal));
         Assert.Contains(rows, row => row.Contains("/model", StringComparison.Ordinal));
     }
 
@@ -270,7 +269,7 @@ public sealed class TuiTranscriptTests
     public void AbortedTurn_StopsSilently()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(2);
+        transcript.BeginTurn();
         transcript.EndTurn();
 
         Assert.DoesNotContain(Rows(output), row => row.Contains('✓') || row.Contains('✗'));
@@ -280,7 +279,7 @@ public sealed class TuiTranscriptTests
     public void AssistantText_StreamsVerbatimAndSwallowsToolMarkers()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.AppendAssistant("checking now\n");
         transcript.AppendAssistant("<tool_call>{\"tool\":\"read\"}</tool_call>");
         transcript.Flush();
@@ -295,7 +294,7 @@ public sealed class TuiTranscriptTests
     public void Notices_RenderCompactionAndRetryAsSingleMutedRows()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyActivity(Activity(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
         transcript.ApplyActivity(Activity(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md", count: 2));
 
@@ -308,7 +307,7 @@ public sealed class TuiTranscriptTests
     public void ThinkingActivity_DrivesTheLiveRowInsteadOfTheTranscript()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyActivity(Activity(AgentActivityKind.Thinking, AgentActivityState.Started));
 
         Assert.DoesNotContain(Rows(output), row => row.Contains("Thinking", StringComparison.Ordinal));
@@ -318,22 +317,26 @@ public sealed class TuiTranscriptTests
     public void BeginTurn_PrintsOneTurnHeader()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(7);
+        transcript.BeginTurn();
 
         var rows = Rows(output);
-        Assert.Contains(rows, row => row.Contains("◆", StringComparison.Ordinal) && row.Contains("turn 7", StringComparison.Ordinal));
+        var header = Assert.Single(rows, row => row.Contains("◆", StringComparison.Ordinal));
+        Assert.DoesNotContain("turn", header, StringComparison.Ordinal);
     }
 
     [Fact]
     public void BeginTurn_ResetsPerTurnState()
     {
         var (transcript, output) = Create();
-        transcript.BeginTurn(1);
+        transcript.BeginTurn();
         transcript.ApplyDurable(Durable("run.failed", "failed", "boom"));
-        transcript.BeginTurn(2);
+        transcript.BeginTurn();
         transcript.EndTurn();
 
-        Assert.DoesNotContain(Rows(output).SkipWhile(row => !row.Contains("turn 2", StringComparison.Ordinal)), row => row.Contains("boom", StringComparison.Ordinal));
+        var all = Rows(output).ToList();
+        var lastHeader = all.FindLastIndex(row => row.Contains("◆", StringComparison.Ordinal));
+        Assert.True(lastHeader >= 0, "turn header missing");
+        Assert.DoesNotContain(all.Skip(lastHeader + 1), row => row.Contains("boom", StringComparison.Ordinal));
         _ = Empty;
     }
 }

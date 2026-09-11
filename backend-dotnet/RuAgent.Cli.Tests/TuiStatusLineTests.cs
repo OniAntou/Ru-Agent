@@ -23,7 +23,7 @@ public sealed class TuiStatusLineTests
         status.SetState(TuiRunState.Tool);
         status.SetActivity("Edit src/app.cs:12-40");
         status.SetElapsed(1.1);
-        status.SetCounters(3, 12400, 4);
+        status.SetCounters(12400, 4);
 
         Assert.Equal(width, TuiText.VisibleWidth(status.Compose(width)));
     }
@@ -66,13 +66,13 @@ public sealed class TuiStatusLineTests
         var status = Create();
         status.SetState(TuiRunState.Thinking);
         status.SetElapsed(2.1);
-        status.SetCounters(3, 12400, 4);
+        status.SetCounters(12400, 4);
 
         var text = status.Compose(80);
 
         Assert.Contains("Thinking", text, StringComparison.Ordinal);
         Assert.Contains("2.1s", text, StringComparison.Ordinal);
-        Assert.Contains("turn 3", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("turn", text, StringComparison.Ordinal);
         Assert.Contains("⇣12.4k", text, StringComparison.Ordinal);
         Assert.Contains("4 tools", text, StringComparison.Ordinal);
     }
@@ -106,7 +106,7 @@ public sealed class TuiStatusLineTests
         var status = Create();
         status.SetState(TuiRunState.Thinking);
         status.SetElapsed(1.0);
-        status.SetCounters(3, 12400, 4);
+        status.SetCounters(12400, 4);
 
         var narrow = status.Compose(40);
 
@@ -115,12 +115,12 @@ public sealed class TuiStatusLineTests
     }
 
     [Fact]
-    public void Compose_IdleShowsTheLastTurnSummary()
+    public void Compose_IdleShowsTheLastRunSummary()
     {
         var status = Create();
         status.SetElapsed(18.4);
         status.SetDetail("3 files changed");
-        status.SetCounters(3, 12400, 4);
+        status.SetCounters(12400, 4);
 
         var text = status.Compose(80);
 

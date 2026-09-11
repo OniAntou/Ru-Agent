@@ -1425,13 +1425,13 @@ public sealed class AgentCommands
             {
                 turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 sessionRenderer.Width = Tui.TuiViewport.Width();
-                sessionRenderer.Status.SetCounters(turn, lastTotalTokens, 0);
+                sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                 if (ApplyFooterLayout(repaint: true))
                 {
                     await StartTypeAheadAsync().ConfigureAwait(false);
                 }
 
-                sessionRenderer.BeginTurn(turn);
+                sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
                 if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase)
@@ -1549,7 +1549,7 @@ public sealed class AgentCommands
                                 if (usageEnvelope?.TotalTokens is { } total)
                                 {
                                     lastTotalTokens = total;
-                                    sessionRenderer.Status.SetCounters(turn, lastTotalTokens, 0);
+                                    sessionRenderer.Status.SetCounters(lastTotalTokens, 0);
                                 }
                             }
                             catch (System.Text.Json.JsonException)

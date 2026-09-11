@@ -41,7 +41,6 @@ public sealed class TuiTranscript
     private string _lineBuffer = string.Empty;
     private bool _inToolBlock;
     private bool _atLineStart = true;
-    private int _turn;
     private int _toolsSettled;
     private string? _terminalCode;
     private string? _summaryDetail;
@@ -69,9 +68,8 @@ public sealed class TuiTranscript
 
     private sealed record ToolDetail(string Verb, string? Target, int? Added, int? Removed, int? DurationMs, bool Failed);
 
-    public void BeginTurn(int turn)
+    public void BeginTurn()
     {
-        _turn = turn;
         _toolsSettled = 0;
         _hasStreamedDelta = false;
         _lineBuffer = string.Empty;
@@ -87,7 +85,7 @@ public sealed class TuiTranscript
         _surface.Line();
         WriteLines(
             TuiPalette.Paint("  ◆ ", TuiToken.Brand)
-            + TuiPalette.Paint($"turn {turn} · {DateTime.Now:HH:mm}", TuiToken.Meta),
+            + TuiPalette.Paint($"{DateTime.Now:HH:mm}", TuiToken.Meta),
             TuiPalette.Paint("  │", TuiToken.Line));
     }
 
@@ -757,16 +755,16 @@ public sealed class TuiTranscript
         switch (outcome)
         {
             case TuiTurnOutcome.Completed:
-                WriteLines(BuildFooter(_turn, seconds, _toolsSettled, _summaryDetail));
+                WriteLines(BuildFooter(seconds, _toolsSettled, _summaryDetail));
                 break;
             case TuiTurnOutcome.Cancelled:
                 WriteLines(
                     TuiPalette.Paint("  ✗ ", TuiToken.Err)
-                    + TuiPalette.Paint($"turn {_turn} · {TuiStatusLine.FormatElapsed(seconds)} · cancelled", TuiToken.Meta));
+                    + TuiPalette.Paint($"{TuiStatusLine.FormatElapsed(seconds)} · cancelled", TuiToken.Meta));
                 break;
             default:
                 _surface.WriteBlock(
-                    ComposeFailure(_turn, seconds, errorCode ?? _terminalCode ?? "run_failed"),
+                    ComposeFailure(seconds, errorCode ?? _terminalCode ?? "run_failed"),
                     _status.LiveRow(Width));
                 break;
         }
@@ -777,11 +775,10 @@ public sealed class TuiTranscript
         _pendingTools.Clear();
     }
 
-    public static string BuildFooter(int turn, double seconds, int tools, string? detail)
+    public static string BuildFooter(double seconds, int tools, string? detail)
     {
         var parts = new List<string>
         {
-            $"turn {turn}",
             TuiStatusLine.FormatElapsed(seconds),
             tools == 1 ? "1 tool" : $"{tools} tools",
         };
@@ -796,12 +793,12 @@ public sealed class TuiTranscript
     }
 
     /// <summary>Failure line plus a single actionable remedy line.</summary>
-    public static IReadOnlyList<string> ComposeFailure(int turn, double seconds, string code)
+    public static IReadOnlyList<string> ComposeFailure(double seconds, string code)
     {
         var lines = new List<string>
         {
             TuiPalette.Paint("  ✗ ", TuiToken.Err)
-            + TuiPalette.Paint($"turn {turn} · {TuiStatusLine.FormatElapsed(seconds)} · ", TuiToken.Meta)
+            + TuiPalette.Paint($"{TuiStatusLine.FormatElapsed(seconds)} · ", TuiToken.Meta)
             + TuiPalette.Paint(code, TuiToken.Err),
         };
 

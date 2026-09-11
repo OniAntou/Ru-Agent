@@ -104,7 +104,7 @@ public sealed class TuiTurnSnapshotTests
     {
         var (renderer, output) = Create();
         renderer.Width = 80;
-        renderer.BeginTurn(3);
+        renderer.BeginTurn();
 
         renderer.RenderFrame(Activity("thinking", "started", 1));
         renderer.RenderFrame(Delta("Để em xem renderer trước nhé.\n", 2));
@@ -167,11 +167,11 @@ public sealed class TuiTurnSnapshotTests
         var rows = Rows(output);
         var indexOf = new Func<string, int>(needle => rows.ToList().FindIndex(row => row.Contains(needle, StringComparison.Ordinal)));
 
-        var turnHeader = indexOf("◆ turn 3");
+        var turnHeader = indexOf("◆");
         var prose = indexOf("Để em xem renderer trước nhé.");
         var read = indexOf("✓ view");
         var edit = indexOf("✓ edit");
-        var footer = indexOf("✓ turn 3");
+        var footer = rows.ToList().FindLastIndex(row => row.Contains("✓", StringComparison.Ordinal) && row.Contains("2 tools", StringComparison.Ordinal));
 
         Assert.True(turnHeader >= 0, "turn header missing");
         Assert.True(turnHeader < prose, "prose must follow the turn header");
@@ -185,7 +185,7 @@ public sealed class TuiTurnSnapshotTests
     {
         var (output, _) = PlayTurn();
 
-        var footer = Rows(output).Single(row => row.Contains("✓ turn 3", StringComparison.Ordinal));
+        var footer = Rows(output).Single(row => row.Contains("✓", StringComparison.Ordinal) && row.Contains("2 tools", StringComparison.Ordinal));
 
         Assert.Contains("2 tools", footer, StringComparison.Ordinal);
         Assert.Contains("3 files changed", footer, StringComparison.Ordinal);
@@ -208,7 +208,7 @@ public sealed class TuiTurnSnapshotTests
     {
         var (renderer, output) = Create();
         renderer.Width = 80;
-        renderer.BeginTurn(4);
+        renderer.BeginTurn();
         renderer.RenderFrame(Durable("tool.execution_completed", "succeeded", "read_only", 5));
         renderer.RenderFrame(Durable("run.completed", "succeeded", "ok", 6));
         renderer.EndTurn();
@@ -223,7 +223,7 @@ public sealed class TuiTurnSnapshotTests
     {
         var (renderer, output) = Create();
         renderer.Width = 80;
-        renderer.BeginTurn(5);
+        renderer.BeginTurn();
         renderer.RenderFrame(Activity("terminal", "started", 1, symbol: "dotnet", toolDisplay: "Terminal"));
         renderer.RenderFrame(Durable("tool.execution_completed", "failed", "exit_1", 2));
         renderer.EndTurn();

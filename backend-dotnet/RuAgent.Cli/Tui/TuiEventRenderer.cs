@@ -56,9 +56,9 @@ public sealed class TuiSessionRenderer
         _status.SetState(TuiRunState.Idle);
     }
 
-    public void BeginTurn(int turn = 0)
+    public void BeginTurn()
     {
-        _transcript.BeginTurn(turn);
+        _transcript.BeginTurn();
         _status.SetState(TuiRunState.Thinking);
         StartLiveRow();
     }

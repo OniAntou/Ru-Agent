@@ -8,6 +8,8 @@
 | Public route | 64 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
 | .NET tests | Full 13-project matrix via `scripts/test_dotnet.ps1 -Configuration Debug` (2026-09-11, commit `b4e79469`): **3,122 passed / 0 failed / 0 skipped** — Broker 588, CLI 545, Client 50, Connectors 3, Harness.Core 281, Harness.Persistence 103, Hosting 26, Protocol 24, Runtime.Adapters 217, Runtime.Core 6, Runtime.Worker 64, RuBackend 795, GUI 420. |
 | Python suite | 310 passed, 0 failed. `ruff check src tests scripts tools`, `mypy src` (29 files), and `pip check` passed. |
+| Release build | `build.bat` 13/13 (2026-09-11, `dev`): 0 warning / 0 error toàn bộ; publish self-contained GUI (`RuApp.exe` 162,816 bytes, `includedFrameworks: Microsoft.NETCore.App`, 11 loose XBF), Worker + Runtime.Core, Broker, RuBackend, CLI. Overlay plugin skipped theo mặc định (optional). |
+| Managed runtime smoke | Bản publish chạy isolated (`RU_DATA_ROOT`/`RU_LOG_ROOT` temp, port riêng): `/settings` 200 với bearer đúng và 401 với bearer sai, agent + device worker listeners mở, `/status` 200, `POST /host/shutdown` đóng sạch cả 3 port và toàn bộ process tree, temp root xoá sạch. Không thay thế live device acceptance (mic/TTS/loa/VTS/provider thật vẫn là user-run gate). |
 | Plugins | voice/STT, VTube Studio, native overlay là plugin tùy chọn; coding core không phụ thuộc. `build.bat` skip overlay mặc định (in `Overlay plugin: skipped`), dùng `-WithOverlay` để build; CI job `native-overlay` là `continue-on-error`. Xem `docs/architecture.md` mục "Coding core and plugins". |
 | `git diff --check` | passed |
 

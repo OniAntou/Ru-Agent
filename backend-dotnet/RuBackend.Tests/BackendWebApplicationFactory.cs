@@ -12,7 +12,6 @@ using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Agent;
 using RuBackend.Diagnostics;
-using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Worker;
 using RuBackend.Tests.Fakes;
@@ -23,7 +22,6 @@ namespace RuBackend.Tests;
 public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string? _ownedDataRoot;
-    private readonly IMemoryService? _memoryService;
     private readonly IRuntimeWorkerClient _runtimeWorkerClient;
     private readonly DataPaths? _dataPaths;
     private readonly ICredentialStore? _credentialStore;
@@ -38,7 +36,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private string? _brokerRoot;
 
     public BackendWebApplicationFactory(
-        IMemoryService? memoryService = null,
         IRuntimeWorkerClient? runtimeWorkerClient = null,
         DataPaths? dataPaths = null,
         ICredentialStore? credentialStore = null,
@@ -53,7 +50,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
             : null;
-        _memoryService = memoryService;
         _runtimeWorkerClient = runtimeWorkerClient ?? StubRuntimeWorkerClient.Healthy();
         _dataPaths = dataPaths;
         _credentialStore = credentialStore;
@@ -96,12 +92,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
 
         builder.ConfigureTestServices(services =>
         {
-            if (_memoryService is not null)
-            {
-                services.RemoveAll<IMemoryService>();
-                services.AddSingleton(_memoryService);
-            }
-
             services.RemoveAll<IRuntimeWorkerClient>();
             services.AddSingleton(_runtimeWorkerClient);
 

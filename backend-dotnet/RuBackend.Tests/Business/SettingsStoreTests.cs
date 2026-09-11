@@ -17,8 +17,6 @@ public sealed class SettingsStoreTests
         Assert.Equal("OpenCode Zen", snapshot.Backend);
         Assert.Equal(string.Empty, snapshot.Model);
         Assert.Equal("Default", snapshot.ApiVariant);
-        Assert.True(snapshot.EnableSelfLearning);
-        Assert.True(snapshot.ShareMemoryWithCloud);
         Assert.Equal("Ru (OmniVoice)", snapshot.VoiceLabel);
         Assert.Equal("original", snapshot.VoiceStyleId);
         Assert.Equal(1.0, snapshot.VoiceSpeed);
@@ -305,9 +303,7 @@ public sealed class SettingsStoreTests
     private static (SettingsStore Store, DataPaths Paths) CreateStore()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-settings-tests", Guid.NewGuid().ToString("N"));
-        var paths = new DataPaths(
-            Path.Combine(root, "memory.db"),
-            Path.Combine(root, "settings.json"),
+        var paths = new DataPaths(Path.Combine(root, "settings.json"),
             Path.Combine(root, "sessions"),
             Path.Combine(root, "activity.jsonl"));
         return (new SettingsStore(paths), paths);

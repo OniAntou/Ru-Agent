@@ -96,7 +96,6 @@ public sealed class AgentConversationOutboxDispatcher
     private readonly IHarnessModelContextBootstrapper _contextBootstrapper;
     private readonly IAgentHistoryTransitionSink _transitions;
     private readonly TimeProvider _clock;
-    private readonly AgentConversationMemoryProjector? _memoryProjector;
     private readonly AgentConversationActivityProjector? _activityProjector;
 
     public AgentConversationOutboxDispatcher(
@@ -106,7 +105,6 @@ public sealed class AgentConversationOutboxDispatcher
         IHarnessModelContextBootstrapper contextBootstrapper,
         IAgentHistoryTransitionSink transitions,
         TimeProvider clock,
-        AgentConversationMemoryProjector? memoryProjector = null,
         AgentConversationActivityProjector? activityProjector = null)
     {
         _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
@@ -116,7 +114,6 @@ public sealed class AgentConversationOutboxDispatcher
             ?? throw new ArgumentNullException(nameof(contextBootstrapper));
         _transitions = transitions ?? throw new ArgumentNullException(nameof(transitions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _memoryProjector = memoryProjector;
         _activityProjector = activityProjector;
     }
 
@@ -249,14 +246,6 @@ public sealed class AgentConversationOutboxDispatcher
                         cancellationToken)
                     .ConfigureAwait(false);
             }
-        }
-        else if (_memoryProjector is not null)
-        {
-            await _memoryProjector.ProjectAsync(
-                    claim.IntentId,
-                    claim.SessionId.Value,
-                    cancellationToken)
-                .ConfigureAwait(false);
         }
 
         var acknowledged = await _outbox.AcknowledgeAsync(

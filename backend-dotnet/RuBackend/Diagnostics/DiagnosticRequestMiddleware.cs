@@ -84,11 +84,6 @@ public sealed class DiagnosticRequestMiddleware
             return "http.observation";
         }
 
-        if (value.StartsWith("/memory", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http.memory";
-        }
-
         if (value.StartsWith("/settings", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/sessions", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/activity-log", StringComparison.OrdinalIgnoreCase))

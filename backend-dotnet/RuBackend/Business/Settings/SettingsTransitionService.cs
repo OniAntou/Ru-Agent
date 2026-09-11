@@ -334,12 +334,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             openCodeModel,
             kiloModel,
             apiVariant,
-            OptionalBoolean(payload, "enable_self_learning")
-                ?? OptionalBoolean(payload, "self_learning_enabled")
-                ?? current.EnableSelfLearning,
-            OptionalBoolean(payload, "share_memory_with_cloud")
-                ?? OptionalBoolean(payload, "cloud_memory_consent")
-                ?? current.ShareMemoryWithCloud,
             OptionalBoolean(payload, "kilo_reasoning_enabled")
                 ?? current.KiloReasoningEnabled,
             OptionalString(payload, "voice_label", 128) ?? current.VoiceLabel,

@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 echo ============================================
 echo  Ru Desktop - Build + PRI Generation Script
 echo  .NET 10 + ASP.NET Core + WinUI 3 (Unpackaged Self-Contained)
-echo  Coding core: 64 HTTP + 1 WS, managed C# Worker, CLI tracer
+echo  Coding core: 62 HTTP + 1 WS, managed C# Worker, CLI tracer
 echo  Plugins (optional): voice/STT, VTube Studio, desktop overlay
 echo ============================================
 echo.

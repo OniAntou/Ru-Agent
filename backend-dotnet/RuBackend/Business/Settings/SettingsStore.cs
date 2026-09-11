@@ -97,8 +97,6 @@ public sealed class SettingsStore : ISettingsStore
             persisted["opencode_model"] = candidate.OpenCodeModel;
             persisted["kilo_model"] = candidate.KiloModel;
             persisted["api_variant"] = candidate.ApiVariant;
-            persisted["enable_self_learning"] = candidate.EnableSelfLearning;
-            persisted["share_memory_with_cloud"] = candidate.ShareMemoryWithCloud;
             persisted["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled;
             persisted.Remove("checkpoint_path");
             persisted["voice_label"] = candidate.VoiceLabel;
@@ -199,8 +197,6 @@ public sealed class SettingsStore : ISettingsStore
             openCodeModel,
             kiloModel,
             ReadString(raw, "api_variant", "Default"),
-            ReadBoolean(raw, "enable_self_learning", true),
-            ReadBoolean(raw, "share_memory_with_cloud", true),
             ReadBoolean(raw, "kilo_reasoning_enabled", false),
             ReadString(raw, "voice_label", "Ru (OmniVoice)"),
             NormalizeVoiceStyle(ReadString(raw, "voice_style_id", OriginalVoiceStyle)),

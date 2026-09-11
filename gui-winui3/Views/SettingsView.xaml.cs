@@ -37,7 +37,6 @@ namespace RuApp.Views
             _apiService = apiService;
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
-            MemoryControl.Initialize(apiService);
             _ = LoadSettingsAsync();
             SetupAutoSave();
             SetupVts();
@@ -90,8 +89,6 @@ namespace RuApp.Views
             GeminiVisionKeyBox.PasswordChanged += AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
-            SelfLearningToggle.Toggled += AutoSaveHandler;
-            CloudMemoryConsentToggle.Toggled += AutoSaveHandler;
         }
 
         private async void OnAutoSaveTimerTick(object? sender, object e)
@@ -157,8 +154,6 @@ namespace RuApp.Views
                     ? "Saved (leave blank to keep unchanged)"
                     : "sk-...";
 
-                SelfLearningToggle.IsOn = settings.SelfLearningEnabled;
-                CloudMemoryConsentToggle.IsOn = settings.CloudMemoryConsent;
 
                 var obsStatus = await _apiService.GetObservationStatusAsync();
                 if (obsStatus != null)
@@ -177,8 +172,6 @@ namespace RuApp.Views
 
         private void UpdateVisibilityForBackend(string choice)
         {
-            bool cloud = choice is "opencode" or "kilo" or "openai" or "anthropic";
-
             OpenCodeApiRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
             KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
             OpenAiApiRow.Visibility = (choice == "openai") ? Visibility.Visible : Visibility.Collapsed;
@@ -186,9 +179,6 @@ namespace RuApp.Views
             CustomEndpointRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
             CustomApiKeyRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
 
-            CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
-            SelfLearningRow.Visibility = Visibility.Visible;
-            ExtendedFeaturesCard.Visibility = Visibility.Visible;
         }
 
         private void OnBackendSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -233,8 +223,6 @@ namespace RuApp.Views
                     GeminiVisionApiKey = GeminiVisionKeyBox.Password,
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
-                    SelfLearningEnabled = SelfLearningToggle.IsOn,
-                    CloudMemoryConsent = CloudMemoryConsentToggle.IsOn
                 };
 
                 bool ok = await _apiService.SaveProviderSettingsAsync(dto);
@@ -332,7 +320,6 @@ namespace RuApp.Views
                 _providerCatalogController = null;
                 _ownsProviderCatalogController = false;
             }
-            MemoryControl?.Dispose();
             _apiService = null;
         }
 
@@ -346,8 +333,6 @@ namespace RuApp.Views
             GeminiVisionKeyBox.PasswordChanged -= AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
-            SelfLearningToggle.Toggled -= AutoSaveHandler;
-            CloudMemoryConsentToggle.Toggled -= AutoSaveHandler;
             if (_autoSaveTimer != null)
             {
                 _autoSaveTimer.Tick -= OnAutoSaveTimerTick;
@@ -591,7 +576,6 @@ namespace RuApp.Views
             SetupSettingsNavHover(NavSystemBtn, NavSystemIcon, NavSystemText, () => _activeSettingsTab == "system");
             SetupSettingsNavHover(NavObserverBtn, NavObserverIcon, NavObserverText, () => _activeSettingsTab == "observer");
             SetupSettingsNavHover(NavVtsBtn, NavVtsIcon, NavVtsText, () => _activeSettingsTab == "vts");
-            SetupSettingsNavHover(NavMemoryBtn, NavMemoryIcon, NavMemoryText, () => _activeSettingsTab == "memory");
         }
 
         private void SetupSettingsNavHover(Button btn, FontIcon? icon, TextBlock? text, Func<bool> isActive)
@@ -619,7 +603,6 @@ namespace RuApp.Views
         private void OnNavSystemClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("system");
         private void OnNavObserverClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("observer");
         private void OnNavVtsClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("vts");
-        private void OnNavMemoryClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("memory");
 
         private void SetActiveSettingsTab(string tab)
         {
@@ -628,22 +611,18 @@ namespace RuApp.Views
             NavSystemBtn.Background = transparent;
             NavObserverBtn.Background = transparent;
             NavVtsBtn.Background = transparent;
-            NavMemoryBtn.Background = transparent;
 
             var isSystem = tab == "system";
             var isObserver = tab == "observer";
             var isVts = tab == "vts";
-            var isMemory = tab == "memory";
 
             SwitchPanel(SystemSettingsScrollViewer, isSystem);
             SwitchPanel(ObservationScrollViewer, isObserver);
             SwitchPanel(VtsSettingsScrollViewer, isVts);
-            SwitchPanel(MemoryPanel, isMemory);
 
             UpdateNavButton(NavSystemIcon, NavSystemText, NavSystemLine, isSystem);
             UpdateNavButton(NavObserverIcon, NavObserverText, NavObserverLine, isObserver);
             UpdateNavButton(NavVtsIcon, NavVtsText, NavVtsLine, isVts);
-            UpdateNavButton(NavMemoryIcon, NavMemoryText, NavMemoryLine, isMemory);
         }
 
         private static void SwitchPanel(FrameworkElement panel, bool active)

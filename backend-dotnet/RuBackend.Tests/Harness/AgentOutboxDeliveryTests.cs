@@ -229,9 +229,7 @@ public sealed class AgentOutboxDeliveryTests
         BackendHarnessTestFixture fixture,
         bool createSession)
     {
-        var paths = new DataPaths(
-            Path.Combine(fixture.RootPath, "memory.db"),
-            Path.Combine(fixture.RootPath, "settings.json"),
+        var paths = new DataPaths(Path.Combine(fixture.RootPath, "settings.json"),
             Path.Combine(fixture.RootPath, "sessions"),
             Path.Combine(fixture.RootPath, "activity.jsonl"));
         var store = new SessionStore(paths, new MutableTimeProvider(

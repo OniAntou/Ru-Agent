@@ -16,7 +16,6 @@ using RuBackend.Harness;
 using RuBackend.Harness.Broker;
 using RuBackend.Harness.Worker;
 using RuBackend.Harness.Workspace;
-using RuBackend.Memory;
 using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
@@ -230,10 +229,6 @@ internal static class PublicHostServiceRegistration
     {
         services.AddSingleton<HarnessOutboxStore>();
         services.AddSingleton<RuBackend.Harness.IHarnessModelContextBootstrapper, RuBackend.Harness.HarnessModelContextBootstrapper>();
-        services.AddSingleton<AgentMemoryContextProvider>();
-        services.AddSingleton<IAgentMemoryContextProvider>(services =>
-            services.GetRequiredService<AgentMemoryContextProvider>());
-        services.AddSingleton<AgentConversationMemoryProjector>();
         services.AddSingleton<AgentConversationActivityProjector>();
         services.AddSingleton<AgentRunHistoryTransitionSink>();
         services.AddSingleton<IAgentHistoryTransitionSink>(services =>
@@ -316,17 +311,6 @@ internal static class PublicHostServiceRegistration
         return services;
     }
 
-    internal static IServiceCollection AddRuMemory(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        services.AddSingleton(BuildMemorySqliteOptions(configuration));
-        services.AddSingleton<IMemoryRepository, SqliteMemoryRepository>();
-        services.AddSingleton<IMemoryPolicy, MemoryPolicy>();
-        services.AddSingleton<IMemoryService, MemoryService>();
-        return services;
-    }
-
     private static DataPaths BuildDataPaths(IConfiguration configuration)
     {
         var dataRoot = configuration["RU_DATA_ROOT"]
@@ -353,21 +337,6 @@ internal static class PublicHostServiceRegistration
             logRoot);
     }
 
-    private static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration)
-    {
-        var dataRoot = configuration["RU_DATA_ROOT"]
-            ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
-        var root = string.IsNullOrWhiteSpace(dataRoot)
-            ? Path.Combine(Directory.GetCurrentDirectory(), "data", "conversations")
-            : dataRoot.Trim();
-
-        return new MemorySqliteOptions
-        {
-            DatabasePath = configuration["RuBackend:Memory:DatabasePath"]
-                ?? Path.Combine(root, "memory.db"),
-            ReadOnly = false,
-        };
-    }
 
     private static KnownSecretRedactor BuildKnownSecretRedactor()
     {

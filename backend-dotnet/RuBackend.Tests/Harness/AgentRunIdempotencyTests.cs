@@ -236,14 +236,6 @@ public sealed class AgentRunIdempotencyTests
             Directory.CreateDirectory(ws);
             var dataRoot = System.IO.Path.Combine(root, "data");
             Directory.CreateDirectory(dataRoot);
-            var dataPaths = new RuBackend.Business.DataPaths(
-                System.IO.Path.Combine(dataRoot, "memory.db"),
-                System.IO.Path.Combine(dataRoot, "settings.json"),
-                System.IO.Path.Combine(dataRoot, "sessions"),
-                System.IO.Path.Combine(dataRoot, "activity.jsonl")
-            );
-            // Actually DataPaths ctor used for tests is 6 args, but AgentHarnessDatabase derived from BusinessDataRoot
-            // We need to create via DataPaths.Resolve
             var resolved = RuBackend.Business.DataPaths.Resolve(root, root, root, dataRoot, System.IO.Path.Combine(root, "logs"));
             return new TempWorkspace(root, ws, resolved);
         }

@@ -214,11 +214,6 @@ public sealed class ProviderSettingsUpdateDto
     [JsonPropertyName("custom_api_key")]
     public string CustomApiKey { get; init; } = string.Empty;
 
-    [JsonPropertyName("self_learning_enabled")]
-    public bool SelfLearningEnabled { get; init; }
-
-    [JsonPropertyName("cloud_memory_consent")]
-    public bool CloudMemoryConsent { get; init; }
 }
 
 public sealed class ReasoningSettingsUpdateDto

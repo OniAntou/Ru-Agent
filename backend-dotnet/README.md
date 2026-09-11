@@ -1,8 +1,8 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 64 HTTP routes
-plus the single `/voice/stream` WebSocket (43 non-Agent routes plus 20 additive
+when started as `RuBackend.exe --managed-runtime` and owns all 62 HTTP routes
+plus the single `/voice/stream` WebSocket (41 non-Agent routes plus 20 additive
 `/agent/v1/*` plus 1 `POST /host/shutdown`). Text turns use the current Worker v2-backed Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
@@ -37,7 +37,7 @@ dependency-free test fixture. Git commit
 ## Ownership
 
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
-credentials, sessions and their message history, activity, structured memory, Agent run ordering,
+credentials, sessions and their message history, activity, Agent run ordering,
 metadata filtering, and every public endpoint contract. Agent generation uses
 the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
 work uses the same managed process at `ws://127.0.0.1:8006/worker/v1`:
@@ -54,7 +54,7 @@ return a bounded `status: "error"` envelope even when the HTTP status is 200.
 
 The workers are private implementation code, not another public framework. WAV
 payloads stay binary instead of being expanded into base64. Agent replies, TTS, history,
-memory, activity, and logs keep private voice/VTS metadata out of visible and
+activity, and logs keep private voice/VTS metadata out of visible and
 persistent text.
 
 ## Configuration
@@ -69,7 +69,7 @@ persistent text.
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
 | `RuBackend__AgentWorkerUrl` | `ws://127.0.0.1:8005/worker/v2` standalone | Private Agent Worker protocol URL. |
 | `RuBackend__DeviceWorkerUrl` | `ws://127.0.0.1:8006/worker/v1` standalone | Private Device Worker protocol URL. |
-| `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, activity, and memory for tests. |
+| `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, and activity for tests. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
 desktop, Agent Worker, and Device Worker secrets, writes a single-use

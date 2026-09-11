@@ -129,9 +129,7 @@ public sealed class DiagnosticEndpointsTests
         var root = Path.Combine(Path.GetTempPath(), "ru-diag-export-cap-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var paths = new DataPaths(
-                Path.Combine(root, "memory.db"),
-                Path.Combine(root, "settings.json"),
+            var paths = new DataPaths(Path.Combine(root, "settings.json"),
                 Path.Combine(root, "sessions"),
                 Path.Combine(root, "activity.jsonl"));
             Directory.CreateDirectory(paths.LogRoot);

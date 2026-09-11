@@ -64,8 +64,6 @@ public sealed class AgentPayloadTests
         OpenCodeModel: backend == "OpenCode Zen" ? model : string.Empty,
         KiloModel: backend == "Kilo Gateway" ? model : string.Empty,
         ApiVariant: "Default",
-        EnableSelfLearning: true,
-        ShareMemoryWithCloud: true,
         KiloReasoningEnabled: false,
         VoiceLabel: "Ru",
         VoiceStyleId: "original",

@@ -155,8 +155,6 @@ public sealed class RuPromptContextProviderTests
         "test-model",
         "test-model",
         "Default",
-        EnableSelfLearning: false,
-        ShareMemoryWithCloud: false,
         KiloReasoningEnabled: false,
         VoiceLabel: "Ru",
         VoiceStyleId: "original",

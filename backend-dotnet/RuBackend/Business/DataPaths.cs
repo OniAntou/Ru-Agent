@@ -1,7 +1,6 @@
 namespace RuBackend.Business;
 
 public sealed record DataPaths(
-    string MemoryDatabase,
     string SettingsFile,
     string SessionDirectory,
     string ActivityLogFile,
@@ -15,12 +14,10 @@ public sealed record DataPaths(
         Path.Combine(BusinessDataRoot, "agent_harness.db");
 
     public DataPaths(
-        string memoryDatabase,
         string settingsFile,
         string sessionDirectory,
         string activityLogFile)
         : this(
-            memoryDatabase,
             settingsFile,
             sessionDirectory,
             activityLogFile,
@@ -64,8 +61,6 @@ public sealed record DataPaths(
             ? null
             : Path.GetFullPath(configuredDataRoot.Trim());
 
-        var memoryRoot = isolatedRoot
-            ?? Path.Combine(resolvedProjectRoot, "data", "conversations");
         var businessRoot = isolatedRoot
             ?? Path.Combine(resolvedLocalAppData, "Ru");
 
@@ -76,7 +71,6 @@ public sealed record DataPaths(
         var bootstrapLogRoot = Path.Combine(resolvedLogRoot, "bootstrap");
 
         return new DataPaths(
-            Path.Combine(memoryRoot, "memory.db"),
             Path.Combine(businessRoot, "settings.json"),
             Path.Combine(businessRoot, "sessions"),
             Path.Combine(businessRoot, "activity_log.jsonl"),

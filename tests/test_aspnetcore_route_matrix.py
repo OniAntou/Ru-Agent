@@ -12,8 +12,6 @@ EXPECTED_HTTP_ROUTES = {
     ("GET", "/activity-log"),
     ("DELETE", "/activity-log"),
     ("GET", "/models"),
-    ("GET", "/memory"),
-    ("DELETE", "/memory"),
     ("GET", "/settings"),
     ("POST", "/settings"),
     ("POST", "/settings/provider/remove"),
@@ -77,7 +75,7 @@ EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (64, 1)
+    assert validate_route_contract(repo_root) == (62, 1)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -101,7 +99,6 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/diagnostics/export",
         "/diagnostics/status",
         "/activity-log",
-        "/memory",
         "/settings",
         "/settings/provider/remove",
         "/sessions",

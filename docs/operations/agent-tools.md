@@ -65,7 +65,7 @@ advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **64 HTTP plus 1 WebSocket** (43 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
+> - Public Contract is now **62 HTTP plus 1 WebSocket** (41 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
@@ -255,7 +255,7 @@ to allow recovery.
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
 next Agent turn, and removed on session replacement, disconnect, or deletion.
-It is never written to conversation history, memory extraction, reviewed
+It is never written to conversation history, reviewed
 examples, TTS, or VTS metadata. This lets Ru answer an immediate “why?” from
 the verified reason without asking the model to reconstruct or invent the
 previous action state.
@@ -474,7 +474,7 @@ or reset. The inline surface still owns bounded status, workspace trust,
 approval, Stop, and Continue controls. Malformed, unknown, stale, or other
 content-bearing transient frames are ignored. Raw commands, arguments, stdout,
 or private payload content never reach the feed, durable audit, conversation
-history, TTS, VTS metadata, or memory.
+history, TTS, or VTS metadata.
 The desktop entry point also creates a real 32-character session automatically
 for the first Agent prompt when the empty conversation surface has no active
 session; users do not need to send a preliminary message.

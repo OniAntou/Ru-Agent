@@ -117,10 +117,5 @@ namespace RuApp.Models
         [JsonPropertyName("subtitle_pos_y")]
         public int SubtitlePosY { get; set; } = -1;
 
-        [JsonPropertyName("self_learning_enabled")]
-        public bool SelfLearningEnabled { get; set; } = true;
-
-        [JsonPropertyName("cloud_memory_consent")]
-        public bool CloudMemoryConsent { get; set; } = true;
     }
 }

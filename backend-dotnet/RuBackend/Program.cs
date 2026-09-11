@@ -11,7 +11,6 @@ using RuBackend.Harness.Broker;
 using RuBackend.Harness.Worker;
 using RuBackend.Harness.Workspace;
 using RuBackend.Hosting;
-using RuBackend.Memory;
 using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
@@ -76,8 +75,7 @@ builder.Services
     .AddRuSettingsAndSessions(builder.Configuration)
     .AddRuHarnessStores()
     .AddRuAgentRuntime(isDeterministicHarness, isManagedRuntime)
-    .AddRuActivityAndDiagnostics()
-    .AddRuMemory(builder.Configuration);
+    .AddRuActivityAndDiagnostics();
 builder.WebHost.UseUrls(
     builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000");
 
@@ -85,7 +83,7 @@ var app = builder.Build();
 
 // Media surfaces are optional (Pi-style): voice/STT/VTube/observation map
 // only when RU_MEDIA_SURFACES is unset or "1". Headless coding agents run
-// with RU_MEDIA_SURFACES=0 and serve a reduced subset of the 64 HTTP + 1 WS
+// with RU_MEDIA_SURFACES=0 and serve a reduced subset of the 62 HTTP + 1 WS
 // contract with the media routes unmapped.
 var mediaSurfacesEnabled = !string.Equals(
     Environment.GetEnvironmentVariable("RU_MEDIA_SURFACES"),
@@ -141,7 +139,6 @@ if (mediaSurfacesEnabled)
 BusinessEndpoints.Map(app);
 AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
-MemoryEndpoints.Map(app);
 StatusEndpoints.Map(app);
 if (mediaSurfacesEnabled)
 {

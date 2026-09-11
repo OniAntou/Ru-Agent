@@ -33,7 +33,7 @@ Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru
 calls the user `anh` and itself `em`. Agent replies contain no Unicode emoji or ASCII
 emoticons. Search commands, model controls, voice pace, VTS actions, segment
 identifiers, and transport timings are private metadata and must be removed
-before display, TTS, history, memory, logs, or reviewed examples.
+before display, TTS, history, logs, or reviewed examples.
 
 Each Agent turn carries a bounded `correlation_id` and a durable run/session
 identity. The composer keeps one active run; reconnecting to the Agent SSE
@@ -84,7 +84,7 @@ request. The private Generation Kernel emits exactly one `system` message from
 these ordered layers: a neutral Ru Agent runtime contract, Agent execution contract,
 environment, root-selected Ru instruction files, profile/preset, validated
 host capabilities, and bounded runtime context. The model then receives the
-ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
+ordered user/assistant/tool turns; clock, mood, voice/VTS state, and
 references are not appended as separate system messages.
 
 Host capabilities are the runtime projection of the 6 Protocol-owned tool
@@ -120,12 +120,12 @@ instruction limit. It re-reads those roots for every newly built prompt
 context, so copying or changing `SKILL.md` is picked up on a new run or after
 restart without a downloader or package manager. Ancillary `references/`,
 `assets/`, and `scripts/` files are ignored by discovery and are not
-automatically read or executed. Context values remain bounded (100 KiB memory,
-32 KiB per reference, and 512 KiB serialized context). Root-selected
+automatically read or executed. Context values remain bounded (32 KiB per
+reference and 512 KiB serialized context). Root-selected
 instructions and Markdown skills are followed only as guidance; they cannot
 grant tools, permissions, approvals, paths, network access, or preset changes.
-The Markdown `allowed-tools` field is descriptive only. Memory, runtime
-references, and tool/search results remain explicitly untrusted.
+The Markdown `allowed-tools` field is descriptive only. Runtime
+references and tool/search results remain explicitly untrusted.
 
 Markdown skills are prompt guidance, not executable workflows. The existing
 declarative `SkillManifest` format (`skill.json` plus `instructions.md`) remains
@@ -207,7 +207,7 @@ manual acceptance gates.
 
 VTube Studio hotkeys and expressions are resolved from the connected model's
 current catalog. The runtime revalidates catalog codes before dispatch and
-removes private action suffixes before TTS, history, memory, and approved
+removes private action suffixes before TTS, history, and approved
 examples. The managed Worker also exposes runtime-scoped GUI state/config/connect
 surface, persists its authentication token at canonical `pyvts_token.txt`,
 and honors `RU_DATA_ROOT` for isolated runs; enabling the optional overlay is
@@ -254,7 +254,7 @@ remains a user-run acceptance check.
 The current Agent composer uses the same tiers. The shell and conversation view use the
 Editorial reading room presentation: the approved light mineral palette as the
 baseline, a flat sidebar, and a centered document-style reading column.
-Voice/VTS, Log, Diagnostics, Settings, and Memory retain their existing layout
+Voice/VTS, Log, Diagnostics, and Settings retain their existing layout
 in this phase while inheriting the active shared Light or Dark token set.
 The application keeps Light as its fallback and MainWindow can request the
 active theme on the shell root so default controls follow the same contrast.
@@ -292,7 +292,7 @@ frames do not enter durable history or audit. The projector covers nine kinds,
 including `compaction` (bounded covered-entry count and elapsed time) and
 `retry` (bounded read-only tool transport retry attempt), plus a generic
 `status` fallback. Agent payloads and raw tool output
-never enter TTS, VTS metadata, memory, or automation names.
+never enter TTS, VTS metadata, or automation names.
 Assistant text is delivered separately as a typed `assistant.delta` transient
 frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
 optional execution id, and positive transient sequence before dispatching it;
@@ -381,7 +381,7 @@ fail-closed and never reaches the native adapter.
 
 Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
-memory, reviewed examples, TTS, or VTS metadata.
+reviewed examples, TTS, or VTS metadata.
 
 The six Worker v2 bindings above are the model surface, with standalone
 `web_search`/`web_fetch` tools managed by startup. Managed
@@ -456,8 +456,8 @@ width or composer alignment.
 
 ## Persistence and privacy
 
-ASP.NET Core owns settings, credentials, sessions (including message history), activity, structured
-memory, and reviewed-example policy. Business records live in the canonical
+ASP.NET Core owns settings, credentials, sessions (including message history), activity,
+and reviewed-example policy. Business records live in the canonical
 `%LOCALAPPDATA%\Ru` location (see
 `docs/adr/0004-canonical-ru-data-location.md`). Windows Credential
 Manager remains the secret store.

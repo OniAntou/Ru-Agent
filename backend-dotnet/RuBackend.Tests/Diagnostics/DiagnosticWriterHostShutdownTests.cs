@@ -12,9 +12,7 @@ public sealed class DiagnosticWriterHostShutdownTests
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-host-shutdown-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var paths = new DataPaths(
-            Path.Combine(root, "memory.db"),
-            Path.Combine(root, "settings.json"),
+        var paths = new DataPaths(Path.Combine(root, "settings.json"),
             Path.Combine(root, "sessions"),
             Path.Combine(root, "activity.jsonl"));
         var factory = new BackendWebApplicationFactory(dataPaths: paths);

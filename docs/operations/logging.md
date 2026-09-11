@@ -48,7 +48,7 @@ an `error_code`; oversized exports return `413` with
 at most 4 MB per diagnostic file for one request.
 
 The ASP.NET HTTP boundary emits fixed route events such as `http.stt`,
-`http.voice`, `http.vts`, `http.observation`, `http.memory`, and
+`http.voice`, `http.vts`, `http.observation`, and
 `http.business` with status and duration only. The managed Worker and WinUI
 processes use separate bounded writers under the same resolved `RU_LOG_ROOT`;
 the managed test suites use temporary writer roots and never launch a

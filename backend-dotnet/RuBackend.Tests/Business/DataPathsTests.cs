@@ -6,7 +6,7 @@ namespace RuBackend.Tests.Business;
 public sealed class DataPathsTests
 {
     [Fact]
-    public void Resolve_uses_project_memory_and_localappdata_ru_business_defaults()
+    public void Resolve_uses_localappdata_ru_business_defaults()
     {
         var projectRoot = Path.Combine(Path.GetTempPath(), "ru-project", Guid.NewGuid().ToString("N"));
         var userProfile = Path.Combine(Path.GetTempPath(), "ru-profile", Guid.NewGuid().ToString("N"));
@@ -14,9 +14,6 @@ public sealed class DataPathsTests
 
         var paths = DataPaths.Resolve(projectRoot, userProfile, localAppData, configuredDataRoot: null);
 
-        Assert.Equal(
-            Path.GetFullPath(Path.Combine(projectRoot, "data", "conversations", "memory.db")),
-            paths.MemoryDatabase);
         Assert.Equal(
             Path.GetFullPath(Path.Combine(localAppData, "Ru", "settings.json")),
             paths.SettingsFile);
@@ -50,7 +47,6 @@ public sealed class DataPathsTests
         var paths = DataPaths.Resolve(projectRoot, userProfile, localAppData, dataRoot);
 
         var expectedRoot = Path.GetFullPath(dataRoot);
-        Assert.Equal(Path.Combine(expectedRoot, "memory.db"), paths.MemoryDatabase);
         Assert.Equal(Path.Combine(expectedRoot, "settings.json"), paths.SettingsFile);
         Assert.Equal(Path.Combine(expectedRoot, "sessions"), paths.SessionDirectory);
         Assert.Equal(Path.Combine(expectedRoot, "activity_log.jsonl"), paths.ActivityLogFile);
@@ -84,7 +80,6 @@ public sealed class DataPathsTests
 
         var paths = DataPaths.Resolve(projectRoot, userProfile, localAppData, "   ", "   ");
 
-        Assert.StartsWith(Path.GetFullPath(projectRoot), paths.MemoryDatabase, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith(Path.GetFullPath(Path.Combine(localAppData, "Ru")), paths.SettingsFile, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(Path.GetFullPath(Path.Combine(localAppData, "Ru", "logs")), paths.LogRoot);
         Assert.Equal(Path.GetFullPath(Path.Combine(localAppData, "Ru", "logs", "bootstrap")), paths.BootstrapLogRoot);

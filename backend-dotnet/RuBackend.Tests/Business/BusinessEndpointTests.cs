@@ -654,9 +654,7 @@ public sealed class BusinessEndpointTests
             Directory.CreateDirectory(root);
             return new TemporaryBusinessData(
                 root,
-                new DataPaths(
-                    Path.Combine(root, "memory.db"),
-                    Path.Combine(root, "settings.json"),
+                new DataPaths(Path.Combine(root, "settings.json"),
                     Path.Combine(root, "sessions"),
                     Path.Combine(root, "activity.jsonl")));
         }

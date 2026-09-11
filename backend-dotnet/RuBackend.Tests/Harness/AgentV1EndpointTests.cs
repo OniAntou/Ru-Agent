@@ -50,7 +50,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(64, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 64 (42 + 20 Agent + POST /host/shutdown + POST /settings/provider/remove)
+        Assert.Equal(62, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 62 (40 + 20 Agent + POST /host/shutdown + POST /settings/provider/remove)
     }
 
     [Theory]
@@ -468,8 +468,6 @@ public sealed class AgentV1EndpointTests
         OpenCodeModel: backend == "OpenCode Zen" ? model : string.Empty,
         KiloModel: backend == "Kilo Gateway" ? model : string.Empty,
         ApiVariant: "Default",
-        EnableSelfLearning: true,
-        ShareMemoryWithCloud: true,
         KiloReasoningEnabled: false,
         VoiceLabel: "Ru",
         VoiceStyleId: "original",

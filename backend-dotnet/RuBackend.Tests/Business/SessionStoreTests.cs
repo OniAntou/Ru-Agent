@@ -331,9 +331,7 @@ public sealed class SessionStoreTests
     private static (SessionStore Store, DataPaths Paths) CreateStore(TimeProvider? clock = null)
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-session-tests", Guid.NewGuid().ToString("N"));
-        var paths = new DataPaths(
-            Path.Combine(root, "memory.db"),
-            Path.Combine(root, "settings.json"),
+        var paths = new DataPaths(Path.Combine(root, "settings.json"),
             Path.Combine(root, "sessions"),
             Path.Combine(root, "activity.jsonl"));
         return (new SessionStore(paths, clock), paths);

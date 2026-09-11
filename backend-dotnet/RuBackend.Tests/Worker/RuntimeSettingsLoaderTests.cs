@@ -138,8 +138,6 @@ public sealed class RuntimeSettingsLoaderTests
         "opencode/free",
         "kilo-auto/free",
         "Default",
-        true,
-        true,
         false,
         "Ru (OmniVoice)",
         "original",

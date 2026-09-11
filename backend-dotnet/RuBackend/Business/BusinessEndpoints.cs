@@ -436,10 +436,6 @@ public static class BusinessEndpoints
         result["anthropic_model"] = value.AnthropicModel;
         result["api_variant"] = value.ApiVariant;
         result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
-        result["enable_self_learning"] = value.EnableSelfLearning;
-        result["self_learning_enabled"] = value.EnableSelfLearning;
-        result["share_memory_with_cloud"] = value.ShareMemoryWithCloud;
-        result["cloud_memory_consent"] = value.ShareMemoryWithCloud;
         result.Remove("checkpoint_path");
         result["voice_label"] = value.VoiceLabel;
         result["voice_style_id"] = value.VoiceStyleId;

@@ -41,7 +41,6 @@
                         <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,40"/>
                         <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,40"/>
                         <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,40"/>
-                        <Setter Target="MemoryPanel.Padding" Value="0,8,0,40"/>
                         <!-- Tab 1 Bento 2-Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*,*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -72,7 +71,6 @@
                         <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,32"/>
                         <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,32"/>
                         <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,32"/>
-                        <Setter Target="MemoryPanel.Padding" Value="0,8,0,32"/>
                         <!-- Tab 1 Single Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -102,7 +100,6 @@
                         <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,24"/>
                         <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,24"/>
                         <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,24"/>
-                        <Setter Target="MemoryPanel.Padding" Value="0,8,0,24"/>
                         <!-- Tab 1 Single Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -188,21 +185,6 @@
                         </Grid>
                     </Button>
 
-                    <!-- Nav: Memory -->
-                    <Button x:Name="NavMemoryBtn" Click="OnNavMemoryClick"
-                            Padding="16,8,16,0" Height="42"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            BorderThickness="0"
-                            CornerRadius="6,6,0,0">
-                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
-                                <FontIcon x:Name="NavMemoryIcon" Glyph="&#xE968;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="NavMemoryText" Text="Memory Storage" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <Border x:Name="NavMemoryLine" Grid.Row="1" Height="1.5" Opacity="0" Background="{StaticResource RuAccentBrush}" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
-                        </Grid>
-                    </Button>
                 </StackPanel>
             </Border>
 
@@ -459,62 +441,9 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Right Column: Extended Features & Memory Sync -->
+                            <!-- Right Column: Tips & System Status -->
                             <StackPanel x:Name="RightColumnStack" Grid.Column="1" Margin="10,0,0,0" Spacing="20">
                                 
-                                <!-- Extended Features Card (Visible for Cloud backends) -->
-                                <Border x:Name="ExtendedFeaturesCard" Style="{StaticResource FluentCardStyle}" Visibility="Collapsed">
-                                    <StackPanel Spacing="16">
-                                        <!-- Card Header -->
-                                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,2">
-                                            <Border Width="36" Height="36"
-                                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                    Background="{StaticResource RuAccentSoftBrush}"
-                                                    BorderBrush="{StaticResource RuLineBrush}"
-                                                    BorderThickness="1">
-                                                <FontIcon Glyph="&#xE734;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
-                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center" Spacing="1">
-                                                <TextBlock Text="Smart Features &amp; Cloud Memory"
-                                                           FontSize="15"
-                                                           FontWeight="SemiBold"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           Foreground="{StaticResource RuInkBrush}"/>
-                                                <TextBlock Text="Memory preferences and context synchronization"
-                                                           FontSize="11.5"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           Foreground="{StaticResource RuMutedBrush}"/>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <!-- Self-Learning Toggle -->
-                                        <StackPanel x:Name="SelfLearningRow" Spacing="16">
-                                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
-                                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                    <TextBlock Text="Auto-learning &amp; Memory (Self-Learning)" Style="{StaticResource SettingLabelStyle}"/>
-                                                    <TextBlock Text="Automatically extract preferences and details from conversations" Style="{StaticResource SettingDescStyle}"/>
-                                                </StackPanel>
-                                                <ToggleSwitch x:Name="SelfLearningToggle" Grid.Column="1" IsOn="True"/>
-                                            </Grid>
-                                        </StackPanel>
-
-                                        <!-- Cloud Memory Consent Toggle -->
-                                        <StackPanel x:Name="CloudMemoryRow" Spacing="16" Visibility="Collapsed">
-                                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
-                                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                    <TextBlock Text="Share Memory with Cloud Models" Style="{StaticResource SettingLabelStyle}"/>
-                                                    <TextBlock Text="Allow sending remembered context when chatting with Cloud APIs" Style="{StaticResource SettingDescStyle}"/>
-                                                </StackPanel>
-                                                <ToggleSwitch x:Name="CloudMemoryConsentToggle" Grid.Column="1" IsOn="True"/>
-                                            </Grid>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- Tips & System Status Bento Info Card -->
                                 <Border Background="{StaticResource RuSurfaceBrush}"
                                         BorderBrush="{StaticResource RuLineBrush}"
                                         BorderThickness="1"
@@ -798,10 +727,6 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- Panel 4: Memory -->
-                <Grid x:Name="MemoryPanel" Padding="0,8,0,40" Visibility="Collapsed">
-                    <views:MemoryView x:Name="MemoryControl" />
-                </Grid>
             </Grid>
         </Grid>
     </Grid>

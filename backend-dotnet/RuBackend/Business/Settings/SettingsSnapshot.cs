@@ -9,8 +9,6 @@ public sealed record SettingsSnapshot(
     string OpenCodeModel,
     string KiloModel,
     string ApiVariant,
-    bool EnableSelfLearning,
-    bool ShareMemoryWithCloud,
     bool KiloReasoningEnabled,
     string VoiceLabel,
     string VoiceStyleId,

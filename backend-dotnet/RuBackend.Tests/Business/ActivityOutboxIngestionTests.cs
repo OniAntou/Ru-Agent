@@ -15,9 +15,7 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "ru-act-outbox-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
-        _paths = new DataPaths(
-            Path.Combine(_tempDir, "memory.db"),
-            Path.Combine(_tempDir, "settings.json"),
+        _paths = new DataPaths(Path.Combine(_tempDir, "settings.json"),
             Path.Combine(_tempDir, "sessions"),
             Path.Combine(_tempDir, "activity_log.jsonl"),
             Path.Combine(_tempDir, "logs"),

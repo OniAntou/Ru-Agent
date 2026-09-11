@@ -51,9 +51,7 @@ public sealed class HarnessModelContextBootstrapperTests
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var request = await fixture.SeedRunAsync();
         var root = Path.Combine(Path.GetTempPath(), "ru-context-bootstrap", Guid.NewGuid().ToString("N"));
-        var paths = new DataPaths(
-            Path.Combine(root, "memory.db"),
-            Path.Combine(root, "settings.json"),
+        var paths = new DataPaths(Path.Combine(root, "settings.json"),
             Path.Combine(root, "sessions"),
             Path.Combine(root, "activity.jsonl"));
         var sessions = new SessionStore(paths);

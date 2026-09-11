@@ -30,8 +30,8 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 64 HTTP method/path pairs plus the single
-`/voice/stream` WebSocket (43 non-Agent plus 20 additive `/agent/v1/*` plus 1
+The stable authenticated surface of 62 HTTP method/path pairs plus the single
+`/voice/stream` WebSocket (41 non-Agent plus 20 additive `/agent/v1/*` plus 1
 `POST /host/shutdown`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
@@ -194,10 +194,9 @@ providers through Worker v2 and `ModelRequest.Images`.
 _Avoid_: Unbounded base64 uploads, client-side raw file passthrough
 
 **Protected User Data**:
-Settings, sessions and their message history, activity, structured memory, credentials, and
+Settings, sessions and their message history, activity, credentials, and
 reviewed examples used by the active product. Business records live under
-`%LOCALAPPDATA%\Ru`; structured memory stays project-owned under
-`data/conversations`. `RU_DATA_ROOT` isolates both for tests.
+`%LOCALAPPDATA%\Ru`, and `RU_DATA_ROOT` isolates them for tests.
 _Avoid_: Cleanup candidates, generated data
 
 **Retired Local Model Assets**:

@@ -27,8 +27,8 @@ public sealed class TuiStickyRegion
     /// <summary>Rows the region was built for.</summary>
     public int Rows { get; private set; }
 
-    /// <summary>Columns the region was built for. A width-only resize also
-    /// invalidates the pinned rows: old-width lines wrap mid-drag.</summary>
+    /// <summary>Usable columns the region was built for (<see cref="TuiViewport.Width"/> units,
+    /// not raw console columns).</summary>
     public int Width { get; private set; }
 
     public int FooterHeight { get; private set; }
@@ -165,9 +165,12 @@ public sealed class TuiStickyRegion
             return;
         }
 
-        if (LayoutIsStale(Rows, Width, TuiViewport.TryReadLiveSize(out var liveCols, out var liveRows), liveRows, liveCols))
+        // Live console columns are raw; the region is built in usable columns, so the
+        // staleness comparison must use the same unit on both sides.
+        var hasLiveSize = TuiViewport.TryReadLiveSize(out _, out var liveRows);
+        if (LayoutIsStale(Rows, Width, hasLiveSize, liveRows, TuiViewport.Width()))
         {
-            TuiDebug.Log("sticky", $"paint skipped stale rows={Rows} cols={Width} live={liveCols}x{liveRows}");
+            TuiDebug.Log("sticky", $"paint skipped stale rows={Rows} cols={Width} live={TuiViewport.Width()}x{liveRows}");
             return;
         }
 

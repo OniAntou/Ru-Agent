@@ -15,6 +15,7 @@ public sealed class TuiPanelTests
     [InlineData(40)]
     [InlineData(80)]
     [InlineData(120)]
+    [InlineData(200)]
     public void Compose_EveryLineFillsExactlyTheWidth(int width)
     {
         var lines = TuiPanel.Compose(width, "status", Sample, "esc");

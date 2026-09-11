@@ -33,6 +33,22 @@ public sealed class SlashDropdownTests
     }
 
     [Fact]
+    public void Dropdown_selected_row_uses_brand_label()
+    {
+        TuiPalette.Level = TuiColorLevel.TrueColor;
+        try
+        {
+            var rows = SlashDropdown.Compose(60, "select", new[] { new DropdownItem("/help", "help") }, 0, 5, null);
+            Assert.Contains(TuiPalette.Code(TuiToken.Brand), rows[1]);
+            Assert.All(rows, row => Assert.Equal(60, TuiText.VisibleWidth(row)));
+        }
+        finally
+        {
+            TuiPalette.ResetLevel();
+        }
+    }
+
+    [Fact]
     public void Compose_FramesTheListWithATitleAndCounter()
     {
         var lines = SlashDropdown.Compose(60, "commands", Items, 1, 3, "↑↓ select");

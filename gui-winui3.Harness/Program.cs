@@ -60,7 +60,7 @@ internal static class Program
             startInfo.ArgumentList.Add(options.SessionPath);
             using Process process = Process.Start(startInfo)
                 ?? throw new InvalidOperationException("RuApp could not be started.");
-            using var scenario = new UiAutomationScenario(process, eventsPath);
+            await using var scenario = new UiAutomationScenario(process, eventsPath);
             var checks = new List<HarnessGuiCheck>
             {
                 await scenario.WaitForBackendReadyAsync(options.Timeout),

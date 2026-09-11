@@ -8,10 +8,13 @@ Provider model and reasoning metadata refresh independently. There is no fallbac
 a failed request never switches API, provider, key, model, protocol, or
 reasoning effort.
 
-The Host serves `GET /models` for every provider whose credential is
-configured, active or not; unknown aliases fail closed as
-`provider_not_active`, and a provider without a credential fails as
-`catalog_unauthorized` instead of falling back.
+The Host serves `GET /models` for every configured provider, active or not;
+unknown aliases fail closed as `provider_not_active`. A cloud provider that
+requires a credential (OpenCode Zen, Kilo Gateway, OpenAI, Anthropic) fails as
+`catalog_unauthorized` with an empty catalog once it is signed out — the request
+is not sent anonymously, so no picker offers a model that cannot run. The keyless
+Custom OpenAI endpoint and the credential-less local providers (Ollama, LM
+Studio) keep serving their catalogs.
 
 The GUI refreshes on startup, successful provider/model/key settings changes,
 opening the model selector and every five minutes while Chat is active. It
@@ -60,8 +63,18 @@ the shared settings gate. It never touches other accounts, never rewrites
 aliases return `Unknown provider`; local providers without a stored credential
 (`ollama`, `lmstudio`) succeed as a no-op. After removal the provider fails
 closed — the next catalog or run reports `catalog_unauthorized` rather than
-falling back — and a run already pinned by `AgentProviderSnapshotFactory` keeps
-its snapshot until it reaches a terminal state.
+falling back, so its group disappears from the Chat model picker — and a run
+already pinned by `AgentProviderSnapshotFactory` keeps its snapshot until it
+reaches a terminal state.
+
+## TUI provider and model pickers
+
+The TUI has no catalog endpoint and cannot store a key, so it lists the models
+this machine has already been configured with instead of a fetched catalog. A
+provider that lost its credential stays selectable but is marked `· no key` in
+the `/backend` and `/model` pickers, using the `has_*_key` flags of `/settings`;
+local providers, which have no credential at all, are never marked. A run
+against a signed-out provider fails closed with `catalog_unauthorized`.
 
 ## Reasoning capability contract
 

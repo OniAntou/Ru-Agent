@@ -192,6 +192,22 @@ public sealed class AgentSlashCommandSurfaceTests
     }
 
     [Fact]
+    public async Task Backend_WithoutAPicker_MarksProvidersWithoutAKey()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, _ => Json(
+            "{\"status\":\"ok\",\"backend\":\"OpenCode Zen\",\"opencode_model\":\"opencode/free\"," +
+            "\"has_opencode_key\":false,\"has_kilo_key\":true,\"has_openai_api_key\":false}"));
+
+        Assert.True(await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.Contains("no key", text, StringComparison.Ordinal);
+        Assert.Contains("OpenCode Zen", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Kilo Gateway · no key", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Backend_WithAnArgument_SwitchesDirectly()
     {
         var output = new StringWriter();

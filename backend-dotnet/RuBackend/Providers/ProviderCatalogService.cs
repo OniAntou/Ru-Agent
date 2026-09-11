@@ -65,8 +65,10 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         }
         finally { _gate.Release(); }
 
-        if (selection.Alias is "openai" or "anthropic" && string.IsNullOrWhiteSpace(credential))
+        if (selection.RequiresCredential && string.IsNullOrWhiteSpace(credential))
         {
+            // A signed-out provider fails closed with an empty catalog instead of
+            // fetching anonymously: the picker must not offer a model that cannot run.
             await _gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {

@@ -21,6 +21,14 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     public string PreferenceKey => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
         $"{Backend}\n{BaseUri.AbsoluteUri}\n{Model}")));
 
+    /// <summary>
+    /// Cloud providers that require a signed-in credential. A missing credential makes
+    /// their catalog fail closed, so no picker offers a model that cannot run. Custom
+    /// OpenAI stays exempt because a keyless local endpoint is a supported
+    /// configuration, and Ollama/LM Studio have no credential account.
+    /// </summary>
+    public bool RequiresCredential => Alias is "opencode" or "kilo" or "openai" or "anthropic";
+
     public static ProviderSelection From(SettingsSnapshot settings) => Describe(settings.Backend, settings);
 
     public static ProviderSelection From(SettingsSnapshot settings, string alias) =>

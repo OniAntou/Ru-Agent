@@ -118,15 +118,29 @@ public static class TuiSurfaces
         ("anthropic", "anthropic", "Anthropic"),
     ];
 
-    /// <summary>The backend picker rows, with the current backend marked.</summary>
-    public static IReadOnlyList<ChoiceItem> BackendChoices(string? currentBackend)
+    /// <summary>The backend picker rows, with the current backend marked and a
+    /// signed-out provider called out so its absence from a run is not a surprise.</summary>
+    public static IReadOnlyList<ChoiceItem> BackendChoices(
+        string? currentBackend,
+        IReadOnlyDictionary<string, bool>? keyStates = null)
     {
         var current = NormalizeBackend(currentBackend);
         var items = Backends
-            .Select(b => new ChoiceItem(
-                b.Label,
-                string.Equals(b.Value, current, StringComparison.OrdinalIgnoreCase) ? b.Detail + " · current" : b.Detail,
-                b.Value))
+            .Select(b =>
+            {
+                var detail = b.Detail;
+                if (string.Equals(b.Value, current, StringComparison.OrdinalIgnoreCase))
+                {
+                    detail += " · current";
+                }
+
+                if (keyStates is not null && keyStates.TryGetValue(b.Value, out var hasKey) && !hasKey)
+                {
+                    detail += " · no key";
+                }
+
+                return new ChoiceItem(b.Label, detail, b.Value);
+            })
             .ToList();
 
         var index = items.FindIndex(i => string.Equals(i.Value, current, StringComparison.OrdinalIgnoreCase));
@@ -141,9 +155,13 @@ public static class TuiSurfaces
     /// <summary>
     /// Model candidates: the model configured for the active backend first, then the ones
     /// configured for the other backends. The CLI has no catalog endpoint, so these are the
-    /// models this machine has actually been configured with.
+    /// models this machine has actually been configured with. A model whose provider lost
+    /// its credential stays selectable but is marked, because the CLI cannot store a key.
     /// </summary>
-    public static IReadOnlyList<ChoiceItem> ModelChoices(string? currentBackend, IReadOnlyList<(string Backend, string? Model)> configured)
+    public static IReadOnlyList<ChoiceItem> ModelChoices(
+        string? currentBackend,
+        IReadOnlyList<(string Backend, string? Model)> configured,
+        IReadOnlyDictionary<string, bool>? keyStates = null)
     {
         ArgumentNullException.ThrowIfNull(configured);
         var current = NormalizeBackend(currentBackend);
@@ -158,11 +176,16 @@ public static class TuiSurfaces
                 continue;
             }
 
-            var isCurrent = string.Equals(NormalizeBackend(backend), current, StringComparison.OrdinalIgnoreCase);
-            items.Add(new ChoiceItem(
-                Shorten(value, 24),
-                isCurrent ? backend + " · current" : backend,
-                value));
+            var alias = NormalizeBackend(backend);
+            var detail = string.Equals(alias, current, StringComparison.OrdinalIgnoreCase)
+                ? backend + " · current"
+                : backend;
+            if (keyStates is not null && keyStates.TryGetValue(alias, out var hasKey) && !hasKey)
+            {
+                detail += " · no key";
+            }
+
+            items.Add(new ChoiceItem(Shorten(value, 24), detail, value));
         }
 
         return items;

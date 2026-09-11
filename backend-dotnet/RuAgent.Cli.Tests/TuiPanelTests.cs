@@ -219,6 +219,36 @@ public sealed class TuiSurfacesPickerTests
 
         Assert.Empty(items);
     }
+
+    [Fact]
+    public void BackendChoices_MarksProvidersWithoutACredential()
+    {
+        var items = TuiSurfaces.BackendChoices("OpenCode Zen", new Dictionary<string, bool>
+        {
+            ["opencode"] = false,
+            ["kilo"] = true,
+        });
+
+        var openCode = Assert.Single(items, i => i.Value == "opencode");
+        Assert.Contains("current", openCode.Detail, StringComparison.Ordinal);
+        Assert.Contains("no key", openCode.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "kilo").Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "ollama").Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ModelChoices_MarksModelsOfProvidersWithoutACredential()
+    {
+        var items = TuiSurfaces.ModelChoices("Kilo Gateway", [
+            ("Kilo Gateway", "kilocode/gpt-5-codex"),
+            ("Anthropic", "claude-sonnet-4-5"),
+        ], new Dictionary<string, bool> { ["kilo"] = true, ["anthropic"] = false });
+
+        Assert.Equal(2, items.Count);
+        Assert.DoesNotContain("no key", items[0].Detail, StringComparison.Ordinal);
+        Assert.Contains("no key", items[1].Detail, StringComparison.Ordinal);
+        Assert.Equal("claude-sonnet-4-5", items[1].Value);
+    }
 }
 
 public sealed class ChoiceListTests

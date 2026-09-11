@@ -14,7 +14,7 @@ public sealed class ProviderCatalogEndpointTests
     [Fact]
     public async Task Models_returns_the_provider_catalog_not_the_configured_worker_model()
     {
-        using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
+        using var factory = new BackendWebApplicationFactory(credentialStore: new SingleCredential("api_key", "opencode-key"));
         using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => new CatalogHandler())));
         using var client = configured.CreateClient();
@@ -57,6 +57,24 @@ public sealed class ProviderCatalogEndpointTests
     }
 
     [Fact]
+    public async Task Models_for_a_signed_out_provider_fails_closed_without_fetching()
+    {
+        var handler = new CatalogHandler();
+        using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => handler)));
+        using var client = configured.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/models?backend=opencode"))!;
+
+        Assert.Equal("error", body["status"]!.GetValue<string>());
+        Assert.Equal("catalog_unauthorized", body["error_code"]!.GetValue<string>());
+        Assert.Empty(body["models"]!.AsArray());
+        Assert.Equal(0, handler.Count);
+    }
+
+    [Fact]
     public async Task Models_rejects_an_unknown_backend_alias()
     {
         using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
@@ -71,8 +89,11 @@ public sealed class ProviderCatalogEndpointTests
 
     private sealed class CatalogHandler : HttpMessageHandler
     {
+        public int Count;
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref Count);
             Assert.Equal("https://opencode.ai/zen/v1/models", request.RequestUri?.AbsoluteUri);
             Assert.Null(request.Headers.Authorization);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
@@ -118,7 +139,7 @@ public sealed class ProviderCatalogEndpointTests
     [Fact]
     public async Task Reasoning_save_validates_identity_and_preserves_per_model_choice()
     {
-        using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
+        using var factory = new BackendWebApplicationFactory(credentialStore: new SingleCredential("api_key", "opencode-key"));
         using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => new CatalogHandler())));
         using var client = configured.CreateClient();

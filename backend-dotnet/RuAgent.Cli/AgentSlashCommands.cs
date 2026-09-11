@@ -87,14 +87,14 @@ public sealed class AgentSlashCommands
         return false;
     }
 
-    private static readonly (string Backend, string Field, string HasKeyField)[] KnownBackends =
+    private static readonly (string Backend, string Alias, string Field, string HasKeyField)[] KnownBackends =
     [
-        ("Kilo Gateway", "kilo_model", "has_kilo_key"),
-        ("OpenCode Zen", "opencode_model", "has_opencode_key"),
-        ("Ollama", "ollama_model", ""),
-        ("LM Studio", "lmstudio_model", ""),
-        ("OpenAI", "openai_model", "has_openai_api_key"),
-        ("Anthropic", "anthropic_model", "has_anthropic_api_key"),
+        ("Kilo Gateway", "kilo", "kilo_model", "has_kilo_key"),
+        ("OpenCode Zen", "opencode", "opencode_model", "has_opencode_key"),
+        ("Ollama", "ollama", "ollama_model", ""),
+        ("LM Studio", "lmstudio", "lmstudio_model", ""),
+        ("OpenAI", "openai", "openai_model", "has_openai_api_key"),
+        ("Anthropic", "anthropic", "anthropic_model", "has_anthropic_api_key"),
     ];
 
     private static string ModelFieldFor(string? backend) =>
@@ -123,20 +123,45 @@ public sealed class AgentSlashCommands
     private static string? ReadBackend(JsonElement settings) =>
         settings.TryGetProperty("backend", out var backend) ? backend.GetString() : null;
 
+    /// <summary>
+    /// Credential presence per provider alias. Local providers have no key field and are
+    /// omitted, so callers only ever mark providers that can actually be signed out.
+    /// </summary>
+    private static IReadOnlyDictionary<string, bool> ReadKeyStates(JsonElement settings)
+    {
+        var states = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, alias, _, hasKeyField) in KnownBackends)
+        {
+            if (string.IsNullOrEmpty(hasKeyField))
+            {
+                continue;
+            }
+
+            if (settings.TryGetProperty(hasKeyField, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                states[alias] = value.GetBoolean();
+            }
+        }
+
+        return states;
+    }
+
     private async Task HandleBackendAsync(string? arg, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(arg))
         {
             // No argument: offer the picker instead of making the operator recall the names.
-            var current = await ReadBackendAsync(cancellationToken).ConfigureAwait(false);
-            var list = new Tui.ChoiceList("backend", Tui.TuiSurfaces.BackendChoices(current));
+            var settings = await TryReadSettingsAsync(cancellationToken).ConfigureAwait(false);
+            var current = settings.HasValue ? ReadBackend(settings.Value) : null;
+            var keyStates = settings.HasValue ? ReadKeyStates(settings.Value) : null;
+            var list = new Tui.ChoiceList("backend", Tui.TuiSurfaces.BackendChoices(current, keyStates));
             var picked = Picker is null ? null : await Picker(list, cancellationToken).ConfigureAwait(false);
             if (picked is null)
             {
                 // Cancelled (nothing to add) or not interactive (list the options).
                 if (Picker is null || !IsInteractiveConsole())
                 {
-                    WriteBackendPanel(current);
+                    WriteBackendPanel(current, keyStates);
                 }
 
                 await _out.FlushAsync().ConfigureAwait(false);
@@ -151,9 +176,9 @@ public sealed class AgentSlashCommands
 
     private static bool IsInteractiveConsole() => !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
-    private void WriteBackendPanel(string? current)
+    private void WriteBackendPanel(string? current, IReadOnlyDictionary<string, bool>? keyStates)
     {
-        var rows = Tui.TuiSurfaces.BackendChoices(current)
+        var rows = Tui.TuiSurfaces.BackendChoices(current, keyStates)
             .Select(item => new Tui.PanelRow(item.Label, item.Detail))
             .ToList();
 
@@ -194,12 +219,11 @@ public sealed class AgentSlashCommands
         await _out.FlushAsync().ConfigureAwait(false);
     }
 
-    private async Task<string?> ReadBackendAsync(CancellationToken cancellationToken)
+    private async Task<JsonElement?> TryReadSettingsAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-            return ReadBackend(settings);
+            return await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -218,7 +242,7 @@ public sealed class AgentSlashCommands
                 var configured = KnownBackends
                     .Select(b => (b.Backend, ReadModel(root, b.Backend)))
                     .ToList();
-                var candidates = Tui.TuiSurfaces.ModelChoices(backend, configured);
+                var candidates = Tui.TuiSurfaces.ModelChoices(backend, configured, ReadKeyStates(root));
 
                 // Fewer than two candidates means there is nothing to choose between: show
                 // the card instead of a one-row picker.

@@ -71,6 +71,9 @@ public sealed record ModelRequest
                 throw new ArgumentException("Images contains null entry.", nameof(images));
             }
 
+            const int MaxImageBase64Chars = 5_600_000;
+            const long MaxTotalImagesBytes = 20L * 1024 * 1024;
+
             long totalDecoded = 0;
             foreach (var img in images)
             {
@@ -79,17 +82,21 @@ public sealed record ModelRequest
                     throw new ArgumentException("MimeType is invalid. Only image/png, image/jpeg, image/webp are allowed.", nameof(images));
                 }
 
-                if (string.IsNullOrWhiteSpace(img.Base64Data) || img.Base64Data.Length > 5_600_000)
+                if (string.IsNullOrWhiteSpace(img.Base64Data) || img.Base64Data.Length > MaxImageBase64Chars)
                 {
                     throw new ArgumentException("Base64Data is invalid.", nameof(images));
                 }
 
-                // Estimate decoded bytes: ceil(Base64Data.Length * 3 / 4)
-                // Account for padding via formula (len * 3 + 3) / 4 to get upper bound
-                var len = (long)img.Base64Data.Length;
-                var decoded = (len * 3 + 3) / 4;
+                // Estimate decoded bytes: (len * 3 / 4) minus base64 padding.
+                // Per-image size is enforced by ModelImage's character cap;
+                // only the 20MB total is enforced here.
+                var padding = 0;
+                if (img.Base64Data.EndsWith("==", StringComparison.Ordinal)) padding = 2;
+                else if (img.Base64Data.EndsWith("=", StringComparison.Ordinal)) padding = 1;
+                var decoded = (img.Base64Data.Length * 3L) / 4 - padding;
+
                 totalDecoded += decoded;
-                if (totalDecoded > 20L * 1024 * 1024)
+                if (totalDecoded > MaxTotalImagesBytes)
                 {
                     throw new ArgumentException("Total decoded images exceed 20MB.", nameof(images));
                 }

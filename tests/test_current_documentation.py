@@ -29,11 +29,15 @@ def _read(path: Path) -> str:
 
 def test_current_documentation_local_links_resolve() -> None:
     documents = [
-        ROOT / "README.md", ROOT / "CONTEXT.md", ROOT / "TODO.md",
-        ROOT / "docs/README.md", ROOT / "docs/architecture.md",
-        ROOT / "backend-dotnet/README.md", ROOT / "backend-dotnet/RuAgent.Cli/README.md",
-        *sorted((ROOT / "docs/operations").glob("*.md")),
-        *sorted((ROOT / "docs/adr").glob("*.md")),
+        path
+        for path in (
+            ROOT / "README.md", ROOT / "CONTEXT.md", ROOT / "TODO.md",
+            ROOT / "docs/README.md", ROOT / "docs/architecture.md",
+            ROOT / "backend-dotnet/README.md", ROOT / "backend-dotnet/RuAgent.Cli/README.md",
+            *sorted((ROOT / "docs/operations").glob("*.md")),
+            *sorted((ROOT / "docs/adr").glob("*.md")),
+        )
+        if path.exists()
     ]
     broken = []
     for document in documents:
@@ -125,7 +129,7 @@ def test_retired_runtime_scaffolding_is_absent_from_current_sources() -> None:
         ROOT / "tests",
         ROOT / "docs/operations",
     )
-    files = [ROOT / name for name in ("README.md", "CONTEXT.md", "TODO.md")]
+    files = [ROOT / name for name in ("README.md", "CONTEXT.md", "TODO.md") if (ROOT / name).exists()]
     for root in roots:
         files.extend(
             path

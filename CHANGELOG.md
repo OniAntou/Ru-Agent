@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING(backend)**: Public Contract là 64 HTTP + 1 WS (`43 non-Agent + 20 /agent/v1/* + 1 POST /host/shutdown`) sau khi thêm `POST /settings/provider/remove`; docs cũ ghi 63 đã sửa theo `public-route-contract.json`. Headless `RU_MEDIA_SURFACES=0` phục vụ subset rút gọn (media routes unmapped), không phải full contract.
+- **BREAKING(agent)**: `web_search`/`web_fetch` là tool độc lập, tách khỏi `read`; preset/session cũ liệt kê web dưới `read` cần cập nhật sang `WebToolIds`.
+
 ### Added
 - **feat(cli)**: TUI chuyển sang hệ thị giác "aurora" khớp GUI — `TuiPalette` (token ngữ nghĩa brand `#38BDF8`/brand2 `#818CF8`/meta `#94A3B8`/line `#334155`/ok/warn/err lấy từ GUI dark theme) với cấp màu tự hạ truecolor → 256 → 16 → none theo `COLORTERM`/`WT_SESSION`/`NO_COLOR`/`TERM=dumb`, override qua `RU_TUI_COLOR`; `TuiText` đo/ngắt dòng theo bảng east-asian width (emoji, CJK, ký tự combining, ANSI) thay cho `StripAnsi(x).Length`; `TuiSurface` gom mọi writer vào một write-gate + bọc repaint trong synchronized output (CSI 2026) nên hết nháy và hết rác đuôi dòng.
 - **feat(cli)**: Header TUI gọn còn 3 dòng + dòng phím tắt (`TuiHeader`, thay `GrokHeader`), có empty-state riêng cho phiên mới, workspace rút gọn theo leaf.

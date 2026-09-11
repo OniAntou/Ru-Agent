@@ -45,8 +45,9 @@
 
 - `Program.cs`: voice/STT/VTube/observation chỉ map khi `RU_MEDIA_SURFACES`
   khác `"0"` (`VoiceStreamEndpoint` + `Voice/Observation/Stt/VtsEndpoints`).
-  Headless coding agent chạy `RU_MEDIA_SURFACES=0`, contract mặc định giữ
-  63 HTTP + 1 WS nên `check_aspnetcore_route_matrix.py` vẫn pass.
+  Headless coding agent chạy `RU_MEDIA_SURFACES=0` phục vụ subset rút gọn
+  (media routes unmapped); `check_aspnetcore_route_matrix.py` kiểm tra full
+  contract 64 HTTP + 1 WS khi media bật.
 - RuBackend build 0 warning; media + gateway tests 56/56 xanh.
 
 - Xóa `tool.prepare`/`tool.prepared` legacy khỏi `AgentMessageTypes` (cả `Known` + `V2Only`):
@@ -377,7 +378,7 @@ unit tests replace only their external process boundary and never open RuApp.
   cannot race the live writer's current-day append handle on Windows.
 - Sequential `scripts/test_dotnet.ps1 -NoRestore`: `2,392 passed` across all
   13 test projects; Python suite: `413 passed`; route contract: `62 HTTP + 1
-  WebSocket` (historical snapshot — current contract is 63 HTTP + 1 WebSocket
+  WebSocket` (historical snapshot — current contract is 64 HTTP + 1 WebSocket
   per `backend-dotnet/public-route-contract.json`); documentation/route checks: `8 passed`; `git diff --check` clean.
 
 ### Test-suite cleanup evidence (2026-08-31)
@@ -390,12 +391,12 @@ unit tests replace only their external process boundary and never open RuApp.
   retaining three focused resource/accessibility contracts and behavior tests.
 - Ruff, Mypy (`39` source files), `pip check`, and the
   `56 HTTP + 1 WebSocket` public route contract all passed (historical snapshot —
-  current contract is 63 HTTP + 1 WebSocket per `backend-dotnet/public-route-contract.json`).
+  current contract is 64 HTTP + 1 WebSocket per `backend-dotnet/public-route-contract.json`).
 - The first .NET run encountered a business-fixture JSONL cleanup lock. Only
   those business tests now inject a discarding diagnostic emitter; the `89`
   focused business/diagnostics tests and subsequent full matrix passed.
-  The real writer's bounded shutdown wait still needs investigation, tracked
-  in [TODO](../../TODO.md). This cleanup does not claim that lifecycle bug fixed.
+  The real writer's bounded shutdown wait still needs investigation.
+  This cleanup does not claim that lifecycle bug fixed.
 - Cleanup verification did not publish a fresh GUI, automate the interactive
   GUI, perform real voice/VTS/cloud acceptance, or uninstall packages.
   Commit/push is a separately authorized Git handoff, not runtime acceptance.
@@ -552,8 +553,8 @@ save with a simulated failure) remains a user-run manual gate.
   provider/audio/VTS acceptance was claimed. The old rebuildable GUI publish
   output was replaced; user settings, credentials and session data were untouched.
 
-The route checker must remain at 63 HTTP routes and 1 WebSocket
-route (`/voice/stream`; 42 non-Agent plus 20 additive `/agent/v1/*` plus
+The route checker must remain at 64 HTTP routes and 1 WebSocket
+route (`/voice/stream`; 43 non-Agent plus 20 additive `/agent/v1/*` plus
 `POST /host/shutdown`). The
 deterministic Harness is contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it

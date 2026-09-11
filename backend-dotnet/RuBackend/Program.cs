@@ -85,7 +85,8 @@ var app = builder.Build();
 
 // Media surfaces are optional (Pi-style): voice/STT/VTube/observation map
 // only when RU_MEDIA_SURFACES is unset or "1". Headless coding agents run
-// with RU_MEDIA_SURFACES=0 and keep the 63-route contract minus media.
+// with RU_MEDIA_SURFACES=0 and serve a reduced subset of the 64 HTTP + 1 WS
+// contract with the media routes unmapped.
 var mediaSurfacesEnabled = !string.Equals(
     Environment.GetEnvironmentVariable("RU_MEDIA_SURFACES"),
     "0",

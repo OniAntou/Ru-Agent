@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -130,11 +131,12 @@ def _factory_for(method: str, path: str) -> RequestFactory:
             body = {"speaking": False}
         elif path == "/agent/v1/runs" and method == "POST":
             # Minimal valid tracer payload – harness will fill session_id/workspace if available later;
-            # generic probe uses synthetic session and a workspace placeholder; endpoint validates and may
+            # generic probe uses synthetic session and a drive-agnostic workspace placeholder
+            # (override via RU_HARNESS_WORKSPACE); endpoint validates and may
             # return 201 (created) or 400/409 for placeholder workspace – both considered probe success
             body = {
                 "session_id": session_id or "harness-session",
-                "workspace_path": "D:\\LLM",
+                "workspace_path": os.environ.get("RU_HARNESS_WORKSPACE", "harness-workspace"),
                 "prompt": "harness agent tracer probe",
                 "preset": "standard",
                 "idempotency_key": "harness-probe-key",

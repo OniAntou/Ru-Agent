@@ -6,8 +6,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path -LiteralPath $vswhere)) {
+    $vswhere = (Get-Command vswhere.exe -ErrorAction SilentlyContinue)?.Source
+}
+if (-not $vswhere -or -not (Test-Path -LiteralPath $vswhere)) {
     throw 'Visual Studio Installer was not found.'
 }
 

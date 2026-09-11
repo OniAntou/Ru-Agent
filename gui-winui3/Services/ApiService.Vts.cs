@@ -126,9 +126,11 @@ namespace RuApp.Services
 
         public async Task<VtsStatusDto?> GetVtsStatusAsync(CancellationToken cancellationToken = default)
         {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
             try
             {
-                return await _httpClient.GetFromJsonAsync<VtsStatusDto>($"{_baseUrl}/vts/status", cancellationToken);
+                return await _httpClient.GetFromJsonAsync<VtsStatusDto>($"{_baseUrl}/vts/status", timeoutCts.Token);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

@@ -30,8 +30,8 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 63 HTTP method/path pairs plus the single
-`/voice/stream` WebSocket (42 non-Agent plus 20 additive `/agent/v1/*` plus 1
+The stable authenticated surface of 64 HTTP method/path pairs plus the single
+`/voice/stream` WebSocket (43 non-Agent plus 20 additive `/agent/v1/*` plus 1
 `POST /host/shutdown`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The

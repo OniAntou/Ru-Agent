@@ -174,7 +174,10 @@ internal static class PublicHostServiceRegistration
             }
 
             // Development-only platforms; Windows is the supported production host.
-            return new EphemeralHarnessKeyStore();
+            // Fail closed: no ephemeral fallback, an in-memory key could not
+            // decrypt existing AES-GCM payloads and would overwrite them.
+            throw new PlatformNotSupportedException(
+                "Harness key store requires Windows DPAPI.");
         });
         services.AddSingleton<WorkspaceJournalProtector>(services =>
             new WorkspaceJournalProtector(services.GetRequiredService<IHarnessKeyStore>()));
@@ -437,23 +440,6 @@ internal static class PublicHostServiceRegistration
                 ? new Uri("ws://127.0.0.1:8006/worker/v1")
                 : new Uri(workerUrl, UriKind.Absolute),
             workerToken);
-    }
-}
-
-internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Privacy.IHarnessKeyStore
-{
-    private readonly byte[] _key;
-
-    public EphemeralHarnessKeyStore()
-    {
-        _key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
-    }
-
-    public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken)
-    {
-        var copy = new byte[32];
-        Buffer.BlockCopy(_key, 0, copy, 0, 32);
-        return ValueTask.FromResult(copy);
     }
 }
 

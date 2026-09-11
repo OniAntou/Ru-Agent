@@ -35,8 +35,6 @@ class RuntimeBoundaryRecord:
 def classify(path: str) -> tuple[str, str]:
     if path in _C_SHARP_STARTUP_FILES:
         return "managed-startup", "known-entrypoint"
-    if path.startswith(("src/ru_runtime/worker/v2/", "src/ru_runtime/generation/")):
-        return "production-to-port", "managed-agent-reference"
     if path.startswith((
         "src/ru_runtime/worker/v1/",
         "src/ru_runtime/voice/",
@@ -109,8 +107,21 @@ def _summary(records: Iterable[RuntimeBoundaryRecord]) -> dict[str, object]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--fail-on",
+        action="append",
+        default=[],
+        help="Fail (exit 1) when any file has one of these classifications. "
+        "Repeatable. Default: never fail; print the summary and exit 0.",
+    )
     args = parser.parse_args(argv)
-    print(json.dumps(_summary(scan_runtime_boundary(args.root)), sort_keys=True))
+    records = scan_runtime_boundary(args.root)
+    print(json.dumps(_summary(records), sort_keys=True))
+    if args.fail_on:
+        hits = sorted({r.path for r in records if r.classification in args.fail_on})
+        if hits:
+            print(json.dumps({"fail_on": sorted(args.fail_on), "hits": hits[:50], "hit_count": len(hits)}, sort_keys=True))
+            return 1
     return 0
 
 

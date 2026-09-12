@@ -26,7 +26,6 @@ public static class WorkerV2Contracts
     public const int MaxPromptContextBytes = 512 * 1024;
     public const int MaxPromptInstructionBytes = 64 * 1024;
     public const int MaxCombinedPromptInstructionBytes = 256 * 1024;
-    public const int MaxPromptMemoryBytes = 100 * 1024;
     public const int MaxPromptReferenceBytes = 32 * 1024;
     public const int MaxPromptCollectionItems = 16;
     public const int MaxPromptReceiptBlocks = 32;
@@ -72,7 +71,7 @@ public static class WorkerV2Contracts
     private static readonly IReadOnlySet<string> PromptInstructionRequiredFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptInstructionOrigins = new HashSet<string>(["Workspace", "ExternalSkill"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptCapabilityFields = new HashSet<string>(["id", "version", "description", "scope", "input_schema_json", "input_schema_digest", "example_arguments_json", "availability"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> PromptRuntimeFields = new HashSet<string>(["memory", "mood", "voice", "vts", "hardware", "references"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptRuntimeFields = new HashSet<string>(["mood", "voice", "vts", "hardware", "references"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptReferenceFields = new HashSet<string>(["kind", "label", "content"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptReceiptFields = new HashSet<string>(["composer_version", "prompt_sha256", "block_digests"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptBlockDigestFields = new HashSet<string>(["block_id", "sha256"], StringComparer.Ordinal);
@@ -465,16 +464,10 @@ public static class WorkerV2Contracts
 
         if (context["runtime_context"] is not JsonObject runtime
             || !HasExactFields(runtime, PromptRuntimeFields)
-            || !TryGetNullableString(runtime["memory"], MaxPromptMemoryBytes, out var memory)
             || !TryGetNullableString(runtime["mood"], 256, out _)
             || !TryGetNullableString(runtime["voice"], 2 * 1024, out _)
             || !TryGetNullableString(runtime["vts"], 2 * 1024, out _)
             || !TryGetNullableString(runtime["hardware"], 2 * 1024, out _))
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
-
-        if (memory is not null && PromptUtf8ByteCount(memory) > MaxPromptMemoryBytes)
         {
             throw new AgentProtocolException("invalid_request");
         }

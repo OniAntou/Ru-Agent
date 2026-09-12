@@ -142,7 +142,6 @@ public static class WorkerV2PromptCodec
             ["capabilities"] = capabilities,
             ["runtime_context"] = new JsonObject
             {
-                ["memory"] = context.RuntimeContext.Memory,
                 ["mood"] = context.RuntimeContext.Mood,
                 ["voice"] = context.RuntimeContext.Voice,
                 ["vts"] = context.RuntimeContext.Vts,
@@ -305,7 +304,6 @@ public static class WorkerV2PromptCodec
             instructionRecords,
             capabilityRecords,
             new PromptRuntimeContext(
-                OptionalString(runtime["memory"]),
                 OptionalString(runtime["mood"]),
                 OptionalString(runtime["voice"]),
                 OptionalString(runtime["vts"]),

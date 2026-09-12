@@ -148,7 +148,6 @@ public static class SystemPromptComposer
     {
         var runtime = context.RuntimeContext;
         var sections = new List<string>();
-        AddSection(sections, "memory", runtime.Memory);
         AddSection(sections, "mood", runtime.Mood);
         AddSection(sections, "voice", runtime.Voice);
         AddSection(sections, "vts", runtime.Vts);

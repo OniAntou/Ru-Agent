@@ -144,7 +144,6 @@ public sealed class AgentPromptReceiptTests
                 null,
                 null,
                 null,
-                null,
                 Array.Empty<PromptReference>()));
     }
 

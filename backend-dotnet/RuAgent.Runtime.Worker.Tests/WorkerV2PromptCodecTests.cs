@@ -51,7 +51,7 @@ public sealed class WorkerV2PromptCodecTests
                 PromptHashForTest.Sha256(content),
                 PromptInstructionOrigin.ExternalSkill)],
             Array.Empty<PromptCapability>(),
-            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
 
         var payload = WorkerV2PromptCodec.WriteContext(context);
         Assert.Equal("ExternalSkill", payload["instruction_blocks"]!.AsArray()[0]!.AsObject()["origin"]!.GetValue<string>());
@@ -82,7 +82,7 @@ public sealed class WorkerV2PromptCodecTests
                 content,
                 PromptHashForTest.Sha256(content))],
             Array.Empty<PromptCapability>(),
-            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
 
         var payload = WorkerV2PromptCodec.WriteContext(context);
         payload["instruction_blocks"]!.AsArray()[0]!.AsObject().Remove("origin");
@@ -129,7 +129,7 @@ public sealed class WorkerV2PromptCodecTests
             new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             new[] { capability },
-            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
     }
 
     private static class PromptHashForTest

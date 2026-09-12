@@ -142,14 +142,12 @@ public sealed record PromptReference
 public sealed record PromptRuntimeContext
 {
     public PromptRuntimeContext(
-        string? memory,
         string? mood,
         string? voice,
         string? vts,
         string? hardware,
         IReadOnlyList<PromptReference> references)
     {
-        Memory = PromptText.OptionalBytes(memory, 100 * 1024, nameof(memory));
         Mood = PromptText.Optional(mood, 256, nameof(mood));
         Voice = PromptText.Optional(voice, 2 * 1024, nameof(voice));
         Vts = PromptText.Optional(vts, 2 * 1024, nameof(vts));
@@ -168,8 +166,6 @@ public sealed record PromptRuntimeContext
 
         References = new ReadOnlyCollection<PromptReference>(copiedReferences);
     }
-
-    public string? Memory { get; }
 
     public string? Mood { get; }
 
@@ -201,7 +197,7 @@ public sealed record SystemPromptContext
         new PromptEnvironment("unknown", "unknown", "en-US", "UTC", "1970-01-01", null),
         Array.Empty<PromptInstructionBlock>(),
         Array.Empty<PromptCapability>(),
-        new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+        new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
 
     public SystemPromptContext(
         int schemaVersion,
@@ -346,7 +342,6 @@ public sealed record SystemPromptContext
             }),
             runtime_context = new
             {
-                memory = RuntimeContext.Memory,
                 mood = RuntimeContext.Mood,
                 voice = RuntimeContext.Voice,
                 vts = RuntimeContext.Vts,

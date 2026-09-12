@@ -171,7 +171,6 @@ public sealed class Phase1GoldenParityTests
             instructions,
             capabilities,
             new PromptRuntimeContext(
-                OptionalString(runtime["memory"]),
                 OptionalString(runtime["mood"]),
                 OptionalString(runtime["voice"]),
                 OptionalString(runtime["vts"]),

@@ -132,16 +132,6 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ModelContextSnapshot modelContext,
         CancellationToken cancellationToken)
     {
-        var memoryParts = modelContext.Entries
-            .Where(entry => entry.Role == ModelContextRole.System
-                && entry.Kind == ModelContextEntryKind.Text
-                && string.Equals(entry.SourceId, "base:memory", StringComparison.Ordinal))
-            .Select(entry => entry.Content)
-            .Where(content => !string.IsNullOrWhiteSpace(content))
-            .Cast<string>()
-            .ToArray();
-        var memory = memoryParts.Length == 0 ? null : string.Join("\n\n", memoryParts);
-
         var references = modelContext.Entries
             .Where(entry => entry.Kind == ModelContextEntryKind.ToolResult
                 && !string.IsNullOrWhiteSpace(entry.Content))
@@ -180,7 +170,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             }
         }
 
-        return new PromptRuntimeContext(memory, null, null, null, null, references);
+        return new PromptRuntimeContext(null, null, null, null, references);
     }
 
     private static string WorkspaceLabel(string canonicalRoot)

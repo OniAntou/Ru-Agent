@@ -338,7 +338,6 @@ public sealed class WorkerV2ContractTests
                     Capability("read"),
                 ],
                 new PromptRuntimeContext(
-                    "remembered preference",
                     null,
                     null,
                     null,

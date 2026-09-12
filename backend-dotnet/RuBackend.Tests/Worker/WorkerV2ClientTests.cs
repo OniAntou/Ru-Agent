@@ -788,7 +788,6 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     .Select(definition => Capability(definition.ToolId))
                     .ToArray(),
                 new PromptRuntimeContext(
-                    "remembered preference",
                     null,
                     null,
                     null,

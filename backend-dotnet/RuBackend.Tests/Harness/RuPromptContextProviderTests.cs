@@ -30,7 +30,6 @@ public sealed class RuPromptContextProviderTests
         var snapshot = new ModelContextSnapshot(
             new ModelContextEntry[]
             {
-                ModelContextEntry.Text("base:memory", 1, ModelContextRole.System, "remembered preference"),
                 ModelContextEntry.Text("user", 2, ModelContextRole.User, "read README"),
                 ModelContextEntry.ToolResult(
                     "tool",
@@ -59,7 +58,6 @@ public sealed class RuPromptContextProviderTests
         Assert.NotEqual(firstSkill.ContentSha256, thirdSkill.ContentSha256);
         Assert.Equal("changed skill body", thirdSkill.Content.Split("\n\n", 2)[1]);
         Assert.NotEqual(first.InstructionBlocks[0].ContentSha256, second.InstructionBlocks[0].ContentSha256);
-        Assert.Equal("remembered preference", first.RuntimeContext.Memory);
         Assert.Single(first.RuntimeContext.References);
         Assert.Equal("tool_result", first.RuntimeContext.References[0].Kind);
         Assert.DoesNotContain("arguments", first.RuntimeContext.References[0].Content, StringComparison.OrdinalIgnoreCase);
@@ -142,7 +140,7 @@ public sealed class RuPromptContextProviderTests
             new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             [new PromptCapability("files.read", "1.0.0", "Read", "workspace.read", schema, new string('0', 64), null, "enabled")],
-            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
 
         var error = Assert.Throws<AgentProtocolException>(() => LoopbackModelStepRunner.BuildSettingsForTests(context));
         Assert.Equal("tool_contract_mismatch", error.Code);

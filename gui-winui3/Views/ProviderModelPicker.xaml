@@ -53,8 +53,9 @@
                           Margin="0,0,8,0" />
                 <TextBox x:Name="PickerSearchBox"
                          Grid.Column="1"
-                         AutomationProperties.AutomationId="ModelSearchBox"
-                         PlaceholderText="Search models..."
+                          AutomationProperties.AutomationId="ModelSearchBox"
+                          AutomationProperties.Name="Search models"
+                          PlaceholderText="Search models…"
                          TextChanged="OnPickerSearchTextChanged"
                          FontFamily="{StaticResource RuUiFontFamily}"
                          FontSize="12.5"

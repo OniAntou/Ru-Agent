@@ -203,9 +203,16 @@ public sealed class WelcomeOverlay : Grid, IDisposable
 
         Loaded += (_, _) =>
         {
-            _backgroundPaths.StartAnimations();
-            _loadingPulseStoryboard.Begin();
-            PlayTitleEntrance();
+            if (RuApp.Services.UiTiming.AnimationsEnabled)
+            {
+                _backgroundPaths.StartAnimations();
+                _loadingPulseStoryboard.Begin();
+                PlayTitleEntrance();
+            }
+            else
+            {
+                _titleContainer.Opacity = 1.0;
+            }
         };
 
         Unloaded += (_, _) =>
@@ -401,6 +408,16 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             _buttonScale.ScaleY = 0.82;
             _buttonTransform.Y = 14.0;
 
+            if (!RuApp.Services.UiTiming.AnimationsEnabled)
+            {
+                _buttonContainer.Opacity = 1.0;
+                _buttonScale.ScaleX = 1.0;
+                _buttonScale.ScaleY = 1.0;
+                _buttonTransform.Y = 0.0;
+                _enterButton.Focus(FocusState.Programmatic);
+                return;
+            }
+
             // 3. Blossom spring entrance animation
             var buttonFade = new DoubleAnimation
             {
@@ -460,6 +477,7 @@ public sealed class WelcomeOverlay : Grid, IDisposable
     private void StartArrowNudge()
     {
         if (_isDismissed) return;
+        if (!RuApp.Services.UiTiming.AnimationsEnabled) return;
 
         var nudgeAnim = new DoubleAnimation
         {
@@ -485,6 +503,16 @@ public sealed class WelcomeOverlay : Grid, IDisposable
     {
         if (_isDismissed) return;
         _isDismissed = true;
+
+        if (!RuApp.Services.UiTiming.AnimationsEnabled)
+        {
+            Visibility = Visibility.Collapsed;
+            _backgroundPaths.Dispose();
+            _loadingPulseStoryboard.Stop();
+            _arrowNudgeStoryboard?.Stop();
+            Dismissed?.Invoke(this, EventArgs.Empty);
+            return;
+        }
 
         var fadeOut = new DoubleAnimation
         {

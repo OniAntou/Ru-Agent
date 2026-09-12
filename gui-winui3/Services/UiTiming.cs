@@ -18,4 +18,24 @@ public static class UiTiming
 
     public const double StaleReactionSeconds = 15.0;
     public const double ResizerActiveOpacity = 0.85;
+
+    /// <summary>
+    /// Mirrors the OS "show animations" setting (Settings -&gt; Accessibility -&gt;
+    /// Visual effects). Decorative loops (welcome art, meteor field, pulses)
+    /// must stay off when the user disables animations.
+    /// </summary>
+    public static bool AnimationsEnabled
+    {
+        get
+        {
+            try
+            {
+                return new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+    }
 }

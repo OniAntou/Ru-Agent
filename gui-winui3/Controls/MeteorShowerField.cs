@@ -243,6 +243,12 @@ public sealed class MeteorShowerField : Canvas, IDisposable
             return;
         }
 
+        if (!RuApp.Services.UiTiming.AnimationsEnabled)
+        {
+            StopAndClear();
+            return;
+        }
+
         EnsureCompositionTree();
         UpdateStarPositions();
         Visibility = Visibility.Visible;

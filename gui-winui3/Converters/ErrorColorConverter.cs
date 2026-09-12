@@ -1,5 +1,6 @@
 using System;
 using Microsoft.UI;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 
@@ -11,14 +12,14 @@ namespace RuApp.Converters
         {
             if (value is bool isError && isError)
             {
-                return new SolidColorBrush(Colors.OrangeRed);
+                return Application.Current.Resources["RuDangerBrush"];
             }
-            return new SolidColorBrush(Colors.White);
+            return Application.Current.Resources["RuInkBrush"];
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, string language)
         {
-            throw new NotImplementedException();
+            return DependencyProperty.UnsetValue;
         }
     }
 }

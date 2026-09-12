@@ -10,7 +10,7 @@ public sealed class FileRestoreAdapter
     private readonly CanonicalPathResolver _resolver;
     private readonly int _maxRecoveryBytes;
 
-    // In-memory registry for Broker-level tests (process-isolated). For persistence-backed Host path, HarnessToolGateway uses FileRecoveryStore directly.
+    // In-memory registry for Broker-level tests (process-isolated). For the persistence-backed Host path, FileRecoveryStore is used directly.
     private static readonly ConcurrentDictionary<string, RecoveryRecord> _store = new();
     // ExecuteWithBytes is the adapter boundary used by persistence-backed hosts. Keep
     // a short-lived replay ledger for those opaque ids as well; otherwise a caller could

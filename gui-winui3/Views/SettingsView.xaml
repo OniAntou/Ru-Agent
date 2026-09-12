@@ -297,12 +297,13 @@
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock x:Name="OpenCodeApiKeyLabel" Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                 <PasswordBox x:Name="OpenCodeApiKeyBox"
-                                                             PlaceholderText="sk-opencode-..."
+                                                             AutomationProperties.LabeledBy="{Binding ElementName=OpenCodeApiKeyLabel}"
+                                                             PlaceholderText="sk-opencode-…"
                                                              Width="260"
                                                              Height="36"
                                                              CornerRadius="{StaticResource RuControlCornerRadius}"/>
@@ -323,12 +324,13 @@
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock x:Name="KiloApiKeyLabel" Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="Connection key for Kilo Gateway" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                 <PasswordBox x:Name="KiloApiKeyBox"
-                                                             PlaceholderText="sk-kilo-..."
+                                                             AutomationProperties.LabeledBy="{Binding ElementName=KiloApiKeyLabel}"
+                                                             PlaceholderText="sk-kilo-…"
                                                              Width="260"
                                                              Height="36"
                                                              CornerRadius="{StaticResource RuControlCornerRadius}"/>
@@ -349,12 +351,13 @@
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock x:Name="OpenAiApiKeyLabel" Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                 <PasswordBox x:Name="OpenAiApiKeyBox"
-                                                             PlaceholderText="sk-..."
+                                                             AutomationProperties.LabeledBy="{Binding ElementName=OpenAiApiKeyLabel}"
+                                                             PlaceholderText="sk-…"
                                                              Width="260"
                                                              Height="36"
                                                              CornerRadius="{StaticResource RuControlCornerRadius}"/>
@@ -375,12 +378,13 @@
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock x:Name="AnthropicApiKeyLabel" Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                 <PasswordBox x:Name="AnthropicApiKeyBox"
-                                                             PlaceholderText="sk-ant-..."
+                                                             AutomationProperties.LabeledBy="{Binding ElementName=AnthropicApiKeyLabel}"
+                                                             PlaceholderText="sk-ant-…"
                                                              Width="260"
                                                              Height="36"
                                                              CornerRadius="{StaticResource RuControlCornerRadius}"/>
@@ -401,11 +405,12 @@
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock Text="Custom Server URL" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock x:Name="CustomServerUrlLabel" Text="Custom Server URL" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="OpenAI-compatible endpoint URL" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
                                             <TextBox x:Name="CustomEndpointUrlBox"
                                                      Grid.Column="1"
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=CustomServerUrlLabel}"
                                                      PlaceholderText="http://localhost:8000/v1"
                                                      Width="260"
                                                      Height="36"
@@ -418,12 +423,13 @@
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock Text="Custom API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock x:Name="CustomApiKeyLabel" Text="Custom API Key" Style="{StaticResource SettingLabelStyle}"/>
                                                 <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                                 <PasswordBox x:Name="CustomApiKeyBox"
-                                                             PlaceholderText="sk-..."
+                                                             AutomationProperties.LabeledBy="{Binding ElementName=CustomApiKeyLabel}"
+                                                             PlaceholderText="sk-…"
                                                              Width="260"
                                                              Height="36"
                                                              CornerRadius="{StaticResource RuControlCornerRadius}"/>
@@ -543,12 +549,13 @@
                                     <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" Spacing="2">
-                                            <TextBlock Text="Gemini Vision API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                            <TextBlock x:Name="GeminiVisionApiKeyLabel" Text="Gemini Vision API Key" Style="{StaticResource SettingLabelStyle}"/>
                                             <TextBlock Text="Used for Gemini Flash Screen Observation. Get free key at aistudio.google.com" Style="{StaticResource SettingDescStyle}"/>
                                         </StackPanel>
                                         <PasswordBox x:Name="GeminiVisionKeyBox"
                                                      Grid.Column="1"
-                                                     PlaceholderText="AIza..."
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=GeminiVisionApiKeyLabel}"
+                                                     PlaceholderText="AIza…"
                                                      Width="340"
                                                      Height="36"
                                                      CornerRadius="{StaticResource RuControlCornerRadius}"/>

@@ -56,9 +56,14 @@
                                                 MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="8"
                                                 Background="{StaticResource RuCanvasBrush}"
                                                 BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
-                                                Tapped="OnImageAttachmentTapped" Tag="{x:Bind}"
                                                 ToolTipService.ToolTip="Click to view full image">
-                                            <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
+                                            <HyperlinkButton Click="OnImageAttachmentClick" Tag="{x:Bind}"
+                                                             AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"
+                                                             Padding="0" Background="Transparent" BorderThickness="0"
+                                                             HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                                                <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" />
+                                            </HyperlinkButton>
                                         </Border>
 
                                         <!-- Document / Code File Pill Badge -->
@@ -501,10 +506,10 @@
                                         <!-- Image Thumbnail Box -->
                                         <Grid Visibility="{x:Bind IsImage, Mode=OneWay}" Width="60" Height="60"
                                               ToolTipService.ToolTip="{x:Bind FormattedSize, Mode=OneWay}">
-                                            <Border CornerRadius="8" Background="{StaticResource RuCanvasBrush}"
-                                                    BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
-                                                <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill"/>
-                                            </Border>
+                                             <Border CornerRadius="8" Background="{StaticResource RuCanvasBrush}"
+                                                     BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
+                                                 <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"/>
+                                             </Border>
                                             <Button HorizontalAlignment="Right" VerticalAlignment="Top"
                                                     Width="18" Height="18" Padding="0" Margin="2"
                                                     Background="#C0000000" Foreground="White"
@@ -539,9 +544,10 @@
                     </ScrollViewer>
 
                     <TextBox x:Name="ChatInputTextBox"
-                             Grid.Row="1"
-                             AutomationProperties.AutomationId="ChatInput"
-                             PlaceholderText="Message Ru..."
+                              Grid.Row="1"
+                              AutomationProperties.AutomationId="ChatInput"
+                              AutomationProperties.Name="Message input"
+                              PlaceholderText="Message Ru…"
                              PreviewKeyDown="OnChatInputPreviewKeyDown"
                              AcceptsReturn="True"
                              MinHeight="44"
@@ -670,7 +676,7 @@
                                 </Button.Resources>
                                 <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock x:Name="ChatModelLabel"
-                                               Text="Model..."
+                                                Text="Model…"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}"

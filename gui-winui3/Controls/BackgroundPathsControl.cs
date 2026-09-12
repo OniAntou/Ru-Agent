@@ -236,6 +236,7 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
     {
         try
         {
+            if (!RuApp.Services.UiTiming.AnimationsEnabled) return;
             if (!_isRendering)
             {
                 _isRendering = true;

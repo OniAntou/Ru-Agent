@@ -63,8 +63,7 @@
                             <Setter Target="ThemeToggleButton.Padding" Value="8"/>
                             <Setter Target="NavSettings.Padding" Value="8"/>
                             <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
-                            <Setter Target="StatusText.Visibility" Value="Collapsed"/>
-                            <Setter Target="StatusServiceDetails.Visibility" Value="Collapsed"/>
+                             <Setter Target="StatusText.Visibility" Value="Collapsed"/>
                         </VisualState.Setters>
                     </VisualState>
                 </VisualStateGroup>
@@ -177,8 +176,8 @@
                                                    TextTrimming="CharacterEllipsis" 
                                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
-                                                Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
-                                                Tag="{x:Bind Id}" Opacity="0" ToolTipService.ToolTip="Delete session">
+                                                 Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
+                                                 Tag="{x:Bind Id}" Opacity="0" IsTabStop="False" ToolTipService.ToolTip="Delete session">
                                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
                                         </Button>
                                     </Grid>
@@ -207,15 +206,7 @@
                                        Foreground="{StaticResource RuMutedBrush}"
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center" />
-                            <StackPanel x:Name="StatusServiceDetails" Visibility="Collapsed">
-                                <TextBlock x:Name="TextBackend" Text=".NET Backend" />
-                                <TextBlock x:Name="TextWorker" Text="AI Worker" />
-                                <TextBlock x:Name="TextVts" Text="VTS Live2D" />
-                                <Ellipse x:Name="DotBackend" />
-                                <Ellipse x:Name="DotWorker" />
-                                <Ellipse x:Name="DotVts" />
-                            </StackPanel>
-                        </StackPanel>
+                         </StackPanel>
 
                         <Border x:Name="SidebarBottomDivider" Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
 

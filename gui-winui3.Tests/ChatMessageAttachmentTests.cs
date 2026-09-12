@@ -196,7 +196,7 @@ public sealed class ChatMessageAttachmentTests
             string pickerXaml = File.ReadAllText(pickerPath);
             Assert.Contains("ModelSearchBox", pickerXaml, StringComparison.Ordinal);
             Assert.Contains("PickerListContainer", pickerXaml, StringComparison.Ordinal);
-            Assert.Contains("PlaceholderText=\"Search models...\"", pickerXaml, StringComparison.Ordinal);
+            Assert.Contains("PlaceholderText=\"Search models…\"", pickerXaml, StringComparison.Ordinal);
             Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", pickerXaml, StringComparison.Ordinal);
         }
     }
@@ -320,7 +320,7 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Fact]
-    public void ChatView_has_image_tapped_zoom_contract()
+    public void ChatView_has_image_click_zoom_contract()
     {
         string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
         if (!File.Exists(xamlPath))
@@ -330,7 +330,7 @@ public sealed class ChatMessageAttachmentTests
         if (File.Exists(xamlPath))
         {
             string xaml = File.ReadAllText(xamlPath);
-            Assert.Contains("Tapped=\"OnImageAttachmentTapped\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("Click=\"OnImageAttachmentClick\"", xaml, StringComparison.Ordinal);
         }
 
         string csPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml.cs");
@@ -341,7 +341,7 @@ public sealed class ChatMessageAttachmentTests
         if (File.Exists(csPath))
         {
             string cs = File.ReadAllText(csPath);
-            Assert.Contains("OnImageAttachmentTapped", cs, StringComparison.Ordinal);
+            Assert.Contains("OnImageAttachmentClick", cs, StringComparison.Ordinal);
         }
     }
 }

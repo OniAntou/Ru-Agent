@@ -176,7 +176,7 @@ public sealed class FileDeleteAdapter
         };
     }
 
-    // Helper for HarnessToolGateway path: returns recovery bytes without deleting, for preparation payload
+    // Helper for the Broker preparation path: returns recovery bytes without deleting, for preparation payload
     public (JsonObject safePreview, byte[] recoveryBytes, string beforeHash, string canonicalPath) PrepareForGateway(JsonObject arguments)
     {
         var result = Prepare(arguments);

@@ -230,8 +230,9 @@ namespace RuApp
                     System.Diagnostics.Debug.WriteLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
                     GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
                 };
-                _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
-                _groupedCatalogs = new GroupedProviderCatalogController(new ProviderCatalogService(_apiService));
+                var catalogService = new ProviderCatalogService(_apiService);
+                _providerCatalogController = new ProviderCatalogController(catalogService);
+                _groupedCatalogs = new GroupedProviderCatalogController(catalogService);
                 _apiService.SettingsSaved += OnSettingsSaved;
                 _providerCatalogTimer = new DispatcherTimer { Interval = ProviderCatalogController.PollInterval };
                 _providerCatalogTimer.Tick += async (_, __) =>
@@ -388,10 +389,6 @@ namespace RuApp
                 StatusText.Text = $"Could not connect to {_backendProvider.DisplayName} Backend!";
                 var danger = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 StatusDot.Fill = danger;
-                DotBackend.Fill = danger;
-                DotWorker.Fill = danger;
-                TextBackend.Text = ".NET Backend: Error";
-                TextWorker.Text = "AI Worker: Error";
                 WelcomeOverlay?.NotifyReady(isError: true);
             }
         }
@@ -472,16 +469,6 @@ namespace RuApp
             activeBtn.CornerRadius = new CornerRadius(6);
         }
 
-        private void UpdateShellStatusTooltip()
-        {
-            if (ShellStatusRow == null) return;
-
-            var details = string.Join(
-                Environment.NewLine,
-                new[] { TextBackend.Text, TextWorker.Text, TextVts.Text }
-                    .Where(value => !string.IsNullOrWhiteSpace(value)));
-        }
-
         private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
         {
             SyncSidebarSelection(e.SessionId);
@@ -508,17 +495,7 @@ namespace RuApp
                 var settings = await _apiService.GetSettingsAsync();
                 if (settings is null) return;
                 string backend = settings.BackendChoice ?? "opencode";
-                string model = backend switch
-                {
-                    "opencode" => settings.OpenCodeModel ?? string.Empty,
-                    "kilo" => settings.KiloModel ?? string.Empty,
-                    "openai" => settings.OpenAiModel ?? string.Empty,
-                    "anthropic" => settings.AnthropicModel ?? string.Empty,
-                    "ollama" => settings.OllamaModel ?? string.Empty,
-                    "lmstudio" => settings.LmStudioModel ?? string.Empty,
-                    "custom" => settings.CustomModel ?? string.Empty,
-                    _ => string.Empty,
-                };
+                string model = Models.ProviderModelSelection.GetSelectedModel(settings, backend);
                 _groupedCatalogs?.SetSelection(backend, model);
             }
             catch (Exception ex)
@@ -652,9 +629,6 @@ namespace RuApp
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             StatusText.Text = $"{_backendProvider.DisplayName} Backend ready (127.0.0.1:{backendSession.HttpBaseUri.Port})";
             StatusDot.Fill = successBrush;
-            DotBackend.Fill = successBrush;
-            TextBackend.Text = ".NET Backend: OK";
-            UpdateShellStatusTooltip();
 
             if (_apiService != null)
             {
@@ -678,8 +652,9 @@ namespace RuApp
             {
                 await _groupedCatalogs.DisposeAsync();
             }
-            _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
-            _groupedCatalogs = new GroupedProviderCatalogController(new ProviderCatalogService(_apiService));
+            var reconnectCatalogService = new ProviderCatalogService(_apiService);
+            _providerCatalogController = new ProviderCatalogController(reconnectCatalogService);
+            _groupedCatalogs = new GroupedProviderCatalogController(reconnectCatalogService);
             _providerCatalogController.SetPollingActive(true);
             _groupedCatalogs.SetPollingActive(true);
 
@@ -730,16 +705,8 @@ namespace RuApp
                 _providerCatalogTimer?.Stop();
 
                 var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
                 StatusText.Text = $"{_backendProvider.DisplayName} Backend stopped. Reconnecting...";
                 StatusDot.Fill = dangerBrush;
-                DotBackend.Fill = dangerBrush;
-                DotWorker.Fill = dangerBrush;
-                DotVts.Fill = mutedBrush;
-                TextBackend.Text = ".NET Backend: Stopped";
-                TextWorker.Text = "AI Worker: Stopped";
-                TextVts.Text = "VTS: Disconnected";
-                UpdateShellStatusTooltip();
 
                 if (!_closed && !_composition.IsHarness)
                 {
@@ -991,31 +958,16 @@ namespace RuApp
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             var warningBrush = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
             var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-            var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
 
             // 1. .NET Backend status
             bool backendRunning = snapshot.BackendRunning;
-            DotBackend.Fill = backendRunning ? successBrush : dangerBrush;
-            TextBackend.Text = backendRunning ? ".NET Backend: OK" : ".NET Backend: Error";
 
-            // 2. Python Worker status
+            // 2. Worker status
             bool workerOk = snapshot.WorkerOk;
             string? workerError = snapshot.WorkerError;
-            DotWorker.Fill = workerOk ? successBrush : (backendRunning ? warningBrush : dangerBrush);
-            TextWorker.Text = workerOk
-                ? "AI Worker: Ready"
-                : backendRunning && workerError != null
-                    ? $"AI Worker: Error ({workerError})"
-                    : backendRunning
-                        ? "AI Worker: Waiting..."
-                        : "AI Worker: Off";
 
             // 3. VTube Studio status
             bool vtsConnected = snapshot.VtsConnected;
-            DotVts.Fill = vtsConnected ? successBrush : mutedBrush;
-            TextVts.Text = _composition.IsHarness
-                ? "VTS: Skipped in Harness"
-                : vtsConnected ? "VTS: Connected" : "VTS: Not open";
 
             // Overall summary text
             if (!backendRunning)
@@ -1037,7 +989,9 @@ namespace RuApp
                 if (!workerOk)
                 {
                     StatusDot.Fill = warningBrush;
-                    StatusText.Text = "AI Worker starting or not ready yet";
+                    StatusText.Text = backendRunning && workerError != null
+                        ? $"AI Worker error ({workerError})"
+                        : "AI Worker starting or not ready yet";
                 }
                 else
                 {
@@ -1047,8 +1001,6 @@ namespace RuApp
                         : vtsConnected ? "System ready (Live2D connected)" : "System ready";
                 }
             }
-
-            UpdateShellStatusTooltip();
         }
 
         private async void OnNewChatClick(object sender, RoutedEventArgs e)
@@ -1103,6 +1055,37 @@ namespace RuApp
             {
                 e.Handled = true;
                 OnNavClick(NavSettings, new RoutedEventArgs());
+            }
+            else if (e.Key == Windows.System.VirtualKey.Left)
+            {
+                e.Handled = true;
+                NudgeSidebarWidth(-40);
+            }
+            else if (e.Key == Windows.System.VirtualKey.Right)
+            {
+                e.Handled = true;
+                NudgeSidebarWidth(40);
+            }
+        }
+
+        private void NudgeSidebarWidth(double delta)
+        {
+            if (_responsiveTier == ResponsiveLayoutTier.Narrow) return;
+
+            double newWidth = SidebarColumn.ActualWidth + delta;
+            if (newWidth <= 150)
+            {
+                SidebarColumn.MinWidth = 72;
+                SidebarColumn.Width = new GridLength(72);
+                ApplySidebarVisualMode(true);
+            }
+            else
+            {
+                SidebarColumn.MinWidth = 72;
+                var clamped = Math.Clamp(newWidth, 180, 400);
+                SidebarColumn.Width = new GridLength(clamped);
+                _lastExpandedSidebarWidth = clamped;
+                ApplySidebarVisualMode(false);
             }
         }
 
@@ -1207,6 +1190,7 @@ namespace RuApp
                 if (deleteBtn != null)
                 {
                     deleteBtn.Opacity = 1.0;
+                    deleteBtn.IsTabStop = true;
                 }
             }
         }
@@ -1219,6 +1203,7 @@ namespace RuApp
                 if (deleteBtn != null)
                 {
                     deleteBtn.Opacity = 0.0;
+                    deleteBtn.IsTabStop = false;
                 }
             }
         }

@@ -359,17 +359,7 @@ namespace RuApp.Views
                 var settings = await _apiService.GetSettingsAsync();
                 if (settings == null) return;
                 string backend = settings.BackendChoice ?? "opencode";
-                string currentModel = backend switch
-                {
-                    "opencode" => settings.OpenCodeModel ?? string.Empty,
-                    "kilo" => settings.KiloModel ?? string.Empty,
-                    "openai" => settings.OpenAiModel ?? string.Empty,
-                    "anthropic" => settings.AnthropicModel ?? string.Empty,
-                    "ollama" => settings.OllamaModel ?? string.Empty,
-                    "lmstudio" => settings.LmStudioModel ?? string.Empty,
-                    "custom" => settings.CustomModel ?? string.Empty,
-                    _ => ""
-                };
+                string currentModel = ProviderModelSelection.GetSelectedModel(settings, backend);
 
                 _selectedModel = currentModel;
                 _groupedCatalogs?.SetSelection(backend, currentModel);
@@ -2232,7 +2222,7 @@ namespace RuApp.Views
             _activeAgentTurnSource = AgentTurnSource.Typed;
         }
 
-        private async Task RecoverAgentSessionAsync(CancellationToken cancellationToken)
+        private async Task<SessionInfo> CreateValidatedAgentSessionAsync(CancellationToken cancellationToken)
         {
             if (_apiService is null)
             {
@@ -2242,14 +2232,22 @@ namespace RuApp.Views
             SessionInfo? created = await _apiService.CreateSessionAsync();
             cancellationToken.ThrowIfCancellationRequested();
             string? sessionId = created?.Id?.Trim();
-            if (!AgentSessionSelection.IsValid(sessionId))
+            if (created is null || !AgentSessionSelection.IsValid(sessionId))
             {
                 throw new AgentApiException(
                     "session_create_failed",
-                    "Could not create a new session for Coding Agent.");
+                    "Could not create a session for Coding Agent.");
             }
 
-            _activeSessionId = sessionId!;
+            return created;
+        }
+
+        private async Task RecoverAgentSessionAsync(CancellationToken cancellationToken)
+        {
+            SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
+            string sessionId = created.Id.Trim();
+
+            _activeSessionId = sessionId;
             ClearAgentActivities();
             ClearAgentRunSummary();
             DetachAgentActivitiesFromMessages();
@@ -2258,8 +2256,8 @@ namespace RuApp.Views
             SessionOpened?.Invoke(
                 this,
                 new SessionOpenedEventArgs(
-                    sessionId!,
-                    created?.Title ?? "New Conversation"));
+                    sessionId,
+                    created.Title ?? "New Conversation"));
         }
 
         private async Task EnsureAgentSessionAsync(CancellationToken cancellationToken)
@@ -2269,28 +2267,14 @@ namespace RuApp.Views
                 return;
             }
 
-            if (_apiService is null)
-            {
-                throw new InvalidOperationException("Backend session is unavailable.");
-            }
-
-            SessionInfo? created = await _apiService.CreateSessionAsync();
-            cancellationToken.ThrowIfCancellationRequested();
-            string? sessionId = created?.Id?.Trim();
-            if (!AgentSessionSelection.IsValid(sessionId))
-            {
-                throw new AgentApiException(
-                    "session_create_failed",
-                    "Could not create a session for Coding Agent.");
-            }
-
-            string validSessionId = sessionId!;
+            SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
+            string validSessionId = created.Id.Trim();
             _activeSessionId = validSessionId;
             SessionOpened?.Invoke(
                 this,
                 new SessionOpenedEventArgs(
                     validSessionId,
-                    created?.Title ?? "New Conversation"));
+                    created.Title ?? "New Conversation"));
         }
 
         private bool IsProjectRootWorkspace(string? workspace)
@@ -2324,7 +2308,7 @@ namespace RuApp.Views
             return false;
         }
 
-        private async void OnImageAttachmentTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+        private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement fe && fe.Tag is ImageAttachmentItem item && item.PreviewImage is not null && XamlRoot is not null)
             {

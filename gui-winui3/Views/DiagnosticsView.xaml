@@ -61,15 +61,15 @@
             </StackPanel>
 
             <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <TextBox x:Name="ComponentFilterBox" PlaceholderText="Component..." Width="120" Margin="4,0"
+            <TextBox x:Name="ComponentFilterBox" PlaceholderText="Component…" AutomationProperties.Name="Filter by component" Width="120" Margin="4,0"
                      TextChanged="OnComponentFilterChanged" FontSize="12.5" Padding="8,6"
                      CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
 
-            <TextBox x:Name="EventCodeFilterBox" PlaceholderText="Event Code..." Width="130" Margin="4,0"
+            <TextBox x:Name="EventCodeFilterBox" PlaceholderText="Event code…" AutomationProperties.Name="Filter by event code" Width="130" Margin="4,0"
                      TextChanged="OnEventCodeFilterChanged" FontSize="12.5" Padding="8,6"
                      CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
 
-            <TextBox x:Name="CorrelationFilterBox" PlaceholderText="Correlation ID..." Width="150" Margin="4,0"
+            <TextBox x:Name="CorrelationFilterBox" PlaceholderText="Correlation ID…" AutomationProperties.Name="Filter by correlation ID" Width="150" Margin="4,0"
                      TextChanged="OnCorrelationFilterChanged" FontSize="12.5" Padding="8,6"
                      CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
 

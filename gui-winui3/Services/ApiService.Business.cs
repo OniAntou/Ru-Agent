@@ -85,7 +85,8 @@ namespace RuApp.Services
                 using var response = await _httpClient.GetAsync($"{_baseUrl}/status", timeoutCts.Token);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return (BackendAlive: true, WorkerOk: false, WorkerError: null);
+                    string? statusError = await TryReadStatusErrorAsync(response, timeoutCts.Token);
+                    return (BackendAlive: true, WorkerOk: false, WorkerError: statusError);
                 }
                 var payload = await response.Content.ReadFromJsonAsync<JsonElement>(timeoutCts.Token);
                 if (payload.TryGetProperty("status", out var status) &&
@@ -113,6 +114,29 @@ namespace RuApp.Services
         {
             var detailed = await CheckHealthDetailedAsync(cancellationToken);
             return (detailed.WorkerOk, detailed.WorkerError);
+        }
+
+        private static async Task<string?> TryReadStatusErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
+            try
+            {
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (string.IsNullOrWhiteSpace(body)) return null;
+                using var document = JsonSerializer.Deserialize<JsonDocument>(body);
+                if (document is not null
+                    && document.RootElement.ValueKind == JsonValueKind.Object
+                    && document.RootElement.TryGetProperty("message", out var message)
+                    && message.ValueKind == JsonValueKind.String)
+                {
+                    string? text = message.GetString();
+                    return string.IsNullOrWhiteSpace(text) ? null : text;
+                }
+            }
+            catch (Exception ex) when (ex is JsonException or OperationCanceledException)
+            {
+                // No usable error payload; caller falls back to a generic message.
+            }
+            return null;
         }
 
         public async Task<bool> ShutdownHostAsync(CancellationToken cancellationToken = default)

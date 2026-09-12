@@ -244,6 +244,7 @@ namespace RuApp.Models
                 return;
             }
 
+            byte[] bytes;
             try
             {
                 var raw = _base64Data;
@@ -253,16 +254,33 @@ namespace RuApp.Models
                     raw = raw.Substring(commaIdx + 8);
                 }
 
-                var bytes = Convert.FromBase64String(raw);
+                bytes = Convert.FromBase64String(raw);
                 if (_byteSize == 0)
                 {
                     ByteSize = bytes.Length;
                 }
+            }
+            catch
+            {
+                // Fallback gracefully if decoding fails
+                return;
+            }
+
+            // Bitmap decode + SetSource must not block the UI thread; the
+            // continuation returns to the captured context before touching
+            // the BitmapImage.
+            _ = LoadPreviewImageAsync(bytes);
+        }
+
+        public async Task LoadPreviewImageAsync(byte[] bytes)
+        {
+            try
+            {
                 var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
                 using (var writer = new Windows.Storage.Streams.DataWriter(stream.GetOutputStreamAt(0)))
                 {
                     writer.WriteBytes(bytes);
-                    writer.StoreAsync().AsTask().GetAwaiter().GetResult();
+                    await writer.StoreAsync();
                 }
                 stream.Seek(0);
                 var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();

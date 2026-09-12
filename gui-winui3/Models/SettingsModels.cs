@@ -118,4 +118,24 @@ namespace RuApp.Models
         public int SubtitlePosY { get; set; } = -1;
 
     }
+
+    /// <summary>
+    /// Maps a backend choice to the model id stored on <see cref="AppSettingsDto"/>.
+    /// Single home for the backend -&gt; model switch previously duplicated
+    /// across ChatView and MainWindow.
+    /// </summary>
+    internal static class ProviderModelSelection
+    {
+        internal static string GetSelectedModel(AppSettingsDto settings, string? backend) => backend switch
+        {
+            "opencode" => settings.OpenCodeModel ?? string.Empty,
+            "kilo" => settings.KiloModel ?? string.Empty,
+            "openai" => settings.OpenAiModel ?? string.Empty,
+            "anthropic" => settings.AnthropicModel ?? string.Empty,
+            "ollama" => settings.OllamaModel ?? string.Empty,
+            "lmstudio" => settings.LmStudioModel ?? string.Empty,
+            "custom" => settings.CustomModel ?? string.Empty,
+            _ => string.Empty,
+        };
+    }
 }

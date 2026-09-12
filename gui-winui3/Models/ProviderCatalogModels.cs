@@ -157,7 +157,10 @@ public sealed record ProviderReasoningOption(string Value, string Label, bool Is
 
 public static class ProviderReasoningOptions
 {
-    public static IReadOnlyList<ProviderReasoningOption> For(ProviderCatalogState state)
+    public static IReadOnlyList<ProviderReasoningOption> For(ProviderCatalogState state) =>
+        For(state, selectedModelOverride: null);
+
+    public static IReadOnlyList<ProviderReasoningOption> For(ProviderCatalogState state, string? selectedModelOverride)
     {
         var options = new List<ProviderReasoningOption>
         {
@@ -166,8 +169,14 @@ public static class ProviderReasoningOptions
 
         if (!state.IsSuccess || state.Stale) return options;
 
+        // Grouped selection can be newer than the child snapshot after a model
+        // switch (server SelectedModel lags until refresh). Prefer the caller
+        // override so the picker updates instantly without app restart.
+        string lookup = !string.IsNullOrWhiteSpace(selectedModelOverride)
+            ? selectedModelOverride!
+            : state.SelectedModel;
         var model = state.Catalog.FirstOrDefault(item =>
-            string.Equals(item.Id, state.SelectedModel, StringComparison.Ordinal));
+            string.Equals(item.Id, lookup, StringComparison.OrdinalIgnoreCase));
         if (model is null || !model.Supported || model.Reasoning.State is not
             (ProviderReasoningCapabilities.Levels or ProviderReasoningCapabilities.Toggle))
         {
@@ -177,8 +186,8 @@ public static class ProviderReasoningOptions
         foreach (var option in model.Reasoning.Options)
         {
             if (!string.IsNullOrWhiteSpace(option) &&
-                !string.Equals(option, "default", StringComparison.Ordinal) &&
-                options.All(existing => !string.Equals(existing.Value, option, StringComparison.Ordinal)))
+                !string.Equals(option, "default", StringComparison.OrdinalIgnoreCase) &&
+                options.All(existing => !string.Equals(existing.Value, option, StringComparison.OrdinalIgnoreCase)))
             {
                 options.Add(new ProviderReasoningOption(option, option));
             }

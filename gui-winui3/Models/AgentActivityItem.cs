@@ -101,6 +101,47 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _toolDisplay, value);
     }
 
+    private bool _isVisibleInFeed = true;
+
+    /// <summary>Feed grouping collapses redundant rows; collapsed rows keep
+    /// their data for history but leave the visible feed.</summary>
+    public bool IsVisibleInFeed
+    {
+        get => _isVisibleInFeed;
+        set => SetProperty(ref _isVisibleInFeed, value);
+    }
+
+    private int _collapsedDurationMs;
+
+    /// <summary>Milliseconds folded in from collapsed same-group rows.</summary>
+    public int CollapsedDurationMs
+    {
+        get => _collapsedDurationMs;
+        set
+        {
+            if (SetProperty(ref _collapsedDurationMs, value))
+            {
+                OnPropertyChanged(nameof(EffectiveDurationMs));
+                OnPropertyChanged(nameof(DisplayText));
+                OnPropertyChanged(nameof(CompletedText));
+                OnPropertyChanged(nameof(MetadataText));
+            }
+        }
+    }
+
+    public int? EffectiveDurationMs
+    {
+        get
+        {
+            if (DurationMs is { } own)
+            {
+                return own + CollapsedDurationMs;
+            }
+
+            return CollapsedDurationMs > 0 ? CollapsedDurationMs : null;
+        }
+    }
+
     public bool IsRunning => State == AgentActivityState.Started;
     public bool IsCompleted => State == AgentActivityState.Completed;
     public bool IsFailed => State == AgentActivityState.Failed;
@@ -118,7 +159,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     public string StartedText => Kind switch
     {
         AgentActivityKind.Thinking => "Thinking",
-        AgentActivityKind.Explore => Count is { } count ? (count == 1 ? "Exploring 1 item" : $"Exploring {count} items") : "Exploring",
+        AgentActivityKind.Explore => FileName is { Length: > 0 } file
+            ? $"Exploring {file}"
+            : Count is { } count ? (count == 1 ? "Exploring 1 item" : $"Exploring {count} items") : "Exploring",
         AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"Searching for {symbol}" : "Searching",
         AgentActivityKind.Analyze => "Analyzing",
         AgentActivityKind.Edit => ToolDisplay switch
@@ -139,7 +182,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     public string CompletedText => Kind switch
     {
         AgentActivityKind.Thinking => DurationText(),
-        AgentActivityKind.Explore => Count is { } count ? (count == 1 ? "Explored 1 item" : $"Explored {count} items") : "Explored",
+        AgentActivityKind.Explore => FileName is { Length: > 0 } file
+            ? $"Explored {file}"
+            : Count is { } count ? (count == 1 ? "Explored 1 item" : $"Explored {count} items") : "Explored",
         AgentActivityKind.Search => FormatSearch("Searched"),
         AgentActivityKind.Analyze => "Analyzed",
         AgentActivityKind.Edit => ToolDisplay switch
@@ -170,12 +215,11 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         get
         {
             var parts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(ToolDisplay))
-            {
-                parts.Add(ToolDisplay!);
-            }
-
-            if (!string.IsNullOrWhiteSpace(FileName))
+            // ToolDisplay is intentionally omitted: every DisplayText already
+            // names the verb (Exploring/Editing/Running …), so repeating it
+            // here produced "Explored Explore" style duplication.
+            // Explore target is likewise in DisplayText ("Explored {file}").
+            if (!string.IsNullOrWhiteSpace(FileName) && Kind != AgentActivityKind.Explore)
             {
                 parts.Add(FileName!);
             }
@@ -200,7 +244,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 parts.Add($"+{Added ?? 0} −{Removed ?? 0}");
             }
 
-            if (Kind != AgentActivityKind.Thinking && DurationMs is { } elapsed)
+            if (Kind != AgentActivityKind.Thinking && EffectiveDurationMs is { } elapsed)
             {
                 parts.Add(FormatDuration(elapsed));
             }
@@ -256,6 +300,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(FailedText));
         OnPropertyChanged(nameof(MetadataText));
         OnPropertyChanged(nameof(DisplayText));
+        OnPropertyChanged(nameof(EffectiveDurationMs));
     }
 
     private string FormatSearch(string prefix)
@@ -276,7 +321,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     private string DurationText()
     {
-        if (DurationMs is not { } duration)
+        if (EffectiveDurationMs is not { } duration)
         {
             return "Thought";
         }

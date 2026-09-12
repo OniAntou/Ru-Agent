@@ -185,6 +185,55 @@ public sealed class AgentActivityItemTests
         Assert.Equal("README.md · 250ms", item.MetadataText);
     }
 
+    [Fact]
+    public void Explore_labels_name_the_target_and_metadata_skips_the_duplicate_verb()
+    {
+        var exploring = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Explore,
+            fileName: "Test Agent",
+            toolDisplay: "Explore"));
+        Assert.Equal("Exploring Test Agent", exploring.DisplayText);
+        Assert.Equal(string.Empty, exploring.MetadataText);
+
+        var explored = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Explore,
+            fileName: "Test Agent",
+            toolDisplay: "Explore",
+            durationMs: 19));
+        Assert.Equal("Explored Test Agent", explored.DisplayText);
+        Assert.Equal("19ms", explored.MetadataText);
+    }
+
+    [Fact]
+    public void Feed_rows_start_visible_with_no_expandable_details()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
+
+        Assert.True(item.IsVisibleInFeed);
+        Assert.Equal(0, item.CollapsedDurationMs);
+    }
+
+    [Fact]
+    public void Waiting_and_failed_labels_surface_the_reason_inline()
+    {
+        var waiting = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            kind: AgentActivityKind.Edit,
+            fileName: "obsolete.txt",
+            safeCode: "approval_required"));
+
+        Assert.Contains("approval_required", waiting.DisplayText, StringComparison.Ordinal);
+
+        var failed = new AgentActivityItem(Activity(
+            AgentActivityState.Failed,
+            kind: AgentActivityKind.Edit,
+            safeCode: "policy_denied"));
+
+        Assert.Contains("policy_denied", failed.DisplayText, StringComparison.Ordinal);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,
@@ -213,5 +262,6 @@ public sealed class AgentActivityItemTests
             safeCode,
             toolDisplay,
             null,
-            1);
+            1,
+            null);
 }

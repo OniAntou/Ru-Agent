@@ -17,6 +17,7 @@ using Microsoft.UI.Dispatching;
 using Windows.Foundation;
 using RuAgent.Client;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
 using RuApp.Services;
@@ -82,6 +83,7 @@ namespace RuApp.Views
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
+        private bool _isSendingUserTurn;
         private AgentRunSummaryItem? _agentRunSummary;
         private (string Text, List<ImageAttachmentItem> Attachments)? _lastUserTurn;
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
@@ -249,6 +251,7 @@ namespace RuApp.Views
         private GroupedProviderCatalogController? _groupedCatalogs;
         private bool _ownsGroupedCatalogs;
         private string _selectedModel = string.Empty;
+        private string _selectedBackend = string.Empty;
         private string _selectedReasoningEffort = "default";
         private DispatcherTimer? _modelSaveFailureTimer;
 
@@ -363,6 +366,7 @@ namespace RuApp.Views
                 string currentModel = ProviderModelSelection.GetSelectedModel(settings, backend);
 
                 _selectedModel = currentModel;
+                _selectedBackend = backend;
                 _groupedCatalogs?.SetSelection(backend, currentModel);
                 ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, currentModel);
                 if (_providerCatalogController != null)
@@ -428,6 +432,10 @@ namespace RuApp.Views
             {
                 _selectedModel = state.SelectedModel;
             }
+            if (!string.IsNullOrWhiteSpace(state.SelectedBackend))
+            {
+                _selectedBackend = state.SelectedBackend;
+            }
             ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(
                 state.SelectedBackend, state.SelectedModel);
             ModelPicker.Apply(ProviderModelPickerProjection.Create(
@@ -454,6 +462,11 @@ namespace RuApp.Views
                 if (await _apiService.SaveProviderModelSelectionAsync(backend, model))
                 {
                     _selectedModel = model;
+                    _selectedBackend = backend;
+                    // Reset effort so stale value from previous model/backend cannot
+                    // stick when the new model has different levels. Fresh server
+                    // effort arrives via grouped refresh below.
+                    _selectedReasoningEffort = "default";
                     _groupedCatalogs?.SetSelection(backend, model);
                     ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, model);
                     UpdateContextUsage();
@@ -462,6 +475,9 @@ namespace RuApp.Views
                         _providerCatalogController.SetBackend(backend);
                         _ = _providerCatalogController.RefreshAsync();
                     }
+                    // Refresh grouped catalogs in background to sync SelectedEffort;
+                    // picker itself uses local _selectedModel instantly (no restart).
+                    _ = _groupedCatalogs?.RefreshAsync(force: true);
                     UpdateReasoningEffortUi();
                 }
                 else
@@ -498,20 +514,26 @@ namespace RuApp.Views
             }
 
             var groupedState = _groupedCatalogs.State;
-            if (string.IsNullOrWhiteSpace(groupedState.SelectedBackend))
+            string backend = !string.IsNullOrWhiteSpace(groupedState.SelectedBackend)
+                ? groupedState.SelectedBackend
+                : _selectedBackend;
+            if (string.IsNullOrWhiteSpace(backend))
             {
                 return [new ProviderReasoningOption("default", "default")];
             }
 
-            if (groupedState.Catalogs.TryGetValue(groupedState.SelectedBackend, out var catalogState))
+            if (groupedState.Catalogs.TryGetValue(backend, out var catalogState))
             {
-                return ProviderReasoningOptions.For(catalogState);
+                string effectiveModel = !string.IsNullOrWhiteSpace(groupedState.SelectedModel)
+                    ? groupedState.SelectedModel
+                    : _selectedModel;
+                return ProviderReasoningOptions.For(catalogState, effectiveModel);
             }
 
             return [new ProviderReasoningOption("default", "default")];
         }
 
-        private void SyncEffortFromCatalog()
+        private void SyncEffortFromCatalog(bool force = false)
         {
             if (_groupedCatalogs is null) return;
 
@@ -521,7 +543,8 @@ namespace RuApp.Views
             if (groupedState.Catalogs.TryGetValue(groupedState.SelectedBackend, out var catalogState))
             {
                 if (!string.IsNullOrWhiteSpace(catalogState.SelectedEffort) &&
-                    string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+                    (force ||
+                    string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase)))
                 {
                     _selectedReasoningEffort = catalogState.SelectedEffort;
                 }
@@ -653,11 +676,17 @@ namespace RuApp.Views
         {
             if (_groupedCatalogs is null || string.IsNullOrWhiteSpace(_selectedModel)) return null;
             var state = _groupedCatalogs.State;
-            if (string.IsNullOrWhiteSpace(state.SelectedBackend)) return null;
+            string backend = !string.IsNullOrWhiteSpace(state.SelectedBackend)
+                ? state.SelectedBackend
+                : _selectedBackend;
+            if (string.IsNullOrWhiteSpace(backend)) return null;
 
-            if (state.Catalogs.TryGetValue(state.SelectedBackend, out var catalogState))
+            if (state.Catalogs.TryGetValue(backend, out var catalogState))
             {
-                var match = catalogState.Catalog.FirstOrDefault(m => string.Equals(m.Id, _selectedModel, StringComparison.OrdinalIgnoreCase));
+                string lookup = !string.IsNullOrWhiteSpace(state.SelectedModel)
+                    ? state.SelectedModel
+                    : _selectedModel;
+                var match = catalogState.Catalog.FirstOrDefault(m => string.Equals(m.Id, lookup, StringComparison.OrdinalIgnoreCase));
                 if (match?.ContextLength is int len && len > 0)
                 {
                     return len;
@@ -668,15 +697,28 @@ namespace RuApp.Views
 
         private bool _suppressContextUsageUpdate;
 
+        private static int ResolveUsageTotal(AgentModelUsage usage)
+        {
+            if (usage.TotalTokens is { } total && total > 0) return total;
+            int input = usage.InputTokens ?? 0;
+            int output = usage.OutputTokens ?? 0;
+            int cacheRead = usage.CacheReadInputTokens ?? 0;
+            int cacheWrite = usage.CacheWriteInputTokens ?? 0;
+            return input + output + cacheRead + cacheWrite;
+        }
+
         public void UpdateContextUsage()
         {
             if (_suppressContextUsageUpdate) return;
-            string currentModel = _selectedModel;
+            string currentModel = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedModel)
+                ? _groupedCatalogs.State.SelectedModel
+                : _selectedModel;
             int? catalogCtx = GetCurrentModelContextLength();
             var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel, catalogCtx);
 
             int totalChars = 0;
             int totalImages = 0;
+            int reportedTokens = 0;
 
             foreach (var msg in Messages)
             {
@@ -688,6 +730,28 @@ namespace RuApp.Views
                 {
                     totalImages += msg.Attachments.Count;
                 }
+                if (msg.Usage is { } usage)
+                {
+                    reportedTokens = Math.Max(reportedTokens, ResolveUsageTotal(usage));
+                }
+            }
+
+            if (_activeAgentUsage is { } activeUsage)
+            {
+                reportedTokens = Math.Max(reportedTokens, ResolveUsageTotal(activeUsage));
+            }
+
+            // Include draft input so the meter moves while typing, not only after send.
+            try
+            {
+                if (ChatInputTextBox != null && !string.IsNullOrEmpty(ChatInputTextBox.Text))
+                {
+                    totalChars += ChatInputTextBox.Text.Length;
+                }
+            }
+            catch
+            {
+                // Input box may not be ready during init; estimate stays history-only.
             }
 
             foreach (var att in PendingAttachments)
@@ -696,10 +760,13 @@ namespace RuApp.Views
             }
 
             int estimatedTokens = ModelContextSpecs.EstimateTokens(totalChars, totalImages);
+            // Provider-reported total already includes system/tools/history and is
+            // authoritative when present. Char estimate is only a fallback.
+            int usedTokens = Math.Max(estimatedTokens, reportedTokens);
 
             if (maxTokens > 0)
             {
-                double percentage = Math.Min(100.0, (estimatedTokens * 100.0) / maxTokens);
+                double percentage = Math.Min(100.0, (usedTokens * 100.0) / maxTokens);
 
                 ContextProgressRing.Value = percentage;
                 ContextProgressBar.Value = percentage;
@@ -714,7 +781,7 @@ namespace RuApp.Views
                 ContextProgressRing.Foreground = brush;
                 ContextProgressBar.Foreground = brush;
 
-                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} / {displayLimit}";
+                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} / {displayLimit}";
                 ContextPercentLabel.Text = $"{percentage:0.#}%";
                 ContextPercentLabel.Foreground = percentage > 70 ? brush : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
             }
@@ -722,7 +789,7 @@ namespace RuApp.Views
             {
                 ContextProgressRing.Value = 0;
                 ContextProgressBar.Visibility = Visibility.Collapsed;
-                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} tokens";
+                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} tokens";
                 ContextPercentLabel.Text = "Used";
                 ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
             }
@@ -730,6 +797,7 @@ namespace RuApp.Views
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
         {
+            UpdateContextUsage();
             if (string.IsNullOrEmpty(ChatInputTextBox.Text))
             {
                 _typingDebounce?.Stop();
@@ -768,15 +836,60 @@ namespace RuApp.Views
             DispatcherQueue.TryEnqueue(UpdateAgentInlineState);
         }
 
+        private readonly List<AgentActivityModel> _pendingAgentActivities = new();
+        private DispatcherQueueTimer? _activityFlushTimer;
+
         private void OnAgentActivityReceived(object? sender, AgentActivityModel activity)
         {
             if (DispatcherQueue.HasThreadAccess)
             {
-                ApplyAgentActivity(activity);
+                EnqueueAgentActivity(activity);
                 return;
             }
 
-            DispatcherQueue.TryEnqueue(() => ApplyAgentActivity(activity));
+            DispatcherQueue.TryEnqueue(() => EnqueueAgentActivity(activity));
+        }
+
+        private void EnqueueAgentActivity(AgentActivityModel activity)
+        {
+            _pendingAgentActivities.Add(activity);
+            if (_activityFlushTimer is null)
+            {
+                _activityFlushTimer = DispatcherQueue.CreateTimer();
+                _activityFlushTimer.Interval = TimeSpan.FromMilliseconds(80);
+                _activityFlushTimer.Tick += OnActivityFlushTick;
+            }
+
+            if (!_activityFlushTimer.IsRunning)
+            {
+                _activityFlushTimer.Start();
+            }
+        }
+
+        private void OnActivityFlushTick(Microsoft.UI.Dispatching.DispatcherQueueTimer? timer, object? _)
+        {
+            FlushAgentActivities();
+        }
+
+        private void FlushAgentActivities()
+        {
+            _activityFlushTimer?.Stop();
+            if (_pendingAgentActivities.Count == 0)
+            {
+                return;
+            }
+
+            // Drain to a snapshot so re-entrant activity events during Apply
+            // cannot mutate the collection mid-flush.
+            var batch = _pendingAgentActivities.ToArray();
+            _pendingAgentActivities.Clear();
+            foreach (var activity in batch)
+            {
+                ApplyAgentActivity(activity);
+            }
+
+            AgentActivityGrouper.Reconcile(AgentActivities);
+            ScrollChatToBottom();
         }
 
         private void ApplyAgentActivity(AgentActivityModel activity)
@@ -794,11 +907,10 @@ namespace RuApp.Views
             else
             {
                 var item = new AgentActivityItem(activity);
+
                 _agentActivityById.Add(item.ActivityId, item);
                 AgentActivities.Add(item);
             }
-
-            ScrollChatToBottom();
         }
 
         private void OnAgentSummaryReceived(object? sender, AgentRunSummaryModel summary)
@@ -974,6 +1086,7 @@ namespace RuApp.Views
                     }
                 }
             }
+            UpdateContextUsage();
         }
 
         private void ApplyReplySnapshot(AgentReplySnapshot snapshot)
@@ -993,11 +1106,14 @@ namespace RuApp.Views
             _activeAgentAssistantMessage.Content = snapshot.Text;
             _activeAgentAssistantMessage.IsStreaming = true;
             ScrollChatToBottom();
+            UpdateContextUsage();
         }
 
         private void ClearAgentActivities()
         {
             StopAllTextSweeps();
+            _activityFlushTimer?.Stop();
+            _pendingAgentActivities.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
         }
@@ -1097,9 +1213,20 @@ namespace RuApp.Views
             TextBlock? displayText = null;
             foreach (var child in grid.Children)
             {
-                if (child is TextBlock tb && Grid.GetColumn(tb) == 0)
+                if (child is Grid header)
                 {
-                    displayText = tb;
+                    foreach (var headerChild in header.Children)
+                    {
+                        if (headerChild is TextBlock tb && Grid.GetColumn(tb) == 1)
+                        {
+                            displayText = tb;
+                            break;
+                        }
+                    }
+                }
+
+                if (displayText != null)
+                {
                     break;
                 }
             }
@@ -1295,6 +1422,9 @@ namespace RuApp.Views
         {
             _agentActivityVisible = false;
             AgentStatusText.Text = status;
+            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(status)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         }
 
         private void UpdateAgentComposerVisuals()
@@ -1387,7 +1517,7 @@ namespace RuApp.Views
 
             bool keepTerminalFailureVisible = AgentFailurePresentation.ShouldKeepVisible(
                 _agentController.CurrentRun?.Status,
-                _agentController.StatusText);
+                ResolveFailureReason(_agentController));
 
             if (_agentController.IsBusy != true
                 && !_agentController.CanCancel
@@ -1410,8 +1540,11 @@ namespace RuApp.Views
             bool isRunning = _agentController.CanCancel || IsActiveAgentRunPending();
             UpdateSendButtonMode(isAgentRunning: isRunning);
 
-            string safeStatus = AgentFailurePresentation.Render(_agentController.StatusText);
+            string safeStatus = AgentFailurePresentation.Render(ResolveFailureReason(_agentController));
             AgentStatusText.Text = safeStatus;
+            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(safeStatus)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = _agentController.CanContinue
                 ? Visibility.Visible
@@ -1438,6 +1571,9 @@ namespace RuApp.Views
             {
                 AgentApprovalSummaryText.Text = RenderApprovalSummary(
                     _agentController.PendingApprovalSummary);
+                // Approval arrives via SSE while the user may be scrolled up;
+                // bring the Approve/Deny panel into view.
+                ScrollChatToBottom();
             }
 
             bool hasInlineAction = approvalPending
@@ -1452,6 +1588,39 @@ namespace RuApp.Views
             AgentContinueButton.IsEnabled = actionsEnabled;
             AgentRetryButton.IsEnabled = actionsEnabled;
             AgentStopButton.IsEnabled = actionsEnabled;
+        }
+
+        private static string ResolveFailureReason(AgentRunController controller)
+        {
+            // The SSE final_snapshot only carries the bare run status ("failed"),
+            // which tells the user nothing. Prefer the durable terminal error
+            // code (repeated_tool_call, provider_rate_limited, ...) whenever the
+            // stream text is just a bare status word.
+            string streamText = controller.StatusText ?? string.Empty;
+            string? terminalCode = string.Equals(controller.CurrentRun?.Status, "failed", StringComparison.Ordinal)
+                ? controller.CurrentRun?.TerminalErrorCode
+                : null;
+            if (!string.IsNullOrWhiteSpace(terminalCode) && IsBareRunStatusWord(streamText))
+            {
+                return terminalCode!;
+            }
+
+            return streamText;
+        }
+
+        private static bool IsBareRunStatusWord(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return true;
+            }
+
+            return text.Trim() is string trimmed
+                && (string.Equals(trimmed, "failed", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "completed", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "cancelled", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "interrupted", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "Run ended.", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -1505,6 +1674,18 @@ namespace RuApp.Views
 
         private bool IsActiveAgentRunPending()
         {
+            // Synchronous send guard: _isSendingUserTurn covers the race between
+            // tapping Send and the first await (session ensure + create run),
+            // during which CanCancel/HasPendingApproval are still false and a
+            // second Enter would otherwise create a duplicate user bubble + run.
+            // Entry points (Enter key, Send click) use this; SendAgentTurnAsync
+            // itself must use IsControllerRunPending or it would block its own
+            // caller, which already holds the flag.
+            return _isSendingUserTurn || IsControllerRunPending();
+        }
+
+        private bool IsControllerRunPending()
+        {
             if (_agentController is null)
             {
                 return false;
@@ -1529,6 +1710,7 @@ namespace RuApp.Views
             monitor?.Dispose();
             _agentActivityVisible = false;
             _agentActionPending = false;
+            _isSendingUserTurn = false;
             _activeAgentUsage = null;
             AbandonActiveAgentReply(notifyVoice: true);
 
@@ -1539,6 +1721,7 @@ namespace RuApp.Views
             AgentContinueButton.Visibility = Visibility.Collapsed;
             AgentRetryButton.Visibility = Visibility.Collapsed;
             AgentStatusText.Text = string.Empty;
+            AgentStatusText.Visibility = Visibility.Collapsed;
             UpdateSendButtonMode(isAgentRunning: false);
         }
 
@@ -1895,12 +2078,20 @@ namespace RuApp.Views
 
         private async Task SendCurrentMessageAsync()
         {
+            if (_isSendingUserTurn)
+            {
+                return;
+            }
+
             try
             {
                 string text = ChatInputTextBox.Text.Trim();
                 var attachments = PendingAttachments.ToList();
 
                 if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
+
+                _isSendingUserTurn = true;
+                UpdateSendButtonMode(isAgentRunning: true);
 
                 int imageCount = attachments.Count(static attachment => attachment.IsImage);
                 if (imageCount > 4)
@@ -1948,6 +2139,11 @@ namespace RuApp.Views
                 FailActiveAgentReply(ex);
                 ShowAgentError(ex);
             }
+            finally
+            {
+                _isSendingUserTurn = false;
+                UpdateAgentInlineState();
+            }
         }
 
         private async Task SendAgentTurnAsync(
@@ -1956,7 +2152,8 @@ namespace RuApp.Views
             CancellationToken cancellationToken,
             bool allowSessionRecovery = true,
             List<ImageAttachmentItem>? attachments = null,
-            string? displayUserText = null)
+            string? displayUserText = null,
+            bool addUserMessage = true)
         {
             if (allowSessionRecovery)
             {
@@ -1968,7 +2165,7 @@ namespace RuApp.Views
                 throw new InvalidOperationException("Agent controller is unavailable.");
             }
 
-            if (IsActiveAgentRunPending())
+            if (IsControllerRunPending())
             {
                 ShowAgentInlineStatus("Coding Agent is already running. Please complete or stop the current turn first.");
                 if (source == AgentTurnSource.Voice)
@@ -2015,7 +2212,7 @@ namespace RuApp.Views
 
                 StartNewAgentActivityRun();
                 ClearAgentRunSummary();
-                BeginAgentReply(source, text, attachments, displayUserText);
+                BeginAgentReply(source, text, attachments, displayUserText, addUserMessage);
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Preparing action…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
@@ -2054,7 +2251,7 @@ namespace RuApp.Views
             UpdateAgentInlineState();
         }
 
-        private void BeginAgentReply(AgentTurnSource source, string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null)
+        private void BeginAgentReply(AgentTurnSource source, string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
         {
             _activeAgentTurnSource = source;
             _activeAgentRunId = null;
@@ -2064,15 +2261,18 @@ namespace RuApp.Views
             _agentDeltaKeys.Clear();
             _replyRenderScheduler.Invalidate();
 
-            Messages.Add(new ChatMessageItem
+            if (addUserMessage)
             {
-                Role = "user",
-                Content = !string.IsNullOrEmpty(displayUserText) ? displayUserText : text,
-                SessionId = _activeSessionId,
-                Attachments = attachments != null && attachments.Count > 0
-                    ? new ObservableCollection<ImageAttachmentItem>(attachments)
-                    : new ObservableCollection<ImageAttachmentItem>()
-            });
+                Messages.Add(new ChatMessageItem
+                {
+                    Role = "user",
+                    Content = !string.IsNullOrEmpty(displayUserText) ? displayUserText : text,
+                    SessionId = _activeSessionId,
+                    Attachments = attachments != null && attachments.Count > 0
+                        ? new ObservableCollection<ImageAttachmentItem>(attachments)
+                        : new ObservableCollection<ImageAttachmentItem>()
+                });
+            }
 
             _activeAgentAssistantMessage = new ChatMessageItem
             {
@@ -2468,7 +2668,8 @@ namespace RuApp.Views
                 {
                     if (preserveStreamedReply
                         && _activeAgentAssistantMessage is { } streamedMessage
-                        && !string.IsNullOrWhiteSpace(streamedReply))
+                        && !string.IsNullOrWhiteSpace(streamedReply)
+                        && !ModelToolSelectionParser.LooksLikeToolSelection(streamedReply))
                     {
                         if (!Messages.Contains(streamedMessage))
                         {
@@ -2500,6 +2701,14 @@ namespace RuApp.Views
                     for (int index = 0; index < history.Count; index++)
                     {
                         var (role, content) = history[index];
+                        // A machine tool envelope must never render as chat text
+                        // (e.g. a repeated call that failed the run). Drop it.
+                        if (string.Equals(role, "assistant", StringComparison.Ordinal)
+                            && ModelToolSelectionParser.LooksLikeToolSelection(StripDisplayMarkers(content)))
+                        {
+                            continue;
+                        }
+
                         ObservableCollection<AgentActivityItem>? activities = null;
                         if (role == "assistant")
                         {
@@ -2714,19 +2923,32 @@ namespace RuApp.Views
                 return;
             }
 
+            if (_isSendingUserTurn || IsActiveAgentRunPending() || _agentController?.CanCancel == true)
+            {
+                return;
+            }
+
             try
             {
+                _isSendingUserTurn = true;
+                UpdateSendButtonMode(isAgentRunning: true);
                 await SendAgentTurnAsync(
                     string.IsNullOrWhiteSpace(last.Text) ? "Retry" : last.Text,
                     AgentTurnSource.Typed,
                     CancellationToken.None,
                     attachments: last.Attachments.Count == 0 ? null : new List<ImageAttachmentItem>(last.Attachments),
-                    displayUserText: last.Text);
+                    displayUserText: last.Text,
+                    addUserMessage: false);
             }
             catch (Exception ex)
             {
                 FailActiveAgentReply(ex);
                 ShowAgentError(ex);
+            }
+            finally
+            {
+                _isSendingUserTurn = false;
+                UpdateAgentInlineState();
             }
         }
 
@@ -2799,6 +3021,12 @@ namespace RuApp.Views
                 {
                     foreach (var (role, content) in history)
                     {
+                        if (string.Equals(role, "assistant", StringComparison.Ordinal)
+                            && ModelToolSelectionParser.LooksLikeToolSelection(StripDisplayMarkers(content)))
+                        {
+                            continue;
+                        }
+
                         Messages.Add(new ChatMessageItem
                         {
                             Role = role,
@@ -3073,6 +3301,11 @@ namespace RuApp.Views
             StopAllTextSweeps();
             DetachWaveTimer();
             ClearAgentActivities();
+            if (_activityFlushTimer != null)
+            {
+                _activityFlushTimer.Tick -= OnActivityFlushTick;
+                _activityFlushTimer = null;
+            }
             ClearAgentRunSummary();
             _typingDebounce?.Stop();
             _typingDebounce = null;

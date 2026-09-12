@@ -548,6 +548,36 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
+    public void ProviderReasoningOptions_uses_override_model_and_ignores_case()
+    {
+        var state = new ProviderCatalogState
+        {
+            Status = "ok",
+            SelectedModel = "old-model",
+            Catalog = new[]
+            {
+                new ProviderCatalogModel
+                {
+                    Id = "New-Model",
+                    Supported = true,
+                    Reasoning = new ProviderReasoningCapabilities
+                    {
+                        State = ProviderReasoningCapabilities.Levels,
+                        Options = new[] { "LOW", "high", "High", "default" },
+                    },
+                },
+            },
+        };
+
+        // Stale child SelectedModel must not hide fresh grouped selection.
+        var withOverride = ProviderReasoningOptions.For(state, "new-model");
+        Assert.Equal(new[] { "default", "LOW", "high" }, withOverride.Select(o => o.Value));
+
+        // Without override the old model has no entry -> default only.
+        Assert.Equal(new[] { "default" }, ProviderReasoningOptions.For(state).Select(o => o.Value));
+    }
+
+    [Fact]
     public void SettingsView_does_not_contain_reasoning_and_ChatView_contains_chat_reasoning()
     {
         var settingsXamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml");

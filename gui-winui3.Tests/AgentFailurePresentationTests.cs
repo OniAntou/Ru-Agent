@@ -21,4 +21,26 @@ public sealed class AgentFailurePresentationTests
     {
         Assert.False(AgentFailurePresentation.ShouldKeepVisible("completed", string.Empty));
     }
+
+    [Fact]
+    public void Repeated_tool_call_stays_visible_with_guidance_copy()
+    {
+        Assert.True(AgentFailurePresentation.ShouldKeepVisible(
+            "failed",
+            "repeated_tool_call"));
+        Assert.Equal(
+            "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request or press Retry.",
+            AgentFailurePresentation.Render("repeated_tool_call"));
+    }
+
+    [Fact]
+    public void Invalid_selection_stays_visible_with_guidance_copy()
+    {
+        Assert.True(AgentFailurePresentation.ShouldKeepVisible(
+            "failed",
+            "invalid_selection"));
+        Assert.Equal(
+            "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request or press Retry.",
+            AgentFailurePresentation.Render("invalid_selection"));
+    }
 }

@@ -95,31 +95,34 @@
         </DataTemplate>
 
         <DataTemplate x:Key="AgentActivityTemplate" x:DataType="models:AgentActivityItem">
-            <Grid Margin="0,3"
-                  Padding="0,2"
-                  ColumnDefinitions="Auto,Auto"
-                  ColumnSpacing="8"
+            <Grid Margin="0,2"
                   HorizontalAlignment="Left"
+                  Visibility="{x:Bind IsVisibleInFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                   Loaded="OnActivityItemLoaded"
                   Unloaded="OnActivityItemUnloaded"
                   DataContextChanged="OnActivityItemDataContextChanged"
                   AutomationProperties.LiveSetting="Polite">
-                <TextBlock Grid.Column="0"
-                           Text="{x:Bind DisplayText, Mode=OneWay}"
-                           FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="12.5"
-                           FontWeight="Medium"
-                           Foreground="{StaticResource RuInkBrush}"
-                           TextWrapping="Wrap"
-                           VerticalAlignment="Center"
-                           Margin="0" />
-                <TextBlock Grid.Column="1"
-                           Text="{x:Bind MetadataText, Mode=OneWay}"
-                           FontFamily="{StaticResource RuMonoFontFamily}"
-                           FontSize="11.5"
-                           Foreground="{StaticResource RuMutedBrush}"
-                           Opacity="1.0"
-                           VerticalAlignment="Center" />
+                <Grid ColumnDefinitions="Auto,Auto"
+                      ColumnSpacing="6"
+                      HorizontalAlignment="Left"
+                      VerticalAlignment="Center">
+                    <TextBlock Grid.Column="0"
+                               Text="{x:Bind DisplayText, Mode=OneWay}"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12.5"
+                               FontWeight="Medium"
+                               Foreground="{StaticResource RuInkBrush}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Margin="0" />
+                    <TextBlock Grid.Column="1"
+                               Text="{x:Bind MetadataText, Mode=OneWay}"
+                               FontFamily="{StaticResource RuMonoFontFamily}"
+                               FontSize="11"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               Opacity="0.9"
+                               VerticalAlignment="Center" />
+                </Grid>
                 <!-- State bindings (used by automation & contract tests) -->
                 <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                 <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />

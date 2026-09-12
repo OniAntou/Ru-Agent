@@ -72,7 +72,7 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
         var accessKind = AccessKindForTool(proposal.ToolId, proposalArgs);
         var argsKey = ApprovalArgsKey(proposal.ToolId, proposal.Arguments);
         if (_approvals is not null
-            && _approvals.TryPeekAuthorizationToken(_runId, argsKey, out var storedToken)
+            && _approvals.TryTakeAuthorizationToken(_runId, argsKey, out var storedToken)
             && storedToken is not null)
         {
             return ToolProposalDecision.Allow(

@@ -62,7 +62,14 @@ public sealed class BrokerApprovalState
         Run(runId).Tokens[argsKey] = (token, expiresAt);
     }
 
-    public bool TryPeekAuthorizationToken(string runId, string argsKey, out string? token)
+    /// <summary>
+    /// Hands one cached authorization token to a single decision. The Broker
+    /// consumes its tokens on first use, so the entry is removed here: a later
+    /// identical proposal must re-evaluate (the session directory grant then
+    /// allows it again) instead of replaying a consumed token into
+    /// <c>decision_stale</c>.
+    /// </summary>
+    public bool TryTakeAuthorizationToken(string runId, string argsKey, out string? token)
     {
         token = null;
         if (string.IsNullOrWhiteSpace(runId) || string.IsNullOrWhiteSpace(argsKey))
@@ -71,7 +78,7 @@ public sealed class BrokerApprovalState
         }
 
         if (!_runs.TryGetValue(runId, out var run)
-            || !run.Tokens.TryGetValue(argsKey, out var entry)
+            || !run.Tokens.TryRemove(argsKey, out var entry)
             || string.IsNullOrWhiteSpace(entry.Token)
             || entry.Token.Length > MaxAuthorizationTokenChars
             || entry.ExpiresAt <= DateTimeOffset.UtcNow)

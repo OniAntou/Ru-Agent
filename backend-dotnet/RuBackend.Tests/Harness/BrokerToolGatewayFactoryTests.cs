@@ -267,6 +267,76 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RepeatedResumedProposal_ReevaluatesAfterTokenConsumption()
+    {
+        var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
+        var runId = new RunId("run_" + new string('3', 32));
+        var snapshot = PolicySnapshotCanonicalizer.Create(
+            1,
+            AgentPermissionPreset.Standard,
+            SnapshotWorkspace(),
+            [],
+            DateTimeOffset.UtcNow);
+        var gateway = Assert.IsType<global::RuBackend.Harness.Broker.BrokerToolGateway>(
+            factory.Create(_workspaceRoot, snapshot, runId));
+
+        var externalPath = Path.Combine(
+            Path.GetTempPath(),
+            "ru-broker-replay-" + Guid.NewGuid().ToString("N") + ".txt");
+        await File.WriteAllTextAsync(externalPath, "replay-once");
+        try
+        {
+            var readArgs = new System.Text.Json.Nodes.JsonObject
+            {
+                ["op"] = "read",
+                ["path"] = externalPath,
+            };
+            var decision = await gateway.EvaluateAsync(
+                Proposal(runId, "read", readArgs),
+                CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, decision.Decision);
+            var authorized = await factory.RespondApprovalAsync(
+                runId.Value,
+                decision.ApprovalId!.Value.Value,
+                "allow_session_directory",
+                CancellationToken.None);
+            Assert.True(authorized.Authorized);
+
+            async Task<ToolExecutionReceipt> ExecuteResumedAsync()
+            {
+                var resumed = Proposal(runId, "read", readArgs);
+                var resumedDecision = await gateway.EvaluateAsync(resumed, CancellationToken.None);
+                Assert.Equal(PolicyDecision.Allow, resumedDecision.Decision);
+                var prepared = await gateway.PrepareAsync(
+                    new ApprovedToolExecution(
+                        resumed,
+                        new ExecutionId("exec_" + Guid.NewGuid().ToString("N")),
+                        resumedDecision.CanonicalIntentToken!),
+                    CancellationToken.None);
+                return await gateway.ExecuteAsync(
+                    prepared,
+                    _ => ValueTask.CompletedTask,
+                    CancellationToken.None);
+            }
+
+            var first = await ExecuteResumedAsync();
+            Assert.Equal(ToolExecutionOutcome.Succeeded, first.Outcome);
+
+            // The Broker consumes its authorization token on first use, so the
+            // cached copy is single-use too: a repeated identical proposal must
+            // re-evaluate through the session directory grant instead of
+            // replaying the consumed token into decision_stale.
+            var second = await ExecuteResumedAsync();
+            Assert.Equal(ToolExecutionOutcome.Succeeded, second.Outcome);
+        }
+        finally
+        {
+            try { File.Delete(externalPath); } catch { }
+            factory.CloseRun(runId.Value);
+        }
+    }
+
+    [Fact]
     public async Task RespondApprovalAsync_ReturnsFalse_WhenApprovalUnknown()
     {
         var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);

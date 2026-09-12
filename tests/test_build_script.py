@@ -268,6 +268,58 @@ def test_start_dev_rejects_debug_fallback_when_release_is_missing(tmp_path: Path
     assert "Debug" not in result.stdout
 
 
+def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script = tmp_path / "start_dev.bat"
+    shutil.copy2(repo_root / "start_dev.bat", script)
+    release = (
+        tmp_path
+        / "gui-winui3"
+        / "bin"
+        / "Release"
+        / "net10.0-windows10.0.26100.0"
+        / "win-x64"
+        / "publish"
+    )
+    release.mkdir(parents=True)
+    (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
+    worker = (
+        tmp_path
+        / "backend-dotnet"
+        / "RuAgent.Runtime.Worker"
+        / "bin"
+        / "Release"
+        / "net10.0"
+        / "win-x64"
+        / "publish"
+    )
+    worker.mkdir(parents=True)
+    (worker / "RuAgent.Runtime.Worker.exe").write_text("worker placeholder\n", encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "launch_gui.ps1").write_text(
+        "param([string]$ExecutablePath, [string]$WorkingDirectory, "
+        "[int]$StartupGracePeriodMilliseconds = 2000)\n"
+        "Set-Content -LiteralPath (Join-Path $PSScriptRoot 'launcher-args.txt') "
+        "-Value $WorkingDirectory\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["cmd", "/d", "/c", str(script)],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    working_directory = (scripts / "launcher-args.txt").read_text(encoding="utf-8").strip()
+    assert '"' not in working_directory, working_directory
+    assert Path(working_directory).resolve() == tmp_path.resolve()
+
+
 def test_start_dev_requires_the_managed_worker_publish(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     script = tmp_path / "start_dev.bat"

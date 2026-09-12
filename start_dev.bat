@@ -23,7 +23,7 @@ if not exist "%LAUNCHER%" (
 )
 for %%I in ("%EXE%") do echo Published: %%~tI
 echo Executable: "%EXE%"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%LAUNCHER%" -ExecutablePath "%EXE%" -WorkingDirectory "%~dp0" -StartupGracePeriodMilliseconds 2000
+powershell -NoProfile -ExecutionPolicy Bypass -File "%LAUNCHER%" -ExecutablePath "%EXE%" -WorkingDirectory "%~dp0." -StartupGracePeriodMilliseconds 2000
 if errorlevel 1 (
     echo.
     echo RuApp failed during startup. Check the Windows Application event log or rebuild with build.bat.

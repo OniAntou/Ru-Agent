@@ -177,6 +177,10 @@ arguments terminates the run with `repeated_tool_call` before a second Broker
 dispatch. This applies to read-only calls as well as mutations and terminal
 commands, preventing model loops from duplicating side effects.
 
+A final model step that carries neither text nor tool calls fails the run with
+`empty_model_reply`; an empty completion never ends a run silently, and the
+GUI renders guidance copy for that bounded code.
+
 Use `read` with `op=help` when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
 bounded excerpts from the five current bundled documents (`ru-overview`,

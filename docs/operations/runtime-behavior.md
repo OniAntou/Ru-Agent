@@ -87,14 +87,23 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, voice/VTS state, and
 references are not appended as separate system messages.
 
-Host capabilities are the runtime projection of the 6 Protocol-owned tool
-definitions: model tools (`read`, `write`, `edit`, `bash`, `web_search`, `web_fetch`). Each capability includes its ID/version, description, canonical
+Host capabilities are the runtime projection of the 8 Protocol-owned tool
+definitions: model tools (`read`, `grep`, `glob`, `write`, `edit`, `bash`,
+`web_search`, `web_fetch`). Each capability includes its ID/version, description, canonical
 scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
-emits exactly one JSON object of the form
-`{"tool_id":"read","tool_version":"1.0.0","arguments":{"op":"read","path":"README.md"}}`
-and makes no success claim until the durable result arrives. Ordinary answers
-remain ordinary text. The Worker rejects unknown, duplicate, or digest-mismatched
-contracts before provider execution.
+calls it through the provider's native function-calling interface when the
+dialect supports it (`chat_completions`; the adapter sends `tools` derived from
+the Host/Worker selection contract and maps `delta.tool_calls` back to Host tool
+calls). Other dialects keep the text contract: exactly one JSON object of the
+form `{"tool_id":"read","tool_version":"1.0.0","arguments":{"op":"read","path":"README.md"}}`.
+Either way the model makes no success claim until the durable result arrives and
+ordinary answers remain ordinary text. Tool exchanges stay in that dialogue:
+each selection is followed by its bounded, explicitly untrusted tool output, and
+the newest user-side block becomes the next prompt, so a resumed step never
+re-runs work that already succeeded. Oversized outputs are clamped to the prompt budget
+while the untrusted runtime references retain the full-fidelity result. The
+Worker rejects unknown, duplicate, or digest-mismatched contracts before
+provider execution.
 
 The Host reads `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
 selected run root, then discovers direct-child Markdown skill directories from

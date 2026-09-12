@@ -103,6 +103,7 @@ namespace RuApp.Views
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
         private AgentModelUsage? _activeAgentUsage;
+        private string? _terminalFailureCardContent;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
         private readonly AgentReplyRenderScheduler _replyRenderScheduler;
@@ -982,10 +983,11 @@ namespace RuApp.Views
                 content.Append("\nType **Continue** to resume.");
             }
 
+            _terminalFailureCardContent = content.ToString();
             Messages.Add(new ChatMessageItem
             {
                 Role = "assistant",
-                Content = content.ToString(),
+                Content = _terminalFailureCardContent,
                 IsError = true,
             });
             ScrollChatToBottom();
@@ -2364,6 +2366,7 @@ namespace RuApp.Views
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
             _activeAgentUsage = null;
+            _terminalFailureCardContent = null;
             _agentDeltaKeys.Clear();
             _replyRenderScheduler.Invalidate();
 
@@ -2438,6 +2441,29 @@ namespace RuApp.Views
             {
                 Messages.Remove(placeholder);
             }
+
+            // The failure card is UI-only copy and the reload above rebuilds the
+            // transcript from session history, so a terminal failure without a
+            // rendered reply would otherwise leave no trace. Re-append the
+            // actionable card (or the copy cached from the live summary).
+            if (TerminalFailureCardPolicy.ShouldAppend(
+                    _agentController?.CurrentRun?.Status,
+                    HasRenderedAgentReply(),
+                    Messages.Any(message => message.Role == "assistant" && message.IsError)))
+            {
+                Messages.Add(new ChatMessageItem
+                {
+                    Role = "assistant",
+                    Content = _terminalFailureCardContent
+                        ?? TerminalFailureCardPolicy.Compose(
+                            _agentController is null ? null : ResolveFailureReason(_agentController),
+                            _agentController?.CanContinue == true),
+                    IsError = true,
+                });
+                ScrollChatToBottom();
+            }
+
+            _terminalFailureCardContent = null;
             if (_activeAgentTurnSource == AgentTurnSource.Voice)
             {
                 _harnessEvents?.Write("voice.reply.received");

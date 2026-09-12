@@ -34,6 +34,17 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void Empty_model_reply_stays_visible_with_guidance_copy()
+    {
+        Assert.True(AgentFailurePresentation.ShouldKeepVisible(
+            "failed",
+            "empty_model_reply"));
+        Assert.Equal(
+            "The model returned an empty reply. Please try again, or select another model.",
+            AgentFailurePresentation.Render("empty_model_reply"));
+    }
+
+    [Fact]
     public void Invalid_selection_stays_visible_with_guidance_copy()
     {
         Assert.True(AgentFailurePresentation.ShouldKeepVisible(

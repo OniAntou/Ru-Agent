@@ -35,6 +35,11 @@ internal static class AgentFailurePresentation
             return "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request, or type Continue to resume.";
         }
 
+        if (string.Equals(trimmed, "empty_model_reply", StringComparison.Ordinal))
+        {
+            return "The model returned an empty reply. Please try again, or select another model.";
+        }
+
         if (trimmed.StartsWith("Error", StringComparison.OrdinalIgnoreCase)
             || trimmed.Contains("Exception", StringComparison.OrdinalIgnoreCase))
         {

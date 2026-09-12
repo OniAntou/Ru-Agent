@@ -1,15 +1,15 @@
 # Verification
 
-> **Current as of 2026-09-11 (commit `b4e79469`, worktree sạch).** Older dated entries below are history; only this table is current.
+> **Current as of 2026-09-13 (commit `f4637ba7`, worktree sạch).** Older dated entries below are history; only this table is current.
 > Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals.
-
+> Đợt 2026-09-13: model interface chuyển sang provider-native function calling (`chat_completions`), hội thoại gửi model theo đúng thứ tự user/assistant/tool, tool selection hỏng được trả lại cho model để tự sửa (bounded retry + note `[harness]`), broker authorization token một-lần, final step rỗng fail-closed bằng `empty_model_reply`, failure card GUI sống sót qua transcript reload, và `start_dev.bat` không còn escape mất quote của `%~dp0`.
 | Surface | Current status |
 | --- | --- |
-| Public route | 62 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed) |
-| .NET tests | Full 13-project matrix via `scripts/test_dotnet.ps1 -Configuration Debug` (2026-09-11, sau khi xoá memory system, bịt provider cloud đã đăng xuất, đánh dấu `no key` trong TUI và sửa SSE live tail cho approval): **3,073 passed / 0 failed / 0 skipped** — Broker 588, CLI 548, Client 50, Connectors 3, Harness.Core 281, Harness.Persistence 103, Hosting 26, Protocol 24, Runtime.Adapters 217, Runtime.Core 6, Runtime.Worker 64, RuBackend 740, GUI 423. |
-| Python suite | 311 passed, 0 failed. `ruff check src tests scripts tools`, `mypy src` (29 files), and `pip check` passed. |
-| Release build | `build.bat` 13/13 (2026-09-11, `dev` `57b9edfa`): 0 warning / 0 error toàn bộ; publish self-contained GUI (`RuApp.exe` 162,816 bytes, `includedFrameworks: Microsoft.NETCore.App`, 10 loose XBF / 8 view XAML sau khi xoá memory), Worker + Runtime.Core, Broker, RuBackend, CLI. Overlay plugin skipped theo mặc định (optional). |
-| Managed runtime smoke | Bản publish chạy isolated (`RU_DATA_ROOT`/`RU_LOG_ROOT` temp, port riêng): `/settings` 200 với bearer đúng và 401 với bearer sai, agent + device worker listeners mở, `/status` 200, `POST /host/shutdown` đóng sạch cả 3 port và toàn bộ process tree, temp root xoá sạch. Không thay thế live device acceptance (mic/TTS/loa/VTS/provider thật vẫn là user-run gate). |
+| Public route | 62 HTTP + 1 WebSocket (`/voice/stream`) per `backend-dotnet/public-route-contract.json` (`scripts/check_aspnetcore_route_matrix.py` passed, 2026-09-13) |
+| .NET tests | Full 13-project matrix via `scripts/test_dotnet.ps1 -Configuration Debug` (2026-09-13, sau đợt native tool calling + hội thoại tool + repair-retry): **3,196 passed / 0 failed / 0 skipped** — Broker 588, CLI 548, Client 60, Connectors 3, Harness.Core 310, Harness.Persistence 103, Hosting 26, Protocol 24, Runtime.Adapters 219, Runtime.Core 6, Runtime.Worker 79, RuBackend 755, GUI 475. |
+| Python suite | 312 passed, 0 failed. `ruff check src tests scripts tools`, `mypy src` (29 files) và `pip check` đều passed (2026-09-13). |
+| Release build | `build.bat` 13/13 exit 0 (2026-09-13, `dev` `f4637ba7`): 0 warning / 0 error toàn bộ; publish self-contained GUI (`RuApp.exe` 162,816 bytes, 10 loose XBF / 8 view XAML), Worker + Runtime.Core, Broker, RuBackend, CLI. Overlay plugin skipped mặc định (`Overlay plugin: skipped`, dùng `-WithOverlay` để build). |
+| Managed runtime smoke | Bản publish chạy isolated (2026-09-13, `RU_DATA_ROOT`/`RU_LOG_ROOT` temp, env `RuBackend__BindUrl=http://127.0.0.1:8123`, worker 8125/8126): `/status` 200, `/settings` 200 với bearer đúng và **401** với bearer sai, cả 3 listener mở, `POST /host/shutdown` đóng process tree trong **0.5 s** (3 port đóng, 0 process con sót), temp root xoá sạch. Không thay thế live device acceptance (mic/TTS/loa/VTS/provider thật vẫn là user-run gate). |
 | Plugins | voice/STT, VTube Studio, native overlay là plugin tùy chọn; coding core không phụ thuộc. `build.bat` skip overlay mặc định (in `Overlay plugin: skipped`), dùng `-WithOverlay` để build; CI job `native-overlay` là `continue-on-error`. Xem `docs/architecture.md` mục "Coding core and plugins". |
 | `git diff --check` | passed |
 

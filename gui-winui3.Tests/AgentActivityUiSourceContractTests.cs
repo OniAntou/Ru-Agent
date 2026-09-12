@@ -125,6 +125,24 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void Terminal_panel_streams_tool_output_below_the_transcript()
+    {
+        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        var model = File.ReadAllText(FindSource("Models", "TerminalOutputBlock.cs"));
+
+        Assert.Contains("AutomationProperties.AutomationId=\"TerminalPanel\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("TerminalBlocks", xaml, StringComparison.Ordinal);
+        Assert.Contains("TerminalClearButton", xaml, StringComparison.Ordinal);
+        Assert.Contains("TerminalCollapseButton", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolOutputReceived", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ApplyAgentToolOutput", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("MaximumTerminalBlocks", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("MaximumLines", model, StringComparison.Ordinal);
+        Assert.Contains("MaximumCharacters", model, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Activity_item_contains_no_raw_payload_storage_or_reasoning_text()
     {
         var model = File.ReadAllText(FindSource("Models", "AgentActivityItem.cs"));
@@ -161,7 +179,10 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.Contains("SampleAuroraColor", codeBehind, StringComparison.Ordinal);
         Assert.Contains("UpdateWaveTextBlock", codeBehind, StringComparison.Ordinal);
 
-        // Subtle Cyan-Violet Aurora palette (slice 2: owned by AgentActivityPalette)
+        // The sweep must target the display label (flat row column 0),
+        // never the metadata line: sweeping an empty/short metadata block
+        // is what made the wave look gone.
+        Assert.Contains("Grid.GetColumn(tb) == 0", codeBehind, StringComparison.Ordinal);
         var palette = File.ReadAllText(FindSource("Services", "AgentActivityPalette.cs"));
         Assert.Contains("56, 189, 248", palette, StringComparison.Ordinal); // Soft Cyan
         Assert.Contains("129, 140, 248", palette, StringComparison.Ordinal); // Soft Violet / Indigo

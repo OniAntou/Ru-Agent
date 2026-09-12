@@ -27,12 +27,12 @@ internal static class AgentFailurePresentation
 
         if (string.Equals(trimmed, "repeated_tool_call", StringComparison.Ordinal))
         {
-            return "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request or press Retry.";
+            return "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request, or type Continue to resume.";
         }
 
         if (string.Equals(trimmed, "invalid_selection", StringComparison.Ordinal))
         {
-            return "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request or press Retry.";
+            return "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request, or type Continue to resume.";
         }
 
         if (trimmed.StartsWith("Error", StringComparison.OrdinalIgnoreCase)

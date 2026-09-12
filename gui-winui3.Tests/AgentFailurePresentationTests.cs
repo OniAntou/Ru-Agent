@@ -29,7 +29,7 @@ public sealed class AgentFailurePresentationTests
             "failed",
             "repeated_tool_call"));
         Assert.Equal(
-            "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request or press Retry.",
+            "Ru repeated the same action instead of answering, so the run was stopped. Please rephrase your request, or type Continue to resume.",
             AgentFailurePresentation.Render("repeated_tool_call"));
     }
 
@@ -40,7 +40,7 @@ public sealed class AgentFailurePresentationTests
             "failed",
             "invalid_selection"));
         Assert.Equal(
-            "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request or press Retry.",
+            "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request, or type Continue to resume.",
             AgentFailurePresentation.Render("invalid_selection"));
     }
 }

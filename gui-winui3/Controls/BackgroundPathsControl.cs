@@ -103,7 +103,10 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
         bool isDark = ActualTheme == ElementTheme.Dark ||
             (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
 
-        Color baseColor = isDark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 15, 23, 42);
+        Color baseColor = isDark
+            ? Color.FromArgb(255, 255, 255, 255)
+            : (Application.Current.Resources["RuInkBrush"] as SolidColorBrush)?.Color
+                ?? Color.FromArgb(255, 15, 23, 42);
 
         int[] positions = { 1, -1 };
         int streamIndex = 0;
@@ -159,14 +162,16 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
                 // Styling: inner paths (higher i) are thicker and much brighter,
                 // matching the radiant white convergence core in the preview image
                 double normalizedI = (double)i / (PathCount - 1);
-                double strokeWidth = 0.55 + normalizedI * 1.10; // 0.55px to 1.65px
+                double strokeWidth = 0.70 + normalizedI * 1.20; // 0.70px to 1.90px
                 double targetAlpha = isDark
-                    ? Math.Clamp(0.12 + normalizedI * 0.82, 0.10, 0.96)
-                    : Math.Clamp(0.08 + normalizedI * 0.60, 0.06, 0.70);
+                    ? Math.Clamp(0.25 + normalizedI * 0.75, 0.25, 0.96)
+                    : Math.Clamp(0.20 + normalizedI * 0.65, 0.20, 0.85);
 
-                // Stream length and gap in virtual coordinates (curve length is ~1750px)
-                double dashLength = 320.0 + (i % 8) * 35.0;
-                double gapLength = 540.0 + (i % 6) * 55.0;
+                // Stream length and gap in virtual coordinates (curve length is ~1750px).
+                // Denser duty cycle than before so the pattern reads clearly
+                // instead of dissolving into sparse faint segments.
+                double dashLength = 460.0 + (i % 8) * 35.0;
+                double gapLength = 380.0 + (i % 6) * 55.0;
                 double cycle = dashLength + gapLength;
 
                 // In WinUI 3, StrokeDashArray and StrokeDashOffset are in units of StrokeThickness
@@ -273,7 +278,10 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
         bool isDark = ActualTheme == ElementTheme.Dark ||
             (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
 
-        Color baseColor = isDark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 15, 23, 42);
+        Color baseColor = isDark
+            ? Color.FromArgb(255, 255, 255, 255)
+            : (Application.Current.Resources["RuInkBrush"] as SolidColorBrush)?.Color
+                ?? Color.FromArgb(255, 15, 23, 42);
         for (int i = 0; i < TotalStreams; i++)
         {
             if (_paths[i] is { } path)

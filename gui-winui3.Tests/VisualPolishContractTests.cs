@@ -111,7 +111,30 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
-    public void Wave_stays_throttled_and_motion_respecting()
+    public void Welcome_overlay_follows_the_gui_theme_tokens()
+    {
+        var overlay = File.ReadAllText(FindSource("Controls", "WelcomeOverlay.cs"));
+        var paths = File.ReadAllText(FindSource("Controls", "BackgroundPathsControl.cs"));
+
+        foreach (var token in new[] { "RuCanvasBrush", "RuSurfaceBrush", "RuInkBrush", "RuMutedBrush", "RuLineBrush", "RuAccentBrush", "RuAccentSoftBrush" })
+        {
+            Assert.Contains(token, overlay, StringComparison.Ordinal);
+        }
+
+        foreach (var hardcode in new[] { "10, 10, 10", "212, 212, 216", "71, 85, 105", "20, 20, 24", "22, 22, 26" })
+        {
+            Assert.DoesNotContain(hardcode, overlay, StringComparison.Ordinal);
+            Assert.DoesNotContain(hardcode, paths, StringComparison.Ordinal);
+        }
+
+        // Welcome path stroke: pure white on dark (luminous on the dark
+        // canvas), theme ink on light (white would vanish on light canvas).
+        Assert.Contains("Color.FromArgb(255, 255, 255, 255)", paths, StringComparison.Ordinal);
+        Assert.Contains("RuInkBrush", paths, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Wave_stays_throttled_and_always_on()
     {
         var timing = File.ReadAllText(FindSource("Services", "UiTiming.cs"));
         var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
@@ -121,7 +144,13 @@ public sealed class VisualPolishContractTests
         Assert.True(int.Parse(wave.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) >= 40,
             "WaveFrame must stay throttled at 40ms or slower.");
 
-        Assert.Contains("!Services.UiTiming.AnimationsEnabled", codeBehind, StringComparison.Ordinal);
+        // The activity wave is a signature effect: it always runs while rows
+        // are active and never gates on the OS animation setting.
+        Assert.Contains("StartTextSweep", codeBehind, StringComparison.Ordinal);
+        var sweepStart = codeBehind.IndexOf("private void StartTextSweep", StringComparison.Ordinal);
+        var sweepEnd = codeBehind.IndexOf("private void StopTextSweep", sweepStart, StringComparison.Ordinal);
+        Assert.True(sweepStart >= 0 && sweepEnd > sweepStart, "StartTextSweep body boundary was not found.");
+        Assert.DoesNotContain("AnimationsEnabled", codeBehind[sweepStart..sweepEnd], StringComparison.Ordinal);
     }
 
     private static string ThemeBlock(string appXaml, string theme)

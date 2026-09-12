@@ -283,6 +283,7 @@ namespace RuApp.Views
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
+            _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
@@ -329,6 +330,7 @@ namespace RuApp.Views
                 _agentController.ActivityReceived -= OnAgentActivityReceived;
                 _agentController.SummaryReceived -= OnAgentSummaryReceived;
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
+                _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
             }
 
@@ -345,6 +347,7 @@ namespace RuApp.Views
                 _agentController.ActivityReceived += OnAgentActivityReceived;
                 _agentController.SummaryReceived += OnAgentSummaryReceived;
                 _agentController.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
+                _agentController.ToolOutputReceived += OnAgentToolOutputReceived;
                 _agentController.UsageReceived += OnAgentUsageReceived;
             }
 
@@ -901,6 +904,7 @@ namespace RuApp.Views
             if (_agentActivityById.TryGetValue(activity.ActivityId, out var existing))
             {
                 existing.UpdateFrom(activity);
+                TrackTerminalToolState(existing);
             }
             else
             {
@@ -908,6 +912,27 @@ namespace RuApp.Views
 
                 _agentActivityById.Add(item.ActivityId, item);
                 AgentActivities.Add(item);
+                TrackTerminalToolState(item);
+            }
+        }
+
+        private void TrackTerminalToolState(AgentActivityItem item)
+        {
+            if (item.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking)
+            {
+                return;
+            }
+
+            if (item.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
+            {
+                _lastTerminalToolLabel = item.DisplayText;
+                return;
+            }
+
+            if (item.State is RuAgent.Protocol.Harness.AgentActivityState.Completed
+                or RuAgent.Protocol.Harness.AgentActivityState.Failed)
+            {
+                CompleteTerminalBlock(item.DisplayText, failed: item.State == RuAgent.Protocol.Harness.AgentActivityState.Failed);
             }
         }
 
@@ -1145,6 +1170,86 @@ namespace RuApp.Views
                 }
             }
             ClearAgentActivities();
+            ClearTerminalBlocks();
+        }
+
+        // ── Terminal output panel ──────────────────────────────
+        private const int MaximumTerminalBlocks = 5;
+        private string? _lastTerminalToolLabel;
+        private bool _terminalCollapsed;
+
+        public ObservableCollection<TerminalOutputBlock> TerminalBlocks { get; } = new();
+
+        private void OnAgentToolOutputReceived(object? sender, AgentToolOutputModel output)
+        {
+            if (DispatcherQueue.HasThreadAccess)
+            {
+                ApplyAgentToolOutput(output);
+                return;
+            }
+
+            DispatcherQueue.TryEnqueue(() => ApplyAgentToolOutput(output));
+        }
+
+        private void ApplyAgentToolOutput(AgentToolOutputModel output)
+        {
+            if (_agentController?.IsBusy != true)
+            {
+                return;
+            }
+
+            var block = TerminalBlocks.FirstOrDefault(candidate =>
+                string.Equals(candidate.ExecutionId, output.ExecutionId, StringComparison.Ordinal));
+            if (block is null)
+            {
+                block = new TerminalOutputBlock(
+                    output.ExecutionId,
+                    string.IsNullOrWhiteSpace(_lastTerminalToolLabel)
+                        ? "Command output"
+                        : _lastTerminalToolLabel);
+                TerminalBlocks.Add(block);
+                while (TerminalBlocks.Count > MaximumTerminalBlocks)
+                {
+                    TerminalBlocks.RemoveAt(0);
+                }
+            }
+
+            block.AppendText(output.Text);
+            _terminalCollapsed = false;
+            TerminalPanel.Visibility = Visibility.Visible;
+            TerminalScrollHost.ChangeView(null, double.MaxValue, null);
+        }
+
+        private void CompleteTerminalBlock(string label, bool failed)
+        {
+            TerminalOutputBlock? block = null;
+            foreach (var candidate in TerminalBlocks)
+            {
+                if (!candidate.IsCompleted
+                    && string.Equals(candidate.Title, label, StringComparison.Ordinal))
+                {
+                    block = candidate;
+                }
+            }
+
+            block ??= TerminalBlocks.LastOrDefault(candidate => !candidate.IsCompleted);
+            block?.Complete(failed);
+        }
+
+        private void ClearTerminalBlocks()
+        {
+            TerminalBlocks.Clear();
+            _lastTerminalToolLabel = null;
+            TerminalPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnTerminalClearClick(object sender, RoutedEventArgs e) => ClearTerminalBlocks();
+
+        private void OnTerminalCollapseClick(object sender, RoutedEventArgs e)
+        {
+            _terminalCollapsed = !_terminalCollapsed;
+            TerminalScrollHost.Visibility = _terminalCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            ((Button)sender).Content = _terminalCollapsed ? "Show" : "Hide";
         }
 
         // ── Activity text wave animation ──────────────────────────────
@@ -1221,7 +1326,9 @@ namespace RuApp.Views
                 {
                     foreach (var headerChild in header.Children)
                     {
-                        if (headerChild is TextBlock tb && Grid.GetColumn(tb) == 1)
+                        // The activity row is flat: column 0 is the display
+                        // label, column 1 the metadata line. Sweep the label.
+                        if (headerChild is TextBlock tb && Grid.GetColumn(tb) == 0)
                         {
                             displayText = tb;
                             break;
@@ -1291,11 +1398,6 @@ namespace RuApp.Views
 
         private void StartTextSweep(TextBlock textBlock)
         {
-            if (!Services.UiTiming.AnimationsEnabled)
-            {
-                return;
-            }
-
             if (!_activeWaveTextBlocks.Add(textBlock))
                 return;
 
@@ -1533,6 +1635,13 @@ namespace RuApp.Views
             UpdateSendButtonMode(isAgentRunning: isRunning);
 
             string safeStatus = AgentFailurePresentation.Render(ResolveFailureReason(_agentController));
+            if (keepTerminalFailureVisible && !isRunning)
+            {
+                // Terminal failure copy now lives in the transcript as an
+                // error message; repeating it above the composer would show
+                // the same failure twice.
+                safeStatus = string.Empty;
+            }
             AgentStatusText.Text = safeStatus;
             AgentStatusText.Visibility = string.IsNullOrWhiteSpace(safeStatus)
                 ? Visibility.Collapsed
@@ -3245,6 +3354,7 @@ namespace RuApp.Views
                 _agentController.ActivityReceived -= OnAgentActivityReceived;
                 _agentController.SummaryReceived -= OnAgentSummaryReceived;
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
+                _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
             }
             StopAllTextSweeps();

@@ -60,6 +60,20 @@ public sealed class AgentRunSummaryUiContractTests
         Assert.Contains("return;", applyBody, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Terminal_failure_does_not_duplicate_above_the_composer()
+    {
+        var code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        var stateStart = code.IndexOf("private void UpdateAgentInlineState", StringComparison.Ordinal);
+        Assert.True(stateStart >= 0, "UpdateAgentInlineState was not found.");
+        var stateEnd = code.IndexOf("private static string ResolveFailureReason", stateStart, StringComparison.Ordinal);
+        Assert.True(stateEnd > stateStart, "UpdateAgentInlineState body boundary was not found.");
+
+        var stateBody = code[stateStart..stateEnd];
+        Assert.Contains("keepTerminalFailureVisible", stateBody, StringComparison.Ordinal);
+        Assert.Contains("safeStatus = string.Empty", stateBody, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("Continue", true)]
     [InlineData("continue", true)]

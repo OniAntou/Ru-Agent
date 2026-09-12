@@ -5,8 +5,7 @@ namespace RuApp.Services;
 
 /// <summary>
 /// Feed presentation policy applied in place after every activity mutation:
-/// - Consecutive completed Thinking rows fold into the last one (durations
-///   summed) so thought spam becomes a single "Thought for Xs" row.
+/// - Completed Thinking rows never reach the feed (duration-only noise).
 /// - Consecutive identical completed rows (same kind and target) keep the
 ///   last one.
 /// Running, waiting and failed rows are never collapsed.
@@ -26,39 +25,18 @@ internal static class AgentActivityGrouper
             item.CollapsedDurationMs = 0;
         }
 
-        CollapseThinkingChains(items);
+        HideCompletedThoughts(items);
         CollapseIdenticalCompleted(items);
     }
 
-    private static void CollapseThinkingChains(IList<AgentActivityItem> items)
+    private static void HideCompletedThoughts(IList<AgentActivityItem> items)
     {
-        int runStart = -1;
-        for (int i = 0; i <= items.Count; i++)
+        foreach (var item in items)
         {
-            bool inRun = i < items.Count
-                && items[i].Kind == AgentActivityKind.Thinking
-                && items[i].State == AgentActivityState.Completed;
-
-            if (inRun && runStart < 0)
+            if (item.Kind == AgentActivityKind.Thinking
+                && item.State == AgentActivityState.Completed)
             {
-                runStart = i;
-            }
-
-            if (!inRun && runStart >= 0)
-            {
-                if (i - runStart >= 2)
-                {
-                    int folded = 0;
-                    for (int j = runStart; j < i - 1; j++)
-                    {
-                        folded += items[j].DurationMs ?? 0;
-                        items[j].IsVisibleInFeed = false;
-                    }
-
-                    items[i - 1].CollapsedDurationMs = folded;
-                }
-
-                runStart = -1;
+                item.IsVisibleInFeed = false;
             }
         }
     }

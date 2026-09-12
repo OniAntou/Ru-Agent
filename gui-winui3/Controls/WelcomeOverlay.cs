@@ -268,21 +268,23 @@ public sealed class WelcomeOverlay : Grid, IDisposable
         sb.Begin();
     }
 
+    private bool IsDarkTheme() =>
+        ActualTheme == ElementTheme.Dark ||
+        (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+
+    private static Color ThemeColor(string key, Color fallback) =>
+        (Application.Current.Resources[key] as SolidColorBrush)?.Color ?? fallback;
+
     private void ApplyThemeBackground()
     {
-        bool isDark = ActualTheme == ElementTheme.Dark ||
-            (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
-
-        // Pure pitch obsidian black matching preview image
-        Background = isDark
-            ? new SolidColorBrush(Color.FromArgb(255, 10, 10, 10))
-            : new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
+        // Match the app canvas so the overlay melts into the GUI theme.
+        Background = new SolidColorBrush(ThemeColor("RuCanvasBrush", Color.FromArgb(255, 22, 24, 29)));
     }
 
     private void ApplyTitleBrush()
     {
-        bool isDark = ActualTheme == ElementTheme.Dark ||
-            (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+        Color ink = ThemeColor("RuInkBrush", Color.FromArgb(255, 241, 245, 249));
+        Color muted = ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184));
 
         var gradient = new LinearGradientBrush
         {
@@ -290,45 +292,32 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             EndPoint = new Windows.Foundation.Point(0.8, 1.0)
         };
 
-        if (isDark)
-        {
-            gradient.GradientStops.Add(new GradientStop { Color = Color.FromArgb(255, 255, 255, 255), Offset = 0.0 });
-            gradient.GradientStops.Add(new GradientStop { Color = Color.FromArgb(225, 212, 212, 216), Offset = 1.0 });
-        }
-        else
-        {
-            gradient.GradientStops.Add(new GradientStop { Color = Color.FromArgb(255, 15, 23, 42), Offset = 0.0 });
-            gradient.GradientStops.Add(new GradientStop { Color = Color.FromArgb(220, 71, 85, 105), Offset = 1.0 });
-        }
+        gradient.GradientStops.Add(new GradientStop { Color = ink, Offset = 0.0 });
+        var tail = muted;
+        tail.A = 225;
+        gradient.GradientStops.Add(new GradientStop { Color = tail, Offset = 1.0 });
 
         _titleText.Foreground = gradient;
     }
 
     private void ApplyButtonTheme()
     {
-        bool isDark = ActualTheme == ElementTheme.Dark ||
-            (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+        bool isDark = IsDarkTheme();
+        Color surface = ThemeColor("RuSurfaceBrush", Color.FromArgb(255, 32, 35, 42));
+        Color line = ThemeColor("RuLineBrush", Color.FromArgb(255, 51, 65, 85));
+        Color muted = ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184));
+        Color accent = ThemeColor("RuAccentBrush", Color.FromArgb(255, 226, 232, 240));
+        Color canvas = ThemeColor("RuCanvasBrush", Color.FromArgb(255, 22, 24, 29));
 
-        if (isDark)
-        {
-            _loadingBadge.Background = new SolidColorBrush(Color.FromArgb(170, 20, 20, 24));
-            _loadingBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
-            _statusLabel.Foreground = new SolidColorBrush(Color.FromArgb(210, 161, 161, 170));
+        _loadingBadge.Background = new SolidColorBrush(Color.FromArgb(isDark ? (byte)170 : (byte)180, surface.R, surface.G, surface.B));
+        _loadingBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(40, line.R, line.G, line.B));
+        _statusLabel.Foreground = new SolidColorBrush(Color.FromArgb(210, muted.R, muted.G, muted.B));
 
-            _enterButton.Background = new SolidColorBrush(Color.FromArgb(235, 10, 10, 12));
-            _enterButton.Foreground = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
-            _enterButton.BorderBrush = new SolidColorBrush(Color.FromArgb(45, 255, 255, 255));
-        }
-        else
-        {
-            _loadingBadge.Background = new SolidColorBrush(Color.FromArgb(180, 244, 244, 245));
-            _loadingBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 0, 0, 0));
-            _statusLabel.Foreground = new SolidColorBrush(Color.FromArgb(210, 113, 113, 122));
-
-            _enterButton.Background = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255));
-            _enterButton.Foreground = new SolidColorBrush(Color.FromArgb(255, 15, 23, 42));
-            _enterButton.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 0, 0, 0));
-        }
+        _enterButton.Background = new SolidColorBrush(accent);
+        _enterButton.Foreground = isDark
+            ? new SolidColorBrush(canvas)
+            : new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
+        _enterButton.BorderBrush = new SolidColorBrush(Color.FromArgb(45, line.R, line.G, line.B));
     }
 
     private void OnButtonPointerEntered(object sender, PointerRoutedEventArgs e)
@@ -337,15 +326,15 @@ public sealed class WelcomeOverlay : Grid, IDisposable
         _arrowGlyph.Translation = new System.Numerics.Vector3(4, 0, 0);
         _arrowGlyph.Opacity = 1.0;
 
-        bool isDark = ActualTheme == ElementTheme.Dark ||
-            (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+        bool isDark = IsDarkTheme();
 
-        _enterButton.Background = isDark
-            ? new SolidColorBrush(Color.FromArgb(255, 22, 22, 26))
-            : new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
-        _enterButton.BorderBrush = isDark
-            ? new SolidColorBrush(Color.FromArgb(80, 255, 255, 255))
-            : new SolidColorBrush(Color.FromArgb(70, 0, 0, 0));
+        Color soft = ThemeColor("RuAccentSoftBrush", Color.FromArgb(255, 40, 45, 55));
+        Color line = ThemeColor("RuLineBrush", Color.FromArgb(255, 51, 65, 85));
+        Color ink = ThemeColor("RuInkBrush", Color.FromArgb(255, 241, 245, 249));
+        Color canvas = ThemeColor("RuCanvasBrush", Color.FromArgb(255, 22, 24, 29));
+        _enterButton.Background = new SolidColorBrush(soft);
+        _enterButton.Foreground = new SolidColorBrush(isDark ? canvas : ink);
+        _enterButton.BorderBrush = new SolidColorBrush(Color.FromArgb(isDark ? (byte)80 : (byte)70, line.R, line.G, line.B));
     }
 
     private void OnButtonPointerExited(object sender, PointerRoutedEventArgs e)

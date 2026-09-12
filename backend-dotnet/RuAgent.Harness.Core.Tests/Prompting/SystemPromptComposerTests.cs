@@ -137,8 +137,8 @@ public sealed class SystemPromptComposerTests
             ]));
 
         Assert.Contains("Use read with op=help for Ru product behavior", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use bash for current time, machine or process status, application discovery, and optional volume commands.", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use write with op=write to create note files.", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use bash to run one bounded command (inspection, tests, builds, lint, local Git) or, with approval, a shell script.", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use write with op=write to create or overwrite a file, op=delete to remove a file (recoverable once with op=restore).", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("shell scripts, external mutations, direct deletion", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);

@@ -121,11 +121,11 @@ public static class SystemPromptComposer
         }
         if (Has("bash"))
         {
-            lines.Add("Use bash for current time, machine or process status, application discovery, and optional volume commands.");
+            lines.Add("Use bash to run one bounded command (inspection, tests, builds, lint, local Git) or, with approval, a shell script.");
         }
         if (Has("write"))
         {
-            lines.Add("Use write with op=write to create note files.");
+            lines.Add("Use write with op=write to create or overwrite a file, op=delete to remove a file (recoverable once with op=restore).");
         }
         if (Has("web_search") || Has("web_fetch"))
         {

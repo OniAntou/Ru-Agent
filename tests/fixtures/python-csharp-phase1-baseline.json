@@ -5,11 +5,11 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "8eff727e804d066913748a0f2369240e6343b7b8002fae18db6db030e3c27bb1"
+            "sha256": "9df393a449e3af5580cef8b67023b49d5aa0489701ee7a4023ed85a61bdb4a07"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "5493a32663fbf41ac0f1d23c61212c39be7f7559da5e9ff259a2270fb1fb0a66"
+            "sha256": "52703a58b2f1ab87a1ceeb3ceba1c82c4ba34c657cf452511f7199288a2dad1b"
           },
           {
             "block_id": "environment",
@@ -29,12 +29,12 @@
           },
           {
             "block_id": "runtime",
-            "sha256": "f623d688c71ca8312426f428c1642b64ec0193207df283a5e48c07061c900af6"
+            "sha256": "3e590028cfe3145f1874d6ede282bf027dfc66fcd7f025c91a21636d1bdacf21"
           }
         ],
         "composer_version": "1.0.0",
         "private_marker": "sk-PHASE1-PRIVATE-MARKER",
-        "prompt_sha256": "c796f55c8efa3a033c69535fecd24e95d06c910d67432fc26fd3c97270de6766"
+        "prompt_sha256": "ef5fc3bcab8324d898165036b53b50398068e26f434ce26d1edf2c44b10293af"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -81,7 +81,6 @@
         "preset": "standard",
         "runtime_context": {
           "hardware": null,
-          "memory": "User prefers concise answers.",
           "mood": null,
           "references": [
             {

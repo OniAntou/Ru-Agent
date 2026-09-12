@@ -39,6 +39,39 @@ public sealed class ConsecutiveToolCallGuardTests
         Assert.False(ConsecutiveToolCallGuard.IsRepeated(context, [call]));
     }
 
+    [Fact]
+    public void Single_retry_after_never_executed_infra_failure_is_allowed()
+    {
+        var call = Call("{\"op\":\"list\",\"path\":\"D:/Test Agent\"}");
+        var context = InfraFailureContext(call, "decision_stale");
+
+        Assert.False(ConsecutiveToolCallGuard.IsRepeated(context, [call]));
+    }
+
+    [Fact]
+    public void Second_consecutive_infra_failure_is_still_repeated()
+    {
+        var call = Call("{\"op\":\"list\",\"path\":\"D:/Test Agent\"}");
+        var first = InfraFailureContext(call, "decision_stale").Entries.ToList();
+        first.Add(ModelContextEntry.Assistant(
+            "assistant-retry",
+            3,
+            new AssistantStep(null, [call], AssistantFinishReason.ToolCalls, 1)));
+        first.Add(ToolResult("tool-retry", 4, "decision_stale"));
+        var context = new ModelContextSnapshot(first, "[]"u8.ToArray());
+
+        Assert.True(ConsecutiveToolCallGuard.IsRepeated(context, [call]));
+    }
+
+    [Fact]
+    public void Retry_after_tool_level_denial_is_still_repeated()
+    {
+        var call = Call("{\"op\":\"list\",\"path\":\"D:/Test Agent\"}");
+        var context = InfraFailureContext(call, "denied");
+
+        Assert.True(ConsecutiveToolCallGuard.IsRepeated(context, [call]));
+    }
+
     private static ModelContextSnapshot Context(ModelToolCall call, bool includeReceipt)
     {
         var entries = new List<ModelContextEntry>
@@ -71,4 +104,30 @@ public sealed class ConsecutiveToolCallGuardTests
         using var document = JsonDocument.Parse(arguments);
         return new ModelToolCall(null, "files.read", "1", document.RootElement);
     }
+
+    private static ModelContextSnapshot InfraFailureContext(ModelToolCall call, string code)
+    {
+        var entries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Assistant(
+                "assistant-prior",
+                1,
+                new AssistantStep(null, [call], AssistantFinishReason.ToolCalls, 1)),
+            ToolResult("tool-prior", 2, code),
+        };
+        return new ModelContextSnapshot(entries, "[]"u8.ToArray());
+    }
+
+    private static ModelContextEntry ToolResult(string sourceId, long sequence, string code) =>
+        ModelContextEntry.ToolResult(
+            sourceId,
+            sequence,
+            new ToolExecutionReceipt(
+                new ExecutionId("exec_11111111111111111111111111111111"),
+                new ToolCallId("call_11111111111111111111111111111111"),
+                ToolExecutionOutcome.Failed,
+                code,
+                null,
+                false),
+            "{}");
 }

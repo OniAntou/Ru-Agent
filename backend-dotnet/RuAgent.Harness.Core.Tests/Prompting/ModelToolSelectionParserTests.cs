@@ -118,4 +118,36 @@ public sealed class ModelToolSelectionParserTests
     [InlineData("")]
     public void TrySplitTrailingBlock_ignores_non_trailing_markup(string text) =>
         Assert.False(ModelToolSelectionParser.TrySplitTrailingBlock(text, out _, out _));
+
+    [Theory]
+    [InlineData("{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}")]
+    [InlineData("{\n  \"tool_id\": \"read\",\n  \"tool_version\": \"1.0.0\",\n  \"arguments\": {\n    \"op\": \"list\",\n    \"path\": \"D:\\\\Test Agent\"\n  }\n}")]
+    [InlineData("```json\n{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}\n```")]
+    [InlineData("<tool_call>{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}</tool_call>")]
+    [InlineData("<tool_call>\n<read>\n<args>\n<op>list</op>\n</args>\n</read>")]
+    [InlineData("Xin chào! Tôi sẽ thử truy cập vào folder.<tool_call>\n<(\n\"tool_id\": \"read\",\n\"tool_version\": \"1.0.0\",\n\"arguments\": {}\n}\n}>")]
+    public void LooksLikeToolSelection_detects_every_observed_envelope_dialect(string text) =>
+        Assert.True(ModelToolSelectionParser.LooksLikeToolSelection(text));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    [InlineData("Chào bạn! Tôi là trợ lý AI.")]
+    [InlineData("{\"hello\": \"world\"}")]
+    [InlineData("To call a tool, write <tool_call> and then describe args.")]
+    [InlineData("Discuss <tool_call>{} syntax here. Then keep explaining.")]
+    public void LooksLikeToolSelection_keeps_prose_and_discussion(string? text) =>
+        Assert.False(ModelToolSelectionParser.LooksLikeToolSelection(text));
+
+    [Fact]
+    public void TryExtractCallCandidate_repairs_mangled_delimiters_and_cleans_prose()
+    {
+        const string prose = "Xin chào! Tôi sẽ thử truy cập vào folder.";
+        const string text = prose + "<tool_call>\n<(\n\"tool_id\":\"files.read\",\n\"tool_version\":\"1.0.0\",\n\"arguments\":{\"path\":\"README.md\"}\n}\n}>";
+
+        Assert.True(ModelToolSelectionParser.TryExtractCallCandidate(text, out var extractedProse, out var envelope));
+        Assert.Equal(prose, extractedProse);
+        Assert.StartsWith("{", envelope, StringComparison.Ordinal);
+        Assert.DoesNotContain("<(", envelope, StringComparison.Ordinal);
+    }
 }

@@ -5,6 +5,17 @@ namespace RuAgent.Harness.Core.Prompting;
 
 public static class ConsecutiveToolCallGuard
 {
+    // Receipt codes where the tool never executed for infrastructure reasons.
+    // Retrying the identical call once after one of these is self-correction,
+    // not a loop. Policy denials and tool-level errors stay guarded: blindly
+    // retrying those is the loop this guard exists to stop.
+    private static readonly HashSet<string> NeverExecutedCodes = new(StringComparer.Ordinal)
+    {
+        "decision_stale",
+        "transport_failure",
+        "not_executed_after_unknown",
+    };
+
     public static bool IsRepeated(
         ModelContextSnapshot context,
         IReadOnlyList<ModelToolCall> proposed)
@@ -17,14 +28,14 @@ public static class ConsecutiveToolCallGuard
         }
 
         var index = context.Entries.Count - 1;
-        var receiptCount = 0;
+        var receipts = new List<ToolExecutionReceipt>();
         while (index >= 0 && context.Entries[index].Kind == ModelContextEntryKind.ToolResult)
         {
-            receiptCount++;
+            receipts.Add(context.Entries[index].ToolReceipt!);
             index--;
         }
 
-        if (receiptCount == 0
+        if (receipts.Count == 0
             || index < 0
             || context.Entries[index].Kind != ModelContextEntryKind.AssistantStep)
         {
@@ -32,7 +43,7 @@ public static class ConsecutiveToolCallGuard
         }
 
         var prior = context.Entries[index].AssistantStep!.ToolCalls;
-        if (prior.Count != proposed.Count || receiptCount != prior.Count)
+        if (prior.Count != proposed.Count || receipts.Count != prior.Count)
         {
             return false;
         }
@@ -45,8 +56,55 @@ public static class ConsecutiveToolCallGuard
             }
         }
 
+        // A single retry after an infrastructure failure that never executed
+        // the tool is allowed through; a second consecutive identical
+        // infra-failure still fails (bounded further by the step/call
+        // budgets as a backstop).
+        if (receipts.All(NeverExecuted) && !PrecededBySameInfraFailure(context, index, proposed))
+        {
+            return false;
+        }
+
         return true;
     }
+
+    private static bool PrecededBySameInfraFailure(
+        ModelContextSnapshot context,
+        int assistantIndex,
+        IReadOnlyList<ModelToolCall> proposed)
+    {
+        var index = assistantIndex - 1;
+        var receipts = new List<ToolExecutionReceipt>();
+        while (index >= 0 && context.Entries[index].Kind == ModelContextEntryKind.ToolResult)
+        {
+            receipts.Add(context.Entries[index].ToolReceipt!);
+            index--;
+        }
+
+        if (index < 0 || context.Entries[index].Kind != ModelContextEntryKind.AssistantStep)
+        {
+            return false;
+        }
+
+        var prior = context.Entries[index].AssistantStep!.ToolCalls;
+        if (prior.Count != proposed.Count || receipts.Count != prior.Count)
+        {
+            return false;
+        }
+
+        for (var callIndex = 0; callIndex < prior.Count; callIndex++)
+        {
+            if (!SameCall(prior[callIndex], proposed[callIndex]))
+            {
+                return false;
+            }
+        }
+
+        return receipts.All(NeverExecuted);
+    }
+
+    private static bool NeverExecuted(ToolExecutionReceipt receipt) =>
+        receipt is not null && NeverExecutedCodes.Contains(receipt.Code);
 
     private static bool SameCall(ModelToolCall left, ModelToolCall right) =>
         string.Equals(left.ToolId, right.ToolId, StringComparison.Ordinal)

@@ -55,6 +55,210 @@ public static class ModelToolSelectionParser
         return true;
     }
 
+    /// <summary>
+    /// Same-length repair of mangled envelope delimiters weak models invent
+    /// ("&lt;(" for "{", "}&gt;" for "}"). Length preservation keeps repaired
+    /// coordinates valid against the original text.
+    /// </summary>
+    public static string RepairDelimiters(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        return text
+            .Replace("<(", "{", StringComparison.Ordinal)
+            .Replace("}>", "}", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Finds the first balanced JSON object at or after <paramref name="startIndex"/>,
+    /// honouring string literals and escapes. Returns false when unbalanced.
+    /// </summary>
+    public static bool TryFindFirstJsonObject(string text, int startIndex, out string json, out int start)
+    {
+        json = string.Empty;
+        start = -1;
+        if (string.IsNullOrEmpty(text) || (uint)startIndex >= (uint)text.Length)
+        {
+            return false;
+        }
+
+        int depth = 0;
+        bool inString = false;
+        bool escape = false;
+        int objectStart = -1;
+        for (int i = startIndex; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (inString)
+            {
+                if (escape)
+                {
+                    escape = false;
+                }
+                else if (c == '\\')
+                {
+                    escape = true;
+                }
+                else if (c == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+            }
+            else if (c == '{')
+            {
+                if (depth == 0)
+                {
+                    objectStart = i;
+                }
+
+                depth++;
+            }
+            else if (c == '}' && depth > 0 && --depth == 0)
+            {
+                json = text.Substring(objectStart, i - objectStart + 1);
+                start = objectStart;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Presentation shape check shared by the worker and renderers: does this
+    /// text carry a tool-selection envelope (any dialect) that must never be
+    /// shown as chat? No advertised-capability knowledge required.
+    /// </summary>
+    public static bool LooksLikeToolSelection(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var trimmed = text.Trim();
+        if (trimmed.StartsWith(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var openIndex = trimmed.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+        if (openIndex >= 0)
+        {
+            var repaired = RepairDelimiters(trimmed);
+            return TryFindFirstJsonObject(repaired, openIndex + ToolCallOpenTag.Length, out var found, out _)
+                && HasToolKeys(found);
+        }
+
+        var candidate = NormalizeCandidate(RepairDelimiters(trimmed));
+        return candidate.StartsWith("{", StringComparison.Ordinal) && HasToolKeys(candidate);
+    }
+
+    /// <summary>
+    /// Worker extraction for opener-led attempts anywhere in the text (prose
+    /// glued to an envelope, possibly with mangled delimiters). Succeeds only
+    /// when a tool-keyed JSON object follows the opener; <paramref name="prose"/>
+    /// is the text before it with dangling opener/fence remnants removed.
+    /// </summary>
+    public static bool TryExtractCallCandidate(string text, out string prose, out string envelopeJson)
+    {
+        prose = text;
+        envelopeJson = string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        var openIndex = text.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+        if (openIndex < 0)
+        {
+            return false;
+        }
+
+        var repaired = RepairDelimiters(text);
+        if (!TryFindFirstJsonObject(repaired, openIndex + ToolCallOpenTag.Length, out var found, out var foundAt)
+            || !HasToolKeys(found))
+        {
+            return false;
+        }
+
+        var rawProse = repaired[..foundAt].TrimEnd();
+        while (true)
+        {
+            var next = rawProse;
+            if (next.EndsWith(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase) && next.Length >= ToolCallOpenTag.Length)
+            {
+                next = next[..^ToolCallOpenTag.Length].TrimEnd();
+            }
+            else if (next.EndsWith("```", StringComparison.Ordinal))
+            {
+                next = next[..next.LastIndexOf("```", StringComparison.Ordinal)].TrimEnd();
+            }
+            else
+            {
+                break;
+            }
+
+            if (next.Length == rawProse.Length)
+            {
+                break;
+            }
+
+            rawProse = next;
+        }
+
+        prose = rawProse;
+        envelopeJson = found;
+        return true;
+    }
+
+    private static bool HasToolKeys(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            bool hasId = false;
+            bool hasVersion = false;
+            bool hasArguments = false;
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (property.NameEquals("tool_id"))
+                {
+                    hasId = true;
+                }
+                else if (property.NameEquals("tool_version"))
+                {
+                    hasVersion = true;
+                }
+                else if (property.NameEquals("arguments"))
+                {
+                    hasArguments = true;
+                }
+            }
+
+            return hasId && hasVersion && hasArguments;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     public static string NormalizeCandidate(string text)
     {
         if (string.IsNullOrWhiteSpace(text))

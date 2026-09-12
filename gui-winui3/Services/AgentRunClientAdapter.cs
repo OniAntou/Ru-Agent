@@ -97,7 +97,8 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
         CancellationToken cancellationToken = default,
         Func<AgentActivityModel, Task>? onActivity = null,
         Func<AgentRunSummaryModel, Task>? onSummary = null,
-        Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null)
+        Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
+        Func<AgentToolOutputModel, Task>? onToolOutput = null)
     {
         ArgumentNullException.ThrowIfNull(onEvent);
         using var sse = _sseFactory();
@@ -119,6 +120,15 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
                     && summary is not null)
                 {
                     await DispatchAsync(() => onSummary(summary), cancellationToken)
+                        .ConfigureAwait(false);
+                    continue;
+                }
+
+                if (onToolOutput is not null
+                    && AgentToolOutputModel.TryParse(frame, out var toolOutput)
+                    && toolOutput is not null)
+                {
+                    await DispatchAsync(() => onToolOutput(toolOutput), cancellationToken)
                         .ConfigureAwait(false);
                     continue;
                 }

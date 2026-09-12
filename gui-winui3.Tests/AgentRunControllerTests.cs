@@ -41,6 +41,7 @@ public sealed class AgentRunControllerTests
         public List<AgentActivityModel> ActivityStream { get; } = new();
         public List<AgentRunSummaryModel> SummaryStream { get; } = new();
         public List<AgentAssistantDeltaModel> AssistantDeltaStream { get; } = new();
+        public List<AgentToolOutputModel> ToolOutputStream { get; } = new();
         public bool CancelCalled;
         public bool ContinueCalled;
         public bool TrustCalled;
@@ -118,7 +119,8 @@ public sealed class AgentRunControllerTests
             CancellationToken ct = default,
             Func<AgentActivityModel, Task>? onActivity = null,
             Func<AgentRunSummaryModel, Task>? onSummary = null,
-            Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null)
+            Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
+            Func<AgentToolOutputModel, Task>? onToolOutput = null)
         {
             if (SubscriptionGate is not null)
             {
@@ -135,6 +137,14 @@ public sealed class AgentRunControllerTests
                 foreach (var delta in AssistantDeltaStream)
                 {
                     await onAssistantDelta(delta).ConfigureAwait(false);
+                }
+            }
+
+            if (onToolOutput is not null)
+            {
+                foreach (var output in ToolOutputStream)
+                {
+                    await onToolOutput(output).ConfigureAwait(false);
                 }
             }
 
@@ -249,6 +259,34 @@ public sealed class AgentRunControllerTests
         Assert.Equal("Xin chào", item.Text);
         Assert.Equal(7, item.TransientSequence);
         Assert.True(dispatches > 0);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_delivers_tool_output_once_per_transient_frame()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        var output = new AgentToolOutputModel(
+            "total 3",
+            "exec_abcdef0123456789abcdef0123456789",
+            null,
+            4);
+        fake.ToolOutputStream.Add(output);
+        fake.ToolOutputStream.Add(output);
+        var received = new List<AgentToolOutputModel>();
+        var controller = new AgentRunController(fake);
+        controller.ToolOutputReceived += (_, item) => received.Add(item);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1",
+            "C:\\work",
+            "do it",
+            "standard",
+            null,
+            "idem-tool-output"));
+
+        var item = Assert.Single(received);
+        Assert.Equal("total 3", item.Text);
+        Assert.Equal("exec_abcdef0123456789abcdef0123456789", item.ExecutionId);
     }
 
     [Fact]

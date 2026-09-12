@@ -29,5 +29,6 @@ public interface IAgentRunClient
         CancellationToken cancellationToken = default,
         Func<AgentActivityModel, Task>? onActivity = null,
         Func<AgentRunSummaryModel, Task>? onSummary = null,
-        Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null);
+        Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
+        Func<AgentToolOutputModel, Task>? onToolOutput = null);
 }

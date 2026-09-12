@@ -18,6 +18,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private readonly Action<AgentEventModel>? _auditSink;
     private readonly object _gate = new();
     private readonly HashSet<string> _assistantDeltaKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _toolOutputKeys = new(StringComparer.Ordinal);
 
     private AgentRunModel? _currentRun;
     private string _statusText = "Ready";
@@ -148,6 +149,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             lock (_gate)
             {
                 _assistantDeltaKeys.Clear();
+                _toolOutputKeys.Clear();
                 _streamTerminalStatus = null;
             }
             RefreshCommands();
@@ -172,7 +174,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     token,
                     OnActivityAsync,
                     OnSummaryAsync,
-                    OnAssistantDeltaAsync)
+                    OnAssistantDeltaAsync,
+                    OnToolOutputAsync)
                 .ConfigureAwait(false);
             // The SSE stream ends after the terminal snapshot, but the create response
             // may be stale (or the stream may have disconnected). Refresh the durable
@@ -647,6 +650,51 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         return Task.CompletedTask;
     }
 
+    private Task OnToolOutputAsync(AgentToolOutputModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        string? runId;
+        lock (_gate)
+        {
+            if (!_isBusy || _isCancelRequested || _currentRunId is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            runId = _currentRunId;
+        }
+
+        RunOnUi(() =>
+        {
+            try
+            {
+                lock (_gate)
+                {
+                    if (!_isBusy
+                        || _isCancelRequested
+                        || !string.Equals(_currentRunId, runId, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    var key = $"{runId}:{model.ExecutionId}:{model.TransientSequence}";
+                    if (!_toolOutputKeys.Add(key))
+                    {
+                        return;
+                    }
+                }
+
+                ToolOutputReceived?.Invoke(this, model);
+            }
+            catch
+            {
+                // A visual tool-output subscriber is observational and must not
+                // fail the Agent SSE subscription or its durable run state.
+            }
+        });
+        return Task.CompletedTask;
+    }
+
     private void WriteSink(AgentEventModel model)
     {
         if (_sink is null)
@@ -701,6 +749,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     public event EventHandler<AgentRunSummaryModel>? SummaryReceived;
 
     public event EventHandler<AgentAssistantDeltaModel>? AssistantDeltaReceived;
+
+    public event EventHandler<AgentToolOutputModel>? ToolOutputReceived;
 
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
 

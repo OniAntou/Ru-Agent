@@ -132,6 +132,10 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ModelContextSnapshot modelContext,
         CancellationToken cancellationToken)
     {
+        // Tool output keeps its full-fidelity channel here as untrusted data;
+        // the model conversation additionally carries the exchange history
+        // (see LoopbackModelStepRunner.BuildConversation) so the model knows
+        // which calls already ran.
         var references = modelContext.Entries
             .Where(entry => entry.Kind == ModelContextEntryKind.ToolResult
                 && !string.IsNullOrWhiteSpace(entry.Content))

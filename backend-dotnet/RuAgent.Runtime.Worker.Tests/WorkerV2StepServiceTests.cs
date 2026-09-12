@@ -154,6 +154,53 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_marks_malformed_native_arguments_as_retryable_model_repair()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, new[] { new ModelToolFragment("call-8", "files.read", "{\"path\":") }, true, "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("model_tool_call_invalid", error.Code);
+        Assert.True(error.Retryable);
+    }
+
+    [Fact]
+    public async Task Step_service_rejects_parallel_native_calls_as_retryable_model_repair()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment("call-1", "files.read", "{\"path\":\"README.md\"}"),
+                    new ModelToolFragment("call-2", "files.read", "{\"path\":\"README.md\"}"),
+                },
+                true,
+                "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("model_tool_call_multiple", error.Code);
+        Assert.True(error.Retryable);
+    }
+
+    [Fact]
+    public async Task Step_service_rejects_unadvertised_native_tool_as_retryable_model_repair()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, new[] { new ModelToolFragment("call-3", "files.teleport", "{}") }, true, "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("model_tool_call_unavailable", error.Code);
+        Assert.True(error.Retryable);
+    }
+
+    [Fact]
     public async Task Step_service_converts_prompt_tool_selection_without_leaking_json_as_text()
     {
         var provider = new FakeModelProvider(
@@ -356,7 +403,7 @@ public sealed class WorkerV2StepServiceTests
             new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
 
         Assert.Equal("invalid_selection", error.Code);
-        Assert.False(error.Retryable);
+        Assert.True(error.Retryable);
     }
 
     [Fact]
@@ -418,7 +465,7 @@ public sealed class WorkerV2StepServiceTests
             new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
 
         Assert.Equal("invalid_selection", error.Code);
-        Assert.False(error.Retryable);
+        Assert.True(error.Retryable);
     }
 
     [Fact]
@@ -466,7 +513,7 @@ public sealed class WorkerV2StepServiceTests
             new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
 
         Assert.Equal("invalid_selection", error.Code);
-        Assert.False(error.Retryable);
+        Assert.True(error.Retryable);
     }
 
     [Fact]

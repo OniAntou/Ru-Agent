@@ -828,6 +828,88 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RunStepAsync_retries_rejected_tool_call_with_feedback_note()
+    {
+        var starts = 0;
+        string? secondPrompt = null;
+        await StartServer(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject { ["version"] = 2, ["capabilities"] = new JsonArray("agent.step") },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            var requestId = start["id"]!.GetValue<string>();
+            var correlation = start["correlation_id"]!.GetValue<string>();
+            if (Interlocked.Increment(ref starts) == 1)
+            {
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = requestId,
+                    ["type"] = "error",
+                    ["seq"] = 1,
+                    ["correlation_id"] = correlation,
+                    ["payload"] = new JsonObject { ["code"] = "model_tool_call_invalid", ["retryable"] = true },
+                }.ToJsonString());
+                return;
+            }
+
+            secondPrompt = start["payload"]!["prompt"]!.GetValue<string>();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = requestId,
+                ["type"] = "agent.step.done",
+                ["seq"] = 1,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "recovered",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(new AgentWorkerClientOptions(new Uri(_url), _token))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)],
+        };
+        var request = new ModelStepRequest(
+            new RunId("run_55555555555555555555555555555555"),
+            new ModelStepId("step_55555555555555555555555555555555"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('c', 64));
+
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Equal("recovered", result.Step.Text);
+        Assert.Equal(2, starts);
+        Assert.NotNull(secondPrompt);
+        Assert.Contains("[harness]", secondPrompt, StringComparison.Ordinal);
+        Assert.Contains("arguments were incomplete or invalid", secondPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunStepAsync_does_not_retry_non_retryable_worker_error()
     {
         var starts = 0;

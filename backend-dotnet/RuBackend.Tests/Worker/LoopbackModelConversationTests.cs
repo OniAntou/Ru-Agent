@@ -109,6 +109,24 @@ public sealed class LoopbackModelConversationTests
         Assert.Single(turns);
     }
 
+    [Fact]
+    public void Rejected_tool_call_feedback_is_appended_and_clamped()
+    {
+        var prompt = LoopbackModelStepRunner.ApplySelectionFeedbackForTests("task", "model_tool_call_invalid");
+        Assert.Contains("[harness]", prompt, StringComparison.Ordinal);
+        Assert.Contains("arguments were incomplete or invalid", prompt, StringComparison.Ordinal);
+
+        // Provider/stream anomalies keep the plain retry without model feedback.
+        Assert.Equal("task", LoopbackModelStepRunner.ApplySelectionFeedbackForTests("task", "protocol_failure"));
+
+        // The note never pushes the prompt past the worker budget.
+        var clamped = LoopbackModelStepRunner.ApplySelectionFeedbackForTests(
+            new string('x', 20_000),
+            "invalid_selection");
+        Assert.True(clamped.Length <= 16_000, $"prompt={clamped.Length}");
+        Assert.Contains("[harness]", clamped, StringComparison.Ordinal);
+    }
+
     private static ModelContextSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(entries, Array.Empty<byte>());
 

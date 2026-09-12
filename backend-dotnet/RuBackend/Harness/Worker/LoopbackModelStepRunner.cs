@@ -70,6 +70,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         // fresh single-use provider bootstrap, and deltas stay buffered
         // until Done, so retries never duplicate visible output.
         var attempt = 0;
+        string? selectionFeedbackCode = null;
         while (true)
         {
         string? providerBootstrapPath = null;
@@ -192,6 +193,12 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
         var hasImages = images is { Count: > 0 };
         var (prompt, turns) = BuildConversation(request.Context, hasImages);
+        if (selectionFeedbackCode is not null
+            && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
+        {
+            prompt = ApplySelectionFeedback(prompt, selectionFeedback);
+        }
+
         var settings = BuildSettings(request.PromptContext);
 
         var startPayload = new JsonObject
@@ -437,6 +444,9 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 ? StepRetryBackoffsOverride
                 : ModelStepRetryBackoffs;
             await Task.Delay(backoffs[attempt], cancellationToken).ConfigureAwait(false);
+            // A model-formatting rejection is handed back to the model on the
+            // next attempt instead of failing the run closed.
+            selectionFeedbackCode = error.Code;
             attempt++;
         }
         finally
@@ -563,6 +573,41 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     internal static (string Prompt, JsonArray Turns) BuildConversationForTests(
         ModelContextSnapshot context,
         bool hasImages = false) => BuildConversation(context, hasImages);
+
+    /// <summary>
+    /// Model-facing feedback for the bounded retry after a rejected tool
+    /// selection: the coding-agent behaviour of handing a formatting mistake
+    /// back to the model instead of failing the run closed. Unknown codes keep
+    /// the plain retry (provider/stream anomalies are not model mistakes).
+    /// </summary>
+    internal static string? BuildSelectionFeedback(string errorCode) => errorCode switch
+    {
+        "model_tool_call_invalid" =>
+            "Your previous tool call was rejected: its arguments were incomplete or invalid. Re-issue exactly one tool call with complete JSON arguments.",
+        "model_tool_call_multiple" =>
+            "Your previous reply was rejected: only one tool call is allowed per step. Re-issue exactly one tool call.",
+        "model_tool_call_unavailable" =>
+            "Your previous tool call was rejected: that tool is not advertised. Re-issue exactly one tool call for an advertised tool.",
+        "invalid_selection" =>
+            "Your previous reply was rejected: the tool selection was malformed. Re-issue exactly one valid JSON tool selection, or answer in plain text.",
+        _ => null,
+    };
+
+    internal static string ApplySelectionFeedbackForTests(string prompt, string errorCode)
+    {
+        var feedback = BuildSelectionFeedback(errorCode);
+        return feedback is null ? prompt : ApplySelectionFeedback(prompt, feedback);
+    }
+
+    private static string ApplySelectionFeedback(string prompt, string feedback)
+    {
+        // The feedback note is the part the model must see, so the prompt body
+        // is clamped first and the note is always appended inside the budget.
+        var note = $"\n\n[harness] {feedback}";
+        var budget = Math.Max(1, WorkerV2Contracts.MaxPromptChars - note.Length);
+        var body = prompt.Length <= budget ? prompt : ClampConversationBlock(prompt, budget);
+        return body + note;
+    }
 
     private static string AppendUserBlock(string? pending, string block) =>
         string.IsNullOrWhiteSpace(pending) ? block : pending + "\n\n" + block;

@@ -181,6 +181,15 @@ A final model step that carries neither text nor tool calls fails the run with
 `empty_model_reply`; an empty completion never ends a run silently, and the
 GUI renders guidance copy for that bounded code.
 
+A tool selection the model emits incomplete is treated as a repairable mistake,
+not a terminal one: `model_tool_call_invalid` (unparsable or oversized
+arguments), `model_tool_call_multiple` (more than one call in a step), and
+`model_tool_call_unavailable` (an unadvertised tool) are retryable, and the
+Host re-drives the step with a bounded `[harness]` note telling the model what
+was rejected and to re-issue exactly one complete call. `invalid_selection`
+from the text contract retries the same way. Wire, invariant, and security
+violations stay terminal and are never retried.
+
 Use `read` with `op=help` when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
 bounded excerpts from the five current bundled documents (`ru-overview`,

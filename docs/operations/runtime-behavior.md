@@ -103,7 +103,11 @@ the newest user-side block becomes the next prompt, so a resumed step never
 re-runs work that already succeeded. Oversized outputs are clamped to the prompt budget
 while the untrusted runtime references retain the full-fidelity result. The
 Worker rejects unknown, duplicate, or digest-mismatched contracts before
-provider execution.
+provider execution. When the model's own reply cannot be assembled into a call
+(incomplete arguments, more than one call, or an unadvertised tool) the step is
+retried inside the bounded attempt budget and the next attempt carries a short
+`[harness]` note naming the rejection, so the model repairs its own selection
+instead of failing the run; wire and invariant violations remain terminal.
 
 The Host reads `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
 selected run root, then discovers direct-child Markdown skill directories from

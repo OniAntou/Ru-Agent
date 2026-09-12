@@ -339,20 +339,25 @@ public sealed class WorkerV2StepService
             .Where(id => !string.IsNullOrEmpty(id))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        // The model_tool_call_* codes describe the model's own reply: they stay
+        // retryable so the Host hands the rejection back to the model instead
+        // of failing the run closed. Stream/provider anomalies keep
+        // protocol_failure but are also worth one bounded retry; wire and
+        // invariant violations elsewhere stay terminal.
         if (providerCallIds.Length > 1)
         {
-            throw new WorkerV2StepException("protocol_failure", retryable: false);
+            throw new WorkerV2StepException("model_tool_call_multiple", retryable: true);
         }
 
         if (finishReason != "tool_calls")
         {
-            throw new WorkerV2StepException("protocol_failure", retryable: false);
+            throw new WorkerV2StepException("protocol_failure", retryable: true);
         }
 
         var toolName = fragments.Select(fragment => fragment.ToolName).FirstOrDefault(name => !string.IsNullOrEmpty(name));
         if (string.IsNullOrEmpty(toolName))
         {
-            throw new WorkerV2StepException("protocol_failure", retryable: false);
+            throw new WorkerV2StepException("protocol_failure", retryable: true);
         }
 
         var tool = settings["model_tools"] is JsonArray modelTools
@@ -361,13 +366,13 @@ public sealed class WorkerV2StepService
         var toolVersion = tool?["tool_version"]?.GetValue<string>();
         if (toolVersion is null)
         {
-            throw new WorkerV2StepException("protocol_failure", retryable: false);
+            throw new WorkerV2StepException("model_tool_call_unavailable", retryable: true);
         }
 
         var argumentsText = string.Concat(fragments.Select(fragment => fragment.ArgumentsFragment));
         if (Encoding.UTF8.GetByteCount(argumentsText) > 64 * 1024)
         {
-            throw new WorkerV2StepException("protocol_failure", retryable: false);
+            throw new WorkerV2StepException("model_tool_call_invalid", retryable: true);
         }
 
         JsonElement arguments;
@@ -383,7 +388,7 @@ public sealed class WorkerV2StepService
         }
         catch (JsonException error)
         {
-            throw new WorkerV2StepException("protocol_failure", retryable: false, error);
+            throw new WorkerV2StepException("model_tool_call_invalid", retryable: true, error);
         }
 
         try
@@ -439,7 +444,7 @@ public sealed class WorkerV2StepService
             {
                 if (string.IsNullOrWhiteSpace(prose))
                 {
-                    throw new WorkerV2StepException("invalid_selection", retryable: false, error);
+                    throw new WorkerV2StepException("invalid_selection", retryable: true, error);
                 }
 
                 return (null, prose);
@@ -467,7 +472,7 @@ public sealed class WorkerV2StepService
             }
             catch (ModelToolSelectionException error)
             {
-                throw new WorkerV2StepException("invalid_selection", retryable: false, error);
+                throw new WorkerV2StepException("invalid_selection", retryable: true, error);
             }
         }
 
@@ -483,7 +488,7 @@ public sealed class WorkerV2StepService
         // Mid-text syntax discussion (tag not leading) stays visible.
         if (text.TrimStart().StartsWith("<tool_call>", StringComparison.OrdinalIgnoreCase))
         {
-            throw new WorkerV2StepException("invalid_selection", retryable: false);
+            throw new WorkerV2StepException("invalid_selection", retryable: true);
         }
 
         return (null, text);
@@ -514,7 +519,7 @@ public sealed class WorkerV2StepService
         }
         catch (ModelToolSelectionException error)
         {
-            throw new WorkerV2StepException("invalid_selection", retryable: false, error);
+            throw new WorkerV2StepException("invalid_selection", retryable: true, error);
         }
 
         return BuildSelectionCall(modelTools, selection);
@@ -542,7 +547,7 @@ public sealed class WorkerV2StepService
         }
         catch (ArgumentException error)
         {
-            throw new WorkerV2StepException("invalid_selection", retryable: false, error);
+            throw new WorkerV2StepException("invalid_selection", retryable: true, error);
         }
     }
 

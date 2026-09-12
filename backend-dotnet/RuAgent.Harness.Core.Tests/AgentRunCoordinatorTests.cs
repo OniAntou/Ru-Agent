@@ -381,6 +381,33 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Empty_final_step_fails_the_run_with_a_bounded_code()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep(string.Empty));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, new FakeToolGateway(), store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Failed, result.Run.State);
+        Assert.Equal("empty_model_reply", result.ErrorCode);
+        Assert.Equal("empty_model_reply", result.Run.TerminalErrorCode);
+
+        var commit = store.Commits.Last();
+        var stepCompleted = Assert.Single(
+            commit.Events,
+            e => e.Kind == HarnessEventKind.ModelStepCompleted);
+        Assert.Equal("empty_model_reply", stepCompleted.SafeCode);
+        var runFailed = Assert.Single(
+            commit.Events,
+            e => e.Kind == HarnessEventKind.RunFailed);
+        Assert.Equal("empty_model_reply", runFailed.SafeCode);
+        Assert.Empty(commit.ConversationOutbox);
+    }
+
+    [Fact]
     public async Task Recovery_tool_call_after_failed_tool_executes_normally()
     {
         var prior = ToolStep();

@@ -169,6 +169,71 @@ internal sealed class AgentRunStepHandlers
         return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
+    /// <summary>
+    /// A final step can arrive with neither text nor tool calls when the model
+    /// returns an empty completion. Fail closed with a precise bounded code so
+    /// the run reports a real failure instead of an unhandled internal error.
+    /// </summary>
+    private async Task<AgentRunStepResult> FailEmptyFinalStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken)
+    {
+        const string errorCode = "empty_model_reply";
+        var transition = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.Fail);
+        if (!transition.Accepted)
+        {
+            throw new InvalidOperationException(transition.ErrorCode);
+        }
+
+        var assistantPayloadId = _ids.NewPayloadId();
+        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
+        var assistantPayload = new HarnessPayloadIntent(
+            assistantPayloadId,
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            Math.Max(assistantBytes.Length, 1),
+            assistantBytes);
+        var events = new HarnessEventIntent[]
+        {
+            promptComposedEvent,
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                payloadId: assistantPayloadId,
+                safeCount: step.ToolCalls.Count,
+                safeCode: errorCode),
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.RunFailed,
+                safeCode: errorCode),
+        };
+        var next = run.Advance(
+            transition.Next,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Length,
+            _time.UtcNow,
+            errorCode);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                [promptReceiptPayload, assistantPayload],
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return AgentRunStepResult.Blocked(committed, errorCode);
+    }
+
     public async Task<AgentRunStepResult> HandleToolStepAsync(
         AgentRun run,
         ModelStepId modelStepId,
@@ -250,7 +315,14 @@ internal sealed class AgentRunStepHandlers
     {
         if (string.IsNullOrEmpty(step.Text))
         {
-            throw new InvalidOperationException("model_final_text_missing");
+            return await FailEmptyFinalStepAsync(
+                    run,
+                    modelStepId,
+                    step,
+                    promptReceiptPayload,
+                    promptComposedEvent,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var stateChange = AgentRunStateMachine.TryTransition(

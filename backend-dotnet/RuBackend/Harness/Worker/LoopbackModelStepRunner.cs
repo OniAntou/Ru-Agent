@@ -224,6 +224,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         long expectedSeq = 1;
         AssistantStep? finalStep = null;
         SystemPromptReceipt? finalReceipt = null;
+        string? finalReasoningText = null;
         var bufferedDeltas = new List<AssistantDelta>();
         bool doneReceived = false;
 
@@ -311,6 +312,22 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                     {
                         throw new WorkerProtocolException("invalid_step");
                     }
+
+                    string? reasoningText = null;
+                    if (payload["reasoning_text"] is JsonValue reasoningNode
+                        && reasoningNode.TryGetValue<string>(out var reasoningVal)
+                        && !string.IsNullOrWhiteSpace(reasoningVal))
+                    {
+                        reasoningText = reasoningVal.Length <= 8_000
+                            ? reasoningVal
+                            : reasoningVal[^8_000..];
+                    }
+                    else if (payload["reasoning_text"] is not null
+                        && payload["reasoning_text"]!.GetValueKind() != JsonValueKind.Null)
+                    {
+                        throw new WorkerProtocolException("invalid_step");
+                    }
+                    finalReasoningText = reasoningText;
 
                     var toolCallsArray = payload["tool_calls"] as JsonArray ?? throw new WorkerProtocolException("invalid_step");
                     var toolCalls = new List<ModelToolCall>();
@@ -405,7 +422,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         return new ModelStepResult(
             finalStep,
             finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"),
-            finalStep.Usage);
+            finalStep.Usage,
+            finalReasoningText);
         }
         catch (WorkerProtocolException error) when (
             error.Retryable

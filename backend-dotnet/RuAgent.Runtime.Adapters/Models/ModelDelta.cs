@@ -9,11 +9,17 @@ public sealed record ModelDelta
         IReadOnlyList<ModelToolFragment> toolFragments,
         bool completed,
         string? finishReason,
-        ModelUsage? usage = null)
+        ModelUsage? usage = null,
+        string? reasoning = null)
     {
         if (text is not null && (text.Length > 64 * 1024 || text.Contains('\0')))
         {
             throw new ArgumentException("Model delta exceeds the adapter cap.", nameof(text));
+        }
+
+        if (reasoning is not null && (reasoning.Length > 32 * 1024 || reasoning.Contains('\0')))
+        {
+            throw new ArgumentException("Model reasoning delta exceeds the adapter cap.", nameof(reasoning));
         }
 
         ArgumentNullException.ThrowIfNull(toolFragments);
@@ -32,6 +38,7 @@ public sealed record ModelDelta
         Completed = completed;
         FinishReason = finishReason;
         Usage = usage;
+        Reasoning = reasoning;
     }
 
     public string? Text { get; }
@@ -43,4 +50,8 @@ public sealed record ModelDelta
     public string? FinishReason { get; }
 
     public ModelUsage? Usage { get; }
+
+    /// <summary>Provider-supplied reasoning excerpt, if any. Observational
+    /// only: never fed back into prompts, only surfaced as activity detail.</summary>
+    public string? Reasoning { get; }
 }

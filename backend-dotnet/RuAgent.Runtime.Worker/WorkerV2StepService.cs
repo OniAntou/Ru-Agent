@@ -14,7 +14,8 @@ public sealed record WorkerV2StepResult(
     IReadOnlyList<ModelToolCall> ToolCalls,
     string FinishReason,
     SystemPromptReceipt PromptReceipt,
-    ModelUsage? Usage);
+    ModelUsage? Usage,
+    string? ReasoningText = null);
 
 public sealed class WorkerV2StepException : Exception
 {
@@ -32,6 +33,9 @@ public sealed class WorkerV2StepException : Exception
 
 public sealed class WorkerV2StepService
 {
+    /// <summary>Tail-kept provider reasoning per step. The projector clamps
+    /// further for the activity wire; this cap bounds worker memory.</summary>
+    private const int MaximumReasoningChars = 8_000;
     private static readonly WorkerV2Options DefaultOptions = new(
         0,
         "test-worker",
@@ -136,6 +140,7 @@ public sealed class WorkerV2StepService
             await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             providerGateEntered = true;
             var text = new StringBuilder();
+            var reasoning = new StringBuilder();
             var toolFragments = new List<ModelToolFragment>();
             string? finishReason = null;
             ModelUsage? usage = null;
@@ -162,6 +167,15 @@ public sealed class WorkerV2StepService
                     if (toolFragments.Count > 16)
                     {
                         throw new WorkerV2StepException("protocol_failure", retryable: false);
+                    }
+
+                    if (delta.Reasoning is not null)
+                    {
+                        reasoning.Append(delta.Reasoning);
+                        if (reasoning.Length > MaximumReasoningChars)
+                        {
+                            reasoning.Remove(0, reasoning.Length - MaximumReasoningChars);
+                        }
                     }
 
                     if (delta.FinishReason is not null)
@@ -196,7 +210,7 @@ public sealed class WorkerV2StepService
             await holdback.ReleaseAsync().ConfigureAwait(false);
         }
 
-        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage);
+        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage, ExtractReasoningText(reasoning, text));
         }
         catch (OperationCanceledException)
         {
@@ -226,6 +240,64 @@ public sealed class WorkerV2StepService
                 await generationLease.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    private static string? ExtractReasoningText(StringBuilder reasoning, StringBuilder text)
+    {
+        if (reasoning.Length > 0)
+        {
+            var excerpt = reasoning.ToString().Trim();
+            return excerpt.Length == 0 ? null : excerpt;
+        }
+
+        return ExtractThinkBlocks(text.ToString());
+    }
+
+    private static string? ExtractThinkBlocks(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        var collected = new StringBuilder();
+        int searchFrom = 0;
+        while (true)
+        {
+            int open = text.IndexOf("<think>", searchFrom, StringComparison.OrdinalIgnoreCase);
+            if (open < 0)
+            {
+                break;
+            }
+
+            int close = text.IndexOf("</think>", open + "<think>".Length, StringComparison.OrdinalIgnoreCase);
+            if (close < 0)
+            {
+                break;
+            }
+
+            collected.Append(text.Substring(open + "<think>".Length, close - open - "<think>".Length).Trim());
+            collected.Append('\n');
+            searchFrom = close + "</think>".Length;
+            if (collected.Length >= MaximumReasoningChars)
+            {
+                break;
+            }
+        }
+
+        if (collected.Length == 0)
+        {
+            return null;
+        }
+
+        // Keep the tail: the final deliberation is the most relevant excerpt.
+        var excerpt = collected.ToString().Trim();
+        if (excerpt.Length > MaximumReasoningChars)
+        {
+            excerpt = excerpt[^MaximumReasoningChars..];
+        }
+
+        return excerpt.Length == 0 ? null : excerpt;
     }
 
     private static (List<ModelToolCall> Calls, string? Text) ParseToolCalls(
@@ -356,9 +428,44 @@ public sealed class WorkerV2StepService
             }
         }
 
+        // Opener-led attempt anywhere (prose glued to an envelope, possibly with
+        // mangled delimiters). A tool-keyed payload executes with the prose
+        // kept visible; a broken tool-keyed payload fails loudly instead of
+        // leaking machine syntax as a chat answer. Anything without a
+        // tool-keyed payload falls through (discussion/trailing paths below).
+        if (ModelToolSelectionParser.TryExtractCallCandidate(text, out var callProse, out var callJson))
+        {
+            try
+            {
+                var selected = ModelToolSelectionParser.Parse(
+                    ModelToolSelectionParser.NormalizeCandidate(callJson), advertised);
+                return (BuildSelectionCall(modelTools, selected),
+                    string.IsNullOrWhiteSpace(callProse) ? null : callProse);
+            }
+            catch (ModelToolSelectionException error) when (
+                error.Code is "unknown_tool" or "invalid_tool_version")
+            {
+                throw new WorkerV2StepException("capability_unavailable", retryable: false, error);
+            }
+            catch (ModelToolSelectionException error)
+            {
+                throw new WorkerV2StepException("invalid_selection", retryable: false, error);
+            }
+        }
+
         if (!hasTools && IsJsonObjectWithoutToolFields(candidate))
         {
             return (null, text);
+        }
+
+        // A lone tool-call attempt in a non-JSON dialect (e.g. XML-ish tags the
+        // model invented instead of the JSON envelope) must fail loudly instead
+        // of being presented as a chat answer: the model tried to act, so
+        // silent prose would mislead the user into thinking it answered.
+        // Mid-text syntax discussion (tag not leading) stays visible.
+        if (text.TrimStart().StartsWith("<tool_call>", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new WorkerV2StepException("invalid_selection", retryable: false);
         }
 
         return (null, text);
@@ -705,9 +812,32 @@ public sealed class WorkerV2StepService
             }
 
             const string toolCallTag = "<tool_call>";
-            return candidate[0] == '<'
+            if (candidate[0] == '<'
                 && (toolCallTag.StartsWith(candidate, StringComparison.OrdinalIgnoreCase)
-                    || candidate.StartsWith(toolCallTag, StringComparison.OrdinalIgnoreCase));
+                    || candidate.StartsWith(toolCallTag, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            // A fenced block can carry the tool envelope (```json ... ```), which the
+            // final parse unwraps and executes. Hold it for end-of-step validation
+            // like other structured candidates so raw tool JSON is never streamed
+            // as chat text. Partial fences (`/``) are held too; prose starting
+            // with a single backtick plus text still streams immediately.
+            if (candidate[0] == '`')
+            {
+                if (candidate.Length < 3 && candidate.Trim('`').Length == 0)
+                {
+                    return true;
+                }
+
+                if (candidate.StartsWith("```", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

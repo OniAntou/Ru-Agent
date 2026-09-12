@@ -24,6 +24,8 @@ public enum AgentActivityState
 /// <summary>
 /// Safe activity data created inside the Core boundary. It intentionally has no raw
 /// command, argument, path, patch, output or model-reasoning fields.
+/// Detail carries short human-readable context (for example a model thinking
+/// excerpt); it is length-bounded display text, never tool input/output.
 /// </summary>
 public sealed record AgentActivity(
     string ActivityId,
@@ -38,4 +40,5 @@ public sealed record AgentActivity(
     int? Removed = null,
     int? DurationMs = null,
     string SafeCode = "succeeded",
-    string? ToolDisplay = null);
+    string? ToolDisplay = null,
+    string? Detail = null);

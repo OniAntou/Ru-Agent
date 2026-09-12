@@ -92,6 +92,18 @@ public sealed class AgentActivityModelTests
         Assert.Equal("View", model!.ToolDisplay);
     }
 
+    [Fact]
+    public void TryParse_Preserves_Detail_and_defaults_it_to_null()
+    {
+        var withDetail = Frame("agent.activity", new { activity_id = "act_11111111111111111111111111111111", kind = "thinking", state = "completed", safe_code = "succeeded", detail = "Considering folder scope." }, transientSequence: 7);
+        Assert.True(AgentActivityModel.TryParse(withDetail, out var detailed));
+        Assert.Equal("Considering folder scope.", detailed!.Detail);
+
+        var withoutDetail = Frame("agent.activity", new { activity_id = "act_11111111111111111111111111111111", kind = "thinking", state = "completed", safe_code = "succeeded" }, transientSequence: 8);
+        Assert.True(AgentActivityModel.TryParse(withoutDetail, out var plain));
+        Assert.Null(plain!.Detail);
+    }
+
     private static SseFrame Frame(string kind, object data, long transientSequence)
     {
         var innerJson = JsonSerializer.Serialize(data);

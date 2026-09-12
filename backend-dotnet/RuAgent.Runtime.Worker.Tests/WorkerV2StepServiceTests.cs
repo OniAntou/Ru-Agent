@@ -187,6 +187,52 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_holds_fenced_tool_selection_until_it_is_validated()
+    {
+        const string fenced = "```json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```";
+        var provider = new FakeModelProvider(
+            new ModelDelta(fenced, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_holds_split_fence_prefix_until_it_is_validated()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("``", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("`json\n{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\"}}\n```", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Empty(deltas);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
     public async Task Step_service_converts_split_unclosed_tool_call_wrapper_without_leaking_markup()
     {
         var provider = new FakeModelProvider(
@@ -264,6 +310,68 @@ public sealed class WorkerV2StepServiceTests
     {
         var provider = new FakeModelProvider(
             new ModelDelta("<tool_call>read<arg_key>op</arg_key><arg_value>list</arg_value></tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("invalid_selection", error.Code);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
+    public async Task Step_service_executes_mangled_embedded_call_and_keeps_prose()
+    {
+        const string prose = "Xin chào! Tôi sẽ thử truy cập vào folder.";
+        const string mangled =
+            "<tool_call>\n<(\n\"tool_id\":\"files.read\",\n\"tool_version\":\"1.0.0\",\n\"arguments\":{\"path\":\"D:\\\\Test Agent\"}\n}\n}>";
+        var provider = new FakeModelProvider(
+            new ModelDelta(prose + mangled, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(prose, result.Text);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+        Assert.DoesNotContain("tool_id", string.Concat(deltas), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Step_service_aggregates_reasoning_tail_for_activity_detail()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, "first thought. "),
+            new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop", null, "final thought."));
+        var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(), CancellationToken.None);
+
+        Assert.Equal("done", result.Text);
+        Assert.Equal("first thought. final thought.", result.ReasoningText);
+    }
+
+    [Fact]
+    public async Task Step_service_falls_back_to_think_blocks_without_reasoning_channel()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("answer <think>inner reasoning</think> tail", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(), CancellationToken.None);
+
+        Assert.Equal("inner reasoning", result.ReasoningText);
+    }
+
+    [Fact]
+    public async Task Step_service_rejects_lone_xml_dialect_tool_call()
+    {
+        const string xmlAttempt =
+            "<tool_call>\n<read>\n<args>\n<op>list</op>\n<path>D:\\\\Test Agent</path>\n</args>\n</read>";
+        var provider = new FakeModelProvider(
+            new ModelDelta(xmlAttempt, Array.Empty<ModelToolFragment>(), true, "stop"));
 
         var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
             new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));

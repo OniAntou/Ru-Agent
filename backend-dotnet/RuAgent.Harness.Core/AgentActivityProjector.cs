@@ -13,19 +13,22 @@ public static class AgentActivityProjector
     private const int MaximumDurationMilliseconds = 86_400_000;
     private const int MaximumLeafLength = 128;
     private const int MaximumSymbolLength = 128;
+    public const int MaximumDetailLength = 4_000;
 
     public static AgentActivity ProjectModelStep(
         ModelStepId modelStepId,
         AgentActivityState state,
         int? durationMs = null,
-        string? safeCode = null) =>
+        string? safeCode = null,
+        string? detail = null) =>
         new(
             ActivityId(modelStepId.Value),
             AgentActivityKind.Thinking,
             state,
             DurationMs: ClampDuration(durationMs),
             SafeCode: SafeCodeFor(state, safeCode),
-            ToolDisplay: null);
+            ToolDisplay: null,
+            Detail: ClampDetail(detail));
 
     public static AgentActivity ProjectTool(
         ToolProposal proposal,
@@ -227,7 +230,21 @@ public static class AgentActivityProjector
     private static int? ClampDuration(int? durationMs) =>
         durationMs is >= 0 and <= MaximumDurationMilliseconds ? durationMs : null;
 
-    private static int? ClampCount(int? value) =>
+    private static string? ClampDetail(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return null;
+        }
+
+        var trimmed = detail.Trim();
+        if (trimmed.Contains('\0'))
+        {
+            return null;
+        }
+
+        return trimmed.Length <= MaximumDetailLength ? trimmed : trimmed[..MaximumDetailLength];
+    }    private static int? ClampCount(int? value) =>
         value is >= 0 and <= MaximumCount ? value : null;
 
     private static bool IsSafeCode(string? value) =>
@@ -261,7 +278,9 @@ public static class AgentActivityProjector
             {
                 var arguments = proposal.Arguments;
                 var op = ReadOp(proposal);
-                var fileName = (proposal.ToolId, op) is ("read", "read") or ("write", _) or ("edit", _)
+                // Bounded leaf name for file AND folder targets (list/glob show
+                // the listed folder instead of a bare verb). Same safety rules.
+                var fileName = proposal.ToolId is "read" or "write" or "edit" or "glob"
                     ? ReadSafeFileName(arguments, "path")
                     : null;
                 var (lineStart, lineEnd) = ReadLineRange(arguments);

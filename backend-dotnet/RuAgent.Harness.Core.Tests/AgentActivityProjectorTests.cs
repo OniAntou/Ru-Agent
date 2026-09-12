@@ -28,9 +28,9 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Theory]
-    [InlineData("read", "{\"op\":\"list\",\"path\":\"D:\\\\LLM\"}")]
-    [InlineData("glob", "{\"pattern\":\"**/*.cs\",\"path\":\"D:\\\\LLM\"}")]
-    public void Discovery_tools_project_count_only(string toolId, string argumentsJson)
+    [InlineData("read", "{\"op\":\"list\",\"path\":\"D:\\\\LLM\"}", "LLM")]
+    [InlineData("glob", "{\"pattern\":\"**/*.cs\",\"path\":\"D:\\\\LLM\"}", "LLM")]
+    public void Discovery_tools_project_folder_leaf_and_count(string toolId, string argumentsJson, string expectedLeaf)
     {
         var proposal = Proposal(toolId, argumentsJson);
         var receipt = Receipt("{\"entries\":[{},{}],\"count\":2}");
@@ -42,8 +42,22 @@ public sealed class AgentActivityProjectorTests
 
         Assert.Equal(AgentActivityKind.Explore, activity.Kind);
         Assert.Equal(2, activity.Count);
-        Assert.Null(activity.FileName);
+        Assert.Equal(expectedLeaf, activity.FileName);
         Assert.Null(activity.Symbol);
+        Assert.DoesNotContain("D:\\", activity.FileName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Discovery_tool_without_usable_path_projects_no_leaf()
+    {
+        var proposal = Proposal("read", "{\"op\":\"list\",\"path\":\"D:\\\\\"}");
+
+        var activity = AgentActivityProjector.ProjectTool(
+            proposal,
+            AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Explore, activity.Kind);
+        Assert.Null(activity.FileName);
     }
 
     [Fact]
@@ -142,6 +156,42 @@ public sealed class AgentActivityProjectorTests
         Assert.Equal(label, activity.ToolDisplay);
         Assert.Equal("obsolete.txt", activity.FileName);
         Assert.DoesNotContain("D:\\", activity.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Model_step_projection_carries_bounded_detail()
+    {
+        var activity = AgentActivityProjector.ProjectModelStep(
+            Step,
+            AgentActivityState.Completed,
+            durationMs: 4700,
+            detail: "  Considering folder scope.  ");
+
+        Assert.Equal("Considering folder scope.", activity.Detail);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public void Model_step_projection_drops_blank_detail(string? detail)
+    {
+        var activity = AgentActivityProjector.ProjectModelStep(
+            Step,
+            AgentActivityState.Completed,
+            detail: detail);
+
+        Assert.Null(activity.Detail);
+    }
+
+    [Fact]
+    public void Model_step_projection_clamps_oversized_detail()
+    {
+        var activity = AgentActivityProjector.ProjectModelStep(
+            Step,
+            AgentActivityState.Completed,
+            detail: new string('x', 5_000));
+
+        Assert.Equal(4_000, activity.Detail!.Length);
     }
 
     [Fact]

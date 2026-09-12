@@ -37,7 +37,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("removed")] int? Removed = null,
     [property: JsonPropertyName("duration_ms")] int? DurationMs = null,
     [property: JsonPropertyName("safe_code")] string SafeCode = "succeeded",
-    [property: JsonPropertyName("tool_display")] string? ToolDisplay = null);
+    [property: JsonPropertyName("tool_display")] string? ToolDisplay = null,
+    [property: JsonPropertyName("detail")] string? Detail = null);
 
 public static class AgentActivityWireCodec
 {
@@ -98,6 +99,7 @@ public static class AgentActivityWireValidator
     public const int MaximumDurationMilliseconds = 86_400_000;
     public const int MaximumSafeCodeLength = 64;
     public const int MaximumToolDisplayLength = 32;
+    public const int MaximumDetailLength = 4_000;
 
     private static readonly HashSet<string> AllowedProperties = new(StringComparer.Ordinal)
     {
@@ -114,6 +116,7 @@ public static class AgentActivityWireValidator
         "duration_ms",
         "safe_code",
         "tool_display",
+        "detail",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -260,6 +263,7 @@ public static class AgentActivityWireValidator
         }
 
         ValidateToolDisplay(activity.ToolDisplay);
+        ValidateDetail(activity.Detail);
     }
 
     private static void ValidateFileName(string? fileName)
@@ -322,6 +326,19 @@ public static class AgentActivityWireValidator
             {
                 throw new JsonException("Tool display is invalid.");
             }
+        }
+    }
+
+    private static void ValidateDetail(string? detail)
+    {
+        if (detail is null)
+        {
+            return;
+        }
+
+        if (detail.Length is < 1 or > MaximumDetailLength || detail.Contains('\0'))
+        {
+            throw new JsonException("Detail is invalid.");
         }
     }
 

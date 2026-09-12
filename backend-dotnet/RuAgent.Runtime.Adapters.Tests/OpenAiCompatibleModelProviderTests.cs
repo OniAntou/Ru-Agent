@@ -61,6 +61,27 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_preserves_reasoning_content_deltas()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Let me think\"}}]}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"content\":\"done\",\"finish_reason\":\"stop\"}}]}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.Equal("Let me think", deltas[0].Reasoning);
+        Assert.Null(deltas[0].Text);
+        Assert.Equal("done", deltas[1].Text);
+    }
+
+    [Fact]
     public async Task GenerateAsync_preserves_provider_usage_from_terminal_stream_chunk()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

@@ -22,7 +22,8 @@ public sealed record AgentActivityModel(
     string SafeCode,
     string? ToolDisplay,
     long? DurableSequence,
-    long? TransientSequence)
+    long? TransientSequence,
+    string? Detail = null)
 {
     public static bool TryParse(SseFrame frame, out AgentActivityModel? activity)
     {
@@ -85,7 +86,8 @@ public sealed record AgentActivityModel(
                 wire.SafeCode,
                 wire.ToolDisplay,
                 frame.DurableSequence,
-                frame.TransientSequence);
+                frame.TransientSequence,
+                wire.Detail);
             return true;
         }
         catch (JsonException)

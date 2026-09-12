@@ -38,7 +38,8 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
             activity.Removed,
             activity.DurationMs,
             activity.SafeCode,
-            activity.ToolDisplay);
+            activity.ToolDisplay,
+            activity.Detail);
         AgentActivityWireValidator.Validate(wire);
         var json = AgentActivityWireCodec.Serialize(wire);
         _liveEvents.TryPublish(runId, "agent.activity", json);

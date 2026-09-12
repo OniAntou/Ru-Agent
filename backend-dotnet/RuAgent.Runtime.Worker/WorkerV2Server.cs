@@ -259,6 +259,10 @@ public sealed class WorkerV2Server
             {
                 donePayload["usage"] = UsageJson(result.Usage);
             }
+            if (!string.IsNullOrWhiteSpace(result.ReasoningText))
+            {
+                donePayload["reasoning_text"] = result.ReasoningText;
+            }
 
             await SendAsync(socket, sendLock, new WorkerV2Envelope(
                 WorkerV2Contracts.ProtocolVersion,

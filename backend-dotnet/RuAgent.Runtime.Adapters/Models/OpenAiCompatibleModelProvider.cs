@@ -106,15 +106,16 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                     }
 
                     var text = ReadText(delta);
+                    var reasoning = ReadOptionalString(delta["reasoning_content"]);
                     var fragments = ReadToolFragments(delta);
                     var finishReason = ReadFinishReason(choice);
-                    if (text is null && fragments.Count == 0 && finishReason is null)
+                    if (text is null && reasoning is null && fragments.Count == 0 && finishReason is null)
                     {
                         continue;
                     }
 
                     var completed = finishReason is not null;
-                    yield return new ModelDelta(text, fragments, completed, finishReason, usage);
+                    yield return new ModelDelta(text, fragments, completed, finishReason, usage, reasoning);
                     if (completed)
                     {
                         yield break;

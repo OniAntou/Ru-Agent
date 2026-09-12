@@ -246,6 +246,19 @@ internal sealed class AgentModelInvocation
                 safeCode: "prompt_contract_invalid"));
     }
 
+    private string? RedactDetail(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return null;
+        }
+
+        // Reasoning can echo context secrets; run it through the same
+        // redactor as streamed deltas before it crosses the sink boundary.
+        var session = _transientRedactor.CreateSession();
+        return session.Append(detail) + session.Complete();
+    }
+
     private int? ElapsedMilliseconds(DateTimeOffset startedAt)
     {
         var elapsed = _time.UtcNow - startedAt;

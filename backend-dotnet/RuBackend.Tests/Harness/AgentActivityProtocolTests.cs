@@ -112,6 +112,38 @@ public sealed class AgentActivityProtocolTests
         }
     }
 
+    [Fact]
+    public void Detail_round_trips_and_stays_optional()
+    {
+        var withDetail = new AgentActivityWire(
+            "act_matrix", AgentActivityKind.Thinking, AgentActivityState.Completed,
+            SafeCode: "succeeded", Detail: "Considering folder scope.\nSecond line.");
+        Assert.Equal("Considering folder scope.\nSecond line.", AgentActivityWireCodec.Parse(
+            AgentActivityWireCodec.Serialize(withDetail)).Detail);
+
+        var withoutDetail = new AgentActivityWire(
+            "act_matrix", AgentActivityKind.Thinking, AgentActivityState.Completed);
+        Assert.Null(AgentActivityWireCodec.Parse(
+            AgentActivityWireCodec.Serialize(withoutDetail)).Detail);
+    }
+
+    [Fact]
+    public void Parse_rejects_oversized_or_nul_detail()
+    {
+        var oversized = JsonSerializer.Serialize(new
+        {
+            activity_id = "act_1",
+            kind = "thinking",
+            state = "completed",
+            safe_code = "succeeded",
+            detail = new string('x', 4_001),
+        });
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(oversized));
+
+        var nul = "{\"activity_id\":\"act_1\",\"kind\":\"thinking\",\"state\":\"completed\",\"safe_code\":\"succeeded\",\"detail\":\"a\\u0000b\"}";
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(nul));
+    }
+
     [Theory]
     [InlineData("command")]
     [InlineData("arguments")]

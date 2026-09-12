@@ -351,53 +351,6 @@
                         </ListView.ItemContainerStyle>
                     </ListView>
 
-                    <Border x:Name="AgentRunSummaryPanel"
-                            Grid.Row="1"
-                            Visibility="Collapsed"
-                             HorizontalAlignment="Stretch"
-                             Margin="16,4,16,8"
-                             Padding="12,8"
-                            Background="{StaticResource RuSurfaceBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            AutomationProperties.AutomationId="AgentRunSummary"
-                            AutomationProperties.Name="Coding Agent Summary"
-                            AutomationProperties.LiveSetting="Polite">
-                        <Grid ColumnDefinitions="22,*"
-                              ColumnSpacing="8">
-                            <Border Grid.Column="0"
-                                    Width="20"
-                                    Height="20"
-                                    CornerRadius="10"
-                                    Background="{StaticResource RuCanvasBrush}"
-                                    BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1"
-                                    VerticalAlignment="Center"
-                                    HorizontalAlignment="Center">
-                                <FontIcon x:Name="AgentRunSummaryGlyph"
-                                          FontSize="10"
-                                          Foreground="{StaticResource RuAccentBrush}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center" />
-                            </Border>
-                             <StackPanel Grid.Column="1"
-                                         Spacing="4"
-                                         VerticalAlignment="Center">
-                                <TextBlock x:Name="AgentRunSummaryText"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           FontSize="12.5"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource RuInkBrush}"
-                                           TextWrapping="Wrap" />
-                                <TextBlock x:Name="AgentRunSummaryMetadata"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           FontSize="11"
-                                           Foreground="{StaticResource RuMutedBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
                 </Grid>
             </ScrollViewer>
         </Grid>
@@ -466,23 +419,6 @@
                     </StackPanel>
                 </Border>
 
-                <Button x:Name="AgentContinueButton"
-                         Content="Continue"
-                         Click="OnAgentContinueClick"
-                         Visibility="Collapsed"
-                         HorizontalAlignment="Left"
-                         Padding="10,4"
-                         AutomationProperties.AutomationId="AgentContinueButton"
-                         AutomationProperties.Name="Continue Coding Agent session" />
-
-                <Button x:Name="AgentRetryButton"
-                         Content="Retry"
-                         Click="OnAgentRetryClick"
-                         Visibility="Collapsed"
-                         HorizontalAlignment="Left"
-                         Padding="10,4"
-                         AutomationProperties.AutomationId="AgentRetryButton"
-                         AutomationProperties.Name="Retry last message" />
             </StackPanel>
 
             <Border x:Name="InputBorder"

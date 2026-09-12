@@ -9,18 +9,20 @@ namespace RuApp.Tests;
 public sealed class AgentRunSummaryUiContractTests
 {
     [Fact]
-    public void Summary_surface_is_separate_from_activity_and_uses_typed_fields_only()
+    public void Failure_surface_is_an_inflow_error_message_with_continue_guidance()
     {
         var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
         var code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
         var model = File.ReadAllText(FindSource("Models", "AgentRunSummaryItem.cs"));
 
-        Assert.Contains("x:Name=\"AgentRunSummaryPanel\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AgentRunSummaryText", xaml, StringComparison.Ordinal);
-        Assert.Contains("AgentRunSummaryMetadata", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentRunSummaryPanel", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentContinueButton", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentRetryButton", xaml, StringComparison.Ordinal);
         Assert.Contains("SummaryReceived", code, StringComparison.Ordinal);
         Assert.Contains("ApplyAgentRunSummary", code, StringComparison.Ordinal);
-        Assert.Contains("ClearAgentRunSummary", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClearAgentRunSummary", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnAgentRetryClick", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnAgentContinueClick", code, StringComparison.Ordinal);
         foreach (var forbidden in new[] { "Command", "Arguments", "Diff", "Stdout", "Stderr", "TransientData" })
         {
             Assert.DoesNotContain(forbidden, model, StringComparison.OrdinalIgnoreCase);
@@ -42,7 +44,7 @@ public sealed class AgentRunSummaryUiContractTests
     }
 
     [Fact]
-    public void Summary_card_only_renders_for_failures()
+    public void Summary_message_only_renders_for_failures()
     {
         var code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
         var applyStart = code.IndexOf("private void ApplyAgentRunSummary", StringComparison.Ordinal);
@@ -53,7 +55,33 @@ public sealed class AgentRunSummaryUiContractTests
         var applyBody = code[applyStart..applyEnd];
         Assert.Contains("IsFailure", applyBody, StringComparison.Ordinal);
         Assert.Contains("HasRenderedAgentReply", applyBody, StringComparison.Ordinal);
+        Assert.Contains("IsError = true", applyBody, StringComparison.Ordinal);
+        Assert.Contains("Continue", applyBody, StringComparison.Ordinal);
         Assert.Contains("return;", applyBody, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Continue", true)]
+    [InlineData("continue", true)]
+    [InlineData("  CONTINUE  ", true)]
+    [InlineData("Continue please", false)]
+    [InlineData("", false)]
+    public void Typed_continue_resumes_only_as_a_bare_command(string text, bool expected)
+    {
+        Assert.Equal(expected, RuApp.Views.ChatView.IsContinueResumeCommand(
+            text,
+            new List<ImageAttachmentItem>()));
+    }
+
+    [Fact]
+    public void Typed_continue_with_attachments_is_a_normal_prompt()
+    {
+        var attachments = new List<ImageAttachmentItem>
+        {
+            new() { FileName = "shot.png" },
+        };
+
+        Assert.False(RuApp.Views.ChatView.IsContinueResumeCommand("Continue", attachments));
     }
 
     private static AgentRunSummaryModel Model(string status, string verification) =>

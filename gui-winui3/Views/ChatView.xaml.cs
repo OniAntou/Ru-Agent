@@ -84,8 +84,6 @@ namespace RuApp.Views
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
-        private AgentRunSummaryItem? _agentRunSummary;
-        private (string Text, List<ImageAttachmentItem> Attachments)? _lastUserTurn;
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
@@ -935,10 +933,9 @@ namespace RuApp.Views
             if (item.IsFailure && HasRenderedAgentReply())
             {
                 // A transient assistant reply may already be visible when the
-                // history/outbox finalization reports a late failure. Do not
-                // overwrite a usable answer with the generic "Agent failed"
-                // banner; the reply is the user-visible result of this turn.
-                ClearAgentRunSummary();
+                // history/outbox finalization reports a late failure. The reply
+                // is the user-visible result of this turn; do not add noise
+                // after it.
                 return;
             }
 
@@ -949,16 +946,23 @@ namespace RuApp.Views
                 return;
             }
 
-            _agentRunSummary = item;
-            AgentRunSummaryText.Text = _agentRunSummary.DisplayText;
-            AgentRunSummaryMetadata.Text = _agentRunSummary.MetadataText;
-            AgentRunSummaryGlyph.Glyph = _agentRunSummary.StatusGlyph;
-            AgentRunSummaryGlyph.Foreground = _agentRunSummary.IsVerifiedSuccess
-                ? (Brush)Application.Current.Resources["RuSuccessBrush"]
-                : _agentRunSummary.IsFailure
-                    ? (Brush)Application.Current.Resources["AppDangerBrush"]
-                    : (Brush)Application.Current.Resources["RuMutedBrush"];
-            AgentRunSummaryPanel.Visibility = Visibility.Visible;
+            var content = new System.Text.StringBuilder();
+            content.Append("**").Append(item.DisplayText).Append("**");
+            if (!string.IsNullOrWhiteSpace(item.MetadataText))
+            {
+                content.Append('\n').Append(item.MetadataText);
+            }
+            if (_agentController.CanContinue)
+            {
+                content.Append("\nType **Continue** to resume.");
+            }
+
+            Messages.Add(new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = content.ToString(),
+                IsError = true,
+            });
             ScrollChatToBottom();
         }
 
@@ -1412,17 +1416,6 @@ namespace RuApp.Views
         private static Windows.UI.Color LerpColor(Windows.UI.Color from, Windows.UI.Color to, double progress) =>
             Services.AgentActivityPalette.LerpColor(from, to, progress);
 
-        private void ClearAgentRunSummary()
-        {
-            _agentRunSummary = null;
-            if (AgentRunSummaryPanel is not null)
-            {
-                AgentRunSummaryPanel.Visibility = Visibility.Collapsed;
-                AgentRunSummaryText.Text = string.Empty;
-                AgentRunSummaryMetadata.Text = string.Empty;
-            }
-        }
-
         private void ShowAgentInlineStatus(string status)
         {
             _agentActivityVisible = false;
@@ -1496,10 +1489,8 @@ namespace RuApp.Views
                 {
                     AgentStatusText.Text = string.Empty;
                 }
-                AgentStopButton.Visibility = Visibility.Collapsed;
-                AgentContinueButton.Visibility = Visibility.Collapsed;
-                AgentRetryButton.Visibility = Visibility.Collapsed;
-                AgentApprovalPanel.Visibility = Visibility.Collapsed;
+            AgentStopButton.Visibility = Visibility.Collapsed;
+            AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
             }
@@ -1512,10 +1503,8 @@ namespace RuApp.Views
                 {
                     AgentStatusText.Text = string.Empty;
                 }
-                AgentStopButton.Visibility = Visibility.Collapsed;
-                AgentContinueButton.Visibility = Visibility.Collapsed;
-                AgentRetryButton.Visibility = Visibility.Collapsed;
-                AgentApprovalPanel.Visibility = Visibility.Collapsed;
+            AgentStopButton.Visibility = Visibility.Collapsed;
+            AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
             }
@@ -1534,10 +1523,8 @@ namespace RuApp.Views
                 _agentActivityVisible = false;
                 AgentInlinePanel.Visibility = Visibility.Collapsed;
                 AgentStatusText.Text = string.Empty;
-                AgentStopButton.Visibility = Visibility.Collapsed;
-                AgentContinueButton.Visibility = Visibility.Collapsed;
-                AgentRetryButton.Visibility = Visibility.Collapsed;
-                AgentApprovalPanel.Visibility = Visibility.Collapsed;
+            AgentStopButton.Visibility = Visibility.Collapsed;
+            AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
             }
@@ -1551,16 +1538,6 @@ namespace RuApp.Views
                 ? Visibility.Collapsed
                 : Visibility.Visible;
             AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentContinueButton.Visibility = _agentController.CanContinue
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-            bool canRetryFailedTurn = keepTerminalFailureVisible
-                && !isRunning
-                && _lastUserTurn is { } retryTurn
-                && (!string.IsNullOrWhiteSpace(retryTurn.Text) || retryTurn.Attachments.Count > 0);
-            AgentRetryButton.Visibility = canRetryFailedTurn
-                ? Visibility.Visible
-                : Visibility.Collapsed;
 
             // Workspace trust is auto-granted: a project-root chat starts silently.
             if (_agentController.NeedsWorkspaceTrust)
@@ -1583,15 +1560,12 @@ namespace RuApp.Views
 
             bool hasInlineAction = approvalPending
                 || _agentController.CanContinue
-                || canRetryFailedTurn
                 || keepTerminalFailureVisible;
             AgentInlinePanel.Visibility = hasInlineAction ? Visibility.Visible : Visibility.Collapsed;
 
             bool actionsEnabled = !_agentActionPending;
             AgentApproveButton.IsEnabled = actionsEnabled;
             AgentDenyButton.IsEnabled = actionsEnabled;
-            AgentContinueButton.IsEnabled = actionsEnabled;
-            AgentRetryButton.IsEnabled = actionsEnabled;
             AgentStopButton.IsEnabled = actionsEnabled;
         }
 
@@ -1707,7 +1681,6 @@ namespace RuApp.Views
         private void ResetAgentState()
         {
             ClearAgentActivities();
-            ClearAgentRunSummary();
 
             var monitor = _agentMonitorCts;
             _agentMonitorCts = null;
@@ -1723,8 +1696,6 @@ namespace RuApp.Views
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentContinueButton.Visibility = Visibility.Collapsed;
-            AgentRetryButton.Visibility = Visibility.Collapsed;
             AgentStatusText.Text = string.Empty;
             AgentStatusText.Visibility = Visibility.Collapsed;
             UpdateSendButtonMode(isAgentRunning: false);
@@ -2081,6 +2052,19 @@ namespace RuApp.Views
 
         private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
 
+        /// <summary>
+        /// A bare typed "Continue" (no attachments) resumes a resumable run
+        /// instead of starting a new turn. Case-insensitive; surrounding
+        /// whitespace is ignored.
+        /// </summary>
+        public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            ArgumentNullException.ThrowIfNull(attachments);
+            return attachments.Count == 0
+                && string.Equals(text.Trim(), "Continue", StringComparison.OrdinalIgnoreCase);
+        }
+
         private async Task SendCurrentMessageAsync()
         {
             if (_isSendingUserTurn)
@@ -2094,6 +2078,17 @@ namespace RuApp.Views
                 var attachments = PendingAttachments.ToList();
 
                 if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
+
+                if (IsContinueResumeCommand(text, attachments) && _agentController?.CanContinue == true)
+                {
+                    // Typed "Continue" resumes a resumable run instead of
+                    // starting a new turn; the failure message points here.
+                    ChatInputTextBox.Text = string.Empty;
+                    await RunAgentActionAsync(
+                        () => _agentController?.ContinueAsync() ?? Task.CompletedTask,
+                        "Resuming Coding Agent…");
+                    return;
+                }
 
                 _isSendingUserTurn = true;
                 UpdateSendButtonMode(isAgentRunning: true);
@@ -2137,7 +2132,6 @@ namespace RuApp.Views
                 }
 
                 await SendAgentTurnAsync(effectivePrompt, AgentTurnSource.Typed, CancellationToken.None, attachments: attachments, displayUserText: text);
-                _lastUserTurn = (text, attachments);
             }
             catch (Exception ex)
             {
@@ -2151,8 +2145,7 @@ namespace RuApp.Views
             }
         }
 
-        private async Task SendAgentTurnAsync(
-            string text,
+        private async Task SendAgentTurnAsync(            string text,
             AgentTurnSource source,
             CancellationToken cancellationToken,
             bool allowSessionRecovery = true,
@@ -2216,7 +2209,6 @@ namespace RuApp.Views
                 _activeWorkspaceId = null;
 
                 StartNewAgentActivityRun();
-                ClearAgentRunSummary();
                 BeginAgentReply(source, text, attachments, displayUserText, addUserMessage);
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Preparing action…");
@@ -2469,7 +2461,7 @@ namespace RuApp.Views
 
             _activeSessionId = sessionId;
             ClearAgentActivities();
-            ClearAgentRunSummary();
+
             DetachAgentActivitiesFromMessages();
             Messages.Clear();
             UpdateViewMode();
@@ -2565,7 +2557,6 @@ namespace RuApp.Views
                 return;
             }
 
-            ClearAgentRunSummary();
             string status = exception switch
             {
                 AgentApiException api => api.ErrorCode switch
@@ -2586,8 +2577,6 @@ namespace RuApp.Views
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
-            AgentContinueButton.Visibility = Visibility.Collapsed;
-            AgentRetryButton.Visibility = Visibility.Collapsed;
         }
 
         private bool HasRenderedAgentReply() =>
@@ -2911,57 +2900,12 @@ namespace RuApp.Views
                     "Stopping Coding Agent…");
             }
             AbandonActiveAgentReply(notifyVoice: true);
-            ClearAgentRunSummary();
             UpdateSendButtonMode(isAgentRunning: false);
         }
 
         private async void OnAgentStopClick(object sender, RoutedEventArgs e)
         {
             await StopActiveAgentAsync();
-        }
-
-        private async void OnAgentRetryClick(object sender, RoutedEventArgs e)
-        {
-            if (_lastUserTurn is not { } last
-                || (string.IsNullOrWhiteSpace(last.Text) && last.Attachments.Count == 0))
-            {
-                return;
-            }
-
-            if (_isSendingUserTurn || IsActiveAgentRunPending() || _agentController?.CanCancel == true)
-            {
-                return;
-            }
-
-            try
-            {
-                _isSendingUserTurn = true;
-                UpdateSendButtonMode(isAgentRunning: true);
-                await SendAgentTurnAsync(
-                    string.IsNullOrWhiteSpace(last.Text) ? "Retry" : last.Text,
-                    AgentTurnSource.Typed,
-                    CancellationToken.None,
-                    attachments: last.Attachments.Count == 0 ? null : new List<ImageAttachmentItem>(last.Attachments),
-                    displayUserText: last.Text,
-                    addUserMessage: false);
-            }
-            catch (Exception ex)
-            {
-                FailActiveAgentReply(ex);
-                ShowAgentError(ex);
-            }
-            finally
-            {
-                _isSendingUserTurn = false;
-                UpdateAgentInlineState();
-            }
-        }
-
-        private async void OnAgentContinueClick(object sender, RoutedEventArgs e)
-        {
-            await RunAgentActionAsync(
-                () => _agentController?.ContinueAsync() ?? Task.CompletedTask,
-                "Resuming Coding Agent…");
         }
 
         private async void OnAgentApproveClick(object sender, RoutedEventArgs e)
@@ -3311,7 +3255,6 @@ namespace RuApp.Views
                 _activityFlushTimer.Tick -= OnActivityFlushTick;
                 _activityFlushTimer = null;
             }
-            ClearAgentRunSummary();
             _typingDebounce?.Stop();
             _typingDebounce = null;
             if (_modelSaveFailureTimer != null)

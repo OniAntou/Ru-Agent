@@ -21,9 +21,14 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     private readonly TimeSpan _receiveTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan StartupConnectWindow = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan StartupConnectBackoff = TimeSpan.FromMilliseconds(400);
+    private const int MaxModelStepAttempts = 3;
+    private static readonly TimeSpan[] ModelStepRetryBackoffs = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)];
 
     // Tests shrink this window; production retries for the full window.
     internal TimeSpan StartupConnectWindowOverride { get; set; }
+
+    // Tests shrink the backoff; production waits out transient provider limits.
+    internal TimeSpan[] StepRetryBackoffsOverride { get; set; } = ModelStepRetryBackoffs;
 
     public LoopbackModelStepRunner(AgentWorkerClientOptions options)
     {
@@ -56,6 +61,13 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(publishDelta);
         _options.Validate();
 
+        // Bounded retry for Worker-reported transient failures (e.g.
+        // provider_rate_limited): each attempt gets a fresh socket and a
+        // fresh single-use provider bootstrap, and deltas stay buffered
+        // until Done, so retries never duplicate visible output.
+        var attempt = 0;
+        while (true)
+        {
         string? providerBootstrapPath = null;
         try
         {
@@ -363,8 +375,9 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 case WorkerV2Contracts.Error:
                     var code = reply.Payload["code"] is JsonValue cv2 && cv2.TryGetValue<string>(out var c) ? c : "generation_failed";
                     var retryable = reply.Payload["retryable"] is JsonValue rv2 && rv2.TryGetValue<bool>(out var r) ? r : false;
-                    // Map to WorkerProtocolException with code.
-                    throw new WorkerProtocolException(code);
+                    // Preserve the Worker's retry signal; the step driver retries
+                    // bounded transient failures instead of failing the run.
+                    throw new WorkerProtocolException(code, retryable);
 
                 default:
                     throw new WorkerProtocolException("unexpected_type");
@@ -394,12 +407,24 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"),
             finalStep.Usage);
         }
+        catch (WorkerProtocolException error) when (
+            error.Retryable
+            && attempt + 1 < MaxModelStepAttempts
+            && !cancellationToken.IsCancellationRequested)
+        {
+            var backoffs = StepRetryBackoffsOverride.Length == MaxModelStepAttempts - 1
+                ? StepRetryBackoffsOverride
+                : ModelStepRetryBackoffs;
+            await Task.Delay(backoffs[attempt], cancellationToken).ConfigureAwait(false);
+            attempt++;
+        }
         finally
         {
             if (providerBootstrapPath is not null)
             {
                 DeleteOwnedProviderBootstrap(providerBootstrapPath);
             }
+        }
         }
     }
 

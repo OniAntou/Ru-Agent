@@ -32,12 +32,23 @@ public sealed record WorkerEnvelope(
 public sealed class WorkerProtocolException : Exception
 {
     public WorkerProtocolException(string code)
+        : this(code, retryable: false)
+    {
+    }
+
+    public WorkerProtocolException(string code, bool retryable)
         : base(code)
     {
         Code = code;
+        Retryable = retryable;
     }
 
     public string Code { get; }
+
+    /// <summary>Worker-reported transient signal (e.g. rate limits). Preserved
+    /// from the error envelope so the step driver can retry bounded failures
+    /// instead of failing the run.</summary>
+    public bool Retryable { get; }
 }
 
 public static class WorkerEnvelopeCodec

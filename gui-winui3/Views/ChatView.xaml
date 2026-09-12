@@ -465,13 +465,22 @@
                 </Border>
 
                 <Button x:Name="AgentContinueButton"
-                        Content="Continue"
-                        Click="OnAgentContinueClick"
-                        Visibility="Collapsed"
-                        HorizontalAlignment="Left"
-                        Padding="10,4"
-                        AutomationProperties.AutomationId="AgentContinueButton"
-                        AutomationProperties.Name="Continue Coding Agent session" />
+                         Content="Continue"
+                         Click="OnAgentContinueClick"
+                         Visibility="Collapsed"
+                         HorizontalAlignment="Left"
+                         Padding="10,4"
+                         AutomationProperties.AutomationId="AgentContinueButton"
+                         AutomationProperties.Name="Continue Coding Agent session" />
+
+                <Button x:Name="AgentRetryButton"
+                         Content="Retry"
+                         Click="OnAgentRetryClick"
+                         Visibility="Collapsed"
+                         HorizontalAlignment="Left"
+                         Padding="10,4"
+                         AutomationProperties.AutomationId="AgentRetryButton"
+                         AutomationProperties.Name="Retry last message" />
             </StackPanel>
 
             <Border x:Name="InputBorder"

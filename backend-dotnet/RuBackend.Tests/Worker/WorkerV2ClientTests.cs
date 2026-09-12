@@ -737,6 +737,212 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Empty(deltas);
     }
 
+    [Fact]
+    public async Task RunStepAsync_retries_retryable_worker_error_with_fresh_attempt()
+    {
+        var starts = 0;
+        await StartServer(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject { ["version"] = 2, ["capabilities"] = new JsonArray("agent.step") },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            var requestId = start["id"]!.GetValue<string>();
+            var correlation = start["correlation_id"]!.GetValue<string>();
+            if (Interlocked.Increment(ref starts) == 1)
+            {
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = requestId,
+                    ["type"] = "error",
+                    ["seq"] = 1,
+                    ["correlation_id"] = correlation,
+                    ["payload"] = new JsonObject { ["code"] = "provider_rate_limited", ["retryable"] = true },
+                }.ToJsonString());
+                return;
+            }
+
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = requestId,
+                ["type"] = "agent.step.delta",
+                ["seq"] = 1,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject { ["text"] = "recovered" },
+            }.ToJsonString());
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = requestId,
+                ["type"] = "agent.step.done",
+                ["seq"] = 2,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "recovered",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(new AgentWorkerClientOptions(new Uri(_url), _token))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)],
+        };
+        var request = new ModelStepRequest(
+            new RunId("run_33333333333333333333333333333333"),
+            new ModelStepId("step_33333333333333333333333333333333"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('c', 64));
+        var deltas = new List<string>();
+        var result = await runner.RunStepAsync(
+            request,
+            delta => { deltas.Add(delta.Content); return ValueTask.CompletedTask; },
+            CancellationToken.None);
+
+        Assert.Equal("recovered", result.Step.Text);
+        Assert.Equal(["recovered"], deltas);
+        Assert.Equal(2, starts);
+    }
+
+    [Fact]
+    public async Task RunStepAsync_does_not_retry_non_retryable_worker_error()
+    {
+        var starts = 0;
+        await StartServer(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject { ["version"] = 2, ["capabilities"] = new JsonArray("agent.step") },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            Interlocked.Increment(ref starts);
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "error",
+                ["seq"] = 1,
+                ["correlation_id"] = start["correlation_id"]!.GetValue<string>(),
+                ["payload"] = new JsonObject { ["code"] = "generation_failed", ["retryable"] = false },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(new AgentWorkerClientOptions(new Uri(_url), _token))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)],
+        };
+        var request = new ModelStepRequest(
+            new RunId("run_44444444444444444444444444444444"),
+            new ModelStepId("step_44444444444444444444444444444444"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('d', 64));
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None));
+
+        Assert.Equal("generation_failed", error.Code);
+        Assert.False(error.Retryable);
+        Assert.Equal(1, starts);
+    }
+
+    [Fact]
+    public async Task RunStepAsync_gives_up_after_bounded_retryable_failures()
+    {
+        var starts = 0;
+        await StartServer(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject { ["version"] = 2, ["capabilities"] = new JsonArray("agent.step") },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            Interlocked.Increment(ref starts);
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "error",
+                ["seq"] = 1,
+                ["correlation_id"] = start["correlation_id"]!.GetValue<string>(),
+                ["payload"] = new JsonObject { ["code"] = "provider_rate_limited", ["retryable"] = true },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(new AgentWorkerClientOptions(new Uri(_url), _token))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)],
+        };
+        var request = new ModelStepRequest(
+            new RunId("run_55555555555555555555555555555555"),
+            new ModelStepId("step_55555555555555555555555555555555"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('e', 64));
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None));
+
+        Assert.Equal("provider_rate_limited", error.Code);
+        Assert.True(error.Retryable);
+        Assert.Equal(3, starts);
+    }
+
     private static JsonObject PromptReceiptJson(SystemPromptContext? context = null)
     {
         var blocks = new JsonArray(

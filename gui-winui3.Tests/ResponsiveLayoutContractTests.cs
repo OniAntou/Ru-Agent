@@ -16,7 +16,7 @@ public sealed class ResponsiveLayoutContractTests
     private static readonly string[] NamedCommandIds =
     [
         "MicButton", "AgentModeButton", "AgentStopButton",
-        "AgentDenyButton", "AgentApproveButton", "AgentContinueButton",
+        "AgentDenyButton", "AgentApproveButton", "AgentContinueButton", "AgentRetryButton",
     ];
 
     [Fact]

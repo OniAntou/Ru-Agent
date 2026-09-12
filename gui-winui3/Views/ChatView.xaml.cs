@@ -83,6 +83,7 @@ namespace RuApp.Views
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
         private AgentRunSummaryItem? _agentRunSummary;
+        private (string Text, List<ImageAttachmentItem> Attachments)? _lastUserTurn;
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
@@ -1362,6 +1363,7 @@ namespace RuApp.Views
                 }
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 AgentContinueButton.Visibility = Visibility.Collapsed;
+                AgentRetryButton.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
@@ -1377,6 +1379,7 @@ namespace RuApp.Views
                 }
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 AgentContinueButton.Visibility = Visibility.Collapsed;
+                AgentRetryButton.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
@@ -1398,6 +1401,7 @@ namespace RuApp.Views
                 AgentStatusText.Text = string.Empty;
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 AgentContinueButton.Visibility = Visibility.Collapsed;
+                AgentRetryButton.Visibility = Visibility.Collapsed;
                 AgentApprovalPanel.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: false);
                 return;
@@ -1410,6 +1414,13 @@ namespace RuApp.Views
             AgentStatusText.Text = safeStatus;
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = _agentController.CanContinue
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            bool canRetryFailedTurn = keepTerminalFailureVisible
+                && !isRunning
+                && _lastUserTurn is { } retryTurn
+                && (!string.IsNullOrWhiteSpace(retryTurn.Text) || retryTurn.Attachments.Count > 0);
+            AgentRetryButton.Visibility = canRetryFailedTurn
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
@@ -1431,6 +1442,7 @@ namespace RuApp.Views
 
             bool hasInlineAction = approvalPending
                 || _agentController.CanContinue
+                || canRetryFailedTurn
                 || keepTerminalFailureVisible;
             AgentInlinePanel.Visibility = hasInlineAction ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1438,6 +1450,7 @@ namespace RuApp.Views
             AgentApproveButton.IsEnabled = actionsEnabled;
             AgentDenyButton.IsEnabled = actionsEnabled;
             AgentContinueButton.IsEnabled = actionsEnabled;
+            AgentRetryButton.IsEnabled = actionsEnabled;
             AgentStopButton.IsEnabled = actionsEnabled;
         }
 
@@ -1524,6 +1537,7 @@ namespace RuApp.Views
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = Visibility.Collapsed;
+            AgentRetryButton.Visibility = Visibility.Collapsed;
             AgentStatusText.Text = string.Empty;
             UpdateSendButtonMode(isAgentRunning: false);
         }
@@ -1927,6 +1941,7 @@ namespace RuApp.Views
                 }
 
                 await SendAgentTurnAsync(effectivePrompt, AgentTurnSource.Typed, CancellationToken.None, attachments: attachments, displayUserText: text);
+                _lastUserTurn = (text, attachments);
             }
             catch (Exception ex)
             {
@@ -2367,6 +2382,7 @@ namespace RuApp.Views
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentContinueButton.Visibility = Visibility.Collapsed;
+            AgentRetryButton.Visibility = Visibility.Collapsed;
         }
 
         private bool HasRenderedAgentReply() =>
@@ -2688,6 +2704,30 @@ namespace RuApp.Views
         private async void OnAgentStopClick(object sender, RoutedEventArgs e)
         {
             await StopActiveAgentAsync();
+        }
+
+        private async void OnAgentRetryClick(object sender, RoutedEventArgs e)
+        {
+            if (_lastUserTurn is not { } last
+                || (string.IsNullOrWhiteSpace(last.Text) && last.Attachments.Count == 0))
+            {
+                return;
+            }
+
+            try
+            {
+                await SendAgentTurnAsync(
+                    string.IsNullOrWhiteSpace(last.Text) ? "Retry" : last.Text,
+                    AgentTurnSource.Typed,
+                    CancellationToken.None,
+                    attachments: last.Attachments.Count == 0 ? null : new List<ImageAttachmentItem>(last.Attachments),
+                    displayUserText: last.Text);
+            }
+            catch (Exception ex)
+            {
+                FailActiveAgentReply(ex);
+                ShowAgentError(ex);
+            }
         }
 
         private async void OnAgentContinueClick(object sender, RoutedEventArgs e)

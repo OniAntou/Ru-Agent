@@ -45,7 +45,7 @@
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*,*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
                         <Setter Target="BackendCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="BackendCard.Margin" Value="0,0,10,0"/>
+                        <Setter Target="BackendCard.Margin" Value="0,0,8,0"/>
                         <Setter Target="RightColumnStack.(Grid.Row)" Value="0"/>
                         <Setter Target="RightColumnStack.(Grid.Column)" Value="1"/>
                         <Setter Target="RightColumnStack.Margin" Value="10,0,0,0"/>
@@ -53,7 +53,7 @@
                         <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*,*"/>
                         <Setter Target="VtsConnectCard.(Grid.Row)" Value="0"/>
                         <Setter Target="VtsConnectCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsConnectCard.Margin" Value="0,0,10,0"/>
+                        <Setter Target="VtsConnectCard.Margin" Value="0,0,8,0"/>
                         <Setter Target="VtsMotionCard.(Grid.Row)" Value="0"/>
                         <Setter Target="VtsMotionCard.(Grid.Column)" Value="1"/>
                         <Setter Target="VtsMotionCard.Margin" Value="10,0,0,0"/>
@@ -75,7 +75,7 @@
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
                         <Setter Target="BackendCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="BackendCard.Margin" Value="0,0,0,20"/>
+                        <Setter Target="BackendCard.Margin" Value="0,0,0,16"/>
                         <Setter Target="RightColumnStack.(Grid.Row)" Value="1"/>
                         <Setter Target="RightColumnStack.(Grid.Column)" Value="0"/>
                         <Setter Target="RightColumnStack.Margin" Value="0,0,0,0"/>
@@ -83,7 +83,7 @@
                         <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="VtsConnectCard.(Grid.Row)" Value="0"/>
                         <Setter Target="VtsConnectCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsConnectCard.Margin" Value="0,0,0,20"/>
+                        <Setter Target="VtsConnectCard.Margin" Value="0,0,0,16"/>
                         <Setter Target="VtsMotionCard.(Grid.Row)" Value="1"/>
                         <Setter Target="VtsMotionCard.(Grid.Column)" Value="0"/>
                         <Setter Target="VtsMotionCard.Margin" Value="0,0,0,0"/>
@@ -132,7 +132,7 @@
             </Grid.RowDefinitions>
 
             <!-- Top Minimalist Linear Underline Tab Strip -->
-            <Border Grid.Row="0" Margin="0,0,0,20"
+            <Border Grid.Row="0" Margin="0,0,0,16"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="0,0,0,1"
                     HorizontalAlignment="Stretch">
@@ -194,7 +194,7 @@
                 <!-- Panel 1: System Settings -->
                 <ScrollViewer x:Name="SystemSettingsScrollViewer" Padding="0,8,0,40" Background="Transparent"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="20" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="16" HorizontalAlignment="Stretch">
                         
                         <!-- Header Banner -->
                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
@@ -227,7 +227,7 @@
                                     BorderBrush="{StaticResource RuLineBrush}"
                                     BorderThickness="1"
                                     CornerRadius="{StaticResource RuControlCornerRadius}">
-                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Ellipse Width="7" Height="7" Fill="{StaticResource RuSuccessBrush}"/>
                                     <TextBlock x:Name="AutoSaveStatusText"
                                                Text="Auto-save"
@@ -243,7 +243,7 @@
                         <Grid x:Name="Tab1BentoGrid" ColumnDefinitions="*,*">
                             
                             <!-- Left Column: Backend & Model Card -->
-                            <Border x:Name="BackendCard" Grid.Column="0" Margin="0,0,10,0" Style="{StaticResource FluentCardStyle}">
+                            <Border x:Name="BackendCard" Grid.Column="0" Margin="0,0,8,0" Style="{StaticResource FluentCardStyle}">
                                 <StackPanel Spacing="16">
                                     <!-- Card Header -->
                                     <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,2">
@@ -268,7 +268,7 @@
                                         </StackPanel>
                                     </StackPanel>
 
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                                     <!-- Provider Row -->
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -294,7 +294,7 @@
 
                                     <!-- OpenCode API Key Row -->
                                     <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock x:Name="OpenCodeApiKeyLabel" Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}"/>
@@ -321,7 +321,7 @@
 
                                     <!-- Kilo API Key Row -->
                                     <StackPanel x:Name="KiloApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock x:Name="KiloApiKeyLabel" Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}"/>
@@ -348,7 +348,7 @@
 
                                     <!-- OpenAI API Key Row -->
                                     <StackPanel x:Name="OpenAiApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock x:Name="OpenAiApiKeyLabel" Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}"/>
@@ -375,7 +375,7 @@
 
                                     <!-- Anthropic API Key Row -->
                                     <StackPanel x:Name="AnthropicApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock x:Name="AnthropicApiKeyLabel" Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}"/>
@@ -402,7 +402,7 @@
 
                                     <!-- Custom Endpoint URL Row -->
                                     <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock x:Name="CustomServerUrlLabel" Text="Custom Server URL" Style="{StaticResource SettingLabelStyle}"/>
@@ -420,7 +420,7 @@
 
                                     <!-- Custom API Key Row -->
                                     <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock x:Name="CustomApiKeyLabel" Text="Custom API Key" Style="{StaticResource SettingLabelStyle}"/>
@@ -448,14 +448,14 @@
                             </Border>
 
                             <!-- Right Column: Tips & System Status -->
-                            <StackPanel x:Name="RightColumnStack" Grid.Column="1" Margin="10,0,0,0" Spacing="20">
+                            <StackPanel x:Name="RightColumnStack" Grid.Column="1" Margin="10,0,0,0" Spacing="16">
                                 
                                 <Border Background="{StaticResource RuSurfaceBrush}"
                                         BorderBrush="{StaticResource RuLineBrush}"
                                         BorderThickness="1"
                                         CornerRadius="{StaticResource RuControlCornerRadius}"
                                         Padding="20,18">
-                                    <StackPanel Spacing="10">
+                                    <StackPanel Spacing="8">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="{StaticResource RuAccentBrush}"/>
                                             <TextBlock Text="Performance Optimization Tips"
@@ -477,7 +477,7 @@
                 <ScrollViewer x:Name="ObservationScrollViewer" Padding="28,20,36,40" Background="Transparent"
                               Visibility="Collapsed"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="20" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="16" HorizontalAlignment="Stretch">
                         
                         <!-- Header Banner -->
                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
@@ -531,7 +531,7 @@
                                     </StackPanel>
                                 </StackPanel>
 
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                                 <!-- Toggle Observer -->
                                 <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -546,7 +546,7 @@
 
                                 <!-- Gemini Vision Key Row -->
                                 <StackPanel x:Name="GeminiVisionRow" Spacing="16">
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" Spacing="2">
                                             <TextBlock x:Name="GeminiVisionApiKeyLabel" Text="Gemini Vision API Key" Style="{StaticResource SettingLabelStyle}"/>
@@ -570,7 +570,7 @@
                 <ScrollViewer x:Name="VtsSettingsScrollViewer" Padding="28,20,36,40" Background="Transparent"
                               Visibility="Collapsed"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="20" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="16" HorizontalAlignment="Stretch">
                         
                         <!-- Header Banner -->
                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
@@ -603,7 +603,7 @@
                         <Grid x:Name="Tab3BentoGrid" ColumnDefinitions="*,*">
                             
                             <!-- Left Column: Connection & Overlay -->
-                            <Border x:Name="VtsConnectCard" Grid.Column="0" Margin="0,0,10,0" Style="{StaticResource FluentCardStyle}">
+                            <Border x:Name="VtsConnectCard" Grid.Column="0" Margin="0,0,8,0" Style="{StaticResource FluentCardStyle}">
                                 <StackPanel Spacing="16">
                                     <!-- Card Header -->
                                     <Grid x:Name="VtsConnectRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
@@ -656,7 +656,7 @@
                                         </Button>
                                     </Grid>
 
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                                     <!-- Overlay toggles -->
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -677,7 +677,7 @@
 
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                         <TextBlock Grid.Column="0" Text="Mouse Look Sensitivity" Style="{StaticResource SettingLabelStyle}"/>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                             <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="140" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
                                             <TextBlock x:Name="MouseSensitivityText"
                                                        Text="100%"
@@ -696,8 +696,8 @@
 
                             <!-- Right Column: Motion Sliders -->
                             <Border x:Name="VtsMotionCard" Grid.Column="1" Margin="10,0,0,0" Style="{StaticResource FluentCardStyle}">
-                                <StackPanel Spacing="14">
-                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                <StackPanel Spacing="16">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon Glyph="&#xE7EC;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"/>
                                         <TextBlock Text="Avatar motion intensity:"
                                                    FontSize="14"
@@ -706,7 +706,7 @@
                                                    Foreground="{StaticResource RuInkBrush}"/>
                                     </StackPanel>
 
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
                                     
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="36">
                                         <TextBlock Grid.Column="0" Text="Body Sway" Style="{StaticResource SettingLabelStyle}"/>

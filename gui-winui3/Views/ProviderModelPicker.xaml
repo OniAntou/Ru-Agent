@@ -87,7 +87,7 @@
         </Border>
 
         <!-- Subtle Divider Line -->
-        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5" Margin="4,0,4,4" />
+<Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="4,0,4,4" />
 
         <!-- Grouped Model List with Sleek Slim ScrollBar -->
         <ScrollViewer MaxHeight="250"

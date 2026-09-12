@@ -40,7 +40,7 @@
                         <Setter Target="VoiceBentoGrid.ColumnDefinitions" Value="*,*"/>
                         <Setter Target="VoiceConfigCard.(Grid.Row)" Value="0"/>
                         <Setter Target="VoiceConfigCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VoiceConfigCard.Margin" Value="0,0,10,0"/>
+                        <Setter Target="VoiceConfigCard.Margin" Value="0,0,8,0"/>
                         <Setter Target="VoiceRightColumn.(Grid.Row)" Value="0"/>
                         <Setter Target="VoiceRightColumn.(Grid.Column)" Value="1"/>
                         <Setter Target="VoiceRightColumn.Margin" Value="10,0,0,0"/>
@@ -91,7 +91,7 @@
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        <StackPanel x:Name="VoiceContentStack" Spacing="20" HorizontalAlignment="Stretch" MaxWidth="1360">
+        <StackPanel x:Name="VoiceContentStack" Spacing="16" HorizontalAlignment="Stretch" MaxWidth="1360">
             <!-- Header Banner -->
             <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
                 <StackPanel Grid.Column="0" Spacing="4">
@@ -123,7 +123,7 @@
             <Grid x:Name="VoiceBentoGrid" ColumnDefinitions="*,*">
                 
                 <!-- Left Column: OmniVoice TTS Configuration -->
-                <Border x:Name="VoiceConfigCard" Grid.Column="0" Margin="0,0,10,0" Style="{StaticResource FluentCardStyle}">
+                <Border x:Name="VoiceConfigCard" Grid.Column="0" Margin="0,0,8,0" Style="{StaticResource FluentCardStyle}">
                     <StackPanel Spacing="16">
                         <!-- Card Header -->
                         <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,2">
@@ -148,7 +148,7 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                         <!-- Voice Profile Picker -->
                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -167,7 +167,7 @@
                             </ComboBox>
                         </Grid>
 
-                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                         <!-- Speed Slider -->
                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -185,7 +185,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                         <!-- Auto Pace Toggle -->
                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -196,7 +196,7 @@
                             <ToggleSwitch x:Name="AutoPaceToggle" Grid.Column="1" IsOn="False" Toggled="OnAutoPaceToggled"/>
                         </Grid>
 
-                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                         <!-- Auto Read Aloud Toggle -->
                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -207,7 +207,7 @@
                             <ToggleSwitch x:Name="AutoReadToggle" Grid.Column="1" IsOn="True" Toggled="OnAutoReadToggled"/>
                         </Grid>
 
-                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                         <!-- Subtitles Overlay Toggle -->
                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
@@ -219,8 +219,8 @@
                         </Grid>
 
                         <!-- Subtitle Customization Panel -->
-                        <StackPanel x:Name="SubtitleCustomizationPanel" Spacing="14" Margin="0,4,0,0" Visibility="Collapsed">
-                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                        <StackPanel x:Name="SubtitleCustomizationPanel" Spacing="16" Margin="0,4,0,0" Visibility="Collapsed">
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                             <!-- Font Size Selector -->
                             <Grid ColumnDefinitions="*,Auto" MinHeight="40">
@@ -290,7 +290,7 @@
                 </Border>
 
                 <!-- Right Column: GPU Lifecycle & Voice Tester Bento Cards -->
-                <StackPanel x:Name="VoiceRightColumn" Grid.Column="1" Margin="10,0,0,0" Spacing="20">
+                <StackPanel x:Name="VoiceRightColumn" Grid.Column="1" Margin="8,0,0,0" Spacing="16">
                     
                     <!-- Voice Sample Tester Card -->
                     <Border Style="{StaticResource FluentCardStyle}">
@@ -317,7 +317,7 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                             <Grid x:Name="TestVoiceRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
                                 <TextBox x:Name="TestTextBox" Grid.Column="0" Text="Hello, I'm Ru! How are you doing today?" 
@@ -361,7 +361,7 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
 
                             <TextBlock Text="Pre-warm OmniVoice weights into VRAM to reduce first-sentence latency, or release GPU when running other apps." 
                                        Style="{StaticResource SettingDescStyle}"/>

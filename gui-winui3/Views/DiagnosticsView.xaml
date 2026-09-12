@@ -85,7 +85,7 @@
                     Click="OnPauseClicked" Foreground="{StaticResource AppTextPrimaryBrush}" Background="{StaticResource AppCardBackgroundBrush}"
                     BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}"/>
 
-            <Button x:Name="ExportButton" Content="Export NDJSON" FontSize="12.5" Padding="14,6" Margin="4,0,0,0"
+            <Button x:Name="ExportButton" Content="Export NDJSON" FontSize="12.5" Padding="14,6" Margin="8,0,0,0"
                     Click="OnExportClicked" Foreground="{StaticResource AppAccentHoverBrush}" Background="{StaticResource AppAccentSubtleBrush}"
                     BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
                     HorizontalAlignment="Right"/>
@@ -94,11 +94,11 @@
 
         <!-- Warning Alert Banner -->
         <Border Grid.Row="1" x:Name="WarningBanner" Visibility="Collapsed"
-                Background="#33EF4444" BorderBrush="#BBEF4444" BorderThickness="1"
+                Background="#33B91C1C" BorderBrush="{StaticResource RuDangerBrush}" BorderThickness="1"
                 CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,10" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE783;" FontSize="16" Foreground="#EF4444"/>
-                <TextBlock x:Name="WarningBannerText" Text="Warning: Detected log write errors or dropped entries." FontSize="12.5" FontWeight="SemiBold" Foreground="#EF4444"/>
+                <FontIcon Glyph="&#xE783;" FontSize="16" Foreground="{StaticResource RuDangerBrush}"/>
+                <TextBlock x:Name="WarningBannerText" Text="Warning: Detected log write errors or dropped entries." FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource RuDangerBrush}"/>
             </StackPanel>
         </Border>
 
@@ -166,9 +166,9 @@
                                 </Border>
 
                                 <!-- Component badge -->
-                                <Border Grid.Column="3" Background="#2038BDF8" BorderBrush="#38BDF8" BorderThickness="1" CornerRadius="6"
+                                 <Border Grid.Column="3" Background="#2038BDF8" BorderBrush="{StaticResource RuInfoBrush}" BorderThickness="1" CornerRadius="6"
                                         Padding="6,2" Margin="0,1,12,0" VerticalAlignment="Top">
-                                    <TextBlock Text="{Binding Component}" FontSize="11" Foreground="#38BDF8"/>
+                                    <TextBlock Text="{Binding Component}" FontSize="11" Foreground="{StaticResource RuInfoBrush}"/>
                                 </Border>
 
                                 <!-- Content + Detail -->
@@ -176,7 +176,7 @@
                                     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"
                                                FontSize="13.5" VerticalAlignment="Top" Margin="0,2,0,4"/>
 
-                                    <Border Background="#141418" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
+                                    <Border Background="{StaticResource RuCanvasBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
                                             CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
                                             Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
                                         <StackPanel Spacing="4">

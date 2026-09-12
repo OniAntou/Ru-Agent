@@ -17,13 +17,16 @@
                     <Color x:Key="RuSidebarColor">#EAECEF</Color>
                     <Color x:Key="RuSurfaceColor">#FFFFFF</Color>
                     <Color x:Key="RuInkColor">#0F172A</Color>
-                    <Color x:Key="RuMutedColor">#64748B</Color>
+                    <Color x:Key="RuMutedColor">#5B6B82</Color>
                     <Color x:Key="RuLineColor">#CBD5E1</Color>
                     <Color x:Key="RuAccentColor">#1E293B</Color>
                     <Color x:Key="RuAccentSoftColor">#E2E8F0</Color>
                     <Color x:Key="RuSuccessColor">#10B981</Color>
                     <Color x:Key="RuWarningColor">#F59E0B</Color>
-                    <Color x:Key="RuDangerColor">#EF4444</Color>
+                    <Color x:Key="RuDangerColor">#B91C1C</Color>
+                    <Color x:Key="RuInfoColor">#075985</Color>
+                    <Color x:Key="RuVioletColor">#7E22CE</Color>
+                    <Color x:Key="RuPinkColor">#BE123C</Color>
 
                     <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#1E293B" />
                     <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#334155" />
@@ -69,6 +72,9 @@
                     <Color x:Key="RuSuccessColor">#34D399</Color>
                     <Color x:Key="RuWarningColor">#FBBF24</Color>
                     <Color x:Key="RuDangerColor">#F87171</Color>
+                    <Color x:Key="RuInfoColor">#38BDF8</Color>
+                    <Color x:Key="RuVioletColor">#C084FC</Color>
+                    <Color x:Key="RuPinkColor">#F472B6</Color>
 
                     <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#E2E8F0" />
                     <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#F8FAFC" />
@@ -119,6 +125,9 @@
             <SolidColorBrush x:Key="RuSuccessBrush" Color="{ThemeResource RuSuccessColor}" />
             <SolidColorBrush x:Key="RuWarningBrush" Color="{ThemeResource RuWarningColor}" />
             <SolidColorBrush x:Key="RuDangerBrush" Color="{ThemeResource RuDangerColor}" />
+            <SolidColorBrush x:Key="RuInfoBrush" Color="{ThemeResource RuInfoColor}" />
+            <SolidColorBrush x:Key="RuVioletBrush" Color="{ThemeResource RuVioletColor}" />
+            <SolidColorBrush x:Key="RuPinkBrush" Color="{ThemeResource RuPinkColor}" />
 
             <FontFamily x:Key="RuUiFontFamily">Segoe UI Variable</FontFamily>
             <FontFamily x:Key="RuDisplayFontFamily">Cambria</FontFamily>

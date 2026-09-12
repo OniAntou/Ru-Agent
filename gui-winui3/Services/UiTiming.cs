@@ -13,7 +13,7 @@ public static class UiTiming
     public static readonly TimeSpan ReconnectPoll = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan ModelSaveFailure = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan AgentRetryDelay = TimeSpan.FromSeconds(1);
-    public static readonly TimeSpan WaveFrame = TimeSpan.FromMilliseconds(33);
+    public static readonly TimeSpan WaveFrame = TimeSpan.FromMilliseconds(50);
     public static readonly TimeSpan ChatFlash = TimeSpan.FromMilliseconds(120);
 
     public const double StaleReactionSeconds = 15.0;

@@ -259,7 +259,7 @@
                   PointerReleased="Resizer_PointerReleased"
                   DoubleTapped="Resizer_DoubleTapped">
                 <Border x:Name="SidebarResizerLine" Width="1" HorizontalAlignment="Center"
-                        Background="{StaticResource RuLineBrush}" Opacity="0.4"/>
+                        Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
             </controls:SidebarResizerControl>
 
             <!-- Content Frame with Smooth Native Transition -->

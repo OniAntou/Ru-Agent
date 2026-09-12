@@ -1287,13 +1287,18 @@ namespace RuApp.Views
 
         private void StartTextSweep(TextBlock textBlock)
         {
+            if (!Services.UiTiming.AnimationsEnabled)
+            {
+                return;
+            }
+
             if (!_activeWaveTextBlocks.Add(textBlock))
                 return;
 
             if (_waveTimer == null)
             {
                 _waveTimer = DispatcherQueue.CreateTimer();
-                _waveTimer.Interval = Services.UiTiming.WaveFrame; // ~30 FPS
+                _waveTimer.Interval = Services.UiTiming.WaveFrame; // ~20 FPS
                 _waveTimer.Tick += OnWaveTimerTick;
             }
 

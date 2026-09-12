@@ -32,6 +32,54 @@ public sealed class WorkerV2ContractTests
     }
 
     [Fact]
+    public void Step_done_accepts_usage_and_reasoning_beside_a_native_call()
+    {
+        static string Digest() => new('a', 64);
+        var payload = new JsonObject
+        {
+            // A tool selection step stays text-free; narration streams as deltas.
+            ["text"] = null,
+            ["tool_calls"] = new JsonArray(new JsonObject
+            {
+                ["provider_call_id"] = "call_1",
+                ["tool_id"] = "write",
+                ["tool_version"] = "1.0.0",
+                ["arguments"] = new JsonObject { ["path"] = "index.html" },
+            }),
+            ["finish_reason"] = "tool_calls",
+            ["prompt_receipt"] = new JsonObject
+            {
+                ["composer_version"] = "1.0.0",
+                ["prompt_sha256"] = Digest(),
+                ["block_digests"] = new JsonArray(new JsonObject
+                {
+                    ["block_id"] = "agent.contract",
+                    ["sha256"] = Digest(),
+                }),
+            },
+            ["usage"] = new JsonObject
+            {
+                ["input_tokens"] = 10,
+                ["output_tokens"] = 5,
+            },
+            ["reasoning_text"] = "Suy nghi ngan.",
+        };
+        var envelope = new WorkerV2Envelope(
+            WorkerV2Contracts.ProtocolVersion,
+            "step_done_regression",
+            WorkerV2Contracts.AgentStepDone,
+            1,
+            null,
+            payload);
+
+        var json = WorkerV2EnvelopeCodec.Serialize(envelope);
+
+        var reparsed = WorkerV2EnvelopeCodec.Parse(json);
+        Assert.Equal(WorkerV2Contracts.AgentStepDone, reparsed.Type);
+        Assert.Equal("Suy nghi ngan.", reparsed.Payload["reasoning_text"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void Golden_valid_envelopes_round_trip()
     {
         var fixture = LoadFixture();

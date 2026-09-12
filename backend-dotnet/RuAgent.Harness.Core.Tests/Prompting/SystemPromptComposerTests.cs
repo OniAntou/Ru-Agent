@@ -29,6 +29,22 @@ public sealed class SystemPromptComposerTests
     }
 
     [Fact]
+    public void Compose_with_native_tool_calling_swaps_the_selection_contract()
+    {
+        var context = PromptFixtures.ValidContext();
+
+        var native = SystemPromptComposer.Compose(context, nativeToolCalling: true);
+        var textSelection = SystemPromptComposer.Compose(context);
+
+        Assert.Contains("TOOL CALLING:", native.Text, StringComparison.Ordinal);
+        Assert.Contains("native tool-calling interface", native.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("TOOL SELECTION CONTRACT:", native.Text, StringComparison.Ordinal);
+        Assert.Contains("TOOL SELECTION CONTRACT:", textSelection.Text, StringComparison.Ordinal);
+        Assert.NotEqual(textSelection.Receipt.PromptSha256, native.Receipt.PromptSha256);
+        native.Receipt.ValidateAgainst(context, native.Text);
+    }
+
+    [Fact]
     public void Compose_delegates_persona_to_trusted_root_instructions()
     {
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(

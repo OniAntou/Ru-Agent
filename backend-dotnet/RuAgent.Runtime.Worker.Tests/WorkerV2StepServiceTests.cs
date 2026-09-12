@@ -105,11 +105,52 @@ public sealed class WorkerV2StepServiceTests
 
         var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None);
 
+        // The wire contract keeps tool selections text-free; narration streams
+        // live through deltas and never becomes step text.
         Assert.Null(result.Text);
         Assert.Single(result.ToolCalls);
         Assert.Equal("files.read", result.ToolCalls[0].ToolId);
         Assert.Equal("README.md", result.ToolCalls[0].Arguments.GetProperty("path").GetString());
         Assert.DoesNotContain("README.md", result.PromptReceipt.PromptSha256, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Step_service_keeps_narration_out_of_step_text_beside_a_native_call()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("Dang tao file. ", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta(
+                null,
+                new[] { new ModelToolFragment("call-9", "files.read", "{\"path\":\"README.md\"}") },
+                true,
+                "tool_calls"));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            CancellationToken.None);
+
+        // Narration streams live, but a tool selection step stays text-free.
+        Assert.Null(result.Text);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_merges_streamed_native_fragments_that_carry_the_call_id_once()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, new[] { new ModelToolFragment("call-7", "files.read", "{\"path\":") }, false, null),
+            new ModelDelta(null, new[] { new ModelToolFragment(null, string.Empty, "\"README.md\"}") }, true, "tool_calls"));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            CancellationToken.None);
+
+        Assert.Equal("tool_calls", result.FinishReason);
+        var call = Assert.Single(result.ToolCalls);
+        Assert.Equal("call-7", call.ProviderCallId);
+        Assert.Equal("files.read", call.ToolId);
+        Assert.Equal("README.md", call.Arguments.GetProperty("path").GetString());
     }
 
     [Fact]

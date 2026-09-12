@@ -61,6 +61,41 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_advertises_model_tools_as_provider_functions()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var settings = new JsonObject
+        {
+            ["model_tools"] = new JsonArray(new JsonObject
+            {
+                ["tool_id"] = "write",
+                ["tool_version"] = "1.0.0",
+                ["scopes"] = new JsonArray("workspace.write"),
+                ["availability"] = "executable",
+                ["model_enabled"] = true,
+                ["capability_class"] = "tool",
+                ["verification_required"] = false,
+                ["input_schema"] = JsonNode.Parse(
+                    "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}}}"),
+            }),
+        };
+
+        _ = await provider.GenerateAsync(Request(settings), CancellationToken.None).ToListAsync();
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        var tool = Assert.Single(body["tools"]!.AsArray())!.AsObject();
+        Assert.Equal("function", tool["type"]!.GetValue<string>());
+        Assert.Equal("write", tool["function"]!["name"]!.GetValue<string>());
+        Assert.Equal("object", tool["function"]!["parameters"]!["type"]!.GetValue<string>());
+        Assert.Equal("auto", body["tool_choice"]!.GetValue<string>());
+        Assert.False(body.ContainsKey("model_tools"));
+    }
+
+    [Fact]
     public async Task GenerateAsync_preserves_reasoning_content_deltas()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -202,7 +237,7 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
-    public async Task GenerateAsync_does_not_forward_internal_model_tools_to_the_provider()
+    public async Task GenerateAsync_rejects_malformed_model_tools_instead_of_forwarding_them()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -210,16 +245,19 @@ public sealed class OpenAiCompatibleModelProviderTests
         });
         var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
 
-        _ = await provider.GenerateAsync(
-            Request(new JsonObject
-            {
-                ["temperature"] = 0.7,
-                ["model_tools"] = new JsonArray(new JsonObject { ["tool_id"] = "files.read" }),
-            }),
-            CancellationToken.None).ToListAsync();
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await provider.GenerateAsync(
+                Request(new JsonObject
+                {
+                    ["temperature"] = 0.7,
+                    ["model_tools"] = new JsonArray(new JsonObject { ["tool_id"] = "files.read" }),
+                }),
+                CancellationToken.None).ToListAsync());
 
-        var body = handler.RequestBody!;
-        Assert.DoesNotContain("model_tools", body, StringComparison.Ordinal);
+        Assert.Equal("malformed_payload", error.Code);
+        Assert.False(error.Retryable);
+        // The Host/Worker selection contract itself never reaches the provider.
+        Assert.DoesNotContain("model_tools", handler.RequestBody!, StringComparison.Ordinal);
     }
 
     [Fact]

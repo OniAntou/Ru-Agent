@@ -175,17 +175,54 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         };
         foreach (var property in request.Settings)
         {
-            // model_tools is a private Host/Worker selection contract. The
-            // managed Agent asks the model for a single JSON selection through
-            // its composed prompt; provider-native function calling is not part
-            // of this adapter contract.
             if (property.Key is not ("model" or "messages" or "stream" or "stream_options" or "model_tools"))
             {
                 body[property.Key] = property.Value?.DeepClone();
             }
         }
 
+        // The Host/Worker selection contract becomes the provider's native
+        // function-calling surface: the model calls capabilities directly and
+        // the Host still owns policy, approval, and execution.
+        var tools = BuildToolDeclarations(request.Settings);
+        if (tools.Count > 0)
+        {
+            body["tools"] = tools;
+            body["tool_choice"] = "auto";
+        }
+
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    private static JsonArray BuildToolDeclarations(JsonObject settings)
+    {
+        var tools = new JsonArray();
+        if (settings["model_tools"] is not JsonArray modelTools)
+        {
+            return tools;
+        }
+
+        foreach (var node in modelTools)
+        {
+            if (node is not JsonObject tool
+                || tool["tool_id"]?.GetValue<string>() is not { Length: > 0 } toolId
+                || tool["input_schema"] is not JsonObject schema)
+            {
+                throw new ModelProviderException("malformed_payload", retryable: false);
+            }
+
+            tools.Add(new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject
+                {
+                    ["name"] = toolId,
+                    ["parameters"] = schema.DeepClone(),
+                },
+            });
+        }
+
+        return tools;
     }
 
     private static string? ReadText(JsonObject delta)

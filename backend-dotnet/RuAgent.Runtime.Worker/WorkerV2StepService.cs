@@ -113,7 +113,14 @@ public sealed class WorkerV2StepService
         var providerBootstrap = ResolveProviderBootstrap(
             ReadProviderBootstrapPath(startPayload),
             cancellationToken);
-        var snapshot = SystemPromptComposer.Compose(start.Context);
+        // Only the OpenAI-compatible adapter exposes the host capabilities
+        // through provider-native function calling; other protocols keep the
+        // text selection contract.
+        var nativeToolCalling = string.Equals(
+            providerBootstrap.Protocol,
+            ProviderProtocols.ChatCompletions,
+            StringComparison.Ordinal);
+        var snapshot = SystemPromptComposer.Compose(start.Context, nativeToolCalling);
         var request = new ModelRequest(
             providerBootstrap.Model,
             snapshot.Text,
@@ -324,12 +331,20 @@ public sealed class WorkerV2StepService
             return (new List<ModelToolCall>(), string.IsNullOrEmpty(visibleText) ? null : visibleText);
         }
 
-        if (fragments.Count > 1 && fragments.Select(fragment => fragment.ProviderCallId).Distinct(StringComparer.Ordinal).Count() > 1)
+        // Streaming providers send the call id on the first fragment only;
+        // continuation fragments carry just the argument text. A step still
+        // accepts exactly one call, so only distinct non-empty ids conflict.
+        var providerCallIds = fragments
+            .Select(fragment => fragment.ProviderCallId)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (providerCallIds.Length > 1)
         {
             throw new WorkerV2StepException("protocol_failure", retryable: false);
         }
 
-        if (finishReason != "tool_calls" || text.Length != 0)
+        if (finishReason != "tool_calls")
         {
             throw new WorkerV2StepException("protocol_failure", retryable: false);
         }
@@ -373,9 +388,12 @@ public sealed class WorkerV2StepService
 
         try
         {
+            // Provider-native calls may carry narration before the call. It has
+            // already streamed as deltas, and the wire contract forbids visible
+            // text next to a tool selection, so the step stays call-only.
             return (new List<ModelToolCall>
             {
-                new(fragments[0].ProviderCallId, toolName, toolVersion, arguments),
+                new(providerCallIds.Length == 1 ? providerCallIds[0] : null, toolName, toolVersion, arguments),
             }, null);
         }
         catch (ArgumentException error)

@@ -75,6 +75,8 @@ public static class WorkerV2Contracts
     private static readonly IReadOnlySet<string> PromptReferenceFields = new HashSet<string>(["kind", "label", "content"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptReceiptFields = new HashSet<string>(["composer_version", "prompt_sha256", "block_digests"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptBlockDigestFields = new HashSet<string>(["block_id", "sha256"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> StepDoneRequired = new HashSet<string>(["text", "tool_calls", "finish_reason", "prompt_receipt"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> StepDoneFields = new HashSet<string>(["text", "tool_calls", "finish_reason", "prompt_receipt", "usage", "reasoning_text"], StringComparer.Ordinal);
 
     public static void ValidateEnvelope(JsonObject envelope)
     {
@@ -710,9 +712,22 @@ public static class WorkerV2Contracts
 
     public static void ValidateStepDone(JsonObject payload)
     {
-        if (payload.Count is < 4 or > 5 || !payload.ContainsKey("text") || !payload.ContainsKey("tool_calls") || !payload.ContainsKey("finish_reason") || !payload.ContainsKey("prompt_receipt"))
+        var fields = payload.Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
+        if (!StepDoneRequired.IsSubsetOf(fields) || !fields.IsSubsetOf(StepDoneFields))
         {
             throw new AgentProtocolException("invalid_step");
+        }
+
+        if (payload.ContainsKey("reasoning_text")
+            && payload["reasoning_text"] is not null
+            && payload["reasoning_text"]!.GetValueKind() != JsonValueKind.Null)
+        {
+            if (payload["reasoning_text"] is not JsonValue rtv
+                || !rtv.TryGetValue<string>(out var reasoning)
+                || reasoning.Length > MaxTextChars)
+            {
+                throw new AgentProtocolException("invalid_step");
+            }
         }
 
         if (payload.ContainsKey("usage"))

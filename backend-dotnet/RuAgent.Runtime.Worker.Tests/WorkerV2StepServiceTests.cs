@@ -210,6 +210,91 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_strips_trailing_unparseable_wrapper_and_keeps_prose()
+    {
+        const string prose = "I'll check if I can access the \"Test Agent\" folder. Let me look at the workspace structure first.";
+        var provider = new FakeModelProvider(
+            new ModelDelta(prose, Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("<tool_call>read<arg_key>op</arg_key><arg_value>list</arg_value>", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("<arg_key>path</arg_key><arg_value>/D/Test Agent</arg_value></tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(prose, result.Text);
+        Assert.Empty(result.ToolCalls);
+        Assert.Equal("stop", result.FinishReason);
+        Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Step_service_executes_trailing_valid_wrapper_and_keeps_prose()
+    {
+        const string prose = "I'll check the workspace structure first.";
+        const string payload = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"D:/Test Agent\"}}";
+        var provider = new FakeModelProvider(
+            new ModelDelta(prose + " ", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta("<tool_call>" + payload + "</tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(prose, result.Text);
+        Assert.Equal("tool_calls", result.FinishReason);
+        Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+        Assert.DoesNotContain("<tool_call>", string.Concat(deltas), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Step_service_rejects_lone_unparseable_wrapper()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta("<tool_call>read<arg_key>op</arg_key><arg_value>list</arg_value></tool_call>", Array.Empty<ModelToolFragment>(), true, "stop"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("invalid_selection", error.Code);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
+    public async Task Step_service_keeps_mid_text_syntax_discussion_visible()
+    {
+        const string text = "To call a tool, write <tool_call> and then describe args. Now let me read the file list.";
+        var provider = new FakeModelProvider(
+            new ModelDelta(text, Array.Empty<ModelToolFragment>(), true, "stop"));
+        var deltas = new List<string>();
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            text =>
+            {
+                deltas.Add(text);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(text, result.Text);
+        Assert.Empty(result.ToolCalls);
+        Assert.Equal(text, string.Concat(deltas));
+    }
+
+    [Fact]
     public async Task Step_service_keeps_ordinary_prose_visible_when_tools_are_advertised()
     {
         var provider = new FakeModelProvider(

@@ -97,4 +97,25 @@ public sealed class ModelToolSelectionParserTests
     [InlineData("<tool_call>{")]
     public void NormalizeCandidate_rejects_ambiguous_unclosed_markup(string text) =>
         Assert.Equal(text, ModelToolSelectionParser.NormalizeCandidate(text));
+
+    [Fact]
+    public void TrySplitTrailingBlock_splits_prose_first_wrapper_last()
+    {
+        const string prose = "Let me look at the workspace structure first.";
+        const string block = "<tool_call>read<arg_key>op</arg_key></tool_call>";
+
+        Assert.True(ModelToolSelectionParser.TrySplitTrailingBlock(
+            prose + " " + block, out var splitProse, out var splitBlock));
+        Assert.Equal(prose, splitProse);
+        Assert.Equal(block, splitBlock);
+    }
+
+    [Theory]
+    [InlineData("plain prose without markup")]
+    [InlineData("To call a tool, write <tool_call> and then describe args.")]
+    [InlineData("Discuss <tool_call>{} syntax here. Then keep explaining.")]
+    [InlineData("<tool_call>read<arg_key>op</arg_key></tool_call> and more prose")]
+    [InlineData("")]
+    public void TrySplitTrailingBlock_ignores_non_trailing_markup(string text) =>
+        Assert.False(ModelToolSelectionParser.TrySplitTrailingBlock(text, out _, out _));
 }

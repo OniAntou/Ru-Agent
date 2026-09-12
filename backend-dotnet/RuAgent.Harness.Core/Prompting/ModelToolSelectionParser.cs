@@ -23,6 +23,38 @@ public static class ModelToolSelectionParser
     private const string ToolCallCloseTag = "</tool_call>";
     private static readonly Regex SemVer = new("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// Splits a trailing tool-call block (prose first, wrapper last) so a late
+    /// wrapper is never rendered as chat text. Returns false when there is no
+    /// trailing block: no tag at all, an unterminated tag, or prose after the
+    /// closing tag. Mid-text syntax discussion is left untouched.
+    /// </summary>
+    public static bool TrySplitTrailingBlock(string text, out string prose, out string block)
+    {
+        prose = text;
+        block = string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        var index = text.LastIndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var candidate = text[index..];
+        if (!candidate.TrimEnd().EndsWith(ToolCallCloseTag, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        prose = text[..index].TrimEnd();
+        block = candidate;
+        return true;
+    }
+
     public static string NormalizeCandidate(string text)
     {
         if (string.IsNullOrWhiteSpace(text))

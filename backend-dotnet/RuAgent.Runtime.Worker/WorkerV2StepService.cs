@@ -185,19 +185,18 @@ public sealed class WorkerV2StepService
                 throw MapProviderException(mpe);
             }
 
-            finishReason ??= toolFragments.Count > 0 ? "tool_calls" : "stop";
-            var calls = ParseToolCalls(toolFragments, start.Settings, finishReason, text);
-            if (calls.Count > 0)
-            {
-                finishReason = "tool_calls";
-            }
-            var visibleText = calls.Count > 0 ? null : (text.Length == 0 ? null : text.ToString());
-            if (calls.Count == 0)
-            {
-                await holdback.ReleaseAsync().ConfigureAwait(false);
-            }
+        finishReason ??= toolFragments.Count > 0 ? "tool_calls" : "stop";
+        var (calls, visibleText) = ParseToolCalls(toolFragments, start.Settings, finishReason, text);
+        if (calls.Count > 0)
+        {
+            finishReason = "tool_calls";
+        }
+        if (calls.Count == 0)
+        {
+            await holdback.ReleaseAsync().ConfigureAwait(false);
+        }
 
-            return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage);
+        return new WorkerV2StepResult(visibleText, calls, finishReason, snapshot.Receipt, usage);
         }
         catch (OperationCanceledException)
         {
@@ -229,7 +228,7 @@ public sealed class WorkerV2StepService
         }
     }
 
-    private static List<ModelToolCall> ParseToolCalls(
+    private static (List<ModelToolCall> Calls, string? Text) ParseToolCalls(
         IReadOnlyList<ModelToolFragment> fragments,
         JsonObject settings,
         string finishReason,
@@ -237,10 +236,10 @@ public sealed class WorkerV2StepService
     {
         if (fragments.Count == 0)
         {
-            var promptSelection = ParsePromptToolSelection(text.ToString(), settings);
+            var (promptSelection, visibleText) = ParsePromptToolSelection(text.ToString(), settings);
             if (promptSelection is not null)
             {
-                return [promptSelection];
+                return ([promptSelection], visibleText);
             }
 
             if (finishReason == "tool_calls")
@@ -248,7 +247,9 @@ public sealed class WorkerV2StepService
                 throw new WorkerV2StepException("protocol_failure", retryable: false);
             }
 
-            return new List<ModelToolCall>();
+            // VisibleText already carries the stripped prose when a trailing
+            // block was removed; otherwise it is the full text (or empty).
+            return (new List<ModelToolCall>(), string.IsNullOrEmpty(visibleText) ? null : visibleText);
         }
 
         if (fragments.Count > 1 && fragments.Select(fragment => fragment.ProviderCallId).Distinct(StringComparer.Ordinal).Count() > 1)
@@ -300,10 +301,10 @@ public sealed class WorkerV2StepService
 
         try
         {
-            return new List<ModelToolCall>
+            return (new List<ModelToolCall>
             {
                 new(fragments[0].ProviderCallId, toolName, toolVersion, arguments),
-            };
+            }, null);
         }
         catch (ArgumentException error)
         {
@@ -311,22 +312,60 @@ public sealed class WorkerV2StepService
         }
     }
 
-    private static ModelToolCall? ParsePromptToolSelection(string text, JsonObject settings)
+    private static (ModelToolCall? Call, string? VisibleText) ParsePromptToolSelection(string text, JsonObject settings)
     {
-        var candidate = ModelToolSelectionParser.NormalizeCandidate(text);
-        if (candidate.Length == 0 || candidate[0] is not ('{' or '['))
-        {
-            return null;
-        }
-
         var modelTools = settings["model_tools"] as JsonArray;
         var hasTools = modelTools is { Count: > 0 };
-        if (!hasTools && IsJsonObjectWithoutToolFields(candidate))
+        var advertised = AdvertisedToolIds(modelTools);
+
+        var candidate = ModelToolSelectionParser.NormalizeCandidate(text);
+        if (candidate.Length != 0 && candidate[0] is '{' or '[')
         {
-            return null;
+            if (!hasTools && IsJsonObjectWithoutToolFields(candidate))
+            {
+                return (null, text);
+            }
+
+            return (BuildSelectionCall(modelTools, candidate, advertised), null);
         }
 
-        var advertised = modelTools?
+        // Trailing wrapper: prose first, tool call last. A complete trailing
+        // block either executes (valid selection) or is stripped from visible
+        // text (invalid selection) so raw tool-call markup never reaches chat.
+        if (ModelToolSelectionParser.TrySplitTrailingBlock(text, out var prose, out var block))
+        {
+            try
+            {
+                var trailing = ModelToolSelectionParser.Parse(
+                    ModelToolSelectionParser.NormalizeCandidate(block), advertised);
+                return (BuildSelectionCall(modelTools, trailing), string.IsNullOrWhiteSpace(prose) ? null : prose);
+            }
+            catch (ModelToolSelectionException error) when (
+                error.Code is "unknown_tool" or "invalid_tool_version")
+            {
+                throw new WorkerV2StepException("capability_unavailable", retryable: false, error);
+            }
+            catch (ModelToolSelectionException error)
+            {
+                if (string.IsNullOrWhiteSpace(prose))
+                {
+                    throw new WorkerV2StepException("invalid_selection", retryable: false, error);
+                }
+
+                return (null, prose);
+            }
+        }
+
+        if (!hasTools && IsJsonObjectWithoutToolFields(candidate))
+        {
+            return (null, text);
+        }
+
+        return (null, text);
+    }
+
+    private static HashSet<string> AdvertisedToolIds(JsonArray? modelTools) =>
+        modelTools?
             .OfType<JsonObject>()
             .Select(tool => tool["tool_id"] is JsonValue value
                 && value.TryGetValue<string>(out var id)
@@ -334,8 +373,10 @@ public sealed class WorkerV2StepService
                     : string.Empty)
             .Where(id => id.Length > 0)
             .ToHashSet(StringComparer.Ordinal)
-            ?? new HashSet<string>(StringComparer.Ordinal);
+        ?? new HashSet<string>(StringComparer.Ordinal);
 
+    private static ModelToolCall BuildSelectionCall(JsonArray? modelTools, string candidate, HashSet<string> advertised)
+    {
         ModelToolSelection selection;
         try
         {
@@ -351,6 +392,11 @@ public sealed class WorkerV2StepService
             throw new WorkerV2StepException("invalid_selection", retryable: false, error);
         }
 
+        return BuildSelectionCall(modelTools, selection);
+    }
+
+    private static ModelToolCall BuildSelectionCall(JsonArray? modelTools, ModelToolSelection selection)
+    {
         var configuredTool = modelTools?
             .OfType<JsonObject>()
             .FirstOrDefault(tool => tool["tool_id"] is JsonValue value
@@ -492,11 +538,18 @@ public sealed class WorkerV2StepService
 
     private sealed class DeltaHoldback
     {
+        private const string ToolCallOpenTag = "<tool_call>";
+        private const string ToolCallCloseTag = "</tool_call>";
+        private const int TagOverlapChars = 10;
+
         private readonly Func<string, ValueTask>? _sink;
         private readonly List<string> _held = [];
         private bool _decided;
         private bool _structured;
         private long _bytes;
+        private string _tail = string.Empty;
+        private bool _tailActive;
+        private string _recent = string.Empty;
 
         public DeltaHoldback(Func<string, ValueTask>? sink)
         {
@@ -516,11 +569,14 @@ public sealed class WorkerV2StepService
                 throw new WorkerV2StepException("protocol_failure", retryable: false);
             }
 
+            var overlap = _recent;
+            _recent = TailOverlap(_recent + delta);
+
             if (_decided)
             {
                 if (!_structured)
                 {
-                    await _sink(delta).ConfigureAwait(false);
+                    await ForwardProseAsync(delta, overlap).ConfigureAwait(false);
                 }
 
                 return;
@@ -541,9 +597,26 @@ public sealed class WorkerV2StepService
             }
 
             _decided = true;
-            foreach (var held in _held)
+            var tagAt = combined.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+            if (tagAt < 0)
             {
-                await _sink(held).ConfigureAwait(false);
+                foreach (var held in _held)
+                {
+                    await _sink(held).ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                // Prose arrived together with a later tool-call candidate in one
+                // chunk: show only the prose, hold the candidate for end-of-step
+                // validation like the streaming path does.
+                if (tagAt > 0)
+                {
+                    await _sink(combined[..tagAt]).ConfigureAwait(false);
+                }
+
+                _tail = combined[tagAt..];
+                _tailActive = true;
             }
 
             _held.Clear();
@@ -551,11 +624,29 @@ public sealed class WorkerV2StepService
 
         public async ValueTask ReleaseAsync()
         {
-            if (_sink is not null && _structured)
+            if (_sink is not null)
             {
-                foreach (var held in _held)
+                if (_tailActive)
                 {
-                    await _sink(held).ConfigureAwait(false);
+                    // End of step with a held candidate tail. A complete
+                    // trailing block is either valid (the final parse executed
+                    // it, so this is unreachable) or invalid (drop it to match
+                    // the stripped final text). An unterminated tail is
+                    // ordinary prose: flush it.
+                    if (!ModelToolSelectionParser.TrySplitTrailingBlock(_tail, out _, out _))
+                    {
+                        await _sink(_tail).ConfigureAwait(false);
+                    }
+
+                    _tail = string.Empty;
+                    _tailActive = false;
+                }
+                else if (_structured)
+                {
+                    foreach (var held in _held)
+                    {
+                        await _sink(held).ConfigureAwait(false);
+                    }
                 }
             }
 
@@ -563,6 +654,48 @@ public sealed class WorkerV2StepService
             _decided = true;
             _structured = false;
         }
+
+        private async ValueTask ForwardProseAsync(string delta, string overlap)
+        {
+            if (!_tailActive)
+            {
+                var scan = overlap + delta;
+                var tagAt = scan.IndexOf(ToolCallOpenTag, StringComparison.OrdinalIgnoreCase);
+                if (tagAt < 0)
+                {
+                    await _sink!(delta).ConfigureAwait(false);
+                    return;
+                }
+
+                // A tool-call candidate starts mid-stream (possibly split
+                // across deltas, reconstructed via overlap): show the prose
+                // before it and hold the candidate for end-of-step validation.
+                var sinkCount = tagAt - overlap.Length;
+                if (sinkCount > 0)
+                {
+                    await _sink!(delta[..sinkCount]).ConfigureAwait(false);
+                }
+
+                _tail = scan[tagAt..];
+                _tailActive = true;
+                return;
+            }
+
+            _tail += delta;
+            // A candidate stops being trailing as soon as real prose follows
+            // its closing tag: flush everything, it was discussion, not a call.
+            var closeAt = _tail.LastIndexOf(ToolCallCloseTag, StringComparison.OrdinalIgnoreCase);
+            if (closeAt >= 0
+                && !string.IsNullOrWhiteSpace(_tail[(closeAt + ToolCallCloseTag.Length)..]))
+            {
+                await _sink!(_tail).ConfigureAwait(false);
+                _tail = string.Empty;
+                _tailActive = false;
+            }
+        }
+
+        private static string TailOverlap(string value) =>
+            value.Length <= TagOverlapChars ? value : value[^TagOverlapChars..];
 
         private static bool CouldBeStructuredSelection(string candidate)
         {

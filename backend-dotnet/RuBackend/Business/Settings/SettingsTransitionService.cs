@@ -283,8 +283,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
     {
         BackendOpenCode => "opencode_model",
         BackendKilo => "kilo_model",
-        "Ollama" => "ollama_model",
-        "LM Studio" => "lmstudio_model",
         "Custom OpenAI" => "custom_model",
         BackendOpenAi => "openai_model",
         BackendAnthropic => "anthropic_model",
@@ -303,16 +301,8 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             ?? current.OpenCodeModel;
         var kiloModel = OptionalString(payload, "kilo_model", 256)
             ?? current.KiloModel;
-        var ollamaModel = OptionalString(payload, "ollama_model", 256)
-            ?? current.OllamaModel;
-        var lmStudioModel = OptionalString(payload, "lmstudio_model", 256)
-            ?? current.LmStudioModel;
         var customModel = OptionalString(payload, "custom_model", 256)
             ?? current.CustomModel;
-        var ollamaUrl = OptionalString(payload, "ollama_url", 1024)
-            ?? current.OllamaUrl;
-        var lmStudioUrl = OptionalString(payload, "lmstudio_url", 1024)
-            ?? current.LmStudioUrl;
         var customUrl = OptionalString(payload, "custom_url", 1024)
             ?? current.CustomUrl;
         var openAiModel = OptionalString(payload, "openai_model", 256)
@@ -348,11 +338,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             OptionalString(payload, "subtitle_pos_mode", 32) ?? current.SubtitlePosMode,
             OptionalInt(payload, "subtitle_pos_x", -1, 10000) ?? current.SubtitlePosX,
             OptionalInt(payload, "subtitle_pos_y", -1, 10000) ?? current.SubtitlePosY,
-            ollamaModel,
-            lmStudioModel,
             customModel,
-            ollamaUrl,
-            lmStudioUrl,
             customUrl,
             openAiModel,
             anthropicModel);
@@ -426,11 +412,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "model",
             "opencode_model",
             "kilo_model",
-            "ollama_model",
-            "lmstudio_model",
             "custom_model",
-            "ollama_url",
-            "lmstudio_url",
             "custom_url",
             "openai_model",
             "anthropic_model",
@@ -463,8 +445,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "gguf" or "llama.cpp" => BackendOpenCode,
             "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
             "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => BackendKilo,
-            "ollama" or "ollama api" => "Ollama",
-            "lmstudio" or "lm studio" or "lm studio api" => "LM Studio",
             "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
             "openai" or "openai api" => BackendOpenAi,
             "anthropic" or "anthropic claude" or "claude" => BackendAnthropic,

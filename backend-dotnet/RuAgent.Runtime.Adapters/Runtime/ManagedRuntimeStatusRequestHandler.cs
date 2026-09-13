@@ -17,14 +17,11 @@ public sealed class ManagedRuntimeStatusRequestHandler : IPrivateRuntimeRequestH
         {
             ["opencode"] = "OpenCode Zen",
             ["kilo"] = "Kilo Gateway",
-            ["ollama"] = "Ollama",
-            ["lmstudio"] = "LM Studio",
-            ["lm studio"] = "LM Studio",
             ["custom"] = "Custom OpenAI",
         };
     private static readonly IReadOnlySet<string> SupportedBackends =
         new HashSet<string>(
-            ["OpenCode Zen", "Kilo Gateway", "Ollama", "LM Studio", "Custom OpenAI"],
+            ["OpenCode Zen", "Kilo Gateway", "Custom OpenAI"],
             StringComparer.Ordinal);
     private readonly ManagedRuntimeSettingsService _settings;
 

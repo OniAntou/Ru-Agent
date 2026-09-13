@@ -19,17 +19,17 @@ public sealed class ManagedRuntimeSettingsServiceTests
 
         var message = await service.LoadAsync(
             new RuntimeSettingsInput(
-                "Ollama",
-                "qwen3:8b",
-                "http://127.0.0.1:11434/v1",
+                "Custom OpenAI",
+                "local-model",
+                "http://127.0.0.1:9000/v1",
                 "Default",
                 false),
             CancellationToken.None);
 
         Assert.Equal("Runtime loaded.", message);
-        Assert.Equal("Ollama", service.Current.Backend);
-        Assert.Equal("qwen3:8b", service.Current.ModelName);
-        Assert.Equal(new Uri("http://127.0.0.1:11434/v1"), service.Current.BaseUrl);
+        Assert.Equal("Custom OpenAI", service.Current.Backend);
+        Assert.Equal("local-model", service.Current.ModelName);
+        Assert.Equal(new Uri("http://127.0.0.1:9000/v1"), service.Current.BaseUrl);
     }
 
     [Fact]
@@ -47,9 +47,9 @@ public sealed class ManagedRuntimeSettingsServiceTests
 
         var error = await Assert.ThrowsAsync<ManagedRuntimeSettingsException>(() => service.LoadAsync(
             new RuntimeSettingsInput(
-                "Ollama",
-                "qwen3:8b",
-                "http://127.0.0.1:11434/v1",
+                "Custom OpenAI",
+                "local-model",
+                "http://127.0.0.1:9000/v1",
                 "Default",
                 false),
             CancellationToken.None));

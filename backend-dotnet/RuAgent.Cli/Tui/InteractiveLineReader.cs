@@ -12,7 +12,7 @@ public sealed class InteractiveLineReader
     public static readonly SlashCommandInfo[] KnownCommands =
     [
         new("/model", "Switch or show the active model", "/model [name]"),
-        new("/backend", "Switch provider backend (kilo, opencode, ollama...)", "/backend <name>"),
+        new("/backend", "Switch provider backend (kilo, opencode, openai, custom...)", "/backend <name>"),
         new("/fork", "Branch this conversation", "/fork [title]"),
         new("/tree", "Show the session tree", "/tree"),
         new("/stats", "Show token and session stats", "/stats"),

@@ -97,8 +97,6 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             {
                 "OpenCode Zen" => settings.OpenCodeModel,
                 "Kilo Gateway" => settings.KiloModel,
-                "Ollama" => settings.OllamaModel,
-                "LM Studio" => settings.LmStudioModel,
                 "Custom OpenAI" => settings.CustomModel,
                 _ => "configured-model",
             };

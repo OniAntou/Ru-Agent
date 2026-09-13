@@ -229,7 +229,7 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task PostSettings_saves_ollama_backend_with_model_and_url()
+    public async Task PostSettings_saves_custom_backend_with_model_and_url()
     {
         using var data = TemporaryBusinessData.Create();
         var credentials = new FakeCredentialStore();
@@ -244,21 +244,21 @@ public sealed class BusinessEndpointTests
             "/settings",
             new
             {
-                backend_choice = "ollama",
-                ollama_model = "qwen3:8b",
-                ollama_url = "http://127.0.0.1:11434/v1",
+                backend_choice = "custom",
+                custom_model = "my-model",
+                custom_url = "http://127.0.0.1:9000/v1",
             });
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload.GetProperty("status").GetString());
         var loaded = Assert.Single(runtime.Candidates);
-        Assert.Equal("Ollama", loaded.Backend);
-        Assert.Equal("qwen3:8b", loaded.OllamaModel);
-        Assert.Equal("http://127.0.0.1:11434/v1", loaded.OllamaUrl);
+        Assert.Equal("Custom OpenAI", loaded.Backend);
+        Assert.Equal("my-model", loaded.CustomModel);
+        Assert.Equal("http://127.0.0.1:9000/v1", loaded.CustomUrl);
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
-        Assert.Equal("Ollama", persisted["backend"]!.GetValue<string>());
-        Assert.Equal("qwen3:8b", persisted["ollama_model"]!.GetValue<string>());
+        Assert.Equal("Custom OpenAI", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("my-model", persisted["custom_model"]!.GetValue<string>());
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"ollama\",\"ollama_model\":\"qwen3:8b\",\"ollama_url\":\"http://127.0.0.1:11434/v1\",\"custom_url\":\"http://localhost:9000/v1\"}");
+            "{\"backend\":\"custom\",\"custom_model\":\"my-model\",\"custom_url\":\"http://localhost:9000/v1\"}");
         var credentials = new FakeCredentialStore();
         credentials.Seed("Ru", "custom_api_key", "private-custom-key");
         using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
@@ -309,9 +309,8 @@ public sealed class BusinessEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("ollama", payload.GetProperty("backend_choice").GetString());
-        Assert.Equal("qwen3:8b", payload.GetProperty("ollama_model").GetString());
-        Assert.Equal("http://127.0.0.1:11434/v1", payload.GetProperty("ollama_url").GetString());
+        Assert.Equal("custom", payload.GetProperty("backend_choice").GetString());
+        Assert.Equal("my-model", payload.GetProperty("custom_model").GetString());
         Assert.Equal("http://localhost:9000/v1", payload.GetProperty("custom_url").GetString());
         Assert.True(payload.GetProperty("has_custom_api_key").GetBoolean());
         Assert.Equal(string.Empty, payload.GetProperty("custom_api_key").GetString());
@@ -323,7 +322,7 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"ollama\",\"ollama_model\":\"qwen3:8b\",\"ollama_url\":\"http://10.0.0.5:11434/v1\"}");
+            "{\"backend\":\"custom\",\"custom_model\":\"my-model\",\"custom_url\":\"http://10.0.0.5:9000/v1\"}");
         var runtime = new FakeRuntimeSettingsLoader();
         using var factory = CreateAspNetFactory(
             data.Paths,
@@ -334,13 +333,13 @@ public sealed class BusinessEndpointTests
             "/settings",
             new
             {
-                backend_choice = "ollama",
-                ollama_model = "qwen3:8b",
+                backend_choice = "custom",
+                custom_model = "my-model",
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var loaded = Assert.Single(runtime.Candidates);
-        Assert.Equal("http://10.0.0.5:11434/v1", loaded.OllamaUrl);
+        Assert.Equal("http://10.0.0.5:9000/v1", loaded.CustomUrl);
     }
 
     [Fact]
@@ -378,8 +377,6 @@ public sealed class BusinessEndpointTests
     [InlineData("kilo", "Kilo Gateway", "kilo_model")]
     [InlineData("openai", "OpenAI", "openai_model")]
     [InlineData("anthropic", "Anthropic", "anthropic_model")]
-    [InlineData("ollama", "Ollama", "ollama_model")]
-    [InlineData("lmstudio", "LM Studio", "lmstudio_model")]
     [InlineData("custom", "Custom OpenAI", "custom_model")]
     public async Task PostSettings_selected_model_table_covers_every_alias(
         string alias,
@@ -425,7 +422,7 @@ public sealed class BusinessEndpointTests
         """{"backend_choice":"kilo","selected_model":"grouped-model","model":"legacy-model"}""",
         """{"backend_choice":"kilo","selected_model":"grouped-model","kilo_api_key":"private-key"}""",
         """{"backend_choice":"kilo","selected_model":"grouped-model","opencode_api_key":"private-key"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","ollama_url":"http://127.0.0.1:11434/v1"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","unknown_provider_url":"http://127.0.0.1:9999/v1"}""",
         """{"backend_choice":"kilo","selected_model":"grouped-model","reasoning_effort":"high","reasoning_model":"grouped-model","reasoning_identity":"kilo"}""",
     };
 
@@ -479,8 +476,6 @@ public sealed class BusinessEndpointTests
         "kilo_model" => snapshot.KiloModel,
         "openai_model" => snapshot.OpenAiModel,
         "anthropic_model" => snapshot.AnthropicModel,
-        "ollama_model" => snapshot.OllamaModel,
-        "lmstudio_model" => snapshot.LmStudioModel,
         "custom_model" => snapshot.CustomModel,
         _ => throw new ArgumentOutOfRangeException(nameof(modelField)),
     };

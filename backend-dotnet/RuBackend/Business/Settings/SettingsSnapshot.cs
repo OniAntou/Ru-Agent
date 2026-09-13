@@ -22,11 +22,7 @@ public sealed record SettingsSnapshot(
     string SubtitlePosMode,
     int SubtitlePosX,
     int SubtitlePosY,
-    string OllamaModel,
-    string LmStudioModel,
     string CustomModel,
-    string OllamaUrl,
-    string LmStudioUrl,
     string CustomUrl,
     string OpenAiModel,
     string AnthropicModel);

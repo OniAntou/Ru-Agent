@@ -16,8 +16,6 @@ public sealed class ProviderCatalogTests
 
         Assert.Empty(settings.OpenCodeModel);
         Assert.Empty(settings.KiloModel);
-        Assert.Empty(settings.OllamaModel);
-        Assert.Empty(settings.LmStudioModel);
         Assert.Empty(settings.CustomModel);
     }
 
@@ -401,8 +399,6 @@ public sealed class ProviderCatalogTests
         Assert.Contains("\"selected_model\":\"kilo-model\"", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("opencode_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("kilo_model", handler.LastBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("ollama_model", handler.LastBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("lmstudio_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("custom_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("openai_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("anthropic_model", handler.LastBody, StringComparison.Ordinal);

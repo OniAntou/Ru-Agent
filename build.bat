@@ -4,20 +4,8 @@ echo ============================================
 echo  Ru Desktop - Build + PRI Generation Script
 echo  .NET 10 + ASP.NET Core + WinUI 3 (Unpackaged Self-Contained)
 echo  Coding core: 62 HTTP + 1 WS, managed C# Worker, CLI tracer
-echo  Plugins (optional): voice/STT, VTube Studio, desktop overlay
 echo ============================================
 echo.
-
-rem Optional plugins. The coding core never depends on a plugin, so a missing
-rem plugin toolchain must not fail this build. Enable the native overlay with
-rem `build.bat -WithOverlay` or RU_WITH_OVERLAY=1.
-set "WITH_OVERLAY=0"
-for %%a in (%*) do (
-    if /I "%%a"=="-WithOverlay" set "WITH_OVERLAY=1"
-    if /I "%%a"=="--with-overlay" set "WITH_OVERLAY=1"
-    if /I "%%a"=="-WithPlugins" set "WITH_OVERLAY=1"
-)
-if /I "%RU_WITH_OVERLAY%"=="1" set "WITH_OVERLAY=1"
 
 set "PROJECT_DIR=%~dp0gui-winui3"
 set "CSPROJ=%PROJECT_DIR%\RuApp.csproj"
@@ -37,14 +25,14 @@ set "BACKEND_PUBLISH_DIR=%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x
 set "PUBLISH_DIR=%PROJECT_DIR%\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish"
 set "OBJ_DIR=%PROJECT_DIR%\obj\x64\Release\net10.0-windows10.0.26100.0\win-x64"
 
-echo [1/13] Cleaning previous build...
+echo [1/12] Cleaning previous build...
 call dotnet clean "%CSPROJ%" -r win-x64 -c Release -p:Platform=x64
 if errorlevel 1 (
     echo CLEAN FAILED!
     exit /b 1
 )
 
-echo [2/13] Building RuAgent.Harness.Core (deterministic, BCL-only, no deps)...
+echo [2/12] Building RuAgent.Harness.Core (deterministic, BCL-only, no deps)...
 call dotnet build "%HARNESS_CORE_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -52,7 +40,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/13] Building RuAgent.Harness.Persistence (Core + Microsoft.Data.Sqlite)...
+echo [3/12] Building RuAgent.Harness.Persistence (Core + Microsoft.Data.Sqlite)...
 call dotnet build "%HARNESS_PERSISTENCE_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -60,7 +48,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/13] Building RuAgent.Hosting (Worker/Broker Job Object + runtime descriptor)...
+echo [4/12] Building RuAgent.Hosting (Worker/Broker Job Object + runtime descriptor)...
 call dotnet build "%HOSTING_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -68,7 +56,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [5/13] Building RuAgent.Client (PublicHost start-or-attach + API/SSE clients)...
+echo [5/12] Building RuAgent.Client (PublicHost start-or-attach + API/SSE clients)...
 call dotnet build "%CLIENT_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -76,7 +64,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [6/13] Publishing RuAgent.Cli headless tracer (self-contained, win-x64)...
+echo [6/12] Publishing RuAgent.Cli headless tracer (self-contained, win-x64)...
 call dotnet publish "%CLI_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -89,7 +77,7 @@ if not exist "%CLI_PUBLISH_DIR%\RuAgent.Cli.exe" (
     exit /b 1
 )
 
-echo [7/13] Publishing managed Worker v1/v2 plus Runtime.Core (self-contained, win-x64)...
+echo [7/12] Publishing managed Worker v1/v2 plus Runtime.Core (self-contained, win-x64)...
 call dotnet publish "%WORKER_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -107,7 +95,7 @@ if not exist "%RUNTIME_CORE_PUBLISH_DLL%" (
     exit /b 1
 )
 
-echo [8/13] Publishing RuAgentBroker (self-contained, win-x64)...
+echo [8/12] Publishing RuAgentBroker (self-contained, win-x64)...
 call dotnet publish "%BROKER_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -120,7 +108,7 @@ if not exist "%BROKER_PUBLISH_DIR%\RuAgent.Broker.exe" (
     exit /b 1
 )
 
-echo [9/13] Publishing ASP.NET Core backend (self-contained, win-x64)...
+echo [9/12] Publishing ASP.NET Core backend (self-contained, win-x64)...
 call dotnet publish "%BACKEND_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -133,7 +121,7 @@ if not exist "%BACKEND_PUBLISH_DIR%\RuBackend.exe" (
     exit /b 1
 )
 
-echo [10/13] Publishing Release GUI (self-contained, win-x64)...
+echo [10/12] Publishing Release GUI (self-contained, win-x64)...
 if exist "%PUBLISH_DIR%" (
     echo Removing stale GUI publish output...
     rmdir /s /q "%PUBLISH_DIR%"
@@ -168,7 +156,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [11/13] Copying compiled XAML (.xbf) files...
+echo [11/12] Copying compiled XAML (.xbf) files...
 if not exist "%PUBLISH_DIR%\Views" mkdir "%PUBLISH_DIR%\Views"
 if not exist "%OBJ_DIR%\App.xbf" (
     echo BUILD FAILED: Compiled XAML App.xbf was not created.
@@ -208,28 +196,7 @@ echo Published !RU_XBF_COUNT! view XAML files.
 
 call dotnet build-server shutdown >nul 2>&1
 
-echo [12/13] Native desktop overlay plugin (optional)...
-if not "%WITH_OVERLAY%"=="1" goto :overlay_skipped
-call powershell -ExecutionPolicy Bypass -File "%~dp0scripts\build_ru_desktop_overlay.ps1"
-if errorlevel 1 (
-    echo.
-    echo NATIVE OVERLAY PLUGIN BUILD FAILED!
-    exit /b 1
-)
-if not exist "%~dp0tools\ru_desktop_overlay\out\build\Release\RuDesktopOverlay.exe" (
-    echo.
-    echo NATIVE OVERLAY PLUGIN BUILD FAILED: RuDesktopOverlay.exe was not created.
-    exit /b 1
-)
-echo Native overlay plugin built.
-goto :overlay_done
-:overlay_skipped
-echo   SKIPPED: native desktop overlay is an optional plugin.
-echo   Enable it with:  build.bat -WithOverlay   (needs Visual Studio C++ + vcpkg)
-:overlay_done
-
-call dotnet build-server shutdown >nul 2>&1
-echo [13/13] Build complete!
+echo [12/12] Build complete!
 echo.
 echo ============================================
 echo  Harness.Core:       %HARNESS_CORE_PROJECT%
@@ -243,11 +210,6 @@ echo  Broker:             %BROKER_PUBLISH_DIR%\RuAgent.Broker.exe
 echo  Backend:            %BACKEND_PUBLISH_DIR%\RuBackend.exe
 echo  Output:             %PUBLISH_DIR%\RuApp.exe
 for %%I in ("%PUBLISH_DIR%\RuApp.exe") do echo  Published:          %%~tI
-if "%WITH_OVERLAY%"=="1" (
-    echo  Overlay plugin:      built
-) else (
-    echo  Overlay plugin:      skipped ^(optional; build.bat -WithOverlay^)
-)
 echo  Launch:             start_dev.bat
 echo ============================================
 echo.

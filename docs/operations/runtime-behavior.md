@@ -243,14 +243,6 @@ speaking state, and acknowledgement share the normal voice path. Missing
 credentials, stale events, or a busy Agent run must report a skip/error and must
 not pretend that capture, reaction, or audio playback occurred.
 
-`RuDesktopOverlay` is an optional plugin — a separate Spout2 receiver. It does not own
-RuApp, VTube Studio, the model, VTS actions, or voice, and the coding core never
-references it. `build.bat` skips it by default and only builds it with
-`-WithOverlay`/`RU_WITH_OVERLAY=1`, so a missing plugin toolchain cannot fail the
-coding build. Building the receiver may
-use a local vcpkg cache; the cache is build infrastructure, not application
-data or a distributable artifact.
-
 ## WinUI responsive shell
 
 The WinUI shell has three presentation tiers based on client width: Wide at

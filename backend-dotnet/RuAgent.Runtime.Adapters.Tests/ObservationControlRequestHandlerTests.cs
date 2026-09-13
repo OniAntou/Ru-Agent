@@ -12,7 +12,7 @@ public sealed class ObservationControlRequestHandlerTests
     [Fact]
     public async Task Status_is_explicitly_disabled_until_a_managed_capture_loop_exists()
     {
-        var handler = Handler("Ollama");
+        var handler = Handler("Custom OpenAI");
 
         var response = await InvokeAsync(handler, "GET", "/observation/status", null);
         var body = Body(response);

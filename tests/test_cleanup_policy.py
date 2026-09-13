@@ -102,7 +102,6 @@ def test_retired_local_model_paths_are_classified_as_legacy(relative: str) -> No
         "gui-winui3/bin",
         "backend-dotnet/RuBackend/obj",
         "gui-winui3/pri_staging",
-        "tools/ru_desktop_overlay/out",
         "tests/__pycache__",
         "rustup-init.exe",
         "resources.pri.xml",

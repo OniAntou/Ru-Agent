@@ -104,7 +104,7 @@ public sealed class RuntimeSettingsLoaderTests
                 {
                     ["status"] = "success",
                     ["message"] = "Runtime loaded.",
-                    ["backend"] = "Ollama",
+                    ["backend"] = "Custom OpenAI",
                 }));
         });
         var loader = new LoopbackRuntimeSettingsLoader(new DeviceWorkerClientOptions(
@@ -112,10 +112,7 @@ public sealed class RuntimeSettingsLoaderTests
             "worker-secret"));
         var candidate = Snapshot(new JsonObject()) with
         {
-            Backend = "Ollama",
-            OllamaModel = "qwen3:8b",
-            OllamaUrl = "http://127.0.0.1:11434/v1",
-            LmStudioModel = "local-model",
+            Backend = "Custom OpenAI",
             CustomModel = "my-model",
             CustomUrl = "http://localhost:9000/v1",
         };
@@ -123,12 +120,11 @@ public sealed class RuntimeSettingsLoaderTests
         var message = await loader.LoadAsync(candidate, CancellationToken.None);
 
         Assert.Equal("Runtime loaded.", message);
-        Assert.Equal("Ollama", observed!.Payload["backend"]!.GetValue<string>());
-        Assert.Equal("qwen3:8b", observed.Payload["ollama_model"]!.GetValue<string>());
-        Assert.Equal("http://127.0.0.1:11434/v1", observed.Payload["ollama_url"]!.GetValue<string>());
-        Assert.Equal("local-model", observed.Payload["lmstudio_model"]!.GetValue<string>());
+        Assert.Equal("Custom OpenAI", observed!.Payload["backend"]!.GetValue<string>());
         Assert.Equal("my-model", observed.Payload["custom_model"]!.GetValue<string>());
         Assert.Equal("http://localhost:9000/v1", observed.Payload["custom_url"]!.GetValue<string>());
+        Assert.False(observed.Payload.ContainsKey("ollama_model"));
+        Assert.False(observed.Payload.ContainsKey("lmstudio_model"));
     }
 
     private static SettingsSnapshot Snapshot(JsonObject raw) => new(
@@ -151,11 +147,7 @@ public sealed class RuntimeSettingsLoaderTests
         "auto",
         -1,
         -1,
-        "qwen2.5:latest",
         "default",
-        "default",
-        "http://localhost:11434/v1",
-        "http://localhost:1234/v1",
         "http://localhost:8000/v1",
         string.Empty,
         string.Empty);

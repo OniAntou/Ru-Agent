@@ -49,7 +49,7 @@ public sealed class ManagedWorkerCompositionTests
                 8006,
                 "agent-token",
                 "device-token",
-                new ProviderBootstrapData("Ollama", "chat_completions", new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                new ProviderBootstrapData("Custom OpenAI", "chat_completions", new Uri("http://127.0.0.1:9000/v1/chat/completions"),
                     "managed-agent",
                     string.Empty),
                 Directory.GetCurrentDirectory()),
@@ -72,7 +72,7 @@ public sealed class ManagedWorkerCompositionTests
         Assert.Equal(200, reply.Payload["status_code"]!.GetValue<int>());
         var body = JsonNode.Parse(reply.Payload["body"]!.GetValue<string>())!.AsObject();
         Assert.Equal("ok", body["status"]!.GetValue<string>());
-        Assert.Equal("Ollama", body["backend"]!.GetValue<string>());
+        Assert.Equal("Custom OpenAI", body["backend"]!.GetValue<string>());
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class ManagedWorkerCompositionTests
                 8006,
                 "agent-token",
                 "device-token",
-                new ProviderBootstrapData("Ollama", "chat_completions", new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                new ProviderBootstrapData("Custom OpenAI", "chat_completions", new Uri("http://127.0.0.1:9000/v1/chat/completions"),
                     "managed-agent",
                     string.Empty),
                 Directory.GetCurrentDirectory()),
@@ -132,7 +132,7 @@ public sealed class ManagedWorkerCompositionTests
                 8006,
                 "agent-token",
                 "device-token",
-                new ProviderBootstrapData("Ollama", "chat_completions", new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                new ProviderBootstrapData("Custom OpenAI", "chat_completions", new Uri("http://127.0.0.1:9000/v1/chat/completions"),
                     "managed-agent",
                     string.Empty),
                 Directory.GetCurrentDirectory()),
@@ -350,7 +350,7 @@ public sealed class ManagedWorkerCompositionTests
                     8006,
                     "agent-token",
                     "device-token",
-                    new ProviderBootstrapData("Ollama", "chat_completions", new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                    new ProviderBootstrapData("Custom OpenAI", "chat_completions", new Uri("http://127.0.0.1:9000/v1/chat/completions"),
                         "managed-agent",
                         string.Empty),
                     root),

@@ -15,8 +15,6 @@ public sealed class SettingsStore : ISettingsStore
     private const long MaximumSettingsFileBytes = 1 * 1024 * 1024;
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
-    private const string BackendOllama = "Ollama";
-    private const string BackendLmStudio = "LM Studio";
     private const string BackendCustom = "Custom OpenAI";
     private const string OriginalVoiceStyle = "original";
 
@@ -44,6 +42,10 @@ public sealed class SettingsStore : ISettingsStore
         "top_k",
         "allow_web_search",
         "allow_online_search",
+        "ollama_model",
+        "ollama_url",
+        "lmstudio_model",
+        "lmstudio_url",
     ];
 
     private readonly string _settingsFile;
@@ -111,11 +113,7 @@ public sealed class SettingsStore : ISettingsStore
             persisted["subtitle_pos_mode"] = candidate.SubtitlePosMode;
             persisted["subtitle_pos_x"] = candidate.SubtitlePosX;
             persisted["subtitle_pos_y"] = candidate.SubtitlePosY;
-            persisted["ollama_model"] = candidate.OllamaModel;
-            persisted["lmstudio_model"] = candidate.LmStudioModel;
             persisted["custom_model"] = candidate.CustomModel;
-            persisted["ollama_url"] = candidate.OllamaUrl;
-            persisted["lmstudio_url"] = candidate.LmStudioUrl;
             persisted["custom_url"] = candidate.CustomUrl;
             persisted["openai_model"] = candidate.OpenAiModel;
             persisted["anthropic_model"] = candidate.AnthropicModel;
@@ -210,11 +208,7 @@ public sealed class SettingsStore : ISettingsStore
             ReadString(raw, "subtitle_pos_mode", "auto"),
             ReadBoundedInt(raw, "subtitle_pos_x", -1, -1, 10000),
             ReadBoundedInt(raw, "subtitle_pos_y", -1, -1, 10000),
-            ReadString(raw, "ollama_model", "qwen2.5:latest"),
-            ReadString(raw, "lmstudio_model", "default"),
             ReadString(raw, "custom_model", "default"),
-            ReadString(raw, "ollama_url", "http://localhost:11434/v1"),
-            ReadString(raw, "lmstudio_url", "http://localhost:1234/v1"),
             ReadString(raw, "custom_url", "http://localhost:8000/v1"),
             ReadString(raw, "openai_model", string.Empty),
             ReadString(raw, "anthropic_model", string.Empty));
@@ -266,8 +260,6 @@ public sealed class SettingsStore : ISettingsStore
             "gguf" or "llama.cpp" => BackendOpenCode,
             "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
             "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => BackendKilo,
-            "ollama" or "ollama api" => BackendOllama,
-            "lmstudio" or "lm studio" or "lm studio api" => BackendLmStudio,
             "custom" or "custom openai" or "custom openai api" => BackendCustom,
             "openai" or "openai api" => "OpenAI",
             "anthropic" or "anthropic claude" or "claude" => "Anthropic",
@@ -373,11 +365,7 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.Model, 256, nameof(candidate.Model));
         ValidateLength(candidate.OpenCodeModel, 256, nameof(candidate.OpenCodeModel));
         ValidateLength(candidate.KiloModel, 256, nameof(candidate.KiloModel));
-        ValidateLength(candidate.OllamaModel, 256, nameof(candidate.OllamaModel));
-        ValidateLength(candidate.LmStudioModel, 256, nameof(candidate.LmStudioModel));
         ValidateLength(candidate.CustomModel, 256, nameof(candidate.CustomModel));
-        ValidateLength(candidate.OllamaUrl, 1024, nameof(candidate.OllamaUrl));
-        ValidateLength(candidate.LmStudioUrl, 1024, nameof(candidate.LmStudioUrl));
         ValidateLength(candidate.CustomUrl, 1024, nameof(candidate.CustomUrl));
         ValidateLength(candidate.OpenAiModel, 256, nameof(candidate.OpenAiModel));
         ValidateLength(candidate.AnthropicModel, 256, nameof(candidate.AnthropicModel));

@@ -304,9 +304,9 @@ public sealed class ProviderModelPickerProjectionTests
     [Fact]
     public void Provider_group_definitions_are_presentation_only()
     {
-        Assert.Equal(7, ProviderGroupDefinitions.All.Count);
+        Assert.Equal(5, ProviderGroupDefinitions.All.Count);
         Assert.Equal(
-            new[] { 0, 1, 2, 3, 4, 5, 6 },
+            new[] { 0, 1, 2, 3, 4 },
             ProviderGroupDefinitions.All.Select(definition => definition.Order));
         Assert.Equal("kilo", ProviderGroupDefinitions.ByAlias["kilo"].Alias);
         Assert.Equal("Kilo Gateway", ProviderGroupDefinitions.ByBackend["Kilo Gateway"].Backend);

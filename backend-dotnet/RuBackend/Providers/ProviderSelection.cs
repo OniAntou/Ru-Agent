@@ -25,7 +25,7 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     /// Cloud providers that require a signed-in credential. A missing credential makes
     /// their catalog fail closed, so no picker offers a model that cannot run. Custom
     /// OpenAI stays exempt because a keyless local endpoint is a supported
-    /// configuration, and Ollama/LM Studio have no credential account.
+    /// configuration.
     /// </summary>
     public bool RequiresCredential => Alias is "opencode" or "kilo" or "openai" or "anthropic";
 
@@ -39,8 +39,6 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
         "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "OpenCode Zen",
         "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "Kilo Gateway",
         "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
-        "ollama" or "ollama api" => "Ollama",
-        "lmstudio" or "lm studio" or "lm studio api" => "LM Studio",
         "openai" or "openai api" => "OpenAI",
         "anthropic" or "anthropic claude" or "claude" => "Anthropic",
         _ => throw new UnknownProviderAliasException(),
@@ -53,8 +51,6 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
             "OpenCode Zen" => ("opencode", "chat_completions", "https://opencode.ai/zen/v1", settings.OpenCodeModel, "api_key"),
             "Kilo Gateway" => ("kilo", "chat_completions", "https://api.kilo.ai/api/gateway", settings.KiloModel, "kilo_gateway_api_key"),
             "Custom OpenAI" => ("custom", "chat_completions", settings.CustomUrl, settings.CustomModel, "custom_api_key"),
-            "Ollama" => ("ollama", "chat_completions", settings.OllamaUrl, settings.OllamaModel, (string?)null),
-            "LM Studio" => ("lmstudio", "chat_completions", settings.LmStudioUrl, settings.LmStudioModel, (string?)null),
             "OpenAI" => ("openai", "openai_responses", "https://api.openai.com/v1", settings.OpenAiModel, "openai_api_key"),
             "Anthropic" => ("anthropic", "anthropic_messages", "https://api.anthropic.com/v1", settings.AnthropicModel, "anthropic_api_key"),
             _ => throw new ArgumentException("Unsupported model provider."),

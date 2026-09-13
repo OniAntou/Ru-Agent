@@ -138,7 +138,7 @@ public sealed class AgentSlashCommandSurfaceTests
     public async Task Model_WithASingleCandidate_SkipsThePicker()
     {
         var output = new StringWriter();
-        var commands = Create(output, _ => Json("{\"status\":\"ok\",\"backend\":\"Ollama\",\"ollama_model\":\"llama3\"}"));
+        var commands = Create(output, _ => Json("{\"status\":\"ok\",\"backend\":\"Kilo Gateway\",\"kilo_model\":\"gpt-5-codex\"}"));
         var pickerCalls = 0;
         commands.Picker = (_, _) =>
         {
@@ -149,7 +149,7 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
         Assert.Equal(0, pickerCalls);
-        Assert.Contains("llama3", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("gpt-5-codex", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public sealed class AgentSlashCommandSurfaceTests
 
         var text = output.ToString();
         Assert.Contains("╭─ backend", text, StringComparison.Ordinal);
-        foreach (var name in new[] { "Kilo Gateway", "OpenCode Zen", "Ollama", "LM Studio", "OpenAI", "Anthropic" })
+        foreach (var name in new[] { "Kilo Gateway", "OpenCode Zen", "OpenAI", "Anthropic" })
         {
             Assert.Contains(name, text, StringComparison.Ordinal);
         }

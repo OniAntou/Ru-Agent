@@ -12,19 +12,17 @@ The coding core is the product: Public Host, Broker execution authority, the
 managed Agent v2 Worker, the durable Agent SSE stream, and the `RuApp`/`RuAgent.Cli`
 clients. The coding core never depends on a media surface.
 
-Voice/STT, VTube Studio, and the native desktop overlay are **optional plugins**.
-A host without their toolchains is fully functional for coding:
+Voice/STT and VTube Studio are **optional plugins**. A host without their
+toolchains is fully functional for coding:
 
 | Plugin | Boundary | Enable |
 | --- | --- | --- |
 | Voice / STT | Python optional extra `[voice]` in `pyproject.toml`; `/voice/stream`, `/voice/*`, `/stt/*` map only when `RU_MEDIA_SURFACES` is unset or `1` | install the extra, keep `RU_MEDIA_SURFACES` enabled |
 | VTube Studio | private Worker v1 `vts.catalog` plus public `/vts/*`, mapped only when `RU_MEDIA_SURFACES` is unset or `1` | enable `RU_MEDIA_SURFACES` |
-| Native desktop overlay | separate CMake/Spout2 project at `tools/ru_desktop_overlay`, never referenced by the GUI build | `build.bat -WithOverlay` (or `RU_WITH_OVERLAY=1`) |
 
 With `RU_MEDIA_SURFACES=0` a headless coding host serves the route contract
-minus the media routes. `build.bat` skips the overlay plugin by default and
-reports `Overlay plugin: skipped`; the matching CI job is `continue-on-error`.
-Missing or broken plugin toolchains must never fail the coding build.
+minus the media routes. `build.bat` builds only the coding core and has no
+plugin stage; missing or broken plugin toolchains must never fail that build.
 
 ## Process topology
 
@@ -54,8 +52,7 @@ OpenCode Zen uses `api_key`, Kilo uses `kilo_gateway_api_key`, Custom OpenAI
 uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic uses
 `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
 and `https://api.anthropic.com/v1`. Missing keys stay missing; aliases and other
-providers' keys are never tried. Ollama/LM Studio do not read cloud credentials.
-The Worker startup handoff is neutral and reads no credential; provider data
+providers' keys are never tried. The Worker startup handoff is neutral and reads no credential; provider data
 enters only through validated per-step DPAPI handoffs that pin protocol
 (`chat_completions`, `openai_responses`, `anthropic_messages`), reasoning
 options, and for Anthropic the bounded `max_tokens` (min documented max,

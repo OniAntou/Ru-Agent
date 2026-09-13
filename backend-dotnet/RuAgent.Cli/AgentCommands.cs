@@ -944,8 +944,6 @@ public sealed class AgentCommands
             {
                 "Kilo Gateway" => settings.TryGetProperty("kilo_model", out var km) ? km.GetString() ?? "" : "",
                 "OpenCode Zen" => settings.TryGetProperty("opencode_model", out var om) ? om.GetString() ?? "" : "",
-                "Ollama" => settings.TryGetProperty("ollama_model", out var olm) ? olm.GetString() ?? "" : "",
-                "LM Studio" => settings.TryGetProperty("lmstudio_model", out var lmm) ? lmm.GetString() ?? "" : "",
                 "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
                 "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
                 _ => settings.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
@@ -1313,8 +1311,6 @@ public sealed class AgentCommands
                 {
                     "Kilo Gateway" => s.TryGetProperty("kilo_model", out var km) ? km.GetString() ?? "" : "",
                     "OpenCode Zen" => s.TryGetProperty("opencode_model", out var om) ? om.GetString() ?? "" : "",
-                    "Ollama" => s.TryGetProperty("ollama_model", out var olm) ? olm.GetString() ?? "" : "",
-                    "LM Studio" => s.TryGetProperty("lmstudio_model", out var lmm) ? lmm.GetString() ?? "" : "",
                     "OpenAI" => s.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
                     "Anthropic" => s.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
                     _ => s.TryGetProperty("model", out var mProp) ? mProp.GetString() ?? "" : "",

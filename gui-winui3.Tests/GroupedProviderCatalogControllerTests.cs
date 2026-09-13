@@ -158,7 +158,7 @@ public sealed class GroupedProviderCatalogControllerTests
         controlled.CompleteAll(alias => Snapshot(alias, "fresh-model"));
         Assert.True(await second);
         Assert.Equal("fresh-model", controller.State.Catalogs["kilo"].Models.Single());
-        Assert.Equal(7, successfulEvents);
+        Assert.Equal(5, successfulEvents);
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class GroupedProviderCatalogControllerTests
 
         controller.SetPollingActive(true);
         var refresh = controller.RefreshIfDueAsync();
-        await WaitForAsync(() => controlled.StartedAliases().Count == 7, "all children to poll");
+        await WaitForAsync(() => controlled.StartedAliases().Count == 5, "all children to poll");
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
 
@@ -182,7 +182,7 @@ public sealed class GroupedProviderCatalogControllerTests
         controller.SetPollingActive(false);
         clock.Advance(TimeSpan.FromMinutes(6));
         Assert.False(await controller.RefreshIfDueAsync());
-        Assert.True(controlled.StartedAliases().Count == 7);
+        Assert.True(controlled.StartedAliases().Count == 5);
     }
 
     [Fact]

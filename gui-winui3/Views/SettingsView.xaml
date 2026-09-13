@@ -286,8 +286,6 @@
                                             <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
                                             <ComboBoxItem Content="OpenAI (Official API)" Tag="openai"/>
                                             <ComboBoxItem Content="Anthropic Claude (Official API)" Tag="anthropic"/>
-                                            <ComboBoxItem Content="Ollama (Local: localhost:11434)" Tag="ollama"/>
-                                            <ComboBoxItem Content="LM Studio (Local: localhost:1234)" Tag="lmstudio"/>
                                             <ComboBoxItem Content="Custom OpenAI Server" Tag="custom"/>
                                         </ComboBox>
                                     </Grid>
@@ -464,7 +462,7 @@
                                                        FontFamily="{StaticResource RuUiFontFamily}"
                                                        Foreground="{StaticResource RuInkBrush}"/>
                                         </StackPanel>
-                                        <TextBlock Text="• For local Ollama / LM Studio servers, select q4_k_m or q5_k_m models for fastest response times."
+                                        <TextBlock Text="• For a local OpenAI-compatible server, keep the endpoint on 127.0.0.1 and pick the model name exactly as the server reports it."
                                                    Style="{StaticResource SettingDescStyle}"/>
                                     </StackPanel>
                                 </Border>

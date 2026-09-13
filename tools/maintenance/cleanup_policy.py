@@ -53,7 +53,6 @@ _REBUILDABLE_ROOTS = (
     "resources.pri.xml",
     "rustup-init.exe",
     "gui-winui3/pri_staging",
-    "tools/ru_desktop_overlay/out",
 )
 
 _LEGACY_ROOTS = (

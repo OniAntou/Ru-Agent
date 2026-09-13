@@ -28,22 +28,8 @@ namespace RuApp.Models
         [JsonPropertyName("kilo_model")]
         public string KiloModel { get; set; } = string.Empty;
 
-        [JsonPropertyName("ollama_model")]
-        public string OllamaModel { get; set; } = string.Empty;
-
-        [JsonPropertyName("lmstudio_model")]
-        public string LmStudioModel { get; set; } = string.Empty;
-
         [JsonPropertyName("custom_model")]
         public string CustomModel { get; set; } = string.Empty;
-
-        [JsonPropertyName("ollama_url")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? OllamaUrl { get; set; }
-
-        [JsonPropertyName("lmstudio_url")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? LmStudioUrl { get; set; }
 
         [JsonPropertyName("custom_url")]
         public string CustomUrl { get; set; } = "http://localhost:8000/v1";
@@ -132,8 +118,6 @@ namespace RuApp.Models
             "kilo" => settings.KiloModel ?? string.Empty,
             "openai" => settings.OpenAiModel ?? string.Empty,
             "anthropic" => settings.AnthropicModel ?? string.Empty,
-            "ollama" => settings.OllamaModel ?? string.Empty,
-            "lmstudio" => settings.LmStudioModel ?? string.Empty,
             "custom" => settings.CustomModel ?? string.Empty,
             _ => string.Empty,
         };

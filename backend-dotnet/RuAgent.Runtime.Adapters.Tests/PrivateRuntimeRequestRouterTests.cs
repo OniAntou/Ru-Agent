@@ -8,7 +8,7 @@ public sealed class PrivateRuntimeRequestRouterTests
 {
     [Theory]
     [InlineData("GET", "/status")]
-    [InlineData("GET", "/models?backend=Ollama")]
+    [InlineData("GET", "/models?backend=custom")]
     [InlineData("POST", "/voice/tts")]
     public async Task Allowlisted_routes_are_forwarded(string method, string path)
     {

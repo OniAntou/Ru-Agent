@@ -42,7 +42,6 @@ data/memory.db-shm
 src/ru_runtime/models/*
 !src/ru_runtime/models/__init__.py
 eval_results/
-tools/ru_desktop_overlay/out/
 VBCABLE_Setup/
 logs/
 vts_token.txt

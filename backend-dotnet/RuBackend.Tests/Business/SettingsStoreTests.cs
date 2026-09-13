@@ -156,27 +156,36 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public async Task Read_ollama_settings_populates_the_new_snapshot_fields()
+    public async Task Read_retired_local_provider_fields_are_scrubbed_from_the_snapshot()
     {
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
         await File.WriteAllTextAsync(paths.SettingsFile, """
             {
-              "backend": "ollama",
+              "backend": "custom",
               "ollama_model": "qwen3:8b",
               "ollama_url": "http://127.0.0.1:11434/v1",
               "lmstudio_model": "local-model",
+              "lmstudio_url": "http://127.0.0.1:1234/v1",
               "custom_url": "http://10.0.0.5:8000/v1"
             }
             """);
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("Ollama", snapshot.Backend);
-        Assert.Equal("qwen3:8b", snapshot.OllamaModel);
-        Assert.Equal("http://127.0.0.1:11434/v1", snapshot.OllamaUrl);
-        Assert.Equal("local-model", snapshot.LmStudioModel);
+        Assert.Equal("Custom OpenAI", snapshot.Backend);
         Assert.Equal("http://10.0.0.5:8000/v1", snapshot.CustomUrl);
+        Assert.Null(snapshot.Raw["ollama_model"]);
+        Assert.Null(snapshot.Raw["ollama_url"]);
+        Assert.Null(snapshot.Raw["lmstudio_model"]);
+        Assert.Null(snapshot.Raw["lmstudio_url"]);
+
+        await store.SaveAsync(snapshot, CancellationToken.None);
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        Assert.Null(persisted["ollama_model"]);
+        Assert.Null(persisted["ollama_url"]);
+        Assert.Null(persisted["lmstudio_model"]);
+        Assert.Null(persisted["lmstudio_url"]);
     }
 
     [Fact]
@@ -200,7 +209,6 @@ public sealed class SettingsStoreTests
                 Backend = "Custom OpenAI",
                 CustomModel = "my-model",
                 CustomUrl = "http://localhost:9000/v1",
-                OllamaUrl = "http://localhost:11434/v1",
             },
             CancellationToken.None);
 

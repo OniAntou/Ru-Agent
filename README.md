@@ -204,7 +204,7 @@ Script `scripts/test_dotnet.ps1` tự phát hiện **13 test projects** (`*Tests
 ├── gui-winui3.Harness/          # Harness composition cho GUI acceptance
 ├── src/ru_runtime/              # Python provider/tooling còn giữ (voice, speech)
 ├── tests/                       # Python pytest suites (tooling, boundary, docs)
-├── tools/                       # maintenance + ru_desktop_overlay
+├── tools/                       # maintenance scripts
 ├── skills/                      # Markdown skill packages (prompt guidance)
 ├── docs/                        # Tài liệu kiến trúc chuyên sâu
 │   ├── architecture.md          # Đặc tả kiến trúc tổng quan

@@ -14,9 +14,7 @@ public static class ProviderGroupDefinitions
         new("Kilo Gateway", "kilo", "Kilo", 1),
         new("OpenAI", "openai", "OpenAI", 2),
         new("Anthropic", "anthropic", "Anthropic", 3),
-        new("Ollama", "ollama", "Ollama", 4),
-        new("LM Studio", "lmstudio", "LM Studio", 5),
-        new("Custom OpenAI", "custom", "Custom", 6),
+        new("Custom OpenAI", "custom", "Custom", 4),
     ];
 
     public static IReadOnlyDictionary<string, ProviderGroupDefinition> ByAlias { get; } =

@@ -11,9 +11,9 @@ public sealed class ManagedRuntimeStatusRequestHandlerTests
     public async Task Status_and_models_report_the_active_typed_settings()
     {
         var settings = new ManagedRuntimeSettingsService(new RuntimeSettingsSnapshot(
-            "Ollama",
-            "qwen3:8b",
-            new Uri("http://127.0.0.1:11434/v1"),
+            "Custom OpenAI",
+            "local-model",
+            new Uri("http://127.0.0.1:9000/v1"),
             "Default",
             false));
         var handler = new ManagedRuntimeStatusRequestHandler(settings);
@@ -21,18 +21,18 @@ public sealed class ManagedRuntimeStatusRequestHandlerTests
         var status = await InvokeAsync(handler, "GET", "/status", null);
         Assert.Equal(200, status.StatusCode);
         Assert.Equal("ok", Body(status)["status"]!.GetValue<string>());
-        Assert.Equal("Ollama", Body(status)["backend"]!.GetValue<string>());
+        Assert.Equal("Custom OpenAI", Body(status)["backend"]!.GetValue<string>());
 
-        var models = await InvokeAsync(handler, "GET", "/models?backend=Ollama", null);
+        var models = await InvokeAsync(handler, "GET", "/models?backend=custom", null);
         Assert.Equal(200, models.StatusCode);
-        Assert.Equal(["qwen3:8b"], Body(models)["models"]!.AsArray().Select(node => node!.GetValue<string>()));
+        Assert.Equal(["local-model"], Body(models)["models"]!.AsArray().Select(node => node!.GetValue<string>()));
     }
 
     [Fact]
     public async Task Models_for_another_backend_return_a_bounded_error_without_network()
     {
         var settings = new ManagedRuntimeSettingsService(new RuntimeSettingsSnapshot(
-            "Ollama", "qwen3:8b", null, "Default", false));
+            "Custom OpenAI", "local-model", null, "Default", false));
         var handler = new ManagedRuntimeStatusRequestHandler(settings);
 
         var response = await InvokeAsync(handler, "GET", "/models?backend=OpenCode%20Zen", null);
@@ -43,9 +43,6 @@ public sealed class ManagedRuntimeStatusRequestHandlerTests
     }
 
     [Theory]
-    [InlineData("ollama")]
-    [InlineData("lmstudio")]
-    [InlineData("lm studio")]
     [InlineData("custom")]
     [InlineData("opencode")]
     [InlineData("kilo")]
@@ -53,8 +50,6 @@ public sealed class ManagedRuntimeStatusRequestHandlerTests
     {
         var expectedBackend = alias switch
         {
-            "ollama" => "Ollama",
-            "lmstudio" or "lm studio" => "LM Studio",
             "custom" => "Custom OpenAI",
             "opencode" => "OpenCode Zen",
             "kilo" => "Kilo Gateway",
@@ -75,7 +70,7 @@ public sealed class ManagedRuntimeStatusRequestHandlerTests
     public async Task Models_reject_an_unsupported_backend_with_a_stable_message()
     {
         var settings = new ManagedRuntimeSettingsService(new RuntimeSettingsSnapshot(
-            "Ollama", "active-model", null, "Default", false));
+            "Custom OpenAI", "active-model", null, "Default", false));
         var handler = new ManagedRuntimeStatusRequestHandler(settings);
 
         var response = await InvokeAsync(handler, "GET", "/models?backend=unsupported", null);

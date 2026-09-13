@@ -426,11 +426,7 @@ public static class BusinessEndpoints
         result["model"] = value.Model;
         result["opencode_model"] = value.OpenCodeModel;
         result["kilo_model"] = value.KiloModel;
-        result["ollama_model"] = value.OllamaModel;
-        result["lmstudio_model"] = value.LmStudioModel;
         result["custom_model"] = value.CustomModel;
-        result["ollama_url"] = value.OllamaUrl;
-        result["lmstudio_url"] = value.LmStudioUrl;
         result["custom_url"] = value.CustomUrl;
         result["openai_model"] = value.OpenAiModel;
         result["anthropic_model"] = value.AnthropicModel;
@@ -490,8 +486,6 @@ public static class BusinessEndpoints
     {
         "OpenCode Zen" => "opencode",
         "Kilo Gateway" => "kilo",
-        "Ollama" => "ollama",
-        "LM Studio" => "lmstudio",
         "Custom OpenAI" => "custom",
         "OpenAI" => "openai",
         "Anthropic" => "anthropic",

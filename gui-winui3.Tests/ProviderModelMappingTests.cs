@@ -11,8 +11,6 @@ public sealed class ProviderModelMappingTests
         KiloModel = "kilo-model",
         OpenAiModel = "openai-model",
         AnthropicModel = "anthropic-model",
-        OllamaModel = "ollama-model",
-        LmStudioModel = "lmstudio-model",
         CustomModel = "custom-model",
     };
 
@@ -21,8 +19,6 @@ public sealed class ProviderModelMappingTests
     [InlineData("kilo", "kilo-model")]
     [InlineData("openai", "openai-model")]
     [InlineData("anthropic", "anthropic-model")]
-    [InlineData("ollama", "ollama-model")]
-    [InlineData("lmstudio", "lmstudio-model")]
     [InlineData("custom", "custom-model")]
     public void GetSelectedModel_ReturnsModelForBackend(string backend, string expected)
     {

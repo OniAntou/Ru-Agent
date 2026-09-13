@@ -445,15 +445,11 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         {
             "OpenCode Zen" => "opencode_model",
             "Kilo Gateway" => "kilo_model",
-            "Ollama" => "ollama_model",
-            "LM Studio" => "lmstudio_model",
             "Custom OpenAI" => "custom_model",
             _ => throw new ArgumentException("Unsupported runtime backend.", nameof(payload)),
         };
         var urlKey = backend switch
         {
-            "Ollama" => "ollama_url",
-            "LM Studio" => "lmstudio_url",
             "Custom OpenAI" => "custom_url",
             _ => null,
         };

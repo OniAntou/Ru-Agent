@@ -101,7 +101,6 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
         parents=True
     )
     (tmp_path / "gui-winui3" / "pri_staging").mkdir(parents=True)
-    (tmp_path / "tools" / "ru_desktop_overlay" / "out").mkdir(parents=True)
     (tmp_path / "logs").mkdir()
     (tmp_path / ".tmp").mkdir()
     (tmp_path / ".tmp" / "lfm-smoke.err.log").write_text("private", encoding="utf-8")
@@ -119,7 +118,6 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     assert "backend-dotnet/RuBackend/bin" in candidates
     assert "backend-dotnet/RuBackend/bin/nested" not in candidates
     assert "gui-winui3/pri_staging" in candidates
-    assert "tools/ru_desktop_overlay/out" in candidates
     assert "logs" in candidates
     assert ".tmp/lfm-smoke.err.log" in candidates
     assert "checkpoints/ru-hard-evaluation-v1" in candidates

@@ -166,11 +166,7 @@ public sealed class RuPromptContextProviderTests
         SubtitlePosMode: "auto",
         SubtitlePosX: -1,
         SubtitlePosY: -1,
-        OllamaModel: "qwen",
-        LmStudioModel: "default",
         CustomModel: "default",
-        OllamaUrl: "http://localhost:11434/v1",
-        LmStudioUrl: "http://localhost:1234/v1",
         CustomUrl: "http://localhost:8000/v1",
         OpenAiModel: string.Empty,
         AnthropicModel: string.Empty);

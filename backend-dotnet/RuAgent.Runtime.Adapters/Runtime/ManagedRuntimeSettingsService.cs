@@ -81,8 +81,6 @@ public sealed class ManagedRuntimeSettingsService
         [
             "OpenCode Zen",
             "Kilo Gateway",
-            "Ollama",
-            "LM Studio",
             "Custom OpenAI",
         ],
         StringComparer.Ordinal);

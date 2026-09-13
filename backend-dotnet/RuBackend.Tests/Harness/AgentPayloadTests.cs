@@ -77,11 +77,7 @@ public sealed class AgentPayloadTests
         SubtitlePosMode: "auto",
         SubtitlePosX: -1,
         SubtitlePosY: -1,
-        OllamaModel: string.Empty,
-        LmStudioModel: string.Empty,
         CustomModel: string.Empty,
-        OllamaUrl: "http://localhost:11434/v1",
-        LmStudioUrl: "http://localhost:1234/v1",
         CustomUrl: "http://localhost:8000/v1",
         OpenAiModel: backend == "OpenAI" ? model : string.Empty,
         AnthropicModel: backend == "Anthropic" ? model : string.Empty);

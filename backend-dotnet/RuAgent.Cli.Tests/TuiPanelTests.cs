@@ -184,7 +184,7 @@ public sealed class TuiSurfacesPickerTests
 
         Assert.Equal("opencode", items[0].Value);
         Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
-        Assert.Equal(6, items.Count);
+        Assert.Equal(4, items.Count);
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public sealed class TuiSurfacesPickerTests
         var items = TuiSurfaces.ModelChoices("Kilo Gateway", [
             ("Kilo Gateway", "kilocode/gpt-5-codex"),
             ("OpenCode Zen", "  "),
-            ("Ollama", "kilocode/gpt-5-codex"),
+            ("Custom OpenAI", "kilocode/gpt-5-codex"),
             ("Anthropic", "claude-sonnet-4-5"),
         ]);
 
@@ -215,7 +215,7 @@ public sealed class TuiSurfacesPickerTests
     [Fact]
     public void ModelChoices_WithNothingConfigured_IsEmpty()
     {
-        var items = TuiSurfaces.ModelChoices("Kilo Gateway", [("Kilo Gateway", null), ("Ollama", "")]);
+        var items = TuiSurfaces.ModelChoices("Kilo Gateway", [("Kilo Gateway", null), ("Custom OpenAI", "")]);
 
         Assert.Empty(items);
     }
@@ -233,7 +233,7 @@ public sealed class TuiSurfacesPickerTests
         Assert.Contains("current", openCode.Detail, StringComparison.Ordinal);
         Assert.Contains("no key", openCode.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "kilo").Detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "ollama").Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "openai").Detail, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -24,7 +24,7 @@ def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
 
 def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    dotnet_job = workflow.split("  dotnet:\n", maxsplit=1)[1].split("  native-overlay:\n", maxsplit=1)[0]
+    dotnet_job = workflow.split("  dotnet:\n", maxsplit=1)[1]
 
     assert "shell: pwsh" in dotnet_job
     assert r"run: .\scripts\test_dotnet.ps1 -Configuration Debug" in dotnet_job

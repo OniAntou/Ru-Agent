@@ -112,8 +112,6 @@ public static class TuiSurfaces
     [
         ("kilo", "kilo", "Kilo Gateway"),
         ("opencode", "opencode", "OpenCode Zen"),
-        ("ollama", "ollama", "Ollama"),
-        ("lmstudio", "lmstudio", "LM Studio"),
         ("openai", "openai", "OpenAI"),
         ("anthropic", "anthropic", "Anthropic"),
     ];
@@ -195,8 +193,6 @@ public static class TuiSurfaces
     {
         "kilo" or "kilo gateway" => "kilo",
         "opencode" or "opencode zen" => "opencode",
-        "ollama" => "ollama",
-        "lm studio" or "lmstudio" => "lmstudio",
         "openai" => "openai",
         "anthropic" => "anthropic",
         _ => string.Empty,

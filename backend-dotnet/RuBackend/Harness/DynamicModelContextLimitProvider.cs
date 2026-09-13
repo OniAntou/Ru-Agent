@@ -62,8 +62,6 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         {
             "opencode zen" or "opencode" or "opencode zen api" or "opencode api" => snapshot.OpenCodeModel,
             "kilo gateway" or "kilo" or "kilo gateway api" or "kilo api" => snapshot.KiloModel,
-            "ollama" or "ollama api" => snapshot.OllamaModel,
-            "lm studio" or "lmstudio" or "lm studio api" => snapshot.LmStudioModel,
             "custom openai" or "custom" or "custom openai api" => snapshot.CustomModel,
             "openai" or "openai api" => snapshot.OpenAiModel,
             "anthropic" or "anthropic claude" or "claude" => snapshot.AnthropicModel,
@@ -84,8 +82,6 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
             snapshot.KiloModel,
             snapshot.OpenAiModel,
             snapshot.AnthropicModel,
-            snapshot.OllamaModel,
-            snapshot.LmStudioModel,
             snapshot.CustomModel);
     }
 

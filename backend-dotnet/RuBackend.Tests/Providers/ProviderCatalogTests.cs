@@ -196,8 +196,6 @@ public sealed class ProviderCatalogTests : IDisposable
     [InlineData("OpenCode Zen", "api_key")]
     [InlineData("Kilo Gateway", "kilo_gateway_api_key")]
     [InlineData("Custom OpenAI", "custom_api_key")]
-    [InlineData("Ollama", null)]
-    [InlineData("LM Studio", null)]
     public async Task Provider_selection_uses_only_its_canonical_credential_account(
         string backend, string? expectedAccount)
     {

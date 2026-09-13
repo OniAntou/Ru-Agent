@@ -21,9 +21,9 @@ public sealed class RuntimeV1HandlerTests
             WorkerV1Contracts.RuntimeLoad,
             new JsonObject
             {
-                ["backend"] = "Ollama",
-                ["ollama_model"] = "qwen3:8b",
-                ["ollama_url"] = "http://127.0.0.1:11434/v1",
+                ["backend"] = "Custom OpenAI",
+                ["custom_model"] = "local-model",
+                ["custom_url"] = "http://127.0.0.1:9000/v1",
                 ["api_variant"] = "Default",
                 ["kilo_reasoning_enabled"] = false,
                 ["voice_label"] = "Ái Vy (OmniVoice)",
@@ -43,7 +43,7 @@ public sealed class RuntimeV1HandlerTests
         Assert.Single(replies);
         Assert.Equal(WorkerV1Contracts.RuntimeState, replies[0].Type);
         Assert.Equal("success", replies[0].Payload["status"]!.GetValue<string>());
-        Assert.Equal("Ollama", settings.Current.Backend);
+        Assert.Equal("Custom OpenAI", settings.Current.Backend);
         Assert.Equal("Ái Vy (OmniVoice)", settings.Current.Voice.VoiceLabel);
         Assert.Equal(1.25, settings.Current.Voice.VoiceSpeed);
         Assert.True(settings.Current.Voice.AutoPaceEnabled);
@@ -118,8 +118,8 @@ public sealed class RuntimeV1HandlerTests
             WorkerV1Contracts.RuntimeLoad,
             new JsonObject
             {
-                ["backend"] = "Ollama",
-                ["ollama_model"] = "qwen3:8b",
+                ["backend"] = "Custom OpenAI",
+                ["custom_model"] = "local-model",
                 ["api_key"] = "must-not-cross-boundary",
             },
             CancellationToken.None));

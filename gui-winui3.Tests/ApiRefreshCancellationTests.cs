@@ -62,21 +62,45 @@ public sealed class ApiRefreshCancellationTests
     [Fact]
     public async Task ApiService_records_LastError_and_fires_RequestFailed_on_http_failure()
     {
-        using var handler = new FailingHandler(HttpStatusCode.InternalServerError);
-        var session = new BackendSession(new Uri("http://127.0.0.1:59999/"), "test-secret");
-        using var api = new ApiService(session, handler);
+        var logRoot = Path.Combine(
+            Path.GetTempPath(),
+            "ru-api-error-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(logRoot);
+        try
+        {
+            using var handler = new FailingHandler(HttpStatusCode.InternalServerError);
+            var session = new BackendSession(new Uri("http://127.0.0.1:59999/"), "test-secret");
+            using var api = new ApiService(session, handler, logRoot);
 
-        ApiErrorEventArgs? capturedEvent = null;
-        api.RequestFailed += (_, args) => capturedEvent = args;
+            ApiErrorEventArgs? capturedEvent = null;
+            api.RequestFailed += (_, args) => capturedEvent = args;
 
-        var result = await api.GetSettingsAsync();
+            var result = await api.GetSettingsAsync();
 
-        Assert.Null(result);
-        Assert.NotNull(api.LastError);
-        Assert.Equal("GetSettingsAsync", api.LastError.Method);
-        Assert.Equal(500, api.LastError.StatusCode);
-        Assert.NotNull(capturedEvent);
-        Assert.Same(api.LastError, capturedEvent.Error);
+            Assert.Null(result);
+            Assert.NotNull(api.LastError);
+            Assert.Equal("GetSettingsAsync", api.LastError.Method);
+            Assert.Equal(500, api.LastError.StatusCode);
+            Assert.NotNull(capturedEvent);
+            Assert.Same(api.LastError, capturedEvent.Error);
+
+            // The failure diagnostic must land in the injected root: a test that
+            // exercises this path must never write into the operator's real log.
+            var diagnosticFile = Assert.Single(Directory.GetFiles(logRoot, "gui-*.jsonl"));
+            Assert.Contains("api_getsettingsasync_500", File.ReadAllText(diagnosticFile));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(logRoot, recursive: true);
+            }
+            catch (IOException)
+            {
+                // best-effort cleanup
+            }
+        }
     }
 
     private sealed class FailingHandler : HttpMessageHandler

@@ -25,21 +25,23 @@ namespace RuApp.Services
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
         private readonly BackendSession _session;
+        private readonly string? _logRoot;
 
-        public ApiService(string authSecret, int port = 8000)
-            : this(BackendSession.FromLoopback(port, authSecret))
+        public ApiService(string authSecret, int port = 8000, string? logRoot = null)
+            : this(BackendSession.FromLoopback(port, authSecret), logRoot)
         {
         }
 
-        public ApiService(BackendSession session)
-            : this(session, handler: null)
+        public ApiService(BackendSession session, string? logRoot = null)
+            : this(session, handler: null, logRoot)
         {
         }
 
-        internal ApiService(BackendSession session, HttpMessageHandler? handler)
+        internal ApiService(BackendSession session, HttpMessageHandler? handler, string? logRoot = null)
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _baseUrl = session.HttpBaseUri.ToString().TrimEnd('/');
+            _logRoot = logRoot;
             _httpClient = handler == null ? new HttpClient() : new HttpClient(handler);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AuthSecret);
         }
@@ -71,7 +73,7 @@ namespace RuApp.Services
 
             try
             {
-                GuiDiagnosticWriter.WriteApiError(method, ex.GetType().Name, statusCode);
+                GuiDiagnosticWriter.WriteApiError(method, ex.GetType().Name, statusCode, _logRoot);
             }
             catch
             {

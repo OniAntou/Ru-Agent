@@ -196,7 +196,11 @@ internal sealed class AgentToolExecutionPipeline
                 {
                     var deniedExecutionId = _ids.NewExecutionId();
                     var code = decision.SafeCode ?? "policy_denied";
-                    var deniedExecution = CreateDeniedExecution(proposal, deniedExecutionId, code);
+                    var deniedExecution = CreateDeniedExecution(
+                        proposal,
+                        deniedExecutionId,
+                        code,
+                        decision.DenyHint);
                     denied.Add(proposal.ModelOrder, deniedExecution);
                     AgentActivityProjector.PublishSafe(
                         _activitySink,
@@ -489,13 +493,22 @@ internal sealed class AgentToolExecutionPipeline
     private DeniedToolExecution CreateDeniedExecution(
         ToolProposal proposal,
         ExecutionId executionId,
-        string code)
+        string code,
+        string? hint = null)
     {
-        var modelContent = JsonSerializer.SerializeToUtf8Bytes(new
+        // The repair hint names the argument shape to change; without it a denied
+        // call is repeated verbatim until the loop guard ends the run.
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            error = "tool_denied",
-            code,
-        });
+            ["error"] = "tool_denied",
+            ["code"] = code,
+        };
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            fields["hint"] = hint;
+        }
+
+        var modelContent = JsonSerializer.SerializeToUtf8Bytes(fields);
         var resultPayloadId = _ids.NewPayloadId();
         var resultPayload = new HarnessPayloadIntent(
             resultPayloadId,

@@ -131,6 +131,18 @@ public abstract class ToolGatewayConformance : IDisposable
     }
 
     [Fact]
+    public async Task Malformed_read_call_is_denied_with_a_repair_hint()
+    {
+        var decision = await Gateway.EvaluateAsync(
+            Proposal("read", new JsonObject { ["path"] = "notes/a.txt" }),
+            CancellationToken.None);
+
+        Assert.Equal(PolicyDecision.Deny, decision.Decision);
+        Assert.Equal("malformed_call", decision.SafeCode);
+        Assert.Contains("read requires op", decision.DenyHint);
+    }
+
+    [Fact]
     public async Task HelpDocs_executes_read_only_within_bounds()
     {
         var proposal = Proposal("read", new JsonObject

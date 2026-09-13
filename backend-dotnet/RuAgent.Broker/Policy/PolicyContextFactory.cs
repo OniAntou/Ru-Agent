@@ -36,7 +36,9 @@ public sealed class PolicyContextFactory
         // the model proposal; `regex` is the retired name of `is_regex`.
         if (arguments.ContainsKey("expected_sha256") || arguments.ContainsKey("regex"))
         {
-            throw new PolicyContextException("invalid_arguments");
+            throw new PolicyContextException(
+                "invalid_arguments",
+                hint: "expected_sha256 and regex are captured by the host; remove them from the call.");
         }
 
         var resolver = new CanonicalPathResolver(_canonicalRoot);
@@ -49,7 +51,9 @@ public sealed class PolicyContextFactory
                 || !timeoutValue.TryGetValue<int>(out var parsedTimeout)
                 || parsedTimeout < 1)
             {
-                throw new PolicyContextException("malformed_call");
+                throw new PolicyContextException(
+                    "malformed_call",
+                    hint: "timeout_ms must be a positive integer number of milliseconds.");
             }
 
             timeoutMs = parsedTimeout;
@@ -67,7 +71,9 @@ public sealed class PolicyContextFactory
             var mode = OptionalText(arguments, "mode") ?? "run";
             if (mode is not ("run" or "shell"))
             {
-                throw new PolicyContextException("malformed_call");
+                throw new PolicyContextException(
+                    "malformed_call",
+                    hint: "bash mode must be \"run\" (executable plus arguments) or \"shell\" (script).");
             }
 
             var workingDirectory = OptionalText(arguments, "working_directory") ?? ".";
@@ -90,12 +96,16 @@ public sealed class PolicyContextFactory
             if (string.Equals(mode, "run", StringComparison.Ordinal))
             {
                 resolvedExecutable = OptionalText(arguments, "executable")
-                    ?? throw new PolicyContextException("malformed_call");
+                    ?? throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "bash mode \"run\" requires executable (and optional string arguments); use mode \"shell\" with a script for pipelines.");
             }
             else
             {
                 var script = OptionalText(arguments, "script")
-                    ?? throw new PolicyContextException("malformed_call");
+                    ?? throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "bash mode \"shell\" requires script as a single string.");
                 _ = OptionalText(arguments, "shell");
                 terminalAnalysis = _powerShell.Analyze(script);
             }
@@ -104,7 +114,9 @@ public sealed class PolicyContextFactory
             {
                 if (argvNode.Count > RuAgent.Protocol.TerminalLimits.MaxArguments)
                 {
-                    throw new PolicyContextException("malformed_call");
+                    throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "arguments has more entries than the terminal allows; reduce the argument vector.");
                 }
 
                 var list = new List<string>(argvNode.Count);
@@ -112,13 +124,17 @@ public sealed class PolicyContextFactory
                 {
                     if (item is not JsonValue value || !value.TryGetValue<string>(out var element))
                     {
-                        throw new PolicyContextException("malformed_call");
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "arguments must be an array of strings, one entry per argument.");
                     }
 
                     if (element.Length > RuAgent.Protocol.TerminalLimits.MaxArgumentChars
                         || element.Contains('\0'))
                     {
-                        throw new PolicyContextException("malformed_call");
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "one argument is too long or contains a null character.");
                     }
 
                     list.Add(element);
@@ -128,7 +144,9 @@ public sealed class PolicyContextFactory
             }
             else if (arguments["arguments"] is not null || arguments.ContainsKey("arguments"))
             {
-                throw new PolicyContextException("malformed_call");
+                throw new PolicyContextException(
+                    "malformed_call",
+                    hint: "arguments must be an array of strings, one entry per argument.");
             }
 
             if (string.Equals(mode, "run", StringComparison.Ordinal))
@@ -140,19 +158,29 @@ public sealed class PolicyContextFactory
         {
             var op = toolId switch
             {
-                "read" => OptionalText(arguments, "op") ?? throw new PolicyContextException("malformed_call"),
-                "write" => OptionalText(arguments, "op") ?? throw new PolicyContextException("malformed_call"),
+                "read" => OptionalText(arguments, "op")
+                    ?? throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "read requires op: \"list\", \"read\", or \"help\"."),
+                "write" => OptionalText(arguments, "op")
+                    ?? throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "write requires op: \"write\", \"delete\", or \"restore\"."),
                 "edit" => "edit",
                 "grep" => "grep",
                 "glob" => "glob",
                 "web_search" => "web_search",
                 "web_fetch" => "web_fetch",
-                _ => throw new PolicyContextException("malformed_call"),
+                _ => throw new PolicyContextException(
+                    "malformed_call",
+                    hint: "unknown tool id; use read, grep, glob, write, edit, bash, web_search, or web_fetch."),
             };
             if ((toolId == "read" && op is not ("list" or "read" or "help"))
                 || (toolId == "write" && op is not ("write" or "delete" or "restore")))
             {
-                throw new PolicyContextException("malformed_call");
+                throw new PolicyContextException(
+                    "malformed_call",
+                    hint: "read op must be list|read|help and write op must be write|delete|restore.");
             }
 
             if (IsTargetFreeOp(toolId, op))
@@ -170,7 +198,9 @@ public sealed class PolicyContextFactory
                 var pathInput = OptionalText(arguments, "path");
                 if (recoveryId is null && pathInput is null)
                 {
-                    throw new PolicyContextException("malformed_call");
+                    throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "write op \"restore\" requires recovery_id or path.");
                 }
 
                 if (pathInput is not null)
@@ -188,7 +218,9 @@ public sealed class PolicyContextFactory
                         : null);
                 if (pathInput is null)
                 {
-                    throw new PolicyContextException("malformed_call");
+                    throw new PolicyContextException(
+                        "malformed_call",
+                        hint: "this call requires path (a workspace-relative path or an exact absolute path supplied by the user). Use \".\" for the workspace root.");
                 }
 
                 try
@@ -255,7 +287,9 @@ public sealed class PolicyContextFactory
         }
         catch (ArgumentException error) when (error.Message == "invalid_arguments")
         {
-            throw new PolicyContextException("invalid_arguments");
+            throw new PolicyContextException(
+                "invalid_arguments",
+                hint: "a relative path must stay inside the workspace; use an absolute path for a directory granted outside it.");
         }
         catch (ArgumentException error)
         {
@@ -312,7 +346,9 @@ public sealed class PolicyContextFactory
             || string.IsNullOrWhiteSpace(result)
             || result.Contains('\0'))
         {
-            throw new PolicyContextException("malformed_call");
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: $"argument \"{key}\" must be a non-empty string.");
         }
 
         return result;
@@ -328,7 +364,9 @@ public sealed class PolicyContextFactory
         if (arguments[key] is not JsonValue value
             || !value.TryGetValue<bool>(out var flag))
         {
-            throw new PolicyContextException("malformed_call");
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: $"argument \"{key}\" must be true or false.");
         }
 
         return flag;

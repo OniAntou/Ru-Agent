@@ -29,13 +29,43 @@ public static class PolicyNetworkIntents
 
 public sealed class PolicyContextException : Exception
 {
-    public PolicyContextException(string code, Exception? innerException = null)
+    /// <summary>
+    /// Maximum length of the bounded hint that may travel to the model next to
+    /// the code. The hint names the argument shape the call was missing; it never
+    /// carries file contents, paths outside the workspace, or credentials.
+    /// </summary>
+    public const int MaximumHintLength = 200;
+
+    public PolicyContextException(string code, Exception? innerException = null, string? hint = null)
         : base(code, innerException)
     {
         Code = code;
+        Hint = Sanitize(hint);
     }
 
     public string Code { get; }
+
+    /// <summary>
+    /// Bounded, model-facing explanation of how to repair the call, or null when
+    /// the code alone is actionable.
+    /// </summary>
+    public string? Hint { get; }
+
+    private static string? Sanitize(string? hint)
+    {
+        if (string.IsNullOrWhiteSpace(hint))
+        {
+            return null;
+        }
+
+        var cleaned = hint.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (cleaned.Contains('\0'))
+        {
+            return null;
+        }
+
+        return cleaned.Length <= MaximumHintLength ? cleaned : cleaned[..MaximumHintLength];
+    }
 }
 
 /// <summary>

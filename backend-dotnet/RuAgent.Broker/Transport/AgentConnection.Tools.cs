@@ -48,7 +48,7 @@ public sealed partial class AgentConnection
         }
         catch (PolicyContextException error)
         {
-            return Task.FromResult(DecisionReply(request, "deny", error.Code, null));
+            return Task.FromResult(DecisionReply(request, "deny", error.Code, null, error.Hint));
         }
 
         var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
@@ -195,7 +195,10 @@ public sealed partial class AgentConnection
         }
         catch (PolicyContextException error)
         {
-            return ToolError(request, error.Code, "execution intent could not be re-resolved");
+            return ToolError(
+                request,
+                error.Code,
+                error.Hint ?? "execution intent could not be re-resolved");
         }
 
         var expected = new ApprovalBinding(
@@ -308,7 +311,8 @@ public sealed partial class AgentConnection
         AgentEnvelope request,
         string decision,
         string reasonCode,
-        string? matchedRuleId) => Reply(request, AgentMessageTypes.ToolDecision, new JsonObject
+        string? matchedRuleId,
+        string? summary = null) => Reply(request, AgentMessageTypes.ToolDecision, new JsonObject
         {
             ["status"] = decision switch
             {
@@ -319,7 +323,9 @@ public sealed partial class AgentConnection
             ["reason_code"] = reasonCode,
             ["analyzer_risk_pending"] = false,
             ["matched_rule_id"] = matchedRuleId,
-            ["safe_summary"] = decision switch
+            // A repair hint for malformed calls travels as the bounded summary so
+            // the model can fix the argument shape instead of repeating the call.
+            ["safe_summary"] = summary ?? decision switch
             {
                 "allow" => "policy allowed the call",
                 "ask" => "policy requires user approval",

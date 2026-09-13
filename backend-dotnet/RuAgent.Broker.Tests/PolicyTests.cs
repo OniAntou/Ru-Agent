@@ -377,6 +377,24 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Malformed_calls_carry_a_repair_hint()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        var readWithoutOp = Assert.Throws<PolicyContextException>(
+            () => factory.Create("read", "1.0.0", new JsonObject { ["path"] = "notes/a.txt" }));
+        Assert.Equal("malformed_call", readWithoutOp.Code);
+        Assert.Contains("read requires op", readWithoutOp.Hint);
+
+        var bashWithoutExecutable = Assert.Throws<PolicyContextException>(
+            () => factory.Create("bash", "1.0.0", new JsonObject { ["working_directory"] = "." }));
+        Assert.Equal("malformed_call", bashWithoutExecutable.Code);
+        Assert.Contains("executable", bashWithoutExecutable.Hint);
+
+        Assert.Null(new PolicyContextException("invalid_path").Hint);
+    }
+
+    [Fact]
     public void Protected_path_denies_but_file_mutations_and_network_metadata_are_automatic()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());

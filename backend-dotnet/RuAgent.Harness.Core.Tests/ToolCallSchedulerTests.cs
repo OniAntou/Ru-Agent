@@ -60,6 +60,20 @@ public sealed class ToolCallSchedulerTests
     }
 
     [Fact]
+    public void Deny_hint_is_bounded_and_sanitized()
+    {
+        var decision = ToolProposalDecision.Deny(
+            ToolAccessKind.ReadOnly,
+            "malformed_call",
+            "read requires op.\r\n" + new string('x', 400));
+
+        Assert.NotNull(decision.DenyHint);
+        Assert.DoesNotContain('\n', decision.DenyHint!);
+        Assert.True(decision.DenyHint!.Length <= ToolProposalDecision.MaximumDenyHintLength);
+        Assert.Null(ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "policy_denied").DenyHint);
+    }
+
+    [Fact]
     public async Task Consecutive_read_only_calls_overlap_and_receipts_return_in_model_order()
     {
         var scheduler = new ToolCallScheduler();

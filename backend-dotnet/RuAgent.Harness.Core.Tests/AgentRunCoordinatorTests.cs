@@ -473,6 +473,35 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Denied_tool_carries_the_repair_hint_to_the_model()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => ToolProposalDecision.Deny(
+                ToolAccessKind.ReadOnly,
+                "malformed_call",
+                "read requires op: \"list\", \"read\", or \"help\"."),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Single(result.Receipts);
+        var commit = Assert.Single(
+            store.Commits,
+            item => item.Events.Any(@event =>
+                @event.Kind == HarnessEventKind.ToolExecutionCompleted));
+        var payload = Assert.Single(commit.Payloads);
+        var content = Encoding.UTF8.GetString(payload.Plaintext.Span);
+        Assert.Contains("malformed_call", content);
+        Assert.Contains("read requires op", content);
+    }
+
+    [Fact]
     public async Task Mixed_allowed_and_denied_results_remain_in_model_order()
     {
         var model = new FakeModelStepRunner();

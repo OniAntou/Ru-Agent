@@ -110,7 +110,8 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
                     ?? throw new ToolTransportException("missing_decision_token")),
             "deny" => ToolProposalDecision.Deny(
                 accessKind,
-                body["reason_code"]?.GetValue<string>() ?? "policy_denied"),
+                body["reason_code"]?.GetValue<string>() ?? "policy_denied",
+                body["safe_summary"]?.GetValue<string>()),
             "ask" => RegisterBrokerAsk(
                 proposal,
                 argsKey,

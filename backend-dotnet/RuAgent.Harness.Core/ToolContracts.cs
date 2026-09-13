@@ -69,20 +69,30 @@ public sealed record ToolProposalDecision
         ToolAccessKind accessKind,
         string? canonicalIntentToken,
         ApprovalId? approvalId,
-        string safeCode)
+        string safeCode,
+        string? denyHint)
     {
         Decision = decision;
         AccessKind = accessKind;
         CanonicalIntentToken = canonicalIntentToken;
         ApprovalId = approvalId;
         SafeCode = safeCode;
+        DenyHint = denyHint;
     }
+
+    /// <summary>
+    /// Bounded repair hint that travels to the model next to a deny code; it
+    /// names the argument shape the call was missing and never carries file
+    /// contents or paths.
+    /// </summary>
+    public const int MaximumDenyHintLength = 200;
 
     public PolicyDecision Decision { get; }
     public ToolAccessKind AccessKind { get; }
     public string? CanonicalIntentToken { get; }
     public ApprovalId? ApprovalId { get; }
     public string SafeCode { get; }
+    public string? DenyHint { get; }
 
     public static ToolProposalDecision Allow(
         ToolAccessKind accessKind,
@@ -101,7 +111,8 @@ public sealed record ToolProposalDecision
             accessKind,
             canonicalIntentToken,
             null,
-            "allowed");
+            "allowed",
+            denyHint: null);
     }
 
     public static ToolProposalDecision Ask(
@@ -121,10 +132,14 @@ public sealed record ToolProposalDecision
             accessKind,
             null,
             approvalId,
-            safeCode);
+            safeCode,
+            denyHint: null);
     }
 
-    public static ToolProposalDecision Deny(ToolAccessKind accessKind, string safeCode)
+    public static ToolProposalDecision Deny(
+        ToolAccessKind accessKind,
+        string safeCode,
+        string? denyHint = null)
     {
         ValidateAccessKind(accessKind);
         if (!IsSafeCode(safeCode))
@@ -137,7 +152,26 @@ public sealed record ToolProposalDecision
             accessKind,
             null,
             null,
-            safeCode);
+            safeCode,
+            BoundHint(denyHint));
+    }
+
+    private static string? BoundHint(string? hint)
+    {
+        if (string.IsNullOrWhiteSpace(hint))
+        {
+            return null;
+        }
+
+        var cleaned = hint.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (cleaned.Contains('\0'))
+        {
+            return null;
+        }
+
+        return cleaned.Length <= MaximumDenyHintLength
+            ? cleaned
+            : cleaned[..MaximumDenyHintLength];
     }
 
     private static void ValidateAccessKind(ToolAccessKind accessKind)

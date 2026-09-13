@@ -253,6 +253,7 @@ namespace RuApp
 
                 _settingsView = new SettingsView();
                 _settingsView.Initialize(_apiService, _providerCatalogController);
+                SettingsModalContent.Content = _settingsView;
 
                 _logView = new LogView();
                 _logView.Initialize(_apiService);
@@ -379,7 +380,7 @@ namespace RuApp
         {
             btn.PointerEntered += (s, e) =>
             {
-                if (btn != _activeNavButton)
+                if (btn != _activeNavButton && (btn != NavSettings || !_isSettingsModalOpen))
                 {
                     btn.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
                     btn.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
@@ -387,7 +388,7 @@ namespace RuApp
             };
             btn.PointerExited += (s, e) =>
             {
-                if (btn != _activeNavButton)
+                if (btn != _activeNavButton && (btn != NavSettings || !_isSettingsModalOpen))
                 {
                     btn.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                     btn.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
@@ -455,16 +456,85 @@ namespace RuApp
             }
         }
 
+        private bool _isSettingsModalOpen;
+
+        private void OnSettingsModalOverlaySizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (e.NewSize.Width > 0 && e.NewSize.Height > 0)
+            {
+                SettingsModalCard.Width = Math.Min(880, Math.Max(400, e.NewSize.Width - 48));
+                SettingsModalCard.Height = Math.Min(560, Math.Max(360, e.NewSize.Height - 40));
+            }
+        }
+
+        private void OpenSettingsPopup()
+        {
+            _isSettingsModalOpen = true;
+            SettingsModalOverlay.Visibility = Visibility.Visible;
+            if (SettingsModalOverlay.ActualWidth > 0 && SettingsModalOverlay.ActualHeight > 0)
+            {
+                SettingsModalCard.Width = Math.Min(880, Math.Max(400, SettingsModalOverlay.ActualWidth - 48));
+                SettingsModalCard.Height = Math.Min(560, Math.Max(360, SettingsModalOverlay.ActualHeight - 40));
+            }
+            _ = _settingsView?.RefreshProviderCatalogAsync();
+
+            NavSettings.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+            NavSettings.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+            CloseSettingsButton?.Focus(FocusState.Programmatic);
+        }
+
+        private void CloseSettingsPopup()
+        {
+            if (!_isSettingsModalOpen) return;
+
+            _isSettingsModalOpen = false;
+            SettingsModalOverlay.Visibility = Visibility.Collapsed;
+
+            if (_activeNavButton != NavSettings)
+            {
+                NavSettings.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                NavSettings.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+            }
+        }
+
+        private void OnSettingsBackdropPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            CloseSettingsPopup();
+        }
+
+        private void OnSettingsCardPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            e.Handled = true;
+        }
+
+        private void OnCloseSettingsButtonClick(object sender, RoutedEventArgs e)
+        {
+            CloseSettingsPopup();
+        }
+
         private void OnNavClick(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string tag)
             {
+                if (tag == "settings")
+                {
+                    if (_isSettingsModalOpen)
+                    {
+                        CloseSettingsPopup();
+                    }
+                    else
+                    {
+                        OpenSettingsPopup();
+                    }
+                    return;
+                }
+
+                CloseSettingsPopup();
                 SetActiveNav(btn);
 
                 ContentFrame.Content = tag switch
                 {
                     "chat" => _chatView,
-                    "settings" => _settingsView,
                     "log" => _logView,
                     "diagnostics" => _diagnosticsView,
                     "policy" => _policyControlPanel,
@@ -484,10 +554,6 @@ namespace RuApp
                     _providerCatalogController?.SetPollingActive(false);
                     _groupedCatalogs?.SetPollingActive(false);
                     _providerCatalogTimer?.Stop();
-                }
-                if (tag == "settings")
-                {
-                    _ = _settingsView?.RefreshProviderCatalogAsync();
                 }
                 _diagnosticsView?.SetActive(tag == "diagnostics");
                 _logView?.SetActive(tag == "log");
@@ -917,6 +983,13 @@ namespace RuApp
 
         private void OnShellPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
+            if (e.Key == Windows.System.VirtualKey.Escape && _isSettingsModalOpen)
+            {
+                e.Handled = true;
+                CloseSettingsPopup();
+                return;
+            }
+
             var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 

@@ -19,6 +19,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     private int? _durationMs;
     private string _safeCode = "succeeded";
     private string? _toolDisplay;
+    private string? _detail;
 
     public AgentActivityItem(AgentActivityModel activity)
     {
@@ -99,6 +100,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     {
         get => _toolDisplay;
         private set => SetProperty(ref _toolDisplay, value);
+    }
+
+    public string? Detail
+    {
+        get => _detail;
+        private set => SetProperty(ref _detail, value);
     }
 
     private bool _isVisibleInFeed = true;
@@ -210,7 +217,13 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         ? $"Failed · {SafeCode}"
         : "Failed";
 
-    public string MetadataText
+    public bool HasLineDelta => Kind == AgentActivityKind.Edit && (Added is not null || Removed is not null);
+    public bool HasNoLineDelta => !HasLineDelta;
+    public bool HasLineDeltaAndBaseMetadata => HasLineDelta && !string.IsNullOrWhiteSpace(BaseMetadataText);
+    public string AddedDeltaText => $"+{Added ?? 0}";
+    public string RemovedDeltaText => $"−{Removed ?? 0}";
+
+    public string BaseMetadataText
     {
         get
         {
@@ -239,14 +252,24 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 parts.Add(count == 1 ? "1 result" : $"{count} results");
             }
 
-            if (Kind == AgentActivityKind.Edit && (Added is not null || Removed is not null))
+            return string.Join(" · ", parts);
+        }
+    }
+
+    public string MetadataText
+    {
+        get
+        {
+            var parts = new List<string>();
+            var baseMeta = BaseMetadataText;
+            if (!string.IsNullOrWhiteSpace(baseMeta))
             {
-                parts.Add($"+{Added ?? 0} −{Removed ?? 0}");
+                parts.Add(baseMeta);
             }
 
-            if (Kind != AgentActivityKind.Thinking && EffectiveDurationMs is { } elapsed)
+            if (HasLineDelta)
             {
-                parts.Add(FormatDuration(elapsed));
+                parts.Add($"{AddedDeltaText} {RemovedDeltaText}");
             }
 
             return string.Join(" · ", parts);
@@ -289,6 +312,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         DurationMs = activity.DurationMs;
         SafeCode = activity.SafeCode;
         ToolDisplay = activity.ToolDisplay;
+        Detail = activity.Detail;
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));
@@ -299,8 +323,15 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(WaitingText));
         OnPropertyChanged(nameof(FailedText));
         OnPropertyChanged(nameof(MetadataText));
+        OnPropertyChanged(nameof(BaseMetadataText));
+        OnPropertyChanged(nameof(HasLineDelta));
+        OnPropertyChanged(nameof(HasNoLineDelta));
+        OnPropertyChanged(nameof(HasLineDeltaAndBaseMetadata));
+        OnPropertyChanged(nameof(AddedDeltaText));
+        OnPropertyChanged(nameof(RemovedDeltaText));
         OnPropertyChanged(nameof(DisplayText));
         OnPropertyChanged(nameof(EffectiveDurationMs));
+        OnPropertyChanged(nameof(Detail));
     }
 
     private string FormatSearch(string prefix)
@@ -313,11 +344,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
         return Symbol is { Length: > 0 } ? $"{prefix} for {Symbol}" : prefix;
     }
-
-    private static string FormatDuration(int durationMs) =>
-        durationMs < 1000
-            ? $"{durationMs}ms"
-            : $"{durationMs / 1000d:0.#}s";
 
     private string DurationText()
     {

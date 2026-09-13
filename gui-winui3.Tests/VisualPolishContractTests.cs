@@ -153,6 +153,20 @@ public sealed class VisualPolishContractTests
         Assert.DoesNotContain("AnimationsEnabled", codeBehind[sweepStart..sweepEnd], StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Activity_visual_hold_and_speed_tuning_are_configured()
+    {
+        var timing = File.ReadAllText(FindSource("Services", "UiTiming.cs"));
+        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        Assert.Contains("ActivityWavePeriodSeconds", timing, StringComparison.Ordinal);
+        Assert.Contains("ActivityMinHold", timing, StringComparison.Ordinal);
+        Assert.Contains("ActivityWavePeriodSeconds", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ActivityMinHold", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("FlushDeferredCompletions", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("EnsureHoldTimer", codeBehind, StringComparison.Ordinal);
+    }
+
     private static string ThemeBlock(string appXaml, string theme)
     {
         var start = appXaml.IndexOf($"<ResourceDictionary x:Key=\"{theme}\">", StringComparison.Ordinal);

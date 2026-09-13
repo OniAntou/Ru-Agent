@@ -139,6 +139,32 @@ public sealed class AgentActivityProjectorTests
         Assert.DoesNotContain("D:\\", activity.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Terminal_waiting_approval_projection_carries_command_detail_for_shell_and_run_modes()
+    {
+        var shellProposal = Proposal(
+            "bash",
+            "{\"mode\":\"shell\",\"script\":\"git reset --hard HEAD~1\"}");
+        var shellActivity = AgentActivityProjector.ProjectTool(
+            shellProposal,
+            AgentActivityState.Waiting);
+
+        Assert.Equal(AgentActivityKind.Terminal, shellActivity.Kind);
+        Assert.Equal(AgentActivityState.Waiting, shellActivity.State);
+        Assert.Equal("git reset --hard HEAD~1", shellActivity.Detail);
+
+        var runProposal = Proposal(
+            "bash",
+            "{\"mode\":\"run\",\"executable\":\"rm\",\"arguments\":[\"-rf\",\"node_modules\"]}");
+        var runActivity = AgentActivityProjector.ProjectTool(
+            runProposal,
+            AgentActivityState.Waiting);
+
+        Assert.Equal(AgentActivityKind.Terminal, runActivity.Kind);
+        Assert.Equal(AgentActivityState.Waiting, runActivity.State);
+        Assert.Equal("rm -rf node_modules", runActivity.Detail);
+    }
+
     [Theory]
     [InlineData("delete", "Delete")]
     [InlineData("restore", "Restore")]

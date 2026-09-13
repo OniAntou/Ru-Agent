@@ -27,6 +27,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private string? _waitKind;
     private string? _pendingApprovalId;
     private string? _pendingApprovalSummary;
+    private string? _pendingApprovalCommand;
     private string? _streamTerminalStatus;
     private bool _isCancelRequested;
     private CancellationTokenSource? _subscriptionCts;
@@ -97,6 +98,20 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
     }
 
+    public string? PendingApprovalCommand
+    {
+        get { lock (_gate) return _pendingApprovalCommand; }
+        private set
+        {
+            lock (_gate)
+            {
+                _pendingApprovalCommand = value;
+            }
+
+            OnPropertyChanged(nameof(PendingApprovalCommand));
+        }
+    }
+
     public bool HasPendingApproval => PendingApprovalId is not null;
 
     public bool NeedsWorkspaceTrust =>
@@ -145,6 +160,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             _waitKind = null;
             PendingApprovalId = null;
             PendingApprovalSummary = null;
+            PendingApprovalCommand = null;
             Events.Clear();
             lock (_gate)
             {
@@ -201,6 +217,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     _waitKind = null;
                     PendingApprovalId = null;
                     PendingApprovalSummary = null;
+                    PendingApprovalCommand = null;
                     if (!_isCancelRequested
                         && !string.Equals(CurrentRun?.Status, "failed", StringComparison.Ordinal))
                     {
@@ -284,6 +301,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     _waitKind = null;
                     PendingApprovalId = null;
                     PendingApprovalSummary = null;
+                    PendingApprovalCommand = null;
                     CurrentRun = null;
                 }
 
@@ -411,6 +429,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 PendingApprovalId = null;
                 PendingApprovalSummary = null;
+                PendingApprovalCommand = null;
             }
 
             RefreshCommands();
@@ -515,6 +534,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 PendingApprovalId = null;
                 PendingApprovalSummary = null;
+                PendingApprovalCommand = null;
             }
 
             if (!model.IsTransient)
@@ -559,6 +579,11 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     {
                         return;
                     }
+                }
+
+                if (model.Kind == AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(model.Detail))
+                {
+                    PendingApprovalCommand = model.Detail;
                 }
 
                 ActivityReceived?.Invoke(this, model);
@@ -786,6 +811,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             _waitKind = null;
             PendingApprovalId = null;
             PendingApprovalSummary = null;
+            PendingApprovalCommand = null;
             RefreshCommands();
         });
         return true;

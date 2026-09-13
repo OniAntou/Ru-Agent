@@ -90,9 +90,17 @@ public sealed class AgentActivityItemTests
         var editStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, fileName: "App.xaml", added: 2, removed: 1));
         Assert.Equal("Editing", editStarted.DisplayText);
         Assert.Equal("App.xaml · +2 −1", editStarted.MetadataText);
+        Assert.True(editStarted.HasLineDelta);
+        Assert.False(editStarted.HasNoLineDelta);
+        Assert.True(editStarted.HasLineDeltaAndBaseMetadata);
+        Assert.Equal("App.xaml", editStarted.BaseMetadataText);
+        Assert.Equal("+2", editStarted.AddedDeltaText);
+        Assert.Equal("−1", editStarted.RemovedDeltaText);
 
         var editCompleted = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit));
         Assert.Equal("Edited", editCompleted.DisplayText);
+        Assert.False(editCompleted.HasLineDelta);
+        Assert.True(editCompleted.HasNoLineDelta);
 
         // Terminal
         var termStarted = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Terminal));
@@ -152,7 +160,7 @@ public sealed class AgentActivityItemTests
             count: 12,
             durationMs: 1200));
         Assert.Equal("Compacted 12 context items", compactionCompleted.DisplayText);
-        Assert.Equal("1.2s", compactionCompleted.MetadataText);
+        Assert.Equal(string.Empty, compactionCompleted.MetadataText);
 
         var compactionFailed = new AgentActivityItem(Activity(
             AgentActivityState.Failed,
@@ -174,7 +182,7 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void Item_adds_tool_duration_to_metadata()
+    public void Item_omits_tool_duration_from_metadata()
     {
         var item = new AgentActivityItem(Activity(
             AgentActivityState.Completed,
@@ -182,7 +190,7 @@ public sealed class AgentActivityItemTests
             fileName: "README.md",
             durationMs: 250));
 
-        Assert.Equal("README.md · 250ms", item.MetadataText);
+        Assert.Equal("README.md", item.MetadataText);
     }
 
     [Fact]
@@ -203,7 +211,7 @@ public sealed class AgentActivityItemTests
             toolDisplay: "Explore",
             durationMs: 19));
         Assert.Equal("Explored Test Agent", explored.DisplayText);
-        Assert.Equal("19ms", explored.MetadataText);
+        Assert.Equal(string.Empty, explored.MetadataText);
     }
 
     [Fact]
@@ -234,6 +242,24 @@ public sealed class AgentActivityItemTests
         Assert.Contains("policy_denied", failed.DisplayText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Detail_Property_Tracks_Model_And_Notifies()
+    {
+        var model = Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Terminal, detail: "npm run test");
+        var item = new AgentActivityItem(model);
+
+        Assert.Equal("npm run test", item.Detail);
+
+        var changed = new List<string?>();
+        item.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        var updated = Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Terminal, detail: "git status");
+        item.UpdateFrom(updated);
+
+        Assert.Equal("git status", item.Detail);
+        Assert.Contains(nameof(AgentActivityItem.Detail), changed);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,
@@ -246,7 +272,8 @@ public sealed class AgentActivityItemTests
         int? removed = null,
         int? durationMs = null,
         string safeCode = "succeeded",
-        string? toolDisplay = null) =>
+        string? toolDisplay = null,
+        string? detail = null) =>
         new(
             "act_11111111111111111111111111111111",
             kind,
@@ -263,5 +290,5 @@ public sealed class AgentActivityItemTests
             toolDisplay,
             null,
             1,
-            null);
+            detail);
 }

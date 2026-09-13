@@ -596,6 +596,52 @@ public sealed class AgentRunControllerTests
         Assert.Null(controller.PendingApprovalSummary);
     }
 
+    [Fact]
+    public async Task CreateAndRun_tracks_terminal_approval_command_from_activity_stream()
+    {
+        const string approvalId = "apr_cccccccccccccccccccccccccccccccc";
+        var fake = new FakeClient { Run = WaitingApprovalRun() };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-approval",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "approval.requested",
+            OccurredAt: "2026",
+            Status: "waiting_approval",
+            SafeSummary: "terminal_delete_requires_approval",
+            PayloadRef: null,
+            ApprovalId: approvalId,
+            Sequence: 3,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var activity = new AgentActivityModel(
+            ActivityId: "act_1",
+            Kind: AgentActivityKind.Terminal,
+            State: AgentActivityState.Waiting,
+            FileName: null,
+            LineStart: null,
+            LineEnd: null,
+            Symbol: null,
+            Count: null,
+            Added: null,
+            Removed: null,
+            DurationMs: null,
+            SafeCode: "terminal_delete_requires_approval",
+            ToolDisplay: "Terminal",
+            DurableSequence: null,
+            TransientSequence: 1,
+            Detail: "rm -rf build/");
+        fake.ActivityStream.Add(activity);
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-approval-command"));
+
+        Assert.True(controller.HasPendingApproval);
+        Assert.Equal("rm -rf build/", controller.PendingApprovalCommand);
+    }
+
     private static AgentRunModel WaitingApprovalRun() =>
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
             RunId, "sess_1", "ws_1", "waiting_approval", "standard", "2026", "2026"));

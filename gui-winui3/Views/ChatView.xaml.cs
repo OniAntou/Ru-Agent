@@ -786,7 +786,10 @@ namespace RuApp.Views
         }
 
         private readonly List<AgentActivityModel> _pendingAgentActivities = new();
+        private readonly Dictionary<string, (AgentActivityModel Model, long DueTick)> _deferredCompletions = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, long> _activityStartTicks = new(StringComparer.Ordinal);
         private DispatcherQueueTimer? _activityFlushTimer;
+        private DispatcherQueueTimer? _holdTimer;
 
         private void OnAgentActivityReceived(object? sender, AgentActivityModel activity)
         {
@@ -851,17 +854,139 @@ namespace RuApp.Views
 
             if (_agentActivityById.TryGetValue(activity.ActivityId, out var existing))
             {
+                if (activity.State is RuAgent.Protocol.Harness.AgentActivityState.Completed
+                    or RuAgent.Protocol.Harness.AgentActivityState.Failed)
+                {
+                    if (_activityStartTicks.TryGetValue(activity.ActivityId, out long startTick))
+                    {
+                        long elapsed = Environment.TickCount64 - startTick;
+                        long minHold = (long)Services.UiTiming.ActivityMinHold.TotalMilliseconds;
+                        if (elapsed < minHold)
+                        {
+                            _deferredCompletions[activity.ActivityId] = (activity, startTick + minHold);
+                            EnsureHoldTimer();
+                            return;
+                        }
+                    }
+
+                    _deferredCompletions.Remove(activity.ActivityId);
+                    _activityStartTicks.Remove(activity.ActivityId);
+                }
+                else if (activity.State == RuAgent.Protocol.Harness.AgentActivityState.Waiting)
+                {
+                    _deferredCompletions.Remove(activity.ActivityId);
+                }
+                else if (activity.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
+                {
+                    _activityStartTicks.TryAdd(activity.ActivityId, Environment.TickCount64);
+                }
+
                 existing.UpdateFrom(activity);
                 TrackTerminalToolState(existing);
             }
             else
             {
+                if (activity.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
+                {
+                    _activityStartTicks.TryAdd(activity.ActivityId, Environment.TickCount64);
+                }
+
                 var item = new AgentActivityItem(activity);
 
                 _agentActivityById.Add(item.ActivityId, item);
                 AgentActivities.Add(item);
                 TrackTerminalToolState(item);
             }
+        }
+
+        private void EnsureHoldTimer()
+        {
+            if (_holdTimer is null)
+            {
+                _holdTimer = DispatcherQueue.CreateTimer();
+                _holdTimer.Interval = TimeSpan.FromMilliseconds(40);
+                _holdTimer.Tick += OnHoldTimerTick;
+            }
+
+            if (!_holdTimer.IsRunning)
+            {
+                _holdTimer.Start();
+            }
+        }
+
+        private void OnHoldTimerTick(Microsoft.UI.Dispatching.DispatcherQueueTimer? timer, object? _)
+        {
+            if (_deferredCompletions.Count == 0)
+            {
+                _holdTimer?.Stop();
+                return;
+            }
+
+            long now = Environment.TickCount64;
+            List<string>? readyKeys = null;
+            foreach (var kvp in _deferredCompletions)
+            {
+                if (now >= kvp.Value.DueTick)
+                {
+                    readyKeys ??= new List<string>();
+                    readyKeys.Add(kvp.Key);
+                }
+            }
+
+            if (readyKeys is null)
+            {
+                return;
+            }
+
+            foreach (var key in readyKeys)
+            {
+                if (_deferredCompletions.Remove(key, out var deferred))
+                {
+                    _activityStartTicks.Remove(key);
+                    if (_agentActivityById.TryGetValue(key, out var existing))
+                    {
+                        existing.UpdateFrom(deferred.Model);
+                        TrackTerminalToolState(existing);
+                    }
+                }
+            }
+
+            AgentActivityGrouper.Reconcile(AgentActivities);
+            ScrollChatToBottom();
+
+            if (_deferredCompletions.Count == 0)
+            {
+                _holdTimer?.Stop();
+            }
+        }
+
+        private void FlushDeferredCompletions()
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(FlushDeferredCompletions);
+                return;
+            }
+
+            _holdTimer?.Stop();
+            if (_deferredCompletions.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var kvp in _deferredCompletions)
+            {
+                _activityStartTicks.Remove(kvp.Key);
+                if (_agentActivityById.TryGetValue(kvp.Key, out var existing))
+                {
+                    existing.UpdateFrom(kvp.Value.Model);
+                    TrackTerminalToolState(existing);
+                }
+            }
+
+            _deferredCompletions.Clear();
+            AgentActivityGrouper.Reconcile(AgentActivities);
+            ScrollChatToBottom();
         }
 
         private void TrackTerminalToolState(AgentActivityItem item)
@@ -1072,6 +1197,9 @@ namespace RuApp.Views
         {
             StopAllTextSweeps();
             _activityFlushTimer?.Stop();
+            _holdTimer?.Stop();
+            _deferredCompletions.Clear();
+            _activityStartTicks.Clear();
             _pendingAgentActivities.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
@@ -1376,7 +1504,7 @@ namespace RuApp.Views
             }
 
             double elapsed = _waveStopwatch.Elapsed.TotalSeconds;
-            double phase = (elapsed / 1.25) % 1.0;
+            double phase = (elapsed / Services.UiTiming.ActivityWavePeriodSeconds) % 1.0;
 
             List<TextBlock>? deadBlocks = null;
             foreach (var tb in _activeWaveTextBlocks)
@@ -1588,9 +1716,34 @@ namespace RuApp.Views
             {
                 AgentApprovalSummaryText.Text = RenderApprovalSummary(
                     _agentController.PendingApprovalSummary);
+
+                string? terminalCommand = _agentController.PendingApprovalCommand;
+                if (string.IsNullOrWhiteSpace(terminalCommand))
+                {
+                    var terminalActivity = AgentActivities.LastOrDefault(a =>
+                        a.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(a.Detail));
+                    terminalCommand = terminalActivity?.Detail;
+                }
+
+                if (!string.IsNullOrWhiteSpace(terminalCommand))
+                {
+                    AgentApprovalCommandText.Text = terminalCommand;
+                    AgentApprovalCommandContainer.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    AgentApprovalCommandText.Text = string.Empty;
+                    AgentApprovalCommandContainer.Visibility = Visibility.Collapsed;
+                }
+
                 // Approval arrives via SSE while the user may be scrolled up;
                 // bring the Approve/Deny panel into view.
                 ScrollChatToBottom();
+            }
+            else
+            {
+                AgentApprovalCommandText.Text = string.Empty;
+                AgentApprovalCommandContainer.Visibility = Visibility.Collapsed;
             }
 
             bool hasInlineAction = approvalPending
@@ -2303,6 +2456,7 @@ namespace RuApp.Views
 
         private async Task CompleteActiveAgentTurnAsync(CancellationToken cancellationToken)
         {
+            FlushDeferredCompletions();
             if (_activeAgentReplyCompleted)
             {
                 return;
@@ -2838,6 +2992,7 @@ namespace RuApp.Views
 
         private async Task StopActiveAgentAsync(bool force = false)
         {
+            FlushDeferredCompletions();
             if (force)
             {
                 // Session replacement must not be blocked by another UI action
@@ -3068,6 +3223,11 @@ namespace RuApp.Views
             {
                 _activityFlushTimer.Tick -= OnActivityFlushTick;
                 _activityFlushTimer = null;
+            }
+            if (_holdTimer != null)
+            {
+                _holdTimer.Tick -= OnHoldTimerTick;
+                _holdTimer = null;
             }
             if (_modelSaveFailureTimer != null)
             {

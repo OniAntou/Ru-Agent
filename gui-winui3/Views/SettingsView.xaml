@@ -24,395 +24,283 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
 
+            <Style x:Key="SidebarCategoryHeadingStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                <Setter Property="Margin" Value="8,16,8,4" />
+            </Style>
+
+            <Style x:Key="SidebarNavButtonStyle" TargetType="Button">
+                <Setter Property="Height" Value="32" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Padding" Value="10,4" />
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <Grid x:Name="ResponsiveRoot">
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup x:Name="ResponsiveStates">
-                <VisualState x:Name="Wide">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1280"/>
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SettingsRootGrid.MaxWidth" Value="1360"/>
-                        <Setter Target="SettingsRootGrid.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="SettingsRootGrid.Margin" Value="44,16,44,0"/>
-                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,40"/>
-                        <!-- Tab 1 Bento 2-Column -->
-                        <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*,*"/>
-                        <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="BackendCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="BackendCard.Margin" Value="0,0,8,0"/>
-                        <Setter Target="RightColumnStack.(Grid.Row)" Value="0"/>
-                        <Setter Target="RightColumnStack.(Grid.Column)" Value="1"/>
-                        <Setter Target="RightColumnStack.Margin" Value="10,0,0,0"/>
-                        <!-- Tab 3 Bento 2-Column -->
-                        <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*,*"/>
-                    </VisualState.Setters>
-                </VisualState>
+    <!-- Main 2-Column Settings Modal Container -->
+    <Grid x:Name="SettingsRootGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <Grid.ColumnDefinitions>
+            <!-- Left Sidebar Navigation -->
+            <ColumnDefinition Width="200" />
+            <!-- Right Content Area -->
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-                <VisualState x:Name="Compact">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="900"/>
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SettingsRootGrid.MaxWidth" Value="1000"/>
-                        <Setter Target="SettingsRootGrid.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="SettingsRootGrid.Margin" Value="28,12,28,0"/>
-                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,32"/>
-                        <!-- Tab 1 Single Column -->
-                        <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
-                        <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="BackendCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="BackendCard.Margin" Value="0,0,0,16"/>
-                        <Setter Target="RightColumnStack.(Grid.Row)" Value="1"/>
-                        <Setter Target="RightColumnStack.(Grid.Column)" Value="0"/>
-                        <Setter Target="RightColumnStack.Margin" Value="0,0,0,0"/>
-                        <!-- Tab 3 Single Column -->
-                        <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*"/>
-                    </VisualState.Setters>
-                </VisualState>
-
-                <VisualState x:Name="Narrow">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0"/>
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SettingsRootGrid.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="SettingsRootGrid.Margin" Value="14,8,14,0"/>
-                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,24"/>
-                        <!-- Tab 1 Single Column -->
-                        <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
-                        <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="BackendCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="BackendCard.Margin" Value="0,0,0,16"/>
-                        <Setter Target="RightColumnStack.(Grid.Row)" Value="1"/>
-                        <Setter Target="RightColumnStack.(Grid.Column)" Value="0"/>
-                        <Setter Target="RightColumnStack.Margin" Value="0,0,0,0"/>
-                        <!-- Tab 3 Single Column -->
-                        <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*"/>
-                    </VisualState.Setters>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
-
-        <Grid x:Name="SettingsRootGrid" HorizontalAlignment="Stretch" MaxWidth="1360" Margin="44,16,44,0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- Top Minimalist Linear Underline Tab Strip -->
-            <Border Grid.Row="0" Margin="0,0,0,16"
-                    BorderBrush="{StaticResource RuLineBrush}"
-                    BorderThickness="0,0,0,1"
-                    HorizontalAlignment="Stretch">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <!-- Nav: System & Models -->
-                    <Button x:Name="NavSystemBtn" Click="OnNavSystemClick"
-                            Padding="16,8,16,0" Height="42"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            BorderThickness="0"
-                            CornerRadius="6,6,0,0">
-                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
-                                <FontIcon x:Name="NavSystemIcon" Glyph="&#xE713;" FontSize="13.5" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="NavSystemText" Text="System &amp; Models" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <Border x:Name="NavSystemLine" Grid.Row="1" Height="1.5" Opacity="1" Background="{StaticResource RuAccentBrush}" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
-                        </Grid>
-                    </Button>
-
+        <!-- ==================== LEFT COLUMN: SIDEBAR ==================== -->
+        <Border Grid.Column="0"
+                Background="{StaticResource RuCanvasBrush}"
+                BorderBrush="{StaticResource RuLineBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid Padding="12,16,12,16">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
+                    <!-- Models / AI Providers Tab Button -->
+                    <Button x:Name="NavModelsBtn"
+                            Content="Models &amp; Providers"
+                            Click="OnNavModelsClick"
+                            Style="{StaticResource SidebarNavButtonStyle}" />
                 </StackPanel>
-            </Border>
+            </Grid>
+        </Border>
+
+        <!-- ==================== RIGHT COLUMN: CONTENT ==================== -->
+        <Grid Grid.Column="1" Background="{StaticResource RuSurfaceBrush}" RowDefinitions="Auto,*">
+            <!-- Header Bar (Category Title & Subtitle) -->
+            <Grid Grid.Row="0" Padding="28,20,56,16" BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock x:Name="CategoryTitleText"
+                                   Text="Models &amp; Providers"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   FontFamily="{StaticResource RuDisplayFontFamily}"
+                                   Foreground="{StaticResource RuInkBrush}" />
+                        <TextBlock x:Name="CategorySubtitleText"
+                                   Text="Configure cloud AI model providers, API credentials, and server connections."
+                                   FontSize="12.5"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <!-- Auto-Save Status Badge -->
+                    <Border Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Padding="12,6"
+                            Background="{StaticResource RuAccentSoftBrush}"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource RuControlCornerRadius}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse Width="7" Height="7" Fill="{StaticResource RuSuccessBrush}" />
+                            <TextBlock x:Name="AutoSaveStatusText"
+                                       Text="Auto-save"
+                                       FontSize="12"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontWeight="Medium"
+                                       Foreground="{StaticResource RuInkBrush}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
 
             <!-- Panels Area -->
-            <Grid x:Name="SettingsPanelsGrid" Grid.Row="1">
-                
-                <!-- Panel 1: System Settings -->
-                <ScrollViewer x:Name="SystemSettingsScrollViewer" Padding="0,8,0,40" Background="Transparent"
-                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="16" HorizontalAlignment="Stretch">
-                        
-                        <!-- Header Banner -->
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <Border HorizontalAlignment="Left"
-                                        Padding="8,3"
-                                        Background="{StaticResource RuAccentSoftBrush}"
-                                        BorderBrush="{StaticResource RuAccentBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource RuControlCornerRadius}">
-                                    <TextBlock Text="SYSTEM SETTINGS"
-                                               FontSize="10.5"
-                                               FontWeight="Bold"
-                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                               Foreground="{StaticResource RuAccentBrush}"/>
-                                </Border>
-                                <TextBlock Text="System &amp; Model Configuration"
-                                           FontSize="24"
-                                           FontFamily="{StaticResource RuDisplayFontFamily}"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource RuInkBrush}"/>
-                                <TextBlock Text="Manage AI model providers, API keys, and intelligent features"
-                                           FontSize="12.5"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           Foreground="{StaticResource RuMutedBrush}"/>
-                            </StackPanel>
-                            <Border Grid.Column="1" VerticalAlignment="Center"
-                                    Padding="12,6"
-                                    Background="{StaticResource RuAccentSoftBrush}"
-                                    BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="{StaticResource RuControlCornerRadius}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Ellipse Width="7" Height="7" Fill="{StaticResource RuSuccessBrush}"/>
-                                    <TextBlock x:Name="AutoSaveStatusText"
-                                               Text="Auto-save"
-                                               FontSize="12"
-                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                               FontWeight="Medium"
-                                               Foreground="{StaticResource RuInkBrush}"/>
+            <ScrollViewer x:Name="PanelModelsScrollViewer"
+                          Grid.Row="1"
+                          Padding="28,20,28,32"
+                          Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="16">
+                    <!-- Main Provider & Keys Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="16">
+                            <!-- Provider Dropdown Row -->
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Active Provider" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Choose cloud AI provider or custom server" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
-                            </Border>
-                        </Grid>
+                                <ComboBox x:Name="BackendComboBox"
+                                          Grid.Column="1"
+                                          Width="260"
+                                          Height="36"
+                                          CornerRadius="{StaticResource RuControlCornerRadius}"
+                                          SelectionChanged="OnBackendSelectionChanged">
+                                    <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode" />
+                                    <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo" />
+                                    <ComboBoxItem Content="OpenAI (Official API)" Tag="openai" />
+                                    <ComboBoxItem Content="Anthropic Claude (Official API)" Tag="anthropic" />
+                                    <ComboBoxItem Content="Custom OpenAI Server" Tag="custom" />
+                                </ComboBox>
+                            </Grid>
 
-                        <!-- Bento 2-Column Grid -->
-                        <Grid x:Name="Tab1BentoGrid" ColumnDefinitions="*,*">
-                            
-                            <!-- Left Column: Backend & Model Card -->
-                            <Border x:Name="BackendCard" Grid.Column="0" Margin="0,0,8,0" Style="{StaticResource FluentCardStyle}">
-                                <StackPanel Spacing="16">
-                                    <!-- Card Header -->
-                                    <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,2">
-                                        <Border Width="36" Height="36"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                Background="{StaticResource RuAccentSoftBrush}"
-                                                BorderBrush="{StaticResource RuLineBrush}"
-                                                BorderThickness="1">
-                                            <FontIcon Glyph="&#xE950;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <StackPanel VerticalAlignment="Center" Spacing="1">
-                                            <TextBlock Text="AI Provider &amp; Models"
-                                                       FontSize="15"
-                                                       FontWeight="SemiBold"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       Foreground="{StaticResource RuInkBrush}"/>
-                                            <TextBlock Text="Configure cloud AI API connections or local servers"
-                                                       FontSize="11.5"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       Foreground="{StaticResource RuMutedBrush}"/>
-                                        </StackPanel>
+                            <!-- OpenCode API Key Row -->
+                            <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock x:Name="OpenCodeApiKeyLabel" Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
                                     </StackPanel>
-
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-
-                                    <!-- Provider Row -->
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                            <TextBlock Text="Provider" Style="{StaticResource SettingLabelStyle}"/>
-                                            <TextBlock Text="Choose cloud AI provider or local server" Style="{StaticResource SettingDescStyle}"/>
-                                        </StackPanel>
-                                        <ComboBox x:Name="BackendComboBox"
-                                                  Grid.Column="1"
-                                                  Width="260"
-                                                  Height="36"
-                                                  CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                  SelectionChanged="OnBackendSelectionChanged">
-                                            <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
-                                            <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
-                                            <ComboBoxItem Content="OpenAI (Official API)" Tag="openai"/>
-                                            <ComboBoxItem Content="Anthropic Claude (Official API)" Tag="anthropic"/>
-                                            <ComboBoxItem Content="Custom OpenAI Server" Tag="custom"/>
-                                        </ComboBox>
-                                    </Grid>
-
-                                    <!-- OpenCode API Key Row -->
-                                    <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock x:Name="OpenCodeApiKeyLabel" Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                <PasswordBox x:Name="OpenCodeApiKeyBox"
-                                                             AutomationProperties.LabeledBy="{Binding ElementName=OpenCodeApiKeyLabel}"
-                                                             PlaceholderText="sk-opencode-…"
-                                                             Width="260"
-                                                             Height="36"
-                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                                <Button x:Name="OpenCodeSignOutButton"
-                                                        Content="Đăng xuất"
-                                                        Tag="opencode"
-                                                        Click="OnRemoveProviderClick"
-                                                        Height="36"
-                                                        MinWidth="96"
-                                                        AutomationProperties.AutomationId="SignOutProviderOpenCode"
-                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <!-- Kilo API Key Row -->
-                                    <StackPanel x:Name="KiloApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock x:Name="KiloApiKeyLabel" Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="Connection key for Kilo Gateway" Style="{StaticResource SettingDescStyle}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                <PasswordBox x:Name="KiloApiKeyBox"
-                                                             AutomationProperties.LabeledBy="{Binding ElementName=KiloApiKeyLabel}"
-                                                             PlaceholderText="sk-kilo-…"
-                                                             Width="260"
-                                                             Height="36"
-                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                                <Button x:Name="KiloSignOutButton"
-                                                        Content="Đăng xuất"
-                                                        Tag="kilo"
-                                                        Click="OnRemoveProviderClick"
-                                                        Height="36"
-                                                        MinWidth="96"
-                                                        AutomationProperties.AutomationId="SignOutProviderKilo"
-                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <!-- OpenAI API Key Row -->
-                                    <StackPanel x:Name="OpenAiApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock x:Name="OpenAiApiKeyLabel" Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                <PasswordBox x:Name="OpenAiApiKeyBox"
-                                                             AutomationProperties.LabeledBy="{Binding ElementName=OpenAiApiKeyLabel}"
-                                                             PlaceholderText="sk-…"
-                                                             Width="260"
-                                                             Height="36"
-                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                                <Button x:Name="OpenAiSignOutButton"
-                                                        Content="Đăng xuất"
-                                                        Tag="openai"
-                                                        Click="OnRemoveProviderClick"
-                                                        Height="36"
-                                                        MinWidth="96"
-                                                        AutomationProperties.AutomationId="SignOutProviderOpenAi"
-                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <!-- Anthropic API Key Row -->
-                                    <StackPanel x:Name="AnthropicApiRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock x:Name="AnthropicApiKeyLabel" Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                <PasswordBox x:Name="AnthropicApiKeyBox"
-                                                             AutomationProperties.LabeledBy="{Binding ElementName=AnthropicApiKeyLabel}"
-                                                             PlaceholderText="sk-ant-…"
-                                                             Width="260"
-                                                             Height="36"
-                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                                <Button x:Name="AnthropicSignOutButton"
-                                                        Content="Đăng xuất"
-                                                        Tag="anthropic"
-                                                        Click="OnRemoveProviderClick"
-                                                        Height="36"
-                                                        MinWidth="96"
-                                                        AutomationProperties.AutomationId="SignOutProviderAnthropic"
-                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-
-                                    <!-- Custom Endpoint URL Row -->
-                                    <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock x:Name="CustomServerUrlLabel" Text="Custom Server URL" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="OpenAI-compatible endpoint URL" Style="{StaticResource SettingDescStyle}"/>
-                                            </StackPanel>
-                                            <TextBox x:Name="CustomEndpointUrlBox"
-                                                     Grid.Column="1"
-                                                     AutomationProperties.LabeledBy="{Binding ElementName=CustomServerUrlLabel}"
-                                                     PlaceholderText="http://localhost:8000/v1"
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <PasswordBox x:Name="OpenCodeApiKeyBox"
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=OpenCodeApiKeyLabel}"
+                                                     PlaceholderText="sk-opencode-&#x2026;"
                                                      Width="260"
                                                      Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                        </Grid>
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                        <Button x:Name="OpenCodeSignOutButton"
+                                                Content="Đăng xuất"
+                                                Tag="opencode"
+                                                Click="OnRemoveProviderClick"
+                                                Height="36"
+                                                MinWidth="96"
+                                                AutomationProperties.AutomationId="SignOutProviderOpenCode"
+                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
                                     </StackPanel>
-
-                                    <!-- Custom API Key Row -->
-                                    <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                                <TextBlock x:Name="CustomApiKeyLabel" Text="Custom API Key" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                                <PasswordBox x:Name="CustomApiKeyBox"
-                                                             AutomationProperties.LabeledBy="{Binding ElementName=CustomApiKeyLabel}"
-                                                             PlaceholderText="sk-…"
-                                                             Width="260"
-                                                             Height="36"
-                                                             CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                                <Button x:Name="CustomSignOutButton"
-                                                        Content="Đăng xuất"
-                                                        Tag="custom"
-                                                        Click="OnRemoveProviderClick"
-                                                        Height="36"
-                                                        MinWidth="96"
-                                                        AutomationProperties.AutomationId="SignOutProviderCustom"
-                                                        CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Right Column: Tips & System Status -->
-                            <StackPanel x:Name="RightColumnStack" Grid.Column="1" Margin="10,0,0,0" Spacing="16">
-                                
-                                <Border Background="{StaticResource RuSurfaceBrush}"
-                                        BorderBrush="{StaticResource RuLineBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource RuControlCornerRadius}"
-                                        Padding="20,18">
-                                    <StackPanel Spacing="8">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="{StaticResource RuAccentBrush}"/>
-                                            <TextBlock Text="Performance Optimization Tips"
-                                                       FontSize="13.5"
-                                                       FontWeight="SemiBold"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       Foreground="{StaticResource RuInkBrush}"/>
-                                        </StackPanel>
-                                        <TextBlock Text="• For a local OpenAI-compatible server, keep the endpoint on 127.0.0.1 and pick the model name exactly as the server reports it."
-                                                   Style="{StaticResource SettingDescStyle}"/>
-                                    </StackPanel>
-                                </Border>
+                                </Grid>
                             </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
 
+                            <!-- Kilo API Key Row -->
+                            <StackPanel x:Name="KiloApiRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock x:Name="KiloApiKeyLabel" Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="Connection key for Kilo Gateway" Style="{StaticResource SettingDescStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <PasswordBox x:Name="KiloApiKeyBox"
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=KiloApiKeyLabel}"
+                                                     PlaceholderText="sk-kilo-&#x2026;"
+                                                     Width="260"
+                                                     Height="36"
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                        <Button x:Name="KiloSignOutButton"
+                                                Content="Đăng xuất"
+                                                Tag="kilo"
+                                                Click="OnRemoveProviderClick"
+                                                Height="36"
+                                                MinWidth="96"
+                                                AutomationProperties.AutomationId="SignOutProviderKilo"
+                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
 
-            </Grid>
+                            <!-- OpenAI API Key Row -->
+                            <StackPanel x:Name="OpenAiApiRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock x:Name="OpenAiApiKeyLabel" Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <PasswordBox x:Name="OpenAiApiKeyBox"
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=OpenAiApiKeyLabel}"
+                                                     PlaceholderText="sk-&#x2026;"
+                                                     Width="260"
+                                                     Height="36"
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                        <Button x:Name="OpenAiSignOutButton"
+                                                Content="Đăng xuất"
+                                                Tag="openai"
+                                                Click="OnRemoveProviderClick"
+                                                Height="36"
+                                                MinWidth="96"
+                                                AutomationProperties.AutomationId="SignOutProviderOpenAi"
+                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Anthropic API Key Row -->
+                            <StackPanel x:Name="AnthropicApiRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock x:Name="AnthropicApiKeyLabel" Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <PasswordBox x:Name="AnthropicApiKeyBox"
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=AnthropicApiKeyLabel}"
+                                                     PlaceholderText="sk-ant-&#x2026;"
+                                                     Width="260"
+                                                     Height="36"
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                        <Button x:Name="AnthropicSignOutButton"
+                                                Content="Đăng xuất"
+                                                Tag="anthropic"
+                                                Click="OnRemoveProviderClick"
+                                                Height="36"
+                                                MinWidth="96"
+                                                AutomationProperties.AutomationId="SignOutProviderAnthropic"
+                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Custom Endpoint URL Row -->
+                            <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock x:Name="CustomServerUrlLabel" Text="Custom Server URL" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="OpenAI-compatible endpoint URL" Style="{StaticResource SettingDescStyle}" />
+                                    </StackPanel>
+                                    <TextBox x:Name="CustomEndpointUrlBox"
+                                             Grid.Column="1"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=CustomServerUrlLabel}"
+                                             PlaceholderText="http://localhost:8000/v1"
+                                             Width="260"
+                                             Height="36"
+                                             CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Custom API Key Row -->
+                            <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
+                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                        <TextBlock x:Name="CustomApiKeyLabel" Text="Custom API Key" Style="{StaticResource SettingLabelStyle}" />
+                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <PasswordBox x:Name="CustomApiKeyBox"
+                                                     AutomationProperties.LabeledBy="{Binding ElementName=CustomApiKeyLabel}"
+                                                     PlaceholderText="sk-&#x2026;"
+                                                     Width="260"
+                                                     Height="36"
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                        <Button x:Name="CustomSignOutButton"
+                                                Content="Đăng xuất"
+                                                Tag="custom"
+                                                Click="OnRemoveProviderClick"
+                                                Height="36"
+                                                MinWidth="96"
+                                                AutomationProperties.AutomationId="SignOutProviderCustom"
+                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </UserControl>

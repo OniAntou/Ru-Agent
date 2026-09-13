@@ -57,6 +57,9 @@ public static class AgentActivityProjector
         }
 
         var toolDisplay = ToolDisplayFor(proposal);
+        var detail = state == AgentActivityState.Waiting && kind == AgentActivityKind.Terminal
+            ? ExtractTerminalCommand(proposal)
+            : null;
 
         return new AgentActivity(
             ActivityId(proposal.ToolCallId.Value),
@@ -71,7 +74,74 @@ public static class AgentActivityProjector
             metadata.Removed,
             ClampDuration(durationMs),
             SafeCodeFor(state, safeCode ?? receipt?.Code),
-            ToolDisplay: toolDisplay);
+            ToolDisplay: toolDisplay,
+            Detail: detail);
+    }
+
+    private static string? ExtractTerminalCommand(ToolProposal proposal)
+    {
+        if (!string.Equals(proposal.ToolId, "bash", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        try
+        {
+            var arguments = proposal.Arguments;
+            if (arguments.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (arguments.TryGetProperty("script", out var script) && script.ValueKind == JsonValueKind.String)
+            {
+                return CleanCommand(script.GetString());
+            }
+
+            if (arguments.TryGetProperty("executable", out var exe) && exe.ValueKind == JsonValueKind.String)
+            {
+                var executable = exe.GetString();
+                if (string.IsNullOrWhiteSpace(executable))
+                {
+                    return null;
+                }
+
+                var parts = new List<string> { executable.Trim() };
+                if (arguments.TryGetProperty("arguments", out var args) && args.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in args.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String && item.GetString() is { } arg)
+                        {
+                            parts.Add(arg);
+                        }
+                    }
+                }
+
+                return CleanCommand(string.Join(' ', parts));
+            }
+
+            if (arguments.TryGetProperty("command", out var cmd) && cmd.ValueKind == JsonValueKind.String)
+            {
+                return CleanCommand(cmd.GetString());
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static string? CleanCommand(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var cleaned = raw.Replace('\0', ' ').Trim();
+        return cleaned.Length <= MaximumDetailLength ? cleaned : cleaned[..MaximumDetailLength];
     }
 
     /// <summary>

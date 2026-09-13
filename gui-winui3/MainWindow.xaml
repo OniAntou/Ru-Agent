@@ -153,15 +153,13 @@
                                             </MenuFlyout>
                                         </Grid.ContextFlyout>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="{x:Bind IconGlyph, Mode=OneTime}" FontSize="12" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
+                                        <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                                                    TextTrimming="CharacterEllipsis" 
                                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                        <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
+                                        <Button Grid.Column="1" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
                                                  Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
                                                  Tag="{x:Bind Id}" Opacity="0" IsTabStop="False" ToolTipService.ToolTip="Delete session">
                                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
@@ -258,6 +256,67 @@
                     </TransitionCollection>
                 </ContentControl.ContentTransitions>
             </ContentControl>
+        </Grid>
+
+        <!-- Settings Modal Overlay Popup -->
+        <Grid x:Name="SettingsModalOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="2"
+              Canvas.ZIndex="500"
+              Visibility="Collapsed"
+              SizeChanged="OnSettingsModalOverlaySizeChanged">
+            <Grid.ChildrenTransitions>
+                <TransitionCollection>
+                    <EntranceThemeTransition FromVerticalOffset="16" IsStaggeringEnabled="False" />
+                </TransitionCollection>
+            </Grid.ChildrenTransitions>
+
+            <!-- Dimmed Backdrop (Click outside card to close) -->
+            <Border x:Name="SettingsModalBackdrop"
+                    Background="{StaticResource RuCanvasBrush}"
+                    Opacity="0.75"
+                    PointerPressed="OnSettingsBackdropPointerPressed" />
+
+            <!-- Dialog Card Container (Fixed stable dimension avoids jitter/shifting) -->
+            <Border x:Name="SettingsModalCard"
+                    Width="880"
+                    Height="560"
+                    MaxWidth="1080"
+                    MaxHeight="780"
+                    Margin="24,20"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderBrush="{StaticResource RuLineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    PointerPressed="OnSettingsCardPointerPressed">
+                <Grid>
+                    <!-- Modal Body (Hosts SettingsView with Sidebar + Content) -->
+                    <ContentControl x:Name="SettingsModalContent"
+                                    HorizontalContentAlignment="Stretch"
+                                    VerticalContentAlignment="Stretch"
+                                    Background="Transparent" />
+
+                    <!-- Top-Right Close Button -->
+                    <Button x:Name="CloseSettingsButton"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="0,16,16,0"
+                            Canvas.ZIndex="10"
+                            Click="OnCloseSettingsButtonClick"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="4"
+                            Width="32"
+                            Height="32"
+                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                            AutomationProperties.Name="Close settings"
+                            ToolTipService.ToolTip="Close (Esc)">
+                        <FontIcon Glyph="&#xE711;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- Welcome & Loading Overlay (BackgroundPaths animation while backend initializes) -->

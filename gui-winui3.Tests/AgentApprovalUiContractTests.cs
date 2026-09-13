@@ -13,6 +13,8 @@ public sealed class AgentApprovalUiContractTests
         {
             "x:Name=\"AgentApprovalPanel\"",
             "x:Name=\"AgentApprovalSummaryText\"",
+            "x:Name=\"AgentApprovalCommandContainer\"",
+            "x:Name=\"AgentApprovalCommandText\"",
             "x:Name=\"AgentApproveButton\"",
             "x:Name=\"AgentDenyButton\"",
             "AutomationProperties.LiveSetting=\"Polite\""

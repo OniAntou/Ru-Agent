@@ -298,104 +298,25 @@ namespace RuApp.Views
 
         private void AutoSaveTextHandler(object sender, TextChangedEventArgs e) => ScheduleAutoSave();
 
-        private string _activeSettingsTab = "system";
-
         private void InitializeSettingsHoverEffects()
         {
-            SetupSettingsNavHover(NavSystemBtn, NavSystemIcon, NavSystemText, () => _activeSettingsTab == "system");
-        }
-
-        private void SetupSettingsNavHover(Button btn, FontIcon? icon, TextBlock? text, Func<bool> isActive)
-        {
-            btn.PointerEntered += (s, e) =>
+            if (NavModelsBtn != null)
             {
-                if (!isActive())
-                {
-                    btn.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuCanvasBrush"];
-                    if (text != null) text.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
-                    if (icon != null) icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
-                }
-            };
-            btn.PointerExited += (s, e) =>
-            {
-                if (!isActive())
-                {
-                    btn.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                    if (text != null) text.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
-                    if (icon != null) icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
-                }
-            };
-        }
-
-        private void OnNavSystemClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("system");
-
-        private void SetActiveSettingsTab(string tab)
-        {
-            _activeSettingsTab = tab;
-            var transparent = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            NavSystemBtn.Background = transparent;
-
-            var isSystem = tab == "system";
-
-            SwitchPanel(SystemSettingsScrollViewer, isSystem);
-
-            UpdateNavButton(NavSystemIcon, NavSystemText, NavSystemLine, isSystem);
-        }
-
-        private static void SwitchPanel(FrameworkElement panel, bool active)
-        {
-            if (panel == null) return;
-            if (active)
-            {
-                panel.Visibility = Visibility.Visible;
-                AnimatePanelEntrance(panel);
-            }
-            else
-            {
-                panel.Visibility = Visibility.Collapsed;
+                NavModelsBtn.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
+                NavModelsBtn.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+                NavModelsBtn.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
             }
         }
 
-        private static void AnimatePanelEntrance(FrameworkElement element)
+        private void OnNavModelsClick(object sender, RoutedEventArgs e)
         {
-            var sb = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
-            var fadeAnim = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+            if (NavModelsBtn != null)
             {
-                From = 0.3,
-                To = 1.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(200)),
-                EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut }
-            };
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fadeAnim, element);
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fadeAnim, "Opacity");
-            sb.Children.Add(fadeAnim);
-            sb.Begin();
-        }
-
-        private static void UpdateNavButton(FontIcon icon, TextBlock text, Border line, bool active)
-        {
-            if (line != null)
-            {
-                var sb = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
-                var anim = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
-                {
-                    To = active ? 1.0 : 0.0,
-                    Duration = new Duration(TimeSpan.FromMilliseconds(active ? 180 : 100)),
-                    EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut }
-                };
-                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(anim, line);
-                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(anim, "Opacity");
-                sb.Children.Add(anim);
-                sb.Begin();
+                NavModelsBtn.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
+                NavModelsBtn.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+                NavModelsBtn.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
             }
-
-            if (icon != null)
-                icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentBrush"] : Application.Current.Resources["RuMutedBrush"]);
-            if (text != null)
-            {
-                text.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuInkBrush"] : Application.Current.Resources["RuMutedBrush"]);
-                text.FontWeight = active ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Medium;
-            }
+            _ = _providerCatalogController?.RefreshAsync(force: true);
         }
     }
 }

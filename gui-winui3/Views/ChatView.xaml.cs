@@ -88,8 +88,6 @@ namespace RuApp.Views
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
-        private DispatcherTimer? _typingDebounce;
-        private bool _typingPushed;
         private enum AgentTurnSource
         {
             Typed,
@@ -297,16 +295,6 @@ namespace RuApp.Views
             _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
-            _typingDebounce = new DispatcherTimer { Interval = Services.UiTiming.TypingDebounce };
-            _typingDebounce.Tick += (_, __) =>
-            {
-                _typingDebounce.Stop();
-                if (!string.IsNullOrEmpty(ChatInputTextBox.Text) && !_typingPushed)
-                {
-                    _typingPushed = true;
-                    PushSafelyAsync(_apiService?.PushVtsActivityAsync(true));
-                }
-            };
 
             Messages.CollectionChanged += (_, __) => UpdateContextUsage();
             PendingAttachments.CollectionChanged += (_, __) => UpdateContextUsage();
@@ -802,16 +790,8 @@ namespace RuApp.Views
             UpdateContextUsage();
             if (string.IsNullOrEmpty(ChatInputTextBox.Text))
             {
-                _typingDebounce?.Stop();
-                if (_typingPushed)
-                {
-                    _typingPushed = false;
-                    PushSafelyAsync(_apiService?.PushVtsActivityAsync(false));
-                }
                 return;
             }
-            _typingDebounce?.Stop();
-            _typingDebounce?.Start();
         }
 
         private static async void PushSafelyAsync(Task? task)
@@ -2215,11 +2195,6 @@ namespace RuApp.Views
                 PendingAttachments.Clear();
                 AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
 
-                if (_typingPushed)
-                {
-                    _typingPushed = false;
-                    PushSafelyAsync(_apiService?.PushVtsActivityAsync(false));
-                }
 
                 var textAttachments = attachments.Where(a => !a.IsImage && !string.IsNullOrWhiteSpace(a.TextContent)).ToList();
                 string effectivePrompt = text;
@@ -3391,8 +3366,6 @@ namespace RuApp.Views
                 _activityFlushTimer.Tick -= OnActivityFlushTick;
                 _activityFlushTimer = null;
             }
-            _typingDebounce?.Stop();
-            _typingDebounce = null;
             if (_modelSaveFailureTimer != null)
             {
                 _modelSaveFailureTimer.Stop();

@@ -10,7 +10,6 @@ namespace RuApp.Services;
 public sealed class SubtitleOverlayService : IDisposable
 {
     private readonly SubtitleOverlayWindow _window;
-    private readonly VtsWindowTracker _tracker;
     private readonly SubtitlePresenter _presenter;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly DispatcherTimer _trackerTimer;
@@ -20,7 +19,6 @@ public sealed class SubtitleOverlayService : IDisposable
 
     private bool _started;
     private bool _disposed;
-    private bool _vtsHidden = true;
 
     public event Action<int, int>? PositionChanged;
 
@@ -28,10 +26,9 @@ public sealed class SubtitleOverlayService : IDisposable
     public int CustomX { get; set; } = -1;
     public int CustomY { get; set; } = -1;
 
-    public SubtitleOverlayService(SubtitleOverlayWindow window, VtsWindowTracker tracker, SubtitlePresenter presenter)
+    public SubtitleOverlayService(SubtitleOverlayWindow window, SubtitlePresenter presenter)
     {
         _window = window;
-        _tracker = tracker;
         _presenter = presenter;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("Subtitle overlay must be created on the UI thread.");
@@ -153,7 +150,6 @@ public sealed class SubtitleOverlayService : IDisposable
         _window.Close();
 
         _presenter.SnapshotChanged -= OnPresenterSnapshotChanged;
-        _tracker.Dispose();
     }
 
     public void Dispose() => Stop();
@@ -174,26 +170,12 @@ public sealed class SubtitleOverlayService : IDisposable
         }
         else
         {
-            VtsWindowSnapshot snapshot = _tracker.GetCurrent();
-            RectPx anchorRect;
-            RectPx workArea;
-            int dpi;
-
-            if (snapshot.Visible)
-            {
-                anchorRect = snapshot.Rect;
-                workArea = snapshot.WorkArea;
-                dpi = snapshot.Dpi;
-            }
-            else
-            {
-                workArea = GetPrimaryWorkArea(out dpi);
-                int fallbackWidth = Math.Clamp(workArea.Width / 2, 260, 640);
-                int fallbackHeight = 200;
-                int x = workArea.X + (workArea.Width - fallbackWidth) / 2;
-                int y = workArea.Bottom - fallbackHeight - 40;
-                anchorRect = new RectPx(x, y, fallbackWidth, fallbackHeight);
-            }
+            RectPx workArea = GetPrimaryWorkArea(out int dpi);
+            int fallbackWidth = Math.Clamp(workArea.Width / 2, 260, 640);
+            int fallbackHeight = 200;
+            int x = workArea.X + (workArea.Width - fallbackWidth) / 2;
+            int y = workArea.Bottom - fallbackHeight - 40;
+            RectPx anchorRect = new RectPx(x, y, fallbackWidth, fallbackHeight);
 
             (RectPx rect, int physicalFontSize, bool _) = SubtitleLayout.ComputeSubtitleRect(
                 anchorRect, workArea);
@@ -204,11 +186,9 @@ public sealed class SubtitleOverlayService : IDisposable
             }
         }
 
-        bool becameVisible = _vtsHidden;
-        _vtsHidden = false;
         _window.EnsureTopmost();
         SubtitleSnapshot current = _presenter.Current;
-        if (becameVisible && current != SubtitleSnapshot.Empty)
+        if (current != SubtitleSnapshot.Empty)
         {
             ApplyFadeAction(_fadeState.OnTextAvailable(), current);
         }

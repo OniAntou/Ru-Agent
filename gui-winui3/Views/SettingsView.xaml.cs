@@ -18,12 +18,6 @@ namespace RuApp.Views
         private DispatcherTimer? _autoSaveTimer;
         private bool _saveInProgress;
         private bool _saveRequestedDuringSave;
-        private DispatcherTimer? _vtsConfigDebounce;
-        private bool _loadingVtsConfig;
-        private DispatcherTimer? _vtsControlDebounce;
-        private bool _syncingVtsControls;
-        private enum PendingVtsControl { None, Overlay, MouseLook, Sensitivity }
-        private PendingVtsControl _pendingVtsControl;
 
         public SettingsView()
         {
@@ -39,38 +33,6 @@ namespace RuApp.Views
             _ownsProviderCatalogController = providerCatalogController is null;
             _ = LoadSettingsAsync();
             SetupAutoSave();
-            SetupVts();
-        }
-
-        private void SetupVts()
-        {
-            _vtsConfigDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-            _vtsConfigDebounce.Tick += OnVtsConfigDebounceTick;
-
-            _vtsControlDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
-            _vtsControlDebounce.Tick += OnVtsControlDebounceTick;
-
-            _ = LoadVtsConfigAsync();
-            _ = PollVtsStatusAsync();
-        }
-
-        private async void OnVtsConfigDebounceTick(object? sender, object e)
-        {
-            if (_vtsConfigDebounce != null)
-            {
-                _vtsConfigDebounce.Stop();
-            }
-            await SaveVtsConfigAsync();
-            await LoadVtsConfigAsync();
-        }
-
-        private async void OnVtsControlDebounceTick(object? sender, object e)
-        {
-            if (_vtsControlDebounce != null)
-            {
-                _vtsControlDebounce.Stop();
-            }
-            await FlushPendingVtsControlAsync();
         }
 
         private void SetupAutoSave()
@@ -86,7 +48,6 @@ namespace RuApp.Views
             KiloApiKeyBox.PasswordChanged += AutoSaveHandler;
             OpenAiApiKeyBox.PasswordChanged += AutoSaveHandler;
             AnthropicApiKeyBox.PasswordChanged += AutoSaveHandler;
-            GeminiVisionKeyBox.PasswordChanged += AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
         }
@@ -144,10 +105,6 @@ namespace RuApp.Views
                 AnthropicApiKeyBox.PlaceholderText = settings.HasAnthropicKey
                     ? "Saved (leave blank to keep unchanged)"
                     : "sk-ant-...";
-                GeminiVisionKeyBox.Password = string.Empty;
-                GeminiVisionKeyBox.PlaceholderText = settings.HasGeminiVisionKey
-                    ? "Saved (leave blank to keep unchanged)"
-                    : "AIza...";
                 CustomEndpointUrlBox.Text = settings.CustomUrl;
                 CustomApiKeyBox.Password = string.Empty;
                 CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
@@ -155,13 +112,7 @@ namespace RuApp.Views
                     : "sk-...";
 
 
-                var obsStatus = await _apiService.GetObservationStatusAsync();
-                if (obsStatus != null)
                 {
-                    ScreenObserverToggle.IsOn = obsStatus.Active;
-                    ScreenObserverStatusText.Text = obsStatus.Active
-                        ? "Status: Active (Every 1s · Real-time)"
-                        : "Status: Disabled";
                 }
 
                 UpdateVisibilityForBackend(settings.BackendChoice);
@@ -220,7 +171,6 @@ namespace RuApp.Views
                     KiloApiKey = KiloApiKeyBox.Password,
                     OpenAiApiKey = OpenAiApiKeyBox.Password,
                     AnthropicApiKey = AnthropicApiKeyBox.Password,
-                    GeminiVisionApiKey = GeminiVisionKeyBox.Password,
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
                 };
@@ -330,7 +280,6 @@ namespace RuApp.Views
             KiloApiKeyBox.PasswordChanged -= AutoSaveHandler;
             OpenAiApiKeyBox.PasswordChanged -= AutoSaveHandler;
             AnthropicApiKeyBox.PasswordChanged -= AutoSaveHandler;
-            GeminiVisionKeyBox.PasswordChanged -= AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
             if (_autoSaveTimer != null)
@@ -339,17 +288,9 @@ namespace RuApp.Views
                 _autoSaveTimer.Stop();
                 _autoSaveTimer = null;
             }
-            if (_vtsConfigDebounce != null)
             {
-                _vtsConfigDebounce.Tick -= OnVtsConfigDebounceTick;
-                _vtsConfigDebounce.Stop();
-                _vtsConfigDebounce = null;
             }
-            if (_vtsControlDebounce != null)
             {
-                _vtsControlDebounce.Tick -= OnVtsControlDebounceTick;
-                _vtsControlDebounce.Stop();
-                _vtsControlDebounce = null;
             }
         }
 
@@ -357,225 +298,11 @@ namespace RuApp.Views
 
         private void AutoSaveTextHandler(object sender, TextChangedEventArgs e) => ScheduleAutoSave();
 
-        private async void OnConnectVtsClick(object sender, RoutedEventArgs e)
-        {
-            if (_apiService == null) return;
-            ConnectVtsButton.IsEnabled = false;
-            try
-            {
-                await _apiService.ConnectVtsAsync();
-            }
-            finally
-            {
-                ConnectVtsButton.IsEnabled = true;
-            }
-            _ = PollVtsStatusAsync();
-        }
-
-        private void OnVtsConfigSliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine($"[SettingsView] Slider changed: {sender?.GetType().Name} new={e.NewValue:0}");
-            if (_loadingVtsConfig) return;
-            _vtsConfigDebounce?.Stop();
-            _vtsConfigDebounce?.Start();
-        }
-
-        private async Task LoadVtsConfigAsync()
-        {
-            if (_apiService == null) return;
-            _loadingVtsConfig = true;
-            var config = await _apiService.GetVtsConfigAsync();
-            if (config != null)
-            {
-                SwaySlider.Value = SwayAmplitudeToPercent(config.SwayAmplitudeIdle);
-                HeadSlider.Value = config.HeadScale;
-                EyeSlider.Value = config.EyeScale;
-                MicroSlider.Value = MicroDelayToPercent(config.MicroActionMinDelay);
-                PoseSlider.Value = PoseIntervalToPercent(config.PoseMinInterval);
-            }
-            _loadingVtsConfig = false;
-        }
-
-        private async Task SaveVtsConfigAsync()
-        {
-            if (_apiService == null) return;
-            var config = new VtsConfigDto
-            {
-                SwayAmplitudeIdle = SwayPercentToAmplitude(SwaySlider.Value, idle: true),
-                SwayAmplitudeSpeaking = SwayPercentToAmplitude(SwaySlider.Value, idle: false),
-                HeadScale = HeadSlider.Value,
-                EyeScale = EyeSlider.Value,
-                MicroActionMinDelay = MicroPercentToDelay(MicroSlider.Value, min: true),
-                MicroActionMaxDelay = MicroPercentToDelay(MicroSlider.Value, min: false),
-                PoseMinInterval = PosePercentToInterval(PoseSlider.Value, min: true),
-                PoseMaxInterval = PosePercentToInterval(PoseSlider.Value, min: false),
-                BreathAmplitude = 1.5,
-                BreathRate = 0.15,
-            };
-            System.Diagnostics.Debug.WriteLine($"[SettingsView] SaveVtsConfigAsync: sway={config.SwayAmplitudeIdle:0.0}/{config.SwayAmplitudeSpeaking:0.0} head={config.HeadScale:0.0} eye={config.EyeScale:0.0}");
-            bool ok = await _apiService.SaveVtsConfigAsync(config);
-            System.Diagnostics.Debug.WriteLine($"[SettingsView] SaveVtsConfigAsync result={ok}");
-        }
-
-        private static double SwayPercentToAmplitude(double percent, bool idle)
-        {
-            double min = idle ? 5.0 : 5.0;
-            double max = idle ? 30.0 : 40.0;
-            return min + (max - min) * percent / 100.0;
-        }
-
-        private static double SwayAmplitudeToPercent(double amplitude)
-        {
-            if (amplitude <= 5.0) return 0.0;
-            if (amplitude >= 30.0) return 100.0;
-            return (amplitude - 5.0) / 25.0 * 100.0;
-        }
-
-        private static double MicroPercentToDelay(double percent, bool min)
-        {
-            double high = min ? 40.0 : 90.0;
-            double low = min ? 8.0 : 22.0;
-            return low + (high - low) * (100.0 - percent) / 100.0;
-        }
-
-        private static double MicroDelayToPercent(double delay)
-        {
-            if (delay <= 8.0) return 100.0;
-            if (delay >= 40.0) return 0.0;
-            return 100.0 - (delay - 8.0) / 32.0 * 100.0;
-        }
-
-        private static double PosePercentToInterval(double percent, bool min)
-        {
-            double high = min ? 300.0 : 600.0;
-            double low = min ? 90.0 : 130.0;
-            return low + (high - low) * (100.0 - percent) / 100.0;
-        }
-
-        private static double PoseIntervalToPercent(double interval)
-        {
-            if (interval <= 90.0) return 100.0;
-            if (interval >= 300.0) return 0.0;
-            return 100.0 - (interval - 90.0) / 210.0 * 100.0;
-        }
-
-        private async Task PollVtsStatusAsync()
-        {
-            if (_apiService == null) return;
-            var status = await _apiService.GetVtsStatusAsync();
-            if (status == null) return;
-            _syncingVtsControls = true;
-            try
-            {
-                if (status.Connected)
-                {
-                    VtsStatusText.Text = string.IsNullOrEmpty(status.ModelName)
-                        ? "Status: Connected"
-                        : $"Status: Connected · {status.ModelName}";
-                    VtsStateText.Text = string.IsNullOrEmpty(status.State) ? "" : "Motion: " + status.State;
-                }
-                else
-                {
-                    VtsStatusText.Text = "Status: Disconnected";
-                    VtsStateText.Text = string.IsNullOrEmpty(status.ConnectError) ? "" : status.ConnectError;
-                }
-
-                OverlayToggle.IsOn = status.OverlayEnabled;
-                MouseLookToggle.IsEnabled = status.Connected;
-                MouseLookToggle.IsOn = status.MouseLookEnabled;
-                MouseSensitivitySlider.IsEnabled = status.MouseLookEnabled && status.Connected;
-                MouseSensitivitySlider.Value = status.MouseLookSensitivity * 100;
-                MouseSensitivityText.Text = $"{status.MouseLookSensitivity * 100:0}%";
-
-                bool overlayBroken = status.OverlayEnabled && !status.OverlayRunning;
-                VtsOverlayErrorText.Text = "Overlay is enabled but process is not running (missing RuDesktopOverlay.exe?).";
-                VtsOverlayErrorText.Visibility = overlayBroken ? Visibility.Visible : Visibility.Collapsed;
-            }
-            finally
-            {
-                _syncingVtsControls = false;
-            }
-        }
-
-        private void OnOverlayToggleChanged(object sender, RoutedEventArgs e)
-        {
-            if (_syncingVtsControls) return;
-            _pendingVtsControl = PendingVtsControl.Overlay;
-            _vtsControlDebounce?.Stop();
-            _vtsControlDebounce?.Start();
-        }
-
-        private void OnMouseLookToggleChanged(object sender, RoutedEventArgs e)
-        {
-            if (_syncingVtsControls) return;
-            MouseSensitivitySlider.IsEnabled = MouseLookToggle.IsOn;
-            _pendingVtsControl = PendingVtsControl.MouseLook;
-            _vtsControlDebounce?.Stop();
-            _vtsControlDebounce?.Start();
-        }
-
-        private void OnMouseSensitivityChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-        {
-            if (MouseSensitivityText != null)
-                MouseSensitivityText.Text = $"{e.NewValue:0}%";
-            if (_syncingVtsControls || !MouseLookToggle.IsOn) return;
-            _pendingVtsControl = PendingVtsControl.Sensitivity;
-            _vtsControlDebounce?.Stop();
-            _vtsControlDebounce?.Start();
-        }
-
-        private async Task FlushPendingVtsControlAsync()
-        {
-            if (_apiService == null || _pendingVtsControl == PendingVtsControl.None) return;
-            var pending = _pendingVtsControl;
-            _pendingVtsControl = PendingVtsControl.None;
-            switch (pending)
-            {
-                case PendingVtsControl.Overlay:
-                    await _apiService.SaveOverlayAsync(OverlayToggle.IsOn);
-                    break;
-                case PendingVtsControl.MouseLook:
-                    await _apiService.SaveMouseLookAsync(MouseLookToggle.IsOn, MouseSensitivitySlider.Value / 100.0);
-                    break;
-                case PendingVtsControl.Sensitivity:
-                    await _apiService.SaveMouseLookAsync(MouseLookToggle.IsOn, MouseSensitivitySlider.Value / 100.0);
-                    break;
-            }
-        }
-
-        private async void OnScreenObserverToggled(object sender, RoutedEventArgs e)
-        {
-            if (_loading || _apiService == null) return;
-            bool isOn = ScreenObserverToggle.IsOn;
-            ScreenObserverStatusText.Text = isOn
-                ? "Starting..."
-                : "Pausing...";
-
-            if (isOn)
-            {
-                bool success = await _apiService.StartObservationAsync(1.0);
-                ScreenObserverStatusText.Text = success
-                    ? "Status: Active (Every 1s · Real-time)"
-                    : "Status: Startup error (Check API Key)";
-                if (!success)
-                {
-                    ScreenObserverToggle.IsOn = false;
-                }
-            }
-            else
-            {
-                await _apiService.StopObservationAsync();
-                ScreenObserverStatusText.Text = "Status: Disabled";
-            }
-        }
-
         private string _activeSettingsTab = "system";
 
         private void InitializeSettingsHoverEffects()
         {
             SetupSettingsNavHover(NavSystemBtn, NavSystemIcon, NavSystemText, () => _activeSettingsTab == "system");
-            SetupSettingsNavHover(NavObserverBtn, NavObserverIcon, NavObserverText, () => _activeSettingsTab == "observer");
-            SetupSettingsNavHover(NavVtsBtn, NavVtsIcon, NavVtsText, () => _activeSettingsTab == "vts");
         }
 
         private void SetupSettingsNavHover(Button btn, FontIcon? icon, TextBlock? text, Func<bool> isActive)
@@ -601,28 +328,18 @@ namespace RuApp.Views
         }
 
         private void OnNavSystemClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("system");
-        private void OnNavObserverClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("observer");
-        private void OnNavVtsClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("vts");
 
         private void SetActiveSettingsTab(string tab)
         {
             _activeSettingsTab = tab;
             var transparent = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
             NavSystemBtn.Background = transparent;
-            NavObserverBtn.Background = transparent;
-            NavVtsBtn.Background = transparent;
 
             var isSystem = tab == "system";
-            var isObserver = tab == "observer";
-            var isVts = tab == "vts";
 
             SwitchPanel(SystemSettingsScrollViewer, isSystem);
-            SwitchPanel(ObservationScrollViewer, isObserver);
-            SwitchPanel(VtsSettingsScrollViewer, isVts);
 
             UpdateNavButton(NavSystemIcon, NavSystemText, NavSystemLine, isSystem);
-            UpdateNavButton(NavObserverIcon, NavObserverText, NavObserverLine, isObserver);
-            UpdateNavButton(NavVtsIcon, NavVtsText, NavVtsLine, isVts);
         }
 
         private static void SwitchPanel(FrameworkElement panel, bool active)

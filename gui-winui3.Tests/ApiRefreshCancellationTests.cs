@@ -45,7 +45,6 @@ public sealed class ApiRefreshCancellationTests
 
     [Theory]
     [InlineData("worker")]
-    [InlineData("vts")]
     [InlineData("voice")]
     public async Task Health_requests_honor_cancellation_token(string endpoint)
     {
@@ -58,7 +57,6 @@ public sealed class ApiRefreshCancellationTests
         {
             "worker" => Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.CheckWorkerHealthAsync(cts.Token)),
             "voice" => Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.GetVoiceStatusAsync(cts.Token)),
-            _ => Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.GetVtsStatusAsync(cts.Token)),
         };
 
         cts.Cancel();

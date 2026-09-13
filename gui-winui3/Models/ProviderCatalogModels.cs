@@ -214,8 +214,6 @@ public sealed class ProviderSettingsUpdateDto
     [JsonPropertyName("anthropic_api_key")]
     public string AnthropicApiKey { get; init; } = string.Empty;
 
-    [JsonPropertyName("gemini_vision_api_key")]
-    public string GeminiVisionApiKey { get; init; } = string.Empty;
 
     [JsonPropertyName("custom_url")]
     public string CustomUrl { get; init; } = "http://localhost:8000/v1";

@@ -61,11 +61,7 @@ namespace RuApp.Models
         [JsonPropertyName("kilo_reasoning_enabled")]
         public bool KiloReasoningEnabled { get; set; } = false;
 
-        [JsonPropertyName("gemini_vision_api_key")]
-        public string GeminiVisionApiKey { get; set; } = string.Empty;
 
-        [JsonPropertyName("has_gemini_vision_key")]
-        public bool HasGeminiVisionKey { get; set; } = false;
 
         [JsonPropertyName("voice_label")]
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";

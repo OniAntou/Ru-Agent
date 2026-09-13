@@ -39,8 +39,6 @@
                         <Setter Target="SettingsRootGrid.HorizontalAlignment" Value="Stretch"/>
                         <Setter Target="SettingsRootGrid.Margin" Value="44,16,44,0"/>
                         <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,40"/>
-                        <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,40"/>
-                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,40"/>
                         <!-- Tab 1 Bento 2-Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*,*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -51,12 +49,6 @@
                         <Setter Target="RightColumnStack.Margin" Value="10,0,0,0"/>
                         <!-- Tab 3 Bento 2-Column -->
                         <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*,*"/>
-                        <Setter Target="VtsConnectCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="VtsConnectCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsConnectCard.Margin" Value="0,0,8,0"/>
-                        <Setter Target="VtsMotionCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="VtsMotionCard.(Grid.Column)" Value="1"/>
-                        <Setter Target="VtsMotionCard.Margin" Value="10,0,0,0"/>
                     </VisualState.Setters>
                 </VisualState>
 
@@ -69,8 +61,6 @@
                         <Setter Target="SettingsRootGrid.HorizontalAlignment" Value="Stretch"/>
                         <Setter Target="SettingsRootGrid.Margin" Value="28,12,28,0"/>
                         <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,32"/>
-                        <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,32"/>
-                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,32"/>
                         <!-- Tab 1 Single Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -81,12 +71,6 @@
                         <Setter Target="RightColumnStack.Margin" Value="0,0,0,0"/>
                         <!-- Tab 3 Single Column -->
                         <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*"/>
-                        <Setter Target="VtsConnectCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="VtsConnectCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsConnectCard.Margin" Value="0,0,0,16"/>
-                        <Setter Target="VtsMotionCard.(Grid.Row)" Value="1"/>
-                        <Setter Target="VtsMotionCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsMotionCard.Margin" Value="0,0,0,0"/>
                     </VisualState.Setters>
                 </VisualState>
 
@@ -98,8 +82,6 @@
                         <Setter Target="SettingsRootGrid.HorizontalAlignment" Value="Stretch"/>
                         <Setter Target="SettingsRootGrid.Margin" Value="14,8,14,0"/>
                         <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,24"/>
-                        <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,24"/>
-                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,24"/>
                         <!-- Tab 1 Single Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -110,16 +92,6 @@
                         <Setter Target="RightColumnStack.Margin" Value="0,0,0,0"/>
                         <!-- Tab 3 Single Column -->
                         <Setter Target="Tab3BentoGrid.ColumnDefinitions" Value="*"/>
-                        <Setter Target="VtsConnectCard.(Grid.Row)" Value="0"/>
-                        <Setter Target="VtsConnectCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsConnectCard.Margin" Value="0,0,0,16"/>
-                        <Setter Target="VtsMotionCard.(Grid.Row)" Value="1"/>
-                        <Setter Target="VtsMotionCard.(Grid.Column)" Value="0"/>
-                        <Setter Target="VtsMotionCard.Margin" Value="0,0,0,0"/>
-                        <Setter Target="ConnectVtsButton.(Grid.Row)" Value="1"/>
-                        <Setter Target="ConnectVtsButton.(Grid.Column)" Value="0"/>
-                        <Setter Target="ConnectVtsButton.(Grid.ColumnSpan)" Value="2"/>
-                        <Setter Target="ConnectVtsButton.HorizontalAlignment" Value="Stretch"/>
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
@@ -150,38 +122,6 @@
                                 <TextBlock x:Name="NavSystemText" Text="System &amp; Models" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <Border x:Name="NavSystemLine" Grid.Row="1" Height="1.5" Opacity="1" Background="{StaticResource RuAccentBrush}" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
-                        </Grid>
-                    </Button>
-
-                    <!-- Nav: Screen Observation -->
-                    <Button x:Name="NavObserverBtn" Click="OnNavObserverClick"
-                            Padding="16,8,16,0" Height="42"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            BorderThickness="0"
-                            CornerRadius="6,6,0,0">
-                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
-                                <FontIcon x:Name="NavObserverIcon" Glyph="&#xE7B3;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="NavObserverText" Text="Screen Observer" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <Border x:Name="NavObserverLine" Grid.Row="1" Height="1.5" Opacity="0" Background="{StaticResource RuAccentBrush}" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
-                        </Grid>
-                    </Button>
-
-                    <!-- Nav: VTube Studio -->
-                    <Button x:Name="NavVtsBtn" Click="OnNavVtsClick"
-                            Padding="16,8,16,0" Height="42"
-                            Background="Transparent"
-                            BorderBrush="Transparent"
-                            BorderThickness="0"
-                            CornerRadius="6,6,0,0">
-                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
-                                <FontIcon x:Name="NavVtsIcon" Glyph="&#xE703;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="NavVtsText" Text="VTube Studio" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <Border x:Name="NavVtsLine" Grid.Row="1" Height="1.5" Opacity="0" Background="{StaticResource RuAccentBrush}" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
                         </Grid>
                     </Button>
 
@@ -471,266 +411,6 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- Panel 2: Screen Observation -->
-                <ScrollViewer x:Name="ObservationScrollViewer" Padding="28,20,36,40" Background="Transparent"
-                              Visibility="Collapsed"
-                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="16" HorizontalAlignment="Stretch">
-                        
-                        <!-- Header Banner -->
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <Border HorizontalAlignment="Left"
-                                        Padding="8,3"
-                                        Background="{StaticResource RuAccentSoftBrush}"
-                                        BorderBrush="{StaticResource RuAccentBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource RuControlCornerRadius}">
-                                    <TextBlock Text="VISION &amp; CONTEXT"
-                                               FontSize="10.5"
-                                               FontWeight="Bold"
-                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                               Foreground="{StaticResource RuAccentBrush}"/>
-                                </Border>
-                                <TextBlock Text="Screen Observer"
-                                           FontSize="24"
-                                           FontFamily="{StaticResource RuDisplayFontFamily}"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource RuInkBrush}"/>
-                                <TextBlock Text="Analyze context of open applications and documents in real time"
-                                           FontSize="12.5"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           Foreground="{StaticResource RuMutedBrush}"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <Border Style="{StaticResource FluentCardStyle}">
-                            <StackPanel Spacing="16">
-                                <!-- Card Header -->
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,2">
-                                    <Border Width="36" Height="36"
-                                            CornerRadius="{StaticResource RuControlCornerRadius}"
-                                            Background="{StaticResource RuAccentSoftBrush}"
-                                            BorderBrush="{StaticResource RuLineBrush}"
-                                            BorderThickness="1">
-                                        <FontIcon Glyph="&#xE7B3;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                    <StackPanel VerticalAlignment="Center" Spacing="1">
-                                        <TextBlock Text="Screen Observer (Gemini Flash Live Observer)"
-                                                   FontSize="15"
-                                                   FontWeight="SemiBold"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   Foreground="{StaticResource RuInkBrush}"/>
-                                        <TextBlock Text="Analyze context of open applications and documents in real time"
-                                                   FontSize="11.5"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   Foreground="{StaticResource RuMutedBrush}"/>
-                                    </StackPanel>
-                                </StackPanel>
-
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-
-                                <!-- Toggle Observer -->
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" Spacing="2">
-                                        <TextBlock Text="Enable Live Screen Observer" Style="{StaticResource SettingLabelStyle}"/>
-                                        <TextBlock x:Name="ScreenObserverStatusText"
-                                                   Text="Status: Disabled"
-                                                   Style="{StaticResource SettingDescStyle}"/>
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="ScreenObserverToggle" Grid.Column="1" Toggled="OnScreenObserverToggled"/>
-                                </Grid>
-
-                                <!-- Gemini Vision Key Row -->
-                                <StackPanel x:Name="GeminiVisionRow" Spacing="16">
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" Spacing="2">
-                                            <TextBlock x:Name="GeminiVisionApiKeyLabel" Text="Gemini Vision API Key" Style="{StaticResource SettingLabelStyle}"/>
-                                            <TextBlock Text="Used for Gemini Flash Screen Observation. Get free key at aistudio.google.com" Style="{StaticResource SettingDescStyle}"/>
-                                        </StackPanel>
-                                        <PasswordBox x:Name="GeminiVisionKeyBox"
-                                                     Grid.Column="1"
-                                                     AutomationProperties.LabeledBy="{Binding ElementName=GeminiVisionApiKeyLabel}"
-                                                     PlaceholderText="AIza…"
-                                                     Width="340"
-                                                     Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                    </Grid>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-
-                <!-- Panel 3: VTube Studio -->
-                <ScrollViewer x:Name="VtsSettingsScrollViewer" Padding="28,20,36,40" Background="Transparent"
-                              Visibility="Collapsed"
-                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="16" HorizontalAlignment="Stretch">
-                        
-                        <!-- Header Banner -->
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <Border HorizontalAlignment="Left"
-                                        Padding="8,3"
-                                        Background="{StaticResource RuAccentSoftBrush}"
-                                        BorderBrush="{StaticResource RuAccentBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="{StaticResource RuControlCornerRadius}">
-                                    <TextBlock Text="LIVE2D &amp; MOTION"
-                                               FontSize="10.5"
-                                               FontWeight="Bold"
-                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                               Foreground="{StaticResource RuAccentBrush}"/>
-                                </Border>
-                                <TextBlock Text="Avatar VTube Studio"
-                                           FontSize="24"
-                                           FontFamily="{StaticResource RuDisplayFontFamily}"
-                                           FontWeight="Bold"
-                                           Foreground="{StaticResource RuInkBrush}"/>
-                                <TextBlock Text="Synchronize Live2D avatar motion, gesture physics, and desktop interactions"
-                                           FontSize="12.5"
-                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                           Foreground="{StaticResource RuMutedBrush}"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Bento 2-Column Grid for VTS -->
-                        <Grid x:Name="Tab3BentoGrid" ColumnDefinitions="*,*">
-                            
-                            <!-- Left Column: Connection & Overlay -->
-                            <Border x:Name="VtsConnectCard" Grid.Column="0" Margin="0,0,8,0" Style="{StaticResource FluentCardStyle}">
-                                <StackPanel Spacing="16">
-                                    <!-- Card Header -->
-                                    <Grid x:Name="VtsConnectRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
-                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
-                                            <Border Width="36" Height="36"
-                                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                    Background="{StaticResource RuAccentSoftBrush}"
-                                                    BorderBrush="{StaticResource RuLineBrush}"
-                                                    BorderThickness="1">
-                                                <FontIcon Glyph="&#xE703;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
-                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <StackPanel VerticalAlignment="Center" Spacing="1">
-                                                <TextBlock Text="Avatar Live2D VTube Studio"
-                                                           FontSize="15"
-                                                           FontWeight="SemiBold"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           Foreground="{StaticResource RuInkBrush}"/>
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock x:Name="VtsStatusText"
-                                                               Text="Status: Disconnected"
-                                                               FontSize="11.5"
-                                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                                               Foreground="{StaticResource RuMutedBrush}"/>
-                                                    <TextBlock x:Name="VtsStateText"
-                                                               Text=""
-                                                               FontSize="11.5"
-                                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                                               Foreground="{StaticResource RuAccentBrush}"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <Button x:Name="ConnectVtsButton"
-                                                Grid.Column="1"
-                                                Click="OnConnectVtsClick"
-                                                Padding="16,8"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                Background="{StaticResource RuAccentSoftBrush}"
-                                                BorderBrush="{StaticResource RuAccentBrush}"
-                                                BorderThickness="1">
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <FontIcon Glyph="&#xE703;" FontSize="13" Foreground="{StaticResource RuAccentBrush}"/>
-                                                <TextBlock Text="Connect VTS"
-                                                           FontWeight="SemiBold"
-                                                           FontSize="12.5"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           Foreground="{StaticResource RuAccentBrush}"/>
-                                            </StackPanel>
-                                        </Button>
-                                    </Grid>
-
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-
-                                    <!-- Overlay toggles -->
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                            <TextBlock Text="Desktop Overlay (Floating Avatar)" Style="{StaticResource SettingLabelStyle}"/>
-                                            <TextBlock Text="Display avatar across full desktop screen" Style="{StaticResource SettingDescStyle}"/>
-                                        </StackPanel>
-                                        <ToggleSwitch x:Name="OverlayToggle" Grid.Column="1" IsOn="False" Toggled="OnOverlayToggleChanged"/>
-                                    </Grid>
-
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                            <TextBlock Text="Mouse Look" Style="{StaticResource SettingLabelStyle}"/>
-                                            <TextBlock Text="Avatar turns head to track mouse cursor coordinates" Style="{StaticResource SettingDescStyle}"/>
-                                        </StackPanel>
-                                        <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" Toggled="OnMouseLookToggleChanged"/>
-                                    </Grid>
-
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                        <TextBlock Grid.Column="0" Text="Mouse Look Sensitivity" Style="{StaticResource SettingLabelStyle}"/>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                            <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="140" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
-                                            <TextBlock x:Name="MouseSensitivityText"
-                                                       Text="100%"
-                                                       Width="40"
-                                                       VerticalAlignment="Center"
-                                                       Foreground="{StaticResource RuAccentBrush}"
-                                                       FontFamily="{StaticResource RuMonoFontFamily}"
-                                                       TextAlignment="Right"
-                                                       FontWeight="Bold"/>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <TextBlock x:Name="VtsOverlayErrorText" Text="" Foreground="{StaticResource RuDangerBrush}" FontSize="12" Visibility="Collapsed"/>
-                                </StackPanel>
-                            </Border>
-
-                            <!-- Right Column: Motion Sliders -->
-                            <Border x:Name="VtsMotionCard" Grid.Column="1" Margin="10,0,0,0" Style="{StaticResource FluentCardStyle}">
-                                <StackPanel Spacing="16">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon Glyph="&#xE7EC;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"/>
-                                        <TextBlock Text="Avatar motion intensity:"
-                                                   FontSize="14"
-                                                   FontWeight="SemiBold"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   Foreground="{StaticResource RuInkBrush}"/>
-                                    </StackPanel>
-
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6"/>
-                                    
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="36">
-                                        <TextBlock Grid.Column="0" Text="Body Sway" Style="{StaticResource SettingLabelStyle}"/>
-                                        <Slider x:Name="SwaySlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="200" ValueChanged="OnVtsConfigSliderChanged"/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="36">
-                                        <TextBlock Grid.Column="0" Text="Head Motion" Style="{StaticResource SettingLabelStyle}"/>
-                                        <Slider x:Name="HeadSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="200" ValueChanged="OnVtsConfigSliderChanged"/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="36">
-                                        <TextBlock Grid.Column="0" Text="Eye Movement" Style="{StaticResource SettingLabelStyle}"/>
-                                        <Slider x:Name="EyeSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="200" ValueChanged="OnVtsConfigSliderChanged"/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="36">
-                                        <TextBlock Grid.Column="0" Text="Micro-action Frequency" Style="{StaticResource SettingLabelStyle}"/>
-                                        <Slider x:Name="MicroSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="200" ValueChanged="OnVtsConfigSliderChanged"/>
-                                    </Grid>
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="36">
-                                        <TextBlock Grid.Column="0" Text="Pose Frequency" Style="{StaticResource SettingLabelStyle}"/>
-                                        <Slider x:Name="PoseSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="200" ValueChanged="OnVtsConfigSliderChanged"/>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
 
             </Grid>
         </Grid>

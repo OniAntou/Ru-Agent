@@ -26,7 +26,7 @@ namespace RuApp.Services
         private VoiceReplyLatencyTracker? _replyLatencyTracker;
         private VoiceSubtitleEventPump? _subtitleEvents;
         private bool _replyHasInput;
-        private bool _vtsSpeaking;
+        private bool _speaking;
         private bool _disposed;
 
         private static readonly Regex VoiceMarkerPattern = new(
@@ -163,10 +163,9 @@ namespace RuApp.Services
                 if (IsCurrentRequest(requestId))
                 {
                     _subtitleEvents?.TryClear();
-                    if (_vtsSpeaking)
+                    if (_speaking)
                     {
-                        _vtsSpeaking = false;
-                        await ResetVtsSpeakingAsync();
+                        _speaking = false;
                     }
                 }
                 playbackQueue.Dispose();
@@ -261,8 +260,8 @@ namespace RuApp.Services
                 _replyStreamClient = null;
                 _replyStreamWorker = null;
                 _replyLatencyTracker = null;
-                resetVts = _vtsSpeaking;
-                _vtsSpeaking = false;
+                resetVts = _speaking;
+                _speaking = false;
                 CleanupPlayer();
             }
 
@@ -279,7 +278,6 @@ namespace RuApp.Services
             }
             if (resetVts)
             {
-                _ = ResetVtsSpeakingAsync();
             }
         }
 
@@ -468,10 +466,9 @@ namespace RuApp.Services
             cts?.Cancel();
             playbackQueue?.Dispose();
             _subtitleEvents?.TryClear();
-            if (_vtsSpeaking)
+            if (_speaking)
             {
-                _vtsSpeaking = false;
-                _ = ResetVtsSpeakingAsync();
+                _speaking = false;
             }
             CleanupPlayer();
         }
@@ -528,10 +525,9 @@ namespace RuApp.Services
                 {
                     isCurrentReply = ReferenceEquals(_replyStreamCts, streamCancellation);
                 }
-                if (isCurrentReply && _vtsSpeaking)
+                if (isCurrentReply && _speaking)
                 {
-                    _vtsSpeaking = false;
-                    await ResetVtsSpeakingAsync();
+                    _speaking = false;
                 }
             }
         }
@@ -744,10 +740,10 @@ namespace RuApp.Services
                 }
 
                 snapshot = tracker.TryComplete(VoiceReplyOutcome.Completed);
-                resetVts = snapshot is not null && _vtsSpeaking;
+                resetVts = snapshot is not null && _speaking;
                 if (resetVts)
                 {
-                    _vtsSpeaking = false;
+                    _speaking = false;
                 }
                 if (ReferenceEquals(_replyLatencyTracker, tracker))
                 {
@@ -757,7 +753,6 @@ namespace RuApp.Services
             ReportReplyLatency(snapshot);
             if (resetVts)
             {
-                _ = ResetVtsSpeakingAsync();
             }
         }
 
@@ -824,19 +819,10 @@ namespace RuApp.Services
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                if (!_vtsSpeaking)
-                {
-                    bool ok = await _apiService.SetVtsSpeakingAsync(true);
-                    if (!ok)
-                    {
-                        throw new InvalidOperationException("VTS speaking state was not accepted.");
-                    }
-                    _vtsSpeaking = true;
-                    if (requestId is not null)
-                    {
-                        await ReportPlaybackAsync(requestId, "started");
-                    }
-                }
+            if (!_speaking)
+            {
+                _speaking = true;
+            }
 
                 await _playbackDevice.PlayAsync(audio, cancellationToken, onPlaybackStarted);
             }
@@ -886,17 +872,6 @@ namespace RuApp.Services
             }
         }
 
-        private async Task ResetVtsSpeakingAsync()
-        {
-            try
-            {
-                await _apiService.SetVtsSpeakingAsync(false);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[VoicePlayback] Reset VTS speaking failed: {ex.Message}");
-            }
-        }
 
         private void CleanupPlayer()
         {
@@ -911,10 +886,9 @@ namespace RuApp.Services
             _subtitleEvents?.Dispose();
             _subtitleEvents = null;
             _playbackDevice.Dispose();
-            if (_vtsSpeaking)
+            if (_speaking)
             {
-                _vtsSpeaking = false;
-                _ = ResetVtsSpeakingAsync();
+                _speaking = false;
             }
         }
 
@@ -926,10 +900,9 @@ namespace RuApp.Services
             _subtitleEvents?.Dispose();
             _subtitleEvents = null;
             _playbackDevice.Dispose();
-            if (_vtsSpeaking)
+            if (_speaking)
             {
-                _vtsSpeaking = false;
-                await ResetVtsSpeakingAsync();
+                _speaking = false;
             }
         }
     }

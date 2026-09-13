@@ -27,9 +27,6 @@ namespace RuApp
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _subtitleOverlay;
         private SubtitlePresenter? _subtitlePresenter;
-        private DispatcherTimer? _observationTimer;
-        private string? _lastSeenReactionId;
-        private bool _observationPollInFlight;
 
         private ChatView? _chatView;
         private VoiceView? _voiceView;
@@ -242,8 +239,7 @@ namespace RuApp
                 };
                 _healthStatusService = new HealthStatusService(
                     _apiService,
-                    () => _backendProvider.Session != null,
-                    _composition.IsHarness);
+                    () => _backendProvider.Session != null);
                 _voicePlayback = new VoicePlaybackService(
                     _apiService,
                     _composition.PlaybackDeviceFactory?.Invoke());
@@ -251,11 +247,9 @@ namespace RuApp
                 if (_composition.EnableSubtitleOverlay)
                 {
                     var subtitleWindow = new Views.SubtitleOverlayWindow();
-                    var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
                     _subtitlePresenter = new Services.SubtitlePresenter();
                     _subtitleOverlay = new Services.SubtitleOverlayService(
                         subtitleWindow,
-                        subtitleTracker,
                         _subtitlePresenter);
                     _voicePlayback.ConfigureSubtitles(_subtitlePresenter);
                 }
@@ -374,9 +368,6 @@ namespace RuApp
 
                 if (!_composition.IsHarness)
                 {
-                    _observationTimer = new DispatcherTimer { Interval = Services.UiTiming.ObservationPoll };
-                    _observationTimer.Tick += OnObservationTimerTick;
-                    _observationTimer.Start();
                 }
 
                 if (_composition.IsHarness && WelcomeOverlay != null && !WelcomeOverlay.IsDismissed)
@@ -660,8 +651,7 @@ namespace RuApp
 
             _healthStatusService = new HealthStatusService(
                 _apiService,
-                () => _backendProvider.Session != null,
-                _composition.IsHarness);
+                () => _backendProvider.Session != null);
 
             if (_agentController != null)
             {
@@ -677,7 +667,6 @@ namespace RuApp
             _sessionsTimer?.Start();
             if (!_composition.IsHarness)
             {
-                _observationTimer?.Start();
             }
             _providerCatalogTimer?.Start();
 
@@ -701,7 +690,6 @@ namespace RuApp
             DispatcherQueue.TryEnqueue(() =>
             {
                 _sessionsTimer?.Stop();
-                _observationTimer?.Stop();
                 _providerCatalogTimer?.Stop();
 
                 var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
@@ -776,8 +764,6 @@ namespace RuApp
                     await _groupedCatalogs.DisposeAsync();
                     _groupedCatalogs = null;
                 }
-                _observationTimer?.Stop();
-                _observationTimer = null;
                 if (_chatView != null)
                 {
                     _chatView.SessionOpened -= OnChatSessionOpened;
@@ -900,49 +886,6 @@ namespace RuApp
         }
 
 
-        private async void OnObservationTimerTick(object? sender, object e)
-        {
-            if (_apiService == null || _voicePlayback == null || _observationPollInFlight || _backendProvider.Session == null) return;
-            _observationPollInFlight = true;
-            try
-            {
-                var status = await _apiService.GetObservationStatusAsync();
-                if (status != null
-                    && status.Active
-                    && !string.IsNullOrWhiteSpace(status.LastReaction)
-                    && !string.IsNullOrWhiteSpace(status.LastReactionId)
-                    && !string.Equals(_lastSeenReactionId, status.LastReactionId, StringComparison.Ordinal))
-                {
-                    if (status.LastReactionAt is double reactionAt
-                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0 - reactionAt > Services.UiTiming.StaleReactionSeconds)
-                    {
-                        _lastSeenReactionId = status.LastReactionId;
-                        _ = _apiService.AcknowledgeObservationAsync(
-                            status.LastReactionId,
-                            played: false);
-                        return;
-                    }
-                    bool played = await _voicePlayback.SpeakTextAsync(
-                        status.LastReaction,
-                        interrupt: false);
-                    if (played)
-                    {
-                        _lastSeenReactionId = status.LastReactionId;
-                        _ = _apiService.AcknowledgeObservationAsync(
-                            status.LastReactionId,
-                            played: true);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] Observation poll failed: {ex.Message}");
-            }
-            finally
-            {
-                _observationPollInFlight = false;
-            }
-        }
 
         private async Task UpdateHealthStatusAsync()
         {
@@ -966,8 +909,6 @@ namespace RuApp
             bool workerOk = snapshot.WorkerOk;
             string? workerError = snapshot.WorkerError;
 
-            // 3. VTube Studio status
-            bool vtsConnected = snapshot.VtsConnected;
 
             // Overall summary text
             if (!backendRunning)
@@ -998,7 +939,7 @@ namespace RuApp
                     StatusDot.Fill = successBrush;
                     StatusText.Text = _composition.IsHarness
                         ? "Harness ready"
-                        : vtsConnected ? "System ready (Live2D connected)" : "System ready";
+                        : "System ready";
                 }
             }
         }

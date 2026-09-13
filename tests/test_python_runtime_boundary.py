@@ -9,7 +9,7 @@ from scripts.check_python_runtime_boundary import _summary, scan_runtime_boundar
 def test_inventory_identifies_known_entrypoints_without_claiming_reachability(tmp_path: Path) -> None:
     files = {
         "backend-dotnet/RuBackend/Program.cs": 'Launch("ru_runtime.worker.server");',
-        "src/ru_runtime/voice/omnivoice_server.py": 'raise RuntimeError("must not execute")',
+        "backend-dotnet/RuBackend/Business/BusinessEndpoints.cs": "// bounded public endpoint",
         "scripts/probe.py": "pass",
     }
     for relative, text in files.items():
@@ -20,8 +20,8 @@ def test_inventory_identifies_known_entrypoints_without_claiming_reachability(tm
     payloads = {item.path: item.to_payload() for item in records}
     assert set(payloads) == set(files)
     assert payloads["backend-dotnet/RuBackend/Program.cs"].get("is_known_managed_startup") is True
-    assert payloads["src/ru_runtime/voice/omnivoice_server.py"].get("is_known_managed_startup") is False
-    assert payloads["src/ru_runtime/voice/omnivoice_server.py"]["classification"] == "provider-only"
+    assert payloads["backend-dotnet/RuBackend/Business/BusinessEndpoints.cs"].get("is_known_managed_startup") is False
+    assert payloads["backend-dotnet/RuBackend/Business/BusinessEndpoints.cs"]["classification"] == "legacy"
     assert payloads["scripts/probe.py"]["classification"] == "tooling"
     assert all("reachable_from_managed_startup" not in item for item in payloads.values())
     summary = _summary(records)
@@ -34,7 +34,7 @@ def test_inventory_skips_generated_files_and_bounds_hash_input(tmp_path: Path) -
     for relative in (
         "scripts/large.py", "scripts/__pycache__/ignored.py",
         "backend-dotnet/Project/bin/ignored.cs", "backend-dotnet/Project/obj/ignored.cs",
-        "src/ru_runtime/voice/audio.wav",
+        "backend-dotnet/Project/audio.wav",
     ):
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)

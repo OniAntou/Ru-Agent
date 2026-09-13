@@ -143,14 +143,10 @@ public sealed record PromptRuntimeContext
 {
     public PromptRuntimeContext(
         string? mood,
-        string? voice,
-        string? vts,
         string? hardware,
         IReadOnlyList<PromptReference> references)
     {
         Mood = PromptText.Optional(mood, 256, nameof(mood));
-        Voice = PromptText.Optional(voice, 2 * 1024, nameof(voice));
-        Vts = PromptText.Optional(vts, 2 * 1024, nameof(vts));
         Hardware = PromptText.Optional(hardware, 2 * 1024, nameof(hardware));
         ArgumentNullException.ThrowIfNull(references);
         var copiedReferences = references.ToArray();
@@ -168,10 +164,6 @@ public sealed record PromptRuntimeContext
     }
 
     public string? Mood { get; }
-
-    public string? Voice { get; }
-
-    public string? Vts { get; }
 
     public string? Hardware { get; }
 
@@ -197,7 +189,7 @@ public sealed record SystemPromptContext
         new PromptEnvironment("unknown", "unknown", "en-US", "UTC", "1970-01-01", null),
         Array.Empty<PromptInstructionBlock>(),
         Array.Empty<PromptCapability>(),
-        new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
+        new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
 
     public SystemPromptContext(
         int schemaVersion,
@@ -343,8 +335,6 @@ public sealed record SystemPromptContext
             runtime_context = new
             {
                 mood = RuntimeContext.Mood,
-                voice = RuntimeContext.Voice,
-                vts = RuntimeContext.Vts,
                 hardware = RuntimeContext.Hardware,
                 references = RuntimeContext.References.Select(reference => new
                 {

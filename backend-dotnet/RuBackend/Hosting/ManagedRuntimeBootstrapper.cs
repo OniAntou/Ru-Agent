@@ -16,9 +16,7 @@ namespace RuBackend.Hosting;
 internal sealed record ManagedRuntimeBootstrap(
     string? PublicBearer,
     int AgentWorkerPort,
-    int DeviceWorkerPort,
     string AgentWorkerToken,
-    string DeviceWorkerToken,
     WorkerBrokerProcessManager WorkerBrokerManager,
     RuntimeDescriptorWriter DescriptorWriter,
     PublicHostSingleInstance SingleInstance);
@@ -44,9 +42,7 @@ internal static class ManagedRuntimeBootstrapper
     {
         string? managedPublicBearer = null;
         var managedAgentWorkerToken = string.Empty;
-        var managedDeviceWorkerToken = string.Empty;
         var managedAgentWorkerPort = PublicHostRuntimeOptions.DefaultWorkerPort;
-        var managedDeviceWorkerPort = PublicHostRuntimeOptions.DefaultDeviceWorkerPort;
 
         var configDataRoot = configuration["RU_DATA_ROOT"] ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
         var configLogRoot = configuration["RU_LOG_ROOT"] ?? Environment.GetEnvironmentVariable("RU_LOG_ROOT");
@@ -79,9 +75,8 @@ internal static class ManagedRuntimeBootstrapper
             }
         }
 
-        // Generate independent private credentials for the Agent and device workers.
+        // Generate an independent private credential for the agent worker.
         managedAgentWorkerToken = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
-        managedDeviceWorkerToken = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
         managedPublicBearer = configuration["RU_DESKTOP_TOKEN"] ?? Environment.GetEnvironmentVariable("RU_DESKTOP_TOKEN");
         if (string.IsNullOrWhiteSpace(managedPublicBearer))
         {
@@ -96,17 +91,14 @@ internal static class ManagedRuntimeBootstrapper
         Environment.SetEnvironmentVariable("RU_LOG_ROOT", managedLogRoot);
         configuration["RU_LOG_ROOT"] = managedLogRoot;
 
-        // Resolve ports before creating the protected bootstrap. The manager uses the
-        // same log/session root and returns the final values after readiness succeeds.
+        // Resolve the worker port before creating the protected bootstrap. The
+        // manager uses the same log/session root and returns the final values
+        // after readiness succeeds.
         managedAgentWorkerPort = ReadConfiguredPort(
             configuration["RuBackend:AgentWorkerPort"]
                 ?? Environment.GetEnvironmentVariable("RU_BACKEND_AGENT_WORKER_PORT")
                 ?? Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT"),
             PublicHostRuntimeOptions.DefaultWorkerPort);
-        managedDeviceWorkerPort = ReadConfiguredPort(
-            configuration["RuBackend:DeviceWorkerPort"]
-                ?? Environment.GetEnvironmentVariable("RU_BACKEND_DEVICE_WORKER_PORT"),
-            PublicHostRuntimeOptions.DefaultDeviceWorkerPort);
 
         var bootstrapRoot = Path.Combine(managedLogRoot, "agent", "session");
         var providerBootstrapPath = await new ManagedProviderBootstrapFactory()
@@ -128,10 +120,8 @@ internal static class ManagedRuntimeBootstrapper
         var managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
         var startup = new WorkerBrokerStartupOptions(
             managedAgentWorkerToken,
-            managedDeviceWorkerToken,
             providerBootstrapPath,
             managedAgentWorkerPort,
-            managedDeviceWorkerPort,
             null,
             Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
         var workerStarted = await managedWorkerBrokerManager
@@ -155,7 +145,6 @@ internal static class ManagedRuntimeBootstrapper
         }
 
         managedAgentWorkerPort = managedWorkerBrokerManager.AgentWorkerPort;
-        managedDeviceWorkerPort = managedWorkerBrokerManager.DeviceWorkerPort;
 
         // Propagate broker descriptor to Host's env for Broker client
         var brokerDescriptorPath = managedWorkerBrokerManager.BrokerDescriptorPath;
@@ -180,9 +169,7 @@ internal static class ManagedRuntimeBootstrapper
         return new ManagedRuntimeBootstrap(
             managedPublicBearer,
             managedAgentWorkerPort,
-            managedDeviceWorkerPort,
             managedAgentWorkerToken,
-            managedDeviceWorkerToken,
             managedWorkerBrokerManager,
             managedDescriptorWriter,
             managedSingleInstance);

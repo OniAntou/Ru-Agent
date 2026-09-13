@@ -17,12 +17,6 @@ public sealed class SettingsStoreTests
         Assert.Equal("OpenCode Zen", snapshot.Backend);
         Assert.Equal(string.Empty, snapshot.Model);
         Assert.Equal("Default", snapshot.ApiVariant);
-        Assert.Equal("Ru (OmniVoice)", snapshot.VoiceLabel);
-        Assert.Equal("original", snapshot.VoiceStyleId);
-        Assert.Equal(1.0, snapshot.VoiceSpeed);
-        Assert.False(snapshot.AutoPaceEnabled);
-        Assert.True(snapshot.AutoReadReplies);
-        Assert.False(snapshot.ShowSubtitles);
     }
 
     [Fact]
@@ -57,9 +51,9 @@ public sealed class SettingsStoreTests
         Assert.Null(snapshot.Raw["top_k"]);
         Assert.Null(snapshot.Raw["allow_web_search"]);
         Assert.Null(snapshot.Raw["allow_online_search"]);
-        Assert.Equal(2.0, snapshot.VoiceSpeed);
-        Assert.False(snapshot.ShowSubtitles);
-        Assert.Equal("original", snapshot.VoiceStyleId);
+        Assert.Null(snapshot.Raw["voice_speed"]);
+        Assert.Null(snapshot.Raw["show_subtitles"]);
+        Assert.Null(snapshot.Raw["voice_style_id"]);
         Assert.Equal("preserve-me", snapshot.Raw["unknown_future_key"]!.GetValue<string>());
     }
 

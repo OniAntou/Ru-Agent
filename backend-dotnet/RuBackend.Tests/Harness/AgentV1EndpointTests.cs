@@ -50,7 +50,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(43, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket; HTTP count 43 (23 non-Agent + 20 /agent/v1/*)
+        Assert.Equal(37, doc.RootElement.GetArrayLength()); // 37 HTTP routes (17 non-Agent + 20 /agent/v1/*), no websocket
     }
 
     [Theory]
@@ -469,18 +469,6 @@ public sealed class AgentV1EndpointTests
         KiloModel: backend == "Kilo Gateway" ? model : string.Empty,
         ApiVariant: "Default",
         KiloReasoningEnabled: false,
-        VoiceLabel: "Ru",
-        VoiceStyleId: "original",
-        VoiceSpeed: 1.0,
-        AutoPaceEnabled: false,
-        AutoReadReplies: false,
-        ShowSubtitles: false,
-        SubtitleColor: "#FFFFFF",
-        SubtitleSize: "medium",
-        SubtitleDuration: 2.0,
-        SubtitlePosMode: "auto",
-        SubtitlePosX: -1,
-        SubtitlePosY: -1,
         CustomModel: string.Empty,
         CustomUrl: "http://localhost:8000/v1",
         OpenAiModel: backend == "OpenAI" ? model : string.Empty,

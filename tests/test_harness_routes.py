@@ -15,8 +15,8 @@ def test_registry_covers_the_current_contract_without_silent_skips() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     registry = build_route_registry(load_contract(repo_root))
 
-    # 43 HTTP routes plus the single /voice/stream WebSocket entry.
-    assert len(registry) == 44
+    # 37 HTTP routes with no WebSocket transport remaining.
+    assert len(registry) == 37
     assert all(
         entry.safety
         in {
@@ -34,18 +34,18 @@ def test_registry_covers_the_current_contract_without_silent_skips() -> None:
     assert all(entry.request_factory is not None for entry in registry if entry.safety is not RouteSafety.EXTERNAL_SKIP)
 
 
-def test_registry_exposes_only_the_voice_websocket_and_no_chat_route() -> None:
+def test_registry_exposes_no_websocket_or_chat_route() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     registry = build_route_registry(load_contract(repo_root))
 
     websocket_paths = [entry.path for entry in registry if entry.transport == "websocket"]
-    assert websocket_paths == ["/voice/stream"]
+    assert websocket_paths == []
     assert all(entry.path != "/chat" for entry in registry)
 
     benchmark = (repo_root / "scripts" / "benchmark_backend.py").read_text(
         encoding="utf-8"
     )
-    assert 'for path in ("/voice/stream",)' in benchmark
+    assert '"/voice/stream"' not in benchmark
     assert '"/chat"' not in benchmark
 
 

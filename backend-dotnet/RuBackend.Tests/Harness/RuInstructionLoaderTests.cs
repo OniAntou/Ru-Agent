@@ -107,7 +107,7 @@ public sealed class RuInstructionLoaderTests
             new PromptEnvironment("model", "windows", "en-US", "UTC", "2026-09-07", "workspace"),
             result.Blocks,
             Array.Empty<PromptCapability>(),
-            new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
         var prompt = SystemPromptComposer.Compose(context);
         prompt.Receipt.ValidateAgainst(context, prompt.Text);
         Assert.Contains(SystemPromptComposer.ExternalSkillInstructionBoundary, prompt.Text, StringComparison.Ordinal);

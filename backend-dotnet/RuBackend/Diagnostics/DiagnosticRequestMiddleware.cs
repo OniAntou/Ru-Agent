@@ -64,16 +64,6 @@ public sealed class DiagnosticRequestMiddleware
     private static string MapEventCode(PathString path)
     {
         var value = path.Value ?? string.Empty;
-        if (value.Equals("/voice/transcribe", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http.stt";
-        }
-
-        if (value.StartsWith("/voice/", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http.voice";
-        }
-
         if (value.StartsWith("/settings", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/sessions", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/activity-log", StringComparison.OrdinalIgnoreCase))

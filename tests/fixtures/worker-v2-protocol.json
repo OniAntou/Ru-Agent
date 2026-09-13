@@ -64,8 +64,6 @@
             ],
             "runtime_context": {
               "mood": null,
-              "voice": null,
-              "vts": null,
               "hardware": null,
               "references": []
             }

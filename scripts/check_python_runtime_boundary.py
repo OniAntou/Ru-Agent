@@ -9,7 +9,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-_SCAN_ROOTS = ("src/ru_runtime", "scripts", "tools", "tests", "backend-dotnet")
+_SCAN_ROOTS = ("scripts", "tools", "tests", "backend-dotnet")
 _IGNORED_PARTS = {"__pycache__", ".pytest_cache", "bin", "obj", ".git"}
 _MAX_HASH_BYTES = 64 * 1024
 _MAX_FILES = 20_000
@@ -35,12 +35,6 @@ class RuntimeBoundaryRecord:
 def classify(path: str) -> tuple[str, str]:
     if path in _C_SHARP_STARTUP_FILES:
         return "managed-startup", "known-entrypoint"
-    if path.startswith((
-        "src/ru_runtime/worker/v1/",
-        "src/ru_runtime/voice/",
-        "src/ru_runtime/speech/",
-    )):
-        return "provider-only", "phase-two-device-boundary"
     if path.startswith(("scripts/", "tools/", "tests/")):
         return "tooling", "non-product-build"
     return "legacy", "outside-classified-source-groups"

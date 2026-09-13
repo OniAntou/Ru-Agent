@@ -140,7 +140,7 @@ public sealed class RuPromptContextProviderTests
             new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             [new PromptCapability("files.read", "1.0.0", "Read", "workspace.read", schema, new string('0', 64), null, "enabled")],
-            new PromptRuntimeContext(null, null, null, null, Array.Empty<PromptReference>()));
+            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
 
         var error = Assert.Throws<AgentProtocolException>(() => LoopbackModelStepRunner.BuildSettingsForTests(context));
         Assert.Equal("tool_contract_mismatch", error.Code);
@@ -154,18 +154,6 @@ public sealed class RuPromptContextProviderTests
         "test-model",
         "Default",
         KiloReasoningEnabled: false,
-        VoiceLabel: "Ru",
-        VoiceStyleId: "original",
-        VoiceSpeed: 1,
-        AutoPaceEnabled: false,
-        AutoReadReplies: true,
-        ShowSubtitles: false,
-        SubtitleColor: "#FFFFFF",
-        SubtitleSize: "medium",
-        SubtitleDuration: 2,
-        SubtitlePosMode: "auto",
-        SubtitlePosX: -1,
-        SubtitlePosY: -1,
         CustomModel: "default",
         CustomUrl: "http://localhost:8000/v1",
         OpenAiModel: string.Empty,

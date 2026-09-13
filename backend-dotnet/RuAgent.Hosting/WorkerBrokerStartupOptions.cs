@@ -2,23 +2,15 @@ namespace RuAgent.Hosting;
 
 public sealed record WorkerBrokerStartupOptions(
     string AgentWorkerToken,
-    string DeviceWorkerToken,
     string ProviderBootstrapPath,
     int AgentWorkerPort,
-    int DeviceWorkerPort,
     int? BrokerPort,
     string? BrokerExecutable)
 {
     public void Validate()
     {
         ValidateToken(AgentWorkerToken, nameof(AgentWorkerToken));
-        ValidateToken(DeviceWorkerToken, nameof(DeviceWorkerToken));
         ValidatePort(AgentWorkerPort, nameof(AgentWorkerPort));
-        ValidatePort(DeviceWorkerPort, nameof(DeviceWorkerPort));
-        if (AgentWorkerPort == DeviceWorkerPort)
-        {
-            throw new ArgumentException("Agent and device worker ports must differ.");
-        }
 
         if (BrokerPort is not null)
         {

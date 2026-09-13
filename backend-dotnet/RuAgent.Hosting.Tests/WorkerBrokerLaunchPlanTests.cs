@@ -5,35 +5,35 @@ namespace RuAgent.Hosting.Tests;
 public sealed class WorkerBrokerLaunchPlanTests
 {
     [Fact]
-    public void Dotnet_mode_owns_both_worker_ports_in_one_managed_process()
+    public void Dotnet_mode_owns_the_worker_and_broker_in_one_managed_process()
     {
         using var project = TemporaryProject.Create();
-        var startup = project.DotnetStartup(18080, 18081, 18082);
+        var startup = project.DotnetStartup(18080, 18081);
 
         var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
         Assert.Equal(new[] { "dotnet-agent-worker", "ru-agent-broker" }, plan.Children.Select(child => child.Role));
         Assert.Equal(18080, plan.AgentWorkerPort);
-        Assert.Equal(18081, plan.DeviceWorkerPort);
-        Assert.Equal(18082, plan.BrokerPort);
-        Assert.Contains("--host 127.0.0.1 --port 18080 --device-port 18081", plan.Children[0].Arguments, StringComparison.Ordinal);
+        Assert.Equal(18081, plan.BrokerPort);
+        Assert.Contains("--host 127.0.0.1 --port 18080", plan.Children[0].Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--device-port", plan.Children[0].Arguments, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Managed_worker_receives_both_private_tokens_but_no_python_device_child()
+    public void Managed_worker_receives_the_private_token_but_no_python_device_child()
     {
         using var project = TemporaryProject.Create();
-        var startup = project.DotnetStartup(18083, 18084, 18085);
+        var startup = project.DotnetStartup(18083, 18084);
         var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
         var agent = plan.Children[0].Environment;
         var broker = plan.Children[1].Environment;
         Assert.Equal(startup.AgentWorkerToken, agent["RU_AGENT_WORKER_TOKEN"]);
-        Assert.Equal(startup.DeviceWorkerToken, agent["RU_DEVICE_WORKER_TOKEN"]);
         Assert.Equal(startup.ProviderBootstrapPath, agent["RU_AGENT_PROVIDER_BOOTSTRAP"]);
         Assert.Equal(project.Root, agent["RU_PROJECT_ROOT"]);
         Assert.Equal(project.LogRoot, agent["RU_LOG_ROOT"]);
         Assert.False(agent.ContainsKey("RU_WORKER_TOKEN"));
+        Assert.False(agent.ContainsKey("RU_DEVICE_WORKER_TOKEN"));
         Assert.DoesNotContain(broker.Keys, key => key.Contains("TOKEN", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(plan.Children, child => child.Role == "python-device-worker");
     }
@@ -49,7 +49,7 @@ public sealed class WorkerBrokerLaunchPlanTests
         {
             var dotnetPlan = WorkerBrokerLaunchPlan.Create(
                 project.Root,
-                project.DotnetStartup(18100, 18101, 18102),
+                project.DotnetStartup(18100, 18101),
                 project.LogRoot);
             Assert.Equal(Path.GetFullPath(dataRoot), dotnetPlan.Children[0].Environment["RU_DATA_ROOT"]);
 
@@ -67,7 +67,7 @@ public sealed class WorkerBrokerLaunchPlanTests
     public void Managed_launch_plan_contains_no_legacy_python_process()
     {
         using var project = TemporaryProject.Create();
-        var startup = project.DotnetStartup(18086, 18087, 18088);
+        var startup = project.DotnetStartup(18086, 18087);
 
         var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
@@ -80,14 +80,14 @@ public sealed class WorkerBrokerLaunchPlanTests
     public void Startup_rejects_colliding_ports_and_bootstrap_escape()
     {
         using var project = TemporaryProject.Create();
-        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, project.DotnetStartup(8000, 18090, 18091), project.LogRoot));
-        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, project.DotnetStartup(18092, 18092, 18093), project.LogRoot));
+        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, project.DotnetStartup(8000, 18090), project.LogRoot));
+        Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, project.DotnetStartup(18092, 18092), project.LogRoot));
 
         var outside = Path.Combine(Path.GetTempPath(), "ru-bootstrap-outside-" + Guid.NewGuid().ToString("N"));
         File.WriteAllText(outside, "secret");
         try
         {
-            var escaped = project.DotnetStartup(18094, 18095, 18096) with { ProviderBootstrapPath = outside };
+            var escaped = project.DotnetStartup(18094, 18095) with { ProviderBootstrapPath = outside };
             Assert.Throws<ArgumentException>(() => WorkerBrokerLaunchPlan.Create(project.Root, escaped, project.LogRoot));
         }
         finally
@@ -100,7 +100,7 @@ public sealed class WorkerBrokerLaunchPlanTests
     public void Failed_plan_validation_does_not_publish_a_stale_broker_descriptor()
     {
         using var project = TemporaryProject.Create();
-        var startup = project.DotnetStartup(18097, 18098, 18099);
+        var startup = project.DotnetStartup(18097, 18098);
         project.DeleteAgentWorker();
 
         Assert.Throws<FileNotFoundException>(() =>
@@ -134,7 +134,7 @@ public sealed class WorkerBrokerLaunchPlanTests
             return new TemporaryProject(root, logRoot, broker);
         }
 
-        public WorkerBrokerStartupOptions DotnetStartup(int agentPort, int devicePort, int brokerPort)
+        public WorkerBrokerStartupOptions DotnetStartup(int agentPort, int brokerPort)
         {
             var sessionRoot = Path.Combine(LogRoot, "agent", "session");
             Directory.CreateDirectory(sessionRoot);
@@ -142,10 +142,8 @@ public sealed class WorkerBrokerLaunchPlanTests
             File.WriteAllText(bootstrap, "protected");
             return new WorkerBrokerStartupOptions(
                 "agent-token-" + Guid.NewGuid().ToString("N"),
-                "device-token-" + Guid.NewGuid().ToString("N"),
                 bootstrap,
                 agentPort,
-                devicePort,
                 brokerPort,
                 BrokerExecutable);
         }

@@ -21,7 +21,7 @@ public interface IWorkerBrokerJobFactory
 
 public interface IWorkerBrokerReadinessProbe
 {
-    Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int deviceWorkerPort, int brokerPort, CancellationToken cancellationToken);
+    Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int brokerPort, CancellationToken cancellationToken);
 }
 
 public sealed class WorkerBrokerProcessManager : IDisposable
@@ -50,7 +50,6 @@ public sealed class WorkerBrokerProcessManager : IDisposable
     }
 
     public int AgentWorkerPort { get; private set; }
-    public int DeviceWorkerPort { get; private set; }
     public int WorkerPort => AgentWorkerPort;
     public int BrokerPort { get; private set; }
     public string? BrokerDescriptorPath { get; private set; }
@@ -143,7 +142,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                 job.Assign(child);
             }
 
-            var ready = await _readinessProbe.WaitUntilReadyAsync(plan.AgentWorkerPort, plan.DeviceWorkerPort, plan.BrokerPort, cancellationToken).ConfigureAwait(false);
+            var ready = await _readinessProbe.WaitUntilReadyAsync(plan.AgentWorkerPort, plan.BrokerPort, cancellationToken).ConfigureAwait(false);
             if (!ready)
                 throw new InvalidOperationException("Worker/Broker did not become ready.");
 
@@ -159,7 +158,6 @@ public sealed class WorkerBrokerProcessManager : IDisposable
                 _brokerDescriptorPath = plan.BrokerDescriptorPath;
                 _brokerSessionRoot = plan.BrokerSessionRoot;
                 AgentWorkerPort = plan.AgentWorkerPort;
-                DeviceWorkerPort = plan.DeviceWorkerPort;
                 BrokerPort = plan.BrokerPort;
                 BrokerDescriptorPath = plan.BrokerDescriptorPath;
                 BrokerSessionRoot = plan.BrokerSessionRoot;
@@ -391,15 +389,14 @@ public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
     private static readonly TimeSpan TotalBudget = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan PollGap = TimeSpan.FromMilliseconds(250);
 
-    public async Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int deviceWorkerPort, int brokerPort, CancellationToken cancellationToken)
+    public async Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int brokerPort, CancellationToken cancellationToken)
     {
         var budget = Stopwatch.StartNew();
         while (!cancellationToken.IsCancellationRequested && budget.Elapsed < TotalBudget)
         {
             var agentOk = await CanConnectAsync(agentWorkerPort, cancellationToken).ConfigureAwait(false);
-            var deviceOk = deviceWorkerPort == agentWorkerPort || await CanConnectAsync(deviceWorkerPort, cancellationToken).ConfigureAwait(false);
             var brokerOk = await CanConnectAsync(brokerPort, cancellationToken).ConfigureAwait(false);
-            if (agentOk && deviceOk && brokerOk)
+            if (agentOk && brokerOk)
             {
                 return true;
             }
@@ -429,5 +426,5 @@ public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
 
 public sealed class NoopReadinessProbe : IWorkerBrokerReadinessProbe
 {
-    public Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int deviceWorkerPort, int brokerPort, CancellationToken cancellationToken) => Task.FromResult(true);
+    public Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int brokerPort, CancellationToken cancellationToken) => Task.FromResult(true);
 }

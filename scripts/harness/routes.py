@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 from collections.abc import Callable, Mapping
@@ -54,15 +53,6 @@ def load_contract(repo_root: Path) -> list[dict[str, Any]]:
     return data
 
 
-def _synthetic_audio_base64() -> str:
-    try:
-        from .voice_fixtures import build_synthetic_wav
-
-        return base64.b64encode(build_synthetic_wav()).decode("ascii")
-    except ImportError:
-        return base64.b64encode(b"RIFF-harness-fixture").decode("ascii")
-
-
 def _factory_for(method: str, path: str) -> RequestFactory:
     def make(session_id: str | None = None) -> RequestSpec:
         resolved_path = path.replace("{sessionId}", session_id or "harness-session")
@@ -81,26 +71,8 @@ def _factory_for(method: str, path: str) -> RequestFactory:
         body: Mapping[str, object] | None = None
         if path == "/settings":
             body = {
-                "voice_speed": 1.0,
-                "auto_read_replies": True,
-                "show_subtitles": False,
+                "api_variant": "Default",
             }
-        elif path == "/voice/latency":
-            body = {
-                "outcome": "completed",
-                "submit_to_first_delta_ms": 0.0,
-                "submit_to_first_phrase_ms": 0.0,
-                "phrase_to_first_audio_ms": 0.0,
-                "submit_to_playback_requested_ms": 0.0,
-            }
-        elif path == "/voice/tts":
-            body = {
-                "text": "Harness reply",
-                "voice_label": "Ru (OmniVoice)",
-                "speed": 1.0,
-            }
-        elif path == "/voice/transcribe":
-            body = {"audio_b64": _synthetic_audio_base64(), "sample_rate": 16_000}
         elif path == "/agent/v1/runs" and method == "POST":
             # Minimal valid tracer payload – harness will fill session_id/workspace if available later;
             # generic probe uses synthetic session and a drive-agnostic workspace placeholder
@@ -147,8 +119,7 @@ def _classify(entry: Mapping[str, Any]) -> tuple[RouteSafety, str | None, bool]:
     if path == "/host/shutdown":
         return RouteSafety.EXTERNAL_SKIP, "destructive_route_skipped", False
     if transport == "websocket" or method == "GET":
-        optional_device = path == "/voice/status"
-        return RouteSafety.READ_ONLY, None, optional_device
+        return RouteSafety.READ_ONLY, None, False
     return RouteSafety.FIXTURE_MUTATION, None, False
 
 

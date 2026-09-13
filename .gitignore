@@ -38,9 +38,6 @@ data/memory.db
 data/memory.db-wal
 data/memory.db-shm
 /models/
-!src/ru_runtime/models/
-src/ru_runtime/models/*
-!src/ru_runtime/models/__init__.py
 eval_results/
 VBCABLE_Setup/
 logs/

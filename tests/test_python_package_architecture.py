@@ -10,9 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RETIRED_MODULES = (
-    "mini_gpt", "ru_runtime.generation", "ru_runtime.worker", "ru_runtime.vts",
-    "ru_runtime.server", "ru_runtime.routers", "ru_runtime.memory",
-    "ru_runtime.observation",
+    "mini_gpt", "ru_runtime",
 )
 
 

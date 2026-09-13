@@ -388,8 +388,6 @@ public sealed class WorkerV2ContractTests
                 new PromptRuntimeContext(
                     null,
                     null,
-                    null,
-                    null,
                     [new PromptReference("tool_result", "untrusted", "untrusted tool result")]));
         }
 

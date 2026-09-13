@@ -23,7 +23,6 @@ def _write_stub_commands(
     )
     omitted_path = {
         "worker": r"backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe",
-        "core": r"backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Core.dll",
         "runtimeconfig": r"gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.runtimeconfig.json",
     }.get(missing_artifact)
     omit_artifact = (
@@ -42,7 +41,6 @@ def _write_stub_commands(
         "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
         "  echo cli > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Cli.exe\"\n"
         "  echo worker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Worker.exe\"\n"
-        "  echo runtime-core > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Core.dll\"\n"
         f"{gui_publish}"
         "  echo {\"runtimeOptions\":{\"includedFrameworks\":[{\"name\":\"Microsoft.NETCore.App\",\"version\":\"10.0.0\"}]}} > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\RuApp.runtimeconfig.json\"\n"
         f"{omit_artifact}"
@@ -130,7 +128,7 @@ def test_publish_order_and_self_contained_gui_flags(tmp_path: Path) -> None:
     ))
 
 
-@pytest.mark.parametrize("missing_artifact", ["worker", "core", "runtimeconfig"])
+@pytest.mark.parametrize("missing_artifact", ["worker", "runtimeconfig"])
 def test_missing_runtime_publish_artifact_stops_release_build(
     tmp_path: Path, missing_artifact: str,
 ) -> None:
@@ -138,7 +136,6 @@ def test_missing_runtime_publish_artifact_stops_release_build(
     assert result.returncode != 0
     expected_diagnostic = {
         "worker": "RuAgent.Runtime.Worker.exe was not created.",
-        "core": "RuAgent.Runtime.Core.dll was not published.",
         "runtimeconfig": "RuApp.runtimeconfig.json was not created.",
     }[missing_artifact]
     assert expected_diagnostic in result.stdout

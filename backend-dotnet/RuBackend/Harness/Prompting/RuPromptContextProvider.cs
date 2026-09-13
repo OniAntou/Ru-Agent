@@ -172,7 +172,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             }
         }
 
-        return new PromptRuntimeContext(null, null, null, null, references);
+        return new PromptRuntimeContext(null, null, references);
     }
 
     private static string WorkspaceLabel(string canonicalRoot)

@@ -19,7 +19,6 @@ using RuBackend.Harness.Workspace;
 using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
-using RuBackend.Speech;
 using RuBackend.Worker;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Tools.Web;
@@ -48,9 +47,7 @@ internal static class PublicHostServiceRegistration
         IConfiguration configuration,
         string? managedPublicBearer,
         int agentWorkerPort,
-        string agentWorkerToken,
-        int deviceWorkerPort,
-        string deviceWorkerToken)
+        string agentWorkerToken)
     {
         services.Configure<BackendOptions>(options =>
         {
@@ -67,18 +64,6 @@ internal static class PublicHostServiceRegistration
             configuration,
             agentWorkerPort,
             agentWorkerToken));
-        services.AddSingleton(BuildDeviceWorkerClientOptions(
-            configuration,
-            deviceWorkerPort,
-            deviceWorkerToken));
-        services.AddSingleton<LoopbackWorkerClient>();
-        services.AddSingleton<IWorkerConnectionClient>(services =>
-            services.GetRequiredService<LoopbackWorkerClient>());
-        services.AddSingleton<IRuntimeProtocolClient>(services =>
-            services.GetRequiredService<LoopbackWorkerClient>());
-        services.AddSingleton<IVoiceProtocolClient>(services =>
-            services.GetRequiredService<LoopbackWorkerClient>());
-        services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
         services.AddHttpClient<AgentWebToolExecutor>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);
@@ -127,7 +112,6 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton(services => new ProviderCatalogService(
             services.GetRequiredService<IHttpClientFactory>().CreateClient("ProviderCatalog"),
             services.GetRequiredService<ICredentialStore>(), services.GetRequiredService<TimeProvider>()));
-        services.AddSingleton<IRuntimeSettingsLoader, LoopbackRuntimeSettingsLoader>();
         services.AddSingleton<ISettingsTransitionService, SettingsTransitionService>();
         services.AddSingleton<ISessionStore, SessionStore>();
         return services;
@@ -383,28 +367,6 @@ internal static class PublicHostServiceRegistration
         return new AgentWorkerClientOptions(
             string.IsNullOrWhiteSpace(workerUrl)
                 ? new Uri("ws://127.0.0.1:8005/worker/v2")
-                : new Uri(workerUrl, UriKind.Absolute),
-            workerToken);
-    }
-
-    private static DeviceWorkerClientOptions BuildDeviceWorkerClientOptions(
-        IConfiguration configuration,
-        int managedPort,
-        string managedToken)
-    {
-        var configuredUrl = configuration["RuBackend:DeviceWorkerUrl"];
-        var workerUrl = !string.IsNullOrWhiteSpace(managedToken)
-            ? $"ws://127.0.0.1:{managedPort}/worker/v1"
-            : configuredUrl;
-        var workerToken = !string.IsNullOrWhiteSpace(managedToken)
-            ? managedToken
-            : configuration["RU_DEVICE_WORKER_TOKEN"]
-                ?? Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN")
-                ?? string.Empty;
-
-        return new DeviceWorkerClientOptions(
-            string.IsNullOrWhiteSpace(workerUrl)
-                ? new Uri("ws://127.0.0.1:8006/worker/v1")
                 : new Uri(workerUrl, UriKind.Absolute),
             workerToken);
     }

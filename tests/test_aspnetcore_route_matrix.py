@@ -21,12 +21,6 @@ EXPECTED_HTTP_ROUTES = {
     ("DELETE", "/sessions/{sessionId}"),
     ("POST", "/sessions/{sessionId}/fork"),
     ("POST", "/sessions/{sessionId}/rewind"),
-    ("GET", "/voice/status"),
-    ("POST", "/voice/latency"),
-    ("POST", "/voice/tts"),
-    ("POST", "/voice/warmup"),
-    ("POST", "/voice/release"),
-    ("POST", "/voice/transcribe"),
     ("POST", "/agent/v1/runs"),
     ("GET", "/agent/v1/runs/{runId}"),
     ("GET", "/agent/v1/runs/{runId}/events"),
@@ -50,13 +44,13 @@ EXPECTED_HTTP_ROUTES = {
     ("POST", "/host/shutdown"),
 }
 
-EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
+EXPECTED_WEBSOCKET_ROUTES: set[tuple[str, str]] = set()
 
 
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (43, 1)
+    assert validate_route_contract(repo_root) == (37, 0)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -76,6 +70,8 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
     contract = load_route_contract(repo_root)
 
     direct_paths = {
+        "/status",
+        "/models",
         "/diagnostics/logs",
         "/diagnostics/export",
         "/diagnostics/status",

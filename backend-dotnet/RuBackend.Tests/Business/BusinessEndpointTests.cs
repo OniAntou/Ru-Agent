@@ -125,15 +125,13 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task PostSettings_loads_runtime_then_persists_without_secrets()
+    public async Task PostSettings_persists_without_secrets()
     {
         using var data = TemporaryBusinessData.Create();
         var credentials = new FakeCredentialStore();
-        var runtime = new FakeRuntimeSettingsLoader();
         using var factory = CreateAspNetFactory(
             data.Paths,
-            credentials: credentials,
-            runtimeLoader: runtime);
+            credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -150,13 +148,11 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload.GetProperty("status").GetString());
-        var loaded = Assert.Single(runtime.Candidates);
-        Assert.Equal("OpenCode Zen", loaded.Backend);
-        Assert.Equal("opencode/free", loaded.OpenCodeModel);
         Assert.Equal(
             "new-private-key",
             await credentials.GetAsync("Ru", "api_key", CancellationToken.None));
         var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        Assert.Contains("opencode/free", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("new-private-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("api_key", persisted, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("max_tokens", persisted, StringComparison.Ordinal);
@@ -168,52 +164,10 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task Failed_runtime_load_restores_previous_settings_and_credentials()
-    {
-        using var data = TemporaryBusinessData.Create();
-        await File.WriteAllTextAsync(
-            data.Paths.SettingsFile,
-            "{\"backend\":\"llama.cpp\",\"model\":\"old.gguf\"}");
-        var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
-        var credentials = new FakeCredentialStore();
-        credentials.Seed("Ru", "api_key", "old-key");
-        var runtime = new FakeRuntimeSettingsLoader
-        {
-            Error = new InvalidOperationException("private model path must not leak"),
-        };
-        using var factory = CreateAspNetFactory(
-            data.Paths,
-            credentials: credentials,
-            runtimeLoader: runtime);
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.PostAsJsonAsync(
-            "/settings",
-            new
-            {
-                backend_choice = "opencode",
-                opencode_model = "broken-model",
-                opencode_api_key = "new-key",
-            });
-        var body = await response.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("\"status\":\"error\"", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("private model path", body, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
-        Assert.Equal(
-            "old-key",
-            await credentials.GetAsync("Ru", "api_key", CancellationToken.None));
-    }
-
-    [Fact]
     public async Task PostSettings_with_gguf_payload_migrates_to_opencode()
     {
         using var data = TemporaryBusinessData.Create();
-        var runtime = new FakeRuntimeSettingsLoader();
-        using var factory = CreateAspNetFactory(
-            data.Paths,
-            runtimeLoader: runtime);
+        using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -225,7 +179,8 @@ public sealed class BusinessEndpointTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("OpenCode Zen", Assert.Single(runtime.Candidates).Backend);
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal("OpenCode Zen", persisted["backend"]!.GetValue<string>());
     }
 
     [Fact]
@@ -233,11 +188,9 @@ public sealed class BusinessEndpointTests
     {
         using var data = TemporaryBusinessData.Create();
         var credentials = new FakeCredentialStore();
-        var runtime = new FakeRuntimeSettingsLoader();
         using var factory = CreateAspNetFactory(
             data.Paths,
-            credentials: credentials,
-            runtimeLoader: runtime);
+            credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -252,13 +205,10 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload.GetProperty("status").GetString());
-        var loaded = Assert.Single(runtime.Candidates);
-        Assert.Equal("Custom OpenAI", loaded.Backend);
-        Assert.Equal("my-model", loaded.CustomModel);
-        Assert.Equal("http://127.0.0.1:9000/v1", loaded.CustomUrl);
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
         Assert.Equal("Custom OpenAI", persisted["backend"]!.GetValue<string>());
         Assert.Equal("my-model", persisted["custom_model"]!.GetValue<string>());
+        Assert.Equal("http://127.0.0.1:9000/v1", persisted["custom_url"]!.GetValue<string>());
     }
 
     [Fact]
@@ -266,11 +216,9 @@ public sealed class BusinessEndpointTests
     {
         using var data = TemporaryBusinessData.Create();
         var credentials = new FakeCredentialStore();
-        var runtime = new FakeRuntimeSettingsLoader();
         using var factory = CreateAspNetFactory(
             data.Paths,
-            credentials: credentials,
-            runtimeLoader: runtime);
+            credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -290,7 +238,6 @@ public sealed class BusinessEndpointTests
         var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
         Assert.DoesNotContain("private-custom-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("custom_api_key", persisted, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("Custom OpenAI", Assert.Single(runtime.Candidates).Backend);
     }
 
     [Fact]
@@ -323,10 +270,7 @@ public sealed class BusinessEndpointTests
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
             "{\"backend\":\"custom\",\"custom_model\":\"my-model\",\"custom_url\":\"http://10.0.0.5:9000/v1\"}");
-        var runtime = new FakeRuntimeSettingsLoader();
-        using var factory = CreateAspNetFactory(
-            data.Paths,
-            runtimeLoader: runtime);
+        using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -338,8 +282,8 @@ public sealed class BusinessEndpointTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var loaded = Assert.Single(runtime.Candidates);
-        Assert.Equal("http://10.0.0.5:9000/v1", loaded.CustomUrl);
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal("http://10.0.0.5:9000/v1", persisted["custom_url"]!.GetValue<string>());
     }
 
     [Fact]
@@ -349,8 +293,7 @@ public sealed class BusinessEndpointTests
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
             "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
-        var runtime = new FakeRuntimeSettingsLoader();
-        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync("/settings", new
@@ -362,10 +305,6 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload!["status"]!.GetValue<string>());
-        Assert.Single(runtime.Candidates);
-        Assert.Equal("Kilo Gateway", runtime.Candidates[0].Backend);
-        Assert.Equal("kilo-model", runtime.Candidates[0].KiloModel);
-        Assert.Equal("opencode/free", runtime.Candidates[0].OpenCodeModel);
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
         Assert.Equal("Kilo Gateway", persisted["backend"]!.GetValue<string>());
         Assert.Equal("kilo-model", persisted["kilo_model"]!.GetValue<string>());
@@ -387,8 +326,7 @@ public sealed class BusinessEndpointTests
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
             "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
-        var runtime = new FakeRuntimeSettingsLoader();
-        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync("/settings", new
@@ -400,9 +338,6 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload!["status"]!.GetValue<string>());
-        Assert.Single(runtime.Candidates);
-        Assert.Equal(expectedBackend, runtime.Candidates[0].Backend);
-        Assert.Equal("grouped-model", CandidateModel(runtime.Candidates[0], expectedModelField));
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
         Assert.Equal(expectedBackend, persisted["backend"]!.GetValue<string>());
         Assert.Equal("grouped-model", persisted[expectedModelField]!.GetValue<string>());
@@ -435,8 +370,7 @@ public sealed class BusinessEndpointTests
             data.Paths.SettingsFile,
             "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
         var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
-        var runtime = new FakeRuntimeSettingsLoader();
-        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -444,7 +378,6 @@ public sealed class BusinessEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
 
         Assert.Equal("error", payload!["status"]!.GetValue<string>());
-        Assert.Empty(runtime.Candidates);
         Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
     }
 
@@ -456,8 +389,7 @@ public sealed class BusinessEndpointTests
             data.Paths.SettingsFile,
             "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
         var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
-        var runtime = new FakeRuntimeSettingsLoader();
-        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         var json = "{\"backend_choice\":\"kilo\",\"selected_model\":\"" + new string('a', 257) + "\"}";
@@ -466,19 +398,8 @@ public sealed class BusinessEndpointTests
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
 
         Assert.Equal("error", payload!["status"]!.GetValue<string>());
-        Assert.Empty(runtime.Candidates);
         Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
     }
-
-    private static string? CandidateModel(SettingsSnapshot snapshot, string modelField) => modelField switch
-    {
-        "opencode_model" => snapshot.OpenCodeModel,
-        "kilo_model" => snapshot.KiloModel,
-        "openai_model" => snapshot.OpenAiModel,
-        "anthropic_model" => snapshot.AnthropicModel,
-        "custom_model" => snapshot.CustomModel,
-        _ => throw new ArgumentOutOfRangeException(nameof(modelField)),
-    };
 
     [Fact]
     public async Task Session_routes_create_list_activate_and_delete_the_same_document()
@@ -571,30 +492,11 @@ public sealed class BusinessEndpointTests
 
     private static BackendWebApplicationFactory CreateAspNetFactory(
         DataPaths paths,
-        ICredentialStore? credentials = null,
-        IRuntimeSettingsLoader? runtimeLoader = null) =>
+        ICredentialStore? credentials = null) =>
         new(
             dataPaths: paths,
             credentialStore: credentials ?? new FakeCredentialStore(),
-            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader(),
             diagnosticEmitter: new DiscardingDiagnosticEmitter());
-
-    private sealed class FakeRuntimeSettingsLoader : IRuntimeSettingsLoader
-    {
-        public List<SettingsSnapshot> Candidates { get; } = [];
-
-        public Exception? Error { get; init; }
-
-        public Task<string> LoadAsync(
-            SettingsSnapshot candidate,
-            CancellationToken cancellationToken)
-        {
-            Candidates.Add(candidate);
-            return Error is null
-                ? Task.FromResult("Runtime loaded.")
-                : Task.FromException<string>(Error);
-        }
-    }
 
     private sealed class FakeCredentialStore : ICredentialStore
     {

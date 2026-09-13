@@ -16,7 +16,6 @@ public sealed class SettingsStore : ISettingsStore
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
     private const string BackendCustom = "Custom OpenAI";
-    private const string OriginalVoiceStyle = "original";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -46,6 +45,18 @@ public sealed class SettingsStore : ISettingsStore
         "ollama_url",
         "lmstudio_model",
         "lmstudio_url",
+        "voice_label",
+        "voice_style_id",
+        "voice_speed",
+        "auto_pace_enabled",
+        "auto_read_replies",
+        "show_subtitles",
+        "subtitle_color",
+        "subtitle_size",
+        "subtitle_duration",
+        "subtitle_pos_mode",
+        "subtitle_pos_x",
+        "subtitle_pos_y",
     ];
 
     private readonly string _settingsFile;
@@ -101,18 +112,6 @@ public sealed class SettingsStore : ISettingsStore
             persisted["api_variant"] = candidate.ApiVariant;
             persisted["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled;
             persisted.Remove("checkpoint_path");
-            persisted["voice_label"] = candidate.VoiceLabel;
-            persisted["voice_style_id"] = candidate.VoiceStyleId;
-            persisted["voice_speed"] = candidate.VoiceSpeed;
-            persisted["auto_pace_enabled"] = candidate.AutoPaceEnabled;
-            persisted["auto_read_replies"] = candidate.AutoReadReplies;
-            persisted["show_subtitles"] = candidate.ShowSubtitles;
-            persisted["subtitle_color"] = candidate.SubtitleColor;
-            persisted["subtitle_size"] = candidate.SubtitleSize;
-            persisted["subtitle_duration"] = candidate.SubtitleDuration;
-            persisted["subtitle_pos_mode"] = candidate.SubtitlePosMode;
-            persisted["subtitle_pos_x"] = candidate.SubtitlePosX;
-            persisted["subtitle_pos_y"] = candidate.SubtitlePosY;
             persisted["custom_model"] = candidate.CustomModel;
             persisted["custom_url"] = candidate.CustomUrl;
             persisted["openai_model"] = candidate.OpenAiModel;
@@ -196,18 +195,6 @@ public sealed class SettingsStore : ISettingsStore
             kiloModel,
             ReadString(raw, "api_variant", "Default"),
             ReadBoolean(raw, "kilo_reasoning_enabled", false),
-            ReadString(raw, "voice_label", "Ru (OmniVoice)"),
-            NormalizeVoiceStyle(ReadString(raw, "voice_style_id", OriginalVoiceStyle)),
-            ReadBoundedNumber(raw, "voice_speed", 1.0, 0.5, 2.0),
-            ReadBoolean(raw, "auto_pace_enabled", false),
-            ReadBoolean(raw, "auto_read_replies", true),
-            ReadBoolean(raw, "show_subtitles", false),
-            ReadString(raw, "subtitle_color", "#FFFFFF"),
-            ReadString(raw, "subtitle_size", "medium"),
-            ReadBoundedNumber(raw, "subtitle_duration", 2.0, 1.0, 10.0),
-            ReadString(raw, "subtitle_pos_mode", "auto"),
-            ReadBoundedInt(raw, "subtitle_pos_x", -1, -1, 10000),
-            ReadBoundedInt(raw, "subtitle_pos_y", -1, -1, 10000),
             ReadString(raw, "custom_model", "default"),
             ReadString(raw, "custom_url", "http://localhost:8000/v1"),
             ReadString(raw, "openai_model", string.Empty),
@@ -267,13 +254,6 @@ public sealed class SettingsStore : ISettingsStore
         };
     }
 
-    private static string NormalizeVoiceStyle(string value)
-    {
-        return string.Equals(value, OriginalVoiceStyle, StringComparison.Ordinal)
-            ? OriginalVoiceStyle
-            : OriginalVoiceStyle;
-    }
-
     private static string ReadString(JsonObject raw, string key, string fallback)
     {
         return raw[key] is JsonValue value && value.TryGetValue<string>(out var result)
@@ -286,21 +266,6 @@ public sealed class SettingsStore : ISettingsStore
         return raw[key] is JsonValue value && value.TryGetValue<bool>(out var result)
             ? result
             : fallback;
-    }
-
-    private static double ReadBoundedNumber(
-        JsonObject raw,
-        string key,
-        double fallback,
-        double minimum,
-        double maximum)
-    {
-        if (raw[key] is not JsonValue value || !TryReadNumber(value, out var result))
-        {
-            return fallback;
-        }
-
-        return Math.Clamp(result, minimum, maximum);
     }
 
     private static async Task<byte[]> ReadBoundedBytesAsync(
@@ -327,38 +292,6 @@ public sealed class SettingsStore : ISettingsStore
         return output.ToArray();
     }
 
-    private static int ReadBoundedInt(
-        JsonObject raw,
-        string key,
-        int fallback,
-        int minimum,
-        int maximum)
-    {
-        if (raw[key] is not JsonValue value || !TryReadNumber(value, out var result))
-        {
-            return fallback;
-        }
-
-        return Math.Clamp((int)Math.Round(result), minimum, maximum);
-    }
-
-    private static bool TryReadNumber(JsonValue value, out double result)
-    {
-        if (value.TryGetValue<int>(out var integer))
-        {
-            result = integer;
-            return true;
-        }
-
-        if (value.TryGetValue<long>(out var longInteger))
-        {
-            result = longInteger;
-            return true;
-        }
-
-        return value.TryGetValue<double>(out result) && double.IsFinite(result);
-    }
-
     private static void Validate(SettingsSnapshot candidate)
     {
         ValidateLength(candidate.Backend, 64, nameof(candidate.Backend));
@@ -370,17 +303,6 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.OpenAiModel, 256, nameof(candidate.OpenAiModel));
         ValidateLength(candidate.AnthropicModel, 256, nameof(candidate.AnthropicModel));
         ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
-        ValidateLength(candidate.VoiceLabel, 128, nameof(candidate.VoiceLabel));
-
-        if (!double.IsFinite(candidate.VoiceSpeed) || candidate.VoiceSpeed is < 0.5 or > 2.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(candidate.VoiceSpeed));
-        }
-
-        if (!string.Equals(candidate.VoiceStyleId, OriginalVoiceStyle, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Unsupported voice style.", nameof(candidate.VoiceStyleId));
-        }
     }
 
     private static void ValidateLength(string value, int maximum, string parameterName)

@@ -14,20 +14,6 @@ public sealed record AgentWorkerClientOptions(Uri Uri, string Token)
         MaxMessageBytes);
 }
 
-public sealed record DeviceWorkerClientOptions(Uri Uri, string Token)
-{
-    public const int ProtocolVersion = 1;
-    public const int DefaultMaxMessageBytes = 8 * 1024 * 1024;
-
-    public int MaxMessageBytes { get; init; } = DefaultMaxMessageBytes;
-
-    public void Validate() => WorkerClientOptionValidation.Validate(
-        Uri,
-        Token,
-        "/worker/v1",
-        MaxMessageBytes);
-}
-
 internal static class WorkerClientOptionValidation
 {
     public static void Validate(
@@ -67,4 +53,26 @@ public sealed class WorkerUnavailableException : Exception
         : base("Runtime worker is unavailable.", innerException)
     {
     }
+}
+
+public sealed class WorkerProtocolException : Exception
+{
+    public WorkerProtocolException(string code)
+        : this(code, retryable: false)
+    {
+    }
+
+    public WorkerProtocolException(string code, bool retryable)
+        : base(code)
+    {
+        Code = code;
+        Retryable = retryable;
+    }
+
+    public string Code { get; }
+
+    /// <summary>Worker-reported transient signal (e.g. rate limits). Preserved
+    /// from the error envelope so the step driver can retry bounded failures
+    /// instead of failing the run.</summary>
+    public bool Retryable { get; }
 }

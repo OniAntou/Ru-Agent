@@ -5,46 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ru-runtime"
 version = "0.1.0"
-description = "Cloud-first Vietnamese-English Ru conversational runtime."
+description = "Repository tooling for the Ru Agent workspace."
 requires-python = ">=3.11,<3.15"
-dependencies = [
-    "numpy>=1.26",
-    "SpeechRecognition>=3.10",
-    "pyaudio>=0.2",
-    "psutil>=5.9",
-    "websockets>=16,<17",
-]
+dependencies = []
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
-    "flask>=3.1,<4",
-    "soundfile>=0.12",
     "packaging>=24",
     "ruff==0.16.2",
-    "mypy==2.3.0",
 ]
-runtime = [
+tooling = [
     "httpx>=0.25",
-    "keyring>=25",
-]
-voice = [
-    "torch>=2.8,<2.9",
-    "torchaudio>=2.8,<2.9",
-    "omnivoice>=0.2.1",
-    "flask>=3.1,<4",
-    "numpy>=1.26",
-    "soundfile>=0.12",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-ru_runtime = ["reference_text.txt", "tyc_talk.wav"]
+[tool.setuptools]
+packages = []
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "scripts", "."]
+pythonpath = ["scripts", "."]
 testpaths = ["tests"]
 norecursedirs = [".venv", ".venv311", "omnivoice_env", "models", ".tmp", ".worktrees", "pip-cache", ".pytest_cache", ".minigpt", "gui-winui3", "backend-dotnet", "logs", "artifacts", "data"]
 addopts = "-p no:warnings"
@@ -56,13 +35,3 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
-
-[tool.mypy]
-python_version = "3.11"
-# Check Ru's source deterministically; CI executes the runtime on both 3.11 and 3.13.
-# Host-version-specific third-party stubs (notably NumPy) must not change this gate.
-no_site_packages = true
-check_untyped_defs = true
-warn_return_any = true
-warn_unused_configs = true
-ignore_missing_imports = true

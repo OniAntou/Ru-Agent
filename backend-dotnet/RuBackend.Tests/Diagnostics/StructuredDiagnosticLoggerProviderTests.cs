@@ -43,12 +43,12 @@ public sealed class StructuredDiagnosticLoggerProviderTests
     {
         var emitter = new RecordingEmitter();
         using var provider = new StructuredDiagnosticLoggerProvider(emitter);
-        var logger = provider.CreateLogger("RuBackend.Stt");
+        var logger = provider.CreateLogger("RuBackend.Memory");
 
         logger.LogWarning(new HttpRequestException("secret payload"), "raw failure");
 
         var call = Assert.Single(emitter.Calls);
-        Assert.Equal("stt.failed", call.EventCode);
+        Assert.Equal("memory.failed", call.EventCode);
         Assert.Equal("network", call.ExceptionKind);
     }
 

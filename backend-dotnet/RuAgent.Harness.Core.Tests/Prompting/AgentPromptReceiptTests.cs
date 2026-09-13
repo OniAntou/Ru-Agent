@@ -142,8 +142,6 @@ public sealed class AgentPromptReceiptTests
             new PromptRuntimeContext(
                 null,
                 null,
-                null,
-                null,
                 Array.Empty<PromptReference>()));
     }
 

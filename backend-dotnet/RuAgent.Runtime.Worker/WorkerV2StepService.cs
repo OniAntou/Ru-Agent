@@ -5,7 +5,6 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Core.Lifecycle;
 
 namespace RuAgent.Runtime.Worker;
 
@@ -45,26 +44,22 @@ public sealed class WorkerV2StepService
     private readonly IModelProviderResolver _providers;
     private readonly IModelProvider? _singleProvider;
     private readonly WorkerV2Options _options;
-    private readonly RuntimeLeaseCoordinator? _leases;
     private readonly SemaphoreSlim _providerGate = new(1, 1);
 
     public WorkerV2StepService(
         IModelProviderResolver providers,
-        WorkerV2Options? options = null,
-        RuntimeLeaseCoordinator? leases = null)
-        : this((IModelProvider?)null, providers, options, leases) { }
+        WorkerV2Options? options = null)
+        : this((IModelProvider?)null, providers, options) { }
 
     public WorkerV2StepService(
         IModelProvider provider,
-        WorkerV2Options? options = null,
-        RuntimeLeaseCoordinator? leases = null)
-        : this(provider, null, options, leases) { }
+        WorkerV2Options? options = null)
+        : this(provider, null, options) { }
 
     private WorkerV2StepService(
         IModelProvider? singleProvider,
         IModelProviderResolver? providers,
-        WorkerV2Options? options,
-        RuntimeLeaseCoordinator? leases)
+        WorkerV2Options? options)
     {
         _singleProvider = singleProvider;
         _providers = providers ?? (singleProvider is not null ? new ModelProviderResolver(new Dictionary<string, IModelProvider>
@@ -74,16 +69,7 @@ public sealed class WorkerV2StepService
             ["anthropic_messages"] = singleProvider,
         }) : throw new ArgumentNullException(nameof(providers)));
         _options = options ?? DefaultOptions;
-        _leases = leases;
     }
-
-    /// <summary>
-    /// The coordinator is shared with the v1 device adapters by the managed
-    /// composition. Generation holds the observation lease so an observation
-    /// request can fail fast with <c>generation_busy</c> instead of competing
-    /// with the active model call.
-    /// </summary>
-    public RuntimeLeaseCoordinator? Leases => _leases;
 
     public async Task<WorkerV2StepResult> RunAsync(JsonObject startPayload, CancellationToken cancellationToken)
         => await RunAsync(startPayload, null, cancellationToken).ConfigureAwait(false);
@@ -133,17 +119,9 @@ public sealed class WorkerV2StepService
             start.Images ?? Array.Empty<ModelImage>());
         var holdback = new DeltaHoldback(onDelta);
 
-        RuntimeLease? generationLease = null;
         var providerGateEntered = false;
         try
         {
-            if (_leases is not null)
-            {
-                generationLease = await _leases
-                    .AcquireAsync(ResourceKind.Observation, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
             await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             providerGateEntered = true;
             var text = new StringBuilder();
@@ -240,11 +218,6 @@ public sealed class WorkerV2StepService
             if (providerGateEntered)
             {
                 _providerGate.Release();
-            }
-
-            if (generationLease is not null)
-            {
-                await generationLease.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

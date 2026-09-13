@@ -324,9 +324,7 @@ public sealed class WorkerV2Server
     }
 
     private static bool IsWorkerPath(PathString path) =>
-        string.Equals(path, "/worker", StringComparison.Ordinal)
-        || string.Equals(path, "/worker/v1", StringComparison.Ordinal)
-        || string.Equals(path, "/worker/v2", StringComparison.Ordinal);
+        string.Equals(path, "/worker/v2", StringComparison.Ordinal);
 
     private static JsonObject UsageJson(ModelUsage usage)
     {

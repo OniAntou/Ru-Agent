@@ -1,12 +1,6 @@
 {
   "routes": [
     {"method": "GET", "path": "/status", "group": "status"},
-    {"method": "GET", "path": "/models", "group": "status"},
-    {"method": "GET", "path": "/voice/status", "group": "voice"},
-    {"method": "POST", "path": "/voice/latency", "group": "voice"},
-    {"method": "POST", "path": "/voice/tts", "group": "voice"},
-    {"method": "POST", "path": "/voice/warmup", "group": "voice"},
-    {"method": "POST", "path": "/voice/release", "group": "voice"},
-    {"method": "POST", "path": "/voice/transcribe", "group": "voice"}
+    {"method": "GET", "path": "/models", "group": "status"}
   ]
 }

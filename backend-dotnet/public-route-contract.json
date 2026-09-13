@@ -1,12 +1,12 @@
 [
-  {"method":"GET","path":"/status","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.GetStatusAsync"]},
+  {"method":"GET","path":"/status","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetStatusAsync"]},
   {"method":"POST","path":"/host/shutdown","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ShutdownHostAsync"]},
   {"method":"GET","path":"/diagnostics/logs","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetDiagnosticLogsAsync"]},
   {"method":"GET","path":"/diagnostics/export","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ExportDiagnosticLogsAsync"]},
   {"method":"GET","path":"/diagnostics/status","transport":"http","source":"backend-dotnet/RuBackend/Diagnostics/DiagnosticEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetDiagnosticStatusAsync"]},
   {"method":"GET","path":"/activity-log","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetActivityLogAsync"]},
   {"method":"DELETE","path":"/activity-log","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ClearActivityLogAsync"]},
-  {"method":"GET","path":"/models","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.GetModelsAsync"]},
+  {"method":"GET","path":"/models","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetModelsAsync"]},
   {"method":"GET","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSettingsAsync"]},
   {"method":"POST","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.SaveSettingsAsync"]},
   {"method":"POST","path":"/settings/provider/remove","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RemoveProviderAsync"]},
@@ -16,12 +16,6 @@
   {"method":"DELETE","path":"/sessions/{sessionId}","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.DeleteSessionAsync"]},
   {"method":"POST","path":"/sessions/{sessionId}/fork","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ForkSessionAsync"]},
   {"method":"POST","path":"/sessions/{sessionId}/rewind","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RewindSessionAsync"]},
-  {"method":"GET","path":"/voice/status","transport":"http","source":"backend-dotnet/RuBackend/Runtime/VoiceEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.GetVoiceStatusAsync"]},
-  {"method":"POST","path":"/voice/latency","transport":"http","source":"backend-dotnet/RuBackend/Runtime/VoiceEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.ReportVoiceLatencyAsync"]},
-  {"method":"POST","path":"/voice/tts","transport":"http","source":"backend-dotnet/RuBackend/Runtime/VoiceEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.SynthesizeVoiceAsync"]},
-  {"method":"POST","path":"/voice/warmup","transport":"http","source":"backend-dotnet/RuBackend/Runtime/VoiceEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.WarmupVoiceAsync"]},
-  {"method":"POST","path":"/voice/release","transport":"http","source":"backend-dotnet/RuBackend/Runtime/VoiceEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.ReleaseVoiceAsync"]},
-  {"method":"POST","path":"/voice/transcribe","transport":"http","source":"backend-dotnet/RuBackend/Speech/SttEndpoints.cs","classification":"runtime-worker","winui_callers":["ApiService.TranscribeAsync"]},
   {"method":"POST","path":"/agent/v1/runs","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/runs/{runId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"GET","path":"/agent/v1/runs/{runId}/events","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
@@ -41,6 +35,5 @@
   {"method":"PUT","path":"/agent/v1/workspaces/{workspaceId}/concurrency","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.SetWorkspaceConcurrencyAsync"]},
   {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/activity","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetWorkspaceActivityAsync"]},
   {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/changes","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetWorkspaceChangesAsync"]},
-  {"method":"POST","path":"/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RestoreWorkspaceChangeAsync"]},
-  {"method":"WS","path":"/voice/stream","transport":"websocket","source":"backend-dotnet/RuBackend/Runtime/VoiceStreamEndpoint.cs","classification":"runtime-worker","winui_callers":["VoiceStreamClient"]}
+  {"method":"POST","path":"/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RestoreWorkspaceChangeAsync"]}
 ]

@@ -1,48 +1,40 @@
 using System.Net;
-using System.Text;
-using Microsoft.AspNetCore.Http;
-using RuBackend.Runtime;
-using RuBackend.Tests.Fakes;
+using System.Text.Json;
 using Xunit;
 
 namespace RuBackend.Tests.Runtime;
 
 public sealed class StatusEndpointsTests
 {
-    [Theory]
-    [InlineData("/status")]
-    public async Task AspNet_mode_maps_status_to_the_private_worker(string path)
-    {
-        var worker = WorkerReturning("{\"status\":\"ok\"}");
-        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync(path);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(path, Assert.Single(worker.Requests).PathAndQuery);
-    }
-
     [Fact]
-    public async Task Status_returns_503_when_worker_is_not_ready()
+    public async Task AspNet_mode_serves_status_from_the_host_settings()
     {
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: new StubRuntimeWorkerClient(
-                new HttpRequestException("private model path")));
+        using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/status");
-        var text = await response.Content.ReadAsStringAsync();
 
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        Assert.DoesNotContain("private model path", text, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal("ok", body.GetProperty("status").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("backend").GetString()));
     }
 
     [Fact]
-    public async Task Status_rejects_an_oversized_GET_body_before_worker_dispatch()
+    public async Task Status_requires_the_desktop_bearer()
     {
-        var worker = WorkerReturning("{\"status\":\"ok\"}");
-        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/status");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Status_rejects_an_oversized_GET_body_before_dispatch()
+    {
+        using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/status")
         {
@@ -52,11 +44,5 @@ public sealed class StatusEndpointsTests
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
-        Assert.Empty(worker.Requests);
     }
-
-    private static StubRuntimeWorkerClient WorkerReturning(string body) => new(new RuntimeWorkerResponse(
-        StatusCodes.Status200OK,
-        "application/json",
-        Encoding.UTF8.GetBytes(body)));
 }

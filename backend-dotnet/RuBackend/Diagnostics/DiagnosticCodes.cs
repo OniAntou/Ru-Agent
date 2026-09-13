@@ -18,14 +18,6 @@ public static class DiagnosticCodes
     public const string LlmRequest = "llm.request";
     public const string LlmResponse = "llm.response";
 
-    public const string SpeechSynthesizeStart = "speech.synthesize.start";
-    public const string SpeechSynthesizeDone = "speech.synthesize.done";
-    public const string SpeechSynthesizeFailed = "speech.synthesize.failed";
-
-    public const string SttStart = "stt.start";
-    public const string SttDone = "stt.done";
-    public const string SttFailed = "stt.failed";
-
     public const string MemorySearch = "memory.search";
     public const string MemorySave = "memory.save";
     public const string MemoryFailed = "memory.failed";

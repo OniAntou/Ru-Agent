@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import time
 from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
-from websockets.asyncio.client import connect
 
 
 def percentile(samples: Iterable[float], percentile_value: float) -> float:
@@ -38,16 +36,6 @@ def _http_url(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + path
 
 
-def _websocket_url(base_url: str, path: str, token: str | None = None) -> str:
-    # NOTE: bearer token must never appear in the URL query (leaks to logs);
-    # it is sent via the Authorization header in _measure_websocket_once.
-    # The optional token arg is kept for backward compatibility and ignored.
-    del token
-    scheme = "wss" if base_url.startswith("https://") else "ws"
-    authority = base_url.split("://", 1)[1].rstrip("/")
-    return f"{scheme}://{authority}{path}"
-
-
 def measure_http_settings(base_url: str, token: str, samples: int) -> dict[str, float | int | None]:
     timings: list[float] = []
     failures = 0
@@ -68,33 +56,9 @@ def measure_http_settings(base_url: str, token: str, samples: int) -> dict[str, 
     return summarize_samples(timings, failures=failures)
 
 
-async def _measure_websocket_once(uri: str, token: str) -> float:
-    started = time.perf_counter()
-    headers = {"Authorization": f"Bearer {token}"}
-    async with connect(uri, proxy=None, open_timeout=10, close_timeout=2, additional_headers=headers):
-        pass
-    return (time.perf_counter() - started) * 1000
-
-
-def measure_websockets(base_url: str, token: str, samples: int) -> dict[str, dict[str, float | int | None]]:
-    result: dict[str, dict[str, float | int | None]] = {}
-    for path in ("/voice/stream",):
-        timings: list[float] = []
-        failures = 0
-        uri = _websocket_url(base_url, path)
-        for _ in range(samples):
-            try:
-                timings.append(asyncio.run(_measure_websocket_once(uri, token)))
-            except Exception:
-                failures += 1
-        result[path] = summarize_samples(timings, failures=failures)
-    return result
-
-
 def benchmark_target(base_url: str, token: str, samples: int) -> dict[str, object]:
     return {
         "http_settings": measure_http_settings(base_url, token, samples),
-        "websockets": measure_websockets(base_url, token, samples),
     }
 
 

@@ -137,16 +137,6 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
         private static string InferEventCode(string categoryName)
         {
             var category = categoryName.ToLowerInvariant();
-            if (category.Contains(".stt", StringComparison.Ordinal))
-            {
-                return DiagnosticCodes.SttFailed;
-            }
-
-            if (category.Contains(".voice", StringComparison.Ordinal))
-            {
-                return DiagnosticCodes.SpeechSynthesizeFailed;
-            }
-
             if (category.Contains(".memory", StringComparison.Ordinal))
             {
                 return DiagnosticCodes.MemoryFailed;

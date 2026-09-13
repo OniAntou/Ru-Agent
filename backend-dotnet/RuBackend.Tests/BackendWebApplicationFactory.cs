@@ -22,12 +22,9 @@ namespace RuBackend.Tests;
 public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string? _ownedDataRoot;
-    private readonly IRuntimeWorkerClient _runtimeWorkerClient;
     private readonly DataPaths? _dataPaths;
     private readonly ICredentialStore? _credentialStore;
-    private readonly IRuntimeSettingsLoader? _runtimeSettingsLoader;
     private readonly ISettingsStore? _settingsStore;
-    private readonly IVoiceProtocolClient? _voiceProtocolClient;
     private readonly IAgentBrokerClient? _agentBrokerClient;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
     private readonly bool _withInProcessBroker;
@@ -36,12 +33,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private string? _brokerRoot;
 
     public BackendWebApplicationFactory(
-        IRuntimeWorkerClient? runtimeWorkerClient = null,
         DataPaths? dataPaths = null,
         ICredentialStore? credentialStore = null,
-        IRuntimeSettingsLoader? runtimeSettingsLoader = null,
         ISettingsStore? settingsStore = null,
-        IVoiceProtocolClient? voiceProtocolClient = null,
         IAgentBrokerClient? agentBrokerClient = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null,
@@ -50,12 +44,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
             : null;
-        _runtimeWorkerClient = runtimeWorkerClient ?? StubRuntimeWorkerClient.Healthy();
         _dataPaths = dataPaths;
         _credentialStore = credentialStore;
-        _runtimeSettingsLoader = runtimeSettingsLoader;
         _settingsStore = settingsStore;
-        _voiceProtocolClient = voiceProtocolClient;
         _agentBrokerClient = agentBrokerClient;
         _diagnosticEmitter = diagnosticEmitter;
         ModelStepRunnerOverride = modelStepRunner;
@@ -75,7 +66,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     {
         builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
         builder.UseSetting("RU_AGENT_WORKER_TOKEN", "test-agent-worker-secret");
-        builder.UseSetting("RU_DEVICE_WORKER_TOKEN", "test-device-worker-secret");
         if (_ownedDataRoot is not null)
         {
             builder.UseSetting("RU_DATA_ROOT", _ownedDataRoot);
@@ -92,9 +82,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
 
         builder.ConfigureTestServices(services =>
         {
-            services.RemoveAll<IRuntimeWorkerClient>();
-            services.AddSingleton(_runtimeWorkerClient);
-
             if (ModelStepRunnerOverride is not null)
             {
                 services.RemoveAll<RuAgent.Harness.Core.IModelStepRunner>();
@@ -112,22 +99,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             services.AddHttpClient("ProviderCatalog")
                 .ConfigurePrimaryHttpMessageHandler(() => new SyntheticCatalogHandler());
 
-            if (_runtimeSettingsLoader is not null)
-            {
-                services.RemoveAll<IRuntimeSettingsLoader>();
-                services.AddSingleton(_runtimeSettingsLoader);
-            }
-
             if (_settingsStore is not null)
             {
                 services.RemoveAll<ISettingsStore>();
                 services.AddSingleton(_settingsStore);
-            }
-
-            if (_voiceProtocolClient is not null)
-            {
-                services.RemoveAll<IVoiceProtocolClient>();
-                services.AddSingleton(_voiceProtocolClient);
             }
 
             if (_agentBrokerClient is not null)

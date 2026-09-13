@@ -1,44 +1,25 @@
 using System.Net;
 using System.Net.Http;
-using RuAgent.Runtime.Adapters.Audio;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Adapters.Runtime;
-using RuAgent.Runtime.Adapters.Speech;
-using RuAgent.Runtime.Core.Contracts;
-using RuAgent.Runtime.Core.Lifecycle;
 
 namespace RuAgent.Runtime.Worker;
 
 /// <summary>
-/// Explicit object graph for the managed Worker. Agent v2 receives the one-shot
-/// model bootstrap; device v1 receives only typed settings and adapters, never
-/// the provider credential or bootstrap file.
+/// Explicit object graph for the managed Worker: one agent v2 model-step server
+/// that receives the one-shot provider bootstrap.
 /// </summary>
 public sealed record ManagedWorkerCompositionOptions
 {
     public ManagedWorkerCompositionOptions(
         int agentPort,
-        int devicePort,
         string agentWorkerToken,
-        string deviceWorkerToken,
         ProviderBootstrapData agentProviderBootstrap,
         string projectRoot,
         string? providerBootstrapRoot = null)
     {
         ValidatePort(agentPort, nameof(agentPort));
-        ValidatePort(devicePort, nameof(devicePort));
-        if (agentPort != 0 && devicePort != 0 && agentPort == devicePort)
-        {
-            throw new ArgumentException("Agent and device worker ports must differ.");
-        }
-
         AgentWorkerToken = ValidateToken(agentWorkerToken, nameof(agentWorkerToken));
-        DeviceWorkerToken = ValidateToken(deviceWorkerToken, nameof(deviceWorkerToken));
-        if (string.Equals(AgentWorkerToken, DeviceWorkerToken, StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Agent and device worker tokens must differ.");
-        }
         AgentProviderBootstrap = agentProviderBootstrap ?? throw new ArgumentNullException(nameof(agentProviderBootstrap));
         ProjectRoot = ResolveDirectory(projectRoot, nameof(projectRoot));
         ProviderBootstrapRoot = providerBootstrapRoot is null
@@ -48,11 +29,7 @@ public sealed record ManagedWorkerCompositionOptions
 
     public int AgentPort { get; }
 
-    public int DevicePort { get; }
-
     public string AgentWorkerToken { get; }
-
-    public string DeviceWorkerToken { get; }
 
     public ProviderBootstrapData AgentProviderBootstrap { get; }
 
@@ -61,8 +38,6 @@ public sealed record ManagedWorkerCompositionOptions
     public string? ProviderBootstrapRoot { get; }
 
     public string? LogRoot { get; init; }
-
-    public Uri? VoiceEndpoint { get; init; }
 
     private static void ValidatePort(int port, string parameterName)
     {
@@ -110,18 +85,6 @@ public sealed class ManagedWorkerCompositionDependencies
     public IModelProvider? ModelProvider { get; init; }
 
     public IModelProviderResolver? ModelProviderResolver { get; init; }
-
-    public IVoiceProvider? VoiceProvider { get; init; }
-
-    public OmniVoiceProcessController? OmniVoiceProcess { get; init; }
-
-    public HttpClient? VoiceHttpClient { get; init; }
-
-    public ISpeechRecognizer? SpeechRecognizer { get; init; }
-
-    public IManagedRuntimeApplier? RuntimeApplier { get; init; }
-
-    public RuntimeLeaseCoordinator? SharedLeases { get; init; }
 }
 
 public sealed class ManagedWorkerComposition : IAsyncDisposable
@@ -130,48 +93,16 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
     private int _disposed;
 
     private ManagedWorkerComposition(
-        RuntimeLeaseCoordinator leases,
-        ManagedRuntimeSettingsService settings,
         WorkerV2StepService agentSteps,
-        WorkerV2Server agentServer,
-        ManagedWorkerV1RequestRouter deviceRouter,
-        WorkerV1Server deviceServer,
-        IVoiceProvider? voiceProvider,
-        ISpeechRecognizer speechRecognizer,
-        OmniVoiceProcessController? omniVoiceProcess)
+        WorkerV2Server agentServer)
     {
-        Leases = leases;
-        SharedLeases = leases;
-        Settings = settings;
         AgentSteps = agentSteps;
         AgentServer = agentServer;
-        DeviceRouter = deviceRouter;
-        DeviceServer = deviceServer;
-        VoiceProvider = voiceProvider;
-        SpeechRecognizer = speechRecognizer;
-        OmniVoiceProcess = omniVoiceProcess;
     }
-
-    public RuntimeLeaseCoordinator Leases { get; }
-
-    /// <summary>Alias used by diagnostics to make shared ownership explicit.</summary>
-    public RuntimeLeaseCoordinator SharedLeases { get; }
-
-    public ManagedRuntimeSettingsService Settings { get; }
 
     public WorkerV2StepService AgentSteps { get; }
 
     public WorkerV2Server AgentServer { get; }
-
-    public ManagedWorkerV1RequestRouter DeviceRouter { get; }
-
-    public WorkerV1Server DeviceServer { get; }
-
-    public IVoiceProvider? VoiceProvider { get; }
-
-    public ISpeechRecognizer SpeechRecognizer { get; }
-
-    public OmniVoiceProcessController? OmniVoiceProcess { get; }
 
     public static ManagedWorkerComposition Create(
         ManagedWorkerCompositionOptions options,
@@ -183,18 +114,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
         var owned = new List<object>();
         try
         {
-            if (dependencies.OmniVoiceProcess is not null)
-            {
-                // The composition owns provider lifecycle even when a test or
-                // host supplies a custom process controller.
-                owned.Add(dependencies.OmniVoiceProcess);
-            }
-
-            var leases = dependencies.SharedLeases ?? Own(owned, new RuntimeLeaseCoordinator());
-            var settings = new ManagedRuntimeSettingsService(
-                InitialSettings(options.AgentProviderBootstrap),
-                dependencies.RuntimeApplier);
-
             IModelProviderResolver providerResolver;
             if (dependencies.ModelProviderResolver is not null)
             {
@@ -228,78 +147,10 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
                 options.AgentProviderBootstrap.Model,
                 options.AgentProviderBootstrap.Credential,
                 options.ProviderBootstrapRoot);
-            var agentSteps = new WorkerV2StepService(providerResolver, agentOptions, leases);
+            var agentSteps = new WorkerV2StepService(providerResolver, agentOptions);
             var agentServer = new WorkerV2Server(options.AgentWorkerToken, agentSteps);
 
-            var voiceProvider = dependencies.VoiceProvider;
-            var omniVoiceProcess = dependencies.OmniVoiceProcess;
-            if (voiceProvider is null)
-            {
-                var voiceEndpoint = ResolveVoiceEndpoint(options);
-                var processOptions = TryBuildOmniVoiceProcessOptions(options.ProjectRoot, voiceEndpoint);
-                if (omniVoiceProcess is null && processOptions is not null)
-                {
-                    omniVoiceProcess = Own(owned, new OmniVoiceProcessController(processOptions));
-                }
-
-                if (omniVoiceProcess is not null)
-                {
-                    var voiceHttpClient = dependencies.VoiceHttpClient
-                        ?? Own(owned, new HttpClient());
-                    voiceProvider = Own(owned, new OmniVoiceHttpProvider(
-                        voiceHttpClient,
-                        new OmniVoiceProviderOptions(voiceEndpoint),
-                        omniVoiceProcess));
-                }
-            }
-
-            var speechRecognizer = dependencies.SpeechRecognizer
-                ?? Own(owned, new UnavailableSpeechRecognizer());
-
-            var privateRouter = new PrivateRuntimeRequestRouter(
-                new UnavailablePrivateRuntimeRequestHandler());
-            var runtimeStatusHandler = new ManagedRuntimeStatusRequestHandler(settings);
-            privateRouter = privateRouter
-                .WithRouteHandler("GET", "/status", runtimeStatusHandler)
-                .WithRouteHandler("GET", "/models", runtimeStatusHandler);
-            if (voiceProvider is not null)
-            {
-                var voiceHandler = new VoiceRuntimeRequestHandler(voiceProvider, settings);
-                privateRouter = privateRouter
-                    .WithRouteHandler("GET", "/voice/status", voiceHandler)
-                    .WithRouteHandler("POST", "/voice/latency", voiceHandler)
-                    .WithRouteHandler("POST", "/voice/tts", voiceHandler)
-                    .WithRouteHandler("POST", "/voice/warmup", voiceHandler)
-                    .WithRouteHandler("POST", "/voice/release", voiceHandler);
-            }
-            else
-            {
-                var unavailableVoiceHandler = new UnavailableVoiceRuntimeRequestHandler();
-                privateRouter = privateRouter
-                    .WithRouteHandler("GET", "/voice/status", unavailableVoiceHandler)
-                    .WithRouteHandler("POST", "/voice/latency", unavailableVoiceHandler)
-                    .WithRouteHandler("POST", "/voice/tts", unavailableVoiceHandler)
-                    .WithRouteHandler("POST", "/voice/warmup", unavailableVoiceHandler)
-                    .WithRouteHandler("POST", "/voice/release", unavailableVoiceHandler);
-            }
-
-            var deviceRouter = new ManagedWorkerV1RequestRouter(
-                settings,
-                privateRouter,
-                voiceProvider is null ? null : new VoiceStreamCoordinator(voiceProvider, leases),
-                speechRecognizer);
-            var deviceServer = new WorkerV1Server(options.DeviceWorkerToken, deviceRouter);
-
-            var composition = new ManagedWorkerComposition(
-                leases,
-                settings,
-                agentSteps,
-                agentServer,
-                deviceRouter,
-                deviceServer,
-                voiceProvider,
-                speechRecognizer,
-                omniVoiceProcess);
+            var composition = new ManagedWorkerComposition(agentSteps, agentServer);
             composition._owned.AddRange(owned);
             return composition;
         }
@@ -323,61 +174,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
         }
 
         _owned.Clear();
-    }
-
-    private static RuntimeSettingsSnapshot InitialSettings(ProviderBootstrapData bootstrap) => new(
-        bootstrap.Backend,
-        bootstrap.Model,
-        bootstrap.Endpoint,
-        "Default",
-        false);
-
-    private static Uri ResolveVoiceEndpoint(ManagedWorkerCompositionOptions options)
-    {
-        if (options.VoiceEndpoint is not null)
-        {
-            return options.VoiceEndpoint;
-        }
-
-        var host = Environment.GetEnvironmentVariable("RU_VOICE_HOST");
-        if (string.IsNullOrWhiteSpace(host) || !string.Equals(host.Trim(), "127.0.0.1", StringComparison.Ordinal))
-        {
-            host = "127.0.0.1";
-        }
-
-        var port = 5_052;
-        var rawPort = Environment.GetEnvironmentVariable("RU_VOICE_PORT");
-        if (int.TryParse(rawPort, out var parsedPort) && parsedPort is >= 1_024 and <= 65_535)
-        {
-            port = parsedPort;
-        }
-
-        return new UriBuilder(Uri.UriSchemeHttp, host, port).Uri;
-    }
-
-    private static OmniVoiceProcessOptions? TryBuildOmniVoiceProcessOptions(
-        string projectRoot,
-        Uri voiceEndpoint)
-    {
-        var python = Path.Combine(projectRoot, "omnivoice_env", "Scripts", "python.exe");
-        var script = Path.Combine(projectRoot, "src", "ru_runtime", "voice", "omnivoice_server.py");
-        if (!File.Exists(python) || !File.Exists(script))
-        {
-            return null;
-        }
-
-        try
-        {
-            return new OmniVoiceProcessOptions(projectRoot, python, script)
-            {
-                Host = "127.0.0.1",
-                Port = voiceEndpoint.Port,
-            };
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
     }
 
     private static T Own<T>(ICollection<object> owned, T value)
@@ -419,17 +215,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
             case IDisposable disposable:
                 disposable.Dispose();
                 break;
-        }
-    }
-
-    private sealed class UnavailableSpeechRecognizer : ISpeechRecognizer
-    {
-        public Task<string> RecognizeAsync(
-            SpeechRequest request,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new SpeechProviderException("speech_unavailable", retryable: true);
         }
     }
 }

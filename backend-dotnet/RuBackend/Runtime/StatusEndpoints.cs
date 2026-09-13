@@ -1,4 +1,3 @@
-using RuBackend.Configuration;
 using RuBackend.Business.Settings;
 using RuBackend.Providers;
 
@@ -8,9 +7,23 @@ public static class StatusEndpoints
 {
     public static void Map(WebApplication app)
     {
-        app.MapGet("/status", HandleAsync);
+        app.MapGet("/status", StatusAsync);
         app.MapGet("/models", ModelsAsync);
         app.MapPost("/host/shutdown", ShutdownAsync);
+    }
+
+    private static async Task<IResult> StatusAsync(
+        HttpContext context,
+        ISettingsStore settings,
+        CancellationToken cancellationToken)
+    {
+        var current = await settings.ReadAsync(cancellationToken);
+        return Results.Json(new
+        {
+            status = "ok",
+            message = "Backend is running and ready for the WinUI3 UI.",
+            backend = current.Backend,
+        });
     }
 
     private static async Task<IResult> ModelsAsync(HttpContext context, ISettingsStore settings,
@@ -35,21 +48,6 @@ public static class StatusEndpoints
             return Results.Json(new { status = "error", error_code = "catalog_configuration_error", models = Array.Empty<string>() });
         }
     }
-
-    private static Task HandleAsync(
-        HttpContext context,
-        IRuntimeWorkerClient workerClient,
-        ILoggerFactory loggerFactory,
-        Microsoft.Extensions.Options.IOptions<BackendOptions> options,
-        CancellationToken cancellationToken) =>
-        RuntimeEndpointRelay.SendAsync(
-            context,
-            workerClient,
-            loggerFactory,
-            "RuBackend.Status",
-            "Runtime worker is not ready.",
-            options.Value.MaxRequestBodyBytes,
-            cancellationToken);
 
     private static IResult ShutdownAsync(IHostApplicationLifetime lifetime)
     {

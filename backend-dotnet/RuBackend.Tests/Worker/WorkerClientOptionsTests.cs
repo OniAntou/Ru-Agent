@@ -27,20 +27,6 @@ public sealed class WorkerClientOptionsTests
     }
 
     [Fact]
-    public void Device_options_require_the_v1_endpoint()
-    {
-        var options = new DeviceWorkerClientOptions(
-            new Uri("ws://127.0.0.1:8124/worker/v1"),
-            "device-token");
-
-        options.Validate();
-
-        Assert.Throws<ArgumentException>(() => new DeviceWorkerClientOptions(
-            new Uri("ws://127.0.0.1:8124/worker/v2"),
-            "device-token").Validate());
-    }
-
-    [Fact]
     public void Agent_options_reject_a_v1_endpoint_instead_of_rewriting_it()
     {
         var options = new AgentWorkerClientOptions(

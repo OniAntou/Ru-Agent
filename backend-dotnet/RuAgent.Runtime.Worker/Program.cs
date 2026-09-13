@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using RuAgent.Runtime.Adapters.Bootstrap;
-using RuAgent.Runtime.Adapters.Models;
 
 namespace RuAgent.Runtime.Worker;
 
@@ -11,7 +10,6 @@ internal static class WorkerEntryPoint
     {
         var host = "127.0.0.1";
         var port = 0;
-        var devicePort = 0;
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -22,70 +20,41 @@ internal static class WorkerEntryPoint
                 case "--port" when index + 1 < args.Length && int.TryParse(args[++index], out var parsedPort):
                     port = parsedPort;
                     break;
-                case "--device-port" when index + 1 < args.Length && int.TryParse(args[++index], out var parsedDevicePort):
-                    devicePort = parsedDevicePort;
-                    break;
                 default:
-                    throw new ArgumentException("Only --host, --port, and --device-port are supported.");
+                    throw new ArgumentException("Only --host and --port are supported.");
             }
         }
 
-        if (devicePort == 0)
-        {
-            devicePort = port;
-        }
-
-        if (host != "127.0.0.1"
-            || port is < 1 or > 65_535
-            || devicePort is < 1 or > 65_535)
+        if (host != "127.0.0.1" || port is < 1 or > 65_535)
         {
             throw new ArgumentException("Worker binds only to 127.0.0.1 and valid ports.");
         }
 
         var token = Environment.GetEnvironmentVariable("RU_AGENT_WORKER_TOKEN")
             ?? throw new InvalidOperationException("RU_AGENT_WORKER_TOKEN is required.");
-        var deviceToken = Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN")
-            ?? throw new InvalidOperationException("RU_DEVICE_WORKER_TOKEN is required.");
         var bootstrapPath = Environment.GetEnvironmentVariable("RU_AGENT_PROVIDER_BOOTSTRAP")
             ?? throw new InvalidOperationException("RU_AGENT_PROVIDER_BOOTSTRAP is required.");
         var sessionRoot = Path.GetDirectoryName(Path.GetFullPath(bootstrapPath))
             ?? throw new InvalidOperationException("Provider bootstrap root is invalid.");
         var providerData = ProtectedProviderBootstrap.ReadAndDelete(sessionRoot, bootstrapPath);
-        // The bootstrap is an agent-only handoff. Remove the path from the
-        // process environment before composing the device v1 graph so a v1
-        // adapter cannot rediscover the provider credential channel.
         Environment.SetEnvironmentVariable("RU_AGENT_PROVIDER_BOOTSTRAP", null);
         var projectRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT")
             ?? Directory.GetCurrentDirectory();
-        var logRoot = Environment.GetEnvironmentVariable("RU_LOG_ROOT");
         var composition = ManagedWorkerComposition.Create(
             new ManagedWorkerCompositionOptions(
                 port,
-                devicePort,
                 token,
-                deviceToken,
                 providerData,
                 projectRoot,
-                sessionRoot)
-            {
-                LogRoot = logRoot,
-            });
+                sessionRoot));
 
         var builder = WebApplication.CreateBuilder();
-        var urls = devicePort == 0 || devicePort == port
-            ? new[] { $"http://{host}:{port}" }
-            : new[] { $"http://{host}:{port}", $"http://{host}:{devicePort}" };
-        builder.WebHost.UseUrls(urls);
+        builder.WebHost.UseUrls($"http://{host}:{port}");
         var app = builder.Build();
         app.UseWebSockets();
         try
         {
-            // Dual-port compat: bind both URLs when the ports differ so legacy
-            // device-v1 callers keep working; /worker/v1 stays a valid alias
-            // on either socket and each server enforces its own token.
-            app.Run(context => string.Equals(context.Request.Path, "/worker/v1", StringComparison.Ordinal)
-                ? composition.DeviceServer.HandleAsync(context)
-                : composition.AgentServer.HandleAsync(context));
+            app.Run(composition.AgentServer.HandleAsync);
             await app.RunAsync();
         }
         finally

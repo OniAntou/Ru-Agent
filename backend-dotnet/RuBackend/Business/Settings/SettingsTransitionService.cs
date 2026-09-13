@@ -3,13 +3,6 @@ using RuBackend.Providers;
 
 namespace RuBackend.Business.Settings;
 
-public interface IRuntimeSettingsLoader
-{
-    Task<string> LoadAsync(
-        SettingsSnapshot candidate,
-        CancellationToken cancellationToken);
-}
-
 public sealed record SettingsTransitionResult(bool Success, string Message);
 
 public interface ISettingsTransitionService
@@ -28,7 +21,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
     private const string ServiceName = "Ru";
     private const string OpenCodeAccount = "api_key";
     private const string KiloAccount = "kilo_gateway_api_key";
-    private const string GeminiAccount = "gemini_vision_api_key";
     private const string CustomAccount = "custom_api_key";
     private const string OpenAiAccount = "openai_api_key";
     private const string AnthropicAccount = "anthropic_api_key";
@@ -39,19 +31,16 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
 
     private readonly ISettingsStore _settings;
     private readonly ICredentialStore _credentials;
-    private readonly IRuntimeSettingsLoader _runtime;
     private readonly ProviderCatalogService? _catalog;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SettingsTransitionService(
         ISettingsStore settings,
         ICredentialStore credentials,
-        IRuntimeSettingsLoader runtime,
         ProviderCatalogService? catalog = null)
     {
         _settings = settings;
         _credentials = credentials;
-        _runtime = runtime;
         _catalog = catalog;
     }
 
@@ -107,10 +96,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                var requiresRuntimeLoad = RequiresRuntimeLoad(payload, updates);
-                var runtimeMessage = requiresRuntimeLoad
-                    ? await _runtime.LoadAsync(candidate, cancellationToken).ConfigureAwait(false)
-                    : "Settings saved.";
                 try
                 {
                     await _settings.SaveAsync(candidate, cancellationToken).ConfigureAwait(false);
@@ -118,19 +103,10 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
                 catch
                 {
                     await RestoreCredentialsAsync(snapshots).ConfigureAwait(false);
-                    if (requiresRuntimeLoad)
-                    {
-                        await TryRestoreRuntimeAsync(previous).ConfigureAwait(false);
-                    }
-
                     throw;
                 }
 
-                return new SettingsTransitionResult(
-                    true,
-                    string.IsNullOrWhiteSpace(runtimeMessage)
-                        ? "Settings saved."
-                        : runtimeMessage);
+                return new SettingsTransitionResult(true, "Settings saved.");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -240,18 +216,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         }
     }
 
-    private async Task TryRestoreRuntimeAsync(SettingsSnapshot previous)
-    {
-        try
-        {
-            await _runtime.LoadAsync(previous, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch
-        {
-            // The caller receives one redacted transition failure.
-        }
-    }
-
     private static JsonObject ExpandModelSelection(JsonObject payload)
     {
         if (!payload.ContainsKey("selected_model"))
@@ -310,12 +274,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var anthropicModel = OptionalString(payload, "anthropic_model", 256)
             ?? current.AnthropicModel;
         var apiVariant = OptionalString(payload, "api_variant", 64) ?? current.ApiVariant;
-        var voiceStyle = OptionalString(payload, "voice_style_id", 32)
-            ?? current.VoiceStyleId;
-        if (!string.Equals(voiceStyle, "original", StringComparison.Ordinal))
-        {
-            throw new SettingsPayloadException();
-        }
 
         return new SettingsSnapshot(
             current.Raw.DeepClone().AsObject(),
@@ -326,18 +284,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             apiVariant,
             OptionalBoolean(payload, "kilo_reasoning_enabled")
                 ?? current.KiloReasoningEnabled,
-            OptionalString(payload, "voice_label", 128) ?? current.VoiceLabel,
-            voiceStyle,
-            OptionalDouble(payload, "voice_speed", 0.5, 2.0) ?? current.VoiceSpeed,
-            OptionalBoolean(payload, "auto_pace_enabled") ?? current.AutoPaceEnabled,
-            OptionalBoolean(payload, "auto_read_replies") ?? current.AutoReadReplies,
-            OptionalBoolean(payload, "show_subtitles") ?? current.ShowSubtitles,
-            OptionalString(payload, "subtitle_color", 32) ?? current.SubtitleColor,
-            OptionalString(payload, "subtitle_size", 32) ?? current.SubtitleSize,
-            OptionalDouble(payload, "subtitle_duration", 1.0, 10.0) ?? current.SubtitleDuration,
-            OptionalString(payload, "subtitle_pos_mode", 32) ?? current.SubtitlePosMode,
-            OptionalInt(payload, "subtitle_pos_x", -1, 10000) ?? current.SubtitlePosX,
-            OptionalInt(payload, "subtitle_pos_y", -1, 10000) ?? current.SubtitlePosY,
             customModel,
             customUrl,
             openAiModel,
@@ -351,7 +297,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var updates = new Dictionary<string, string>(StringComparer.Ordinal);
         var openCode = OptionalSecret(payload, "opencode_api_key");
         var kilo = OptionalSecret(payload, "kilo_api_key");
-        var gemini = OptionalSecret(payload, "gemini_vision_api_key");
         var custom = OptionalSecret(payload, "custom_api_key");
         var openAi = OptionalSecret(payload, "openai_api_key");
         var anthropic = OptionalSecret(payload, "anthropic_api_key");
@@ -364,11 +309,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         if (kilo is not null)
         {
             updates[KiloAccount] = kilo;
-        }
-
-        if (gemini is not null)
-        {
-            updates[GeminiAccount] = gemini;
         }
 
         if (custom is not null)
@@ -399,44 +339,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         }
 
         return updates.Select(pair => new CredentialUpdate(pair.Key, pair.Value)).ToArray();
-    }
-
-    private static bool RequiresRuntimeLoad(
-        JsonObject payload,
-        IReadOnlyList<CredentialUpdate> updates)
-    {
-        var runtimeFields = new[]
-        {
-            "backend",
-            "backend_choice",
-            "model",
-            "opencode_model",
-            "kilo_model",
-            "custom_model",
-            "custom_url",
-            "openai_model",
-            "anthropic_model",
-            "openai_api_key",
-            "anthropic_api_key",
-            "custom_api_key",
-            "api_variant",
-            "kilo_reasoning_enabled",
-            "voice_label",
-            "voice_style_id",
-            "voice_speed",
-            "auto_pace_enabled",
-            "auto_read_replies",
-            "show_subtitles",
-            "subtitle_color",
-            "subtitle_size",
-            "subtitle_duration",
-            "subtitle_pos_mode",
-            "subtitle_pos_x",
-            "subtitle_pos_y",
-        };
-        return runtimeFields.Any(payload.ContainsKey)
-            || updates.Any(update =>
-                update.Account is OpenCodeAccount or KiloAccount or CustomAccount or OpenAiAccount or AnthropicAccount);
     }
 
     private static string NormalizeBackend(string value) =>
@@ -487,68 +389,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         }
 
         throw new SettingsPayloadException();
-    }
-
-    private static int? OptionalInt(
-        JsonObject payload,
-        string key,
-        int minimum,
-        int maximum)
-    {
-        if (!payload.TryGetPropertyValue(key, out var node) || node is null)
-        {
-            return null;
-        }
-
-        if (node is JsonValue value
-            && value.TryGetValue<int>(out var result)
-            && result >= minimum
-            && result <= maximum)
-        {
-            return result;
-        }
-
-        throw new SettingsPayloadException();
-    }
-
-    private static double? OptionalDouble(
-        JsonObject payload,
-        string key,
-        double minimum,
-        double maximum)
-    {
-        if (!payload.TryGetPropertyValue(key, out var node) || node is null)
-        {
-            return null;
-        }
-
-        if (node is JsonValue value
-            && TryReadDouble(value, out var result)
-            && double.IsFinite(result)
-            && result >= minimum
-            && result <= maximum)
-        {
-            return result;
-        }
-
-        throw new SettingsPayloadException();
-    }
-
-    private static bool TryReadDouble(JsonValue value, out double result)
-    {
-        if (value.TryGetValue<double>(out result))
-        {
-            return true;
-        }
-
-        if (value.TryGetValue<int>(out var integer))
-        {
-            result = integer;
-            return true;
-        }
-
-        result = 0;
-        return false;
     }
 
     private sealed record CredentialUpdate(string Account, string Secret);

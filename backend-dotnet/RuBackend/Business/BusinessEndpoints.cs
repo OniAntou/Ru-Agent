@@ -44,10 +44,6 @@ public static class BusinessEndpoints
                 credentials,
                 "kilo_gateway_api_key",
                 cancellationToken).ConfigureAwait(false);
-            var hasGemini = await HasCredentialAsync(
-                credentials,
-                "gemini_vision_api_key",
-                cancellationToken).ConfigureAwait(false);
             var hasCustom = await HasCredentialAsync(
                 credentials,
                 "custom_api_key",
@@ -64,7 +60,6 @@ public static class BusinessEndpoints
                 snapshot,
                 hasOpenCode,
                 hasKilo,
-                hasGemini,
                 hasCustom,
                 hasOpenAi,
                 hasAnthropic));
@@ -396,7 +391,6 @@ public static class BusinessEndpoints
         SettingsSnapshot value,
         bool hasOpenCode,
         bool hasKilo,
-        bool hasGemini,
         bool hasCustom,
         bool hasOpenAi,
         bool hasAnthropic)
@@ -433,18 +427,6 @@ public static class BusinessEndpoints
         result["api_variant"] = value.ApiVariant;
         result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
         result.Remove("checkpoint_path");
-        result["voice_label"] = value.VoiceLabel;
-        result["voice_style_id"] = value.VoiceStyleId;
-        result["voice_speed"] = value.VoiceSpeed;
-        result["auto_pace_enabled"] = value.AutoPaceEnabled;
-        result["auto_read_replies"] = value.AutoReadReplies;
-        result["show_subtitles"] = value.ShowSubtitles;
-        result["subtitle_color"] = value.SubtitleColor;
-        result["subtitle_size"] = value.SubtitleSize;
-        result["subtitle_duration"] = value.SubtitleDuration;
-        result["subtitle_pos_mode"] = value.SubtitlePosMode;
-        result["subtitle_pos_x"] = value.SubtitlePosX;
-        result["subtitle_pos_y"] = value.SubtitlePosY;
         result["opencode_api_key"] = string.Empty;
         result["kilo_api_key"] = string.Empty;
         result["gemini_vision_api_key"] = string.Empty;
@@ -453,7 +435,6 @@ public static class BusinessEndpoints
         result["anthropic_api_key"] = string.Empty;
         result["has_opencode_key"] = hasOpenCode;
         result["has_kilo_key"] = hasKilo;
-        result["has_gemini_vision_key"] = hasGemini;
         result["has_custom_api_key"] = hasCustom;
         result["has_openai_api_key"] = hasOpenAi;
         result["has_anthropic_api_key"] = hasAnthropic;

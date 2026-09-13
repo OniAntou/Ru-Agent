@@ -14,7 +14,6 @@ using RuBackend.Hosting;
 using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
-using RuBackend.Speech;
 using RuBackend.Worker;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
@@ -58,9 +57,7 @@ if (isManagedRuntime)
 }
 
 var agentWorkerPort = bootstrap?.AgentWorkerPort ?? PublicHostRuntimeOptions.DefaultWorkerPort;
-var deviceWorkerPort = bootstrap?.DeviceWorkerPort ?? PublicHostRuntimeOptions.DefaultDeviceWorkerPort;
 var agentWorkerToken = bootstrap?.AgentWorkerToken ?? string.Empty;
-var deviceWorkerToken = bootstrap?.DeviceWorkerToken ?? string.Empty;
 
 // DI composition groups (registration order matches the previous inline order).
 builder.Services
@@ -68,9 +65,7 @@ builder.Services
         builder.Configuration,
         bootstrap?.PublicBearer,
         agentWorkerPort,
-        agentWorkerToken,
-        deviceWorkerPort,
-        deviceWorkerToken)
+        agentWorkerToken)
     .AddRuSettingsAndSessions(builder.Configuration)
     .AddRuHarnessStores()
     .AddRuAgentRuntime(isDeterministicHarness, isManagedRuntime)
@@ -79,15 +74,6 @@ builder.WebHost.UseUrls(
     builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000");
 
 var app = builder.Build();
-
-// Media surfaces are optional (Pi-style): voice/STT map only when
-// RU_MEDIA_SURFACES is unset or "1". Headless coding agents run with
-// RU_MEDIA_SURFACES=0 and serve a reduced subset of the 43 HTTP + 1 WS
-// contract with the media routes unmapped.
-var mediaSurfacesEnabled = !string.Equals(
-    Environment.GetEnvironmentVariable("RU_MEDIA_SURFACES"),
-    "0",
-    StringComparison.Ordinal);
 
 // Hook shutdown cleanup for managed runtime: descriptor cleanup, job shutdown
 if (isManagedRuntime)
@@ -130,20 +116,11 @@ app.Use(async (context, next) =>
 });
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
-if (mediaSurfacesEnabled)
-{
-    VoiceStreamEndpoint.Map(app);
-}
 
 BusinessEndpoints.Map(app);
 AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
 StatusEndpoints.Map(app);
-if (mediaSurfacesEnabled)
-{
-    VoiceEndpoints.Map(app);
-    SttEndpoints.Map(app);
-}
 
 app.Run();
 

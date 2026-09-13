@@ -19,14 +19,12 @@ public sealed class WorkerBrokerLaunchPlan
 {
     private WorkerBrokerLaunchPlan(
         int agentWorkerPort,
-        int deviceWorkerPort,
         int brokerPort,
         string brokerDescriptorPath,
         string brokerSessionRoot,
         IReadOnlyList<WorkerBrokerProcessSpec> children)
     {
         AgentWorkerPort = agentWorkerPort;
-        DeviceWorkerPort = deviceWorkerPort;
         BrokerPort = brokerPort;
         BrokerDescriptorPath = brokerDescriptorPath;
         BrokerSessionRoot = brokerSessionRoot;
@@ -34,7 +32,6 @@ public sealed class WorkerBrokerLaunchPlan
     }
 
     public int AgentWorkerPort { get; }
-    public int DeviceWorkerPort { get; }
     public int WorkerPort => AgentWorkerPort;
     public int BrokerPort { get; }
     public string BrokerDescriptorPath { get; }
@@ -55,7 +52,7 @@ public sealed class WorkerBrokerLaunchPlan
         var resolvedLogRoot = ResolveLogRoot(root, configuredLogRoot);
         var brokerSessionRoot = Path.Combine(resolvedLogRoot, "agent", "session");
         var selectedBrokerPort = startup.BrokerPort ?? FindFreeLoopbackPort();
-        ValidatePortSet(publicPort, startup.AgentWorkerPort, startup.DeviceWorkerPort, selectedBrokerPort);
+        ValidatePortSet(publicPort, startup.AgentWorkerPort, selectedBrokerPort);
 
         var publishedBroker = startup.BrokerExecutable;
         if (string.IsNullOrWhiteSpace(publishedBroker))
@@ -94,11 +91,10 @@ public sealed class WorkerBrokerLaunchPlan
         children.Add(new WorkerBrokerProcessSpec(
             "dotnet-agent-worker",
             workerExecutable,
-            $"--host 127.0.0.1 --port {startup.AgentWorkerPort} --device-port {startup.DeviceWorkerPort}",
+            $"--host 127.0.0.1 --port {startup.AgentWorkerPort}",
             root,
             CreateWorkerEnvironment(
                 ("RU_AGENT_WORKER_TOKEN", startup.AgentWorkerToken),
-                ("RU_DEVICE_WORKER_TOKEN", startup.DeviceWorkerToken),
                 ("RU_AGENT_PROVIDER_BOOTSTRAP", providerBootstrapPath),
                 ("RU_PROJECT_ROOT", root),
                 ("RU_LOG_ROOT", resolvedLogRoot)),
@@ -122,15 +118,15 @@ public sealed class WorkerBrokerLaunchPlan
             DateTimeOffset.UtcNow.AddHours(1));
         File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
-        return new WorkerBrokerLaunchPlan(startup.AgentWorkerPort, startup.DeviceWorkerPort, selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
+        return new WorkerBrokerLaunchPlan(startup.AgentWorkerPort, selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
     }
 
-    private static void ValidatePortSet(int publicPort, int agentPort, int devicePort, int brokerPort)
+    private static void ValidatePortSet(int publicPort, int agentPort, int brokerPort)
     {
-        var ports = new[] { publicPort, 8001, agentPort, devicePort, brokerPort };
+        var ports = new[] { publicPort, 8001, agentPort, brokerPort };
         if (ports.Any(port => port is < 1024 or > 65_535) || ports.Distinct().Count() != ports.Length)
         {
-            throw new ArgumentException("Public, worker, device, VTube Studio, and Broker ports must be distinct and valid.");
+            throw new ArgumentException("Public, worker, and Broker ports must be distinct and valid.");
         }
     }
 

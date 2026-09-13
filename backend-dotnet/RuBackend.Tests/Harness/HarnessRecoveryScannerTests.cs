@@ -386,14 +386,16 @@ public sealed class HarnessRecoveryScannerTests
             var good = await SeedRunningAsync(fixture, tracked);
 
             var store = new FaultingReadStore(fixture.EventStore, poison.RunId);
-            var summaries = await new HarnessRecoveryScanner(
+            var sweep = await new HarnessRecoveryScanner(
                 store,
                 new FixedTime(Timestamp),
-                _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).ScanPendingRunsAsync(CancellationToken.None);
+                _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).SweepPendingRunsAsync(CancellationToken.None);
 
-            var summary = Assert.Single(summaries);
+            var summary = Assert.Single(sweep.Recovered);
             Assert.Equal(good.RunId, summary.RunId);
             Assert.Equal("failed_pre_dispatch", summary.Action);
+            Assert.Equal(1, sweep.ParkedCount);
+            Assert.False(sweep.AllHandled);
             var after = await fixture.EventStore.GetRunAsync(good.RunId, CancellationToken.None);
             Assert.Equal(HarnessRunState.Failed, after!.State);
         }
@@ -433,11 +435,14 @@ public sealed class HarnessRecoveryScannerTests
     private static async Task<IReadOnlyList<RecoveredRunSummary>> ScanAsync(
         BackendHarnessTestFixture fixture,
         IReadOnlyList<RunId> tracked,
-        DateTimeOffset? now = null) =>
-        await new HarnessRecoveryScanner(
+        DateTimeOffset? now = null)
+    {
+        var sweep = await new HarnessRecoveryScanner(
             fixture.EventStore,
             new FixedTime(now ?? Timestamp),
-            _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).ScanPendingRunsAsync(CancellationToken.None);
+            _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).SweepPendingRunsAsync(CancellationToken.None);
+        return sweep.Recovered;
+    }
 
     private static EventId NewEventId() =>
         new($"evt_{Guid.NewGuid():N}".Replace("-", "").PadRight(36)[..36]);

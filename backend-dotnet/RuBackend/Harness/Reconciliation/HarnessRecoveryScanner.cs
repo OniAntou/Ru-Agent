@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
@@ -15,6 +14,18 @@ namespace RuBackend.Harness.Reconciliation;
 public sealed record RecoveredRunSummary(RunId RunId, string Action);
 
 /// <summary>
+/// Outcome of one recovery sweep. <see cref="ParkedCount"/> counts runs the sweep
+/// could not handle at all (a store fault, a corrupt stream): they stay
+/// non-terminal and keep their workspace locked, so the caller retries.
+/// </summary>
+public sealed record RecoverySweepResult(
+    IReadOnlyList<RecoveredRunSummary> Recovered,
+    int ParkedCount)
+{
+    public bool AllHandled => ParkedCount == 0;
+}
+
+/// <summary>
 /// Startup reconciliation: for every non-terminal run this host may own, compare the
 /// durable event stream against dispatch boundaries. A crash before any dispatch fails
 /// the run safely with no effects; an incomplete read-only execution fails safely; an
@@ -25,7 +36,8 @@ public sealed record RecoveredRunSummary(RunId RunId, string Action);
 public sealed class HarnessRecoveryScanner(
     IHarnessEventStore store,
     ITimeProvider time,
-    Func<CancellationToken, Task<IReadOnlyList<RunId>>>? pendingRunSource = null)
+    Func<CancellationToken, Task<IReadOnlyList<RunId>>>? pendingRunSource = null,
+    ILogger? logger = null)
 {
     private static readonly TimeSpan WorkspaceTrustTimeout = TimeSpan.FromMinutes(10);
 
@@ -38,10 +50,11 @@ public sealed class HarnessRecoveryScanner(
         run.State == HarnessRunState.WaitingApproval
         && ApprovalState.IsExpired(run.UpdatedAt, now);
 
-    public async Task<IReadOnlyList<RecoveredRunSummary>> ScanPendingRunsAsync(
+    public async Task<RecoverySweepResult> SweepPendingRunsAsync(
         CancellationToken cancellationToken)
     {
         var summaries = new List<RecoveredRunSummary>();
+        var parked = 0;
         var runIds = pendingRunSource is { } source
             ? await source(cancellationToken).ConfigureAwait(false)
             : Array.Empty<RunId>();
@@ -56,11 +69,18 @@ public sealed class HarnessRecoveryScanner(
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception error)
             {
-                // One unreadable run (corrupt events, store fault) must not
-                // abort recovery of every other run: it stays non-terminal and
-                // is retried on the next boot.
+                // One unreadable run (corrupt events, store fault) must not abort
+                // recovery of every other run: it stays non-terminal and the sweep
+                // reports it so the caller can retry. It must be visible though: a
+                // silently parked run keeps its workspace's active-run lock and
+                // refuses new runs in that workspace.
+                parked++;
+                logger?.LogWarning(
+                    error,
+                    "run {RunId} could not be recovered and stays parked",
+                    runId.Value);
                 continue;
             }
             if (summary is { } recovered)
@@ -69,7 +89,7 @@ public sealed class HarnessRecoveryScanner(
             }
         }
 
-        return summaries;
+        return new RecoverySweepResult(summaries, parked);
     }
 
     public async Task<RecoveredRunSummary?> ScanRunAsync(
@@ -298,6 +318,16 @@ public sealed class HarnessRecoveryScanner(
 /// </summary>
 public sealed class HarnessRecoveryStartupService : BackgroundService
 {
+    /// <summary>
+    /// A transient startup fault (a database lock while the Broker opens the same
+    /// file, one unreadable run) must not leave every non-terminal run parked:
+    /// parked runs keep their workspace's active-run lock, so new runs in those
+    /// workspaces are refused until the next runtime start.
+    /// </summary>
+    private const int MaximumAttempts = 3;
+
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
+
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly ILogger<HarnessRecoveryStartupService> _logger;
@@ -329,38 +359,79 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
+        {
+            if (await TrySweepAsync(stoppingToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            if (attempt == MaximumAttempts)
+            {
+                // A parked run keeps its workspace's active-run lock, so every new
+                // run in that workspace is refused until a later runtime start
+                // retries. Give up loudly instead of parking silently.
+                _logger.LogError(
+                    "startup recovery gave up after {Attempts} attempts; parked runs keep their workspaces locked until the next runtime start",
+                    attempt);
+                return;
+            }
+
+            _logger.LogWarning(
+                "startup recovery attempt {Attempt} failed; retrying in {DelaySeconds}s",
+                attempt,
+                RetryDelay.TotalSeconds);
+            try
+            {
+                await Task.Delay(RetryDelay, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task<bool> TrySweepAsync(CancellationToken stoppingToken)
+    {
         try
         {
             var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
-            await ScanRunsStageAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
-            await ReconcileMembershipsStageAsync(stoppingToken).ConfigureAwait(false);
+            var scanned = await ScanRunsStageAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            var reconciled = await ReconcileMembershipsStageAsync(stoppingToken).ConfigureAwait(false);
             await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            return scanned && reconciled;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            return true;
         }
         catch (Exception error)
         {
             _logger.LogError(error, "startup recovery scan failed");
+            return false;
         }
     }
 
-    private async Task ScanRunsStageAsync(IReadOnlyList<RunId> pendingRunIds, CancellationToken stoppingToken)
+    private async Task<bool> ScanRunsStageAsync(IReadOnlyList<RunId> pendingRunIds, CancellationToken stoppingToken)
     {
         try
         {
             var scanner = new HarnessRecoveryScanner(
                 _store,
                 new SystemTimeProvider(),
-                _ => Task.FromResult<IReadOnlyList<RunId>>(pendingRunIds));
-            var recovered = await scanner.ScanPendingRunsAsync(stoppingToken).ConfigureAwait(false);
-            foreach (var summary in recovered)
+                _ => Task.FromResult<IReadOnlyList<RunId>>(pendingRunIds),
+                _logger);
+            var sweep = await scanner.SweepPendingRunsAsync(stoppingToken).ConfigureAwait(false);
+            foreach (var summary in sweep.Recovered)
             {
                 _logger.LogWarning(
                     "startup recovery marked run {RunId} as {Action}",
                     summary.RunId.Value,
                     summary.Action);
             }
+
+            return sweep.AllHandled;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -369,18 +440,20 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         catch (Exception error)
         {
             // The run scan must not skip workspace membership reconciliation:
-            // stale leases alone can keep every workspace locked.
+            // stale leases alone can keep every workspace locked. The failed
+            // attempt is reported so the sweep can retry it.
             _logger.LogError(error, "startup recovery run scan failed");
+            return false;
         }
     }
 
-    private async Task ReconcileMembershipsStageAsync(CancellationToken stoppingToken)
+    private async Task<bool> ReconcileMembershipsStageAsync(CancellationToken stoppingToken)
     {
         try
         {
             if (_workspaceCoordinatorStore is null)
             {
-                return;
+                return true;
             }
             var reconciled = await _workspaceCoordinatorStore
                 .ReconcileExpiredAsync(DateTimeOffset.UtcNow, stoppingToken)
@@ -395,6 +468,8 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
                     reconciled.ExpiredClaims,
                     reconciled.RejectedPreparedChanges);
             }
+
+            return true;
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -403,6 +478,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         catch (Exception error)
         {
             _logger.LogError(error, "startup recovery membership reconcile failed");
+            return false;
         }
     }
 
@@ -454,12 +530,11 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
 
                 _runtimeRoots.Register(run.RunId, root, snapshot);
             }
-            catch (Exception error) when (
-                error is HarnessStoreException
-                    or IOException
-                    or UnauthorizedAccessException
-                    or CryptographicException)
+            catch (Exception error) when (error is not OperationCanceledException)
             {
+                // Keeping the run parked is the right outcome for an unreadable
+                // registration, but an unexpected fault must not abort the sweep:
+                // the remaining runs still need their workspace locks back.
                 _logger.LogWarning(error, "run {RunId} could not be rehydrated; keeping it parked", runId.Value);
             }
         }

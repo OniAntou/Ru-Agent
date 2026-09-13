@@ -49,6 +49,7 @@ public sealed class AgentRunControllerTests
         public bool ApproveCalled;
         public bool DenyCalled;
         public bool ThrowOnGetRun;
+        public bool ThrowOnSubscribe;
         public string PayloadContent { get; set; } = "{}";
         public TaskCompletionSource<bool>? SubscriptionGate;
         public Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
@@ -122,6 +123,11 @@ public sealed class AgentRunControllerTests
             Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
             Func<AgentToolOutputModel, Task>? onToolOutput = null)
         {
+            if (ThrowOnSubscribe)
+            {
+                throw new InvalidOperationException("stream_failed");
+            }
+
             if (SubscriptionGate is not null)
             {
                 await SubscriptionGate.Task.ConfigureAwait(false);
@@ -223,6 +229,23 @@ public sealed class AgentRunControllerTests
         var summary = Assert.Single(received);
         Assert.Equal("verified", summary.VerificationState);
         Assert.Empty(controller.Events);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_keeps_the_run_cancellable_when_the_event_stream_fails()
+    {
+        var fake = new FakeClient { Run = MakeRun(), ThrowOnSubscribe = true };
+        var controller = new AgentRunController(fake);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.CreateAndRunAsync(
+            new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-stream-failure")));
+
+        // The host may still own the run, so Stop must stay available; the status
+        // copy tells the user how to recover instead of leaving a silent dead end.
+        Assert.True(controller.CanCancel);
+        Assert.False(controller.IsBusy);
+        Assert.NotNull(controller.CurrentRun);
+        Assert.Contains("Stop", controller.StatusText, StringComparison.Ordinal);
     }
 
     [Fact]

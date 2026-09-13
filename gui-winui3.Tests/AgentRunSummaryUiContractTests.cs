@@ -61,7 +61,7 @@ public sealed class AgentRunSummaryUiContractTests
     }
 
     [Fact]
-    public void Terminal_failure_does_not_duplicate_above_the_composer()
+    public void Terminal_failure_copy_above_the_composer_defers_to_the_transcript_card()
     {
         var code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
         var stateStart = code.IndexOf("private void UpdateAgentInlineState", StringComparison.Ordinal);
@@ -71,7 +71,10 @@ public sealed class AgentRunSummaryUiContractTests
 
         var stateBody = code[stateStart..stateEnd];
         Assert.Contains("keepTerminalFailureVisible", stateBody, StringComparison.Ordinal);
-        Assert.Contains("safeStatus = string.Empty", stateBody, StringComparison.Ordinal);
+        // Deferring to the transcript card is only safe while that card exists;
+        // the inline copy stays visible once a reply was rendered.
+        Assert.Contains("AgentFailurePresentation.InlineFailureStatus(", stateBody, StringComparison.Ordinal);
+        Assert.Contains("HasRenderedAgentReply()", stateBody, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -71,6 +71,27 @@ public sealed class AgentActivityGrouperTests
         Assert.True(items[1].IsVisibleInFeed);
     }
 
+    [Fact]
+    public void Settling_a_finished_run_stops_rows_that_never_completed()
+    {
+        var items = new List<AgentActivityItem>
+        {
+            Item(AgentActivityState.Started, AgentActivityKind.Thinking),
+            Item(AgentActivityState.Started, AgentActivityKind.Edit, fileName: "index.html"),
+            Item(AgentActivityState.Completed, AgentActivityKind.Explore, fileName: "LLM", durationMs: 19),
+        };
+
+        AgentActivityGrouper.SettleRunningRows(items);
+        AgentActivityGrouper.Reconcile(items);
+
+        Assert.Equal(AgentActivityState.Failed, items[0].State);
+        Assert.Equal("interrupted", items[0].SafeCode);
+        Assert.Equal("Failed · interrupted", items[0].DisplayText);
+        Assert.True(items[0].IsVisibleInFeed);
+        Assert.Equal(AgentActivityState.Failed, items[1].State);
+        Assert.Equal(AgentActivityState.Completed, items[2].State);
+    }
+
     private static AgentActivityItem Item(
         AgentActivityState state,
         AgentActivityKind kind,

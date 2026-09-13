@@ -154,6 +154,23 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     public bool IsFailed => State == AgentActivityState.Failed;
     public bool IsWaiting => State == AgentActivityState.Waiting;
 
+    /// <summary>
+    /// The run ended before this row's completion frame was applied: the frame can
+    /// lose the race with the run's terminal transition, and frames are ignored
+    /// once the controller is idle. Settle the row so it never keeps a running
+    /// affordance, and report the interruption instead of a false completion.
+    /// </summary>
+    public void SettleInterruptedRun()
+    {
+        if (State != AgentActivityState.Started)
+        {
+            return;
+        }
+
+        State = AgentActivityState.Failed;
+        SafeCode = "interrupted";
+    }
+
     public string StatusGlyph => State switch
     {
         AgentActivityState.Started => "\uE895",

@@ -54,4 +54,52 @@ public sealed class AgentFailurePresentationTests
             "Ru produced an action the host could not run, so the run was stopped. Please rephrase your request, or type Continue to resume.",
             AgentFailurePresentation.Render("invalid_selection"));
     }
+
+    [Fact]
+    public void Failed_run_with_a_rendered_reply_keeps_the_inline_failure_copy()
+    {
+        Assert.Equal(
+            AgentFailurePresentation.Render("repeated_tool_call"),
+            AgentFailurePresentation.InlineFailureStatus(
+                "failed",
+                "repeated_tool_call",
+                isRunning: false,
+                hasRenderedReply: true));
+    }
+
+    [Fact]
+    public void Failed_run_without_a_rendered_reply_defers_to_the_transcript_card()
+    {
+        Assert.Equal(
+            string.Empty,
+            AgentFailurePresentation.InlineFailureStatus(
+                "failed",
+                "repeated_tool_call",
+                isRunning: false,
+                hasRenderedReply: false));
+    }
+
+    [Fact]
+    public void Running_failure_status_stays_visible_before_the_run_terminates()
+    {
+        Assert.Equal(
+            AgentFailurePresentation.Render("repeated_tool_call"),
+            AgentFailurePresentation.InlineFailureStatus(
+                "failed",
+                "repeated_tool_call",
+                isRunning: true,
+                hasRenderedReply: false));
+    }
+
+    [Fact]
+    public void Successful_run_renders_no_inline_failure_copy()
+    {
+        Assert.Equal(
+            string.Empty,
+            AgentFailurePresentation.InlineFailureStatus(
+                "completed",
+                "Run ended.",
+                isRunning: false,
+                hasRenderedReply: true));
+    }
 }

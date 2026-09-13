@@ -41,6 +41,24 @@ internal static class AgentActivityGrouper
         }
     }
 
+    /// <summary>
+    /// Settles rows still in the running state when the run ends: an activity
+    /// frame can lose the race with the run's terminal transition, and a row left
+    /// running would keep its progress affordance forever.
+    /// </summary>
+    public static void SettleRunningRows(IList<AgentActivityItem> items)
+    {
+        if (items is null)
+        {
+            return;
+        }
+
+        foreach (var item in items)
+        {
+            item.SettleInterruptedRun();
+        }
+    }
+
     private static void CollapseIdenticalCompleted(IList<AgentActivityItem> items)
     {
         for (int i = 1; i < items.Count; i++)

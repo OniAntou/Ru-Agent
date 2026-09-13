@@ -246,7 +246,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = $"Error: {ex.Message}";
+                // The stream died before the run's terminal snapshot, so the host
+                // may still own the run. Keep the run reference (Stop stays
+                // available) and say what the user can do instead of leaving a
+                // silent dead end.
+                StatusText = string.Equals(ex.GetType().Name, "OperationCanceledException", StringComparison.Ordinal)
+                    ? "Event monitoring stopped."
+                    : "Event stream ended unexpectedly. Use Stop to end the run, then send again.";
                 IsBusy = false;
                 RefreshCommands();
             });

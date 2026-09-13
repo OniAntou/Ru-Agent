@@ -77,6 +77,7 @@ namespace RuApp.Views
         private CancellationTokenSource? _agentMonitorCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentActivityVisible;
+        private bool _agentBusySeen;
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
@@ -844,9 +845,37 @@ namespace RuApp.Views
             ScrollChatToBottom();
         }
 
-        private void ApplyAgentActivity(AgentActivityModel activity)
+        /// <summary>
+        /// The activity flush timer can lose the race with the run's terminal
+        /// transition, and frames are ignored once the controller is idle: the
+        /// last frame of a run would be dropped and a running row (for example
+        /// "Thinking") would keep its progress affordance forever. Drain the
+        /// queue without the idle gate, then settle anything still running.
+        /// </summary>
+        private void SettleAgentActivitiesAfterRun()
         {
-            if (_agentController?.IsBusy != true
+            // Apply completions that were held for the min-hold window before
+            // settling leftovers, so a row that did complete is not marked
+            // interrupted by the race this method exists to smooth over.
+            FlushDeferredCompletions();
+
+            if (_pendingAgentActivities.Count > 0)
+            {
+                var queued = _pendingAgentActivities.ToArray();
+                _pendingAgentActivities.Clear();
+                foreach (var activity in queued)
+                {
+                    ApplyAgentActivity(activity, allowWhenIdle: true);
+                }
+            }
+
+            AgentActivityGrouper.SettleRunningRows(AgentActivities);
+            AgentActivityGrouper.Reconcile(AgentActivities);
+        }
+
+        private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
+        {
+            if ((!allowWhenIdle && _agentController?.IsBusy != true)
                 || string.IsNullOrWhiteSpace(activity.ActivityId))
             {
                 return;
@@ -1203,6 +1232,7 @@ namespace RuApp.Views
             _pendingAgentActivities.Clear();
             _agentActivityById.Clear();
             AgentActivities.Clear();
+            _agentBusySeen = false;
         }
 
         private void DetachAgentActivitiesFromMessages()
@@ -1638,6 +1668,14 @@ namespace RuApp.Views
 
         private void UpdateAgentInlineState()
         {
+            bool agentBusy = _agentController?.IsBusy == true;
+            if (_agentBusySeen && !agentBusy)
+            {
+                SettleAgentActivitiesAfterRun();
+            }
+
+            _agentBusySeen = agentBusy;
+
             if (_agentController is null)
             {
                 AgentInlinePanel.Visibility = _agentActivityVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -1688,14 +1726,14 @@ namespace RuApp.Views
             bool isRunning = _agentController.CanCancel || IsActiveAgentRunPending();
             UpdateSendButtonMode(isAgentRunning: isRunning);
 
-            string safeStatus = AgentFailurePresentation.Render(ResolveFailureReason(_agentController));
-            if (keepTerminalFailureVisible && !isRunning)
-            {
-                // Terminal failure copy now lives in the transcript as an
-                // error message; repeating it above the composer would show
-                // the same failure twice.
-                safeStatus = string.Empty;
-            }
+            // Terminal failure copy lives in the transcript as an error message
+            // only when no reply was rendered; otherwise this inline copy is the
+            // actionable signal and must stay visible.
+            string safeStatus = AgentFailurePresentation.InlineFailureStatus(
+                _agentController.CurrentRun?.Status,
+                ResolveFailureReason(_agentController),
+                isRunning,
+                HasRenderedAgentReply());
             AgentStatusText.Text = safeStatus;
             AgentStatusText.Visibility = string.IsNullOrWhiteSpace(safeStatus)
                 ? Visibility.Collapsed

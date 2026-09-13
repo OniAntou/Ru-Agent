@@ -10,8 +10,6 @@ namespace RuApp.Harness;
 
 public sealed class UiAutomationScenario : IAsyncDisposable
 {
-    private const string MicAutomationId = "MicButton";
-    private const string VoiceStatusAutomationId = "VoiceConversationStatus";
     private const string ChatMessagesAutomationId = "ChatMessages";
     private const string NewSessionAutomationId = "NewSessionButton";
     private const string AgentActivityAutomationId = "AgentStatusText";
@@ -37,125 +35,6 @@ public sealed class UiAutomationScenario : IAsyncDisposable
                 && ContainsIgnoreCase(GetName(status), "ready"));
     }
 
-    public async Task<HarnessGuiCheck> StartVoiceAsync(TimeSpan timeout)
-    {
-        DateTimeOffset started = DateTimeOffset.UtcNow;
-        try
-        {
-            AutomationElement mic = await WaitForElementAsync(MicAutomationId, timeout);
-            Invoke(mic);
-            bool changed = await WaitUntilAsync(
-                () => ContainsIgnoreCase(GetName(mic), "Dừng trò chuyện bằng giọng nói")
-                    && ContainsIgnoreCase(GetName(FindByAutomationId(VoiceStatusAutomationId)), "Đang nghe"),
-                timeout);
-            return Check(
-                "gui.voice_start",
-                changed,
-                started,
-                changed ? null : "voice button did not reach listening state");
-        }
-        catch (Exception ex)
-        {
-            return Failure("gui.voice_start", started, ex);
-        }
-    }
-
-    public async Task<HarnessGuiCheck> WaitForVoiceTurnAsync(TimeSpan timeout, int minimumTurn = 1)
-    {
-        DateTimeOffset started = DateTimeOffset.UtcNow;
-        try
-        {
-            bool eventsReady = await WaitUntilAsync(
-                () => HasAtLeast("voice.capture.started", minimumTurn)
-                    && HasAtLeast("voice.capture.ended", minimumTurn)
-                    && HasAtLeast("voice.transcribe.completed", minimumTurn)
-                    && HasAtLeast("voice.chat.sent", minimumTurn)
-                    && HasAtLeast("voice.reply.completed", minimumTurn)
-                    && HasAtLeast("voice.playback.ended", minimumTurn),
-                timeout);
-            bool messagesReady = eventsReady
-                && await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
-            bool privateMarkerAbsent = messagesReady && !VisibleMessageContainsPrivateMarker();
-            bool passed = eventsReady && messagesReady && privateMarkerAbsent;
-            return Check(
-                minimumTurn == 1 ? "gui.voice_turn" : "gui.voice_relisten",
-                passed,
-                started,
-                passed ? null : "voice lifecycle or visible chat assertions did not complete");
-        }
-        catch (Exception ex)
-        {
-            return Failure(minimumTurn == 1 ? "gui.voice_turn" : "gui.voice_relisten", started, ex);
-        }
-    }
-
-    public Task<HarnessGuiCheck> RequestSecondTurnAsync(TimeSpan timeout)
-        => WaitForVoiceTurnAsync(timeout, minimumTurn: 2);
-
-    public async Task<HarnessGuiCheck> StopVoiceAsync(TimeSpan timeout)
-    {
-        DateTimeOffset started = DateTimeOffset.UtcNow;
-        try
-        {
-            AutomationElement mic = await WaitForElementAsync(MicAutomationId, timeout);
-            Invoke(mic);
-            bool stopped = await WaitUntilAsync(
-                () => ContainsIgnoreCase(GetName(FindByAutomationId(VoiceStatusAutomationId)), "Đã dừng")
-                    && ContainsIgnoreCase(GetName(mic), "Bắt đầu trò chuyện bằng giọng nói"),
-                timeout);
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-            var counts = ReadEventCounts();
-            bool noLateTurn = counts.GetValueOrDefault("voice.chat.sent") == 0
-                && counts.GetValueOrDefault("voice.playback.started") == 0;
-            return Check(
-                "gui.voice_stop",
-                stopped && noLateTurn,
-                started,
-                stopped && noLateTurn ? null : "voice conversation did not stop cleanly");
-        }
-        catch (Exception ex)
-        {
-            return Failure("gui.voice_stop", started, ex);
-        }
-    }
-
-    public async Task<HarnessGuiCheck> CancelVoiceAsync(TimeSpan timeout)
-    {
-        DateTimeOffset started = DateTimeOffset.UtcNow;
-        try
-        {
-            bool transcribing = await WaitUntilAsync(
-                () => HasAtLeast("voice.capture.ended", 1),
-                timeout);
-            if (!transcribing)
-            {
-                return Check("gui.voice_cancel", false, started, "transcription phase was not reached");
-            }
-
-            AutomationElement mic = await WaitForElementAsync(MicAutomationId, timeout);
-            Invoke(mic);
-            bool stopped = await WaitUntilAsync(
-                () => ContainsIgnoreCase(GetName(FindByAutomationId(VoiceStatusAutomationId)), "Đã dừng")
-                    && ContainsIgnoreCase(GetName(mic), "Bắt đầu trò chuyện bằng giọng nói")
-                    && HasAtLeast("voice.conversation.cancelled", 1),
-                timeout);
-            var counts = ReadEventCounts();
-            bool noLatePlayback = counts.GetValueOrDefault("voice.playback.started") == 0
-                && counts.GetValueOrDefault("voice.reply.completed") == 0
-                && !HasAtLeast("voice.chat.sent", 1)
-                && !HasUserAndAssistantMessages();
-            return Check(
-                "gui.voice_cancel",
-                stopped && noLatePlayback,
-                started,
-                stopped && noLatePlayback ? null : "cancelled STT produced a late UI or playback event");
-        }
-        catch (Exception ex)
-        {
-            return Failure("gui.voice_cancel", started, ex);
-        }
-    }
-
     public async Task<HarnessGuiCheck> ReplaceSessionAsync(TimeSpan timeout)
     {
         DateTimeOffset started = DateTimeOffset.UtcNow;
@@ -164,35 +43,18 @@ public sealed class UiAutomationScenario : IAsyncDisposable
             AutomationElement button = await WaitForElementAsync(NewSessionAutomationId, timeout);
             Invoke(button);
             bool replaced = await WaitUntilAsync(
-                () => HasAtLeast("voice.session.replaced", 1),
+                () => CountVisibleMessageItems() == 0,
                 timeout);
             return Check(
-                "gui.voice_stale_result",
+                "gui.session_replace",
                 replaced && !VisibleMessageContainsPrivateMarker(),
                 started,
-                replaced ? null : "session replacement event was not observed");
+                replaced ? null : "session replacement did not reset the visible transcript");
         }
         catch (Exception ex)
         {
-            return Failure("gui.voice_stale_result", started, ex);
+            return Failure("gui.session_replace", started, ex);
         }
-    }
-
-    public async Task<HarnessGuiCheck> AssertNoLateUpdateAsync(TimeSpan duration)
-    {
-        DateTimeOffset started = DateTimeOffset.UtcNow;
-        var before = ReadEventCounts();
-        await Task.Delay(duration);
-        var after = ReadEventCounts();
-        bool unchanged = before.SequenceEqual(after)
-            && ContainsIgnoreCase(GetName(FindByAutomationId(VoiceStatusAutomationId)), "Đã dừng")
-            && !HasUserAndAssistantMessages()
-            && !VisibleMessageContainsPrivateMarker();
-        return Check(
-            "gui.voice_no_late_update",
-            unchanged,
-            started,
-            unchanged ? null : "a post-cancellation UI or voice event was observed");
     }
 
     public Task<HarnessGuiCheck> AssertPrivateMetadataAsync()

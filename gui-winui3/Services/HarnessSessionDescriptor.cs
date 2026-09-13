@@ -7,18 +7,13 @@ public sealed record HarnessSessionDescriptor(
     Uri BaseUri,
     string AuthToken,
     string Scenario,
-    string EventsPath,
-    string VoiceMode)
+    string EventsPath)
 {
     private const int MaximumDescriptorBytes = 1 * 1024 * 1024;
     public string? WorkspacePath { get; init; }
 
     private static readonly HashSet<string> AllowedScenarios = new(StringComparer.OrdinalIgnoreCase)
     {
-        "turn",
-        "stop",
-        "cancel",
-        "stale-session",
         "agent-tool-contract",
         "agent-cancel",
         "agent-stale-result",
@@ -30,16 +25,10 @@ public sealed record HarnessSessionDescriptor(
         string authToken,
         string scenario,
         string eventsPath,
-        string voiceMode = "deterministic",
         string? workspacePath = null)
     {
         var session = BackendSession.FromHttpUri(baseUrl, authToken);
         ValidateScenario(scenario);
-        if (!string.Equals(voiceMode, "deterministic", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException("Harness voice mode must be deterministic.", nameof(voiceMode));
-        }
-
         if (string.IsNullOrWhiteSpace(eventsPath))
         {
             throw new ArgumentException("Harness event path is required.", nameof(eventsPath));
@@ -49,8 +38,7 @@ public sealed record HarnessSessionDescriptor(
             session.HttpBaseUri,
             session.AuthSecret,
             scenario,
-            Path.GetFullPath(eventsPath),
-            "deterministic")
+            Path.GetFullPath(eventsPath))
         {
             WorkspacePath = string.IsNullOrWhiteSpace(workspacePath)
                 ? null
@@ -80,7 +68,6 @@ public sealed record HarnessSessionDescriptor(
                 payload.AuthToken,
                 payload.Scenario,
                 payload.EventsPath,
-                payload.VoiceMode,
                 payload.WorkspacePath);
             EnsureUnderDescriptorRoot(descriptorPath, descriptor.EventsPath);
             if (descriptor.WorkspacePath is not null)
@@ -105,7 +92,6 @@ public sealed record HarnessSessionDescriptor(
             AuthToken = AuthToken,
             Scenario = Scenario,
             EventsPath = EventsPath,
-            VoiceMode = VoiceMode,
             WorkspacePath = WorkspacePath,
         };
         File.WriteAllText(
@@ -214,9 +200,6 @@ public sealed record HarnessSessionDescriptor(
 
         [JsonPropertyName("events_path")]
         public string EventsPath { get; set; } = string.Empty;
-
-        [JsonPropertyName("voice_mode")]
-        public string VoiceMode { get; set; } = string.Empty;
 
         [JsonPropertyName("workspace_path")]
         public string? WorkspacePath { get; set; }

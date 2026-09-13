@@ -43,21 +43,16 @@ public sealed class ApiRefreshCancellationTests
             () => api.GetDiagnosticStatusAsync(cts.Token));
     }
 
-    [Theory]
-    [InlineData("worker")]
-    [InlineData("voice")]
-    public async Task Health_requests_honor_cancellation_token(string endpoint)
+    [Fact]
+    public async Task Worker_health_requests_honor_cancellation_token()
     {
         using var handler = new BlockingHandler();
         var session = new BackendSession(new Uri("http://127.0.0.1:59999/"), "test-secret");
         using var api = new ApiService(session, handler);
         using var cts = new CancellationTokenSource();
 
-        Task request = endpoint switch
-        {
-            "worker" => Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.CheckWorkerHealthAsync(cts.Token)),
-            "voice" => Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.GetVoiceStatusAsync(cts.Token)),
-        };
+        Task request = Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => api.CheckWorkerHealthAsync(cts.Token));
 
         cts.Cancel();
         await request;

@@ -10,9 +10,9 @@ public sealed class HarnessEventSinkTests
     {
         using var events = new InMemoryHarnessEventSink();
 
-        Assert.Throws<ArgumentException>(() => events.Write("voice", new { audio = "bytes" }));
-        Assert.Throws<ArgumentException>(() => events.Write("voice", new { transcript = "private" }));
-        Assert.Throws<ArgumentException>(() => events.Write("voice", new { token = "secret" }));
+        Assert.Throws<ArgumentException>(() => events.Write("agent.activity", new { audio = "bytes" }));
+        Assert.Throws<ArgumentException>(() => events.Write("agent.activity", new { transcript = "private" }));
+        Assert.Throws<ArgumentException>(() => events.Write("agent.activity", new { token = "secret" }));
     }
 
     [Fact]
@@ -20,8 +20,9 @@ public sealed class HarnessEventSinkTests
     {
         using var events = new InMemoryHarnessEventSink();
 
-        events.Write("voice.capture.started", new { count = 1 });
+        events.Write("agent.activity", new { count = 1 });
 
-        Assert.Equal(new[] { "voice.capture.started" }, events.Codes);
+        Assert.Throws<ArgumentException>(() => events.Write("voice.capture.started", new { count = 1 }));
+        Assert.Equal(new[] { "agent.activity" }, events.Codes);
     }
 }

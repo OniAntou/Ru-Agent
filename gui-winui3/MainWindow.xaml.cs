@@ -24,12 +24,8 @@ namespace RuApp
         private readonly StartupCancellationScope _startup = new();
         private Task _startupTask = Task.CompletedTask;
         private bool _closed;
-        private VoicePlaybackService? _voicePlayback;
-        private SubtitleOverlayService? _subtitleOverlay;
-        private SubtitlePresenter? _subtitlePresenter;
 
         private ChatView? _chatView;
-        private VoiceView? _voiceView;
         private SettingsView? _settingsView;
         private LogView? _logView;
         private DiagnosticsView? _diagnosticsView;
@@ -240,44 +236,12 @@ namespace RuApp
                 _healthStatusService = new HealthStatusService(
                     _apiService,
                     () => _backendProvider.Session != null);
-                _voicePlayback = new VoicePlaybackService(
-                    _apiService,
-                    _composition.PlaybackDeviceFactory?.Invoke());
-
-                if (_composition.EnableSubtitleOverlay)
-                {
-                    var subtitleWindow = new Views.SubtitleOverlayWindow();
-                    _subtitlePresenter = new Services.SubtitlePresenter();
-                    _subtitleOverlay = new Services.SubtitleOverlayService(
-                        subtitleWindow,
-                        _subtitlePresenter);
-                    _voicePlayback.ConfigureSubtitles(_subtitlePresenter);
-                }
-
-                await _startup.RunAsync(token => _voicePlayback.RefreshSettingsAsync(token));
-                var voiceStatus = await _startup.RunAsync(token => _apiService.GetVoiceStatusAsync(token));
-                if (voiceStatus != null && _subtitleOverlay != null)
-                {
-                    _subtitleOverlay.ApplyCustomization(
-                        voiceStatus.SubtitleColor,
-                        voiceStatus.SubtitleSize,
-                        voiceStatus.SubtitleDuration,
-                        voiceStatus.SubtitlePosMode,
-                        voiceStatus.SubtitlePosX,
-                        voiceStatus.SubtitlePosY);
-                }
-                if (_voicePlayback.SubtitlesEnabled && _subtitleOverlay != null)
-                {
-                    _subtitleOverlay.Start();
-                }
 
                 _agentController = _composition.CreateAgentRunController(this.DispatcherQueue);
 
                 _chatView = new ChatView();
                 _chatView.Initialize(
                     _apiService,
-                    _voicePlayback,
-                    _composition.VoiceSourceFactory,
                     _composition.HarnessEvents,
                     _composition.HarnessScenario,
                     _agentController,
@@ -286,9 +250,6 @@ namespace RuApp
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
                 _chatView.SessionForked += OnChatSessionForked;
-
-                _voiceView = new VoiceView();
-                _voiceView.Initialize(_apiService, _voicePlayback, _subtitleOverlay);
 
                 _settingsView = new SettingsView();
                 _settingsView.Initialize(_apiService, _providerCatalogController);
@@ -389,7 +350,6 @@ namespace RuApp
         private void InitializeSidebarHoverEffects()
         {
             SetupNavHover(NavChat);
-            SetupNavHover(NavVoice);
             SetupNavHover(NavSettings);
 
             // Theme toggle button
@@ -444,7 +404,7 @@ namespace RuApp
             var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
             var line = (SolidColorBrush)Application.Current.Resources["RuLineBrush"];
 
-            foreach (var button in new[] { NavChat, NavVoice, NavSettings })
+            foreach (var button in new[] { NavChat, NavSettings })
             {
                 button.Background = transparent;
                 button.Foreground = muted;
@@ -504,7 +464,6 @@ namespace RuApp
                 ContentFrame.Content = tag switch
                 {
                     "chat" => _chatView,
-                    "voice" => _voiceView,
                     "settings" => _settingsView,
                     "log" => _logView,
                     "diagnostics" => _diagnosticsView,
@@ -771,22 +730,8 @@ namespace RuApp
                     _chatView.Dispose();
                 }
                 _settingsView?.Dispose();
-                _voiceView?.Dispose();
                 _logView?.Dispose();
                 _diagnosticsView?.Dispose();
-                _subtitleOverlay?.Dispose();
-                _subtitlePresenter?.Dispose();
-                if (_voicePlayback != null)
-                {
-                    try
-                    {
-                        await _voicePlayback.DisposeAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Voice shutdown failed: {ex.Message}");
-                    }
-                }
                 _apiService?.Dispose();
                 _healthStatusService = null;
                 _backendProvider.BackendExited -= OnBackendExited;
@@ -988,11 +933,6 @@ namespace RuApp
                 OnNavClick(NavChat, new RoutedEventArgs());
             }
             else if (e.Key == Windows.System.VirtualKey.Number2)
-            {
-                e.Handled = true;
-                OnNavClick(NavVoice, new RoutedEventArgs());
-            }
-            else if (e.Key == Windows.System.VirtualKey.Number3)
             {
                 e.Handled = true;
                 OnNavClick(NavSettings, new RoutedEventArgs());
@@ -1300,7 +1240,6 @@ namespace RuApp
             var labelVis = isNarrow ? Visibility.Collapsed : Visibility.Visible;
             if (LabelNewChat != null) LabelNewChat.Visibility = labelVis;
             if (LabelChat != null) LabelChat.Visibility = labelVis;
-            if (LabelVoice != null) LabelVoice.Visibility = labelVis;
             if (LabelThemeToggle != null) LabelThemeToggle.Visibility = labelVis;
             if (LabelSettings != null) LabelSettings.Visibility = labelVis;
             if (LabelRecents != null) LabelRecents.Visibility = labelVis;
@@ -1329,7 +1268,6 @@ namespace RuApp
 
                 ConfigureMiniButton(NavNewChat, ContentNewChat, IconNewChat);
                 ConfigureMiniButton(NavChat, ContentChat, IconChat);
-                ConfigureMiniButton(NavVoice, ContentVoice, IconVoice);
                 ConfigureMiniButton(ThemeToggleButton, ContentThemeToggle, ThemeToggleIcon);
                 ConfigureMiniButton(NavSettings, ContentSettings, IconSettings);
 
@@ -1362,7 +1300,6 @@ namespace RuApp
 
                 ConfigureFullButton(NavNewChat, ContentNewChat, IconNewChat, new Thickness(0, 0, 10, 0));
                 ConfigureFullButton(NavChat, ContentChat, IconChat, new Thickness(0, 0, 12, 0));
-                ConfigureFullButton(NavVoice, ContentVoice, IconVoice, new Thickness(0, 0, 12, 0));
                 ConfigureFullButton(ThemeToggleButton, ContentThemeToggle, ThemeToggleIcon, new Thickness(0, 0, 12, 0));
                 ConfigureFullButton(NavSettings, ContentSettings, IconSettings, new Thickness(0, 0, 12, 0));
 

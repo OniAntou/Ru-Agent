@@ -11,8 +11,6 @@ public sealed record BackendSession
     public Uri HttpBaseUri { get; }
     public string AuthSecret { get; }
 
-    public Uri VoiceStreamUri => BuildWebSocketUri("/voice/stream");
-
     public static BackendSession FromLoopback(int port, string authSecret)
     {
         if (port is < 1024 or > 65535)
@@ -31,19 +29,6 @@ public sealed record BackendSession
         }
 
         return new BackendSession(uri, authSecret);
-    }
-
-    public Uri BuildWebSocketUri(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith('/'))
-        {
-            throw new ArgumentException("WebSocket path must start with '/'.", nameof(path));
-        }
-
-        // Auth travels via the Authorization header (see VoiceStreamClient).
-        // No token in the query string so secrets never land in logs.
-        return new Uri(
-            $"ws://{HttpBaseUri.Host}:{HttpBaseUri.Port}{path}");
     }
 
     private static Uri ValidateHttpBaseUri(Uri uri)

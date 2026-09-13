@@ -51,43 +51,14 @@ public sealed class SettingsDtoTests
     }
 
     [Fact]
-    public void VoiceStyleIdUsesTheBackendWireName()
+    public void VoiceSettingsAreNoLongerPartOfTheSavePayload()
     {
-        string payload = JsonSerializer.Serialize(new VoiceSettingsUpdateDto
-        {
-            VoiceStyleId = "original",
-        });
+        string payload = JsonSerializer.Serialize(new AppSettingsDto());
 
         using JsonDocument document = JsonDocument.Parse(payload);
 
-        Assert.Equal(
-            "original",
-            document.RootElement.GetProperty("voice_style_id").GetString());
-    }
-
-    [Fact]
-    public void SettingsDtoReadsASupportedVoiceStyle()
-    {
-        AppSettingsDto? settings = JsonSerializer.Deserialize<AppSettingsDto>(
-            """{"voice_style_id":"original"}""");
-
-        Assert.NotNull(settings);
-        Assert.Equal("original", settings!.VoiceStyleId);
-    }
-
-    [Fact]
-    public void VoiceSettingsDefaultToOriginalWithoutAutomaticPace()
-    {
-        var settings = new VoiceSettingsUpdateDto();
-
-        Assert.Equal("original", settings.VoiceStyleId);
-        Assert.False(settings.AutoPaceEnabled);
-    }
-
-    [Fact]
-    public void ManagedVoiceSettingsDefaultToAutomaticPaceDisabled()
-    {
-        Assert.False(new AppSettingsDto().AutoPaceEnabled);
-        Assert.False(new VoiceStatusDto().AutoPaceEnabled);
+        Assert.False(document.RootElement.TryGetProperty("voice_style_id", out _));
+        Assert.False(document.RootElement.TryGetProperty("auto_read_replies", out _));
+        Assert.False(document.RootElement.TryGetProperty("show_subtitles", out _));
     }
 }

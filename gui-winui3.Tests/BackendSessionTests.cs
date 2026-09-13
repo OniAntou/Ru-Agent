@@ -6,16 +6,12 @@ namespace RuApp.Tests;
 public sealed class BackendSessionTests
 {
     [Fact]
-    public void BackendSession_builds_http_and_voice_endpoint_from_a_loopback_port()
+    public void BackendSession_builds_the_http_endpoint_from_a_loopback_port()
     {
         var session = BackendSession.FromLoopback(18001, "desktop-secret");
 
         Assert.Equal(new Uri("http://127.0.0.1:18001/"), session.HttpBaseUri);
-        Assert.Equal(
-            new Uri("ws://127.0.0.1:18001/voice/stream"),
-            session.VoiceStreamUri);
-        Assert.DoesNotContain("token", session.VoiceStreamUri.ToString(), StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("desktop-secret", session.VoiceStreamUri.ToString(), StringComparison.Ordinal);
+        Assert.Equal("desktop-secret", session.AuthSecret);
     }
 
     [Theory]

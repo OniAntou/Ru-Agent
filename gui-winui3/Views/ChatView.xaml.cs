@@ -67,9 +67,6 @@ namespace RuApp.Views
         private const int MaxTextAttachmentBytes = Services.ChatAttachmentPolicy.MaxTextAttachmentBytes;
 
         private ApiService? _apiService;
-        private VoicePlaybackService? _voicePlayback;
-        private VoiceTurnCaptureService? _voiceCapture;
-        private VoiceConversationService? _voiceConversation;
         private HarnessEventSink? _harnessEvents;
         private string? _harnessScenario;
         private string _activeSessionId = "default";
@@ -88,13 +85,7 @@ namespace RuApp.Views
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
-        private enum AgentTurnSource
-        {
-            Typed,
-            Voice,
-        }
 
-        private AgentTurnSource _activeAgentTurnSource;
         private ChatMessageItem? _activeAgentAssistantMessage;
         private string? _activeAgentRunId;
         private string? _activeWorkspaceId;
@@ -149,20 +140,6 @@ namespace RuApp.Views
                 {
                     AttachImageButton.Background = transparent;
                     if (AttachImageIcon != null) AttachImageIcon.Foreground = muted;
-                };
-            }
-
-            if (MicButton != null)
-            {
-                MicButton.PointerEntered += (s, e) =>
-                {
-                    MicButton.Background = canvas;
-                    if (MicIcon != null) MicIcon.Foreground = ink;
-                };
-                MicButton.PointerExited += (s, e) =>
-                {
-                    MicButton.Background = transparent;
-                    if (MicIcon != null) MicIcon.Foreground = muted;
                 };
             }
 
@@ -254,8 +231,6 @@ namespace RuApp.Views
 
         public void Initialize(
             ApiService apiService,
-            VoicePlaybackService voicePlayback,
-            Func<IVoiceFrameSource>? voiceSourceFactory = null,
             HarnessEventSink? harnessEvents = null,
             string? harnessScenario = null,
             AgentRunController? agentController = null,
@@ -264,7 +239,6 @@ namespace RuApp.Views
             GroupedProviderCatalogController? groupedProviderCatalogs = null)
         {
             _apiService = apiService;
-            _voicePlayback = voicePlayback;
             _harnessEvents = harnessEvents;
             _harnessScenario = harnessScenario;
             _agentController = agentController;
@@ -286,13 +260,6 @@ namespace RuApp.Views
             _agentController?.UsageReceived += OnAgentUsageReceived;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
-            _voiceCapture = new VoiceTurnCaptureService(voiceSourceFactory);
-            _voiceConversation = new VoiceConversationService(
-                _voiceCapture,
-                TranscribeVoiceAsync,
-                SendVoiceMessageAsync,
-                harnessEvents);
-            _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
 
@@ -975,25 +942,6 @@ namespace RuApp.Views
 
         private void OnAgentAssistantDeltaReceived(object? sender, AgentAssistantDeltaModel delta)
         {
-            // Voice delivery must not be gated by render coalescing
-            if (_activeAgentTurnSource == AgentTurnSource.Voice
-                && _voicePlayback?.AutoReadReplies == true)
-            {
-                // Deliver voice promptly on any thread that received the delta, but ensure the run is still current
-                var runForVoice = _agentController?.CurrentRun;
-                ChatMessageItem? capturedAssistantMessage;
-                string? capturedRunId;
-                lock (_accumulatorLock)
-                {
-                    capturedAssistantMessage = _activeAgentAssistantMessage;
-                    capturedRunId = _activeAgentRunId;
-                }
-                if (runForVoice != null && capturedAssistantMessage != null && string.Equals(capturedRunId ?? runForVoice.RunId, runForVoice.RunId, StringComparison.Ordinal))
-                {
-                    _voicePlayback.AppendReplyDelta(delta.Text);
-                }
-            }
-
             if (!DispatcherQueue.HasThreadAccess)
             {
                 DispatcherQueue.TryEnqueue(() => OnAgentAssistantDeltaReceived(sender, delta));
@@ -1522,10 +1470,6 @@ namespace RuApp.Views
             AutomationProperties.SetName(
                 AgentModeButton,
                 "Coding Agent");
-            MicButton.IsEnabled = true;
-            AutomationProperties.SetName(
-                MicButton,
-                "Start voice conversation");
         }
 
         private bool _isSendButtonInStopMode;
@@ -1781,7 +1725,7 @@ namespace RuApp.Views
             _agentActionPending = false;
             _isSendingUserTurn = false;
             _activeAgentUsage = null;
-            AbandonActiveAgentReply(notifyVoice: true);
+            AbandonActiveAgentReply();
 
             UpdateAgentComposerVisuals();
             AgentInlinePanel.Visibility = Visibility.Collapsed;
@@ -2217,7 +2161,7 @@ namespace RuApp.Views
                     effectivePrompt = sb.ToString().TrimEnd();
                 }
 
-                await SendAgentTurnAsync(effectivePrompt, AgentTurnSource.Typed, CancellationToken.None, attachments: attachments, displayUserText: text);
+                await SendAgentTurnAsync(effectivePrompt, CancellationToken.None, attachments: attachments, displayUserText: text);
             }
             catch (Exception ex)
             {
@@ -2231,8 +2175,8 @@ namespace RuApp.Views
             }
         }
 
-        private async Task SendAgentTurnAsync(            string text,
-            AgentTurnSource source,
+        private async Task SendAgentTurnAsync(
+            string text,
             CancellationToken cancellationToken,
             bool allowSessionRecovery = true,
             List<ImageAttachmentItem>? attachments = null,
@@ -2252,17 +2196,7 @@ namespace RuApp.Views
             if (IsControllerRunPending())
             {
                 ShowAgentInlineStatus("Coding Agent is already running. Please complete or stop the current turn first.");
-                if (source == AgentTurnSource.Voice)
-                {
-                    throw new InvalidOperationException("Coding Agent is already processing a turn.");
-                }
-
                 return;
-            }
-
-            if (source == AgentTurnSource.Typed && _voiceConversation?.IsRunning == true)
-            {
-                await StopVoiceConversationAsync();
             }
 
             await EnsureAgentSessionAsync(cancellationToken);
@@ -2295,7 +2229,7 @@ namespace RuApp.Views
                 _activeWorkspaceId = null;
 
                 StartNewAgentActivityRun();
-                BeginAgentReply(source, text, attachments, displayUserText, addUserMessage);
+                BeginAgentReply(text, attachments, displayUserText, addUserMessage);
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Preparing action…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
@@ -2309,13 +2243,12 @@ namespace RuApp.Views
                 && AgentSessionRecovery.IsRecoverable(error)
                 && _agentSessionRecovery.TryBegin(_activeSessionId))
             {
-                // Preserve the voice completion gate while replacing the stale
+                // Preserve the completion gate while replacing the stale
                 // session and retrying this same logical turn once.
-                AbandonActiveAgentReply(notifyVoice: false, removeUserMessage: true);
+                AbandonActiveAgentReply(removeUserMessage: true);
                 await RecoverAgentSessionAsync(cancellationToken);
                 await SendAgentTurnAsync(
                     text,
-                    source,
                     cancellationToken,
                     allowSessionRecovery: false,
                     attachments: attachments,
@@ -2334,9 +2267,8 @@ namespace RuApp.Views
             UpdateAgentInlineState();
         }
 
-        private void BeginAgentReply(AgentTurnSource source, string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
+        private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
         {
-            _activeAgentTurnSource = source;
             _activeAgentRunId = null;
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
@@ -2367,16 +2299,6 @@ namespace RuApp.Views
             };
             _activeAgentAssistantMessage.AgentActivities = AgentActivities;
             Messages.Add(_activeAgentAssistantMessage);
-
-            if (source == AgentTurnSource.Voice)
-            {
-                _harnessEvents?.Write("voice.agent.sent");
-            }
-
-            if (_voicePlayback?.AutoReadReplies == true)
-            {
-                _voicePlayback.BeginReplyStream();
-            }
         }
 
         private async Task CompleteActiveAgentTurnAsync(CancellationToken cancellationToken)
@@ -2439,26 +2361,10 @@ namespace RuApp.Views
             }
 
             _terminalFailureCardContent = null;
-            if (_activeAgentTurnSource == AgentTurnSource.Voice)
-            {
-                _harnessEvents?.Write("voice.reply.received");
-                if (_voicePlayback?.AutoReadReplies == true)
-                {
-                    // A streamed reply already entered the voice pipeline through
-                    // OnAgentAssistantDeltaReceived. CompleteReplyStreamAsync only
-                    // uses fallback text when no typed delta arrived.
-                    await _voicePlayback.CompleteReplyStreamAsync(
-                        _activeAgentReplyReceived ? string.Empty : fallbackText);
-                }
-
-                _harnessEvents?.Write("voice.reply.completed");
-                _voiceConversation?.NotifyReplyCompleted();
-            }
 
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
             _agentDeltaKeys.Clear();
-            _activeAgentTurnSource = AgentTurnSource.Typed;
             _agentActivityVisible = false;
             UpdateAgentInlineState();
         }
@@ -2487,34 +2393,14 @@ namespace RuApp.Views
                 _activeAgentAssistantMessage.IsError = !hasReply;
             }
 
-            if (_activeAgentTurnSource == AgentTurnSource.Voice)
-            {
-                if (hasReply)
-                {
-                    _voiceConversation?.NotifyReplyCompleted();
-                }
-                else
-                {
-                    _voicePlayback?.FailReplyStream();
-                    _voiceConversation?.NotifyReplyError(exception);
-                }
-            }
-
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
             _agentDeltaKeys.Clear();
-            _activeAgentTurnSource = AgentTurnSource.Typed;
         }
 
-        private void AbandonActiveAgentReply(bool notifyVoice, bool removeUserMessage = false)
+        private void AbandonActiveAgentReply(bool removeUserMessage = false)
         {
             _replyRenderScheduler.Invalidate();
-            _voicePlayback?.StopVoice();
-            if (notifyVoice && _activeAgentTurnSource == AgentTurnSource.Voice)
-            {
-                _voiceConversation?.NotifyReplyError(
-                    new OperationCanceledException("Agent turn was replaced or cancelled."));
-            }
 
             if (removeUserMessage && Messages.Count > 0)
             {
@@ -2541,7 +2427,6 @@ namespace RuApp.Views
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
             _agentDeltaKeys.Clear();
-            _activeAgentTurnSource = AgentTurnSource.Typed;
         }
 
         private async Task<SessionInfo> CreateValidatedAgentSessionAsync(CancellationToken cancellationToken)
@@ -2882,50 +2767,6 @@ namespace RuApp.Views
             return preserveStreamedReply ? streamedReply : latestAssistant;
         }
 
-        private async Task SendVoiceMessageAsync(string text, CancellationToken cancellationToken)
-        {
-            if (DispatcherQueue.HasThreadAccess)
-            {
-                await SendVoiceMessageOnUiThreadAsync(text, cancellationToken);
-                return;
-            }
-
-            var completion = new TaskCompletionSource<bool>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            if (!DispatcherQueue.TryEnqueue(async () =>
-            {
-                try
-                {
-                    await SendVoiceMessageOnUiThreadAsync(text, cancellationToken);
-                    completion.TrySetResult(true);
-                }
-                catch (Exception ex)
-                {
-                    completion.TrySetException(ex);
-                }
-            }))
-            {
-                throw new InvalidOperationException("Could not switch speech turn to UI thread.");
-            }
-
-            await completion.Task.ConfigureAwait(false);
-        }
-
-        private async Task SendVoiceMessageOnUiThreadAsync(string text, CancellationToken cancellationToken)
-        {
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                await SendAgentTurnAsync(text, AgentTurnSource.Voice, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                FailActiveAgentReply(ex);
-                ShowAgentError(ex);
-                throw;
-            }
-        }
-
         private void ApplyInputWidth()
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
@@ -3009,7 +2850,7 @@ namespace RuApp.Views
                     () => _agentController?.CancelAsync() ?? Task.CompletedTask,
                     "Stopping Coding Agent…");
             }
-            AbandonActiveAgentReply(notifyVoice: true);
+            AbandonActiveAgentReply();
             UpdateSendButtonMode(isAgentRunning: false);
         }
 
@@ -3063,7 +2904,6 @@ namespace RuApp.Views
             try
             {
                 if (_apiService == null) return;
-                await ReplaceVoiceSessionAsync();
                 // A workspace is single-owner while a run is non-terminal. Wait for
                 // the cancellation commit before switching sessions; fire-and-forget
                 // cancellation races the next create request and surfaces as the
@@ -3110,143 +2950,6 @@ namespace RuApp.Views
                 });
             }
         }
-
-        private async void OnMicClick(object sender, RoutedEventArgs e)
-        {
-            if (_voiceConversation == null)
-            {
-                return;
-            }
-
-            try
-            {
-                if (_voiceConversation.IsRunning)
-                {
-                    await StopVoiceConversationAsync();
-                    return;
-                }
-
-                _voicePlayback?.StopVoice();
-                await _voiceConversation.StartAsync();
-                SetVoiceButtonState(true);
-            }
-            catch (Exception ex)
-            {
-                SetVoiceButtonState(false);
-                ChatInputTextBox.PlaceholderText = "Could not access microphone. Check microphone permissions.";
-                System.Diagnostics.Debug.WriteLine($"Error starting voice conversation: {ex.Message}");
-            }
-        }
-
-        private async Task StopVoiceConversationAsync()
-        {
-            if (_voiceConversation == null || !_voiceConversation.IsRunning)
-            {
-                _voicePlayback?.StopVoice();
-                SetVoiceButtonState(false);
-                return;
-            }
-
-            await _voiceConversation.StopAsync();
-            AbandonActiveAgentReply(notifyVoice: false);
-            _harnessEvents?.Write(
-                string.Equals(_harnessScenario, "cancel", StringComparison.OrdinalIgnoreCase)
-                    ? "voice.conversation.cancelled"
-                    : "voice.conversation.stopped");
-            _voicePlayback?.StopVoice();
-            SetVoiceButtonState(false);
-        }
-
-        private async Task ReplaceVoiceSessionAsync()
-        {
-            if (_voiceConversation != null)
-            {
-                await _voiceConversation.ReplaceSessionAsync();
-            }
-
-            AbandonActiveAgentReply(notifyVoice: false);
-            SetVoiceButtonState(false);
-        }
-
-        private async Task<string?> TranscribeVoiceAsync(byte[] wavBytes, CancellationToken cancellationToken)
-        {
-            if (_apiService == null)
-            {
-                throw new InvalidOperationException("Voice API is not ready.");
-            }
-
-            string? text = await _apiService.TranscribeAudioAsync(wavBytes, cancellationToken);
-            if (text == null)
-            {
-                throw new InvalidOperationException("Speech recognition service is unavailable.");
-            }
-
-            _harnessEvents?.Write("voice.transcribe.completed");
-            return text;
-        }
-
-        private void OnVoiceConversationStatusChanged(object? sender, VoiceConversationStatus status)
-        {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (status.State == VoiceConversationState.Stopped)
-                {
-                    SetVoiceButtonState(false);
-                    VoiceConversationStatusText.Text = "Stopped";
-                    VoiceConversationStatusText.Visibility = Visibility.Visible;
-                    return;
-                }
-
-                if (status.State == VoiceConversationState.Error)
-                {
-                    SetVoiceButtonState(false);
-                    ChatInputTextBox.PlaceholderText = status.Message
-                        ?? "Voice conversation stopped.";
-                    VoiceConversationStatusText.Text = status.Message ?? "Could not access microphone.";
-                    VoiceConversationStatusText.Visibility = Visibility.Visible;
-                    return;
-                }
-
-                SetVoiceButtonState(true);
-                VoiceConversationStatusText.Text = status.State switch
-                {
-                    VoiceConversationState.Listening => "Listening...",
-                    VoiceConversationState.Transcribing => "Processing...",
-                    VoiceConversationState.Sending or VoiceConversationState.WaitingForReply => "Waiting for Ru to reply...",
-                    _ => status.Message ?? string.Empty,
-                };
-                VoiceConversationStatusText.Visibility = Visibility.Visible;
-                if (status.State == VoiceConversationState.Listening)
-                {
-                    _harnessEvents?.Write("voice.capture.started");
-                }
-                else if (status.State == VoiceConversationState.Transcribing)
-                {
-                    _harnessEvents?.Write("voice.capture.ended");
-                }
-                if (!string.IsNullOrWhiteSpace(status.Message))
-                {
-                    ChatInputTextBox.PlaceholderText = status.Message;
-                }
-            });
-        }
-
-        private void SetVoiceButtonState(bool active)
-        {
-            MicButton.IsEnabled = true;
-            MicIcon.Glyph = active ? "\uE768" : "\uE720";
-            MicIcon.FontSize = 14;
-            MicIcon.Foreground = active
-                ? new SolidColorBrush(Microsoft.UI.Colors.White)
-                : (Brush)Application.Current.Resources["RuMutedBrush"];
-            MicButton.Background = active
-                ? (SolidColorBrush)Application.Current.Resources["AppDangerBrush"]
-                : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            AutomationProperties.SetName(
-                MicButton,
-                active ? "Stop voice conversation" : "Start voice conversation");
-        }
-
 
         private void OnCopyMessageContentClick(object sender, RoutedEventArgs e)
         {
@@ -3373,15 +3076,6 @@ namespace RuApp.Views
                 _modelSaveFailureTimer = null;
             }
             MeteorShowerField?.Dispose();
-            _voicePlayback?.StopVoice();
-            if (_voiceConversation != null)
-            {
-                _voiceConversation.StatusChanged -= OnVoiceConversationStatusChanged;
-                _voiceConversation.Dispose();
-                _voiceConversation = null;
-            }
-            _voiceCapture?.Dispose();
-            _voiceCapture = null;
         }
 
         private void DetachWaveTimer()

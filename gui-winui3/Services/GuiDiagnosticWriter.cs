@@ -78,27 +78,6 @@ public sealed class GuiDiagnosticWriter : IDisposable
         return TryEnqueueEvent(diagnosticEvent);
     }
 
-    public bool TryEnqueueVoiceCaptureFailure(string errorCode, Exception? exception = null)
-    {
-        if (string.IsNullOrWhiteSpace(errorCode) || errorCode.Length > 64)
-        {
-            throw new ArgumentException("Voice diagnostic error code must be 1-64 characters.", nameof(errorCode));
-        }
-
-        var diagnosticEvent = new GuiDiagnosticEvent(
-            EventId: $"evt_{Guid.NewGuid():N}",
-            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0,
-            Iso: DateTimeOffset.UtcNow.ToString("O"),
-            Level: "error",
-            Component: "gui",
-            EventCode: "gui_voice_capture",
-            Status: "failed",
-            ErrorCode: errorCode,
-            ExceptionKind: ClassifyException(exception));
-
-        return TryEnqueueEvent(diagnosticEvent);
-    }
-
     public bool TryEnqueueApiError(string method, string errorType, int? statusCode = null)
     {
         if (string.IsNullOrWhiteSpace(method) || method.Length > 128)
@@ -179,23 +158,6 @@ public sealed class GuiDiagnosticWriter : IDisposable
         catch
         {
             // Diagnostics must never replace the original crash path.
-            return false;
-        }
-    }
-
-    public static bool WriteVoiceCaptureFailure(
-        string errorCode,
-        Exception? exception = null,
-        string? logRoot = null)
-    {
-        try
-        {
-            using var writer = new GuiDiagnosticWriter(logRoot, capacity: 1);
-            return writer.TryEnqueueVoiceCaptureFailure(errorCode, exception)
-                && writer.Flush(TimeSpan.FromMilliseconds(500));
-        }
-        catch
-        {
             return false;
         }
     }

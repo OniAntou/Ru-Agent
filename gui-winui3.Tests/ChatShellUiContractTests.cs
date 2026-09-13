@@ -10,8 +10,8 @@ public sealed class ChatShellUiContractTests
         string xaml = File.ReadAllText(FindSource("MainWindow.xaml"));
 
         Assert.Contains("x:Name=\"NavChat\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"NavVoice\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"NavSettings\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"NavVoice\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"NavTools\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"NavLog\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"NavDiagnostics\"", xaml, StringComparison.Ordinal);

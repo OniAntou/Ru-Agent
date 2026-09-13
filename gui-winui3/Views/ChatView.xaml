@@ -271,24 +271,6 @@
                                        Foreground="{StaticResource RuInkBrush}" />
                         </StackPanel>
                     </Button>
-                    <Button Tag="Talk with Ru"
-                            Click="OnSuggestionClick"
-                            Background="{StaticResource RuSurfaceBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            Foreground="{StaticResource RuInkBrush}"
-                            CornerRadius="{StaticResource RuControlCornerRadius}"
-                            Padding="14,8"
-                            HorizontalContentAlignment="Left"
-                            FontFamily="{StaticResource RuUiFontFamily}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE720;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                            <TextBlock Text="Talk with Ru"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="13"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                        </StackPanel>
-                    </Button>
                 </StackPanel>
             </StackPanel>
 
@@ -438,14 +420,6 @@
                     </ScrollViewer>
                 </Grid>
             </Border>
-            <TextBlock x:Name="VoiceConversationStatusText"
-                       Grid.Row="1"
-                       Text=""
-                       Visibility="Collapsed"
-                       AutomationProperties.AutomationId="VoiceConversationStatus"
-                       AutomationProperties.LiveSetting="Polite"
-                       Foreground="{StaticResource RuMutedBrush}"
-                       Margin="8,0,8,6" />
 
             <StackPanel x:Name="AgentInlinePanel"
                         Grid.Row="2"
@@ -925,26 +899,6 @@
                                         </StackPanel>
                                     </Flyout>
                                 </Button.Flyout>
-                            </Button>
-
-                            <Button x:Name="MicButton"
-                                    Click="OnMicClick"
-                                    Width="30"
-                                    Height="30"
-                                    Padding="0"
-                                    HorizontalContentAlignment="Center"
-                                    VerticalContentAlignment="Center"
-                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    VerticalAlignment="Center"
-                                    Margin="0"
-                                    AutomationProperties.AutomationId="MicButton"
-                                    AutomationProperties.Name="Talk with Ru by voice">
-                                <FontIcon x:Name="MicIcon"
-                                          Glyph="&#xE720;"
-                                          FontSize="14"
-                                          Foreground="{StaticResource RuMutedBrush}" />
                             </Button>
 
                             <Button x:Name="SendButton"

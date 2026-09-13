@@ -12,10 +12,6 @@ internal static class Program
 {
     private static readonly string[] Scenarios =
     [
-        "turn",
-        "stop",
-        "cancel",
-        "stale-session",
         "agent-tool-contract",
         "agent-cancel",
         "agent-stale-result",
@@ -96,53 +92,7 @@ internal static class Program
     private static async Task<HarnessGuiCheck> RunScenarioAsync(
         UiAutomationScenario scenario,
         HarnessOptions options)
-    {
-        if (options.Scenario.StartsWith("agent-", StringComparison.Ordinal))
-        {
-            return await scenario.RunAgentScenarioAsync(options.Scenario, options.Timeout);
-        }
-
-        HarnessGuiCheck start = await scenario.StartVoiceAsync(options.Timeout);
-        if (start.Status != "passed")
-        {
-            return start;
-        }
-
-        return options.Scenario switch
-        {
-            "turn" => await RunTurnAsync(scenario, options.Timeout),
-            "stop" => await scenario.StopVoiceAsync(options.Timeout),
-            "cancel" => await scenario.CancelVoiceAsync(options.Timeout),
-            "stale-session" => await RunStaleSessionAsync(scenario, options.Timeout),
-            _ => new HarnessGuiCheck("gui.scenario", "failed", 0, "unsupported scenario"),
-        };
-    }
-
-    private static async Task<HarnessGuiCheck> RunTurnAsync(
-        UiAutomationScenario scenario,
-        TimeSpan timeout)
-    {
-        HarnessGuiCheck first = await scenario.WaitForVoiceTurnAsync(timeout);
-        if (first.Status != "passed")
-        {
-            return first;
-        }
-
-        return await scenario.RequestSecondTurnAsync(timeout);
-    }
-
-    private static async Task<HarnessGuiCheck> RunStaleSessionAsync(
-        UiAutomationScenario scenario,
-        TimeSpan timeout)
-    {
-        HarnessGuiCheck replaced = await scenario.ReplaceSessionAsync(timeout);
-        if (replaced.Status != "passed")
-        {
-            return replaced;
-        }
-
-        return await scenario.AssertNoLateUpdateAsync(TimeSpan.FromMilliseconds(500));
-    }
+        => await scenario.RunAgentScenarioAsync(options.Scenario, options.Timeout);
 
     private static string ReadEventsPath(string sessionPath)
     {
@@ -187,7 +137,7 @@ internal static class Program
         {
             string? app = null;
             string? session = null;
-            string scenario = "turn";
+            string scenario = "agent-tool-contract";
             TimeSpan timeout = TimeSpan.FromSeconds(30);
             for (int i = 0; i < args.Length; i++)
             {

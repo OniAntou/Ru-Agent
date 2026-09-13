@@ -24,15 +24,4 @@ public sealed record PublicHostSession(
             throw new ArgumentException("Path must start with '/'", nameof(path));
         return new Uri(BaseUri, path.TrimStart('/'));
     }
-
-    public Uri VoiceStreamUri => BuildWebSocketUri("/voice/stream");
-
-    private Uri BuildWebSocketUri(string path)
-    {
-        // Auth travels via the Authorization header on the ClientWebSocket handshake,
-        // never in the query string, so the bearer never lands in logs or ETW traces.
-        // Callers must set: socket.Options.SetRequestHeader("Authorization", "Bearer " + BearerToken).
-        var builder = new UriBuilder(BaseUri.Scheme == Uri.UriSchemeHttps ? "wss" : "ws", BaseUri.Host, BaseUri.Port, path);
-        return builder.Uri;
-    }
 }

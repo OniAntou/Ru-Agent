@@ -27,21 +27,20 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void Composer_places_left_aligned_attachment_and_agent_selectors_with_right_aligned_mic_and_send_button()
+    public void Composer_places_left_aligned_attachment_and_agent_selectors_with_right_aligned_send_button()
     {
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
         int composerStart = xaml.IndexOf("ColumnDefinitions=\"Auto,Auto,Auto,*,Auto\"", StringComparison.Ordinal);
-        Assert.True(composerStart >= 0, "Composer columns must place attachment, agent button on the left, followed by a spacer and mic + send buttons.");
+        Assert.True(composerStart >= 0, "Composer columns must place attachment and agent button on the left, followed by a spacer and the send button.");
 
         int attachStart = xaml.IndexOf("x:Name=\"AttachImageButton\"", composerStart, StringComparison.Ordinal);
         int agentModeStart = xaml.IndexOf("x:Name=\"AgentModeButton\"", composerStart, StringComparison.Ordinal);
-        int micStart = xaml.IndexOf("x:Name=\"MicButton\"", composerStart, StringComparison.Ordinal);
         int sendStart = xaml.IndexOf("x:Name=\"SendButton\"", composerStart, StringComparison.Ordinal);
-        Assert.True(attachStart >= composerStart && agentModeStart > attachStart && micStart > agentModeStart && sendStart > micStart);
+        Assert.True(attachStart >= composerStart && agentModeStart > attachStart && sendStart > agentModeStart);
         Assert.Contains("Grid.Column=\"0\"", xaml[attachStart..agentModeStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"1\"", xaml[agentModeStart..micStart], StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"MicButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", xaml[agentModeStart..sendStart], StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.AutomationId=\"SendButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.AutomationId=\"AttachImageButton\"", xaml, StringComparison.Ordinal);
     }
 

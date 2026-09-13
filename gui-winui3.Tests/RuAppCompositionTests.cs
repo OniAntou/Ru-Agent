@@ -19,20 +19,17 @@ public sealed class RuAppCompositionTests
         Assert.NotNull(session);
         Assert.Equal(18001, session!.HttpBaseUri.Port);
         Assert.Equal(0, provider.StartManagedBackendCalls);
-        Assert.False(composition.EnableSubtitleOverlay);
     }
 
     [Fact]
-    public void Harness_composition_exposes_deterministic_audio_boundaries_and_safe_events()
+    public void Harness_composition_exposes_safe_events()
     {
         var provider = new FakeRuBackendSessionProvider(
             BackendSession.FromLoopback(18001, "secret"));
         using var composition = RuAppComposition.ForHarness(provider, "events.jsonl");
 
-        Assert.NotNull(composition.VoiceSourceFactory);
-        Assert.NotNull(composition.PlaybackDeviceFactory);
         Assert.NotNull(composition.HarnessEvents);
-        Assert.False(composition.EnableSubtitleOverlay);
+        Assert.True(composition.IsHarness);
     }
 
     private sealed class FakeRuBackendSessionProvider : IRuBackendSessionProvider

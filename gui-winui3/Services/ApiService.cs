@@ -101,11 +101,6 @@ namespace RuApp.Services
         private static bool IsCancellation(Exception ex) =>
             ex is OperationCanceledException || ex is TaskCanceledException;
 
-        public VoiceStreamClient CreateVoiceStreamClient()
-        {
-            return new VoiceStreamClient(_session);
-        }
-
         private static async Task<bool> HasOkEnvelopeAsync(HttpResponseMessage response)
         {
             if (!response.IsSuccessStatusCode) return false;

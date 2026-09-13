@@ -96,7 +96,7 @@ public sealed class VisualPolishContractTests
     [Fact]
     public void Spacing_follows_the_rhythm_scale()
     {
-        foreach (var view in new[] { "ChatView.xaml", "SettingsView.xaml", "VoiceView.xaml", "DiagnosticsView.xaml", "LogView.xaml" })
+        foreach (var view in new[] { "ChatView.xaml", "SettingsView.xaml", "DiagnosticsView.xaml", "LogView.xaml" })
         {
             var xaml = File.ReadAllText(FindSource("Views", view));
             foreach (var off in new[] { "Spacing=\"20\"", "Spacing=\"7\"", "Spacing=\"10\"", "Spacing=\"14\"" })

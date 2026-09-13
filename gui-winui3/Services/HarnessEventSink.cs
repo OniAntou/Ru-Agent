@@ -11,18 +11,6 @@ public class HarnessEventSink : IDisposable
     private const int MaxBytes = 64 * 1024;
     private static readonly HashSet<string> AllowedCodes = new(StringComparer.Ordinal)
     {
-        "voice.capture.started",
-        "voice.capture.ended",
-        "voice.transcribe.completed",
-        "voice.chat.sent",
-        "voice.reply.received",
-        "voice.reply.completed",
-        "voice.reply.failed",
-        "voice.playback.started",
-        "voice.playback.ended",
-        "voice.conversation.stopped",
-        "voice.conversation.cancelled",
-        "voice.session.replaced",
         "agent.activity",
         "agent.approval.required",
         "agent.cancelled",

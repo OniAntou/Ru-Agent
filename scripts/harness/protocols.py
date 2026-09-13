@@ -129,7 +129,7 @@ def probe_http_routes(
     client: HttpClientLike | None = None,
     timeout_seconds: float = 10.0,
 ) -> list[CheckResult]:
-    """Probe every HTTP registry entry; external observations are explicit skips."""
+    """Probe every HTTP registry entry; destructive routes are explicit skips."""
 
     del timeout_seconds
     owned_client = client is None

@@ -11,8 +11,6 @@ public static class WorkerMessageTypes
     public const string VoiceStart = "voice.start";
     public const string VoiceControl = "voice.control";
     public const string VoiceDone = "voice.done";
-    public const string VtsCatalog = "vts.catalog";
-    public const string VtsAction = "vts.action";
     public const string WorkerHealth = "worker.health";
     public const string WorkerHealthOk = "worker.health.ok";
     public const string Error = "error";
@@ -28,8 +26,6 @@ public static class WorkerMessageTypes
             VoiceStart,
             VoiceControl,
             VoiceDone,
-            VtsCatalog,
-            VtsAction,
             WorkerHealth,
             WorkerHealthOk,
             Error,

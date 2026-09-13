@@ -101,34 +101,6 @@ def _factory_for(method: str, path: str) -> RequestFactory:
             }
         elif path == "/voice/transcribe":
             body = {"audio_b64": _synthetic_audio_base64(), "sample_rate": 16_000}
-        elif path == "/vts/mouse-look":
-            body = {"enabled": False, "sensitivity": 1.0}
-        elif path == "/vts/overlay" or path == "/vts/connect":
-            body = {"enabled": False}
-        elif path == "/vts/config":
-            # Keep this fixture aligned with the runtime MotionConfig schema.
-            # The old enabled/sensitivity pair belongs to mouse-look/overlay,
-            # and is rejected by the VTS motion-config endpoint.
-            body = {
-                "sway_amplitude_idle": 10.0,
-                "sway_amplitude_speaking": 16.0,
-                "head_scale": 100.0,
-                "eye_scale": 100.0,
-                "micro_action_min_delay": 8.0,
-                "micro_action_max_delay": 22.0,
-                "pose_min_interval": 90.0,
-                "pose_max_interval": 130.0,
-                "breath_amplitude": 1.5,
-                "breath_rate": 0.15,
-            }
-        elif path == "/vts/activity":
-            body = {"typing": False}
-        elif path == "/vts/action":
-            # The public route fixture accepts a space/comma-delimited string;
-            # the managed Worker v1 protocol uses a JsonArray internally.
-            body = {"codes": "vts_01"}
-        elif path == "/vts/speaking":
-            body = {"speaking": False}
         elif path == "/agent/v1/runs" and method == "POST":
             # Minimal valid tracer payload – harness will fill session_id/workspace if available later;
             # generic probe uses synthetic session and a drive-agnostic workspace placeholder
@@ -174,10 +146,8 @@ def _classify(entry: Mapping[str, Any]) -> tuple[RouteSafety, str | None, bool]:
     transport = str(entry["transport"])
     if path == "/host/shutdown":
         return RouteSafety.EXTERNAL_SKIP, "destructive_route_skipped", False
-    if path.startswith("/observation/"):
-        return RouteSafety.EXTERNAL_SKIP, "hardware_or_external_observation_required", False
     if transport == "websocket" or method == "GET":
-        optional_device = path in {"/voice/status", "/vts/status"}
+        optional_device = path == "/voice/status"
         return RouteSafety.READ_ONLY, None, optional_device
     return RouteSafety.FIXTURE_MUTATION, None, False
 

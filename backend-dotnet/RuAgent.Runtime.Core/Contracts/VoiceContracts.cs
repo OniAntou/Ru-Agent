@@ -2,25 +2,6 @@ using System.Text;
 
 namespace RuAgent.Runtime.Core.Contracts;
 
-/// <summary>
-/// Non-secret voice and subtitle settings shared between the public host and
-/// the managed device worker. Provider credentials never belong in this
-/// snapshot.
-/// </summary>
-public sealed record VoiceSettingsSnapshot(
-    string VoiceLabel = "Ru (OmniVoice)",
-    string VoiceStyleId = "original",
-    double VoiceSpeed = 1.0,
-    bool AutoPaceEnabled = false,
-    bool AutoReadReplies = true,
-    bool ShowSubtitles = false,
-    string SubtitleColor = "#FFFFFF",
-    string SubtitleSize = "medium",
-    double SubtitleDuration = 2.0,
-    string SubtitlePosMode = "auto",
-    int SubtitlePosX = -1,
-    int SubtitlePosY = -1);
-
 public sealed record VoiceRequest
 {
     public VoiceRequest(string text, string voiceProfile, double speed, string voiceStyleId)

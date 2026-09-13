@@ -11,8 +11,7 @@ namespace RuBackend.Worker;
 public sealed class LoopbackWorkerClient :
     IWorkerConnectionClient,
     IRuntimeProtocolClient,
-    IVoiceProtocolClient,
-    IVtsProtocolClient
+    IVoiceProtocolClient
 {
     private readonly DeviceWorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
@@ -35,86 +34,6 @@ public sealed class LoopbackWorkerClient :
         ThrowIfDisposed();
         await using var connection = new WorkerConnection(_options);
         return await connection.ConnectAsync(cancellationToken);
-    }
-
-    public async Task<VtsCatalog?> GetVtsCatalogAsync(
-        string requestId,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        var request = new WorkerEnvelope(
-            DeviceWorkerClientOptions.ProtocolVersion,
-            requestId,
-            WorkerMessageTypes.VtsCatalog,
-            null,
-            new JsonObject { ["operation"] = "catalog" },
-            CorrelationContext.Current);
-
-        try
-        {
-            var item = await SendPooledUnaryAsync(request, "vts", cancellationToken).ConfigureAwait(false);
-            if (item.Type == WorkerMessageTypes.Error)
-            {
-                var error = RemoteError(item.Payload);
-                if (error.Code is "vts_unavailable" or "vts_catalog_unavailable")
-                {
-                    return null;
-                }
-
-                throw error;
-            }
-
-            if (item.Type != WorkerMessageTypes.VtsCatalog)
-            {
-                throw new WorkerProtocolException("unexpected_type");
-            }
-
-            return new VtsCatalog(
-                ReadVtsCodeSet(item.Payload["hotkey_codes"]),
-                ReadVtsCodeSet(item.Payload["expression_codes"]));
-        }
-        catch (WorkerProtocolException)
-        {
-            throw;
-        }
-    }
-
-    public async Task TriggerVtsActionsAsync(
-        string requestId,
-        IReadOnlyList<string> codes,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        var normalized = NormalizeVtsCodes(codes);
-        var request = new WorkerEnvelope(
-            DeviceWorkerClientOptions.ProtocolVersion,
-            requestId,
-            WorkerMessageTypes.VtsAction,
-            null,
-            new JsonObject
-            {
-                ["operation"] = "action",
-                ["codes"] = new JsonArray(
-                    normalized.Select(code => (JsonNode?)code).ToArray()),
-            },
-            CorrelationContext.Current);
-
-        var item = await SendPooledUnaryAsync(request, "vts", cancellationToken).ConfigureAwait(false);
-        if (item.Type == WorkerMessageTypes.Error)
-        {
-            throw RemoteError(item.Payload);
-        }
-
-        if (item.Type != WorkerMessageTypes.VtsAction
-            || !string.Equals(
-                ReadOptionalString(item.Payload["status"], "invalid_vts_action"),
-                "ok",
-                StringComparison.Ordinal))
-        {
-            throw new WorkerProtocolException("invalid_vts_action");
-        }
-
-        return;
     }
 
     public async Task<WorkerHealth> GetHealthAsync(CancellationToken cancellationToken)
@@ -599,46 +518,6 @@ public sealed class LoopbackWorkerClient :
         }
 
         return result;
-    }
-
-    private static IReadOnlySet<string> ReadVtsCodeSet(JsonNode? node)
-    {
-        if (node is not JsonArray values || values.Count > 512)
-        {
-            throw new WorkerProtocolException("invalid_vts_catalog");
-        }
-
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var value in values)
-        {
-            var code = ReadString(value, "invalid_vts_catalog");
-            if (code.Length > 64 || !result.Add(code))
-            {
-                throw new WorkerProtocolException("invalid_vts_catalog");
-            }
-        }
-
-        return result;
-    }
-
-    private static IReadOnlyList<string> NormalizeVtsCodes(IReadOnlyList<string> codes)
-    {
-        ArgumentNullException.ThrowIfNull(codes);
-        if (codes.Count is < 1 or > 3)
-        {
-            throw new WorkerProtocolException("invalid_request");
-        }
-
-        var normalized = codes
-            .Select(code => code?.Trim().ToLowerInvariant() ?? string.Empty)
-            .ToArray();
-        if (normalized.Any(code => code.Length is < 1 or > 64)
-            || normalized.Distinct(StringComparer.Ordinal).Count() != normalized.Length)
-        {
-            throw new WorkerProtocolException("invalid_request");
-        }
-
-        return normalized;
     }
 
     private void RemoveActiveRequest(string requestId, WorkerConnection connection)

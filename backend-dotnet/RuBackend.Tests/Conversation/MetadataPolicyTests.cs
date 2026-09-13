@@ -1,5 +1,4 @@
 using RuBackend.Conversation;
-using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Conversation;
@@ -9,41 +8,35 @@ public sealed class MetadataPolicyTests
     private readonly MetadataPolicy _policy = new();
 
     [Fact]
-    public void SplitReply_strips_private_markers_and_keeps_distinct_catalog_codes()
+    public void SplitReply_strips_private_markers_and_keeps_emotion()
     {
-        var catalog = Catalog(["vts_01", "vts_02"], ["expr_01"]);
-
-        var (visible, codes, emotion) = _policy.SplitReply(
-            "Hay quá! [[EMO:joy]] [[VTS:vts_01, expr_01, vts_02]]",
-            catalog);
+        var (visible, emotion) = _policy.SplitReply(
+            "Hay quá! [[EMO:joy]] [[VTS:vts_01, expr_01, vts_02]]");
 
         Assert.Equal("Hay quá!", visible);
-        Assert.Equal(["vts_01", "expr_01", "vts_02"], codes);
         Assert.Equal("joy", emotion);
+        Assert.DoesNotContain("[[VTS:", visible, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
     [InlineData("Hay quá! [[VTS:vts_99]]")]
     [InlineData("Hay quá! [[VTS:vts_01,vts_01]]")]
     [InlineData("Hay quá! [[VTS:]]")]
-    public void SplitReply_strips_invalid_catalog_markers_without_triggering_actions(string raw)
+    public void SplitReply_strips_every_marker_shape(string raw)
     {
-        var (visible, codes, _) = _policy.SplitReply(raw, Catalog(["vts_01"], []));
+        var (visible, _) = _policy.SplitReply(raw);
 
         Assert.Equal("Hay quá!", visible);
-        Assert.Empty(codes);
         Assert.DoesNotContain("[[VTS:", visible, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void SplitReply_strips_every_marker_even_when_no_catalog_is_available()
+    public void SplitReply_derives_emotion_from_text_when_the_marker_is_absent()
     {
-        var (visible, codes, emotion) = _policy.SplitReply(
-            "[[VTS:vts_01]] Em buồn quá. [[EMO:not-private-data]]",
-            null);
+        var (visible, emotion) = _policy.SplitReply(
+            "[[VTS:vts_01]] Em buồn quá. [[EMO:not-private-data]]");
 
         Assert.Equal("Em buồn quá.", visible);
-        Assert.Empty(codes);
         Assert.Equal("sad", emotion);
     }
 
@@ -59,18 +52,10 @@ public sealed class MetadataPolicyTests
     [Fact]
     public void Marker_only_reply_becomes_the_controlled_safe_text()
     {
-        var (visible, codes, _) = _policy.SplitReply(
-            "[[EMO:joy]] [[VTS:vts_01]] [[VOICE_PACE:quick]]",
-            Catalog(["vts_01"], []));
+        var (visible, _) = _policy.SplitReply(
+            "[[EMO:joy]] [[VTS:vts_01]] [[VOICE_PACE:quick]]");
         visible = _policy.StripVoiceMarkers(visible);
 
         Assert.Equal(MetadataPolicy.EmptyResponseText, visible);
-        Assert.Equal(["vts_01"], codes);
     }
-
-    private static VtsCatalog Catalog(
-        string[] hotkeys,
-        string[] expressions) => new(
-            new HashSet<string>(hotkeys, StringComparer.Ordinal),
-            new HashSet<string>(expressions, StringComparer.Ordinal));
 }

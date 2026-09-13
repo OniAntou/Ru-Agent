@@ -3,8 +3,6 @@ using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Audio;
-using RuAgent.Runtime.Adapters.Devices;
-using RuAgent.Runtime.Adapters.Observation;
 using RuAgent.Runtime.Adapters.Runtime;
 using RuAgent.Runtime.Adapters.Speech;
 using RuAgent.Runtime.Core.Contracts;
@@ -15,8 +13,8 @@ namespace RuAgent.Runtime.Worker.Tests;
 
 /// <summary>
 /// Deterministic Phase 2 parity evidence. The fixture records only contract
-/// fields: no model, network, microphone, OmniVoice, VTube Studio, or Gemini
-/// process participates in these tests.
+/// fields: no model, network, microphone, or OmniVoice process participates in
+/// these tests.
 /// </summary>
 public sealed class Phase2ManagedDeviceParityTests
 {
@@ -29,8 +27,7 @@ public sealed class Phase2ManagedDeviceParityTests
         Assert.Equal(
             new HashSet<string>(StringComparer.Ordinal)
             {
-                "protocol", "settings", "voice", "errors", "speech",
-                "vts", "observation", "cancellation", "privacy",
+                "protocol", "settings", "voice", "errors", "speech", "cancellation",
             },
             ((JsonArray)fixture["cases"]!).Select(item => item!["group"]!.GetValue<string>()).ToHashSet(StringComparer.Ordinal));
     }
@@ -146,65 +143,6 @@ public sealed class Phase2ManagedDeviceParityTests
     }
 
     [Fact]
-    public void Vts_code_sets_and_action_limit_match_fixture()
-    {
-        var expected = Case("vts.code_sets")["expected"]!;
-        var catalog = new VtsCatalog(
-            "phase2-model",
-            "Ru model",
-            ((JsonArray)expected["hotkey_codes"]!).Select(item => item!.GetValue<string>()),
-            ((JsonArray)expected["expression_codes"]!).Select(item => item!.GetValue<string>()));
-
-        Assert.Equal(
-            ((JsonArray)expected["hotkey_codes"]!).Select(item => item!.GetValue<string>()),
-            catalog.HotkeyCodes.OrderBy(code => code, StringComparer.Ordinal));
-        Assert.Equal(
-            ((JsonArray)expected["expression_codes"]!).Select(item => item!.GetValue<string>()),
-            catalog.ExpressionCodes.OrderBy(code => code, StringComparer.Ordinal));
-        Assert.Equal(
-            ((JsonArray)expected["valid_action_codes"]!).Select(item => item!.GetValue<string>()),
-            catalog.ValidateActionCodes(["VTS_01", "expr_01"]));
-        Assert.Equal(RuntimeLimits.MaxVtsActionCodes, expected["max_action_codes"]!.GetValue<int>());
-    }
-
-    [Fact]
-    public void Observation_bounds_and_redaction_match_fixture()
-    {
-        var expected = Case("observation.bounds")["expected"]!;
-        var privateValue = "PRIVATE-OBSERVATION-KEY";
-        var observationJson = new JsonObject
-        {
-            ["scene"] = $"api_key: {privateValue}",
-            ["event"] = "Working",
-            ["confidence"] = 9.0,
-            ["novelty"] = -1.0,
-            ["comment_worthiness"] = 0.5,
-            ["visible_text"] = new JsonArray(Enumerable.Range(0, 10).Select(index => (JsonNode?)$"line-{index}").ToArray()),
-        };
-        var response = new JsonObject
-        {
-            ["candidates"] = new JsonArray(
-                new JsonObject
-                {
-                    ["content"] = new JsonObject
-                    {
-                        ["parts"] = new JsonArray(
-                            new JsonObject { ["text"] = observationJson.ToJsonString() }),
-                    },
-                }),
-        };
-
-        var observation = VisionObservationParser.Parse(response);
-
-        Assert.Equal(expected["confidence"]!.GetValue<double>(), observation.Confidence);
-        Assert.Equal(expected["novelty"]!.GetValue<double>(), observation.Novelty);
-        Assert.Equal(expected["comment_worthiness"]!.GetValue<double>(), observation.CommentWorthiness);
-        Assert.Equal(expected["visible_text_count"]!.GetValue<int>(), observation.VisibleText.Count);
-        Assert.True(expected["redacted"]!.GetValue<bool>());
-        Assert.DoesNotContain(privateValue, observation.Scene, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task Cancellation_does_not_complete_work_and_releases_the_lease()
     {
         var expected = Case("cancellation.before_dispatch")["expected"]!;
@@ -220,35 +158,6 @@ public sealed class Phase2ManagedDeviceParityTests
         await first.DisposeAsync();
         await using var second = await leases.AcquireAsync(ResourceKind.GpuAudio, CancellationToken.None);
         Assert.True(expected["lease_released"]!.GetValue<bool>());
-    }
-
-    [Fact]
-    public async Task Privacy_scan_excludes_prompt_credentials_provider_body_and_audio()
-    {
-        var expected = Case("privacy.redaction")["expected"]!;
-        var input = Case("privacy.redaction")["input"]!;
-        var prompt = input["prompt"]!.GetValue<string>();
-        var credential = input["credential"]!.GetValue<string>();
-
-        var redacted = VisionObservationParser.Redact($"api_key: {credential}");
-        Assert.Equal(expected["credential_visible"]!.GetValue<bool>(), redacted.Contains(credential, StringComparison.Ordinal));
-
-        var provider = new ThrowingObservationProvider(prompt, credential);
-        var response = await new ObservationRuntimeRequestHandler(provider).InvokeAsync(
-            new PrivateRuntimeRequest(
-                "POST",
-                "/observation/analyze",
-                "application/json",
-                Encoding.UTF8.GetBytes(new JsonObject
-                {
-                    ["image_b64"] = Convert.ToBase64String([1, 2, 3]),
-                    ["prompt"] = "Inspect",
-                }.ToJsonString())),
-            CancellationToken.None);
-        var body = Encoding.UTF8.GetString(response.Body.Span);
-        Assert.Equal(expected["prompt_visible"]!.GetValue<bool>(), body.Contains(prompt, StringComparison.Ordinal));
-        Assert.Equal(expected["raw_provider_body_visible"]!.GetValue<bool>(), body.Contains(prompt, StringComparison.Ordinal));
-        Assert.Equal(expected["raw_audio_visible"]!.GetValue<bool>(), body.Contains(credential, StringComparison.Ordinal));
     }
 
     private static JsonObject LoadFixture()
@@ -340,12 +249,6 @@ public sealed class Phase2ManagedDeviceParityTests
             Language = language;
             return Task.FromResult(Transcript);
         }
-    }
-
-    private sealed class ThrowingObservationProvider(string prompt, string credential) : IObservationProvider
-    {
-        public Task<VisionObservation?> AnalyzeAsync(ObservationRequest request, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException($"provider body {prompt} {credential}");
     }
 
     private sealed class StubPrivateHandler : IPrivateRuntimeRequestHandler

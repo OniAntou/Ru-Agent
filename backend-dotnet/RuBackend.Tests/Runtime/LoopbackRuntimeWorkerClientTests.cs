@@ -25,17 +25,17 @@ public sealed class LoopbackRuntimeWorkerClientTests
         var response = await adapter.SendAsync(
             new RuntimeWorkerRequest(
                 HttpMethod.Post,
-                "/observation/cancel",
+                "/voice/tts",
                 "application/json",
-                Encoding.UTF8.GetBytes("{\"observation_id\":\"obs-1\"}")),
+                Encoding.UTF8.GetBytes("{\"text\":\"Xin chào\"}")),
             CancellationToken.None);
 
         Assert.NotNull(protocol.LastRequest);
         Assert.Equal("POST", protocol.LastRequest!.Method);
-        Assert.Equal("/observation/cancel", protocol.LastRequest.PathAndQuery);
+        Assert.Equal("/voice/tts", protocol.LastRequest.PathAndQuery);
         Assert.Equal("application/json", protocol.LastRequest.ContentType);
         Assert.Equal(
-            "{\"observation_id\":\"obs-1\"}",
+            "{\"text\":\"Xin chào\"}",
             Encoding.UTF8.GetString(protocol.LastRequest.Body));
         Assert.Equal(200, response.StatusCode);
         Assert.Equal("application/json", response.ContentType);

@@ -38,7 +38,7 @@ public sealed class DiagnosticRequestMiddlewareTests
         var emitter = new FakeDiagnosticEmitter();
         var context = new DefaultHttpContext();
         context.Request.Method = HttpMethods.Get;
-        context.Request.Path = "/vts/status";
+        context.Request.Path = "/voice/status";
 
         var middleware = new DiagnosticRequestMiddleware(
             next: httpContext =>
@@ -51,7 +51,7 @@ public sealed class DiagnosticRequestMiddlewareTests
         await middleware.InvokeAsync(context);
 
         Assert.Equal("warning", emitter.Level);
-        Assert.Equal("http.vts", emitter.EventCode);
+        Assert.Equal("http.voice", emitter.EventCode);
         Assert.Equal("failed", emitter.Status);
         Assert.Equal("http_503", emitter.ErrorCode);
     }

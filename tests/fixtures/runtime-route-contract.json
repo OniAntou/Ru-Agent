@@ -7,25 +7,6 @@
     {"method": "POST", "path": "/voice/tts", "group": "voice"},
     {"method": "POST", "path": "/voice/warmup", "group": "voice"},
     {"method": "POST", "path": "/voice/release", "group": "voice"},
-    {"method": "POST", "path": "/voice/transcribe", "group": "voice"},
-    {"method": "GET", "path": "/vts/mouse-look", "group": "vts"},
-    {"method": "POST", "path": "/vts/mouse-look", "group": "vts"},
-    {"method": "GET", "path": "/vts/overlay", "group": "vts"},
-    {"method": "POST", "path": "/vts/overlay", "group": "vts"},
-    {"method": "GET", "path": "/vts/status", "group": "vts"},
-    {"method": "POST", "path": "/vts/connect", "group": "vts"},
-    {"method": "GET", "path": "/vts/config", "group": "vts"},
-    {"method": "POST", "path": "/vts/config", "group": "vts"},
-    {"method": "POST", "path": "/vts/activity", "group": "vts"},
-    {"method": "POST", "path": "/vts/action", "group": "vts"},
-    {"method": "POST", "path": "/vts/speaking", "group": "vts"},
-    {"method": "POST", "path": "/observation/preflight", "group": "observation"},
-    {"method": "GET", "path": "/observation/vision-config", "group": "observation"},
-    {"method": "POST", "path": "/observation/react", "group": "observation"},
-    {"method": "POST", "path": "/observation/cancel", "group": "observation"},
-    {"method": "POST", "path": "/observation/ack", "group": "observation"},
-    {"method": "POST", "path": "/observation/start", "group": "observation"},
-    {"method": "POST", "path": "/observation/stop", "group": "observation"},
-    {"method": "GET", "path": "/observation/status", "group": "observation"}
+    {"method": "POST", "path": "/voice/transcribe", "group": "voice"}
   ]
 }

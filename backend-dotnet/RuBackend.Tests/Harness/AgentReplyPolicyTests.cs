@@ -5,7 +5,6 @@ using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Conversation;
 using RuBackend.Harness;
-using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -16,15 +15,9 @@ public sealed class AgentReplyPolicyTests
         new(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task Policy_sanitizes_visible_text_and_accepts_only_catalog_codes()
+    public async Task Policy_sanitizes_visible_text_and_keeps_emotion()
     {
-        var worker = new FakeWorker
-        {
-            Catalog = new VtsCatalog(
-                new HashSet<string>(["smile"], StringComparer.Ordinal),
-                new HashSet<string>(["expr"], StringComparer.Ordinal)),
-        };
-        var policy = new AgentReplyPolicy(new MetadataPolicy(), new WorkerAgentVtsClient(worker));
+        var policy = new AgentReplyPolicy(new MetadataPolicy());
 
         var reply = await policy.PrepareAsync(
             Run(),
@@ -32,40 +25,33 @@ public sealed class AgentReplyPolicyTests
             CancellationToken.None);
 
         Assert.Equal("Hay quá", reply.VisibleText);
-        Assert.Equal(["smile", "expr"], reply.VtsCodes);
         Assert.Equal("joy", reply.Emotion);
     }
 
     [Fact]
-    public async Task Policy_keeps_text_safe_when_vts_catalog_is_unavailable()
+    public async Task Policy_keeps_only_the_visible_text_when_every_marker_is_private()
     {
-        var policy = new AgentReplyPolicy(new MetadataPolicy(), new WorkerAgentVtsClient(new FakeWorker
-        {
-            CatalogError = new WorkerProtocolException("vts_unavailable"),
-        }));
+        var policy = new AgentReplyPolicy(new MetadataPolicy());
 
         var reply = await policy.PrepareAsync(
             Run(),
-            "Em nghe đây [[VTS:smile]] [[EMO:joy]]",
+            "[[VTS:smile]] [[EMO:joy]]",
             CancellationToken.None);
 
-        Assert.Equal("Em nghe đây", reply.VisibleText);
-        Assert.Empty(reply.VtsCodes);
+        Assert.Equal(MetadataPolicy.EmptyResponseText, reply.VisibleText);
         Assert.Equal("joy", reply.Emotion);
     }
 
     [Fact]
-    public async Task Effect_sink_triggers_vts_and_deduplicates_the_same_model_step()
+    public async Task Effect_sink_deduplicates_the_same_model_step()
     {
-        var worker = new FakeWorker();
         var activity = new FakeActivityLogStore();
-        var sink = new AgentReplyEffectSink(new WorkerAgentVtsClient(worker), activity);
-        var reply = new AgentReplyPresentation("visible", ["smile"], "joy");
+        var sink = new AgentReplyEffectSink(activity);
+        var reply = new AgentReplyPresentation("visible", emotion: "joy");
 
         await sink.ApplyAsync(Run(), reply, new ModelStepId("step_11111111111111111111111111111111"), CancellationToken.None);
         await sink.ApplyAsync(Run(), reply, new ModelStepId("step_11111111111111111111111111111111"), CancellationToken.None);
 
-        Assert.Equal(["smile"], worker.TriggeredCodes);
         var evt = Assert.Single(activity.Events);
         Assert.Equal("agent", evt.Type);
         Assert.Equal(
@@ -184,30 +170,6 @@ public sealed class AgentReplyPolicyTests
         new string('a', 64),
         Epoch,
         Epoch);
-
-    private sealed class FakeWorker : IVtsProtocolClient
-    {
-        public VtsCatalog? Catalog { get; init; }
-        public Exception? CatalogError { get; init; }
-        public IReadOnlyList<string> TriggeredCodes { get; private set; } = [];
-
-        public Task<VtsCatalog?> GetVtsCatalogAsync(
-            string requestId,
-            CancellationToken cancellationToken) =>
-            CatalogError is null
-                ? Task.FromResult(Catalog)
-                : Task.FromException<VtsCatalog?>(CatalogError);
-
-        public Task TriggerVtsActionsAsync(
-            string requestId,
-            IReadOnlyList<string> codes,
-            CancellationToken cancellationToken)
-        {
-            TriggeredCodes = codes.ToArray();
-            return Task.CompletedTask;
-        }
-
-    }
 
     private sealed class FakeActivityLogStore : IActivityLogStore
     {

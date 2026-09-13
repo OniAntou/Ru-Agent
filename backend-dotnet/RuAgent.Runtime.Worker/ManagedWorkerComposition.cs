@@ -2,9 +2,7 @@ using System.Net;
 using System.Net.Http;
 using RuAgent.Runtime.Adapters.Audio;
 using RuAgent.Runtime.Adapters.Bootstrap;
-using RuAgent.Runtime.Adapters.Devices;
 using RuAgent.Runtime.Adapters.Models;
-using RuAgent.Runtime.Adapters.Observation;
 using RuAgent.Runtime.Adapters.Runtime;
 using RuAgent.Runtime.Adapters.Speech;
 using RuAgent.Runtime.Core.Contracts;
@@ -66,8 +64,6 @@ public sealed record ManagedWorkerCompositionOptions
 
     public Uri? VoiceEndpoint { get; init; }
 
-    public Uri? VtubeStudioEndpoint { get; init; }
-
     private static void ValidatePort(int port, string parameterName)
     {
         if (port is < 0 or > 65_535)
@@ -123,15 +119,9 @@ public sealed class ManagedWorkerCompositionDependencies
 
     public ISpeechRecognizer? SpeechRecognizer { get; init; }
 
-    public IVtubeStudioClient? VtubeStudioClient { get; init; }
-
-    public IObservationProvider? ObservationProvider { get; init; }
-
     public IManagedRuntimeApplier? RuntimeApplier { get; init; }
 
     public RuntimeLeaseCoordinator? SharedLeases { get; init; }
-
-    public HttpClient? ObservationHttpClient { get; init; }
 }
 
 public sealed class ManagedWorkerComposition : IAsyncDisposable
@@ -148,8 +138,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
         WorkerV1Server deviceServer,
         IVoiceProvider? voiceProvider,
         ISpeechRecognizer speechRecognizer,
-        IVtubeStudioClient vtsClient,
-        IObservationProvider observationProvider,
         OmniVoiceProcessController? omniVoiceProcess)
     {
         Leases = leases;
@@ -161,8 +149,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
         DeviceServer = deviceServer;
         VoiceProvider = voiceProvider;
         SpeechRecognizer = speechRecognizer;
-        VtubeStudioClient = vtsClient;
-        ObservationProvider = observationProvider;
         OmniVoiceProcess = omniVoiceProcess;
     }
 
@@ -184,10 +170,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
     public IVoiceProvider? VoiceProvider { get; }
 
     public ISpeechRecognizer SpeechRecognizer { get; }
-
-    public IVtubeStudioClient VtubeStudioClient { get; }
-
-    public IObservationProvider ObservationProvider { get; }
 
     public OmniVoiceProcessController? OmniVoiceProcess { get; }
 
@@ -273,32 +255,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
 
             var speechRecognizer = dependencies.SpeechRecognizer
                 ?? Own(owned, new UnavailableSpeechRecognizer());
-            var observationProvider = dependencies.ObservationProvider;
-            if (observationProvider is null)
-            {
-                var observationHttpClient = dependencies.ObservationHttpClient
-                    ?? Own(owned, new HttpClient());
-                // The agent provider bootstrap is deliberately not reused here:
-                // v1 has no credential channel. An empty key yields a bounded
-                // missing_api_key skip without making a network request.
-                observationProvider = Own(owned, new GeminiVisionProvider(
-                    observationHttpClient,
-                    new GeminiVisionOptions(string.Empty),
-                    leases));
-            }
-
-            var vtsClient = dependencies.VtubeStudioClient;
-            if (vtsClient is null)
-            {
-                var vtsEndpoint = options.VtubeStudioEndpoint
-                    ?? new Uri("ws://127.0.0.1:8001", UriKind.Absolute);
-                vtsClient = Own(owned, new VtubeStudioClient(
-                    new VtubeStudioClientOptions(vtsEndpoint)
-                    {
-                        TokenPath = FileVtubeStudioTokenStore.ResolveDefaultPath(),
-                    },
-                    leases: leases));
-            }
 
             var privateRouter = new PrivateRuntimeRequestRouter(
                 new UnavailablePrivateRuntimeRequestHandler());
@@ -306,31 +262,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
             privateRouter = privateRouter
                 .WithRouteHandler("GET", "/status", runtimeStatusHandler)
                 .WithRouteHandler("GET", "/models", runtimeStatusHandler);
-            var vtsRuntimeHandler = new VtubeStudioRuntimeRequestHandler(vtsClient);
-            privateRouter = privateRouter
-                .WithRouteHandler("GET", "/vts/mouse-look", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/mouse-look", vtsRuntimeHandler)
-                .WithRouteHandler("GET", "/vts/overlay", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/overlay", vtsRuntimeHandler)
-                .WithRouteHandler("GET", "/vts/status", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/connect", vtsRuntimeHandler)
-                .WithRouteHandler("GET", "/vts/config", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/config", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/activity", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/action", vtsRuntimeHandler)
-                .WithRouteHandler("POST", "/vts/speaking", vtsRuntimeHandler);
-            var observationControlHandler = new ObservationControlRequestHandler(
-                settings,
-                voiceProvider is not null);
-            privateRouter = privateRouter
-                .WithRouteHandler("POST", "/observation/preflight", observationControlHandler)
-                .WithRouteHandler("GET", "/observation/vision-config", observationControlHandler)
-                .WithRouteHandler("POST", "/observation/react", observationControlHandler)
-                .WithRouteHandler("POST", "/observation/cancel", observationControlHandler)
-                .WithRouteHandler("POST", "/observation/ack", observationControlHandler)
-                .WithRouteHandler("POST", "/observation/start", observationControlHandler)
-                .WithRouteHandler("POST", "/observation/stop", observationControlHandler)
-                .WithRouteHandler("GET", "/observation/status", observationControlHandler);
             if (voiceProvider is not null)
             {
                 var voiceHandler = new VoiceRuntimeRequestHandler(voiceProvider, settings);
@@ -356,9 +287,7 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
                 settings,
                 privateRouter,
                 voiceProvider is null ? null : new VoiceStreamCoordinator(voiceProvider, leases),
-                speechRecognizer,
-                vtsClient,
-                observationProvider);
+                speechRecognizer);
             var deviceServer = new WorkerV1Server(options.DeviceWorkerToken, deviceRouter);
 
             var composition = new ManagedWorkerComposition(
@@ -370,8 +299,6 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
                 deviceServer,
                 voiceProvider,
                 speechRecognizer,
-                vtsClient,
-                observationProvider,
                 omniVoiceProcess);
             composition._owned.AddRange(owned);
             return composition;

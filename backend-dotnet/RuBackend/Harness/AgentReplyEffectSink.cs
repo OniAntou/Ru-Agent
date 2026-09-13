@@ -7,20 +7,18 @@ namespace RuBackend.Harness;
 
 /// <summary>
 /// Applies non-critical effects for a committed Agent reply. The bounded in-process
-/// key set prevents reconnect/retry duplicates without making VTS a second source of
-/// truth for the durable run transition.
+/// key set prevents reconnect/retry duplicates without making the activity log a
+/// second source of truth for the durable run transition.
 /// </summary>
 public sealed class AgentReplyEffectSink : IAgentReplyEffectSink
 {
     private const int MaximumAppliedKeys = 4_096;
-    private readonly IAgentVtsClient _vts;
     private readonly IActivityLogStore _activity;
     private readonly ConcurrentDictionary<string, byte> _applied = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _appliedOrder = new();
 
-    public AgentReplyEffectSink(IAgentVtsClient vts, IActivityLogStore activity)
+    public AgentReplyEffectSink(IActivityLogStore activity)
     {
-        _vts = vts ?? throw new ArgumentNullException(nameof(vts));
         _activity = activity ?? throw new ArgumentNullException(nameof(activity));
     }
 
@@ -43,15 +41,6 @@ public sealed class AgentReplyEffectSink : IAgentReplyEffectSink
         TrimAppliedKeys();
         try
         {
-            if (reply.VtsCodes.Count > 0)
-            {
-                await _vts.TriggerAsync(
-                        $"agent-{run.RunId.Value}-{modelStepId.Value}-vts",
-                        reply.VtsCodes,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
             await _activity.AppendAsync(
                     BuildActivity(run, reply, modelStepId),
                     cancellationToken)

@@ -147,16 +147,6 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
                 return DiagnosticCodes.SpeechSynthesizeFailed;
             }
 
-            if (category.Contains(".vts", StringComparison.Ordinal))
-            {
-                return DiagnosticCodes.VtsFailed;
-            }
-
-            if (category.Contains(".observation", StringComparison.Ordinal))
-            {
-                return DiagnosticCodes.ObservationFailed;
-            }
-
             if (category.Contains(".memory", StringComparison.Ordinal))
             {
                 return DiagnosticCodes.MemoryFailed;

@@ -18,7 +18,7 @@ public sealed class WorkerEnvelopeTests
             {
                 ["token"] = "opaque-secret",
                 ["text"] = "Em nghe đây.",
-                ["capabilities"] = new JsonArray("runtime", "voice", "vts"),
+                ["capabilities"] = new JsonArray("runtime", "voice"),
             });
 
         var decoded = WorkerEnvelopeCodec.Parse(WorkerEnvelopeCodec.Serialize(source));
@@ -28,7 +28,7 @@ public sealed class WorkerEnvelopeTests
         Assert.Equal(source.Type, decoded.Type);
         Assert.Null(decoded.Seq);
         Assert.Equal("Em nghe đây.", decoded.Payload["text"]!.GetValue<string>());
-        Assert.Equal(["runtime", "voice", "vts"], decoded.Payload["capabilities"]!.AsArray()
+        Assert.Equal(["runtime", "voice"], decoded.Payload["capabilities"]!.AsArray()
             .Select(item => item!.GetValue<string>()));
     }
 

@@ -30,13 +30,6 @@ public static class DiagnosticCodes
     public const string MemorySave = "memory.save";
     public const string MemoryFailed = "memory.failed";
 
-    public const string VtsAction = "vts.action";
-    public const string VtsCatalog = "vts.catalog";
-    public const string VtsFailed = "vts.failed";
-
-    public const string ObservationTrigger = "observation.trigger";
-    public const string ObservationFailed = "observation.failed";
-
     public const string SettingsRead = "settings.read";
     public const string SettingsSaved = "settings.saved";
 

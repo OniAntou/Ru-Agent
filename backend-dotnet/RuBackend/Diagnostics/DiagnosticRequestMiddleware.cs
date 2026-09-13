@@ -74,16 +74,6 @@ public sealed class DiagnosticRequestMiddleware
             return "http.voice";
         }
 
-        if (value.StartsWith("/vts", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http.vts";
-        }
-
-        if (value.StartsWith("/observation", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http.observation";
-        }
-
         if (value.StartsWith("/settings", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/sessions", StringComparison.OrdinalIgnoreCase) ||
             value.StartsWith("/activity-log", StringComparison.OrdinalIgnoreCase))

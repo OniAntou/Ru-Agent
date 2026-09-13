@@ -20,7 +20,6 @@ using RuBackend.Providers;
 using RuBackend.Runtime;
 using RuBackend.Security;
 using RuBackend.Speech;
-using RuBackend.Vts;
 using RuBackend.Worker;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Tools.Web;
@@ -79,10 +78,7 @@ internal static class PublicHostServiceRegistration
             services.GetRequiredService<LoopbackWorkerClient>());
         services.AddSingleton<IVoiceProtocolClient>(services =>
             services.GetRequiredService<LoopbackWorkerClient>());
-        services.AddSingleton<IVtsProtocolClient>(services =>
-            services.GetRequiredService<LoopbackWorkerClient>());
         services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
-        services.AddSingleton<IAgentVtsClient, WorkerAgentVtsClient>();
         services.AddHttpClient<AgentWebToolExecutor>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);

@@ -5,7 +5,7 @@
       "id": "protocol.handshake",
       "group": "protocol",
       "expected": {
-        "capabilities": ["runtime", "voice", "vts", "observation"],
+        "capabilities": ["runtime", "voice"],
         "hello_sequence": 0,
         "health_sequence": 0,
         "ordered_response_sequence_required": true
@@ -61,50 +61,11 @@
       }
     },
     {
-      "id": "vts.code_sets",
-      "group": "vts",
-      "input": {
-        "hotkeys": ["VTS_01", "VTS_02"],
-        "expressions": ["Expression.exp3.json"]
-      },
-      "expected": {
-        "hotkey_codes": ["vts_01", "vts_02"],
-        "expression_codes": ["expr_01"],
-        "valid_action_codes": ["vts_01", "expr_01"],
-        "max_action_codes": 3
-      }
-    },
-    {
-      "id": "observation.bounds",
-      "group": "observation",
-      "expected": {
-        "confidence": 1.0,
-        "novelty": 0.0,
-        "comment_worthiness": 0.5,
-        "visible_text_count": 8,
-        "redacted": true
-      }
-    },
-    {
       "id": "cancellation.before_dispatch",
       "group": "cancellation",
       "expected": {
         "completed": false,
         "lease_released": true
-      }
-    },
-    {
-      "id": "privacy.redaction",
-      "group": "privacy",
-      "input": {
-        "prompt": "PRIVATE-PROMPT-phase2",
-        "credential": "sk-PRIVATE-CREDENTIAL-phase2"
-      },
-      "expected": {
-        "prompt_visible": false,
-        "credential_visible": false,
-        "raw_provider_body_visible": false,
-        "raw_audio_visible": false
       }
     }
   ]

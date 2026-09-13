@@ -67,7 +67,7 @@ public sealed class AgentRunCoordinatorTests
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
         var policy = new RecordingReplyPolicy(
-            new AgentReplyPresentation("visible", ["smile"], "joy"));
+            new AgentReplyPresentation("visible", emotion: "joy"));
         var effects = new RecordingReplyEffects();
         var coordinator = Coordinator(
             model,

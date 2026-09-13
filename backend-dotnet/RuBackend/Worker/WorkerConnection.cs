@@ -14,8 +14,6 @@ public sealed class WorkerConnection : IAsyncDisposable
             WorkerMessageTypes.RuntimeResponse,
             WorkerMessageTypes.VoiceControl,
             WorkerMessageTypes.VoiceDone,
-            WorkerMessageTypes.VtsCatalog,
-            WorkerMessageTypes.VtsAction,
             WorkerMessageTypes.WorkerHealthOk,
             WorkerMessageTypes.Error,
         ],
@@ -26,8 +24,6 @@ public sealed class WorkerConnection : IAsyncDisposable
             WorkerMessageTypes.RuntimeState,
             WorkerMessageTypes.RuntimeResponse,
             WorkerMessageTypes.VoiceDone,
-            WorkerMessageTypes.VtsCatalog,
-            WorkerMessageTypes.VtsAction,
             WorkerMessageTypes.WorkerHealthOk,
             WorkerMessageTypes.Error,
         ],
@@ -70,9 +66,7 @@ public sealed class WorkerConnection : IAsyncDisposable
                     ["version"] = DeviceWorkerClientOptions.ProtocolVersion,
                     ["capabilities"] = new JsonArray(
                         "runtime",
-                        "voice",
-                        "vts",
-                        "observation"),
+                        "voice"),
                 });
             await SendEnvelopeCoreAsync(request, cancellationToken);
 

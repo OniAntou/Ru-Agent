@@ -7,9 +7,7 @@ namespace RuBackend.Conversation;
 
 public interface IMetadataPolicy
 {
-    (string VisibleText, IReadOnlyList<string> VtsCodes, string? Emotion) SplitReply(
-        string rawReply,
-        VtsCatalog? catalog);
+    (string VisibleText, string? Emotion) SplitReply(string rawReply);
 
     string StripVoiceMarkers(string text);
 }
@@ -22,34 +20,14 @@ public sealed partial class MetadataPolicy : IMetadataPolicy
         ["none", "joy", "sad", "angry", "surprised", "shy"],
         StringComparer.Ordinal);
 
-    public (string VisibleText, IReadOnlyList<string> VtsCodes, string? Emotion) SplitReply(
-        string rawReply,
-        VtsCatalog? catalog)
+    public (string VisibleText, string? Emotion) SplitReply(string rawReply)
     {
         ArgumentNullException.ThrowIfNull(rawReply);
         var emotionMatch = EmotionMarker().Match(rawReply);
         var withoutEmotion = CollapseWhitespace(EmotionMarker().Replace(rawReply, string.Empty));
         var emotion = ResolveEmotion(emotionMatch, withoutEmotion);
-        var matches = VtsMarker().Matches(withoutEmotion);
-        if (matches.Count == 0)
-        {
-            return (withoutEmotion, Array.Empty<string>(), emotion);
-        }
-
-        var codes = matches
-            .SelectMany(match => CodeDelimiter().Split(match.Groups[1].Value))
-            .Where(code => !string.IsNullOrWhiteSpace(code))
-            .Select(code => code.Trim().ToLowerInvariant())
-            .ToArray();
         var visible = CollapseWhitespace(VtsMarker().Replace(withoutEmotion, string.Empty));
-        if (codes.Length == 0
-            || codes.Distinct(StringComparer.Ordinal).Count() != codes.Length
-            || !CodesAreKnown(codes, catalog))
-        {
-            return (visible, Array.Empty<string>(), emotion);
-        }
-
-        return (visible, codes, emotion);
+        return (visible, emotion);
     }
 
     public string StripVoiceMarkers(string text)
@@ -59,18 +37,6 @@ public sealed partial class MetadataPolicy : IMetadataPolicy
         visible = UnterminatedPrivateMarker().Replace(visible, string.Empty);
         visible = CollapseWhitespace(visible);
         return string.IsNullOrWhiteSpace(visible) ? EmptyResponseText : visible;
-    }
-
-    private static bool CodesAreKnown(IReadOnlyList<string> codes, VtsCatalog? catalog)
-    {
-        if (catalog is null)
-        {
-            return false;
-        }
-
-        var known = new HashSet<string>(catalog.HotkeyCodes, StringComparer.OrdinalIgnoreCase);
-        known.UnionWith(catalog.ExpressionCodes);
-        return codes.All(known.Contains);
     }
 
     private static string ResolveEmotion(Match match, string visible)
@@ -133,9 +99,6 @@ public sealed partial class MetadataPolicy : IMetadataPolicy
 
     [GeneratedRegex(@"\[\[EMO:([^\[\]]*?)\]\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex EmotionMarker();
-
-    [GeneratedRegex(@"[\s,]+", RegexOptions.CultureInvariant)]
-    private static partial Regex CodeDelimiter();
 
     [GeneratedRegex(
         @"\s*(?:\[\[(?:VTS|VOICE_PACE|EMO):[^\]]*\]\]|\[(?:SEARCH|APP_OPEN|VOLUME):[^\]]*\])\s*",

@@ -16,8 +16,6 @@ public sealed class WorkerV1Server
             WorkerV1Contracts.RuntimeLoad,
             WorkerV1Contracts.RuntimeRequest,
             WorkerV1Contracts.VoiceStart,
-            WorkerV1Contracts.VtsCatalog,
-            WorkerV1Contracts.VtsAction,
         ],
         StringComparer.Ordinal);
     private readonly WorkerV1Options _options;
@@ -110,7 +108,7 @@ public sealed class WorkerV1Server
                 return;
             }
 
-            var capabilities = new JsonArray("runtime", "voice", "vts", "observation");
+            var capabilities = new JsonArray("runtime", "voice");
             await SendAsync(
                 socket,
                 sendLock,

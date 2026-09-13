@@ -66,7 +66,7 @@ public sealed class PrivateRuntimeRequestRouterTests
         var error = await Assert.ThrowsAsync<PrivateRuntimeRequestException>(() => router.InvokeAsync(
             new PrivateRuntimeRequest(
                 "POST",
-                "/observation/stop",
+                "/voice/release",
                 null,
                 Encoding.UTF8.GetBytes("not-json")),
             CancellationToken.None));

@@ -21,14 +21,14 @@ public sealed class ManagedRuntimeClientTests
         var response = await client.SendAsync(
             new RuntimeWorkerRequest(
                 HttpMethod.Post,
-                "/observation/ack",
+                "/voice/tts",
                 "application/json",
-                Encoding.UTF8.GetBytes("{\"observation_id\":\"obs-1\"}")),
+                Encoding.UTF8.GetBytes("{\"text\":\"Xin chào\"}")),
             CancellationToken.None);
 
         Assert.Equal("POST", protocol.Request!.Method);
-        Assert.Equal("/observation/ack", protocol.Request.PathAndQuery);
-        Assert.Equal("{\"observation_id\":\"obs-1\"}", Encoding.UTF8.GetString(protocol.Request.Body));
+        Assert.Equal("/voice/tts", protocol.Request.PathAndQuery);
+        Assert.Equal("{\"text\":\"Xin chào\"}", Encoding.UTF8.GetString(protocol.Request.Body));
         Assert.Equal(200, response.StatusCode);
         Assert.Equal("{\"status\":\"ok\"}", Encoding.UTF8.GetString(response.Body));
     }

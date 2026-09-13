@@ -22,7 +22,7 @@ public sealed class LoopbackWorkerClientTests
         {
             var hello = await ReceiveEnvelopeAsync(socket);
             observedToken = hello.Payload["token"]!.GetValue<string>();
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime", "voice", "vts", "observation"));
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime", "voice"));
         });
         await using var client = CreateClient(server.Uri, "worker-secret");
 
@@ -31,88 +31,8 @@ public sealed class LoopbackWorkerClientTests
         Assert.Equal("worker-secret", observedToken);
         Assert.Equal(1, hello.Version);
         Assert.Equal(
-            new HashSet<string> { "runtime", "voice", "vts", "observation" },
+            new HashSet<string> { "runtime", "voice" },
             hello.Capabilities);
-    }
-
-    [Fact]
-    public async Task GetVtsCatalog_maps_private_hotkey_and_expression_codes()
-    {
-        WorkerEnvelope? observed = null;
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            var hello = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
-            observed = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(
-                observed.Id,
-                WorkerMessageTypes.VtsCatalog,
-                0,
-                new JsonObject
-                {
-                    ["hotkey_codes"] = new JsonArray("vts_01", "vts_02"),
-                    ["expression_codes"] = new JsonArray("expr_01"),
-                }));
-        });
-        await using var client = CreateClient(server.Uri);
-
-        var catalog = await client.GetVtsCatalogAsync("vts-catalog-1", CancellationToken.None);
-
-        Assert.NotNull(catalog);
-        Assert.Equal(new HashSet<string> { "vts_01", "vts_02" }, catalog.HotkeyCodes);
-        Assert.Equal(new HashSet<string> { "expr_01" }, catalog.ExpressionCodes);
-        Assert.Equal(WorkerMessageTypes.VtsCatalog, observed!.Type);
-        Assert.Equal("catalog", observed.Payload["operation"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task GetVtsCatalog_returns_null_when_vts_is_unavailable()
-    {
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            var hello = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(
-                request.Id,
-                WorkerMessageTypes.Error,
-                0,
-                new JsonObject { ["code"] = "vts_unavailable", ["retryable"] = true }));
-        });
-        await using var client = CreateClient(server.Uri);
-
-        var catalog = await client.GetVtsCatalogAsync("vts-catalog-none", CancellationToken.None);
-
-        Assert.Null(catalog);
-    }
-
-    [Fact]
-    public async Task TriggerVtsActions_sends_only_typed_private_codes()
-    {
-        WorkerEnvelope? observed = null;
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            var hello = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
-            observed = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(
-                observed.Id,
-                WorkerMessageTypes.VtsAction,
-                0,
-                new JsonObject { ["status"] = "ok" }));
-        });
-        await using var client = CreateClient(server.Uri);
-
-        await client.TriggerVtsActionsAsync(
-            "vts-action-1",
-            ["VTS_01", "expr_01"],
-            CancellationToken.None);
-
-        Assert.Equal(WorkerMessageTypes.VtsAction, observed!.Type);
-        Assert.Equal("action", observed.Payload["operation"]!.GetValue<string>());
-        Assert.Equal(
-            ["vts_01", "expr_01"],
-            observed.Payload["codes"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]
@@ -142,15 +62,15 @@ public sealed class LoopbackWorkerClientTests
             new WorkerRuntimeRequest(
                 "runtime-1",
                 "POST",
-                "/observation/cancel",
+                "/voice/tts",
                 "application/json",
-                Encoding.UTF8.GetBytes("{\"observation_id\":\"obs-1\"}")),
+                Encoding.UTF8.GetBytes("{\"text\":\"Xin chào\"}")),
             CancellationToken.None);
 
         Assert.Equal(WorkerMessageTypes.RuntimeRequest, observed!.Type);
         Assert.Equal("POST", observed.Payload["method"]!.GetValue<string>());
         Assert.Equal(
-            "{\"observation_id\":\"obs-1\"}",
+            "{\"text\":\"Xin chào\"}",
             observed.Payload["body"]!.GetValue<string>());
         Assert.Equal(200, response.StatusCode);
         Assert.Equal("{\"status\":\"ok\"}", Encoding.UTF8.GetString(response.Body));
@@ -191,39 +111,12 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
-    public async Task GetVtsCatalog_rejects_a_malformed_private_response()
-    {
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            var hello = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(
-                request.Id,
-                WorkerMessageTypes.VtsCatalog,
-                0,
-                new JsonObject
-                {
-                    ["hotkey_codes"] = "private malformed value",
-                    ["expression_codes"] = new JsonArray(),
-                }));
-        });
-        await using var client = CreateClient(server.Uri);
-
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
-            client.GetVtsCatalogAsync("vts-catalog-invalid", CancellationToken.None));
-
-        Assert.Equal("invalid_vts_catalog", error.Code);
-        Assert.DoesNotContain("private malformed value", error.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task GetHealth_returns_ready_version_and_agent_capabilities()
     {
         await using var server = await FakeWorkerServer.StartAsync(async socket =>
         {
             var hello = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime", "voice", "vts", "observation"));
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime", "voice"));
             var request = await ReceiveEnvelopeAsync(socket);
             await SendEnvelopeAsync(socket, Event(
                 request.Id,
@@ -233,7 +126,7 @@ public sealed class LoopbackWorkerClientTests
                 {
                     ["ready"] = true,
                     ["version"] = 1,
-                    ["capabilities"] = new JsonArray("runtime", "voice", "vts", "observation"),
+                    ["capabilities"] = new JsonArray("runtime", "voice"),
                 }));
         });
         await using var client = CreateClient(server.Uri);
@@ -243,7 +136,7 @@ public sealed class LoopbackWorkerClientTests
         Assert.True(health.Ready);
         Assert.Equal(1, health.Version);
         Assert.Equal(
-            new HashSet<string> { "runtime", "voice", "vts", "observation" },
+            new HashSet<string> { "runtime", "voice" },
             health.Capabilities);
     }
 
@@ -354,7 +247,7 @@ public sealed class LoopbackWorkerClientTests
         Assert.Equal(WorkerMessageTypes.Hello, hello.Type);
         await SendEnvelopeAsync(
             socket,
-            HelloOk(hello.Id, "runtime", "voice", "vts", "observation"));
+            HelloOk(hello.Id, "runtime", "voice"));
     }
 
     private static async Task<WorkerEnvelope> ReceiveEnvelopeAsync(WebSocket socket)

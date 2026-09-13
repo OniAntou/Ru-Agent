@@ -18,10 +18,6 @@ public sealed record WorkerHealth(
     int Version,
     IReadOnlySet<string> Capabilities);
 
-public sealed record VtsCatalog(
-    IReadOnlySet<string> HotkeyCodes,
-    IReadOnlySet<string> ExpressionCodes);
-
 public sealed record WorkerRuntimeRequest(
     string RequestId,
     string Method,

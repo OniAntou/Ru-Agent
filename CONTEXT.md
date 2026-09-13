@@ -1,21 +1,22 @@
 # Ru Assistant
 
-Ru is a local Vietnamese-English assistant whose desktop, public host, runtime
-processes, persistent conversation state, voice, and VTube embodiment are
-maintained in this repository.
+Ru is a local Vietnamese-English coding assistant whose desktop, public host,
+runtime processes, and persistent conversation state are maintained in this
+repository. The media surfaces (voice/STT, VTube Studio, screen observation)
+were removed on 2026-09-13.
 
 ## Language
 
 **Public Host**:
 The ASP.NET Core process that exclusively owns RuApp's authenticated HTTP and
-WebSocket contract and, when launched as `RuBackend.exe --managed-runtime`,
+SSE contract and, when launched as `RuBackend.exe --managed-runtime`,
 owns Worker/Broker children in one Job Object (RuApp/CLI start-or-attach via descriptor).
 _Avoid_: Edge, proxy, FastAPI backend
 
 **Runtime Worker**:
-The authenticated loopback managed C# process that serves Agent v2 and the
-runtime/device v1 boundary. Python remains only at isolated provider seams and
-test-only Harness fixtures; it is not a production Worker startup.
+The authenticated loopback managed C# process that serves Agent v2 on
+`/worker/v2`. There is no device v1 boundary, no Python Worker startup, and no
+media adapter graph.
 _Avoid_: Python backend, upstream server
 
 **Generation Kernel**:
@@ -23,16 +24,9 @@ The module that owns provider selection, cancellation, and generation across
 hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
-**Voice Engine**:
-The isolated OmniVoice service running inside `omnivoice_env`, spawned by the
-managed Runtime Worker as a local HTTP loopback process and returning native WAV audio
-over a private lifecycle/TTS contract.
-_Avoid_: TTS web server, Flask voice server
-
 **Public Contract**:
-The stable authenticated surface of 62 HTTP method/path pairs plus the single
-`/voice/stream` WebSocket (41 non-Agent plus 20 additive `/agent/v1/*` plus 1
-`POST /host/shutdown`; Agent v2 is
+The stable authenticated surface of 37 HTTP method/path pairs with no WebSocket
+route (17 non-Agent plus 20 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is

@@ -15,7 +15,7 @@ advertised Agent tools.
 > **Current checkpoint (Agent-only generation, 2026-09-05):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
->   `RuAgent.Client`. Worker v1 is a device/runtime adapter only; Agent
+>   `RuAgent.Client`. There is no device/runtime v1 boundary; Agent
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
 >   `/agent/v1/*` (20 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
@@ -65,8 +65,7 @@ advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **62 HTTP plus 1 WebSocket** (41 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`;
->   `/voice/stream` is the only public WebSocket).
+> - Public Contract is now **37 HTTP with no WebSocket route** (17 non-Agent + 20 `/agent/v1/*`).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
@@ -269,7 +268,7 @@ A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
 next Agent turn, and removed on session replacement, disconnect, or deletion.
 It is never written to conversation history, reviewed
-examples, TTS, or VTS metadata. This lets Ru answer an immediate “why?” from
+examples, or public payload metadata. This lets Ru answer an immediate “why?” from
 the verified reason without asking the model to reconstruct or invent the
 previous action state.
 
@@ -474,10 +473,10 @@ code-only row instead of duplicating the event. Completed tool kinds
 additionally expose their bounded `duration_ms` on the desktop item.
 
 Before an Agent final reply is persisted, the reply policy strips private
-metadata and accepts VTS codes only from the current catalog. The resulting
+markers. The resulting
 visible text is the only assistant payload sent to the authenticated client,
-model context, and conversation outbox. VTS actions and `agent` assistant
-activity are post-commit effects; failures are bounded observations and do not
+model context, and conversation outbox. Assistant
+activity is a post-commit effect; failures are bounded observations and do not
 turn a committed run into a failed run. User activity is projected from its
 outbox intent with the same preview-sanitized `agent` shape.
 
@@ -487,7 +486,7 @@ or reset. The inline surface still owns bounded status, workspace trust,
 approval, Stop, and Continue controls. Malformed, unknown, stale, or other
 content-bearing transient frames are ignored. Raw commands, arguments, stdout,
 or private payload content never reach the feed, durable audit, conversation
-history, TTS, or VTS metadata.
+history, or public payload metadata.
 The desktop entry point also creates a real 32-character session automatically
 for the first Agent prompt when the empty conversation surface has no active
 session; users do not need to send a preliminary message.

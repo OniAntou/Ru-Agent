@@ -10,7 +10,7 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 /// <summary>
 /// Golden parity against the deterministic Python reference captured in
 /// tests/fixtures/python-csharp-phase1-baseline.json. No live model, network,
-/// audio, or VTube Studio state participates in these assertions.
+/// audio or device state participates in these assertions.
 /// </summary>
 public sealed class Phase1GoldenParityTests
 {

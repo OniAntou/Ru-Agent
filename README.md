@@ -33,7 +33,7 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 │  │ - Mica/Acrylic theme         │    │ - Interactive Terminal REPL  │  │
 │  │ - Starlight Composition FX   │    │ - Slash Commands (/help,...) │  │
 │  │ - Color-Wave Agent Activity  │    │ - Streaming Event Renderer   │  │
-│  │ - Live2D / VTube Studio Lip  │    │ - Session switching & stats  │  │
+│  │ - Multimodal image input     │    │ - Session switching & stats  │  │
 │  └──────────────┬───────────────┘    └──────────────┬───────────────┘  │
 └─────────────────┼───────────────────────────────────┼──────────────────┘
                   │                                   │
@@ -51,13 +51,13 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
         ▼                                               ▼
 ┌───────────────────────────────┐     ┌──────────────────────────────────┐
 │   RuAgent.Runtime.Worker      │     │      RuAgent.Broker (Sandbox)    │
-│   (Port 8005 / 8006)          │     │   (Dynamic Loopback Port)        │
+│   (Loopback Port 8005)        │     │   (Dynamic Loopback Port)        │
 │ - Worker v2: Model Step &     │     │ - read (list/glob/search/    │
 │   Reasoning Orchestration     │     │   read/help)                 │
-│ - Worker v1: Voice Engine     │     │ - web_search / web_fetch     │
-│   (OmniVoice TTS, Google STT) │     │ - write / edit               │
-│ - VTube Studio & Subtitles    │     │ - bash (run/shell)           │
-│ - Screen Observation Analysis │     │ - Policy & Approval Engine       │
+│ - Provider adapters (chat     │     │ - web_search / web_fetch     │
+│   completions / responses /   │     │ - write / edit               │
+│   anthropic messages)         │     │ - bash (run/shell)           │
+│ - Single-use DPAPI bootstrap  │     │ - Policy & Approval Engine       │
 └───────────────────────────────┘     └──────────────────────────────────┘
 ```
 
@@ -83,11 +83,6 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 - **1-Click Copy**: Sao chép nội dung tin nhắn và code snippets nhanh chóng vào Clipboard.
 - **Hỗ trợ Đa phương thức (Multimodal Images)**: Kéo thả, dán ảnh trực tiếp từ Clipboard (hỗ trợ tối đa 4 ảnh/turn, tự động tối ưu hóa kích thước).
 
-### 🎙️ Trợ lý Giọng nói & Tích hợp Live2D
-- **Giọng nói tiếng Việt tự nhiên**: Tích hợp công nghệ TTS OmniVoice tại tốc độ chuẩn `1.00x` cùng nhận diện giọng nói Google STT (`vi-VN`).
-- **Đồng bộ khẩu hình Live2D (VTube Studio)**: Tự động điều khiển chuyển động miệng của model Live2D thông qua WebSocket (`VoiceVolume`).
-- **Subtitle Overlay**: Cửa sổ phụ đề trong suốt ghim trên màn hình, tự động bám theo cửa sổ VTube Studio.
-
 ### 💻 Giao diện Terminal TUI Độc lập
 - Chế độ dòng lệnh tương tác mạnh mẽ (`RuAgent.Cli`) với streaming Markdown, syntax highlighting, hỗ trợ slash commands chuyên nghiệp:
   - `/help`: Hiển thị danh sách lệnh trợ giúp.
@@ -105,21 +100,17 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 
 - **Hệ điều hành**: Windows 10 / Windows 11 (64-bit, phiên bản 22H2 hoặc 24H2 khuyến nghị).
 - **.NET SDK**: Phiên bản **.NET 10.0** (x64).
-- **Python**: **3.11–3.14** (64-bit) theo `pyproject.toml` (`requires-python = ">=3.11,<3.15"`), phục vụ tooling và OmniVoice TTS.
+- **Python**: **3.11–3.14** (64-bit) theo `pyproject.toml` (`requires-python = ">=3.11,<3.15"`), phục vụ tooling kiểm thử/benchmark; repo không còn Python runtime.
 - **Trình biên dịch C++**: Visual Studio 2022 C++ Build Tools (cho các native modules nếu build từ source).
-- **Voice (tùy chọn)**: extra `voice` (`torch/torchaudio/omnivoice`) + script `scripts/setup_omnivoice_env.ps1 -ConfirmModelDownload`.
 
 ---
 
 ## 4. Hướng dẫn cài đặt & Khởi chạy (Setup & Run)
 
-### 4.1. Thiết lập môi trường Python
+### 4.1. Thiết lập môi trường Python (tooling)
 ```powershell
-# Chạy từ %RU_ROOT%. Khởi tạo virtual environment và cài đặt dependencies
-.venv\Scripts\python.exe -m pip install -e ".[runtime,dev]"
-# Voice TTS (tùy chọn): cài extra voice rồi chạy setup cách ly
-.venv\Scripts\python.exe -m pip install -e ".[voice]"
-.\scripts\setup_omnivoice_env.ps1 -ConfirmModelDownload
+# Chạy từ %RU_ROOT%. Khởi tạo virtual environment và cài đặt dependencies tooling
+.venv\Scripts\python.exe -m pip install -e ".[dev,tooling]"
 ```
 
 ### 4.2. Biên dịch toàn bộ hệ thống
@@ -177,7 +168,7 @@ Dự án áp dụng chính sách kiểm thử khắt khe trước mỗi lần b�
 .\scripts\test_dotnet.ps1 -Configuration Debug
 ```
 
-Script `scripts/test_dotnet.ps1` tự phát hiện **13 test projects** (`*Tests.csproj` dưới `backend-dotnet` và `gui-winui3.Tests`, loại trừ `bin`/`obj`/`out`) và chạy tuần tự, dừng ở lỗi đầu tiên. Số lượng test hiện tại thay đổi theo từng gate — xem [verification](docs/operations/verification.md) để lấy con số mới nhất, không hard-code tổng số tại đây.
+Script `scripts/test_dotnet.ps1` tự phát hiện **12 test projects** (`*Tests.csproj` dưới `backend-dotnet` và `gui-winui3.Tests`, loại trừ `bin`/`obj`/`out`) và chạy tuần tự, dừng ở lỗi đầu tiên. Số lượng test hiện tại thay đổi theo từng gate — xem [verification](docs/operations/verification.md) để lấy con số mới nhất, không hard-code tổng số tại đây.
 
 ---
 
@@ -188,21 +179,20 @@ Script `scripts/test_dotnet.ps1` tự phát hiện **13 test projects** (`*Tests
 ├── backend-dotnet/              # Tầng xử lý trung tâm .NET 10
 │   ├── RuBackend/               # Máy chủ ASP.NET Core Public Host (Cổng 8000)
 │   ├── RuAgent.Broker/          # Engine thực thi công cụ & Sandbox chính sách
-│   ├── RuAgent.Runtime.Worker/  # Worker v1/v2 (Model dispatch, Voice, VTS)
+│   ├── RuAgent.Runtime.Worker/  # Managed C# Worker (Worker v2, provider adapters)
 │   ├── RuAgent.Client/          # Client thư viện kết nối Public Host
 │   ├── RuAgent.Cli/             # Giao diện dòng lệnh tương tác TUI
 │   ├── RuAgent.Protocol/        # Định nghĩa kiểu dữ liệu & hợp đồng Protocol
 │   ├── RuAgent.Harness.Core/    # Durable Harness Core (state machines, policy)
 │   ├── RuAgent.Harness.Persistence/ # Harness SQLite/payload/outbox stores
-│   └── *.Tests/                 # 12 test projects (cùng gui-winui3.Tests = 13)
+│   └── *.Tests/                 # 11 test projects (cùng gui-winui3.Tests = 12)
 ├── gui-winui3/                  # Ứng dụng Desktop WinUI 3 (C# / XAML)
-│   ├── Views/                   # ChatView, VoiceView, SettingsView, LogView,...
+│   ├── Views/                   # ChatView, SettingsView, LogView,...
 │   ├── Services/                # ApiService, HealthStatusService, Reconnect,...
 │   ├── Models/                  # Data models cho giao diện
 │   └── RuApp.csproj             # Dự án chính WinUI 3
 ├── gui-winui3.Tests/            # Unit tests cho GUI & Services
 ├── gui-winui3.Harness/          # Harness composition cho GUI acceptance
-├── src/ru_runtime/              # Python provider/tooling còn giữ (voice, speech)
 ├── tests/                       # Python pytest suites (tooling, boundary, docs)
 ├── tools/                       # maintenance scripts
 ├── skills/                      # Markdown skill packages (prompt guidance)
@@ -220,9 +210,9 @@ Script `scripts/test_dotnet.ps1` tự phát hiện **13 test projects** (`*Tests
 ## 8. Bảo mật & Quản lý dữ liệu (Security & Data Privacy)
 
 - **Vị trí lưu trữ dữ liệu**: Dữ liệu phiên, cấu hình và lịch sử được lưu trữ độc quyền tại `%LOCALAPPDATA%\Ru`.
-- **Mã hóa khóa API**: Tất cả API keys (OpenCode, Kilo, OpenAI, Anthropic, Gemini) được mã hóa bằng **Windows Credential Manager (DPAPI)**, không bao giờ lưu trữ dạng plain-text trên ổ đĩa.
+- **Mã hóa khóa API**: Tất cả API keys (OpenCode, Kilo, OpenAI, Anthropic) được mã hóa bằng **Windows Credential Manager (DPAPI)**, không bao giờ lưu trữ dạng plain-text trên ổ đĩa.
 - **Bảo mật cơ sở dữ liệu**: Lịch sử phiên và artifacts của Agent Harness được lưu trữ tại `agent_harness.db` với mã hóa AES-GCM cho các payload nhạy cảm.
-- **Quyền riêng tư tuyệt đối**: Các thông tin nhạy cảm như dữ liệu âm thanh thô, tokens, hành động VTS và metadata kiểm soát nội bộ bị chặn hoàn toàn không cho xuất hiện trong nhật ký (logs), lịch sử hội thoại hiển thị hay bộ nhớ dài hạn.
+- **Quyền riêng tư tuyệt đối**: Các thông tin nhạy cảm như tokens, nội dung yêu cầu thô và metadata kiểm soát nội bộ bị chặn hoàn toàn không cho xuất hiện trong nhật ký (logs) hay lịch sử hội thoại hiển thị.
 
 ---
 

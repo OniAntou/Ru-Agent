@@ -65,51 +65,11 @@ def test_public_route_contract_matches_the_final_surface() -> None:
     } == EXPECTED_WEBSOCKET_ROUTES
 
 
-def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
+def test_every_public_route_is_served_directly_by_aspnet() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     contract = load_route_contract(repo_root)
 
-    direct_paths = {
-        "/status",
-        "/models",
-        "/diagnostics/logs",
-        "/diagnostics/export",
-        "/diagnostics/status",
-        "/activity-log",
-        "/settings",
-        "/settings/provider/remove",
-        "/sessions",
-        "/sessions/new",
-        "/sessions/{sessionId}/activate",
-        "/sessions/{sessionId}",
-        "/sessions/{sessionId}/fork",
-        "/sessions/{sessionId}/rewind",
-        "/agent/v1/runs",
-        "/agent/v1/runs/{runId}",
-        "/agent/v1/runs/{runId}/events",
-        "/agent/v1/runs/{runId}/payloads/{payloadId}",
-        "/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore",
-        "/agent/v1/runs/{runId}/approvals/{approvalId}",
-        "/agent/v1/runs/{runId}/trust",
-        "/agent/v1/runs/{runId}/cancel",
-        "/agent/v1/runs/{runId}/continue",
-        "/agent/v1/runs/{runId}/compact",
-        "/agent/v1/runs/{runId}/commands",
-        "/agent/v1/runs/{runId}/reconcile",
-        "/agent/v1/sessions/{sessionId}/runs",
-        "/agent/v1/policies",
-        "/agent/v1/policies/{ruleId}",
-        "/agent/v1/workspaces/{workspaceId}/concurrency",
-        "/agent/v1/workspaces/{workspaceId}/activity",
-        "/agent/v1/workspaces/{workspaceId}/changes",
-        "/host/shutdown",
-    }
     for entry in contract:
-        expected = (
-            "aspnet-direct"
-            if entry["path"] in direct_paths
-            else "runtime-worker"
-        )
-        assert entry["classification"] == expected
+        assert entry["classification"] == "aspnet-direct"
         assert entry["source"].startswith("backend-dotnet/RuBackend/")
         assert "Compatibility" not in entry["source"]

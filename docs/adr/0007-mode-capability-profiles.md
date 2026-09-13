@@ -38,8 +38,8 @@ retired in 2026-09-04; the current pending-approval model exposes
   sequential tool calls per budget window (`AgentBudgetPolicy`); exhausting the
   window moves the run to `WaitingUser` and an explicit Continue opens a fresh
   window. Approvals still gate mutations. The former Worker v1 conversational
-  generation branch is retired; Worker v1 now carries only runtime/device
-  adapters.
+  generation branch and the device/runtime v1 adapters it later carried are
+  both removed; the managed Worker serves `/worker/v2` only.
 
 ## Superseded history
 

@@ -16,7 +16,7 @@ namespace RuAgent.Runtime.Worker.Tests;
 /// <summary>
 /// One real in-process Worker v2 WebSocket lifecycle with a fake provider,
 /// plus the Phase 1 privacy scans over every serialized frame. No live model,
-/// microphone, audio output, or VTube Studio connection is used.
+/// microphone, audio output, or device connection is used.
 /// </summary>
 public sealed class Phase1WorkerIntegrationTests
 {

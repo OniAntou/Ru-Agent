@@ -36,7 +36,6 @@ not archives — see the verification note below before deleting them.
 - [Architecture decision records](adr/)
 - [ASP.NET Core Public Host](adr/0001-aspnet-core-public-host.md)
 - [Typed Worker protocol v2](adr/0002-typed-worker-protocol-v2.md)
-- [OmniVoice process isolation](adr/0003-omnivoice-process-isolation.md)
 - [Canonical Ru data location](adr/0004-canonical-ru-data-location.md)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
 - [Structured logging and activity](adr/0006-structured-logging-and-activity-boundaries.md)

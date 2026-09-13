@@ -1,9 +1,9 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 62 HTTP routes
-plus the single `/voice/stream` WebSocket (41 non-Agent routes plus 20 additive
-`/agent/v1/*` plus 1 `POST /host/shutdown`). Text turns use the current Worker v2-backed Agent HTTP/SSE
+when started as `RuBackend.exe --managed-runtime` and owns all 37 HTTP routes
+(17 non-Agent routes plus 20 additive
+`/agent/v1/*`). Text turns use the current Worker v2-backed Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
 Harness construction, but it is not a product mode switch and cannot re-enable
@@ -12,20 +12,18 @@ Chat.
 ```text
 RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         |
-        | bearer token or authenticated WebSocket / SSE
+        | bearer token or authenticated SSE
         v
 ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |\
         | \-- owned managed Worker and Broker in one kill-on-close Job Object
         |      |-- C# Worker process
-        |      |     |-- `/worker/v2` :8005 (managed provider adapter, one-step AssistantStep)
-        |      |     |-- `/worker/v1` :8006 (runtime/voice/STT/VTS/observation)
-        |      |     `-- single-use DPAPI provider bootstrap (v2 only)
+        |      |     `-- `/worker/v2` :8005 (managed provider adapter, one-step AssistantStep, single-use DPAPI bootstrap)
         |      `-- private RuAgentBroker (leased loopback endpoint, profile-scoped file/terminal tools)
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
 Public Host owns Worker/Broker in one Job Object; RuApp/CLI only own the
-Public Host descriptor lease and long-lived WebSocket/SSE client leases.
+Public Host descriptor lease and long-lived SSE client leases.
 ```
 
 There is no public Python HTTP server, forwarding catch-all, WebSocket relay, or
@@ -39,8 +37,7 @@ dependency-free test fixture. Git commit
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
 credentials, sessions and their message history, activity, Agent run ordering,
 metadata filtering, and every public endpoint contract. Agent generation uses
-the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
-work uses the same managed process at `ws://127.0.0.1:8006/worker/v1`:
+the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol.
 
 Session deletion uses the stable `DELETE /sessions/{sessionId}` route and an
 application envelope. Only `status: "ok"` means that the deletion coordinator
@@ -48,33 +45,29 @@ removed the session and its owned Harness artifacts; missing or failed deletes
 return a bounded `status: "error"` envelope even when the HTTP status is 200.
 
 - runtime transitions (Agent model steps use the typed C# `/worker/v2` adapter);
-- TTS, streaming voice, STT, and GPU lifecycle calls;
-- VTube Studio connection, motion, catalog, action, and overlay state;
-- structured observation reactions and model/provider status.
+- `GET /status` and `GET /models` served directly from the host settings store
+  and the provider catalog.
 
-The workers are private implementation code, not another public framework. WAV
-payloads stay binary instead of being expanded into base64. Agent replies, TTS, history,
-activity, and logs keep private voice/VTS metadata out of visible and
+The worker is private implementation code, not another public framework. Agent
+replies, history,
+activity, and logs keep private marker metadata out of visible and
 persistent text.
 
 ## Configuration
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST/WebSocket clients. |
+| `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST clients. |
 | `RU_AGENT_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the C# Agent Worker v2. |
-| `RU_DEVICE_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the managed Worker v1 device endpoint. |
 | `RU_BACKEND_AGENT_WORKER_PORT` | `8005` | Private Agent Worker loopback port. |
-| `RU_BACKEND_DEVICE_WORKER_PORT` | `8006` | Private Device Worker loopback port. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
 | `RuBackend__AgentWorkerUrl` | `ws://127.0.0.1:8005/worker/v2` standalone | Private Agent Worker protocol URL. |
-| `RuBackend__DeviceWorkerUrl` | `ws://127.0.0.1:8006/worker/v1` standalone | Private Device Worker protocol URL. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, and activity for tests. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
-desktop, Agent Worker, and Device Worker secrets, writes a single-use
+desktop and Agent Worker secrets, writes a single-use
 DPAPI-protected provider bootstrap for the managed C# Worker, starts one C#
-Worker serving v2 and v1 plus RuAgentBroker before serving public traffic,
+Worker serving v2 plus RuAgentBroker before serving public traffic,
 assigns all owned children to one kill-on-close Windows Job Object, publishes an
 ACL-restricted loopback descriptor for
 `RuAgent.Client` start-or-attach,
@@ -120,20 +113,11 @@ path rollback attribution, and refusal on dirty user state; other Git commands
 remain ordinary terminal requests governed by Broker policy.
 
 The retired Python deterministic Harness is not used for route verification,
-so managed route tests run directly against the published C# composition. The managed composition now
-binds every allowlisted private route to an explicit C# handler: status/models
-report the active typed settings (the worker never receives provider
-credentials), VTS owns runtime-scoped GUI state/config plus
-catalog/action/connect handling, and persists its authentication token through
-the canonical `pyvts_token.txt` path, voice
-and STT use their typed adapters, and observation status/control returns a
-bounded disabled/unavailable result until a managed screen-capture/reaction
-loop is shipped. The raw route fallback is no longer reachable from the
-managed composition; enabling the optional overlay is fail-closed. The
-provider-backed model catalog, VTS overlay process/semantic actions, and
-observation capture/reaction still need a
-dedicated managed-runtime integration gate before claiming full production
-parity.
+so managed route tests run directly against the published C# composition. The
+managed composition binds the Agent step route to the C# Worker v2 handler and
+serves `GET /status`/`GET /models` directly from the host settings store and the
+provider catalog; the media adapters (voice, STT, VTS, observation) and the raw
+route fallback no longer exist.
 
 ## Build and verification
 
@@ -152,10 +136,9 @@ it with ASP.NET's live `EndpointDataSource` so a missing route cannot be hidden
 by a forwarder.
 
 The retired Python deterministic Harness is no longer a supported contract
-gate. Use the managed .NET test suites and `build.bat`; native voice and VTube
-acceptance remain separate user-run gates.
+gate. Use the managed .NET test suites and `build.bat`.
 
 Removing the HTTP proxy eliminates its measured local hop, but it does not make
-model inference, cloud providers, voice synthesis, STT, or VTube Studio itself
+model inference or cloud providers themselves
 intrinsically faster. Measure those paths independently before making latency
 claims.

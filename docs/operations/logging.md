@@ -47,9 +47,9 @@ an `error_code`; oversized exports return `413` with
 `diagnostic_export_too_large`. The reader skips records above 256 KB and scans
 at most 4 MB per diagnostic file for one request.
 
-The ASP.NET HTTP boundary emits fixed route events such as `http.stt`,
-`http.voice`, `http.vts`, `http.observation`, and
-`http.business` with status and duration only. The managed Worker and WinUI
+The ASP.NET HTTP boundary emits fixed route events such as `http.agent`,
+`http.business`, `http.diagnostics`, and `http.settings` with status and
+duration only. The managed Worker and WinUI
 processes use separate bounded writers under the same resolved `RU_LOG_ROOT`;
 the managed test suites use temporary writer roots and never launch a
 production Python Worker.
@@ -58,20 +58,13 @@ events so the diagnostics UI polling does not create a self-referential log
 stream or cause unnecessary UI refreshes.
 GUI crash handling writes `gui_crash` only for unhandled fatal failures, with a
 safe exception category; recoverable WinUI exceptions are handled without a
-false critical crash record, and no raw crash file is created. The WinUI
-microphone boundary may also write
-`gui_voice_capture` failure events with a bounded stage/status code and safe
-exception category, never exception text, raw audio, or transcript data.
+false critical crash record, and no raw crash file is created.
 Activity Timeline data remains a separate privacy-safe outbox owned and
 ingested by ASP.NET Core.
 
 Automated tests cover schema/privacy, bounds, retries, and writer counters.
-The optional `scripts/benchmark_logging.py` probe uses isolated roots, keeps
-the background flusher outside the timed window, averages five repetitions per
-sample, and gates p95/p99 against the logging-disabled baseline. Percentile
-tails are scheduler-sensitive on Windows and are diagnostic evidence, not a
-Phase 2 runtime blocker. Desktop, microphone, speaker, and live VTube Studio
-behavior remain explicit user-run acceptance checks rather than automated
+Live provider behaviour
+remains an explicit user-run acceptance check rather than automated
 logging evidence.
 
 ## Action receipt diagnostics

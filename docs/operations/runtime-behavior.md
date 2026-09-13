@@ -31,9 +31,9 @@ model requests without an API/model/effort fallback. See
 
 Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru
 calls the user `anh` and itself `em`. Agent replies contain no Unicode emoji or ASCII
-emoticons. Search commands, model controls, voice pace, VTS actions, segment
+emoticons. Search commands, model controls, segment
 identifiers, and transport timings are private metadata and must be removed
-before display, TTS, history, logs, or reviewed examples.
+before display, history, logs, or reviewed examples.
 
 Each Agent turn carries a bounded `correlation_id` and a durable run/session
 identity. The composer keeps one active run; reconnecting to the Agent SSE
@@ -57,14 +57,14 @@ object means the provider did not report counts; it is not converted to zero.
 Numeric zero remains an exact provider value. `estimated_input_tokens` is kept
 for backward compatibility and remains an estimate, not a billing record.
 
-The managed C# Worker v1 protocol is the default runtime/device adapter
-boundary for runtime load/request, voice/STT, VTS, observation, and health.
-Agent generation uses the same process through the managed v2 step protocol. The two
-private ports and tokens remain distinct even though the process is shared. The
-v1 graph receives typed settings and adapters, never the provider credential.
+The managed C# Worker is the Agent v2 generation boundary; the device v1
+runtime/voice/STT/VTS/observation protocol was removed with the media surfaces.
+Agent generation runs through the managed v2 step protocol on one private
+loopback port and token. The v2 graph receives no provider credential; each
+step receives a separate protected handoff.
 
 Managed startup launches one `RuAgent.Runtime.Worker.exe` with
-`ws://127.0.0.1:8005/worker/v2` and `ws://127.0.0.1:8006/worker/v1`, followed
+`ws://127.0.0.1:8005/worker/v2`, followed
 by the private Broker. A neutral single-use DPAPI startup handoff composes the
 C# v2 graph without reading or retaining a provider credential. Each Agent
 step requires a separate protected handoff containing
@@ -78,13 +78,13 @@ protocols fail closed before HTTP. Managed startup is unconditional.
 
 ### Agent system-prompt composition
 
-Every accepted Agent model step—typed text, microphone/voice, coding, tool
+Every accepted Agent model step—typed text, coding, tool
 selection, and continuation—rebuilds a fresh prompt context before the Worker
 request. The private Generation Kernel emits exactly one `system` message from
 these ordered layers: a neutral Ru Agent runtime contract, Agent execution contract,
 environment, root-selected Ru instruction files, profile/preset, validated
 host capabilities, and bounded runtime context. The model then receives the
-ordered user/assistant/tool turns; clock, mood, voice/VTS state, and
+ordered user/assistant/tool turns; clock, mood, and
 references are not appended as separate system messages.
 
 Host capabilities are the runtime projection of the 8 Protocol-owned tool
@@ -171,78 +171,6 @@ remain the source for live machine, process, device, and current workspace
 state; bundled help is untrusted reference data and cannot change instruction
 precedence.
 
-## Voice output
-
-OmniVoice is the supported local TTS engine. Today the managed C# Worker owns
-its lifecycle and reaches the isolated `omnivoice_env` service over loopback
-HTTP. Architecture v2 later replaces that listener with a
-bounded framed child-process protocol; the target is not current behavior yet.
-
-Only the `original` voice style is accepted. Exactly 1.00x omits native speed
-adjustment and remains the clone-quality reference. Other bounded speeds use
-OmniVoice's native generation parameter; no local pitch shift, waveform DSP,
-or time stretching is allowed. Non-1.00x output requires human listening before
-any quality claim.
-
-Voice streaming uses ordered WAV chunks, cancellation, playback
-acknowledgements, and a complete-WAV fallback only when streaming fails before
-the first chunk. The desktop starts `MediaPlayer.Play()` before notifying the
-capacity-one subtitle event pump. Subtitle rendering is fail-open: a blocked,
-failed, stale, or disabled subtitle path may drop text but cannot delay audio,
-clear a newer cue, or fail playback.
-
-Generation and OmniVoice do not own the GPU simultaneously. A voice failure is
-reported as unavailable and never silently changes the saved engine/profile.
-
-## Speech input and VTube Studio
-
-Microphone capture is bounded 16 kHz mono PCM WAV. In WinUI the primary
-microphone button starts an explicit, user-controlled half-duplex conversation:
-the local AudioGraph/VAD capture waits for one turn, normalizes variable
-AudioGraph quantum sizes into the detector frame size, sends only a non-empty
-transcript through the existing `/voice/transcribe` Google `vi-VN` path, submits
-it to the Agent HTTP/SSE path, and waits for the existing reply-completion
-boundary before opening the microphone again. The button, typed Send, session
-switch, and view shutdown cancel the loop; cancellation is idempotent and a
-late STT result cannot create a prompt. The microphone remains closed while Ru
-speaks, so speaker audio is not fed back into STT.
-
-Raw PCM frames and transcripts are held only in memory for the active turn.
-Audio leaves the machine for the explicitly requested STT operation and is not
-persisted by Ru. A no-speech turn returns to Listening without sending an empty
-prompt. A capture whose input stays near full scale with no level dips for the
-first ~500 ms ends as an unusable-input error with a visible microphone message
-instead of looping sixty seconds of noise through STT; a broken or corrupted
-microphone stream therefore stops the loop instead of silently retrying. The
-controller and VAD are covered by deterministic tests; physical
-microphone accuracy, speaker output, and live VTube Studio behavior remain
-manual acceptance gates.
-
-VTube Studio hotkeys and expressions are resolved from the connected model's
-current catalog. The runtime revalidates catalog codes before dispatch and
-removes private action suffixes before TTS, history, and approved
-examples. The managed Worker also exposes runtime-scoped GUI state/config/connect
-surface, persists its authentication token at canonical `pyvts_token.txt`,
-and honors `RU_DATA_ROOT` for isolated runs; enabling the optional overlay is
-fail-closed, while overlay process
-ownership and semantic facial/body actions remain explicitly
-unavailable until their typed adapters are added. `VoiceVolume` is the lip-sync
-input. `LLM_MouthOpen` must not be mapped or recreated. Live model connection,
-action, lip-sync, and subtitle appearance remain user-run acceptance checks.
-
-## Observation and desktop overlay
-
-Screen observation is opt-in. The managed Worker owns the bounded observation
-analysis adapter, but its default v1 control handler is fail-closed: status is
-`disabled`, start/react report a stable unavailable result, and no screen frame,
-credential, or reaction is fabricated. A managed Windows capture/reaction loop
-with a trusted Gemini credential channel is still pending.
-When that loop exists, WinUI will poll the bounded status contract and pass each
-event through `VoicePlaybackService`, so MediaPlayer playback, subtitles, VTS
-speaking state, and acknowledgement share the normal voice path. Missing
-credentials, stale events, or a busy Agent run must report a skip/error and must
-not pretend that capture, reaction, or audio playback occurred.
-
 ## WinUI responsive shell
 
 The WinUI shell has three presentation tiers based on client width: Wide at
@@ -250,7 +178,7 @@ The WinUI shell has three presentation tiers based on client width: Wide at
 Wide keeps the resizable 180–400 px sidebar; Compact keeps labels with tighter
 spacing and 180–320 px bounds; Narrow uses a 72 px icon rail and stacks page
 controls. These transitions are presentation-only and do not call the backend,
-restart polling, recreate list sources, or alter audio/VTS behavior.
+restart polling, or recreate list sources.
 
 Automated tests cover policy boundaries, XAML state markers, vertical-only list
 surfaces, and build correctness. Visual resizing at representative window sizes
@@ -259,7 +187,7 @@ remains a user-run acceptance check.
 The current Agent composer uses the same tiers. The shell and conversation view use the
 Editorial reading room presentation: the approved light mineral palette as the
 baseline, a flat sidebar, and a centered document-style reading column.
-Voice/VTS, Log, Diagnostics, and Settings retain their existing layout
+Log, Diagnostics, and Settings retain their existing layout
 in this phase while inheriting the active shared Light or Dark token set.
 The application keeps Light as its fallback and MainWindow can request the
 active theme on the shell root so default controls follow the same contrast.
@@ -269,10 +197,9 @@ synchronously. The selected appearance is UI-only state stored at
 `%LOCALAPPDATA%\Ru\ui-preferences.json`; it is not an ASP.NET setting or model
 configuration. Switching remains presentation-only for application behavior:
 it does not recreate message or session sources, call the backend during
-layout, alter WebSocket ordering, change STT, voice playback, subtitles, or
-VTube Studio control. Automated source/XAML contracts and the WinUI build cover
-structural correctness. Visual resizing and live audio/VTS behavior remain
-manual acceptance checks.
+layout, or alter event-stream ordering. Automated source/XAML contracts and the WinUI build cover
+structural correctness. Visual resizing remains a
+manual acceptance check.
 
 The current Ru signature layer is also presentation-only: a quiet title-bar
 wordmark, an editorial welcome eyebrow, message edge rules, and a GPU-accelerated
@@ -297,7 +224,7 @@ frames do not enter durable history or audit. The projector covers nine kinds,
 including `compaction` (bounded covered-entry count and elapsed time) and
 `retry` (bounded read-only tool transport retry attempt), plus a generic
 `status` fallback. Agent payloads and raw tool output
-never enter TTS, VTS metadata, or automation names.
+never enter transport metadata or automation names.
 Assistant text is delivered separately as a typed `assistant.delta` transient
 frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
 optional execution id, and positive transient sequence before dispatching it;
@@ -313,9 +240,9 @@ reload that still contains only the user turn preserves the already-rendered
 assistant bubble. A later history refresh can reconcile it once the persisted
 assistant entry is available.
 Agent final replies are normalized through the metadata policy before the
-authenticated payload and conversation outbox are committed; private VTS,
-voice, and action markers therefore never enter history or model context.
-Validated VTS effects and the safe assistant activity projection run after that
+authenticated payload and conversation outbox are committed; private
+markers therefore never enter history or model context.
+The safe assistant activity projection runs after that
 commit, so a non-critical effect failure cannot roll back a completed Agent run.
 Agent user/assistant activity records use the `agent` activity type and remain
 preview-sanitized at the activity-store boundary.
@@ -332,7 +259,7 @@ The WinUI 3 desktop client connects to the shared local Public Host via loopback
 `ManagedRuBackendSessionProvider` tracks the Host process lifecycle and coordinates runtime liveness:
 - Liveness detection: `HealthStatusService` probes loopback status with a bounded 3-second timeout via `CheckHealthDetailedAsync`, distinguishing genuine Host offline state (`HttpRequestException` or connection refused) from worker initialization or readiness. Stale or disconnected sessions accurately mark `.NET Backend: Error`.
 - Exit detection: `ManagedRuBackendSessionProvider` hooks the Host process `Exited` event, clearing the active session and firing `BackendExited`.
-- Backoff & auto-reconnect: When the backend stops or becomes unreachable, high-frequency polling timers (observation, catalog, sessions) are stopped to prevent UI thread socket storms. A gentle reconnect timer probes for backend recovery every 3 seconds, re-attaching or restarting the backend and reinitializing active views and controllers without requiring a GUI restart.
+- Backoff & auto-reconnect: When the backend stops or becomes unreachable, high-frequency polling timers (catalog, sessions) are stopped to prevent UI thread socket storms. A gentle reconnect timer probes for backend recovery every 3 seconds, re-attaching or restarting the backend and reinitializing active views and controllers without requiring a GUI restart.
 - Single-instance activation: Multiple instances detect existing instances via process enumeration and native WinUI class queries, bringing the existing window to the foreground cleanly.
 - Shutdown: Window close coordinates timer cancellation and Host shutdown without orphan processes.
 
@@ -386,7 +313,7 @@ fail-closed and never reaches the native adapter.
 
 Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
-reviewed examples, TTS, or VTS metadata.
+reviewed examples, or public payload metadata.
 
 The six Worker v2 bindings above are the model surface, with standalone
 `web_search`/`web_fetch` tools managed by startup. Managed
@@ -470,7 +397,7 @@ Manager remains the secret store.
 Logs, telemetry, manifests, and automated evidence may contain fixed event
 types, counts, durations, hashes, and statuses only. They must not contain
 credentials, bearer values, request bodies, user/session identifiers,
-transcripts, raw audio, assistant responses, or private VTS/voice metadata.
+transcripts, or private marker metadata.
 
 Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
 `%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, managed-worker, test-fixture,
@@ -482,8 +409,8 @@ ASP.NET ingestion path, with read-time re-sanitization for older records.
 ## Acceptance boundary
 
 Automated tests can establish routing, protocol ordering, bounds, cancellation,
-privacy filtering, persistence semantics, non-empty WAV structure, and process
+privacy filtering, persistence semantics, and process
 lifecycle. They cannot establish the effect of an arbitrary terminal command
-on a live external application or device, speaker quality, physical microphone
-accuracy, natural bilingual dialogue, or live VTube Studio behavior. Those
+on a live external application or device, provider quality, or
+natural bilingual dialogue. Those
 remain explicit user-run checks and must be reported as pending until performed.

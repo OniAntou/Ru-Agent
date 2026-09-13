@@ -6,10 +6,11 @@ date: 2026-08-13
 # ASP.NET Core is Ru's only public host
 
 Ru keeps the authenticated public contract in ASP.NET Core. The original
-decision covered 41 HTTP routes and 2 WebSocket routes; the current contract
-has expanded to 62 HTTP routes, including 20 `/agent/v1/*` routes, and one
-public WebSocket route (`/voice/stream`). Python runtime processes remain private
-implementation adapters and
+decision covered 41 HTTP routes and 2 WebSocket routes; the current contract is
+37 HTTP routes, including 20 `/agent/v1/*` routes, with no WebSocket route (the
+media surfaces were removed on 2026-09-13). Python product processes no longer
+exist; any future private
+adapter
 may not expose a public HTTP fallback, because dual public ownership
 previously added latency, route drift, and ambiguous lifecycle ownership.
 

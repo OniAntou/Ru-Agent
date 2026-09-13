@@ -1,28 +1,20 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, 2026-09-01.
+Status: current ownership plus accepted architecture-v2 targets, 2026-09-13.
 
-Operational invariants for generation, voice, STT, VTS, observation, and live
-acceptance are maintained in
+Operational invariants for generation and live acceptance are maintained in
 [`operations/runtime-behavior.md`](operations/runtime-behavior.md).
 
 ## Coding core and plugins
 
 The coding core is the product: Public Host, Broker execution authority, the
 managed Agent v2 Worker, the durable Agent SSE stream, and the `RuApp`/`RuAgent.Cli`
-clients. The coding core never depends on a media surface.
-
-Voice/STT and VTube Studio are **optional plugins**. A host without their
-toolchains is fully functional for coding:
-
-| Plugin | Boundary | Enable |
-| --- | --- | --- |
-| Voice / STT | Python optional extra `[voice]` in `pyproject.toml`; `/voice/stream`, `/voice/*`, `/stt/*` map only when `RU_MEDIA_SURFACES` is unset or `1` | install the extra, keep `RU_MEDIA_SURFACES` enabled |
-| VTube Studio | private Worker v1 `vts.catalog` plus public `/vts/*`, mapped only when `RU_MEDIA_SURFACES` is unset or `1` | enable `RU_MEDIA_SURFACES` |
-
-With `RU_MEDIA_SURFACES=0` a headless coding host serves the route contract
-minus the media routes. `build.bat` builds only the coding core and has no
-plugin stage; missing or broken plugin toolchains must never fail that build.
+clients. The coding core never depends on a media surface, and the repository no
+longer ships one: the voice/STT, VTube Studio, and screen-observation surfaces
+were removed in the 2026-09-13 passes (`docs/CHANGELOG.md`). A host is fully
+functional for coding without any media toolchain; `build.bat` builds only the
+coding core and has no plugin stage, and the whole public route contract is
+always mapped.
 
 ## Process topology
 
@@ -31,12 +23,11 @@ Worker/Broker lifecycle in one Windows kill-on-close Job Object. `RuApp` (WinUI)
 and the headless `RuAgent.Cli` start-or-attach the Public Host through the
 shared `RuAgent.Client` (`PublicHostStarter`/`PublicHostLocator` with
 ACL-restricted loopback descriptor and bearer probe). On first start the Public
-Host creates per-run desktop and separate Agent/device worker secrets, starts
-one managed C# Worker serving Agent v2 on loopback port 8005 and Device v1
-on loopback port 8006, starts the isolated `RuAgentBroker` on a dynamic
-loopback port, binds ASP.NET Core on port 8000, waits for public readiness,
-and assigns the Worker/Broker to one Job Object. Managed startup is
-unconditional.
+Host creates a per-run desktop secret and an Agent worker secret, starts one
+managed C# Worker serving Agent v2 on a loopback port, starts the isolated
+`RuAgentBroker` on a dynamic loopback port, binds ASP.NET Core on port 8000,
+waits for public readiness, and assigns the Worker/Broker to one Job Object.
+Managed startup is unconditional.
 The Host remains running until explicitly stopped (or an owned child exits
 unexpectedly) and does not auto-exit on idle. Both owned children enter one Job
 Object, but ownership is Public Host, not WinUI. Startup succeeds only after
@@ -96,14 +87,11 @@ RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Publi
                                                                 (RuBackend.exe --managed-runtime, owns one kill-on-close Job Object)
                                                                   |-- direct business, persistence, and durable Harness (Core + SQLite agent_harness.db + encrypted payloads)
                                                                   |-- private call to managed C# Worker :8005 (Worker v2 one-step AssistantStep)
-                                                                  |-- private call to managed C# Worker :8006 (Worker v1 runtime/voice/STT/VTS/observation)
-                                                                         `-- private call to RuAgentBroker execution boundary (profile-scoped file/terminal tools)
+                                                                  |-- private call to RuAgentBroker execution boundary (profile-scoped file/terminal tools)
                                                                 Worker/Broker owned children:
-                                                                  |-- managed C# Worker :8005/:8006
+                                                                  |-- managed C# Worker :8005
                                                                   |     |-- bounded provider adapters (OpenAI-compatible Chat Completions, OpenAI Responses, Anthropic Messages) via exact protocol dispatch
-                                                                  |     |-- typed runtime, voice, STT, VTube Studio, and observation adapters
-                                                                  |     |-- protected single-use provider bootstrap (v2 only)
-                                                                  |     `-- isolated OmniVoice Flask service :5052 in omnivoice_env
+                                                                  |     `-- protected single-use provider bootstrap
                                                                   `-- RuAgentBroker
                                                                         `-- policy, approvals, and local action adapters
 ```
@@ -127,15 +115,14 @@ The current Agent flow is:
 
 ```text
 RuApp -> ASP.NET Core public contract -> typed worker protocol v2 -> managed C# Worker
-ASP.NET Core public device calls -> typed worker protocol v1 -> managed C# Worker
-managed C# Worker -> model adapter and typed runtime/device adapters -> Voice Engine / STT / VTS / observation
+managed C# Worker -> bounded provider adapters (chat completions / responses / messages)
 ```
 
-The typed Worker protocol v2 is the active Agent execution path. The framed
-Voice Engine remains an accepted future target, not a claim about the current
-Flask-backed implementation. The shipped OpenCode-style system-prompt composer
-does not introduce a second conversation transport: text, voice, coding, and
-tool-selection steps all use the same Agent run and Worker v2 path.
+The typed Worker protocol v2 is the active Agent execution path and the only
+private protocol left; the device v1 protocol was removed with the media
+surfaces. The shipped OpenCode-style system-prompt composer does not introduce a
+second conversation transport: text, coding, and tool-selection steps all use
+the same Agent run and Worker v2 path.
 
 ## Agent prompt contract
 
@@ -208,14 +195,15 @@ temporary data/log root, three dynamically leased loopback ports, memory-only
 bearers, and one Worker, Broker, and ASP.NET Core edge child. While the port
 leases are still held, it prebuilds Broker and edge sequentially; both are then
 started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
-during a cold build. It classifies all 62 HTTP and 1 WebSocket contract entries
-(41 non-Agent plus 20 additive `/agent/v1/*` plus `POST /host/shutdown`), uses deterministic fixtures for safe
-mutations and voice plus additive Agent v2 tracer fixtures (idempotency,
+during a cold build. It classifies all 37 HTTP contract entries
+(17 non-Agent plus 20 additive `/agent/v1/*`), uses deterministic fixtures for
+safe mutations plus additive Agent v2 tracer fixtures (idempotency,
 workspace trust via `WindowsWorkspaceIdentityResolver` final-path/volume/file
 identity, policy snapshots, SSE cursor, payload binding, file discovery/read
 and hash-guarded mutations/patch/delete/restore with configurable bounded recovery caps, approval
-first-writer-wins and snapshot ordering), skips observation routes that require
-hardware or external services, and removes the temporary root during idempotent
+first-writer-wins and snapshot ordering), records
+operator-required `POST /host/shutdown` as an explicit skip, and removes the
+temporary root during idempotent
 cleanup. An early child exit is recorded only as its
 role, exit code, and lifecycle classification; raw child output is not copied
 into the public artifact.
@@ -225,24 +213,20 @@ contract for RuApp/CLI; credentials and fixed runtime defaults remain
 Public Host-owned.
 
 The GUI Harness extends that ownership boundary through an explicit
-RuAppComposition: production uses the managed backend provider and physical
-AudioGraph/MediaPlayer adapters, while a short-lived loopback descriptor selects
-an external Harness edge, deterministic PCM frame source, recording playback
-device, and bounded JSONL event sink. The WinUI shell, API clients,
-Agent SSE client, voice state machine, session history path, and reply lifecycle
-remain the same. Harness mode skips subtitle overlay and observation polling,
-never takes over an existing RuApp instance, and does not report VTube Studio
-as connected.
+RuAppComposition: production uses the managed backend provider, while a
+short-lived loopback descriptor selects an external Harness edge and a bounded
+JSONL event sink. The WinUI shell, API clients, Agent SSE client, session
+history path, and reply lifecycle remain the same. Harness mode never takes over
+an existing RuApp instance and drives only the `agent-*` scenarios.
 
 ## Ownership
 
 | Owner | Responsibilities |
 | --- | --- |
-| RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), playback, microphone capture, public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 62 HTTP and 1 WebSocket route (41 non-Agent + 20 `/agent/v1/*` plus 1 `POST /host/shutdown`), settings transactions, credentials, sessions and their message history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
-| Managed C# Worker | Default private Worker v2 Agent generation and Worker v1 runtime/device orchestration on separate loopback ports. It receives the single-use DPAPI provider bootstrap for v2 plus a distinct device token for v1; the bootstrap path is cleared before the v1 graph is composed. |
+| RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 37 HTTP routes (17 non-Agent + 20 `/agent/v1/*`), settings transactions, credentials, sessions and their message history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object. The Host does not auto-exit on idle. |
+| Managed C# Worker | Private Worker v2 Agent generation on one loopback port. It receives the single-use DPAPI provider bootstrap and is cleared to a single listener; there is no device graph. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (effective profile, workspace identity, ordered rules, SHA-256) and canonical workspace root, validates hash before capabilities, and advertises model-usable `read` (`list`/`read`/`help`), `grep`, `glob`, `write` (`write`/`delete`/`restore` one-time), `edit`, `bash` (`run`/`shell`), `web_search`, and `web_fetch`. Outside-root targets resolve through session-scoped directory grants: the Host/Broker registers a `CanonicalDirectoryIdentity` per Agent session ID and dispatch routes `read`/`write`/`edit` calls to the matching grant root, so a one-time approval opens the folder for the lifetime of the chat. The grant is in-memory only — it is lost on Broker/Host/UI restart and never shared with new or forked sessions — and it never bypasses protected paths or destructive gates. `files.apply_patch` is not advertised. The Broker has no public HTTP contract. |
-| Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated `omnivoice_env`; the managed Worker currently reaches the retained Flask provider over loopback HTTP. A framed process transport is a future design, not the current contract. |
 
 Unknown public paths stop in ASP.NET Core. There is no forwarding catch-all,
 route ownership selector, or alternate host mode.
@@ -251,16 +235,15 @@ route ownership selector, or alternate host mode.
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-62 HTTP method/path pairs and 1 WebSocket route (`/voice/stream`, plus 20
-`/agent/v1/*` and 1 `POST /host/shutdown`); REST, WebSocket and SSE clients
-authenticate with the desktop secret (bearer for HTTP/SSE). ASP.NET Core maps
+37 HTTP method/path pairs with no WebSocket route (20 `/agent/v1/*` and 17
+non-Agent routes); REST and SSE clients authenticate with the desktop secret
+(bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
 with durable `id: <sequence>` and reconnect via `Last-Event-ID` or
 `?after_sequence=` with `cursor_mismatch` rejection.
 
 Worker contracts are versioned typed WebSockets:
 
-- Protocol v1 (`/worker/v1`) is the private managed C# Worker device adapter by default: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages.
 - Protocol v2 (`/worker/v2`) is the private C# Agent Worker contract: `agent.step.start` → `agent.step.delta`* → `agent.step.done`/`error`, with `agent.step.cancel`, bounded schemas, `AssistantStep(text, tool_calls, finish_reason)` (one `generate_reply` per step), and stable `worker.*` error codes; it never accepts `chat.tool.result`.
 
 Protocol v2 removes HTTP-shaped fields in favor of typed domain commands,
@@ -268,16 +251,8 @@ capabilities, bounded payloads, ordering, cancellation, and stable worker
 errors. `RuAgent.Cli` never speaks Worker protocols directly; it is a thin
 HTTP/SSE client.
 
-Public `/voice/stream` audio is carried as binary WAV frames. In the current
-implementation the managed C# Worker reaches OmniVoice over loopback HTTP on
-port 5052. The accepted Voice Engine target uses bounded stdin/stdout control and
-binary frames, keeps native-speed audio, and exposes no network listener.
-
 Text turns are authenticated Agent runs consumed through the durable Agent SSE
-stream. The only public WebSocket is `/voice/stream`; it carries binary WAV
-frames and does not open a second text-generation transport. In the managed
-default, observation control is an explicit disabled/unavailable surface until
-the C# screen-capture/reaction loop is delivered.
+stream. There is no public WebSocket and no second text-generation transport.
 
 ### Multimodal image attachments
 
@@ -294,7 +269,7 @@ The Agent harness supports end-to-end multimodal image input across WinUI 3, ASP
 ## Data ownership
 
 ASP.NET Core owns business persistence. Settings, sessions, activity,
-and the VTS token default to the canonical `%LOCALAPPDATA%\Ru` location,
+and structured memory default to the canonical `%LOCALAPPDATA%\Ru` location,
 with `RU_DATA_ROOT` available for isolated runs. Secrets are stored through Windows Credential
 Manager rather than JSON files.
 
@@ -312,12 +287,11 @@ The canonical data-location contract is documented in
 ## Privacy boundary
 
 Only data needed for a requested operation crosses a private boundary. Visible
-assistant text may enter Agent generation and approved persistence, but transport-only
-voice controls and private VTS actions, motions, overlays, timings, segment
-identifiers, and model-control metadata must not enter TTS text, history,
-reviewed examples, cleanup manifests, or logs.
+assistant text may enter Agent generation and approved persistence, but private
+markers and model-control metadata must not enter history, reviewed examples,
+cleanup manifests, or logs.
 
-Audio remains binary and manifests contain metadata only. Automated checks may
+Automated checks may
 record statuses, timings, counts, event types, and cleanup state; they never
 record credentials, bearer tokens, request bodies, session identifiers,
-transcripts, audio bytes, or private VTS metadata.
+transcripts, or private marker metadata.

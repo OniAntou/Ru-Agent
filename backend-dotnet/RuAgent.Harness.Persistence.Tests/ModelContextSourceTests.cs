@@ -223,6 +223,57 @@ public sealed class ModelContextSourceTests
         Assert.Equal("context_payload_invalid", exception.Code);
     }
 
+    [Fact]
+    public async Task Repetition_note_restores_as_a_system_text_entry()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId,
+            [],
+            HarnessStoreTestFixture.Timestamp.AddSeconds(1),
+            CancellationToken.None);
+        var noteBytes = Encoding.UTF8.GetBytes(
+            "[REPETITION GUARD] change the arguments before repeating a call");
+        var notePayload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(40),
+            HarnessPayloadKind.ModelContextNote,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            4096,
+            noteBytes);
+        var noteRun = NextRun(request.Run, version: 1, lastSequence: 2);
+        await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                0,
+                noteRun,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(40),
+                    HarnessEventKind.RunNoteAdded,
+                    modelStepId: new ModelStepId("step_11111111111111111111111111111111"),
+                    payloadId: notePayload.PayloadId,
+                    safeCode: "repeated_tool_call")],
+                [notePayload],
+                []),
+            CancellationToken.None);
+
+        var context = await new AgentContextAssembler(
+                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, CancellationToken.None);
+
+        var entry = Assert.Single(context.Entries);
+        Assert.Equal(ModelContextEntryKind.Text, entry.Kind);
+        Assert.Equal(ModelContextRole.System, entry.Role);
+        Assert.Equal(
+            "[REPETITION GUARD] change the arguments before repeating a call",
+            entry.Content);
+        Assert.Equal($"event:{HarnessStoreTestFixture.Event(40).Value}", entry.SourceId);
+    }
+
     private static HarnessPayloadIntent TextPayload(
         int number,
         HarnessPayloadKind kind,

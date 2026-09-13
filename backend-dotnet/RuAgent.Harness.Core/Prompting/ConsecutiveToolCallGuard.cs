@@ -3,8 +3,24 @@ using RuAgent.Harness.Core.Context;
 
 namespace RuAgent.Harness.Core.Prompting;
 
+public enum RepetitionGuardVerdict
+{
+    NotRepeated,
+    Advise,
+    Stop,
+}
+
 public static class ConsecutiveToolCallGuard
 {
+    // Model-visible marker for the corrective note. The guard also uses it to
+    // count how many notes the run already carries, so the context stays the
+    // single source of truth for "the model was already told".
+    public const string RepairNotePrefix = "[REPETITION GUARD]";
+
+    // Bounded self-repair budget: a model that ignores the note still stops,
+    // but a weak model gets a real chance to change its arguments first.
+    public const int MaximumRepairNotes = 2;
+
     // Receipt codes where the tool never executed for infrastructure reasons.
     // Retrying the identical call once after one of these is self-correction,
     // not a loop. Policy denials and tool-level errors stay guarded: blindly
@@ -16,12 +32,52 @@ public static class ConsecutiveToolCallGuard
         "not_executed_after_unknown",
     };
 
-    public static bool IsRepeated(
+    /// <summary>
+    /// Classifies the proposed calls against the previous assistant step: an
+    /// identical repeat is either answered with a corrective note while the
+    /// repair budget lasts, or stopped.
+    /// </summary>
+    public static RepetitionGuardVerdict Inspect(
         ModelContextSnapshot context,
-        IReadOnlyList<ModelToolCall> proposed)
+        IReadOnlyList<ModelToolCall> proposed,
+        out string? receiptCode)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(proposed);
+        if (!TryDescribeRepetition(context, proposed, out receiptCode))
+        {
+            receiptCode = null;
+            return RepetitionGuardVerdict.NotRepeated;
+        }
+
+        return RepairNoteCount(context) < MaximumRepairNotes
+            ? RepetitionGuardVerdict.Advise
+            : RepetitionGuardVerdict.Stop;
+    }
+
+    public static bool IsRepeated(
+        ModelContextSnapshot context,
+        IReadOnlyList<ModelToolCall> proposed) =>
+        Inspect(context, proposed, out _) != RepetitionGuardVerdict.NotRepeated;
+
+    /// <summary>
+    /// Bounded corrective copy for the model. It names the rejection code only;
+    /// arguments and file content never enter the note.
+    /// </summary>
+    public static string BuildRepairNote(string? receiptCode)
+    {
+        var code = string.IsNullOrWhiteSpace(receiptCode) ? "rejected" : receiptCode;
+        return $"{RepairNotePrefix} You already sent this exact tool call and it did not "
+            + $"succeed ({code}). Repeating the identical call cannot succeed. Change the "
+            + "arguments, use a different tool, or explain what is blocking you.";
+    }
+
+    private static bool TryDescribeRepetition(
+        ModelContextSnapshot context,
+        IReadOnlyList<ModelToolCall> proposed,
+        out string? receiptCode)
+    {
+        receiptCode = null;
         if (proposed.Count == 0 || context.Entries.Count < 2)
         {
             return false;
@@ -65,7 +121,26 @@ public static class ConsecutiveToolCallGuard
             return false;
         }
 
+        receiptCode = receipts
+            .Select(receipt => receipt?.Code)
+            .FirstOrDefault(code => !string.IsNullOrWhiteSpace(code));
         return true;
+    }
+
+    private static int RepairNoteCount(ModelContextSnapshot context)
+    {
+        var count = 0;
+        foreach (var entry in context.Entries)
+        {
+            if (entry.Kind == ModelContextEntryKind.Text
+                && entry.Content is { } content
+                && content.StartsWith(RepairNotePrefix, StringComparison.Ordinal))
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static bool PrecededBySameInfraFailure(

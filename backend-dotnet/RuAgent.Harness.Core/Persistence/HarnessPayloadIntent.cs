@@ -15,6 +15,7 @@ public enum HarnessPayloadKind
     PromptReceipt,
     UserImage = 11,
     ModelUsage = 12,
+    ModelContextNote = 13,
 }
 
 [Flags]
@@ -131,6 +132,15 @@ public sealed record HarnessPayloadIntent
         {
             throw new ArgumentException(
                 "ModelContextSummary must be UTF-8 and model-only.",
+                nameof(kind));
+        }
+
+        if (kind == HarnessPayloadKind.ModelContextNote
+            && (audience != HarnessPayloadAudience.ModelContext
+                || encoding != HarnessPayloadEncoding.Utf8Text))
+        {
+            throw new ArgumentException(
+                "ModelContextNote must be UTF-8 and model-only.",
                 nameof(kind));
         }
 

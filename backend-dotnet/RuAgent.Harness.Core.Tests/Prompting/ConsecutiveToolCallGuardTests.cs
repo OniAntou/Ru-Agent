@@ -72,6 +72,54 @@ public sealed class ConsecutiveToolCallGuardTests
         Assert.True(ConsecutiveToolCallGuard.IsRepeated(context, [call]));
     }
 
+    [Fact]
+    public void Repetition_advises_while_the_repair_budget_lasts_then_stops()
+    {
+        var call = Call("{\"op\":\"list\",\"path\":\"D:/Test Agent\"}");
+        var entries = InfraFailureContext(call, "malformed_call").Entries.ToList();
+
+        var advised = ConsecutiveToolCallGuard.Inspect(
+            new ModelContextSnapshot(entries, "[]"u8.ToArray()),
+            [call],
+            out var advisedCode);
+
+        Assert.Equal(RepetitionGuardVerdict.Advise, advised);
+        Assert.Equal("malformed_call", advisedCode);
+
+        for (var index = 0; index < ConsecutiveToolCallGuard.MaximumRepairNotes; index++)
+        {
+            entries.Insert(
+                0,
+                ModelContextEntry.Text(
+                    $"note-{index}",
+                    index + 1,
+                    ModelContextRole.System,
+                    ConsecutiveToolCallGuard.BuildRepairNote(advisedCode)));
+        }
+
+        var stopped = ConsecutiveToolCallGuard.Inspect(
+            new ModelContextSnapshot(entries, "[]"u8.ToArray()),
+            [call],
+            out var stopCode);
+
+        Assert.Equal(RepetitionGuardVerdict.Stop, stopped);
+        Assert.Equal("malformed_call", stopCode);
+    }
+
+    [Fact]
+    public void Repair_note_names_the_rejection_code_behind_the_marker()
+    {
+        var note = ConsecutiveToolCallGuard.BuildRepairNote("malformed_call");
+
+        Assert.StartsWith(ConsecutiveToolCallGuard.RepairNotePrefix, note, StringComparison.Ordinal);
+        Assert.Contains("malformed_call", note, StringComparison.Ordinal);
+        Assert.True(note.Length <= 512);
+        Assert.StartsWith(
+            ConsecutiveToolCallGuard.RepairNotePrefix,
+            ConsecutiveToolCallGuard.BuildRepairNote(null),
+            StringComparison.Ordinal);
+    }
+
     private static ModelContextSnapshot Context(ModelToolCall call, bool includeReceipt)
     {
         var entries = new List<ModelContextEntry>

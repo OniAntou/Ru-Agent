@@ -17,6 +17,7 @@ public enum HarnessEventKind
     ModelPromptComposed,
     ContextCompacted,
     ModelUsageRecorded,
+    RunNoteAdded,
 }
 
 public sealed record HarnessEventIntent

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Prompting;
 
 namespace RuAgent.Harness.Core;
 
@@ -108,6 +109,95 @@ internal sealed class AgentRunStepHandlers
         return AgentRunStepResult.Blocked(committed, errorCode);
     }
 
+    /// <summary>
+    /// Answers a detected repetition with one corrective note instead of ending
+    /// the run: the note lands in the model context as a system entry and the run
+    /// keeps stepping, so a weak model can change its arguments. Bounded by
+    /// <see cref="ConsecutiveToolCallGuard.MaximumRepairNotes"/>; once the notes
+    /// are spent the stop branch takes over.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleRepetitionAdviceStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        string? receiptCode,
+        int droppedCount,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken)
+    {
+        const string advisedCode = "repeated_tool_call_advised";
+        var assistantPayloadId = _ids.NewPayloadId();
+        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
+        var assistantPayload = new HarnessPayloadIntent(
+            assistantPayloadId,
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.AuthenticatedClient
+                | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            Math.Max(assistantBytes.Length, 1),
+            assistantBytes);
+        var notePayloadId = _ids.NewPayloadId();
+        var noteBytes = Encoding.UTF8.GetBytes(
+            ConsecutiveToolCallGuard.BuildRepairNote(receiptCode));
+        var notePayload = new HarnessPayloadIntent(
+            notePayloadId,
+            HarnessPayloadKind.ModelContextNote,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            noteBytes.Length,
+            noteBytes);
+        var events = new List<HarnessEventIntent>
+        {
+            promptComposedEvent,
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                payloadId: assistantPayloadId,
+                safeCount: step.ToolCalls.Count,
+                safeCode: advisedCode),
+        };
+        if (droppedCount > 0)
+        {
+            events.Add(new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.TransientFramesDropped,
+                modelStepId: modelStepId,
+                safeCount: droppedCount));
+        }
+
+        events.Add(new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.RunNoteAdded,
+            modelStepId: modelStepId,
+            payloadId: notePayloadId,
+            safeCode: "repeated_tool_call"));
+
+        var next = run.Advance(
+            run.Status,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Count,
+            _time.UtcNow);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                [promptReceiptPayload, assistantPayload, notePayload],
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
+    }
+
+    /// <summary>
+    /// The repetition survived the repair notes, so the run parks in WaitingUser
+    /// with a bounded continue code instead of failing: the user can resume with
+    /// an explicit Continue, exactly like a budget stop. A state that cannot park
+    /// falls back to the previous fail-closed behavior.
+    /// </summary>
     public async Task<AgentRunStepResult> HandleRepeatedToolStepAsync(
         AgentRun run,
         ModelStepId modelStepId,
@@ -119,10 +209,17 @@ internal sealed class AgentRunStepHandlers
         const string errorCode = "repeated_tool_call";
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
-            HarnessRunTransition.Fail);
-        if (!transition.Accepted)
+            HarnessRunTransition.ExhaustBudget);
+        var failing = !transition.Accepted;
+        if (failing)
         {
-            throw new InvalidOperationException(transition.ErrorCode);
+            transition = AgentRunStateMachine.TryTransition(
+                run.Status,
+                HarnessRunTransition.Fail);
+            if (!transition.Accepted)
+            {
+                throw new InvalidOperationException(transition.ErrorCode);
+            }
         }
 
         var assistantPayloadId = _ids.NewPayloadId();
@@ -145,10 +242,15 @@ internal sealed class AgentRunStepHandlers
                 payloadId: assistantPayloadId,
                 safeCount: step.ToolCalls.Count,
                 safeCode: errorCode),
-            new(
-                _ids.NewEventId(),
-                HarnessEventKind.RunFailed,
-                safeCode: errorCode),
+            failing
+                ? new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.RunFailed,
+                    safeCode: errorCode)
+                : new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.ContinueRequested,
+                    safeCode: errorCode),
         };
         var next = run.Advance(
             transition.Next,
@@ -157,7 +259,7 @@ internal sealed class AgentRunStepHandlers
             run.ToolCallsInWindow,
             events.Length,
             _time.UtcNow,
-            errorCode);
+            failing ? errorCode : null);
         var committed = await CommitAsync(
                 run,
                 next,

@@ -665,6 +665,38 @@ public sealed class AgentRunControllerTests
         Assert.Equal("rm -rf build/", controller.PendingApprovalCommand);
     }
 
+    [Fact]
+    public async Task Continue_stays_available_when_the_run_parks_for_the_repetition_guard()
+    {
+        var fake = new FakeClient
+        {
+            Run = new AgentRunModel(
+                RunId,
+                "sess_1",
+                "ws_1",
+                "waiting_user",
+                "waiting_user",
+                "standard",
+                2026,
+                "2026",
+                1,
+                5,
+                "2026",
+                "2026",
+                null,
+                null,
+                null,
+                null),
+        };
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-waiting-user"));
+
+        Assert.True(controller.CanContinue);
+        Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
+    }
+
     private static AgentRunModel WaitingApprovalRun() =>
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
             RunId, "sess_1", "ws_1", "waiting_approval", "standard", "2026", "2026"));

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Tests.Fakes;
 using Xunit;
 
@@ -269,7 +270,7 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Repeated_completed_tool_call_fails_before_second_execution()
+    public async Task Repeated_completed_tool_call_gets_a_repair_note_before_second_execution()
     {
         var prior = ToolStep();
         var source = new FixedContextSource(
@@ -280,8 +281,8 @@ public sealed class AgentRunCoordinatorTests
                 new ToolExecutionReceipt(
                     new ExecutionId("exec_11111111111111111111111111111111"),
                     new ToolCallId("call_11111111111111111111111111111111"),
-                    ToolExecutionOutcome.Succeeded,
-                    "ok",
+                    ToolExecutionOutcome.Failed,
+                    "malformed_call",
                     null,
                     false),
                 "{}"));
@@ -294,12 +295,70 @@ public sealed class AgentRunCoordinatorTests
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Equal(HarnessRunState.Failed, result.Run.State);
-        Assert.Equal("repeated_tool_call", result.ErrorCode);
-        Assert.Equal("repeated_tool_call", result.Run.TerminalErrorCode);
+        Assert.Equal(HarnessRunState.Running, result.Run.State);
+        Assert.Null(result.ErrorCode);
         Assert.Empty(gateway.ExecuteAttempts);
-        Assert.Contains(store.Commits.SelectMany(commit => commit.Events), item =>
-            item.Kind == HarnessEventKind.ModelStepCompleted && item.SafeCode == "repeated_tool_call");
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.ModelStepCompleted
+            && item.SafeCode == "repeated_tool_call_advised");
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.RunNoteAdded
+            && item.SafeCode == "repeated_tool_call");
+        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
+        Assert.Contains(
+            store.Commits.SelectMany(commit => commit.Payloads),
+            payload => payload.Kind == HarnessPayloadKind.ModelContextNote);
+    }
+
+    [Fact]
+    public async Task Repetition_after_the_repair_budget_parks_the_run_for_continue()
+    {
+        var prior = ToolStep();
+        var notes = Enumerable.Range(0, ConsecutiveToolCallGuard.MaximumRepairNotes)
+            .Select(index => ModelContextEntry.Text(
+                $"note-{index}",
+                index + 1,
+                ModelContextRole.System,
+                ConsecutiveToolCallGuard.BuildRepairNote("malformed_call")))
+            .ToArray();
+        var source = new FixedContextSource(
+            [
+                .. notes,
+                ModelContextEntry.Assistant("assistant-prior", 10, prior),
+                ModelContextEntry.ToolResult(
+                    "tool-prior",
+                    11,
+                    new ToolExecutionReceipt(
+                        new ExecutionId("exec_11111111111111111111111111111111"),
+                        new ToolCallId("call_11111111111111111111111111111111"),
+                        ToolExecutionOutcome.Failed,
+                        "malformed_call",
+                        null,
+                        false),
+                    "{}"),
+            ]);
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway();
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store, contextSource: source);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingUser, result.Run.State);
+        Assert.Equal("repeated_tool_call", result.ErrorCode);
+        Assert.Null(result.Run.TerminalErrorCode);
+        Assert.Empty(gateway.ExecuteAttempts);
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.ModelStepCompleted
+            && item.SafeCode == "repeated_tool_call");
+        Assert.Contains(events, item =>
+            item.Kind == HarnessEventKind.ContinueRequested
+            && item.SafeCode == "repeated_tool_call");
+        Assert.DoesNotContain(events, item => item.Kind == HarnessEventKind.RunFailed);
     }
 
     [Fact]

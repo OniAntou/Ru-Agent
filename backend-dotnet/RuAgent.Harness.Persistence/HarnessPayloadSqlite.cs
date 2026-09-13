@@ -174,6 +174,10 @@ public sealed partial class HarnessPayloadStore
                 role = ModelContextRole.Tool;
                 entryKind = ModelContextEntryKind.ToolResult;
                 break;
+            case HarnessPayloadKind.ModelContextNote:
+                role = ModelContextRole.System;
+                entryKind = ModelContextEntryKind.Text;
+                break;
             default:
                 return null;
         }

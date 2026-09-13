@@ -38,6 +38,7 @@ public static class HarnessEventContractValidator
         "continue.requested",
         "reconciliation.required",
         "transient.frames_dropped",
+        "run.note_added",
     };
 
     private static readonly HashSet<string> ForbiddenFields = new(StringComparer.OrdinalIgnoreCase)

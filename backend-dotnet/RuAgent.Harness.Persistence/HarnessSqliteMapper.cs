@@ -117,6 +117,7 @@ internal static class HarnessSqliteMapper
         HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
         HarnessEventKind.ContextCompacted => "context.compacted",
         HarnessEventKind.ModelUsageRecorded => "model.usage_recorded",
+        HarnessEventKind.RunNoteAdded => "run.note_added",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

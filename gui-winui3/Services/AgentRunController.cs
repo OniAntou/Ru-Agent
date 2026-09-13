@@ -226,7 +226,9 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 }
                 else if (!_isCancelRequested)
                 {
-                    StatusText = "Event stream ended before run completed.";
+                    StatusText = _waitKind == "waiting_user"
+                        ? "Waiting to continue. Type Continue to resume."
+                        : "Event stream ended before run completed.";
                 }
 
                 IsBusy = false;

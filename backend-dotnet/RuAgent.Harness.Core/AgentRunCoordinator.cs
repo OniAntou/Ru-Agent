@@ -163,7 +163,25 @@ public sealed class AgentRunCoordinator
 
         if (step.ToolCalls.Count > 0)
         {
-            if (ConsecutiveToolCallGuard.IsRepeated(context, step.ToolCalls))
+            var repetition = ConsecutiveToolCallGuard.Inspect(
+                context,
+                step.ToolCalls,
+                out var receiptCode);
+            if (repetition == RepetitionGuardVerdict.Advise)
+            {
+                return await _steps.HandleRepetitionAdviceStepAsync(
+                        run,
+                        modelStepId,
+                        step,
+                        receiptCode,
+                        modelDroppedCount,
+                        promptReceiptPayload,
+                        promptComposedEvent,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (repetition == RepetitionGuardVerdict.Stop)
             {
                 return await _steps.HandleRepeatedToolStepAsync(
                         run,

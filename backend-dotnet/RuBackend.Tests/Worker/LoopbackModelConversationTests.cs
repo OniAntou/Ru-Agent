@@ -110,6 +110,33 @@ public sealed class LoopbackModelConversationTests
     }
 
     [Fact]
+    public void Stale_history_is_trimmed_head_first_while_the_newest_result_stays_whole()
+    {
+        var entries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Text("src-0", 1, ModelContextRole.User, "nhiem vu goc"),
+        };
+        var sequence = 2L;
+        for (var index = 0; index < 8; index++)
+        {
+            entries.Add(AssistantStepEntry($"stale-a-{index}", sequence++, "read", "{\"op\":\"read\",\"path\":\"stale.txt\"}"));
+            entries.Add(ToolResultEntry($"stale-t-{index}", sequence++, $"{{\"stale\":{index},\"content\":\"{new string('s', 4_000)}\"}}"));
+        }
+        entries.Add(AssistantStepEntry("src-new-a", sequence++, "read", "{\"op\":\"read\",\"path\":\"fresh.txt\"}"));
+        entries.Add(ToolResultEntry("src-new-t", sequence, "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\"}"));
+
+        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
+
+        Assert.Contains("ket qua moi nhat", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("truncated", prompt, StringComparison.Ordinal);
+        Assert.True(turns.Count <= 8);
+        Assert.True(turns.Count < 9, "all stale history should not fit beside a full prompt");
+        var totalTurnChars = turns.Sum(turn =>
+            turn!["prompt"]!.GetValue<string>().Length + turn["response"]!.GetValue<string>().Length);
+        Assert.True(totalTurnChars <= 32_000, $"turns were {totalTurnChars} chars");
+    }
+
+    [Fact]
     public void Rejected_tool_call_feedback_is_appended_and_clamped()
     {
         var prompt = LoopbackModelStepRunner.ApplySelectionFeedbackForTests("task", "model_tool_call_invalid");

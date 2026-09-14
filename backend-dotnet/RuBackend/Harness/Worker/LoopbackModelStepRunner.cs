@@ -530,7 +530,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 continue;
             }
 
-            if (pending.Length <= WorkerV2Contracts.MaxPromptChars && response.Length <= 32_000)
+            if (response.Length <= 32_000)
             {
                 pairs.Add(new JsonObject { ["prompt"] = pending, ["response"] = response });
                 pending = null;
@@ -538,14 +538,15 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         }
 
         var turns = new JsonArray();
-        foreach (var pair in pairs.TakeLast(8))
+        var promptReserve = pending?.Length ?? 0;
+        foreach (var pair in FitTurnsToBudget(pairs, promptReserve))
         {
             turns.Add(pair);
         }
 
         if (!string.IsNullOrWhiteSpace(pending))
         {
-            return (ClampConversationBlock(pending, WorkerV2Contracts.MaxPromptChars), turns);
+            return (ClampPendingToPromptBudget(pending, turns), turns);
         }
 
         // No user-side block is awaiting a reply: fall back to the last user
@@ -611,6 +612,54 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
     private static string AppendUserBlock(string? pending, string block) =>
         string.IsNullOrWhiteSpace(pending) ? block : pending + "\n\n" + block;
+
+    /// <summary>
+    /// Keeps the newest user-side block fully readable: the prompt always keeps
+    /// its exact text, and only stale history turns yield budget head-first
+    /// (newest kept). Only when even one turn plus the prompt exceeds the wire
+    /// budget is the prompt itself clamped. Wire budgets stay unchanged.
+    /// </summary>
+    private static IEnumerable<JsonObject> FitTurnsToBudget(List<JsonObject> pairs, int promptReserve)
+    {
+        var selected = new List<JsonObject>(Math.Min(8, pairs.Count));
+        var used = 0;
+        for (var index = pairs.Count - 1; index >= 0 && selected.Count < 8; index--)
+        {
+            var pair = pairs[index];
+            var cost = (pair["prompt"]?.GetValue<string>()?.Length ?? 0)
+                + (pair["response"]?.GetValue<string>()?.Length ?? 0);
+            if (selected.Count > 0
+                && used + cost + Math.Min(promptReserve, WorkerV2Contracts.MaxPromptChars) > WorkerV2Contracts.MaxPromptChars * 2)
+            {
+                break;
+            }
+
+            selected.Add(pair);
+            used += cost;
+        }
+
+        selected.Reverse();
+        return selected;
+    }
+
+    private static string ClampPendingToPromptBudget(string pending, JsonArray turns)
+    {
+        if (pending.Length <= WorkerV2Contracts.MaxPromptChars)
+        {
+            return pending;
+        }
+
+        if (turns.Count > 1)
+        {
+            turns.RemoveAt(0);
+            return ClampPendingToPromptBudget(pending, turns);
+        }
+
+        return ClampConversationBlock(pending, WorkerV2Contracts.MaxPromptChars);
+    }
+
+    internal static IReadOnlyList<JsonObject> FitTurnsToBudgetForTests(List<JsonObject> pairs, int promptReserve) =>
+        FitTurnsToBudget(pairs, promptReserve).ToArray();
 
     /// <summary>
     /// Keeps one conversation block inside the worker prompt budget while the

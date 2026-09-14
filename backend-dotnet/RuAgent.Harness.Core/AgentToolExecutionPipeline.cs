@@ -41,7 +41,7 @@ internal sealed class AgentToolExecutionPipeline
         _transientRedactor = transientRedactor;
         _inspectionGate = inspectionGate;
         _activitySink = activitySink;
-        _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash();
+        _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
     }
 
     internal async Task<AgentToolPipelineResult> ExecuteAsync(

@@ -34,6 +34,9 @@ public sealed class InMemoryRetainedApprovalStash : IRetainedApprovalStash
 {
     private static readonly TimeSpan TimeToLive = TimeSpan.FromHours(24);
     private readonly ConcurrentDictionary<string, RetainedApprovalStep> _steps = new(StringComparer.Ordinal);
+    private readonly ITimeProvider? _time;
+
+    public InMemoryRetainedApprovalStash(ITimeProvider? time = null) => _time = time;
 
     public void Stash(RunId runId, RetainedApprovalStep step)
     {
@@ -84,6 +87,8 @@ public sealed class InMemoryRetainedApprovalStash : IRetainedApprovalStash
         }
     }
 
-    private static bool IsExpired(RetainedApprovalStep step) =>
-        DateTimeOffset.UtcNow - step.StashedAt > TimeToLive;
+    private bool IsExpired(RetainedApprovalStep step) =>
+        Now() - step.StashedAt > TimeToLive;
+
+    private DateTimeOffset Now() => _time?.UtcNow ?? DateTimeOffset.UtcNow;
 }

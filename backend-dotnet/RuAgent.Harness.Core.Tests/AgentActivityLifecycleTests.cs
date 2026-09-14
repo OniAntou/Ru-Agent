@@ -136,6 +136,125 @@ public sealed class AgentActivityLifecycleTests
                 && item.Activity.State == AgentActivityState.Completed);
     }
 
+    [Fact]
+    public async Task Resume_executes_stashed_proposal_without_new_model_step()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var approval = new ApprovalId("apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var evaluations = 0;
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ =>
+            {
+                evaluations++;
+                return evaluations == 1
+                    ? ToolProposalDecision.Ask(ToolAccessKind.Mutation, approval)
+                    : ToolProposalDecision.Allow(ToolAccessKind.ReadOnly, "canonical-resumed");
+            },
+        };
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        var asked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal("approval_required", asked.ErrorCode);
+
+        await coordinator.ResumeAfterApprovalAsync(RunId(), CancellationToken.None);
+
+        var resumed = await coordinator.TryResumeRetainedApprovalAsync(RunId(), CancellationToken.None);
+        Assert.NotNull(resumed);
+        Assert.Null(resumed.ErrorCode);
+        Assert.Equal(2, evaluations);
+        Assert.Equal(1, model.Requests.Count);
+        Assert.Equal(1, gateway.ExecuteAttempts.Count);
+        var receipt = Assert.Single(resumed.Receipts);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        Assert.Contains(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ToolExecutionRequested);
+    }
+
+    [Fact]
+    public async Task Stale_stash_dropped_without_resolution()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => ToolProposalDecision.Ask(
+                ToolAccessKind.Mutation,
+                new ApprovalId("apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
+        };
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        var asked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal("approval_required", asked.ErrorCode);
+
+        // Still waiting: refuse and keep nothing pending on the gateway.
+        Assert.Null(await coordinator.TryResumeRetainedApprovalAsync(RunId(), CancellationToken.None));
+        Assert.Empty(gateway.ExecuteAttempts);
+
+        // Running again but without the approval marker: stale stash drops.
+        await CommitStateAsync(store, HarnessRunState.Running, "continued");
+        Assert.Null(await coordinator.TryResumeRetainedApprovalAsync(RunId(), CancellationToken.None));
+        Assert.Empty(gateway.ExecuteAttempts);
+
+        // The next model step proceeds normally; nothing executes behind its back.
+        model.Enqueue(ToolStep());
+        gateway.DecisionFactory = _ => ToolProposalDecision.Allow(ToolAccessKind.ReadOnly, "canonical-second");
+        var next = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Null(next.ErrorCode);
+        Assert.Equal(2, model.Requests.Count);
+        Assert.Equal(1, gateway.ExecuteAttempts.Count);
+    }
+
+    private static async Task CommitStateAsync(
+        InMemoryHarnessEventStore store,
+        HarnessRunState state,
+        string safeCode)
+    {
+        var run = await store.GetRunAsync(RunId(), CancellationToken.None);
+        Assert.NotNull(run);
+        var next = new AgentRun(
+            run.RunId,
+            run.SessionId,
+            run.WorkspaceId,
+            new HarnessRunStatus(state),
+            run.Version + 1,
+            run.LastSequence + 1,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            run.Preset,
+            run.PolicySnapshotVersion,
+            run.PolicySnapshotSha256,
+            run.CreatedAt,
+            Epoch,
+            run.TerminalAt,
+            run.TerminalErrorCode);
+        var committed = await store.CommitAsync(
+            new HarnessCommit(
+                RunId(),
+                run.Version,
+                next,
+                new[]
+                {
+                    new HarnessEventIntent(
+                        new EventId("evt_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                        HarnessEventKind.RunStateChanged,
+                        safeCode: safeCode),
+                },
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>()),
+            CancellationToken.None);
+        Assert.Equal(HarnessCommitOutcome.Committed, committed.Outcome);
+    }
+
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         FakeToolGateway gateway,

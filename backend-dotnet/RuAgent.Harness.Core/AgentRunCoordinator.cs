@@ -22,6 +22,7 @@ public sealed class AgentRunCoordinator
     private readonly AgentRunLifecycle _lifecycle;
     private readonly AgentRunStepHandlers _steps;
     private readonly AgentModelInvocation _invocation;
+    private readonly IRetainedApprovalStash _retainedStash;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -39,9 +40,11 @@ public sealed class AgentRunCoordinator
         IAgentReplyPolicy? replyPolicy = null,
         IAgentReplyEffectSink? replyEffects = null,
         ISystemPromptContextProvider? promptContextProvider = null,
-        ContextBudgetPolicy? contextBudgetPolicy = null)
+        ContextBudgetPolicy? contextBudgetPolicy = null,
+        IRetainedApprovalStash? retainedStash = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
         _contextAssembler = contextAssembler
             ?? throw new ArgumentNullException(nameof(contextAssembler));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
@@ -63,7 +66,8 @@ public sealed class AgentRunCoordinator
             frames,
             transientRedactor ?? PassthroughTransientContentRedactor.Instance,
             inspectionGate,
-            activitySink);
+            activitySink,
+            _retainedStash);
         _lifecycle = new AgentRunLifecycle(
             _store,
             _ids,
@@ -272,6 +276,53 @@ public sealed class AgentRunCoordinator
         _lifecycle.ResumeAfterApprovalAsync(runId, cancellationToken);
 
     /// <summary>
+    /// Executes proposals parked by an earlier approval wait without a new model
+    /// step. Only resumes when the durable stream proves this exact approval was
+    /// resolved; anything else drops the stash and reports nothing to resume, so
+    /// a stale or foreign approval can never execute parked calls.
+    /// </summary>
+    public async Task<AgentRunStepResult?> TryResumeRetainedApprovalAsync(
+        RunId runId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (run.State != HarnessRunState.Running)
+            {
+                _retainedStash.Drop(runId);
+                return null;
+            }
+
+            if (!_retainedStash.TryPeek(runId, out var retained) || retained is null)
+            {
+                return null;
+            }
+
+            var resolved = await HasApprovalResolutionAsync(runId, retained.ApprovalId, cancellationToken)
+                .ConfigureAwait(false);
+            if (!resolved)
+            {
+                _retainedStash.Drop(runId);
+                return null;
+            }
+
+            if (!_retainedStash.TryTake(runId, retained.ApprovalId, out var claimed) || claimed is null)
+            {
+                return null;
+            }
+
+            var result = await _tools.ResumeRetainedAsync(run, claimed, cancellationToken).ConfigureAwait(false);
+            return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _retainedStash.Drop(runId);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Forwards run-scoped cancellation to the gateway so in-flight terminal processes
     /// are killed through their Job Object. Safe to call when nothing is running.
     /// </summary>
@@ -329,6 +380,33 @@ public sealed class AgentRunCoordinator
         CancellationToken cancellationToken) =>
         await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false)
         ?? throw new KeyNotFoundException("run_not_found");
+
+    private async Task<bool> HasApprovalResolutionAsync(
+        RunId runId,
+        ApprovalId approvalId,
+        CancellationToken cancellationToken)
+    {
+        var requestSequence = 0L;
+        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            var evt = envelope.Event;
+            if (requestSequence == 0
+                && string.Equals(evt.Kind, "approval.requested", StringComparison.Ordinal)
+                && evt.ApprovalId is { } found
+                && string.Equals(found.Value, approvalId.Value, StringComparison.Ordinal))
+            {
+                requestSequence = evt.Sequence;
+            }
+            else if (requestSequence > 0
+                && string.Equals(evt.Kind, "run.state_changed", StringComparison.Ordinal)
+                && string.Equals(evt.SafeCode, "approval_resolved", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private async Task<AgentRun> CommitAsync(
         AgentRun current,

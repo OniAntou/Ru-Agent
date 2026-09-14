@@ -666,20 +666,20 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
-    public async Task Mutation_transport_failure_is_not_retried_and_requires_reconciliation()
+    public async Task Mutation_transport_failure_retries_once_then_reconciles_when_retry_fails()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep());
         var gateway = new FakeToolGateway(
             ToolAccessKind.Mutation,
-            transportFailures: 1);
+            transportFailures: 2);
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
         var coordinator = Coordinator(model, gateway, store);
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
-        Assert.Single(gateway.ExecuteAttempts);
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
         var receipt = Assert.Single(result.Receipts);
         Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipt.Outcome);
         Assert.True(receipt.SideEffectsPossible);
@@ -689,7 +689,7 @@ public sealed class AgentRunCoordinatorTests
 
         var blocked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
         Assert.Equal("run_not_runnable", blocked.ErrorCode);
-        Assert.Single(gateway.ExecuteAttempts);
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
     }
 
     [Fact]
@@ -699,7 +699,7 @@ public sealed class AgentRunCoordinatorTests
         model.Enqueue(ToolStep(callCount: 2));
         var gateway = new FakeToolGateway(
             ToolAccessKind.Mutation,
-            transportFailures: 1);
+            transportFailures: 2);
         var store = new InMemoryHarnessEventStore();
         store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
         var coordinator = Coordinator(model, gateway, store);
@@ -707,7 +707,7 @@ public sealed class AgentRunCoordinatorTests
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
-        Assert.Single(gateway.ExecuteAttempts);
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
         Assert.Single(gateway.CancelAttempts);
         Assert.Equal(2, result.Receipts.Count);
         Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, result.Receipts[0].Outcome);

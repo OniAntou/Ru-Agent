@@ -809,10 +809,11 @@ internal sealed class AgentToolExecutionPipeline
                 outputStream.Complete();
                 return receipt;
             }
-            catch (ToolTransportException) when (
-                execution.AccessKind == ToolAccessKind.ReadOnly
-                && attempt < maximumAttempts)
+            catch (ToolTransportException) when (attempt < maximumAttempts)
             {
+                // One retry for transport blips regardless of access kind: the
+                // call never reached the tool, so retrying cannot double-apply a
+                // mutation. The second failure still reports terminally below.
                 if (proposals.TryGetValue(execution.ModelOrder, out var retryProposal))
                 {
                     AgentActivityProjector.PublishSafe(

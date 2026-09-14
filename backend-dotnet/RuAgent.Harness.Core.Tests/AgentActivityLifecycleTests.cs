@@ -255,6 +255,66 @@ public sealed class AgentActivityLifecycleTests
         Assert.Equal(HarnessCommitOutcome.Committed, committed.Outcome);
     }
 
+    [Fact]
+    public async Task Mutation_transport_failure_retries_once_then_succeeds()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(MutationToolStep());
+        var gateway = new FakeToolGateway(ToolAccessKind.Mutation, transportFailures: 1);
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
+        var receipt = Assert.Single(result.Receipts);
+        Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+        Assert.Contains(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Retry
+                && item.Activity.State == AgentActivityState.Completed);
+        Assert.Contains(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Edit
+                && item.Activity.State == AgentActivityState.Completed);
+    }
+
+    [Fact]
+    public async Task Mutation_transport_failure_twice_reports_unknown_without_looping()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(MutationToolStep());
+        var gateway = new FakeToolGateway(ToolAccessKind.Mutation, transportFailures: 2);
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(2, gateway.ExecuteAttempts.Count);
+        var receipt = Assert.Single(result.Receipts);
+        Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipt.Outcome);
+        Assert.Equal("transport_failure", receipt.Code);
+    }
+
+    private static AssistantStep MutationToolStep() =>
+        new(
+            "editing",
+            new[]
+            {
+                new ModelToolCall(
+                    "provider-call-edit",
+                    "edit",
+                    "1",
+                    JsonDocument.Parse("{\"path\":\"Notes.txt\",\"old_string\":\"a\",\"new_string\":\"b\"}").RootElement.Clone()),
+            },
+            AssistantFinishReason.ToolCalls,
+            16);
+
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         FakeToolGateway gateway,

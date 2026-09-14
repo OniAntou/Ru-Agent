@@ -39,6 +39,7 @@ public sealed class HeadlessCodingLoopTests
         var events = await ReadEventsAsync(client, runId);
         var completed = events.Where(e => e.GetProperty("event_type").GetString() == "tool.execution_completed").ToList();
         Assert.True(completed.Count >= 3, $"expected at least three completed executions, saw {completed.Count}");
+        var preApprovalCompletions = completed.Count;
         Assert.Contains(events, e => e.GetProperty("event_type").GetString() == "approval.requested");
 
         var approvalId = events.Last(e => e.GetProperty("event_type").GetString() == "approval.requested").GetProperty("approval_id").GetString();
@@ -54,12 +55,62 @@ public sealed class HeadlessCodingLoopTests
 
         var completedSeen = await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30));
         Assert.True(completedSeen, $"no terminal after approval; now={await GetStatusAsync(client, runId)}");
-        Assert.Equal("completed", await GetStatusAsync(client, runId));
+        // Approval resumes the parked call instead of dropping it: the unknown
+        // executable executes exactly once and its honest failure ends the run.
+        var terminal = await ReadEventsAsync(client, runId);
+        Assert.Equal(
+            preApprovalCompletions + 1,
+            terminal.Where(e => e.GetProperty("event_type").GetString() == "tool.execution_completed").Count());
+        Assert.Equal("failed", await GetStatusAsync(client, runId));
 
         // The raw post-approval commit must not have advanced HEAD (nothing was staged),
         // and the unrelated dirty file is untouched.
         Assert.Equal(workspace.HeadAfterSeed, workspace.HeadNow());
         Assert.Contains("M other.txt", workspace.GitStatusPorcelain(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Approval_resume_executes_parked_proposal_without_reproposal()
+    {
+        using var workspace = GitWorkspace.Create();
+        var outside = Path.Combine(Path.GetTempPath(), "ru-resume-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(outside, "outside");
+        try
+        {
+            var runner = new ScriptedRunner();
+            runner.Enqueue(ToolCall("files.read", $$"""{"path":{{JsonSerializer.Serialize(outside)}}}"""));
+
+            using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            using var client = factory.CreateAuthenticatedClient();
+            var runId = await CreateTrustedRunAsync(client, workspace.Path);
+
+            Assert.True(
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                "run never reached waiting_approval");
+
+            var events = await ReadEventsAsync(client, runId);
+            var approvalId = events.Last(e => e.GetProperty("event_type").GetString() == "approval.requested").GetProperty("approval_id").GetString();
+
+            runner.Enqueue(FinalStep("resumed done"));
+            using var approve = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { command = "allow_once" });
+            Assert.Equal(HttpStatusCode.OK, approve.StatusCode);
+
+            Assert.True(
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(30)),
+                $"no terminal after approval; now={await GetStatusAsync(client, runId)}");
+
+            var final = await ReadEventsAsync(client, runId);
+            // One proposal only: approve resumes the parked call instead of the
+            // model proposing the same call again with a new identity.
+            Assert.Single(final, e => e.GetProperty("event_type").GetString() == "tool.proposed");
+            Assert.Single(final, e => e.GetProperty("event_type").GetString() == "tool.execution_completed");
+        }
+        finally
+        {
+            try { File.Delete(outside); } catch { }
+        }
     }
 
     [Fact]

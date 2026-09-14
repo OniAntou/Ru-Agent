@@ -147,6 +147,8 @@ public interface IAgentRuntimeCoordinatorFactory
         PolicySnapshot? policySnapshot = null,
         RunId? runId = null,
         string? agentSessionId = null);
+
+    void DropRetainedApproval(RunId runId);
 }
 
 public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFactory
@@ -168,6 +170,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly Broker.AgentWebToolExecutor? _webExecutor;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly InMemoryRetainedApprovalStash _retainedStash;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -206,7 +209,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _webExecutor = webExecutor;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _brokerGateways = brokerGateways;
+        _retainedStash = new InMemoryRetainedApprovalStash(_time);
     }
+
+    public void DropRetainedApproval(RunId runId) => _retainedStash.Drop(runId);
 
     public AgentRunCoordinator Create(
         string workspaceRoot,
@@ -256,7 +262,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             activitySink,
             _replyPolicy,
             _replyEffects,
-            promptContextProvider);
+            promptContextProvider,
+            retainedStash: _retainedStash);
     }
 
     private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
@@ -433,6 +440,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     {
         _roots.Remove(runId);
         _brokerGateways?.CloseRun(runId.Value);
+        _coordinatorFactory.DropRetainedApproval(runId);
     }
 
     private async Task ReleaseExpiredApprovalAsync(
@@ -530,6 +538,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
                 return;
             }
+
+            // A previous drive may have parked proposals in an approval wait.
+            // Resume them before the model steps: the receipts land in durable
+            // state, so the next model step continues naturally. Null or stale
+            // means nothing parked; stepping proceeds unchanged.
+            await coordinator.TryResumeRetainedApprovalAsync(runId, cancellationToken).ConfigureAwait(false);
 
             while (!cancellationToken.IsCancellationRequested)
             {

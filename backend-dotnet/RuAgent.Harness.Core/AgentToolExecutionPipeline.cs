@@ -18,6 +18,7 @@ internal sealed class AgentToolExecutionPipeline
     private readonly ITransientContentRedactor _transientRedactor;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly IAgentActivitySink? _activitySink;
+    private readonly IRetainedApprovalStash _retainedStash;
 
     internal AgentToolExecutionPipeline(
         IToolGateway gateway,
@@ -28,7 +29,8 @@ internal sealed class AgentToolExecutionPipeline
         TransientFrameBuffer frames,
         ITransientContentRedactor transientRedactor,
         ReconciliationInspectionGate? inspectionGate = null,
-        IAgentActivitySink? activitySink = null)
+        IAgentActivitySink? activitySink = null,
+        IRetainedApprovalStash? retainedStash = null)
     {
         _gateway = gateway;
         _store = store;
@@ -39,6 +41,7 @@ internal sealed class AgentToolExecutionPipeline
         _transientRedactor = transientRedactor;
         _inspectionGate = inspectionGate;
         _activitySink = activitySink;
+        _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash();
     }
 
     internal async Task<AgentToolPipelineResult> ExecuteAsync(
@@ -118,11 +121,25 @@ internal sealed class AgentToolExecutionPipeline
                     ?? throw new InvalidOperationException("tool_decision_returned_null");
                 if (decision.Decision == PolicyDecision.Ask)
                 {
-                    // A model step can contain more than one call. Any calls prepared
-                    // before the first approval request must be discarded: they have not
-                    // reached the durable execution-request barrier and must not survive
-                    // while the run is waiting for user input.
+                    // A model step can contain more than one call. Calls prepared
+                    // before the first approval request are still discarded: their
+                    // authorization tokens go stale across the wait. But the
+                    // proposals themselves are stashed, so approving resumes the
+                    // step without the model re-proposing it.
                     await DiscardPreparedAsync(prepared).ConfigureAwait(false);
+                    if (decision.ApprovalId is { } approvalId)
+                    {
+                        var pending = proposals.Values
+                            .Where(candidate => !denied.ContainsKey(candidate.ModelOrder))
+                            .OrderBy(candidate => candidate.ModelOrder)
+                            .ToArray();
+                        if (pending.Length > 0)
+                        {
+                            _retainedStash.Stash(
+                                run.RunId,
+                                new RetainedApprovalStep(pending, approvalId, modelStepId, _time.UtcNow));
+                        }
+                    }
                     foreach (var discardedCall in prepared)
                     {
                         if (proposals.TryGetValue(discardedCall.ModelOrder, out var preparedProposal))

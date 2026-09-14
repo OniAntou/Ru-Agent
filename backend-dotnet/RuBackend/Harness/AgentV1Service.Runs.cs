@@ -756,11 +756,20 @@ public sealed partial class AgentV1Service
             return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Continue rejected.");
         }
 
-        var now = _time.UtcNow;
-        var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow + 1, 0, 0, 1, now);
+        // An explicit user Continue overrides the inspection gate: the user has
+        // seen the ambiguous outcome and chosen to proceed. The override is
+        // audited beside the continue request.
+        var gateCleared = false;
+        if (_inspectionGate is { } gate && gate.IsMutationDenied(runId))
+        {
+            gate.RecordInspection(runId);
+            gateCleared = true;
+        }
 
-        var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.ContinueRequested, safeCode: "continued");
-        var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+        var now = _time.UtcNow;
+        var (nextRun, commitEvents) = PlanContinueCommit(run, transition.Next, gateCleared, _ids, now);
+
+        var commit = new HarnessCommit(runId, run.Version, nextRun, commitEvents, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
         var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
         if (result.Outcome != HarnessCommitOutcome.Committed)
         {
@@ -768,6 +777,29 @@ public sealed partial class AgentV1Service
         }
 
         return new AgentServiceResult(200, MapRun(result.Run!));
+    }
+
+    internal static (AgentRun NextRun, HarnessEventIntent[] Events) PlanContinueCommit(
+        AgentRun run,
+        HarnessRunStatus nextStatus,
+        bool clearGate,
+        IIdGenerator ids,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(nextStatus);
+        ArgumentNullException.ThrowIfNull(ids);
+        var events = new List<HarnessEventIntent>
+        {
+            new(ids.NewEventId(), HarnessEventKind.ContinueRequested, safeCode: "continued"),
+        };
+        if (clearGate)
+        {
+            events.Add(new(ids.NewEventId(), HarnessEventKind.ReconciliationResolved, safeCode: "gate_cleared_by_user"));
+        }
+
+        var next = AdvanceRun(run, nextStatus, run.BudgetWindow + 1, 0, 0, events.Count, now);
+        return (next, events.ToArray());
     }
 
     public async Task<AgentServiceResult> CompactAsync(

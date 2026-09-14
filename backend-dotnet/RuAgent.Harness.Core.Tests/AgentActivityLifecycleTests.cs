@@ -168,8 +168,8 @@ public sealed class AgentActivityLifecycleTests
         Assert.NotNull(resumed);
         Assert.Null(resumed.ErrorCode);
         Assert.Equal(2, evaluations);
-        Assert.Equal(1, model.Requests.Count);
-        Assert.Equal(1, gateway.ExecuteAttempts.Count);
+        Assert.Single(model.Requests);
+        Assert.Single(gateway.ExecuteAttempts);
         var receipt = Assert.Single(resumed.Receipts);
         Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
         Assert.Contains(
@@ -211,7 +211,7 @@ public sealed class AgentActivityLifecycleTests
         var next = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
         Assert.Null(next.ErrorCode);
         Assert.Equal(2, model.Requests.Count);
-        Assert.Equal(1, gateway.ExecuteAttempts.Count);
+        Assert.Single(gateway.ExecuteAttempts);
     }
 
     private static async Task CommitStateAsync(

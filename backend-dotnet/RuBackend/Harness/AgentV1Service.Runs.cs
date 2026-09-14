@@ -797,7 +797,6 @@ public sealed partial class AgentV1Service
         DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(run);
-        ArgumentNullException.ThrowIfNull(nextStatus);
         ArgumentNullException.ThrowIfNull(ids);
         var events = new List<HarnessEventIntent>
         {

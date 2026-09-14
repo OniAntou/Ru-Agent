@@ -94,6 +94,49 @@ public sealed class FailedToolCompletionGuardTests
     }
 
     [Fact]
+    public void First_policy_deny_returns_false_so_model_can_adjust()
+    {
+        var context = CreateContext(
+            Receipt(ToolExecutionOutcome.Failed, "policy_denied"));
+
+        Assert.False(FailedToolCompletionGuard.TryGetFailure(context, out _));
+    }
+
+    [Fact]
+    public void Repeated_policy_deny_returns_failure()
+    {
+        var first = ModelContextEntry.ToolResult(
+            "tool-1",
+            2,
+            Receipt(ToolExecutionOutcome.Failed, "policy_denied"),
+            "{}");
+        var retryAssistant = ModelContextEntry.Assistant(
+            "assistant-2",
+            3,
+            new AssistantStep(null, [Call("files.read", "{}")], AssistantFinishReason.ToolCalls, 1));
+        var second = ModelContextEntry.ToolResult(
+            "tool-2",
+            4,
+            Receipt(ToolExecutionOutcome.Failed, "policy_denied"),
+            "{}");
+        var context = new ModelContextSnapshot([first, retryAssistant, second], "[]"u8.ToArray());
+
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(context, out var code));
+        Assert.Equal("policy_denied", code);
+    }
+
+    [Fact]
+    public void Policy_deny_mixed_with_other_failure_returns_first_failure()
+    {
+        var context = CreateContext(
+            Receipt(ToolExecutionOutcome.Failed, "policy_denied"),
+            Receipt(ToolExecutionOutcome.Failed, "transport_failure"));
+
+        Assert.True(FailedToolCompletionGuard.TryGetFailure(context, out var code));
+        Assert.Equal("policy_denied", code);
+    }
+
+    [Fact]
     public void Null_context_throws_ArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => FailedToolCompletionGuard.TryGetFailure(null!, out _));

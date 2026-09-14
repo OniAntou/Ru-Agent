@@ -29,15 +29,36 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
-    public void Chat_has_no_trust_preset_or_scope_controls()
+    public void Chat_has_no_trust_panel_or_scope_controls()
     {
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
         Assert.DoesNotContain("AgentTrustPanel", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentPresetBox", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentApprovalScopeBox", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentApprovalScopePanel", xaml, StringComparison.Ordinal);
         Assert.Contains("AgentApprovalPanel", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Composer_offers_a_bounded_standard_or_trusted_preset()
+    {
+        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.AutomationId=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Agent permission preset\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Tag=\"standard\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Tag=\"trusted\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tag=\"full_access\"", xaml, StringComparison.Ordinal);
+
+        Assert.Contains("OnAgentPresetChanged", code, StringComparison.Ordinal);
+        Assert.Contains("SelectedAgentPreset", code, StringComparison.Ordinal);
+        Assert.Contains("ConfirmTrustedAsync", code, StringComparison.Ordinal);
+        Assert.Contains("EnsureAgentPresetAsync", code, StringComparison.Ordinal);
+        Assert.Contains("preset_version_conflict", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnAgentTrustApproveClick", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnAgentTrustDenyClick", code, StringComparison.Ordinal);
     }
 
     [Fact]

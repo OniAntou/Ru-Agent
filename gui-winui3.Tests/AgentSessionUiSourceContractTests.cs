@@ -16,7 +16,7 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("x:Name=\"AgentModeIcon\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentModeLabel\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Agent\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentPresetBox", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentModeFlyout", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentModeChatOption", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentModeAgentOption", xaml, StringComparison.Ordinal);
@@ -27,7 +27,7 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void Composer_places_left_aligned_attachment_and_agent_selectors_with_right_aligned_send_button()
+    public void Composer_places_preset_model_and_reasoning_selectors_before_send()
     {
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
@@ -36,12 +36,15 @@ public sealed class AgentSessionUiSourceContractTests
 
         int attachStart = xaml.IndexOf("x:Name=\"AttachImageButton\"", composerStart, StringComparison.Ordinal);
         int agentModeStart = xaml.IndexOf("x:Name=\"AgentModeButton\"", composerStart, StringComparison.Ordinal);
+        int presetStart = xaml.IndexOf("x:Name=\"AgentPresetBox\"", composerStart, StringComparison.Ordinal);
         int sendStart = xaml.IndexOf("x:Name=\"SendButton\"", composerStart, StringComparison.Ordinal);
-        Assert.True(attachStart >= composerStart && agentModeStart > attachStart && sendStart > agentModeStart);
+        Assert.True(attachStart >= composerStart && agentModeStart > attachStart && presetStart > agentModeStart && sendStart > presetStart);
         Assert.Contains("Grid.Column=\"0\"", xaml[attachStart..agentModeStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"1\"", xaml[agentModeStart..sendStart], StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", xaml[agentModeStart..presetStart], StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"2\"", xaml[presetStart..sendStart], StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.AutomationId=\"SendButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.AutomationId=\"AttachImageButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.AutomationId=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,9 +105,12 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("SendAgentTurnAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("_agentController.CreateAndRunAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("OnAgentPresetChanged", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("SelectedAgentPreset", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ConfirmTrustedAsync", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("EnsureAgentPresetAsync", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentSettingsFlyout", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentWorkspaceBox", codeBehind, StringComparison.Ordinal);
-        Assert.DoesNotContain("OnAgentPresetChanged", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("OnAgentTrustApproveClick", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("OnAgentTrustDenyClick", codeBehind, StringComparison.Ordinal);
     }
@@ -121,7 +127,7 @@ public sealed class AgentSessionUiSourceContractTests
             ? codeBehind[visualStart..visualEnd]
             : codeBehind[visualStart..];
         Assert.Contains("AgentModeLabel.Text = \"Agent\"", visualBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentPresetBox", visualBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentPresetBox.SelectedIndex = 1", visualBody, StringComparison.Ordinal);
 
         int sendStart = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
         Assert.True(sendStart >= 0, "SendAgentTurnAsync is missing.");
@@ -129,9 +135,35 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(sendEnd > sendStart);
         string sendBody = codeBehind[sendStart..sendEnd];
         Assert.Contains("ShowAgentInlineStatus(", sendBody, StringComparison.Ordinal);
+        Assert.Contains("SelectedAgentPreset()", sendBody, StringComparison.Ordinal);
+        Assert.Contains("EnsureAgentPresetAsync", sendBody, StringComparison.Ordinal);
+        Assert.Contains("ConfirmTrustedAsync", sendBody, StringComparison.Ordinal);
         Assert.DoesNotContain("SetAgentMode", sendBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"standard\",\n                    0,", sendBody.Replace("\r\n", "\n"), StringComparison.Ordinal);
-        Assert.Contains("\"standard\",\n                    null,", sendBody.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.DoesNotContain("\"full_access\"", sendBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Trusted_preset_flows_through_the_stored_session_selection()
+    {
+        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        int presetStart = codeBehind.IndexOf("private async Task<long> EnsureAgentPresetAsync", StringComparison.Ordinal);
+        Assert.True(presetStart >= 0, "EnsureAgentPresetAsync is missing.");
+        int presetEnd = codeBehind.IndexOf("\n        private", presetStart + 1, StringComparison.Ordinal);
+        string presetBody = presetEnd > presetStart
+            ? codeBehind[presetStart..presetEnd]
+            : codeBehind[presetStart..];
+        Assert.Contains("\"trusted\"", presetBody, StringComparison.Ordinal);
+        Assert.Contains("preset_version_conflict", presetBody, StringComparison.Ordinal);
+        Assert.Contains("interactive: true", presetBody, StringComparison.Ordinal);
+        Assert.Contains("SetSessionPresetAsync", presetBody, StringComparison.Ordinal);
+
+        int resetStart = codeBehind.IndexOf("private void ResetAgentState", StringComparison.Ordinal);
+        Assert.True(resetStart >= 0);
+        int resetEnd = codeBehind.IndexOf("\n        private", resetStart + 1, StringComparison.Ordinal);
+        string resetBody = resetEnd > resetStart ? codeBehind[resetStart..resetEnd] : codeBehind[resetStart..];
+        Assert.Contains("_agentPreset = AgentPermissionPreset.Standard", resetBody, StringComparison.Ordinal);
+        Assert.Contains("_agentPresetVersion = null", resetBody, StringComparison.Ordinal);
     }
 
     [Fact]

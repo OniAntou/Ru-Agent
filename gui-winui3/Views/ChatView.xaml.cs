@@ -91,6 +91,9 @@ namespace RuApp.Views
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentActivityVisible;
         private bool _agentBusySeen;
+        private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
+        private string? _agentPresetSessionId;
+        private long? _agentPresetVersion;
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
@@ -1776,6 +1779,32 @@ namespace RuApp.Views
             AutomationProperties.SetName(
                 AgentModeButton,
                 "Coding Agent");
+            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex < 0 && AgentPresetBox.Items.Count > 0)
+            {
+                AgentPresetBox.SelectedIndex = 0;
+            }
+        }
+
+        private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isSendingUserTurn)
+            {
+                return;
+            }
+
+            _agentPreset = SelectedAgentPreset();
+            UpdateAgentInlineState();
+        }
+
+        private AgentPermissionPreset SelectedAgentPreset()
+        {
+            if (AgentPresetBox?.SelectedItem is ComboBoxItem item
+                && string.Equals(item.Tag as string, "trusted", StringComparison.Ordinal))
+            {
+                return AgentPermissionPreset.Trusted;
+            }
+
+            return AgentPermissionPreset.Standard;
         }
 
         private bool _isSendButtonInStopMode;
@@ -2064,9 +2093,16 @@ namespace RuApp.Views
             _agentActionPending = false;
             _isSendingUserTurn = false;
             _activeAgentUsage = null;
+            _agentPreset = AgentPermissionPreset.Standard;
+            _agentPresetSessionId = null;
+            _agentPresetVersion = null;
             AbandonActiveAgentReply();
 
             UpdateAgentComposerVisuals();
+            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 0)
+            {
+                AgentPresetBox.SelectedIndex = 0;
+            }
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
             AgentStopButton.Visibility = Visibility.Collapsed;
@@ -2547,10 +2583,24 @@ namespace RuApp.Views
 
             try
             {
-                // The run starts with the broker's effective Standard profile.
-                // Session permissions are still decided server-side per request,
-                // so the preset value here is compatibility metadata only, not
-                // authority.
+                AgentPermissionPreset preset = SelectedAgentPreset();
+                if (preset == AgentPermissionPreset.Trusted && !await ConfirmTrustedAsync())
+                {
+                    if (AgentPresetBox is not null)
+                    {
+                        AgentPresetBox.SelectedIndex = 0;
+                    }
+                    _agentPreset = AgentPermissionPreset.Standard;
+                    UpdateAgentInlineState();
+                    return;
+                }
+
+                _agentPreset = preset;
+                long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
+                // The trusted choice is stored server-side per session: the run
+                // request carries the same wire value so the stored selection and
+                // the run agree, but the stored selection stays authoritative.
+                string wirePreset = preset == AgentPermissionPreset.Trusted ? "trusted" : "standard";
                 var imagePayloads = attachments?
                     .Where(a => a.IsImage && (!a.IsImage || !string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
@@ -2560,8 +2610,8 @@ namespace RuApp.Views
                     _activeSessionId,
                     workspace,
                     text,
-                    "standard",
-                    null,
+                    wirePreset,
+                    presetVersion,
                     Guid.NewGuid().ToString("N"),
                     imagePayloads);
 
@@ -2800,6 +2850,8 @@ namespace RuApp.Views
             string sessionId = created.Id.Trim();
 
             _activeSessionId = sessionId;
+            _agentPresetSessionId = null;
+            _agentPresetVersion = null;
             ClearAgentActivities();
 
             DetachAgentActivitiesFromMessages();
@@ -2827,6 +2879,79 @@ namespace RuApp.Views
                 new SessionOpenedEventArgs(
                     validSessionId,
                     created.Title ?? "New Conversation"));
+        }
+
+        private async Task<long> EnsureAgentPresetAsync(
+            AgentPermissionPreset preset,
+            CancellationToken cancellationToken)
+        {
+            if (_agentController is null)
+            {
+                throw new InvalidOperationException("Agent controller is unavailable.");
+            }
+
+            if (preset == AgentPermissionPreset.Standard
+                && string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
+                && _agentPreset == AgentPermissionPreset.Standard
+                && _agentPresetVersion is long knownStandardVersion)
+            {
+                return knownStandardVersion;
+            }
+
+            if (string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
+                && _agentPreset == preset
+                && _agentPresetVersion is long knownVersion)
+            {
+                return knownVersion;
+            }
+
+            string wirePreset = preset == AgentPermissionPreset.Trusted ? "trusted" : "standard";
+            AgentApiException? lastConflict = null;
+            for (long expectedVersion = 0; expectedVersion <= 3; expectedVersion++)
+            {
+                try
+                {
+                    long version = await _agentController.SetSessionPresetAsync(
+                        _activeSessionId,
+                        wirePreset,
+                        expectedVersion,
+                        interactive: true,
+                        cancellationToken);
+                    _agentPresetSessionId = _activeSessionId;
+                    _agentPresetVersion = version;
+                    return version;
+                }
+                catch (AgentApiException ex) when (ex.ErrorCode == "preset_version_conflict")
+                {
+                    lastConflict = ex;
+                }
+            }
+
+            if (lastConflict is not null)
+            {
+                throw lastConflict;
+            }
+
+            throw new InvalidOperationException("Could not update the Agent permission preset.");
+        }
+
+        private async Task<bool> ConfirmTrustedAsync()
+        {
+            if (XamlRoot is null)
+            {
+                return false;
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = "Trust this session?",
+                Content = "Trusted runs with fewer approval prompts on a clean workspace. Risky actions outside the workspace still require approval, and workspace trust is still required.",
+                PrimaryButtonText = "Trust",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
         }
 
         private bool IsProjectRootWorkspace(string? workspace)
@@ -3274,6 +3399,10 @@ namespace RuApp.Views
                 _activeSessionId = sessionId;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
+                if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 0)
+                {
+                    AgentPresetBox.SelectedIndex = 0;
+                }
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 DetachAgentActivitiesFromMessages();
                 Messages.Clear();

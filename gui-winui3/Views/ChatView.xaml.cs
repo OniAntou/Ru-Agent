@@ -53,6 +53,19 @@ namespace RuApp.Views
         }
     }
 
+    public sealed class AssistantSegmentTemplateSelector : DataTemplateSelector
+    {
+        public DataTemplate? TextTemplate { get; set; }
+        public DataTemplate? ActivityTemplate { get; set; }
+
+        protected override DataTemplate? SelectTemplateCore(object item, DependencyObject container)
+        {
+            if (item is TextSegment) return TextTemplate;
+            if (item is ActivitySegment) return ActivityTemplate;
+            return base.SelectTemplateCore(item, container);
+        }
+    }
+
     public sealed partial class ChatView : UserControl, IDisposable
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
@@ -86,6 +99,8 @@ namespace RuApp.Views
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _activitySplitOffsetById = new(StringComparer.Ordinal);
+        private int _segmentFrozenLength;
 
         private ChatMessageItem? _activeAgentAssistantMessage;
         private string? _activeAgentRunId;
@@ -935,7 +950,104 @@ namespace RuApp.Views
 
                 _agentActivityById.Add(item.ActivityId, item);
                 AgentActivities.Add(item);
+                FreezeTextSegmentForActivity(item);
                 TrackTerminalToolState(item);
+            }
+        }
+
+        /// <summary>
+        /// Freezes the prose that arrived before a new activity into a settled
+        /// text segment, so the feed stays chronological: narration above, the
+        /// tool row below it, fresh prose in a new live tail. Only touches the
+        /// active message while it still shares the live activity collection.
+        /// </summary>
+        private void FreezeTextSegmentForActivity(AgentActivityItem item)
+        {
+            var message = _activeAgentAssistantMessage;
+            if (message is null || !ReferenceEquals(message.AgentActivities, AgentActivities))
+            {
+                return;
+            }
+
+            var content = message.Content ?? string.Empty;
+            var frozen = Math.Min(_segmentFrozenLength, content.Length);
+            var segments = message.Segments;
+            if (segments is null)
+            {
+                segments = new ObservableCollection<AssistantSegment>();
+                message.Segments = segments;
+            }
+
+            if (segments.Count > 0 && segments[^1] is TextSegment tail)
+            {
+                tail.Text = content.Substring(frozen);
+                tail.IsError = message.IsError;
+            }
+            else if (content.Length > frozen)
+            {
+                segments.Add(new TextSegment(content.Substring(frozen)) { IsError = message.IsError });
+            }
+
+            _activitySplitOffsetById[item.ActivityId] = content.Length;
+            _segmentFrozenLength = content.Length;
+            segments.Add(new ActivitySegment(item.ActivityId, item));
+            segments.Add(new TextSegment(string.Empty) { IsError = message.IsError });
+        }
+
+        private void UpdateLiveTailText(ChatMessageItem? message)
+        {
+            if (message?.Segments is { Count: > 0 } segments
+                && segments[^1] is TextSegment tail)
+            {
+                var content = message.Content ?? string.Empty;
+                var frozen = Math.Min(_segmentFrozenLength, content.Length);
+                tail.Text = content.Substring(frozen);
+            }
+        }
+
+        private List<ActivitySplitOffset> TakeSplitOffsetSnapshot(IEnumerable<AgentActivityItem> items)
+        {
+            var snapshot = new List<ActivitySplitOffset>();
+            foreach (var item in items)
+            {
+                if (item != null && _activitySplitOffsetById.TryGetValue(item.ActivityId, out var offset))
+                {
+                    snapshot.Add(new ActivitySplitOffset(item.ActivityId, offset));
+                }
+            }
+
+            return snapshot;
+        }
+
+        private static void SyncSegmentErrorState(ChatMessageItem message)
+        {
+            if (message.Segments is null)
+            {
+                return;
+            }
+
+            foreach (var segment in message.Segments)
+            {
+                if (segment is TextSegment text)
+                {
+                    text.IsError = message.IsError;
+                }
+            }
+        }
+
+        private static void RebuildMessageSegments(ChatMessageItem message)
+        {
+            if (message.AgentActivities is { Count: > 0 } activities
+                && message.ActivitySplitOffsets != null
+                && !string.IsNullOrEmpty(message.Content))
+            {
+                message.Segments = new ObservableCollection<AssistantSegment>(
+                    ActivitySegmenter.BuildSettled(message.Content, activities, message.ActivitySplitOffsets));
+                SyncSegmentErrorState(message);
+            }
+            else
+            {
+                message.Segments = null;
             }
         }
 
@@ -1232,6 +1344,7 @@ namespace RuApp.Views
             if (!string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
             {
                 _activeAgentAssistantMessage.Content = snapshot.Text;
+                UpdateLiveTailText(_activeAgentAssistantMessage);
                 ScrollChatToBottom();
             }
 
@@ -1248,6 +1361,8 @@ namespace RuApp.Views
             _activityStartTicks.Clear();
             _pendingAgentActivities.Clear();
             _agentActivityById.Clear();
+            _activitySplitOffsetById.Clear();
+            _segmentFrozenLength = 0;
             AgentActivities.Clear();
             _agentBusySeen = false;
         }
@@ -1259,6 +1374,7 @@ namespace RuApp.Views
                 if (ReferenceEquals(message.AgentActivities, AgentActivities))
                 {
                     message.AgentActivities = null;
+                    message.Segments = null;
                 }
             }
         }
@@ -1271,6 +1387,9 @@ namespace RuApp.Views
                 {
                     message.AgentActivities = AgentActivities.Count > 0
                         ? new ObservableCollection<AgentActivityItem>(AgentActivities)
+                        : null;
+                    message.ActivitySplitOffsets = message.AgentActivities != null
+                        ? TakeSplitOffsetSnapshot(message.AgentActivities)
                         : null;
                 }
             }
@@ -1498,6 +1617,11 @@ namespace RuApp.Views
                     : (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
 
                 textBlock.Foreground = targetBrush;
+                // Waiting rows need user action: italic sets them apart without
+                // spending a color that would fail AA on the light theme.
+                textBlock.FontStyle = item.IsWaiting
+                    ? Windows.UI.Text.FontStyle.Italic
+                    : Windows.UI.Text.FontStyle.Normal;
             }
         }
 
@@ -2513,6 +2637,7 @@ namespace RuApp.Views
                 SessionId = _activeSessionId,
             };
             _activeAgentAssistantMessage.AgentActivities = AgentActivities;
+            _segmentFrozenLength = 0;
             Messages.Add(_activeAgentAssistantMessage);
         }
 
@@ -2535,6 +2660,7 @@ namespace RuApp.Views
                 }
                 _activeAgentAssistantMessage.Content = pending.Text;
                 _activeAgentAssistantMessage.IsStreaming = false;
+                UpdateLiveTailText(_activeAgentAssistantMessage);
                 ScrollChatToBottom();
             }
             else if (_activeAgentAssistantMessage != null)
@@ -2591,6 +2717,7 @@ namespace RuApp.Views
             if (pending is not null && _activeAgentAssistantMessage is not null)
             {
                 _activeAgentAssistantMessage.Content = pending.Text;
+                UpdateLiveTailText(_activeAgentAssistantMessage);
             }
 
             bool hasReply = HasRenderedAgentReply();
@@ -2604,9 +2731,11 @@ namespace RuApp.Views
                 if (!hasReply)
                 {
                     _activeAgentAssistantMessage.Content = "Coding Agent could not complete this turn. Please try again later.";
+                    UpdateLiveTailText(_activeAgentAssistantMessage);
                 }
                 _activeAgentAssistantMessage.IsStreaming = false;
                 _activeAgentAssistantMessage.IsError = !hasReply;
+                SyncSegmentErrorState(_activeAgentAssistantMessage);
             }
 
             _activeAgentAssistantMessage = null;
@@ -2884,6 +3013,7 @@ namespace RuApp.Views
                         streamedMessage.Content = streamedReply;
                         streamedMessage.IsStreaming = false;
                         streamedMessage.Usage = _activeAgentUsage;
+                        UpdateLiveTailText(streamedMessage);
                         ScrollChatToBottom();
                         UpdateViewMode();
                         return;
@@ -2895,6 +3025,13 @@ namespace RuApp.Views
                             ? m.AgentActivities
                             : (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
                                 ? new ObservableCollection<AgentActivityItem>(AgentActivities)
+                                : null))
+                        .ToList();
+                    var existingOffsets = Messages
+                        .Where(m => m.Role == "assistant")
+                        .Select(m => m.ActivitySplitOffsets
+                            ?? (ReferenceEquals(m.AgentActivities, AgentActivities) && AgentActivities.Count > 0
+                                ? TakeSplitOffsetSnapshot(AgentActivities)
                                 : null))
                         .ToList();
 
@@ -2915,6 +3052,7 @@ namespace RuApp.Views
                         }
 
                         ObservableCollection<AgentActivityItem>? activities = null;
+                        List<ActivitySplitOffset>? splitOffsets = null;
                         if (role == "assistant")
                         {
                             if (index == lastAssistantIndex)
@@ -2922,21 +3060,28 @@ namespace RuApp.Views
                                 activities = AgentActivities.Count > 0
                                     ? new ObservableCollection<AgentActivityItem>(AgentActivities)
                                     : (assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null);
+                                splitOffsets = AgentActivities.Count > 0
+                                    ? TakeSplitOffsetSnapshot(AgentActivities)
+                                    : (assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null);
                             }
                             else if (assistantCount < existingActivities.Count)
                             {
                                 activities = existingActivities[assistantCount];
+                                splitOffsets = assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null;
                             }
                             assistantCount++;
                         }
 
-                        Messages.Add(new ChatMessageItem
+                        var restoredMessage = new ChatMessageItem
                         {
                             Role = role,
                             Content = role == "assistant" ? StripDisplayMarkers(content) : content,
                             Usage = index == lastAssistantIndex ? _activeAgentUsage : null,
-                            AgentActivities = activities
-                        });
+                            AgentActivities = activities,
+                            ActivitySplitOffsets = splitOffsets,
+                        };
+                        RebuildMessageSegments(restoredMessage);
+                        Messages.Add(restoredMessage);
                     }
 
                     if (history.Count > 0)

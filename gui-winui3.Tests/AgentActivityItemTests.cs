@@ -42,7 +42,8 @@ public sealed class AgentActivityItemTests
             safeCode: "policy_denied"));
 
         Assert.True(item.IsFailed);
-        Assert.Equal("Failed · policy_denied", item.DisplayText);
+        Assert.Equal("Failed", item.DisplayText);
+        Assert.Equal("policy_denied", item.MetadataText);
     }
 
     [Fact]
@@ -53,7 +54,7 @@ public sealed class AgentActivityItemTests
         Assert.Equal("Thinking", thinkingStarted.DisplayText);
 
         var thinkingCompletedSubSecond = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking, durationMs: 450));
-        Assert.Equal("Thought for under 1 second", thinkingCompletedSubSecond.DisplayText);
+        Assert.Equal("Thought briefly", thinkingCompletedSubSecond.DisplayText);
 
         var thinkingCompletedSeconds = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking, durationMs: 3000));
         Assert.Equal("Thought for 3 seconds", thinkingCompletedSeconds.DisplayText);
@@ -118,7 +119,8 @@ public sealed class AgentActivityItemTests
         Assert.Equal("Waiting for confirmation", waitingStatus.DisplayText);
 
         var waitingTool = new AgentActivityItem(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Edit, safeCode: "approval_required"));
-        Assert.Equal("Waiting to continue · approval_required", waitingTool.DisplayText);
+        Assert.Equal("Waiting to continue", waitingTool.DisplayText);
+        Assert.Equal("approval_required", waitingTool.MetadataText);
     }
 
     [Fact]
@@ -161,12 +163,15 @@ public sealed class AgentActivityItemTests
             durationMs: 1200));
         Assert.Equal("Compacted 12 context items", compactionCompleted.DisplayText);
         Assert.Equal(string.Empty, compactionCompleted.MetadataText);
+        Assert.Equal("1.2s", compactionCompleted.DurationShortText);
+        Assert.True(compactionCompleted.HasDuration);
 
         var compactionFailed = new AgentActivityItem(Activity(
             AgentActivityState.Failed,
             kind: AgentActivityKind.Compaction,
             safeCode: "commit_conflict"));
-        Assert.Equal("Failed · commit_conflict", compactionFailed.DisplayText);
+        Assert.Equal("Failed", compactionFailed.DisplayText);
+        Assert.Equal("commit_conflict", compactionFailed.MetadataText);
 
         var retryStarted = new AgentActivityItem(Activity(
             AgentActivityState.Started,
@@ -232,14 +237,14 @@ public sealed class AgentActivityItemTests
             fileName: "obsolete.txt",
             safeCode: "approval_required"));
 
-        Assert.Contains("approval_required", waiting.DisplayText, StringComparison.Ordinal);
+        Assert.Contains("approval_required", waiting.MetadataText, StringComparison.Ordinal);
 
         var failed = new AgentActivityItem(Activity(
             AgentActivityState.Failed,
             kind: AgentActivityKind.Edit,
             safeCode: "policy_denied"));
 
-        Assert.Contains("policy_denied", failed.DisplayText, StringComparison.Ordinal);
+        Assert.Contains("policy_denied", failed.MetadataText, StringComparison.Ordinal);
     }
 
     [Fact]

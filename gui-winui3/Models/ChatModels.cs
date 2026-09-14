@@ -142,10 +142,67 @@ namespace RuApp.Models
 
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasAgentActivities));
+                OnPropertyChanged(nameof(ShowLegacyActivityFeed));
             }
         }
 
         public bool HasAgentActivities => AgentActivities?.Count > 0;
+
+        private ObservableCollection<AssistantSegment>? _segments;
+
+        /// <summary>
+        /// Chronological render order: frozen prose slices interleaved with the
+        /// activity rows that followed them, plus one live tail TextSegment that
+        /// keeps growing while streaming. Null means legacy layout (feed above
+        /// the whole text). Rebuilt from Content + AgentActivities + offsets.
+        /// </summary>
+        public ObservableCollection<AssistantSegment>? Segments
+        {
+            get => _segments;
+            set
+            {
+                if (ReferenceEquals(_segments, value))
+                {
+                    return;
+                }
+
+                _segments = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasSegments));
+                OnPropertyChanged(nameof(ShowLegacyActivityFeed));
+                OnPropertyChanged(nameof(ShowLegacyText));
+            }
+        }
+
+        public bool HasSegments => Segments?.Count > 0;
+
+        /// <summary>Legacy feed: visible only when no chronological segments exist.</summary>
+        public bool ShowLegacyActivityFeed => HasAgentActivities && !HasSegments;
+
+        /// <summary>Legacy full-text block: hidden once segments take over rendering.</summary>
+        public bool ShowLegacyText => !HasSegments;
+
+        private List<ActivitySplitOffset>? _activitySplitOffsets;
+
+        /// <summary>
+        /// Text length at each activity arrival, parallel to the activity
+        /// snapshot. Copied wherever AgentActivities is snapshotted so reload
+        /// rebuilds the same chronological order.
+        /// </summary>
+        public List<ActivitySplitOffset>? ActivitySplitOffsets
+        {
+            get => _activitySplitOffsets;
+            set
+            {
+                if (ReferenceEquals(_activitySplitOffsets, value))
+                {
+                    return;
+                }
+
+                _activitySplitOffsets = value;
+                OnPropertyChanged();
+            }
+        }
 
         private System.Collections.ObjectModel.ObservableCollection<ImageAttachmentItem> _attachments = new();
 
@@ -176,6 +233,7 @@ namespace RuApp.Models
         private void OnAgentActivitiesChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             OnPropertyChanged(nameof(HasAgentActivities));
+            OnPropertyChanged(nameof(ShowLegacyActivityFeed));
         }
 
         protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

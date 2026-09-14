@@ -132,6 +132,8 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 OnPropertyChanged(nameof(DisplayText));
                 OnPropertyChanged(nameof(CompletedText));
                 OnPropertyChanged(nameof(MetadataText));
+                OnPropertyChanged(nameof(HasDuration));
+                OnPropertyChanged(nameof(DurationShortText));
             }
         }
     }
@@ -228,11 +230,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     public string WaitingText => Kind == AgentActivityKind.Status
         ? "Waiting for confirmation"
-        : $"Waiting to continue · {SafeCode}";
+        : "Waiting to continue";
 
-    public string FailedText => SafeCode is { Length: > 0 }
-        ? $"Failed · {SafeCode}"
-        : "Failed";
+    public string FailedText => "Failed";
 
     public bool HasLineDelta => Kind == AgentActivityKind.Edit && (Added is not null || Removed is not null);
     public bool HasNoLineDelta => !HasLineDelta;
@@ -289,7 +289,31 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 parts.Add($"{AddedDeltaText} {RemovedDeltaText}");
             }
 
+            // Bounded machine codes leave the headline for the muted line.
+            if ((State == AgentActivityState.Waiting || State == AgentActivityState.Failed)
+                && !string.IsNullOrWhiteSpace(SafeCode))
+            {
+                parts.Add(SafeCode);
+            }
+
             return string.Join(" · ", parts);
+        }
+    }
+
+    public bool HasDuration => DurationShortText != null;
+
+    /// <summary>Glanceable duration chip for settled non-thinking rows.
+    /// Thinking rows already spell the duration out in words.</summary>
+    public string? DurationShortText
+    {
+        get
+        {
+            if (Kind == AgentActivityKind.Thinking || EffectiveDurationMs is not { } ms)
+            {
+                return null;
+            }
+
+            return ms < 1000 ? $"{ms}ms" : $"{ms / 1000d:0.#}s";
         }
     }
 
@@ -341,6 +365,8 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(FailedText));
         OnPropertyChanged(nameof(MetadataText));
         OnPropertyChanged(nameof(BaseMetadataText));
+        OnPropertyChanged(nameof(HasDuration));
+        OnPropertyChanged(nameof(DurationShortText));
         OnPropertyChanged(nameof(HasLineDelta));
         OnPropertyChanged(nameof(HasNoLineDelta));
         OnPropertyChanged(nameof(HasLineDeltaAndBaseMetadata));
@@ -371,7 +397,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
         if (duration < 1000)
         {
-            return "Thought for under 1 second";
+            return "Thought briefly";
         }
 
         var seconds = Math.Round(duration / 1000d);

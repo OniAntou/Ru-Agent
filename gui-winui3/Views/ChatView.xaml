@@ -151,6 +151,19 @@
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource RuDangerBrush}"
                                    VerticalAlignment="Center" />
+                        <Border Visibility="{x:Bind HasDuration, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                Background="{StaticResource AppCardBackgroundBrush}"
+                                BorderBrush="{StaticResource AppCardBorderSubtleBrush}"
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                Padding="6,1"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{x:Bind DurationShortText, Mode=OneWay}"
+                                       FontFamily="{StaticResource RuMonoFontFamily}"
+                                       FontSize="10.5"
+                                       Foreground="{StaticResource RuMutedBrush}"
+                                       VerticalAlignment="Center" />
+                        </Border>
                     </StackPanel>
                 </Grid>
                 <!-- State bindings (used by automation & contract tests) -->
@@ -185,12 +198,23 @@
                 <StackPanel MaxWidth="760"
                             HorizontalAlignment="Left"
                             Spacing="6">
+                    <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
+                                  AutomationProperties.Name="Agent Activity Timeline"
+                                  ItemsSource="{x:Bind Segments, Mode=OneWay}"
+                                  ItemTemplateSelector="{StaticResource AssistantSegmentSelector}"
+                                  Visibility="{x:Bind HasSegments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Vertical" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
                     <ItemsControl AutomationProperties.AutomationId="AgentActivityFeed"
                                   AutomationProperties.Name="Agent Activity Feed"
                                   AutomationProperties.LiveSetting="Polite"
                                   ItemsSource="{x:Bind AgentActivities, Mode=OneWay}"
                                   ItemTemplate="{StaticResource AgentActivityTemplate}"
-                                  Visibility="{x:Bind HasAgentActivities, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                  Visibility="{x:Bind ShowLegacyActivityFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ItemsStackPanel Orientation="Vertical" />
@@ -198,12 +222,30 @@
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
                     <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                            Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                             FontSize="15"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
                 </StackPanel>
             </Grid>
         </DataTemplate>
+
+        <DataTemplate x:Key="AssistantTextSegmentTemplate" x:DataType="models:TextSegment">
+            <controls:MarkdownBlock MarkdownText="{x:Bind Text, Mode=OneWay}"
+                                    Visibility="{x:Bind HasText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    FontSize="15"
+                                    Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
+                                    FontFamily="{StaticResource RuUiFontFamily}" />
+        </DataTemplate>
+
+        <DataTemplate x:Key="AssistantActivitySegmentTemplate" x:DataType="models:ActivitySegment">
+            <ContentPresenter Content="{x:Bind Item, Mode=OneWay}"
+                              ContentTemplate="{StaticResource AgentActivityTemplate}" />
+        </DataTemplate>
+
+        <views:AssistantSegmentTemplateSelector x:Key="AssistantSegmentSelector"
+                                                       TextTemplate="{StaticResource AssistantTextSegmentTemplate}"
+                                                       ActivityTemplate="{StaticResource AssistantActivitySegmentTemplate}" />
 
         <views:ChatMessageTemplateSelector x:Key="ChatTemplateSelector"
                                            UserTemplate="{StaticResource UserMessageTemplate}"

@@ -596,6 +596,98 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Trusted_clean_workspace_allows_in_workspace_terminal_unknown_and_mutation()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.TrustedEmpty());
+        var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysClean.Instance);
+
+        var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "mystery-tool.exe"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", unknown.Decision);
+        Assert.Equal("trusted_workspace_allow", unknown.ReasonCode);
+
+        var push = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "push"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", push.Decision);
+        Assert.Equal("trusted_workspace_allow", push.ReasonCode);
+    }
+
+    [Fact]
+    public void Trusted_dirty_workspace_keeps_asking()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.TrustedEmpty());
+        var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysDirty.Instance);
+
+        var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "mystery-tool.exe"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", unknown.Decision);
+        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
+    }
+
+    [Fact]
+    public void Trusted_never_allows_web_or_timeout_or_protected()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.TrustedEmpty());
+        var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysClean.Instance);
+
+        var web = evaluator.Evaluate(
+            lease.Snapshot, factory.Create("web_search", "1.0.0", new JsonObject { ["query"] = "ru" }),
+            PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", web.Decision);
+        Assert.Equal("web_approval_required", web.ReasonCode);
+
+        var slow = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "status", 1_000_000), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", slow.Decision);
+        Assert.Equal("terminal_timeout_requires_approval", slow.ReasonCode);
+
+        var envFile = FileCall(factory, "files.write", ".env.local");
+        Assert.Equal("deny", evaluator.Evaluate(lease.Snapshot, envFile, PolicyRequestInvariants.Valid, Now).Decision);
+    }
+
+    [Fact]
+    public void Trusted_clean_workspace_allows_external_directory_inside_grant_roots()
+    {
+        var external = Path.Combine(Path.GetTempPath(), "ru-policy-trusted-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        try
+        {
+            var (lease, factory) = Bind(PolicyEvalSnapshots.TrustedEmpty());
+            var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysClean.Instance);
+            var verdict = evaluator.Evaluate(
+                lease.Snapshot,
+                FileCall(factory, "files.delete", Path.Combine(external, "note.txt")),
+                PolicyRequestInvariants.Valid,
+                Now);
+            Assert.Equal("allow", verdict.Decision);
+            Assert.Equal("trusted_workspace_allow", verdict.ReasonCode);
+        }
+        finally
+        {
+            Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Standard_preset_ignores_cleanliness()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysClean.Instance);
+
+        var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "mystery-tool.exe"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", unknown.Decision);
+        Assert.Equal("terminal_unknown_executable", unknown.ReasonCode);
+    }
+
+    private sealed class AlwaysClean : IWorkspaceCleanlinessProvider
+    {
+        public static readonly AlwaysClean Instance = new();
+        public bool IsWorkspaceClean(string canonicalWorkspaceRoot) => true;
+    }
+
+    private sealed class AlwaysDirty : IWorkspaceCleanlinessProvider
+    {
+        public static readonly AlwaysDirty Instance = new();
+        public bool IsWorkspaceClean(string canonicalWorkspaceRoot) => false;
+    }
+
+    [Fact]
     public void Compatibility_full_access_uses_the_effective_boundary_and_terminal_policy()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());

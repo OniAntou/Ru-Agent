@@ -75,13 +75,16 @@ public sealed class PolicySnapshotEvaluator
 {
     private readonly CommandAnalyzerRegistry _analyzers;
     private readonly ISessionDirectoryGrantRegistry _directoryGrants;
+    private readonly IWorkspaceCleanlinessProvider? _cleanliness;
 
     public PolicySnapshotEvaluator(
         ISessionDirectoryGrantRegistry? directoryGrants = null,
-        CommandAnalyzerRegistry? analyzers = null)
+        CommandAnalyzerRegistry? analyzers = null,
+        IWorkspaceCleanlinessProvider? cleanliness = null)
     {
         _directoryGrants = directoryGrants ?? new SessionDirectoryGrantRegistry();
         _analyzers = analyzers ?? new CommandAnalyzerRegistry();
+        _cleanliness = cleanliness;
     }
 
     public PolicyEvaluation Evaluate(
@@ -93,6 +96,43 @@ public sealed class PolicySnapshotEvaluator
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(invariants);
+
+        var verdict = EvaluateInner(snapshot, context, invariants, now);
+        if (!string.Equals(verdict.Decision, "ask", StringComparison.Ordinal)
+            || !IsTrustedAllowableAsk(verdict.ReasonCode, context)
+            || !string.Equals(snapshot.Preset, BrokerPolicyContracts.TrustedPresetWireValue, StringComparison.Ordinal)
+            || _cleanliness?.IsWorkspaceClean(context.CanonicalWorkspaceRoot) != true)
+        {
+            return verdict;
+        }
+
+        return new PolicyEvaluation("allow", "trusted_workspace_allow", verdict.MatchedRuleId);
+    }
+
+    /// <summary>
+    /// The Ask codes a clean trusted workspace may auto-allow. Web egress, timeouts,
+    /// explicit user rules and protocol invariants always keep asking: only
+    /// in-workspace terminal/delete/external-directory prompts are lifted, and
+    /// networked terminal calls stay gated.
+    /// </summary>
+    private static bool IsTrustedAllowableAsk(string reasonCode, PolicyContext context) =>
+        reasonCode switch
+        {
+            "terminal_external_mutation_requires_approval" or "terminal_unknown_executable"
+                => string.Equals(context.NetworkIntent, PolicyNetworkIntents.None, StringComparison.Ordinal)
+                    && !context.NetworkDeclared,
+            "terminal_delete_requires_approval"
+                => context.Target is { IsInsideWorkspace: true },
+            "external_directory_required" => true,
+            _ => false,
+        };
+
+    private PolicyEvaluation EvaluateInner(
+        BoundPolicySnapshot snapshot,
+        PolicyContext context,
+        PolicyRequestInvariants invariants,
+        DateTimeOffset now)
+    {
 
         if (!invariants.SchemaValid)
         {

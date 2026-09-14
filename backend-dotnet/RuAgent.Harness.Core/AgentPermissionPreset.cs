@@ -4,4 +4,5 @@ public enum AgentPermissionPreset
 {
     Standard,
     FullAccess,
+    Trusted,
 }

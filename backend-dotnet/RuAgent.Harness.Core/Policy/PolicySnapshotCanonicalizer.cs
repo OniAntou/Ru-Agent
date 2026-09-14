@@ -218,6 +218,7 @@ public static class PolicySnapshotCanonicalizer
     {
         AgentPermissionPreset.Standard => "standard",
         AgentPermissionPreset.FullAccess => "full_access",
+        AgentPermissionPreset.Trusted => "trusted",
         _ => throw new ArgumentOutOfRangeException(nameof(preset)),
     };
 

@@ -114,7 +114,12 @@ public sealed class WindowsWorkspaceIdentityResolver
         string snapshotHash,
         DateTimeOffset expiresAt)
     {
-        var presetWire = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
+        var presetWire = preset switch
+        {
+            AgentPermissionPreset.FullAccess => "full_access",
+            AgentPermissionPreset.Trusted => "trusted",
+            _ => "standard",
+        };
         return CreateBrokerLeaseRequest(
             trustedIdentity,
             canonicalRoot,

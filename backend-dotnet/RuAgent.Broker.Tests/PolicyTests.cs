@@ -586,6 +586,16 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Trusted_preset_wire_binds_and_canonicalizes()
+    {
+        Assert.Equal("trusted", BrokerPolicyContracts.CanonicalizePreset("trusted"));
+        Assert.Throws<AgentProtocolException>(() => BrokerPolicyContracts.CanonicalizePreset("trust"));
+
+        var (lease, _) = Bind(PolicyEvalSnapshots.TrustedEmpty());
+        Assert.Equal("trusted", lease.Snapshot.Preset);
+    }
+
+    [Fact]
     public void Compatibility_full_access_uses_the_effective_boundary_and_terminal_policy()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
@@ -840,6 +850,8 @@ internal static class PolicyEvalSnapshots
     public static BrokerPolicySnapshotWire Empty() => Snapshot(1, "standard", []);
 
     public static BrokerPolicySnapshotWire FullAccessEmpty(long version = 1) => Snapshot(version, "full_access", []);
+
+    public static BrokerPolicySnapshotWire TrustedEmpty(long version = 1) => Snapshot(version, "trusted", []);
 
     public static BrokerPolicySnapshotWire SnapshotWith(params BrokerPolicyRuleWire[] rules) =>
         Snapshot(1, "standard", rules);

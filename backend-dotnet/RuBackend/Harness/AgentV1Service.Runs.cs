@@ -991,7 +991,13 @@ public sealed partial class AgentV1Service
         HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
         // Single preset: legacy stored FullAccess rows still project as full_access
         // for wire compatibility; new runs are always standard.
-        Preset: run.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access",
+        Preset: run.Preset switch
+        {
+            AgentPermissionPreset.Standard => "standard",
+            AgentPermissionPreset.FullAccess => "full_access",
+            AgentPermissionPreset.Trusted => "trusted",
+            _ => "standard",
+        },
         PolicySnapshotVersion: run.PolicySnapshotVersion,
         PolicySnapshotSha256: run.PolicySnapshotSha256,
         Version: run.Version,

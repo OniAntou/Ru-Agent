@@ -18,6 +18,7 @@ public sealed class PolicySnapshotMapperTests
     {
         Assert.Equal("standard", MapperWire(AgentPermissionPreset.Standard).Preset);
         Assert.Equal("full_access", MapperWire(AgentPermissionPreset.FullAccess).Preset);
+        Assert.Equal("trusted", MapperWire(AgentPermissionPreset.Trusted).Preset);
     }
 
     [Fact]

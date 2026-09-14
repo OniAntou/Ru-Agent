@@ -1,5 +1,6 @@
 using System.Text.Json;
 using RuAgent.Harness.Core;
+using RuAgent.Protocol;
 using RuBackend.Harness;
 using Xunit;
 
@@ -8,6 +9,8 @@ namespace RuBackend.Tests.Harness;
 public sealed class AgentActivityLivePublisherTests
 {
     private static readonly RunId Run = new("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    private const string ToolCallId = "call_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    private const string ExecutionId = "exec_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
     [Fact]
     public async Task Publish_maps_safe_core_activity_to_agent_activity_transient_frame()
@@ -28,7 +31,7 @@ public sealed class AgentActivityLivePublisherTests
 
         publisher.Publish(Run, activity);
 
-        var frame = await lease.Reader.ReadAsync(CancellationToken.None);
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
         Assert.Equal("agent.activity", frame.Kind);
         using var document = JsonDocument.Parse(frame.Data);
         var parsed = RuAgent.Protocol.Harness.AgentActivityWireCodec.Parse(frame.Data);
@@ -57,9 +60,46 @@ public sealed class AgentActivityLivePublisherTests
 
         publisher.Publish(Run, activity);
 
-        var frame = await lease.Reader.ReadAsync(CancellationToken.None);
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
         Assert.Equal("agent.activity", frame.Kind);
         var parsed = RuAgent.Protocol.Harness.AgentActivityWireCodec.Parse(frame.Data);
+        Assert.Equal("View", parsed.ToolDisplay);
+    }
+
+    [Fact]
+    public async Task Activity_frame_survives_a_delta_burst_that_overflows_the_delta_channel()
+    {
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(hub);
+        var activity = new AgentActivity(
+            "act_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            AgentActivityKind.Analyze,
+            AgentActivityState.Started,
+            SafeCode: "in_progress",
+            ToolDisplay: "View");
+
+        publisher.Publish(Run, activity);
+
+        for (var i = 1; i <= 200; i++)
+        {
+            hub.TryPublishDelta(new RuAgent.Protocol.Harness.BrokerToolOutputDeltaWire(
+                Run.Value,
+                ToolCallId,
+                ExecutionId,
+                i,
+                "stdout",
+                $"chunk-{i}",
+                Redacted: false));
+        }
+
+        Assert.True(hub.DroppedCount > 0);
+        Assert.Equal(0, hub.ActivityDroppedCount);
+
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+        Assert.Equal("agent.activity", frame.Kind);
+        var parsed = RuAgent.Protocol.Harness.AgentActivityWireCodec.Parse(frame.Data);
+        Assert.Equal("act_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", parsed.ActivityId);
         Assert.Equal("View", parsed.ToolDisplay);
     }
 

@@ -30,6 +30,11 @@ public sealed class AgentRunSummaryLivePublisherTests
         Assert.False(publisher.TryPublishSummary(run));
 
         var frames = new List<TransientFrame>();
+        while (lease.ActivityReader.TryRead(out var activityFrame))
+        {
+            frames.Add(activityFrame);
+        }
+
         while (lease.Reader.TryRead(out var frame))
         {
             frames.Add(frame);

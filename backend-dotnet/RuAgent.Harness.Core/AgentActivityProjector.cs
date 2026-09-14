@@ -195,13 +195,15 @@ public static class AgentActivityProjector
     public static AgentActivity ProjectStatus(
         string activityId,
         AgentActivityState state,
-        string? safeCode = null) =>
+        string? safeCode = null,
+        string? detail = null) =>
         new(
             activityId,
             AgentActivityKind.Status,
             state,
             SafeCode: SafeCodeFor(state, safeCode),
-            ToolDisplay: null);
+            ToolDisplay: null,
+            Detail: ClampDetail(detail));
 
     public static AgentActivity ProjectDropped(
         ModelStepId modelStepId,
@@ -277,7 +279,7 @@ public static class AgentActivityProjector
         return null;
     }
 
-    private static string ActivityId(string sourceId)
+    internal static string ActivityId(string sourceId)
     {
         var separator = sourceId.IndexOf('_');
         var suffix = separator >= 0 && separator + 1 < sourceId.Length

@@ -243,6 +243,14 @@ internal sealed class AgentToolExecutionPipeline
                             proposal,
                             AgentActivityState.Failed,
                             gatedExecution.Receipt));
+                    AgentActivityProjector.PublishSafe(
+                        _activitySink,
+                        run.RunId,
+                            AgentActivityProjector.ProjectStatus(
+                                AgentActivityProjector.ActivityId(proposal.ToolCallId.Value) + "_inspection",
+                            AgentActivityState.Waiting,
+                            "inspection_required",
+                            "Run paused for inspection after an ambiguous outcome. Make one read-only inspection, or send Continue to override and resume mutations."));
                     continue;
                 }
 
@@ -634,6 +642,14 @@ internal sealed class AgentToolExecutionPipeline
                             proposal,
                             AgentActivityState.Failed,
                             gatedExecution.Receipt));
+                    AgentActivityProjector.PublishSafe(
+                        _activitySink,
+                        run.RunId,
+                            AgentActivityProjector.ProjectStatus(
+                                AgentActivityProjector.ActivityId(proposal.ToolCallId.Value) + "_inspection",
+                            AgentActivityState.Waiting,
+                            "inspection_required",
+                            "Run paused for inspection after an ambiguous outcome. Make one read-only inspection, or send Continue to override and resume mutations."));
                     continue;
                 }
 

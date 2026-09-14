@@ -288,6 +288,21 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Fact]
+    public void Status_projection_carries_an_optional_bounded_reason()
+    {
+        var activity = AgentActivityProjector.ProjectStatus(
+            "act_33333333333333333333333333333333",
+            AgentActivityState.Waiting,
+            "inspection_required",
+            "Make one read-only inspection, or send Continue to override.");
+
+        Assert.Equal(AgentActivityKind.Status, activity.Kind);
+        Assert.Equal(AgentActivityState.Waiting, activity.State);
+        Assert.Equal("inspection_required", activity.SafeCode);
+        Assert.Contains("Continue", activity.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Publishing_to_a_failing_sink_does_not_throw_or_change_the_activity()
     {
         var activity = AgentActivityProjector.ProjectStatus("act_33333333333333333333333333333333", AgentActivityState.Completed);

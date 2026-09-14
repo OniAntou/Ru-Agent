@@ -116,14 +116,19 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The single session-scoped Agent preset. The model-visible
-Worker v2 list is the runtime projection of six Protocol definitions
-(`read`, `write`, `edit`, `bash`, including offline `read` with `op=help`, plus independently enabled standalone
-`web_search`/`web_fetch` tools with `network.search`/`network.fetch` scopes, Google HTML primary with DuckDuckGo
-HTML fallback)
-(approval-gated). The legacy `standard`/`full_access` wire values are accepted
-as compatibility metadata but map to the same policy; there is no second
-policy tier and no provider, model, protocol, or tool fallback.
+The session-scoped Agent preset (`standard`, opt-in `trusted`).
+The model-visible Worker v2 list is the runtime projection of six Protocol
+definitions (`read`, `write`, `edit`, `bash`, including offline `read` with
+`op=help`, plus independently enabled standalone `web_search`/`web_fetch`
+tools with `network.search`/`network.fetch` scopes, Google HTML primary with
+DuckDuckGo HTML fallback) (approval-gated). Standard is the default: every
+run starts standard unless the stored session selection says trusted. Trusted
+is opt-in per session with interactive confirmation; on a clean workspace it
+auto-allows in-workspace terminal/external-directory/delete/unknown-executable
+prompts (`trusted_workspace_allow`), while web, timeouts, rule asks, and
+invariants still ask or deny. The legacy `full_access` wire value is accepted
+as compatibility metadata but maps to the same standard policy; there is no
+provider, model, protocol, or tool fallback.
 _Avoid_: permanent permission
 
 **Agent Persona Source**:
@@ -136,6 +141,10 @@ _Avoid_: embedded fallback persona
 **Approval Token**:
 A short-lived, one-time value bound to the exact request identity and
 canonical arguments for an external or destructive action.
+Approval proposals survive approval: the pipeline stashes them in memory and
+resumes without a new model proposal after `approval_resolved`; a repeated
+identical deny still terminates the run. A transport failure retries once for
+any access kind before reporting terminally.
 _Avoid_: reusable confirmation flag
 
 **Policy Snapshot**:
@@ -169,8 +178,12 @@ cleanup. `bash` with `mode=run` auto-forms (read/test/build/lint/local-Git) run 
 authorization token; external mutation, deletion, extended timeouts, every
 `bash` with `mode=shell` script, unknown executables, a git directory override
 (`-C`), a non-inert `git -c key=value` config override, and global/system git
-config writes require a one-time approval token. Network use is audit metadata
-plus an approval classifier, never a separate scope gate.
+config writes require a one-time approval token. A clean-workspace `trusted`
+session auto-allows the in-workspace subset above; networked calls, web,
+timeouts, and protected paths stay gated. Network use is audit metadata
+plus an approval classifier, never a separate scope gate. An ambiguous outcome
+pauses with a waiting status detail and `Continue` clears the inspection gate
+with a `gate_cleared_by_user` audit event.
 _Avoid_: unrestricted Bash/PowerShell access
 
 **Connector Adapter**:

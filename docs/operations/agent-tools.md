@@ -163,9 +163,10 @@ success claim. The Worker also accepts that exact object inside one
 attribute-free `<tool_call>...</tool_call>` wrapper or an attribute-free leading
 `<tool_call>` followed by a complete JSON object through the end of the response
 for compatibility with providers that emit textual tool markup; malformed, nested,
-prefixed, or suffixed wrappers remain prose and never execute. There is a single
-runtime policy profile; the preserved `standard`/`full_access` wire values map to
-the same enabled definitions. Each
+prefixed, or suffixed wrappers remain prose and never execute. Runs start in
+the `standard` preset unless the stored session selection says `trusted`
+(`full_access` stays accepted as compatibility metadata mapping to standard).
+Each
 step allows at most 10 sequential tool selections; exhausting that budget
 forces one final wrap-up answer without tools. Approvals still gate mutating
 tools — a card with a bounded preview and an explicit user decision precede
@@ -262,7 +263,9 @@ the prose from the conversation outbox, retains the assistant step internally fo
 as an `InternalOnly` payload, and fails the run with the receipt error code (falling
 back to `tool_failed`). An unverified success claim is never displayed to the user as a
 completed answer. A subsequent different tool call remains eligible for normal execution
-to allow recovery.
+to allow recovery. A first `policy_denied` is the exception: the run stays alive so
+the model can read the failed receipt plus repair hint and adjust; only a repeated
+identical deny terminates the run.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
@@ -388,8 +391,12 @@ the future OS-enforced filesystem/network sandbox.
 ## Agent activity shown in WinUI
 
 Agent is the only supported generation path. The desktop composer uses the
-known project root and exposes no mode selector; there is no
-preset selector or Chat mode switch and no workspace editor. The sidebar
+known project root and exposes one bounded preset selector (`Standard` /
+`Trusted`) plus the model picker; there is no Chat mode switch and no
+workspace editor. The `Trusted` choice needs one explicit confirmation per
+session, is stored server-side with a monotonic version, and flows into runs;
+a version conflict surfaces as `preset_mismatch` / `preset_version_conflict`.
+The sidebar
 keeps only primary conversation surfaces; Log, Diagnostics, Policy, and
 Audit remain reachable from the `Công cụ` flyout. Agent prompts are
 created through the authenticated `/agent/v1/*` API and observed over
@@ -398,9 +405,9 @@ or private payload content.
 
 ## Agent permission UX
 
-Every Agent run is session-scoped. The chat composer starts a run with
-the broker's effective profile and never asks the user to pick a
-permission scope. The Broker is the only authority; Host and the UI only
+Every Agent run is session-scoped. The chat composer offers `Standard`
+(default) and opt-in `Trusted`; the Broker remains the only authority and the
+stored session selection decides what a run may do. Host and the UI only
 display the server-selected pending approval kind with one bounded
 message per reason code:
 
@@ -429,9 +436,15 @@ message per reason code:
 Recognized local Git mutations, read-only/test/build/lint run commands are
 auto-allowed (shell scripts always ask); network-affecting external mutations, direct terminal
 deletion, extended timeouts, and unrecognized executables require a single-use approval
-even inside the project root or an approved folder. The CLI exposes the same model with
-`agent approve <run-id> <approval-id>` and `agent deny`; there is no
-`--scope` flag and no `--preset` flag in the normal flow.
+even inside the project root or an approved folder. A `trusted` session on a
+clean workspace (no tracked git modifications, 60s cache, fail-closed on
+missing git/errors/timeouts) auto-allows the in-workspace subset above with
+reason `trusted_workspace_allow`; networked terminal calls, web, timeouts,
+explicit rule asks, invariants, and protected paths stay gated. The CLI exposes the same model with
+`agent approve <run-id> <approval-id>` and `agent deny`; `agent run` /
+`agent chat` accept `--preset standard|full_access|trusted` (`full_access`
+maps to standard behavior, `trusted` needs interactive confirmation and cannot
+combine with `--json`).
 
 The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only
@@ -444,7 +457,9 @@ The feed projects nine kinds: `thinking`, `explore`, `search`, `analyze`, `edit`
 `terminal`, `compaction`, `retry`, and a generic `status` fallback. `compaction`
 reports the bounded number of covered context entries and the elapsed time of a
 context compaction (the summary text never crosses the sink boundary); `retry`
-reports a bounded read-only tool transport retry attempt. Completed tool kinds
+reports a bounded tool transport retry attempt (any access kind, at most once
+per call). Status rows can carry a bounded plain-text `detail` (for example the
+inspection-gate pause with its Continue guidance). Completed tool kinds
 carry a bounded `duration_ms` measured from the scheduled execution.
 
 Assistant text uses a separate typed `assistant.delta` transient frame. The
@@ -495,7 +510,11 @@ Agent requests use an opaque `correlation_id`, durable run identity, and SSE
 cursor. The UI presents one active run, ignores stale or uncorrelated frames,
 and reconnects by replaying durable events without duplicating history. A
 disconnect marks an ambiguous request as a bounded retryable error; it never
-silently replays a request that might already have committed.
+silently replays a request that might already have committed. An approved run
+resumes its stashed proposals without a new model proposal; an ambiguous
+mutation outcome pauses with a waiting status detail, and an explicit
+`Continue` clears the inspection gate with a `gate_cleared_by_user` audit
+event in the same commit.
 
 The short-intent resolver may answer only an exact, high-confidence greeting
 or acknowledgement locally. Corrections, filesystem/path, search, network,
@@ -509,7 +528,9 @@ External-folder and dangerous-terminal requests use a short-lived approval bound
 session, request, tool version, canonical path/executable/argv/cwd/operation/
 network, snapshot version, and intent hash with 30-min expiry. Consumption is
 first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
-`HostApprovalLedger`). Deny terminates the current run with `approval_denied`,
+`HostApprovalLedger`). A first deny keeps the run alive with a repair hint so
+the model can adjust; only a repeated identical deny terminates the current
+run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
 fields and expired or moved-workspace replays return `approval_stale`. The
 Broker reply carries the exact matcher preview plus one `authorization_token`

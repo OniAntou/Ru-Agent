@@ -90,13 +90,16 @@ bounded `truncated`),
 `recovery_too_large` beyond 1 MiB,
 `recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
-Google HTML with DuckDuckGo fallback. The single
+Google HTML with DuckDuckGo fallback. The `standard`
 profile automatically allows ordinary trusted-workspace file reads/creates/edits
 and applies single-verdict analyzer/rule/approval decisions to terminal requests:
 auto for recognized read/test/build/lint/local-Git `bash` with `mode=run` payloads,
 ask for deletion, external mutation, extended timeouts, every `bash`
 with `mode=shell`
-script, and unknown executables. Protected paths, hard invariants, and extended
+script, and unknown executables. The opt-in `trusted` preset keeps that policy
+but auto-allows the in-workspace terminal/external-directory/delete/unknown-executable
+subset on a clean workspace (`trusted_workspace_allow`); web, timeouts, rule asks,
+invariants, and protected paths stay gated. Protected paths, hard invariants, and extended
 timeout thresholds remain gated. An explicit absolute path outside the trusted
 root
 asks with `external_directory_required`; the approval UI can grant only that

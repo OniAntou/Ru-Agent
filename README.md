@@ -74,7 +74,9 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 - **Tự động hóa lập trình đầy đủ**: Khả năng phân tích yêu cầu, tự động đọc mã nguồn, viết code mới, refactor, chạy test và sửa lỗi lặp cho đến khi hoàn thành mục tiêu.
 - **Quản lý quyền hạn thông minh (Policy & Approvals)**:
   - Tự động cho phép các thao tác đọc/ghi trong thư mục làm việc tin cậy (`trusted workspace`).
+  - Preset session `Standard` mặc định + `Trusted` opt-in (xác nhận tương tác một lần mỗi session): workspace git sạch tự động cho phép thêm cụm terminal trong workspace ngoài/thư mục xóa/unknown-executable (`trusted_workspace_allow`), còn web/timeout/rule-ask/invariant/protected-path vẫn hỏi hoặc từ chối.
   - Mọi Agent run là session-scoped: phê duyệt thư mục ngoài chỉ mở grant cho session hiện tại, token terminal chỉ dùng một lần. Yêu cầu xác nhận phê duyệt tương tác (`Interactive Approval`) đối với các hành động rủi ro: truy cập thư mục ngoài workspace (`external_directory_required`), lệnh xóa vĩnh viễn trên terminal (`terminal_delete_requires_approval`), thực thi tệp thực thi lạ (`terminal_unknown_executable`), mutation ngoài workspace như push mạng/cài package (`terminal_external_mutation_requires_approval`), lệnh chạy quá cửa sổ chuẩn (`terminal_timeout_requires_approval`), hoặc gọi web ngoài khi bật kiểm duyệt (`web_approval_required`). Mọi `terminal.shell` script đều hỏi phê duyệt.
+  - Bớt khắt khe đúng chỗ: approval được giữ lại và resume không cần model gọi lại, transport lỗi retry một lần mọi loại truy cập, deny đầu giữ run sống kèm gợi ý sửa (deny lặp mới kết thúc), outcome mơ hồ pause kèm chi tiết và `Continue` xóa inspection gate có audit (`gate_cleared_by_user`).
 - **Phản hồi sự kiện thời gian thực (Agent Activity)**: Hiển thị dòng trạng thái hoạt động trực quan với hiệu ứng sóng màu **Color Wave** (Cyan $\to$ Violet $\to$ Rose $\to$ Emerald) khi Agent đang suy nghĩ/thực thi công cụ.
 
 ### 💬 Trải nghiệm Chat & Quản lý Nhánh (Session Branching)

@@ -208,8 +208,9 @@ gentle twinkling starlight points and periodic shooting star streaks rendered di
 via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush` with
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
-native TextBox caret/focus behavior and exposes no mode selector; there is no
-preset picker, Chat mode switch, or workspace editor in the composer.
+native TextBox caret/focus behavior and exposes one bounded preset selector
+(`Standard` / `Trusted`); there is no Chat mode switch or workspace editor
+in the composer.
 The UI uses the known project root as the initial Agent workspace and does not
 expose a workspace editor, while the authenticated API still validates the
 canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE path.
@@ -222,8 +223,10 @@ edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
 frames do not enter durable history or audit. The projector covers nine kinds,
 including `compaction` (bounded covered-entry count and elapsed time) and
-`retry` (bounded read-only tool transport retry attempt), plus a generic
-`status` fallback. Agent payloads and raw tool output
+`retry` (bounded tool transport retry attempt, any access kind, at most once
+per call), plus a generic
+`status` fallback (status rows can carry a bounded plain-text `detail`, for
+example the inspection-gate pause with its Continue guidance). Agent payloads and raw tool output
 never enter transport metadata or automation names.
 Assistant text is delivered separately as a typed `assistant.delta` transient
 frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
@@ -285,14 +288,18 @@ The Worker v2 settings advertise six bindings: `read` with
 `web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
 `web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root
 or a folder granted to the same live session and applies analyzer decisions to
-terminal requests. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
+terminal requests. A `trusted` session on a clean workspace auto-allows the
+in-workspace terminal/external-directory/delete/unknown-executable subset
+(`trusted_workspace_allow`); web, timeouts, rule asks, invariants, and
+protected paths stay gated. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
 not an OS-enforced filesystem/network sandbox. File tools may
 request an explicit absolute path outside the project; the user can grant that
 canonical directory to all tools in the current live session. The grant is not
 shared with a new or forked session and disappears on restart. Terminal
 deletion, external mutation (network egress, package installs, push/fetch),
 extended timeouts beyond the standard window, shell scripts, web calls when
-approval-gated, and unknown executable launch require approval.
+approval-gated, and unknown executable launch require approval (unless lifted
+by the clean-workspace `trusted` subset above).
 The model selection channel is active for every Agent run: one budget window
 allows up to 128 model steps and 256 model-initiated tool calls through the
 Agent Broker pipeline (`AgentBudgetPolicy.ModelStepLimit`/`ToolCallLimit`).

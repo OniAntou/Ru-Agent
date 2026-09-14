@@ -45,7 +45,10 @@ not archives — see the verification note below before deleting them.
 
 Git history is the recovery source for removed dated plans and specifications.
 
-Agent permissions are session-scoped. The current approval reasons are
+Agent permissions are session-scoped (`standard` default, opt-in `trusted`
+with interactive confirmation; clean-workspace `trusted` auto-allows the
+in-workspace terminal/external-directory/delete/unknown-executable subset as
+`trusted_workspace_allow`). The current approval reasons are
 `external_directory_required`, `terminal_delete_requires_approval`,
 `terminal_external_mutation_requires_approval`,
 `terminal_timeout_requires_approval`, `web_approval_required`, and

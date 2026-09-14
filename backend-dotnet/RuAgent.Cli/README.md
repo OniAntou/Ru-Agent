@@ -51,7 +51,7 @@ agent policy remove <rule-id>
 ## Current model tool surface
 
 The Agent Worker v2 advertisement contains six core bindings: `read`
-with `op=list|glob|search|read|help`, `write` with
+with `op=list|read|help`, `grep`, `glob`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
 `web_search` and `web_fetch` in both
 Standard and Full Access. Standard applies the stricter

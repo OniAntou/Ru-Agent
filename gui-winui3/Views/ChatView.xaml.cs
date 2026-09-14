@@ -806,6 +806,17 @@ namespace RuApp.Views
         private void EnqueueAgentActivity(AgentActivityModel activity)
         {
             _pendingAgentActivities.Add(activity);
+            if (_pendingAgentActivities.Count == 1 && _activityFlushTimer?.IsRunning != true)
+            {
+                // Lone frame: render on the next dispatcher turn instead of
+                // waiting out the batch window. Burst traffic still falls
+                // through to the timer below and renders as one batch.
+                if (DispatcherQueue.TryEnqueue(FlushAgentActivities))
+                {
+                    return;
+                }
+            }
+
             if (_activityFlushTimer is null)
             {
                 _activityFlushTimer = DispatcherQueue.CreateTimer();
@@ -1216,9 +1227,15 @@ namespace RuApp.Views
                 Messages.Add(_activeAgentAssistantMessage);
             }
 
-            _activeAgentAssistantMessage.Content = snapshot.Text;
+            // Non-text deltas still schedule a render: skip the layout + scroll
+            // pass when the text did not actually grow.
+            if (!string.Equals(_activeAgentAssistantMessage.Content, snapshot.Text, StringComparison.Ordinal))
+            {
+                _activeAgentAssistantMessage.Content = snapshot.Text;
+                ScrollChatToBottom();
+            }
+
             _activeAgentAssistantMessage.IsStreaming = true;
-            ScrollChatToBottom();
             UpdateContextUsage();
         }
 
@@ -1502,7 +1519,13 @@ namespace RuApp.Views
                 _waveTimer.Start();
             }
 
-            UpdateWaveTextBlock(textBlock, 0.0);
+            UpdateWaveTextBlock(textBlock, 0.0, ResolveWaveBaseColor());
+        }
+
+        private static Windows.UI.Color ResolveWaveBaseColor()
+        {
+            var mutedBrush = Application.Current.Resources["RuMutedBrush"] as SolidColorBrush;
+            return mutedBrush?.Color ?? Windows.UI.Color.FromArgb(255, 148, 163, 184);
         }
 
         private void StopTextSweep(TextBlock textBlock)
@@ -1536,6 +1559,10 @@ namespace RuApp.Views
             double elapsed = _waveStopwatch.Elapsed.TotalSeconds;
             double phase = (elapsed / Services.UiTiming.ActivityWavePeriodSeconds) % 1.0;
 
+            // One resource lookup per tick, not per block: theme stays live
+            // because the color is re-resolved on every tick.
+            var baseColor = ResolveWaveBaseColor();
+
             List<TextBlock>? deadBlocks = null;
             foreach (var tb in _activeWaveTextBlocks)
             {
@@ -1545,7 +1572,7 @@ namespace RuApp.Views
                     deadBlocks.Add(tb);
                     continue;
                 }
-                UpdateWaveTextBlock(tb, phase);
+                UpdateWaveTextBlock(tb, phase, baseColor);
             }
 
             if (deadBlocks != null)
@@ -1562,11 +1589,8 @@ namespace RuApp.Views
             }
         }
 
-        private static void UpdateWaveTextBlock(TextBlock tb, double phase)
+        private static void UpdateWaveTextBlock(TextBlock tb, double phase, Windows.UI.Color baseColor)
         {
-            var mutedBrush = Application.Current.Resources["RuMutedBrush"] as SolidColorBrush;
-            var baseColor = mutedBrush?.Color ?? Windows.UI.Color.FromArgb(255, 148, 163, 184);
-
             // Subtle Cyan-Violet Aurora beam center (-0.35 to 1.35)
             double center = -0.35 + 1.70 * phase;
 

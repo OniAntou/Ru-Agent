@@ -1,4 +1,5 @@
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Diagnostics;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
 
@@ -50,6 +51,7 @@ internal sealed class AgentModelInvocation
         CancellationToken cancellationToken)
     {
         var thinkingStartedAt = _time.UtcNow;
+        using var telemetryActivity = HarnessTelemetry.StartModelStepActivity();
         AgentActivityProjector.PublishSafe(
             _activitySink,
             run.RunId,
@@ -76,11 +78,12 @@ internal sealed class AgentModelInvocation
                     AgentActivityState.Failed,
                     ElapsedMilliseconds(thinkingStartedAt),
                     safeCode: "cancelled"));
+            HarnessTelemetry.SetStepOutcome(telemetryActivity, "cancelled");
             throw;
         }
         catch (Exception)
         {
-            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
+            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity)
                 .ConfigureAwait(false);
             throw new InvalidOperationException("prompt_contract_invalid");
         }
@@ -121,6 +124,7 @@ internal sealed class AgentModelInvocation
                     AgentActivityState.Failed,
                     ElapsedMilliseconds(thinkingStartedAt),
                     safeCode: "cancelled"));
+            HarnessTelemetry.SetStepOutcome(telemetryActivity, "cancelled");
             throw;
         }
         catch (Exception)
@@ -134,6 +138,7 @@ internal sealed class AgentModelInvocation
                     AgentActivityState.Failed,
                     ElapsedMilliseconds(thinkingStartedAt),
                     safeCode: "model_failed"));
+            HarnessTelemetry.SetStepOutcome(telemetryActivity, "model_failed");
             throw;
         }
         try
@@ -152,12 +157,13 @@ internal sealed class AgentModelInvocation
                     AgentActivityState.Failed,
                     ElapsedMilliseconds(thinkingStartedAt),
                     safeCode: "cancelled"));
+            HarnessTelemetry.SetStepOutcome(telemetryActivity, "cancelled");
             throw;
         }
         catch (ArgumentException)
         {
             assistantStream.Complete();
-            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
+            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity)
                 .ConfigureAwait(false);
             throw new InvalidOperationException("prompt_contract_invalid");
         }
@@ -177,7 +183,7 @@ internal sealed class AgentModelInvocation
         catch (Exception)
         {
             assistantStream.Complete();
-            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
+            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity)
                 .ConfigureAwait(false);
             throw new InvalidOperationException("prompt_contract_invalid");
         }
@@ -204,9 +210,10 @@ internal sealed class AgentModelInvocation
             run.RunId,
             AgentActivityProjector.ProjectModelStep(
                 modelStepId,
-                AgentActivityState.Completed,
-                ElapsedMilliseconds(thinkingStartedAt),
-                safeCode: "succeeded"));
+                    AgentActivityState.Completed,
+                    ElapsedMilliseconds(thinkingStartedAt),
+                    safeCode: "succeeded"));
+        HarnessTelemetry.SetStepOutcome(telemetryActivity, "succeeded");
         var modelDroppedCount = checked((int)(_frames.DroppedCount - droppedBefore));
         if (modelDroppedCount > 0)
         {
@@ -229,8 +236,10 @@ internal sealed class AgentModelInvocation
     private async Task MarkPromptContractFailureAsync(
         AgentRun run,
         ModelStepId modelStepId,
-        DateTimeOffset startedAt)
+        DateTimeOffset startedAt,
+        System.Diagnostics.Activity? telemetryActivity)
     {
+        HarnessTelemetry.SetStepOutcome(telemetryActivity, "prompt_contract_invalid");
         await _lifecycle.FailAsync(
                 run.RunId,
                 "prompt_contract_invalid",

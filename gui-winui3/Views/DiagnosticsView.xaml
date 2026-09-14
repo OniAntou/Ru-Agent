@@ -73,7 +73,7 @@
                      TextChanged="OnCorrelationFilterChanged" FontSize="12.5" Padding="8,6"
                      CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
 
-            <ComboBox x:Name="LevelFilterCombo" SelectionChanged="OnLevelSelectionChanged" SelectedIndex="0" Margin="4,0" Width="105"
+            <ComboBox x:Name="LevelFilterCombo" AutomationProperties.Name="Filter by level" SelectionChanged="OnLevelSelectionChanged" SelectedIndex="0" Margin="4,0" Width="105"
                       CornerRadius="{StaticResource AppControlCornerRadius}">
                 <ComboBoxItem Content="All Levels"/>
                 <ComboBoxItem Content="info"/>
@@ -81,11 +81,11 @@
                 <ComboBoxItem Content="error"/>
             </ComboBox>
 
-            <Button x:Name="PauseButton" Content="Pause" FontSize="12.5" Padding="12,6" Margin="4,0"
+            <Button x:Name="PauseButton" AutomationProperties.Name="Pause diagnostics refresh" Content="Pause" FontSize="12.5" Padding="12,6" Margin="4,0"
                     Click="OnPauseClicked" Foreground="{StaticResource AppTextPrimaryBrush}" Background="{StaticResource AppCardBackgroundBrush}"
                     BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}"/>
 
-            <Button x:Name="ExportButton" Content="Export NDJSON" FontSize="12.5" Padding="14,6" Margin="8,0,0,0"
+            <Button x:Name="ExportButton" AutomationProperties.Name="Export diagnostics as NDJSON" Content="Export NDJSON" FontSize="12.5" Padding="14,6" Margin="8,0,0,0"
                     Click="OnExportClicked" Foreground="{StaticResource AppAccentHoverBrush}" Background="{StaticResource AppAccentSubtleBrush}"
                     BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
                     HorizontalAlignment="Right"/>
@@ -128,6 +128,7 @@
         <!-- Diagnostics Container -->
         <Border Grid.Row="3" Style="{StaticResource FluentCardStyle}" Padding="16">
             <ListView x:Name="DiagnosticsList"
+                      AutomationProperties.Name="Diagnostics entries"
                       ItemsSource="{x:Bind Rows}"
                       IsItemClickEnabled="True"
                       ItemClick="OnRowClicked"

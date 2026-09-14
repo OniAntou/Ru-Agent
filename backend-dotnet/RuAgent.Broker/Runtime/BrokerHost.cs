@@ -4,7 +4,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebSockets;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 using RuAgent.Broker.Configuration;
+using RuAgent.Broker.Diagnostics;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Skills;
 using RuAgent.Broker.Transport;
@@ -19,6 +22,7 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly BrokerCleanup _cleanup;
     private readonly ToolExecutionService _tools;
+    private readonly TracerProvider? _telemetry;
     private readonly PendingApprovalStore _pendingV2 = new();
     private readonly ApprovalTokenService _authTokens = new();
     private bool _disposed;
@@ -44,6 +48,7 @@ public sealed class BrokerHost : IAsyncDisposable
             killChildren: Array.Empty<Action>(),
             session.DescriptorPath,
             session.Descriptor.SessionRoot);
+        _telemetry = BrokerTelemetry.CreateProvider();
     }
 
     public string BaseUrl => _session.Descriptor.BaseUrl.TrimEnd('/');
@@ -111,6 +116,7 @@ public sealed class BrokerHost : IAsyncDisposable
         _authTokens.Clear();
         await _cleanup.RunAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);
+        try { _telemetry?.Dispose(); } catch { }
         _shutdown.Dispose();
     }
 
@@ -176,9 +182,14 @@ public sealed class BrokerHost : IAsyncDisposable
         RuAgent.Protocol.AgentEnvelope request,
         CancellationToken cancellationToken)
     {
+        using var telemetryActivity = BrokerTelemetry.StartToolActivity();
         var result = request.MessageType == RuAgent.Protocol.AgentMessageTypes.ApprovalResponse
             ? await _tools.RespondToApprovalAsync(request, cancellationToken).ConfigureAwait(false)
             : await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        BrokerTelemetry.SetToolOutcome(
+            telemetryActivity,
+            BrokerTelemetry.ReadToolId(request.Payload),
+            result);
         return new RuAgent.Protocol.AgentEnvelope(
             request.ProtocolVersion,
             request.RequestId,

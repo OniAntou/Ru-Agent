@@ -185,14 +185,14 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
         }
-        catch (Exception)
+        catch (Exception error)
         {
             return Result(
                 request,
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 "tool_failed",
-                "Tool failed.",
+                $"Tool failed ({error.GetType().Name}).",
                 started,
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
@@ -288,14 +288,14 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
         }
-        catch (Exception)
+        catch (Exception error)
         {
             return Result(
                 request,
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 "tool_failed",
-                "Approved action failed.",
+                $"Approved action failed ({error.GetType().Name}).",
                 started,
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
@@ -496,11 +496,11 @@ public sealed partial class ToolExecutionService : IToolInvoker
                 "Tool response data was rejected.",
                 VerificationFailure(binding));
         }
-        catch (Exception)
+        catch (Exception error)
         {
             outcome = ToolExecutionOutcome.Failed(
                 "adapter_error",
-                "Tool adapter failed.",
+                $"Tool adapter failed ({error.GetType().Name}).",
                 VerificationFailure(binding));
         }
 

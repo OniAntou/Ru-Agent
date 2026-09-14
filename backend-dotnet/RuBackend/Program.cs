@@ -122,6 +122,8 @@ AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
 StatusEndpoints.Map(app);
 
+using var telemetryProvider = BackendTelemetry.CreateProvider();
+
 app.Run();
 
 public partial class Program { }

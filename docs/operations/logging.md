@@ -103,3 +103,15 @@ braced candidate reply fails structured selection parsing or validation; it
 carries no reply text or arguments. There is no mode-clamping or Chat request
 compatibility event. The remaining diagnostic is a bounded, fixed-field event:
 no prompt, transcript, tool arguments, output, or exception data.
+
+## OpenTelemetry traces (parallel to JSONL)
+
+The host and broker processes expose OpenTelemetry spans alongside JSONL:
+- Sources `RuAgent.Harness` (`agent.model_step`, outcome tag `step.outcome`)
+  and `RuAgent.Broker` (`tool.execute`, tags `tool.id`, `tool.status`,
+  `error.code`, `verification.state`).
+- Tag allowlist mirrors the JSONL privacy bounds: bounded codes and tool
+  identity only. Ids, prompts, arguments, outputs, paths, endpoints and
+  payloads are never tagged. Unknown values are dropped fail-closed.
+- Without a listener every helper is a no-op. OTLP export is added only when
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set; otherwise traces stay in-process.

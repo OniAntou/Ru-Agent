@@ -170,13 +170,14 @@ public sealed partial class AgentV1Service
         }
 
         var presetRaw = request.Preset?.Trim().ToLowerInvariant() ?? string.Empty;
-        // Single preset: the preset field is compatibility metadata only. Empty
-        // means standard; legacy full_access values are accepted but mapped to
-        // the same standard behavior — Full Access no longer changes policy.
+        // Compatibility metadata: empty means standard; legacy full_access values
+        // are accepted but mapped to the same standard behavior — Full Access no
+        // longer changes policy. Trusted flows through when the session selection
+        // says so (see below); the request string alone never elevates a run.
         AgentPermissionPreset preset = AgentPermissionPreset.Standard;
-        if (!string.IsNullOrEmpty(presetRaw) && presetRaw != "standard" && presetRaw != "full_access" && presetRaw != "full")
+        if (!string.IsNullOrEmpty(presetRaw) && presetRaw != "standard" && presetRaw != "full_access" && presetRaw != "full" && presetRaw != "trusted")
         {
-            return BoundedError(400, "invalid_preset", "preset must be standard or full_access.");
+            return BoundedError(400, "invalid_preset", "preset must be standard, full_access, or trusted.");
         }
 
         var idempotencyKey = request.IdempotencyKey?.Trim() ?? string.Empty;
@@ -290,6 +291,15 @@ public sealed partial class AgentV1Service
 
                 effectiveVersion = existingSelection.Version;
             }
+        }
+
+        // The stored session selection is authoritative: an interactively
+        // confirmed Trusted session produces trusted snapshots. The request
+        // string alone never elevates: without a matching stored selection the
+        // run stays standard.
+        if (existingSelection is not null && existingSelection.Preset == AgentPermissionPreset.Trusted)
+        {
+            preset = AgentPermissionPreset.Trusted;
         }
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);

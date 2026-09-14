@@ -418,7 +418,8 @@ public sealed partial class AgentV1Service
             AgentPermissionPreset preset;
             if (presetRaw == "standard") preset = AgentPermissionPreset.Standard;
             else if (presetRaw == "full_access" || presetRaw == "full") preset = AgentPermissionPreset.FullAccess;
-            else return BoundedError(400, "invalid_preset", "preset must be standard or full_access.");
+            else if (presetRaw == "trusted") preset = AgentPermissionPreset.Trusted;
+            else return BoundedError(400, "invalid_preset", "preset must be standard, full_access, or trusted.");
 
             long expectedVersion = 0;
             if (body.TryGetProperty("expected_version", out var verProp))
@@ -433,9 +434,9 @@ public sealed partial class AgentV1Service
                 return BoundedError(400, "invalid_preset_version", "expected_version must be non-negative.");
             }
 
-            if (preset == AgentPermissionPreset.FullAccess && !isInteractive)
+            if ((preset == AgentPermissionPreset.FullAccess || preset == AgentPermissionPreset.Trusted) && !isInteractive)
             {
-                return BoundedError(403, "interactive_required", "Full Access requires interactive confirmation.");
+                return BoundedError(403, "interactive_required", "Full Access and Trusted presets require interactive confirmation.");
             }
 
             var sessionDoc = await _sessions.GetAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false);
@@ -457,7 +458,14 @@ public sealed partial class AgentV1Service
             }
 
             var sel = result.Selection;
-            return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = sel.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access", version = sel.Version, updated_at = sel.UpdatedAt.ToString("O") });
+            var presetWire = sel.Preset switch
+            {
+                AgentPermissionPreset.Standard => "standard",
+                AgentPermissionPreset.FullAccess => "full_access",
+                AgentPermissionPreset.Trusted => "trusted",
+                _ => "standard",
+            };
+            return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = presetWire, version = sel.Version, updated_at = sel.UpdatedAt.ToString("O") });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

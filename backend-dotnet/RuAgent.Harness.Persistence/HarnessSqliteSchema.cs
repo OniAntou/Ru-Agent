@@ -13,7 +13,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -39,7 +39,7 @@ public static class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -47,7 +47,7 @@ public static class HarnessSqliteSchema
             if (existingVersion == 2)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate;
+                migration.CommandText = SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -57,7 +57,7 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 3)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionThreeToFour + SchemaVersionFourFinalGate;
+                migration.CommandText = SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -67,7 +67,17 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 4)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionFourFinalGate;
+                migration.CommandText = SchemaVersionFourFinalGate + SchemaVersionFiveToSix;
+                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await using var verCmd = connection.CreateCommand();
+                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 5)
+            {
+                await using var migration = connection.CreateCommand();
+                migration.CommandText = SchemaVersionFiveToSix;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -139,7 +149,7 @@ public static class HarnessSqliteSchema
 
         CREATE TABLE IF NOT EXISTS agent_session_settings (
             session_id TEXT PRIMARY KEY,
-            preset INTEGER NOT NULL CHECK(preset IN (0, 1)),
+            preset INTEGER NOT NULL CHECK(preset IN (0, 1, 2)),
             version INTEGER NOT NULL CHECK(version > 0),
             updated_at_utc TEXT NOT NULL
         );
@@ -155,7 +165,7 @@ public static class HarnessSqliteSchema
             budget_window INTEGER NOT NULL CHECK(budget_window > 0),
             model_steps_in_window INTEGER NOT NULL CHECK(model_steps_in_window >= 0),
             tool_calls_in_window INTEGER NOT NULL CHECK(tool_calls_in_window >= 0),
-            preset INTEGER NOT NULL CHECK(preset IN (0, 1)),
+            preset INTEGER NOT NULL CHECK(preset IN (0, 1, 2)),
             session_preset_version INTEGER NOT NULL CHECK(session_preset_version > 0),
             policy_snapshot_version INTEGER NOT NULL CHECK(policy_snapshot_version > 0),
             policy_snapshot_sha256 TEXT NOT NULL CHECK(length(policy_snapshot_sha256) = 64),
@@ -400,5 +410,60 @@ public static class HarnessSqliteSchema
     // shared-mode schema is ready. This is idempotent for interrupted upgrades.
     private const string SchemaVersionFourFinalGate = """
         DROP INDEX IF EXISTS ux_agent_runs_active_workspace;
+        """;
+
+    // Version 6 widens the preset allowlist to Trusted (2). SQLite cannot ALTER
+    // a CHECK, so both tables are rebuilt: same columns in the same order, data
+    // copied verbatim, then the originals are dropped and renamed back. Foreign
+    // keys are off only inside this batch (autocommit statements) and every
+    // existing preset value (0, 1) satisfies the new CHECK, so no row can fail.
+    private const string SchemaVersionFiveToSix = """
+        PRAGMA foreign_keys=OFF;
+
+        CREATE TABLE agent_session_settings_new (
+            session_id TEXT PRIMARY KEY,
+            preset INTEGER NOT NULL CHECK(preset IN (0, 1, 2)),
+            version INTEGER NOT NULL CHECK(version > 0),
+            updated_at_utc TEXT NOT NULL
+        );
+        INSERT INTO agent_session_settings_new(session_id, preset, version, updated_at_utc)
+            SELECT session_id, preset, version, updated_at_utc FROM agent_session_settings;
+        DROP TABLE agent_session_settings;
+        ALTER TABLE agent_session_settings_new RENAME TO agent_session_settings;
+
+        CREATE TABLE agent_runs_new (
+            run_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL REFERENCES agent_workspaces(workspace_id) ON DELETE RESTRICT,
+            state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 10),
+            history_wait_kind INTEGER NULL CHECK(history_wait_kind IN (0, 1)),
+            version INTEGER NOT NULL CHECK(version >= 0),
+            last_sequence INTEGER NOT NULL CHECK(last_sequence >= 0),
+            budget_window INTEGER NOT NULL CHECK(budget_window > 0),
+            model_steps_in_window INTEGER NOT NULL CHECK(model_steps_in_window >= 0),
+            tool_calls_in_window INTEGER NOT NULL CHECK(tool_calls_in_window >= 0),
+            preset INTEGER NOT NULL CHECK(preset IN (0, 1, 2)),
+            session_preset_version INTEGER NOT NULL CHECK(session_preset_version > 0),
+            policy_snapshot_version INTEGER NOT NULL CHECK(policy_snapshot_version > 0),
+            policy_snapshot_sha256 TEXT NOT NULL CHECK(length(policy_snapshot_sha256) = 64),
+            idempotency_key_sha256 TEXT NOT NULL CHECK(length(idempotency_key_sha256) = 64),
+            normalized_request_sha256 TEXT NOT NULL CHECK(length(normalized_request_sha256) = 64),
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            terminal_at_utc TEXT NULL,
+            terminal_error_code TEXT NULL,
+            base_context_captured_at_utc TEXT NULL,
+            base_context_entry_count INTEGER NOT NULL DEFAULT 0 CHECK(base_context_entry_count >= 0),
+            UNIQUE(session_id, idempotency_key_sha256)
+        );
+        INSERT INTO agent_runs_new(run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, session_preset_version, policy_snapshot_version, policy_snapshot_sha256, idempotency_key_sha256, normalized_request_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code, base_context_captured_at_utc, base_context_entry_count)
+            SELECT run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, session_preset_version, policy_snapshot_version, policy_snapshot_sha256, idempotency_key_sha256, normalized_request_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code, base_context_captured_at_utc, base_context_entry_count FROM agent_runs;
+        DROP TABLE agent_runs;
+        ALTER TABLE agent_runs_new RENAME TO agent_runs;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_runs_active_session
+            ON agent_runs(session_id)
+            WHERE terminal_at_utc IS NULL;
+
+        PRAGMA foreign_keys=ON;
         """;
 }

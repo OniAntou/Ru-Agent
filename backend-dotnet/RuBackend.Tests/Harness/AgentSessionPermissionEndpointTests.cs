@@ -80,6 +80,43 @@ public sealed class AgentSessionPermissionEndpointTests
     }
 
     [Fact]
+    public async Task SessionPreset_Trusted_RequiresInteractive_ThenFlowsToRuns()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+
+        var body = new { kind = "session_preset", session_id = sessionId, preset = "trusted", expected_version = 0 };
+        using var denied = await client.PostAsJsonAsync("/agent/v1/policies", body);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+        using var interactive = factory.CreateAuthenticatedClient();
+        interactive.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        using var resp = await interactive.PostAsJsonAsync("/agent/v1/policies", body);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("trusted", json.GetProperty("preset").GetString());
+        Assert.Equal(1, json.GetProperty("version").GetInt64());
+
+        var runBody = new
+        {
+            session_id = sessionId,
+            workspace_path = wsPath,
+            prompt = "trusted run",
+            preset = "trusted",
+            idempotency_key = Guid.NewGuid().ToString("N")
+        };
+        using var runResp = await interactive.PostAsJsonAsync("/agent/v1/runs", runBody);
+        Assert.Equal(HttpStatusCode.Created, runResp.StatusCode);
+        var runJson = await runResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("trusted", runJson.GetProperty("preset").GetString());
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear();
+    }
+
+    [Fact]
     public async Task SessionPreset_AffectsOnlyOneSession()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);

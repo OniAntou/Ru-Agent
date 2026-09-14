@@ -234,4 +234,82 @@ public sealed class HarnessSqliteSchemaTests
             }
         }
     }
+
+    [Fact]
+    public async Task Initialize_migrates_version_five_to_six_preserving_rows_and_widening_preset()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "ru-harness-schema-migration-v6",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            var options = new HarnessSqliteOptions(databasePath);
+            var initial = await HarnessSqliteSchema.InitializeAsync(
+                options,
+                CancellationToken.None);
+            Assert.True(initial.IsAvailable, initial.ErrorCode);
+
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var seed = connection.CreateCommand();
+                seed.CommandText = """
+                    INSERT INTO agent_workspaces(workspace_id, canonical_root_nonce, canonical_root_ciphertext, canonical_root_tag, volume_serial_number, root_file_id, display_identity_hash, trust_request_id, trust_requested_at_utc, trust_expires_at_utc, created_at_utc, updated_at_utc)
+                    VALUES ('ws_55555555555555555555555555555555', zeroblob(12), zeroblob(1), zeroblob(16), 'VOL', 'fid', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'trust-1', '2026-09-01T00:00:00+00:00', '2026-09-02T00:00:00+00:00', '2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00');
+                    INSERT INTO agent_session_settings(session_id, preset, version, updated_at_utc)
+                    VALUES ('migration-sentinel', 0, 7, '2026-08-29T00:00:00.0000000+00:00');
+                    INSERT INTO agent_runs(run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, session_preset_version, policy_snapshot_version, policy_snapshot_sha256, idempotency_key_sha256, normalized_request_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code, base_context_captured_at_utc, base_context_entry_count)
+                    VALUES ('run_66666666666666666666666666666666', 'migration-sentinel', 'ws_55555555555555555555555555555555', 7, NULL, 0, 3, 1, 0, 0, 0, 1, 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', '2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00', NULL, NULL, NULL, 0);
+                    PRAGMA user_version = 5;
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+
+            var migrated = await HarnessSqliteSchema.InitializeAsync(
+                options,
+                CancellationToken.None);
+
+            Assert.True(migrated.IsAvailable, migrated.ErrorCode);
+            Assert.Equal(HarnessSqliteSchema.CurrentVersion, migrated.SchemaVersion);
+            await using var verify = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+            await verify.OpenAsync();
+            await using var sentinel = verify.CreateCommand();
+            sentinel.CommandText =
+                "SELECT version FROM agent_session_settings WHERE session_id = 'migration-sentinel'";
+            Assert.Equal(7L, (long)(await sentinel.ExecuteScalarAsync() ?? 0L));
+            await using var run = verify.CreateCommand();
+            run.CommandText =
+                "SELECT last_sequence FROM agent_runs WHERE run_id = 'run_66666666666666666666666666666666'";
+            Assert.Equal(3L, (long)(await run.ExecuteScalarAsync() ?? -1L));
+            // The widened CHECK now accepts the Trusted preset on both tables.
+            await using var trusted = verify.CreateCommand();
+            trusted.CommandText =
+                "INSERT INTO agent_session_settings(session_id, preset, version, updated_at_utc) VALUES ('trusted-sentinel', 2, 1, '2026-09-01T00:00:00+00:00')";
+            await trusted.ExecuteNonQueryAsync();
+            await using var trustedRun = verify.CreateCommand();
+            trustedRun.CommandText =
+                "UPDATE agent_runs SET preset = 2 WHERE run_id = 'run_66666666666666666666666666666666'";
+            await trustedRun.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = true,
+            }.ToString()))
+            {
+                SqliteConnection.ClearPool(pool);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

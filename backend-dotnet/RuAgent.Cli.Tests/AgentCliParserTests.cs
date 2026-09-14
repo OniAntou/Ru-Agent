@@ -67,6 +67,16 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
+    public void ParseRun_AcceptsPresetTrusted()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "trusted", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<RunCommand>(res.Command);
+        Assert.Equal("trusted", cmd.Preset);
+    }
+
+    [Fact]
     public void ParseRun_RejectsMissingWorkspace()
     {
         var args = new[] { "agent", "run", "prompt without workspace" };

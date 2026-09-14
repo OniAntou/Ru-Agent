@@ -117,9 +117,9 @@ public sealed class AgentCommands
             preset = "standard";
         }
 
-        if (preset != "standard")
+        if (preset != "standard" && preset != "trusted")
         {
-            await _err.WriteLineAsync("invalid_preset: preset must be standard or full_access").ConfigureAwait(false);
+            await _err.WriteLineAsync("invalid_preset: preset must be standard, full_access, or trusted").ConfigureAwait(false);
             return 1;
         }
 

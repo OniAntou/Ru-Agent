@@ -108,6 +108,8 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _detail, value);
     }
 
+    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
+
     private bool _isVisibleInFeed = true;
 
     /// <summary>Feed grouping collapses redundant rows; collapsed rows keep
@@ -375,6 +377,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(DisplayText));
         OnPropertyChanged(nameof(EffectiveDurationMs));
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(HasDetail));
     }
 
     private string FormatSearch(string prefix)

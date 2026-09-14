@@ -66,6 +66,19 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void Feed_template_renders_bounded_detail_below_the_headline()
+    {
+        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        var feedStart = xaml.IndexOf("<DataTemplate x:Key=\"AgentActivityTemplate\"", StringComparison.Ordinal);
+        Assert.True(feedStart >= 0, "AgentActivityTemplate is missing.");
+        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", feedStart, StringComparison.Ordinal);
+        var feedBlock = xaml[feedStart..assistantStart];
+
+        Assert.Contains("x:Bind Detail, Mode=OneWay", feedBlock, StringComparison.Ordinal);
+        Assert.Contains("x:Bind HasDetail, Mode=OneWay", feedBlock, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Agent_send_adds_a_temporary_user_message_and_activity_lifecycle_clears()
     {
         var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));

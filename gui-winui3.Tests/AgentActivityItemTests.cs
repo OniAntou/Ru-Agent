@@ -248,9 +248,22 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void Detail_Property_Tracks_Model_And_Notifies()
+    public void HasDetail_Reflects_Detail_Presence_And_Notifies()
     {
-        var model = Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Terminal, detail: "npm run test");
+        var without = new AgentActivityItem(Activity(AgentActivityState.Started));
+        Assert.False(without.HasDetail);
+
+        var changed = new List<string?>();
+        without.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        without.UpdateFrom(Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Status, detail: "paused for inspection"));
+
+        Assert.True(without.HasDetail);
+        Assert.Contains(nameof(AgentActivityItem.HasDetail), changed);
+    }
+
+    [Fact]
+    public void Detail_Property_Tracks_Model_And_Notifies()
+    {        var model = Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Terminal, detail: "npm run test");
         var item = new AgentActivityItem(model);
 
         Assert.Equal("npm run test", item.Detail);

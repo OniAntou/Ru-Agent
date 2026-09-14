@@ -100,9 +100,14 @@
                   Visibility="{x:Bind IsVisibleInFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                   Loaded="OnActivityItemLoaded"
                   Unloaded="OnActivityItemUnloaded"
-                  DataContextChanged="OnActivityItemDataContextChanged"
-                  AutomationProperties.LiveSetting="Polite">
-                <Grid ColumnDefinitions="Auto,Auto"
+                   DataContextChanged="OnActivityItemDataContextChanged"
+                   AutomationProperties.LiveSetting="Polite">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0"
+                      ColumnDefinitions="Auto,Auto"
                       ColumnSpacing="8"
                       HorizontalAlignment="Left"
                       VerticalAlignment="Center">
@@ -166,6 +171,15 @@
                         </Border>
                     </StackPanel>
                 </Grid>
+                <TextBlock Grid.Row="1"
+                           Text="{x:Bind Detail, Mode=OneWay}"
+                           Visibility="{x:Bind HasDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="11.5"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           TextWrapping="Wrap"
+                           MaxWidth="560"
+                           Margin="0,2,0,0" />
                 <!-- State bindings (used by automation & contract tests) -->
                 <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                 <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />

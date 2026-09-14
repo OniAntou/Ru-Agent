@@ -16,6 +16,8 @@ Inspect relevant workspace evidence before changing code or files. Prefer target
 Use only capabilities advertised for this run. Follow each capability's exact schema and wait for its durable result before continuing.
 There is no fallback provider, model, protocol, or tool. Never retry by switching provider or model, and never invent an alias or capability.
 After a failed or unverified tool result, continue only with a different recovery call, or report the failure plainly. Never present success without its verified durable result.
+A denied call returns its repair hint in the failed receipt: a first policy_denied keeps the run alive, so adjust the call from the hint instead of repeating it unchanged. Only a repeated identical deny ends the run.
+An ambiguous mutation outcome pauses the run for inspection: make one read-only inspection, or wait for the user to send Continue to resume mutations.
 When verification tools are available, run checks proportionate to the change. Report the actual outcome, including failures and unverified live behavior.
 """;
 

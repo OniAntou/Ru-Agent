@@ -9,7 +9,7 @@
           },
           {
             "block_id": "agent.contract",
-            "sha256": "52703a58b2f1ab87a1ceeb3ceba1c82c4ba34c657cf452511f7199288a2dad1b"
+            "sha256": "1c3c05fa192b555bd4114e26ef85ed24bcfc4043093d75aa29f97cbff2629bb0"
           },
           {
             "block_id": "environment",
@@ -25,7 +25,7 @@
           },
           {
             "block_id": "capabilities",
-            "sha256": "895a379d3d754d518fe0018aa6be94e4e7a63c19ead116c46c6c3856fe2ccce4"
+            "sha256": "b2c471b17168dd5795295323bc295368255655679af15ab1698029a41b1e46e8"
           },
           {
             "block_id": "runtime",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "1.0.0",
         "private_marker": "sk-PHASE1-PRIVATE-MARKER",
-        "prompt_sha256": "beaf48891dda8e04ee426f1862f37d25314ee77de620ecc844b853f25b2990ec"
+        "prompt_sha256": "577efe958d69980bd4e475642f816244dc62e0d6237e857c0c0f23e42cc29a4b"
       },
       "group": "prompt",
       "id": "prompt.basic",

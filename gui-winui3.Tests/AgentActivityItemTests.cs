@@ -248,6 +248,35 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
+    public void Edit_started_preview_splits_into_before_and_after_panes()
+    {
+        var model = Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ line one\\nline two ==> line one\\nline TWO");
+        var item = new AgentActivityItem(model);
+
+        Assert.True(item.HasEditPreview);
+        Assert.False(item.HasDetail);
+        Assert.Equal("line one\nline two", item.EditBeforeText);
+        Assert.Equal("line one\nline TWO", item.EditAfterText);
+    }
+
+    [Fact]
+    public void Edit_completed_frame_has_no_two_pane_preview()
+    {
+        var model = Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ a ==> b");
+        var item = new AgentActivityItem(model);
+
+        Assert.False(item.HasEditPreview);
+        Assert.Equal(string.Empty, item.EditBeforeText);
+        Assert.Equal(string.Empty, item.EditAfterText);
+    }
+
+    [Fact]
     public void HasDetail_Reflects_Detail_Presence_And_Notifies()
     {
         var without = new AgentActivityItem(Activity(AgentActivityState.Started));

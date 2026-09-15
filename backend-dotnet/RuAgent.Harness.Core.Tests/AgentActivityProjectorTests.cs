@@ -115,8 +115,7 @@ public sealed class AgentActivityProjectorTests
         Assert.Equal(12, activity.LineEnd);
         Assert.Equal(2, activity.Added);
         Assert.Equal(1, activity.Removed);
-        Assert.DoesNotContain("old", activity.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain("new", activity.ToString(), StringComparison.Ordinal);
+        Assert.Contains("@@ old\\ntext ==> new\\ntext\\nextra", activity.Detail, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -335,6 +334,41 @@ public sealed class AgentActivityProjectorTests
         var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
         Assert.Equal(AgentActivityKind.Analyze, activity.Kind);
         Assert.Equal("View", activity.ToolDisplay);
+    }
+
+    [Fact]
+    public void Edit_started_frame_carries_a_bounded_two_pane_preview_in_detail()
+    {
+        var proposal = Proposal(
+            "edit",
+            "{\"path\":\"notes.txt\",\"old_string\":\"line one\\nline two\",\"new_string\":\"line one\\nline TWO\"}");
+
+        var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Edit, started.Kind);
+        Assert.Equal("@@ line one\\nline two ==> line one\\nline TWO", started.Detail);
+
+        var completed = AgentActivityProjector.ProjectTool(
+            proposal,
+            AgentActivityState.Completed,
+            Receipt("{\"replacements\":1}"));
+        Assert.Null(completed.Detail);
+    }
+
+    [Fact]
+    public void Edit_preview_rejects_control_chars_and_stays_bounded()
+    {
+        var control = Proposal(
+            "edit",
+            "{\"path\":\"notes.txt\",\"old_string\":\"a\\u0001b\",\"new_string\":\"c\"}");
+        Assert.Null(AgentActivityProjector.ProjectTool(control, AgentActivityState.Started).Detail);
+
+        var big = Proposal(
+            "edit",
+            "{\"path\":\"notes.txt\",\"old_string\":\"" + new string('a', 5_000) + "\",\"new_string\":\"b\"}");
+        var detail = AgentActivityProjector.ProjectTool(big, AgentActivityState.Started).Detail;
+        Assert.NotNull(detail);
+        Assert.True(detail.Length <= 4_000);
     }
 
     [Fact]

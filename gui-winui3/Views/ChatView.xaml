@@ -105,6 +105,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0"
                       ColumnDefinitions="Auto,Auto"
@@ -180,6 +181,63 @@
                            TextWrapping="Wrap"
                            MaxWidth="560"
                            Margin="0,2,0,0" />
+                <Grid Grid.Row="2"
+                      Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                      ColumnDefinitions="*,*"
+                      ColumnSpacing="8"
+                      Margin="0,6,0,0"
+                      MaxWidth="560">
+                    <Border Grid.Column="0"
+                            Background="{StaticResource RuCanvasBrush}"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="8,6">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Before"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="10"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <ScrollViewer MaxHeight="160"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto">
+                                <TextBlock Text="{x:Bind EditBeforeText, Mode=OneWay}"
+                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource RuDangerBrush}"
+                                           TextWrapping="Wrap"
+                                           IsTextSelectionEnabled="True"
+                                           AutomationProperties.Name="Edit before" />
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1"
+                            Background="{StaticResource RuCanvasBrush}"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="8,6">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="After"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="10"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <ScrollViewer MaxHeight="160"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto">
+                                <TextBlock Text="{x:Bind EditAfterText, Mode=OneWay}"
+                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource RuSuccessBrush}"
+                                           TextWrapping="Wrap"
+                                           IsTextSelectionEnabled="True"
+                                           AutomationProperties.Name="Edit after" />
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+                </Grid>
                 <!-- State bindings (used by automation & contract tests) -->
                 <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                 <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
@@ -416,6 +474,32 @@
                 </Grid>
             </ScrollViewer>
         </Grid>
+
+        <Button x:Name="NewMessagesPill"
+                Grid.Row="0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,16"
+                Visibility="Collapsed"
+                Click="OnNewMessagesPillClick"
+                AutomationProperties.AutomationId="NewMessagesPill"
+                AutomationProperties.Name="Jump to latest messages"
+                Background="{StaticResource RuSurfaceBrush}"
+                Foreground="{StaticResource RuInkBrush}"
+                BorderBrush="{StaticResource RuLineBrush}"
+                BorderThickness="1"
+                CornerRadius="16"
+                Padding="12,6">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE74B;" FontSize="12" Foreground="{StaticResource RuAccentBrush}" />
+                <TextBlock Text="New messages"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource RuInkBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Button>
 
             <Grid x:Name="InputContainer"
               Grid.Row="1"

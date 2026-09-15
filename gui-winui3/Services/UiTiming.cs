@@ -14,9 +14,12 @@ public static class UiTiming
     public static readonly TimeSpan ModelSaveFailure = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan AgentRetryDelay = TimeSpan.FromSeconds(1);
     public static readonly TimeSpan WaveFrame = TimeSpan.FromMilliseconds(40);
+    public static readonly TimeSpan ActivityFlushBatch = TimeSpan.FromMilliseconds(80);
+    public static readonly TimeSpan ContextMeterDebounce = TimeSpan.FromMilliseconds(250);
     public static readonly TimeSpan ChatFlash = TimeSpan.FromMilliseconds(120);
     public static readonly TimeSpan ActivityMinHold = TimeSpan.FromMilliseconds(300);
     public const double ActivityWavePeriodSeconds = 0.65;
+    public const double ChatFollowThresholdPx = 100.0;
 
     public const double StaleReactionSeconds = 15.0;
     public const double ResizerActiveOpacity = 0.85;

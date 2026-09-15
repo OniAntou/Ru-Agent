@@ -55,6 +55,39 @@ public sealed class AgentReplyAccumulator
         }
     }
 
+    public string? SessionId
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sessionId;
+            }
+        }
+    }
+
+    public bool HasSession => SessionId is not null;
+
+    public void Rebind(string sessionId, string runId)
+    {
+        if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(runId))
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_sessionId is null || !string.Equals(_sessionId, sessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _runId = runId;
+            _generation++;
+            _seenKeys.Clear();
+        }
+    }
+
     public void Invalidate()
     {
         lock (_gate)

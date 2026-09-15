@@ -134,7 +134,11 @@ namespace RuApp.Views
             AttachmentPreviewList.ItemsSource = PendingAttachments;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
-            this.Loaded += (s, e) => ApplyInputWidth();
+            this.Loaded += (s, e) =>
+            {
+                ApplyInputWidth();
+                EnsureNewMessagesPillWired();
+            };
             InitializeChatHoverEffects();
             UpdateViewMode();
         }
@@ -773,11 +777,43 @@ namespace RuApp.Views
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
         {
-            UpdateContextUsage();
+            _composerDraftBySession[_activeSessionId] = ChatInputTextBox.Text ?? string.Empty;
+            ScheduleContextMeterUpdate();
             if (string.IsNullOrEmpty(ChatInputTextBox.Text))
             {
                 return;
             }
+        }
+
+        private DispatcherQueueTimer? _contextMeterTimer;
+        private bool _contextMeterScheduled;
+
+        private void ScheduleContextMeterUpdate()
+        {
+            if (_suppressContextUsageUpdate)
+            {
+                return;
+            }
+
+            if (_contextMeterTimer is null)
+            {
+                _contextMeterTimer = DispatcherQueue.CreateTimer();
+                _contextMeterTimer.Interval = Services.UiTiming.ContextMeterDebounce;
+                _contextMeterTimer.Tick += (_, _) =>
+                {
+                    _contextMeterTimer?.Stop();
+                    _contextMeterScheduled = false;
+                    UpdateContextUsage();
+                };
+            }
+
+            if (_contextMeterScheduled)
+            {
+                return;
+            }
+
+            _contextMeterScheduled = true;
+            _contextMeterTimer.Start();
         }
 
         private static async void PushSafelyAsync(Task? task)
@@ -823,6 +859,11 @@ namespace RuApp.Views
 
         private void EnqueueAgentActivity(AgentActivityModel activity)
         {
+            // An activity frame may arrive while the turn is armed but the
+            // controller has not flipped busy yet (the Thinking Started frame
+            // is published before the first model call completes): arm the
+            // assistant anchor now so the first frames are never dropped.
+            EnsureAgentActivityAnchor();
             _pendingAgentActivities.Add(activity);
             if (_pendingAgentActivities.Count == 1 && _activityFlushTimer?.IsRunning != true)
             {
@@ -838,7 +879,7 @@ namespace RuApp.Views
             if (_activityFlushTimer is null)
             {
                 _activityFlushTimer = DispatcherQueue.CreateTimer();
-                _activityFlushTimer.Interval = TimeSpan.FromMilliseconds(80);
+                _activityFlushTimer.Interval = Services.UiTiming.ActivityFlushBatch;
                 _activityFlushTimer.Tick += OnActivityFlushTick;
             }
 
@@ -904,7 +945,7 @@ namespace RuApp.Views
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
         {
-            if ((!allowWhenIdle && _agentController?.IsBusy != true)
+            if ((!allowWhenIdle && _agentController?.IsBusy != true && !IsActiveAgentRunPending())
                 || string.IsNullOrWhiteSpace(activity.ActivityId))
             {
                 return;
@@ -952,10 +993,56 @@ namespace RuApp.Views
                 var item = new AgentActivityItem(activity);
 
                 _agentActivityById.Add(item.ActivityId, item);
-                AgentActivities.Add(item);
+                InsertActivityInFeedOrder(item);
                 FreezeTextSegmentForActivity(item);
                 TrackTerminalToolState(item);
             }
+        }
+
+        /// <summary>
+        /// Inserts a new activity row so tool progress reads chronologically:
+        /// a settled Thinking row stays above the tool rows that followed it
+        /// instead of sinking below them, matching the Codex/OpenCode feel.
+        /// </summary>
+        private void InsertActivityInFeedOrder(AgentActivityItem item)
+        {
+            int insertAt = AgentActivities.Count;
+            if (item.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking)
+            {
+                while (insertAt > 0
+                    && AgentActivities[insertAt - 1].Kind != RuAgent.Protocol.Harness.AgentActivityKind.Thinking)
+                {
+                    insertAt--;
+                }
+            }
+
+            AgentActivities.Insert(insertAt, item);
+        }
+
+        /// <summary>
+        /// Arms the live assistant bubble for activity-only progress while the
+        /// turn is still being sent: SendCurrentMessageAsync holds
+        /// _isSendingUserTurn across the whole create-run await, so the first
+        /// SSE frames (Thinking Started) land before the controller flips busy
+        /// or the first text delta arrives. A no-op once the anchor exists.
+        /// </summary>
+        private void EnsureAgentActivityAnchor()
+        {
+            if (_activeAgentAssistantMessage is not null || !_isSendingUserTurn)
+            {
+                return;
+            }
+
+            _activeAgentAssistantMessage = new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = string.Empty,
+                IsStreaming = true,
+                SessionId = _activeSessionId,
+            };
+            _activeAgentAssistantMessage.AgentActivities = AgentActivities;
+            _segmentFrozenLength = 0;
+            Messages.Add(_activeAgentAssistantMessage);
         }
 
         /// <summary>
@@ -1059,7 +1146,7 @@ namespace RuApp.Views
             if (_holdTimer is null)
             {
                 _holdTimer = DispatcherQueue.CreateTimer();
-                _holdTimer.Interval = TimeSpan.FromMilliseconds(40);
+                _holdTimer.Interval = Services.UiTiming.WaveFrame;
                 _holdTimer.Tick += OnHoldTimerTick;
             }
 
@@ -1229,7 +1316,7 @@ namespace RuApp.Views
             }
 
             AgentRunModel? run = _agentController?.CurrentRun;
-            if (run is null || _agentController?.IsBusy != true)
+            if (run is null || (_agentController?.IsBusy != true && !IsActiveAgentRunPending()))
             {
                 return;
             }
@@ -1243,13 +1330,22 @@ namespace RuApp.Views
             }
             if (activeAssistantMessage is null)
             {
-                return;
+                EnsureAgentActivityAnchor();
+                lock (_accumulatorLock)
+                {
+                    activeAssistantMessage = _activeAgentAssistantMessage;
+                }
+                if (activeAssistantMessage is null)
+                {
+                    return;
+                }
             }
 
             activeRunId ??= run.RunId;
             lock (_accumulatorLock)
             {
                 _activeAgentRunId = activeRunId;
+                _replyAccumulator.Rebind(_activeSessionId, activeRunId);
             }
             if (!string.Equals(activeRunId, run.RunId, StringComparison.Ordinal))
             {
@@ -1266,20 +1362,18 @@ namespace RuApp.Views
             if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
             {
                 // If no active accumulator (e.g., after Invalidate), begin with real runId and retry once
-                string? currentRunId;
+                if (!_replyAccumulator.HasSession
+                    || !string.Equals(_replyAccumulator.SessionId, _activeSessionId, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _replyAccumulator.Rebind(_activeSessionId, run.RunId);
                 lock (_accumulatorLock)
                 {
-                    currentRunId = _activeAgentRunId;
+                    _activeAgentRunId = run.RunId;
                 }
-                if (currentRunId != null && run.RunId == currentRunId)
-                {
-                    _replyAccumulator.Begin(_activeSessionId, run.RunId);
-                    if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
-                    {
-                        return;
-                    }
-                }
-                else
+                if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
                 {
                     return;
                 }
@@ -1954,6 +2048,7 @@ namespace RuApp.Views
                 // Approval arrives via SSE while the user may be scrolled up;
                 // bring the Approve/Deny panel into view.
                 ScrollChatToBottom();
+                AgentApproveButton?.Focus(FocusState.Programmatic);
             }
             else
             {
@@ -1967,9 +2062,18 @@ namespace RuApp.Views
             AgentInlinePanel.Visibility = hasInlineAction ? Visibility.Visible : Visibility.Collapsed;
 
             bool actionsEnabled = !_agentActionPending;
-            AgentApproveButton.IsEnabled = actionsEnabled;
-            AgentDenyButton.IsEnabled = actionsEnabled;
-            AgentStopButton.IsEnabled = actionsEnabled;
+            if (AgentApproveButton is not null)
+            {
+                AgentApproveButton.IsEnabled = actionsEnabled;
+            }
+            if (AgentDenyButton is not null)
+            {
+                AgentDenyButton.IsEnabled = actionsEnabled;
+            }
+            if (AgentStopButton is not null)
+            {
+                AgentStopButton.IsEnabled = actionsEnabled;
+            }
         }
 
         private static string ResolveFailureReason(AgentRunController controller)
@@ -2513,6 +2617,7 @@ namespace RuApp.Views
                 ChatInputTextBox.Text = string.Empty;
                 PendingAttachments.Clear();
                 AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+                ClearComposerDraft(_activeSessionId);
 
 
                 var textAttachments = attachments.Where(a => !a.IsImage && !string.IsNullOrWhiteSpace(a.TextContent)).ToList();
@@ -2619,6 +2724,7 @@ namespace RuApp.Views
 
                 StartNewAgentActivityRun();
                 BeginAgentReply(text, attachments, displayUserText, addUserMessage);
+                JumpToLatestForNewTurn();
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Preparing action…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
@@ -2665,6 +2771,10 @@ namespace RuApp.Views
             _terminalFailureCardContent = null;
             _agentDeltaKeys.Clear();
             _replyRenderScheduler.Invalidate();
+            lock (_accumulatorLock)
+            {
+                _replyAccumulator.Begin(_activeSessionId, _activeSessionId);
+            }
 
             if (addUserMessage)
             {
@@ -3297,10 +3407,14 @@ namespace RuApp.Views
             {
                 double verticalOffset = ChatScrollHost.VerticalOffset;
                 double maxOffset = ChatScrollHost.ScrollableHeight;
-                bool nearBottom = maxOffset - verticalOffset <= 100; // Within 100px of bottom
-                if (nearBottom)
+                bool nearBottom = maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
+                if (nearBottom || _followOutput)
                 {
                     ChatScrollHost.ChangeView(null, maxOffset, null, disableAnimation: true);
+                }
+                else
+                {
+                    ShowNewMessagesPill();
                 }
                 return;
             }
@@ -3313,11 +3427,89 @@ namespace RuApp.Views
             {
                 double verticalOffset = ChatScrollHost.VerticalOffset;
                 double maxOffset = ChatScrollHost.ScrollableHeight;
-                bool nearBottom = maxOffset - verticalOffset <= 100;
+                bool nearBottom = maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
                 if (nearBottom)
                 {
                     ChatScrollHost.ChangeView(null, maxOffset, null, disableAnimation: true);
                 }
+                else
+                {
+                    ShowNewMessagesPill();
+                }
+            }
+        }
+
+        private readonly Dictionary<string, string> _composerDraftBySession = new(StringComparer.Ordinal);
+        private bool _newMessagesPillWired;
+        private bool _followOutput = true;
+
+        private void RestoreComposerDraft(string sessionId)
+        {
+            if (_composerDraftBySession.TryGetValue(sessionId, out var draft)
+                && ChatInputTextBox is not null
+                && !string.Equals(ChatInputTextBox.Text, draft, StringComparison.Ordinal))
+            {
+                ChatInputTextBox.Text = draft;
+            }
+        }
+
+        private void ClearComposerDraft(string sessionId) => _composerDraftBySession.Remove(sessionId);
+
+        private void EnsureNewMessagesPillWired()
+        {
+            if (_newMessagesPillWired || ChatScrollHost is null)
+            {
+                return;
+            }
+
+            _newMessagesPillWired = true;
+            ChatScrollHost.ViewChanged += (_, _) => OnChatScrollViewChanged();
+        }
+
+        private void OnChatScrollViewChanged()
+        {
+            if (ChatScrollHost is null || NewMessagesPill is null)
+            {
+                return;
+            }
+
+            double maxOffset = ChatScrollHost.ScrollableHeight;
+            _followOutput = maxOffset <= 0
+                || maxOffset - ChatScrollHost.VerticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
+            if (_followOutput)
+            {
+                NewMessagesPill.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ShowNewMessagesPill()
+        {
+            if (_followOutput || NewMessagesPill is null)
+            {
+                return;
+            }
+
+            NewMessagesPill.Visibility = Visibility.Visible;
+        }
+
+        private void OnNewMessagesPillClick(object sender, RoutedEventArgs e)
+        {
+            _followOutput = true;
+            if (NewMessagesPill is not null)
+            {
+                NewMessagesPill.Visibility = Visibility.Collapsed;
+            }
+
+            ChatScrollHost?.ChangeView(null, ChatScrollHost?.ScrollableHeight, null, disableAnimation: true);
+            ChatInputTextBox?.Focus(FocusState.Programmatic);
+        }
+
+        private void JumpToLatestForNewTurn()
+        {
+            _followOutput = true;
+            if (NewMessagesPill is not null)
+            {
+                NewMessagesPill.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -3396,9 +3588,12 @@ namespace RuApp.Views
                 // cancellation races the next create request and surfaces as the
                 // misleading "workspace busy" error.
                 await StopActiveAgentAsync(force: true);
+                _composerDraftBySession[_activeSessionId] = ChatInputTextBox?.Text ?? string.Empty;
                 _activeSessionId = sessionId;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
+                JumpToLatestForNewTurn();
+                RestoreComposerDraft(sessionId);
                 if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 0)
                 {
                     AgentPresetBox.SelectedIndex = 0;
@@ -3516,6 +3711,9 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
+            _contextMeterTimer?.Stop();
+            _contextMeterTimer = null;
+            _contextMeterScheduled = false;
             if (_modelSaveFailureTimer != null)
             {
                 _modelSaveFailureTimer.Stop();

@@ -42,6 +42,23 @@ public sealed class AgentReplyAccumulatorTests
     }
 
     [Fact]
+    public void Rebind_moves_a_session_bound_reply_to_the_live_run_without_dropping_text()
+    {
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("s1", "s1");
+        Assert.True(reply.HasSession);
+        Assert.Equal("s1", reply.SessionId);
+
+        reply.Rebind("s1", "r1");
+        Assert.True(reply.TryAppend("r1", "m1", 1, "hello"));
+        var snap = reply.TakeSnapshot();
+        Assert.NotNull(snap);
+        Assert.Equal("s1", snap.SessionId);
+        Assert.Equal("r1", snap.RunId);
+        Assert.Equal("hello", snap.Text);
+    }
+
+    [Fact]
     public void Invalidate_clears_pending_text_and_identities()
     {
         var reply = new AgentReplyAccumulator();

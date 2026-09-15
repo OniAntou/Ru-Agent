@@ -5,7 +5,9 @@ namespace RuApp.Services;
 
 /// <summary>
 /// Feed presentation policy applied in place after every activity mutation:
-/// - Completed Thinking rows never reach the feed (duration-only noise).
+/// - Thinking rows always stay in the feed (running shows "Thinking", settled
+///   shows "Thought for Xs"): hiding them left the assistant bubble empty
+///   while the model worked, unlike Codex/OpenCode.
 /// - Consecutive identical completed rows (same kind and target) keep the
 ///   last one.
 /// Running, waiting and failed rows are never collapsed.
@@ -25,20 +27,7 @@ internal static class AgentActivityGrouper
             item.CollapsedDurationMs = 0;
         }
 
-        HideCompletedThoughts(items);
         CollapseIdenticalCompleted(items);
-    }
-
-    private static void HideCompletedThoughts(IList<AgentActivityItem> items)
-    {
-        foreach (var item in items)
-        {
-            if (item.Kind == AgentActivityKind.Thinking
-                && item.State == AgentActivityState.Completed)
-            {
-                item.IsVisibleInFeed = false;
-            }
-        }
     }
 
     /// <summary>

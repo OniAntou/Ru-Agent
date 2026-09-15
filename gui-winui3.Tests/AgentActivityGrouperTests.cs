@@ -9,7 +9,7 @@ namespace RuApp.Tests;
 public sealed class AgentActivityGrouperTests
 {
     [Fact]
-    public void Completed_thoughts_stay_out_of_the_feed()
+    public void Completed_thoughts_stay_in_the_feed_with_duration()
     {
         var items = new List<AgentActivityItem>
         {
@@ -20,11 +20,12 @@ public sealed class AgentActivityGrouperTests
 
         AgentActivityGrouper.Reconcile(items);
 
-        Assert.All(items, item => Assert.False(item.IsVisibleInFeed));
+        Assert.All(items, item => Assert.True(item.IsVisibleInFeed));
+        Assert.Equal("Thought for 4 seconds", items[0].DisplayText);
     }
 
     [Fact]
-    public void Running_thought_stays_visible_while_completed_ones_hide()
+    public void Running_thought_stays_visible_alongside_completed_ones()
     {
         var items = new List<AgentActivityItem>
         {
@@ -34,7 +35,7 @@ public sealed class AgentActivityGrouperTests
 
         AgentActivityGrouper.Reconcile(items);
 
-        Assert.False(items[0].IsVisibleInFeed);
+        Assert.True(items[0].IsVisibleInFeed);
         Assert.True(items[1].IsVisibleInFeed);
         Assert.Equal("Thinking", items[1].DisplayText);
     }

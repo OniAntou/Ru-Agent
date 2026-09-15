@@ -108,7 +108,21 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _detail, value);
     }
 
-    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
+    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
+
+    /// <summary>Two-pane edit preview marker: "@@ old ==&gt; new" with escaped newlines.</summary>
+    public bool IsEditPreview =>
+        Kind == AgentActivityKind.Edit
+        && State == AgentActivityState.Started
+        && Detail is { } detail
+        && detail.StartsWith("@@ ", StringComparison.Ordinal)
+        && detail.Contains(" ==> ", StringComparison.Ordinal);
+
+    public bool HasEditPreview => IsEditPreview;
+
+    public string EditBeforeText => IsEditPreview ? SplitEditPreview().Before : string.Empty;
+
+    public string EditAfterText => IsEditPreview ? SplitEditPreview().After : string.Empty;
 
     private bool _isVisibleInFeed = true;
 
@@ -378,6 +392,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(EffectiveDurationMs));
         OnPropertyChanged(nameof(Detail));
         OnPropertyChanged(nameof(HasDetail));
+        OnPropertyChanged(nameof(IsEditPreview));
+        OnPropertyChanged(nameof(HasEditPreview));
+        OnPropertyChanged(nameof(EditBeforeText));
+        OnPropertyChanged(nameof(EditAfterText));
     }
 
     private string FormatSearch(string prefix)
@@ -420,6 +438,24 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(propertyName);
         return true;
     }
+
+    private (string Before, string After) SplitEditPreview()
+    {
+        var detail = Detail ?? string.Empty;
+        var body = detail.StartsWith("@@ ", StringComparison.Ordinal) ? detail[3..] : detail;
+        var separator = body.IndexOf(" ==> ", StringComparison.Ordinal);
+        if (separator < 0)
+        {
+            return (UnescapePreview(body), string.Empty);
+        }
+
+        return (
+            UnescapePreview(body[..separator]),
+            UnescapePreview(body[(separator + 5)..]));
+    }
+
+    private static string UnescapePreview(string value) =>
+        value.Replace("\\n", "\n", StringComparison.Ordinal);
 
     private void OnPropertyChanged(string? propertyName) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

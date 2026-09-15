@@ -59,7 +59,9 @@ public static class AgentActivityProjector
         var toolDisplay = ToolDisplayFor(proposal);
         var detail = state == AgentActivityState.Waiting && kind == AgentActivityKind.Terminal
             ? ExtractTerminalCommand(proposal)
-            : null;
+            : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
+                ? ExtractEditPreview(proposal)
+                : null;
 
         return new AgentActivity(
             ActivityId(proposal.ToolCallId.Value),
@@ -142,6 +144,79 @@ public static class AgentActivityProjector
 
         var cleaned = raw.Replace('\0', ' ').Trim();
         return cleaned.Length <= MaximumDetailLength ? cleaned : cleaned[..MaximumDetailLength];
+    }
+
+    /// <summary>
+    /// Live two-pane edit preview for the Started frame: the exact old/new
+    /// strings from the proposal, bounded and control-char safe. Lines stay
+    /// escaped so the wire keeps its single-line detail shape; the client
+    /// splits them back into two panes. Receipts carry only counts, so this
+    /// is the only frame that can show the change itself.
+    /// </summary>
+    private static string? ExtractEditPreview(ToolProposal proposal)
+    {
+        if (!string.Equals(proposal.ToolId, "edit", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        try
+        {
+            var arguments = proposal.Arguments;
+            if (arguments.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (!arguments.TryGetProperty("old_string", out var oldNode)
+                || oldNode.ValueKind != JsonValueKind.String
+                || !arguments.TryGetProperty("new_string", out var newNode)
+                || newNode.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var oldString = oldNode.GetString() ?? string.Empty;
+            var newString = newNode.GetString() ?? string.Empty;
+            if (oldString.Length == 0 && newString.Length == 0)
+            {
+                return null;
+            }
+
+            const int sideBudget = 1_800;
+            var oldSide = BoundPreviewSide(oldString, sideBudget);
+            var newSide = BoundPreviewSide(newString, sideBudget);
+            if (oldSide is null || newSide is null)
+            {
+                return null;
+            }
+
+            return $"@@ {oldSide} ==> {newSide}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? BoundPreviewSide(string value, int maxChars)
+    {
+        if (value.Contains('\0'))
+        {
+            return null;
+        }
+
+        var flattened = value.Replace("\r\n", "\\n").Replace("\r", "\\n").Replace("\n", "\\n");
+        foreach (var character in flattened)
+        {
+            if (char.IsControl(character) && character != '\t')
+            {
+                return null;
+            }
+        }
+
+        var trimmed = flattened.Trim();
+        return trimmed.Length <= maxChars ? trimmed : trimmed[..maxChars];
     }
 
     /// <summary>

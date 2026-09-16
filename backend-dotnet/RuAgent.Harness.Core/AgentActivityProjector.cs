@@ -57,7 +57,15 @@ public static class AgentActivityProjector
         }
 
         var toolDisplay = ToolDisplayFor(proposal);
-        var detail = state == AgentActivityState.Waiting && kind == AgentActivityKind.Terminal
+
+        // A terminal command is worth showing for as long as it is relevant: while it
+        // waits for an approval decision, and while it actually runs. Showing it only in
+        // the waiting state meant a command the user had already approved went dark the
+        // moment it started, which is exactly when they want to see it. The command is
+        // the same value in both states and passes the same cleaning, so this widens when
+        // it is shown, not what is exposed.
+        var detail = kind == AgentActivityKind.Terminal
+                && state is AgentActivityState.Waiting or AgentActivityState.Started
             ? ExtractTerminalCommand(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)

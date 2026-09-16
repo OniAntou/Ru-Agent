@@ -121,7 +121,7 @@ public sealed class AgentActivityProjectorTests
     [Theory]
     [InlineData("run")]
     [InlineData("shell")]
-    public void Terminal_projection_is_generic_and_has_no_command_metadata(string mode)
+    public void Terminal_projection_keeps_the_path_out_of_metadata(string mode)
     {
         var proposal = Proposal(
             "bash",
@@ -132,10 +132,60 @@ public sealed class AgentActivityProjectorTests
             AgentActivityState.Started);
 
         Assert.Equal(AgentActivityKind.Terminal, activity.Kind);
+
+        // The metadata fields are the ones the row renders as file/line/symbol, and a
+        // terminal call has none of them: a path must not arrive through them.
         Assert.Null(activity.FileName);
         Assert.Null(activity.Symbol);
-        Assert.DoesNotContain("Get-ChildItem", activity.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain("D:\\", activity.ToString(), StringComparison.Ordinal);
+        Assert.Null(activity.LineStart);
+        Assert.Null(activity.Count);
+
+        // The command itself is the detail, and the working directory is not part of it.
+        Assert.Equal("Get-ChildItem D:\\LLM", activity.Detail);
+    }
+
+    [Theory]
+    [InlineData("run")]
+    [InlineData("shell")]
+    public void A_running_terminal_carries_the_command_it_is_running(string mode)
+    {
+        // The command used to appear only while it waited for an approval decision, so a
+        // command the user had approved went dark the moment it started running.
+        var proposal = Proposal(
+            "bash",
+            "{\"mode\":\"" + mode + "\",\"script\":\"dotnet test --nologo\"}");
+
+        var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+        var waiting = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Waiting);
+
+        Assert.Equal("dotnet test --nologo", started.Detail);
+        Assert.Equal("dotnet test --nologo", waiting.Detail);
+    }
+
+    [Fact]
+    public void A_settled_terminal_drops_the_command()
+    {
+        // Once the call is over the row reports its outcome, not the command it ran.
+        var proposal = Proposal(
+            "bash",
+            "{\"mode\":\"run\",\"executable\":\"rm\",\"arguments\":[\"-rf\",\"node_modules\"]}");
+
+        var completed = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Completed);
+
+        Assert.Null(completed.Detail);
+    }
+
+    [Fact]
+    public void A_started_non_terminal_tool_carries_no_command_detail()
+    {
+        // The widening applies to terminal calls only: a read or a search must not pick
+        // up a detail it never had.
+        var proposal = Proposal("read", "{\"op\":\"read\",\"path\":\"README.md\"}");
+
+        var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+
+        Assert.NotEqual(AgentActivityKind.Terminal, started.Kind);
+        Assert.Null(started.Detail);
     }
 
     [Fact]

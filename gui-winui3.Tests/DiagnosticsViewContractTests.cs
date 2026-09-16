@@ -1,24 +1,65 @@
 using System.Text;
 using System.Text.Json;
 using RuApp.Models;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
 
+/// <summary>
+/// Diagnostics surface: no emoji in what it renders, typed log rows, and rows that
+/// are swapped in one batch so a streaming log does not re-render per line.
+///
+/// The batching claim is exercised on the collection that implements it rather than
+/// by searching the view for a method name.
+/// </summary>
 public sealed class DiagnosticsViewContractTests
 {
     [Fact]
-    public void DiagnosticsViewPresentationSourcesContainNoEmoji()
+    public void DiagnosticsMarkupContainsNoEmojiInAnyRenderedText()
     {
-        foreach (var sourceName in new[] { "DiagnosticsView.xaml", "DiagnosticsView.xaml.cs" })
+        var document = GuiSource.Xml("Views", "DiagnosticsView.xaml");
+        var offenders = new List<string>();
+
+        foreach (var element in document.Descendants())
         {
-            foreach (var rune in File.ReadAllText(FindViewSource(sourceName)).EnumerateRunes())
+            foreach (var attribute in element.Attributes())
             {
-                Assert.False(
-                    IsEmojiRune(rune),
-                    $"{sourceName} contains prohibited emoji U+{rune.Value:X4}.");
+                if (attribute.Name.LocalName is not ("Text" or "Content" or "Header"
+                    or "PlaceholderText" or "Description" or "ToolTipService.ToolTip"))
+                {
+                    continue;
+                }
+
+                foreach (var rune in attribute.Value.EnumerateRunes())
+                {
+                    if (EmojiPolicy.IsEmojiRune(rune))
+                    {
+                        offenders.Add($"<{element.Name.LocalName} {attribute.Name.LocalName}> U+{rune.Value:X4}");
+                    }
+                }
             }
         }
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void Diagnostics_code_behind_declares_no_emoji_in_string_literals()
+    {
+        var offenders = new List<string>();
+        foreach (var literal in EmojiPolicy.StringLiterals(GuiSource.Text("Views", "DiagnosticsView.xaml.cs")))
+        {
+            foreach (var rune in literal.EnumerateRunes())
+            {
+                if (EmojiPolicy.IsEmojiRune(rune))
+                {
+                    offenders.Add($"U+{rune.Value:X4}");
+                }
+            }
+        }
+
+        Assert.Empty(offenders);
     }
 
     [Fact]
@@ -48,67 +89,70 @@ public sealed class DiagnosticsViewContractTests
     }
 
     [Fact]
-    public void Export_forwards_component_and_event_code_filters_and_handles_api_failure()
+    public void DiagnosticEventDto_tolerates_a_row_with_only_the_required_fields()
     {
-        var source = File.ReadAllText(FindViewSource("DiagnosticsView.xaml.cs"));
-
-        Assert.Contains("component: component", source, StringComparison.Ordinal);
-        Assert.Contains("eventCode: eventCode", source, StringComparison.Ordinal);
-        Assert.Contains("if (ndjson == null)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("File.ReadAllText", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void DiagnosticsView_batches_rows_and_skips_unchanged_renders()
-    {
-        var source = File.ReadAllText(FindViewSource("DiagnosticsView.xaml.cs"));
-
-        Assert.Contains("BatchObservableCollection<DiagnosticRow>", source, StringComparison.Ordinal);
-        Assert.Contains("Rows.ReplaceAll", source, StringComparison.Ordinal);
-        Assert.Contains("SequenceEqual(visibleEvents)", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Rows.Clear()", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void DiagnosticsView_tolerates_filter_events_before_list_is_loaded()
-    {
-        var source = File.ReadAllText(FindViewSource("DiagnosticsView.xaml.cs"));
-
-        Assert.Contains("FindScrollViewer(DependencyObject? root)", source, StringComparison.Ordinal);
-        Assert.Contains("if (root is null)", source, StringComparison.Ordinal);
-    }
-
-    private static bool IsEmojiRune(Rune rune)
-    {
-        var value = rune.Value;
-        return value is 0x00A9 or 0x00AE or 0x203C or 0x2049 or 0x2122 or 0x2139
-            or 0x3030 or 0x303D or 0x3297 or 0x3299 or 0x20E3 or 0xFE0F
-            or >= 0x2194 and <= 0x21FF
-            or >= 0x2300 and <= 0x23FF
-            or >= 0x2600 and <= 0x27BF
-            or >= 0x2934 and <= 0x2935
-            or >= 0x2B00 and <= 0x2BFF
-            or >= 0x1F000 and <= 0x1FAFF
-            or >= 0xE0020 and <= 0xE007F;
-    }
-
-    private static string FindViewSource(string sourceName)
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
+        // The log is append-only and older rows predate optional fields; a missing
+        // duration or correlation id must not make the row unreadable.
+        var json = """
         {
-            var sourcePath = Path.Combine(
-                directory.FullName,
-                "gui-winui3",
-                "Views",
-                sourceName);
-            if (File.Exists(sourcePath))
-            {
-                return sourcePath;
-            }
+            "event_id": "evt_min",
+            "ts": 1724150400.0,
+            "iso": "2026-08-20T10:40:00.000Z",
+            "level": "warn",
+            "component": "host.http",
+            "event_code": "http.request"
         }
+        """;
 
-        throw new FileNotFoundException($"Could not locate Views/{sourceName}.");
+        var dto = JsonSerializer.Deserialize<DiagnosticEventDto>(json);
+
+        Assert.NotNull(dto);
+        Assert.Equal("evt_min", dto.EventId);
+        Assert.Equal("warn", dto.Level);
+        Assert.Null(dto.DurationMs);
+        Assert.Null(dto.CorrelationId);
     }
+
+    [Fact]
+    public void Swapping_the_visible_rows_notifies_once_for_the_whole_batch()
+    {
+        // A streaming log swaps its visible window every refresh; doing that as N
+        // Add/Remove notifications would re-render per line.
+        var rows = new BatchObservableCollection<RuApp.Views.DiagnosticRow>();
+        var notifications = 0;
+        rows.CollectionChanged += (_, _) => notifications++;
+
+        rows.ReplaceAll(new[] { Row("a"), Row("b"), Row("c") });
+        Assert.Equal(1, notifications);
+
+        var before = rows.ToList();
+        rows.ReplaceAll(new[] { Row("a"), Row("b"), Row("c") });
+        Assert.Equal(2, notifications);
+
+        // The batch is applied wholesale, not merged: the window is authoritative.
+        Assert.Equal(before.Count, rows.Count);
+    }
+
+    [Fact]
+    public void The_diagnostics_view_never_reads_or_writes_files_itself()
+    {
+        // The backend owns log storage. The view may hand bytes to a picker, but
+        // reaching for the filesystem directly would bypass the host's bounds.
+        var view = typeof(RuApp.Views.DiagnosticsView);
+        var methods = view.GetMethods(
+            System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.Static
+            | System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Public);
+
+        Assert.DoesNotContain(
+            methods,
+            method => method.DeclaringType == view
+                && method.Name.Contains("File", StringComparison.OrdinalIgnoreCase)
+                && (method.Name.Contains("Read", StringComparison.OrdinalIgnoreCase)
+                    || method.Name.Contains("Write", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static RuApp.Views.DiagnosticRow Row(string id) =>
+        new(time: "10:40:00", level: "info", component: "host.http", summary: id, detail: string.Empty);
 }

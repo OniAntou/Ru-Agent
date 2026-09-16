@@ -93,11 +93,59 @@ public sealed class AgentActivityGrouperTests
         Assert.Equal(AgentActivityState.Completed, items[2].State);
     }
 
+    [Fact]
+    public void Rows_with_different_counts_or_details_are_never_collapsed()
+    {
+        var items = new List<AgentActivityItem>
+        {
+            Item(AgentActivityState.Completed, AgentActivityKind.Search, symbol: "OnSearch", count: 3),
+            Item(AgentActivityState.Completed, AgentActivityKind.Search, symbol: "OnSearch", count: 5),
+            Item(AgentActivityState.Completed, AgentActivityKind.Edit, fileName: "a.txt", added: 1),
+            Item(AgentActivityState.Completed, AgentActivityKind.Edit, fileName: "a.txt", added: 2),
+        };
+
+        AgentActivityGrouper.Reconcile(items);
+
+        Assert.All(items, item => Assert.True(item.IsVisibleInFeed));
+    }
+
+    [Fact]
+    public void Collapsing_folds_hidden_duration_into_the_survivor()
+    {
+        var items = new List<AgentActivityItem>
+        {
+            Item(AgentActivityState.Completed, AgentActivityKind.Explore, fileName: "LLM", durationMs: 19),
+            Item(AgentActivityState.Completed, AgentActivityKind.Explore, fileName: "LLM", durationMs: 21),
+        };
+
+        AgentActivityGrouper.Reconcile(items);
+
+        Assert.False(items[0].IsVisibleInFeed);
+        Assert.Equal(40, items[1].EffectiveDurationMs);
+    }
+
+    [Fact]
+    public void Settling_a_finished_run_stops_waiting_rows_too()
+    {
+        var items = new List<AgentActivityItem>
+        {
+            Item(AgentActivityState.Waiting, AgentActivityKind.Edit, fileName: "obsolete.txt"),
+        };
+
+        AgentActivityGrouper.SettleRunningRows(items);
+
+        Assert.Equal(AgentActivityState.Failed, items[0].State);
+        Assert.Equal("interrupted", items[0].SafeCode);
+    }
+
     private static AgentActivityItem Item(
         AgentActivityState state,
         AgentActivityKind kind,
         string? fileName = null,
-        int? durationMs = null) =>
+        int? durationMs = null,
+        string? symbol = null,
+        int? count = null,
+        int? added = null) =>
         new(new AgentActivityModel(
             "act_11111111111111111111111111111111",
             kind,
@@ -105,9 +153,9 @@ public sealed class AgentActivityGrouperTests
             fileName,
             null,
             null,
-            null,
-            null,
-            null,
+            symbol,
+            count,
+            added,
             null,
             durationMs,
             "succeeded",

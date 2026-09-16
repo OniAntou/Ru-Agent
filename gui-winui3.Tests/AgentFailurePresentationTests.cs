@@ -56,6 +56,25 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void Reconciliation_required_renders_recovery_copy_instead_of_the_raw_code()
+    {
+        // A run parked on reconciliation is not terminal: the status bar must
+        // explain why the agent stopped and what the user can do, not leak the
+        // internal wire token.
+        string rendered = AgentFailurePresentation.Render("reconciliation_required");
+
+        Assert.NotEqual("reconciliation_required", rendered);
+        Assert.Contains("Continue", rendered, StringComparison.Ordinal);
+        Assert.Equal(
+            rendered,
+            AgentFailurePresentation.InlineFailureStatus(
+                "reconciliation_required",
+                "reconciliation_required",
+                isRunning: true,
+                hasRenderedReply: false));
+    }
+
+    [Fact]
     public void Failed_run_with_a_rendered_reply_keeps_the_inline_failure_copy()
     {
         Assert.Equal(
@@ -101,5 +120,63 @@ public sealed class AgentFailurePresentationTests
                 "Run ended.",
                 isRunning: false,
                 hasRenderedReply: true));
+    }
+
+    [Theory]
+    [InlineData("invalid_workspace", "Invalid or non-existent workspace folder.")]
+    [InlineData("workspace_busy", "Workspace is currently in use by another Agent session.")]
+    [InlineData("preset_mismatch", "Permission preset has changed. Please select a preset and try again.")]
+    [InlineData("preset_version_conflict", "Permission preset has changed. Please select a preset and try again.")]
+    [InlineData("session_create_failed", "Failed to create a session for Coding Agent. Check backend and try again.")]
+    [InlineData("session_not_found", "Chat session is no longer valid. Send a message to create a new session.")]
+    [InlineData("invalid_session_id", "Chat session is no longer valid. Send a message to create a new session.")]
+    [InlineData("unauthorized", "Agent session credentials are no longer valid. Please restart backend.")]
+    [InlineData("agent_store_unavailable", "Agent database is temporarily unavailable. Check permissions or restart.")]
+    [InlineData("harness_store_unavailable", "Agent database is temporarily unavailable. Check permissions or restart.")]
+    public void Every_known_start_failure_has_its_own_sentence(string code, string expected)
+    {
+        Assert.Equal(expected, AgentFailurePresentation.RenderStartFailure(code, message: null));
+    }
+
+    [Fact]
+    public void An_unknown_start_failure_still_names_its_code()
+    {
+        // The code is the only handle support has; it must survive into the copy.
+        string rendered = AgentFailurePresentation.RenderStartFailure("some_new_code", message: null);
+
+        Assert.Contains("some_new_code", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_server_message_is_repeated_only_when_it_adds_something()
+    {
+        // Repeating the code as the message would read as a stutter.
+        string stuttered = AgentFailurePresentation.RenderStartFailure(
+            "some_new_code",
+            message: "some_new_code");
+        Assert.DoesNotContain("some_new_code: some_new_code", stuttered, StringComparison.Ordinal);
+
+        string detailed = AgentFailurePresentation.RenderStartFailure(
+            "some_new_code",
+            message: "the disk is full");
+        Assert.Contains("the disk is full", detailed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_start_failure_without_a_code_still_says_something_actionable()
+    {
+        string rendered = AgentFailurePresentation.RenderStartFailure(errorCode: null, message: null);
+
+        Assert.False(string.IsNullOrWhiteSpace(rendered));
+        Assert.Contains("Activity Log", rendered, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    [InlineData("   ", "  ")]
+    public void A_blank_start_failure_never_renders_an_empty_status(string? code, string? message)
+    {
+        Assert.False(string.IsNullOrWhiteSpace(AgentFailurePresentation.RenderStartFailure(code, message)));
     }
 }

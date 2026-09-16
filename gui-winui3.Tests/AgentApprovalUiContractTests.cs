@@ -1,120 +1,171 @@
+using System.Xml.Linq;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
 
+/// <summary>
+/// Inline approval panel: what the user is told, and the bounded surface that tells
+/// it. The copy is exercised through the presentation the view calls, so a reason
+/// code that loses its sentence — or a panel that grows a control it should not have
+/// — fails here rather than in production.
+/// </summary>
 public sealed class AgentApprovalUiContractTests
 {
-    [Fact]
-    public void Chat_has_bounded_inline_trust_and_approval_surfaces()
+    [Theory]
+    [InlineData(AgentApprovalSummaryPresentation.ExternalDirectoryRequired, "outside the project")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalDeleteRequiresApproval, "delete files")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalExternalMutationRequiresApproval, "outside the workspace")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalTimeoutRequiresApproval, "longer than the standard window")]
+    [InlineData(AgentApprovalSummaryPresentation.WebApprovalRequired, "fetch this web content")]
+    [InlineData(AgentApprovalSummaryPresentation.TerminalUnknownExecutable, "has not recognized the executable")]
+    public void Every_broker_ask_reason_has_its_own_sentence(string reasonCode, string expectedFragment)
     {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        string rendered = AgentApprovalSummaryPresentation.Render(reasonCode);
 
-        foreach (string marker in new[]
+        Assert.NotEqual(reasonCode, rendered);
+        Assert.Contains(expectedFragment, rendered, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void The_mapped_reason_set_matches_the_brokers_ask_reasons()
+    {
+        // RuAgentBroker produces exactly these ask reasons; a new one has to be
+        // given copy, otherwise the panel shows the user a bare token.
+        var expected = new[]
         {
-            "x:Name=\"AgentApprovalPanel\"",
-            "x:Name=\"AgentApprovalSummaryText\"",
-            "x:Name=\"AgentApprovalCommandContainer\"",
-            "x:Name=\"AgentApprovalCommandText\"",
-            "x:Name=\"AgentApproveButton\"",
-            "x:Name=\"AgentDenyButton\"",
-            "AutomationProperties.LiveSetting=\"Polite\""
-        })
+            "external_directory_required",
+            "terminal_delete_requires_approval",
+            "terminal_external_mutation_requires_approval",
+            "terminal_timeout_requires_approval",
+            "web_approval_required",
+            "terminal_unknown_executable",
+        };
+
+        Assert.Equal(
+            expected.OrderBy(code => code, StringComparer.Ordinal),
+            AgentApprovalSummaryPresentation.MappedReasonCodes.OrderBy(code => code, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void An_unknown_reason_stays_visible_instead_of_becoming_a_generic_line()
+    {
+        // A reason this build does not know is still the only explanation the user
+        // has; replacing it with boilerplate would hide why the action is held.
+        string rendered = AgentApprovalSummaryPresentation.Render("future_reason_code");
+
+        Assert.Contains("future_reason_code", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_empty_summary_falls_back_to_a_generic_request_line()
+    {
+        Assert.Equal(
+            "Agent is requesting an action that requires approval.",
+            AgentApprovalSummaryPresentation.Render(null));
+        Assert.Equal(
+            "Agent is requesting an action that requires approval.",
+            AgentApprovalSummaryPresentation.Render("   "));
+    }
+
+    [Fact]
+    public void A_hostile_summary_cannot_grow_the_panel()
+    {
+        // The summary comes off the wire, so it is collapsed and truncated before
+        // it is ever set as text.
+        string rendered = AgentApprovalSummaryPresentation.Render(new string('x', 500));
+
+        Assert.True(rendered.Length <= AgentApprovalSummaryPresentation.MaximumSummaryLength + 1);
+        Assert.EndsWith("…", rendered, StringComparison.Ordinal);
+
+        string multiline = AgentApprovalSummaryPresentation.Render("line one\r\nline two");
+        Assert.DoesNotContain('\n', multiline);
+        Assert.DoesNotContain('\r', multiline);
+    }
+
+    [Fact]
+    public void The_panel_carries_exactly_the_approval_surface()
+    {
+        // The prompt lives in its own control now; ChatView only hosts it.
+        Assert.Contains(
+            GuiSource.Xml("Views", "ChatView.xaml").Descendants(),
+            element => element.Name.LocalName == "AgentApprovalPanelControl");
+
+        var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
+
+        // One panel, its summary, the command block, and the two decisions.
+        foreach (var required in new[]
+                 {
+                     "Panel", "SummaryText", "CommandContainer", "CommandText",
+                     "ApproveButton", "DenyButton",
+                 })
         {
-            Assert.Contains(marker, xaml, StringComparison.Ordinal);
+            Assert.True(named.ContainsKey(required), $"{required} must exist.");
         }
 
-        Assert.DoesNotContain("Arguments", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("stdout", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("script", xaml, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Chat_has_no_trust_panel_or_scope_controls()
-    {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-
-        Assert.DoesNotContain("AgentTrustPanel", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentApprovalScopeBox", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentApprovalScopePanel", xaml, StringComparison.Ordinal);
-        Assert.Contains("AgentApprovalPanel", xaml, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Composer_offers_a_bounded_standard_or_trusted_preset()
-    {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Agent permission preset\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Tag=\"standard\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Tag=\"trusted\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Tag=\"full_access\"", xaml, StringComparison.Ordinal);
-
-        Assert.Contains("OnAgentPresetChanged", code, StringComparison.Ordinal);
-        Assert.Contains("SelectedAgentPreset", code, StringComparison.Ordinal);
-        Assert.Contains("ConfirmTrustedAsync", code, StringComparison.Ordinal);
-        Assert.Contains("EnsureAgentPresetAsync", code, StringComparison.Ordinal);
-        Assert.Contains("preset_version_conflict", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("OnAgentTrustApproveClick", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("OnAgentTrustDenyClick", code, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Approval_summary_renders_three_reason_specific_messages()
-    {
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("external_directory_required", code, StringComparison.Ordinal);
-        Assert.Contains("terminal_delete_requires_approval", code, StringComparison.Ordinal);
-        Assert.Contains("terminal_external_mutation_requires_approval", code, StringComparison.Ordinal);
-        Assert.Contains("terminal_timeout_requires_approval", code, StringComparison.Ordinal);
-        Assert.Contains("web_approval_required", code, StringComparison.Ordinal);
-        Assert.Contains("terminal_unknown_executable", code, StringComparison.Ordinal);
-        Assert.Contains("Ru needs to access a directory", code, StringComparison.Ordinal);
-        Assert.Contains("This terminal command will delete files", code, StringComparison.Ordinal);
-        Assert.Contains("changes something outside the workspace", code, StringComparison.Ordinal);
-        Assert.Contains("Ru has not recognized the executable", code, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Agent_actions_use_the_shared_api_controller_not_chat_websocket()
-    {
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("ApproveAsync()", code, StringComparison.Ordinal);
-        Assert.Contains("DenyAsync()", code, StringComparison.Ordinal);
-        Assert.Contains("CancelAsync()", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("SendAgentApprovalAsync", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("agent.approval.response", code, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Agent_transport_client_owns_the_agent_api_and_sse_path()
-    {
-        string client = File.ReadAllText(FindSource("Services", "AgentRunClientAdapter.cs"));
-
-        Assert.Contains("AgentApiClient", client, StringComparison.Ordinal);
-        Assert.Contains("AgentSseClient", client, StringComparison.Ordinal);
-        Assert.Contains("SubscribeEventsAsync", client, StringComparison.Ordinal);
-        Assert.DoesNotContain("ChatWebSocketClient", client, StringComparison.Ordinal);
-        Assert.DoesNotContain("/chat", client, StringComparison.Ordinal);
-    }
-
-    private static string FindSource(params string[] parts)
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
+        // The retired trust panel and scope pickers are gone.
+        foreach (var retired in new[] { "AgentTrustPanel", "AgentApprovalScopeBox", "AgentApprovalScopePanel" })
         {
-            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
-            if (Directory.Exists(sourceRoot))
-            {
-                return Path.Combine(new[] { sourceRoot }.Concat(parts).ToArray());
-            }
+            Assert.DoesNotContain(named.Keys, name => name.Contains(retired, StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void The_approval_summary_announces_updates_politely()
+    {
+        // The summary is what changes when a decision is requested; a polite live
+        // region is how a screen reader learns a decision is waiting.
+        var summary = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"))["SummaryText"];
+        Assert.Equal("Polite", GuiSource.AttributeValue(summary, "LiveSetting"));
+    }
+
+    [Fact]
+    public void The_approval_prompt_reports_the_decision_instead_of_deciding()
+    {
+        // The control raises which decision was made; the view is what talks to the
+        // run controller, so the prompt cannot grow its own transport.
+        var decision = typeof(RuApp.Controls.AgentApprovalPanelControl).GetEvent("DecisionRequested");
+
+        Assert.NotNull(decision);
+        var args = decision!.EventHandlerType!.GetMethod("Invoke")!.GetParameters()[1].ParameterType;
+        Assert.Equal(typeof(RuApp.Controls.AgentApprovalDecidedEventArgs), args);
+        Assert.NotNull(args.GetProperty("Approved"));
+    }
+
+    [Fact]
+    public void The_composer_preset_offers_standard_and_trusted_only()
+    {
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var named = GuiSource.NamedElements(document);
+
+        Assert.True(named.ContainsKey("AgentPresetBox"), "AgentPresetBox must exist.");
+
+        var tags = document.Descendants()
+            .Select(element => GuiSource.AttributeValue(element, "Tag"))
+            .Where(tag => tag is not null)
+            .ToList();
+
+        Assert.Contains("standard", tags);
+        Assert.Contains("trusted", tags);
+        Assert.DoesNotContain("full_access", tags);
+    }
+
+    [Fact]
+    public void Agent_decisions_go_through_the_shared_controller()
+    {
+        // Approve/deny/cancel are controller methods; there is no second approval
+        // transport and no WebSocket path.
+        foreach (var method in new[]
+                 {
+                     nameof(AgentRunController.ApproveAsync),
+                     nameof(AgentRunController.DenyAsync),
+                     nameof(AgentRunController.CancelAsync),
+                 })
+        {
+            Assert.NotNull(typeof(AgentRunController).GetMethod(method));
         }
 
-        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
+        var assembly = typeof(AgentRunController).Assembly;
+        Assert.Null(assembly.GetType("RuApp.Services.ChatWebSocketClient"));
     }
 }

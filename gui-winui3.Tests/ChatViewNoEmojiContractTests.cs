@@ -3,20 +3,52 @@ using Xunit;
 
 namespace RuApp.Tests;
 
+/// <summary>
+/// The chat surface ships no emoji. The invariant is about what the user sees, so
+/// it is asserted against the markup that renders and the presentation strings, not
+/// against every byte of the code-behind (comments and diagnostics may contain any
+/// character).
+/// </summary>
 public sealed class ChatViewNoEmojiContractTests
 {
     [Fact]
-    public void ChatViewPresentationSourcesContainNoEmoji()
+    public void ChatViewMarkupContainsNoEmojiInAnyRenderedText()
     {
-        foreach (var sourceName in new[] { "ChatView.xaml", "ChatView.xaml.cs" })
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var offenders = new List<string>();
+
+        foreach (var element in document.Descendants())
         {
-            foreach (var rune in File.ReadAllText(FindChatViewSource(sourceName)).EnumerateRunes())
+            foreach (var attribute in element.Attributes())
             {
-                Assert.False(
-                    IsEmojiRune(rune),
-                    $"{sourceName} contains prohibited emoji U+{rune.Value:X4}.");
+                if (!EmojiPolicy.IsRenderedTextAttribute(attribute.Name.LocalName))
+                {
+                    continue;
+                }
+
+                foreach (var rune in EmojiPolicy.FindIn(attribute.Value))
+                {
+                    offenders.Add($"<{element.Name.LocalName} {attribute.Name.LocalName}> U+{rune.Value:X4}");
+                }
             }
         }
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void ChatViewCodeBehindDeclaresNoEmojiInStringLiterals()
+    {
+        var offenders = new List<string>();
+        foreach (var literal in EmojiPolicy.StringLiterals(GuiSource.Text("Views", "ChatView.xaml.cs")))
+        {
+            foreach (var rune in EmojiPolicy.FindIn(literal))
+            {
+                offenders.Add($"U+{rune.Value:X4} in \"{Truncate(literal)}\"");
+            }
+        }
+
+        Assert.Empty(offenders);
     }
 
     [Theory]
@@ -33,40 +65,30 @@ public sealed class ChatViewNoEmojiContractTests
     [InlineData(0xE007F)]
     public void EmojiPolicyCoversEmojiPresentationAndCompositionRunes(int scalar)
     {
-        Assert.True(IsEmojiRune(new Rune(scalar)));
+        Assert.True(EmojiPolicy.IsEmojiRune(new Rune(scalar)));
     }
 
-    private static bool IsEmojiRune(Rune rune)
+    [Theory]
+    [InlineData('A')]
+    [InlineData('é')]
+    [InlineData('—')]
+    [InlineData('…')]
+    [InlineData('·')]
+    public void EmojiPolicyLeavesOrdinaryTypographyAlone(int scalar)
     {
-        var value = rune.Value;
-        return value is 0x00A9 or 0x00AE or 0x203C or 0x2049 or 0x2122 or 0x2139
-            or 0x3030 or 0x303D or 0x3297 or 0x3299 or 0x20E3 or 0xFE0F
-            or >= 0x2194 and <= 0x21FF
-            or >= 0x2300 and <= 0x23FF
-            or >= 0x2600 and <= 0x27BF
-            or >= 0x2934 and <= 0x2935
-            or >= 0x2B00 and <= 0x2BFF
-            or >= 0x1F000 and <= 0x1FAFF
-            or >= 0xE0020 and <= 0xE007F;
+        Assert.False(EmojiPolicy.IsEmojiRune(new Rune(scalar)));
     }
 
-    private static string FindChatViewSource(string sourceName)
+    [Theory]
+    [InlineData(0x2713)]
+    [InlineData(0x2717)]
+    public void EmojiPolicyAlsoRejectsDingbatsTheProductDoesNotUse(int scalar)
     {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
-        {
-            var sourcePath = Path.Combine(
-                directory.FullName,
-                "gui-winui3",
-                "Views",
-                sourceName);
-            if (File.Exists(sourcePath))
-            {
-                return sourcePath;
-            }
-        }
-
-        throw new FileNotFoundException($"Could not locate Views/{sourceName}.");
+        // The policy covers the dingbat block even though a check mark can read as
+        // ordinary typography, so the chat surface cannot grow one by accident.
+        Assert.True(EmojiPolicy.IsEmojiRune(new Rune(scalar)));
     }
+
+    private static string Truncate(string value) =>
+        value.Length <= 48 ? value : value[..48] + "…";
 }

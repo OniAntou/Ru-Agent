@@ -111,9 +111,9 @@ public sealed class OfficialProviderTests
     {
         string xaml = File.ReadAllText(FindViewSource("SettingsView.xaml"));
 
-        Assert.Contains("Content=\"OpenAI (Official API)\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"OpenAI (Official API)\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Tag=\"openai\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Anthropic Claude (Official API)\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Anthropic Claude (Official API)\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Tag=\"anthropic\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"OpenAiApiRow\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AnthropicApiRow\"", xaml, StringComparison.Ordinal);

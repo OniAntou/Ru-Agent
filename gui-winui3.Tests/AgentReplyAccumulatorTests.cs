@@ -42,6 +42,32 @@ public sealed class AgentReplyAccumulatorTests
     }
 
     [Fact]
+    public void Reset_drops_the_superseded_attempt_text_instead_of_appending_onto_it()
+    {
+        // A model step retried after a transient failure re-runs the answer. The
+        // partial text of the attempt that failed must be discarded, not stacked
+        // under the retry.
+        var reply = new AgentReplyAccumulator();
+        reply.Begin("s1", "r1");
+
+        Assert.True(reply.TryAppend("r1", "m1", 1, "half an ans"));
+        var partial = reply.TakeSnapshot();
+        Assert.Equal("half an ans", partial!.Text);
+
+        Assert.True(reply.TryReset("r1", "m1", 2));
+        var cleared = reply.TakeSnapshot();
+        Assert.NotNull(cleared);
+        Assert.Equal(string.Empty, cleared.Text);
+
+        // The retry continues after the reset sequence and replaces the text.
+        Assert.True(reply.TryAppend("r1", "m1", 3, "the full answer"));
+        Assert.Equal("the full answer", reply.TakeSnapshot()!.Text);
+
+        // A replayed reset frame is ignored.
+        Assert.False(reply.TryReset("r1", "m1", 2));
+    }
+
+    [Fact]
     public void Rebind_moves_a_session_bound_reply_to_the_live_run_without_dropping_text()
     {
         var reply = new AgentReplyAccumulator();

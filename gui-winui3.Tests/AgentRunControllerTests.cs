@@ -697,6 +697,55 @@ public sealed class AgentRunControllerTests
         Assert.Contains("Waiting to continue", controller.StatusText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Continue_stays_available_when_the_run_parks_for_reconciliation()
+    {
+        // A run parked on an ambiguous tool outcome stops being driven by the host.
+        // The only way out is a reconciliation decision, and Continue is the only
+        // affordance the desktop client has, so it must stay enabled here instead
+        // of leaving the user with a dead Stop-only panel.
+        var fake = new FakeClient
+        {
+            Run = new AgentRunModel(
+                RunId,
+                "sess_1",
+                "ws_1",
+                "reconciliation_required",
+                null,
+                "standard",
+                2026,
+                "2026",
+                1,
+                5,
+                "2026",
+                "2026",
+                null,
+                null,
+                null,
+                null),
+        };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e1",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "run.state_changed",
+            OccurredAt: "2026",
+            Status: "reconciliation_required",
+            SafeSummary: "reconciliation_required",
+            PayloadRef: null,
+            ApprovalId: null,
+            Sequence: 1,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-reconciliation"));
+
+        Assert.True(controller.CanContinue);
+    }
+
     private static AgentRunModel WaitingApprovalRun() =>
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
             RunId, "sess_1", "ws_1", "waiting_approval", "standard", "2026", "2026"));

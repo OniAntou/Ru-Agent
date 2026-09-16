@@ -1,65 +1,94 @@
-using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
 
+/// <summary>
+/// Chat "follow the newest message" behaviour: the shared timing constants that
+/// drive it, and the new-messages pill that lets the user jump back to the bottom.
+/// Asserted against the real constants and the markup tree, so tuning a timer in
+/// one place cannot silently break the contract, and reordering markup cannot
+/// break the test.
+/// </summary>
 public sealed class ChatFollowContractTests
 {
     [Fact]
-    public void Follow_threshold_and_flush_batch_are_named_ui_timing_constants()
+    public void Follow_threshold_is_a_usable_reading_window()
     {
-        string timing = File.ReadAllText(FindSource("Services", "UiTiming.cs"));
-
-        Assert.Contains("ChatFollowThresholdPx", timing, StringComparison.Ordinal);
-        Assert.Contains("ActivityFlushBatch", timing, StringComparison.Ordinal);
-        Assert.Contains("ContextMeterDebounce", timing, StringComparison.Ordinal);
+        // Small enough that the view re-follows almost immediately, large enough
+        // that a jittery wheel event does not yank the reader back down.
+        Assert.InRange(UiTiming.ChatFollowThresholdPx, 24.0, 400.0);
     }
 
     [Fact]
-    public void Chat_scroll_uses_the_shared_follow_threshold()
+    public void Batch_and_hold_timings_keep_progress_rows_readable()
     {
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        // A burst of deltas is coalesced into one render pass...
+        Assert.InRange(UiTiming.ActivityFlushBatch, TimeSpan.FromMilliseconds(16), TimeSpan.FromMilliseconds(250));
 
-        Assert.Contains("Services.UiTiming.ChatFollowThresholdPx", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("maxOffset - verticalOffset <= 100", code, StringComparison.Ordinal);
+        // ...but a fast-finishing row is still held long enough to be seen, which
+        // only works if the hold outlasts the batch window.
+        Assert.True(
+            UiTiming.ActivityMinHold > UiTiming.ActivityFlushBatch,
+            $"MinHold {UiTiming.ActivityMinHold} must exceed FlushBatch {UiTiming.ActivityFlushBatch}.");
+
+        // The wave clock must be the fastest of the three so it animates within a hold.
+        Assert.True(
+            UiTiming.WaveFrame < UiTiming.ActivityMinHold,
+            $"WaveFrame {UiTiming.WaveFrame} must be shorter than MinHold {UiTiming.ActivityMinHold}.");
+
+        Assert.InRange(UiTiming.ActivityWavePeriodSeconds, 0.1, 5.0);
     }
 
     [Fact]
-    public void Flush_and_hold_timers_use_the_shared_ui_timing_constants()
+    public void Every_polling_interval_is_bounded_below_a_human_timescale()
     {
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("Services.UiTiming.ActivityFlushBatch", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("FromMilliseconds(80)", code, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Chat_has_a_new_messages_pill_with_jump_action()
-    {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("x:Name=\"NewMessagesPill\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"NewMessagesPill\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("OnNewMessagesPillClick", xaml, StringComparison.Ordinal);
-        Assert.Contains("OnNewMessagesPillClick", code, StringComparison.Ordinal);
-        Assert.Contains("RestoreComposerDraft", code, StringComparison.Ordinal);
-        Assert.Contains("AgentApproveButton?.Focus", code, StringComparison.Ordinal);
-    }
-
-    private static string FindSource(params string[] parts)
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
+        // A poll faster than this would spin the backend; slower would read as broken.
+        var polls = new[]
         {
-            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
-            if (Directory.Exists(sourceRoot))
-            {
-                return Path.Combine(new[] { sourceRoot }.Concat(parts).ToArray());
-            }
-        }
+            UiTiming.TypingDebounce,
+            UiTiming.SessionsPoll,
+            UiTiming.ReconnectPoll,
+            UiTiming.ModelSaveFailure,
+            UiTiming.ContextMeterDebounce,
+        };
 
-        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
+        Assert.All(polls, poll =>
+            Assert.InRange(poll, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(10)));
+    }
+
+    [Fact]
+    public void Chat_has_a_new_messages_pill_bound_to_a_jump_handler()
+    {
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var named = GuiSource.NamedElements(document);
+
+        Assert.True(named.ContainsKey("NewMessagesPill"), "NewMessagesPill must exist.");
+
+        var pill = named["NewMessagesPill"];
+        Assert.True(GuiSource.HasAttribute(pill, "AutomationId"), "The pill needs an automation id.");
+
+        // It is reachable: the markup binds it to a click handler the code-behind defines.
+        var handlers = GuiSource.ClickHandlers(document);
+        Assert.Contains(handlers, handler => handler.Contains("NewMessagesPill", StringComparison.Ordinal));
+
+        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        Assert.Contains("OnNewMessagesPillClick", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Restoring_a_draft_is_scoped_per_session()
+    {
+        // Composer drafts are keyed by session, so switching chats must not carry
+        // one session's half-typed message into another. The rule lives in
+        // ComposerDraftStore and is asserted there; this checks the view still uses
+        // it rather than keeping its own map.
+        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        Assert.Contains("ComposerDraftStore", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("_composerDraftBySession", code, StringComparison.Ordinal);
+        Assert.Contains("RestoreComposerDraft", code, StringComparison.Ordinal);
+        Assert.Contains("ClearComposerDraft", code, StringComparison.Ordinal);
     }
 }

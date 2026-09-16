@@ -307,6 +307,28 @@ public sealed class AgentActivityItemTests
         Assert.Contains(nameof(AgentActivityItem.Detail), changed);
     }
 
+    [Fact]
+    public void UpdateFrom_ignores_stale_started_frame_after_settle()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit, fileName: "a.txt"));
+
+        var applied = item.UpdateFrom(Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, fileName: "a.txt"));
+
+        Assert.False(applied);
+        Assert.Equal(AgentActivityState.Completed, item.State);
+    }
+
+    [Fact]
+    public void UpdateFrom_applies_newer_terminal_frame()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, fileName: "a.txt"));
+
+        var applied = item.UpdateFrom(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit, fileName: "a.txt"));
+
+        Assert.True(applied);
+        Assert.Equal(AgentActivityState.Completed, item.State);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,

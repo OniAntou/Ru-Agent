@@ -1,205 +1,213 @@
+using System.Reflection;
+using System.Xml.Linq;
+using RuAgent.Harness.Core;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
 
+/// <summary>
+/// Composer and transcript layout, plus the session-scoped agent state the composer
+/// drives.
+///
+/// Layout is asserted on the element tree — which control sits in which column and
+/// inside which container — so moving or renaming markup is caught by structure
+/// rather than by the order substrings happen to appear in the file.
+/// </summary>
 public sealed class AgentSessionUiSourceContractTests
 {
-    [Fact]
-    public void Composer_exposes_one_static_agent_indicator()
-    {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-
-        Assert.Contains("<Button x:Name=\"AgentModeButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Visibility=\"Collapsed\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentModeButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Coding Agent\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentModeIcon\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentModeLabel\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Agent\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentModeFlyout", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentModeChatOption", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentModeAgentOption", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentSettingsButton", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentSettingsFlyout", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentWorkspaceBox", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Click=\"OnAgentMode", xaml, StringComparison.Ordinal);
-    }
+    /// <summary>Names of surfaces removed with the Agent-mode selector and the chat transport.</summary>
+    private static readonly string[] RetiredXamlNames =
+    [
+        "AgentModeFlyout", "AgentModeChatOption", "AgentModeAgentOption",
+        "AgentSettingsButton", "AgentSettingsFlyout", "AgentWorkspaceBox",
+    ];
 
     [Fact]
-    public void Composer_places_preset_model_and_reasoning_selectors_before_send()
+    public void The_composer_shows_one_static_agent_indicator()
     {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
 
-        int composerStart = xaml.IndexOf("ColumnDefinitions=\"Auto,Auto,Auto,*,Auto\"", StringComparison.Ordinal);
-        Assert.True(composerStart >= 0, "Composer columns must place attachment and agent button on the left, followed by a spacer and the send button.");
+        var agentButton = GuiSource.Require(document, "AgentModeButton");
+        Assert.Equal("Button", agentButton.Name.LocalName);
+        Assert.Equal("Collapsed", GuiSource.AttributeValue(agentButton, "Visibility"));
+        Assert.Equal("AgentModeButton", GuiSource.AttributeValue(agentButton, "AutomationId"));
+        Assert.Equal("Coding Agent", GuiSource.AttributeValue(agentButton, "Name"));
 
-        int attachStart = xaml.IndexOf("x:Name=\"AttachImageButton\"", composerStart, StringComparison.Ordinal);
-        int agentModeStart = xaml.IndexOf("x:Name=\"AgentModeButton\"", composerStart, StringComparison.Ordinal);
-        int presetStart = xaml.IndexOf("x:Name=\"AgentPresetBox\"", composerStart, StringComparison.Ordinal);
-        int sendStart = xaml.IndexOf("x:Name=\"SendButton\"", composerStart, StringComparison.Ordinal);
-        Assert.True(attachStart >= composerStart && agentModeStart > attachStart && presetStart > agentModeStart && sendStart > presetStart);
-        Assert.Contains("Grid.Column=\"0\"", xaml[attachStart..agentModeStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"1\"", xaml[agentModeStart..presetStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"2\"", xaml[presetStart..sendStart], StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"SendButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AttachImageButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
-    }
+        // The indicator is a label, not a selector: a mode flyout was retired.
+        var named = GuiSource.NamedElements(document);
+        Assert.True(named.ContainsKey("AgentModeIcon"), "AgentModeIcon must exist.");
+        Assert.True(named.ContainsKey("AgentModeLabel"), "AgentModeLabel must exist.");
+        Assert.Equal("Agent", GuiSource.AttributeValue(named["AgentModeLabel"], "Text"));
 
-    [Fact]
-    public void Transcript_keeps_the_full_width_scroll_host_and_centered_reading_column()
-    {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        // The preset selector is the only permission control on the composer.
+        Assert.True(named.ContainsKey("AgentPresetBox"), "AgentPresetBox must exist.");
 
-        int readingStart = xaml.IndexOf("<Grid x:Name=\"ReadingColumn\"", StringComparison.Ordinal);
-        int inputStart = xaml.IndexOf("<Grid x:Name=\"InputContainer\"", readingStart, StringComparison.Ordinal);
-        Assert.True(readingStart >= 0, "ReadingColumn is missing.");
-        Assert.True(inputStart > readingStart, "InputContainer must remain outside ReadingColumn.");
-        string readingBlock = xaml[readingStart..inputStart];
-
-        int scrollStart = readingBlock.IndexOf("<ScrollViewer x:Name=\"ChatScrollHost\"", StringComparison.Ordinal);
-        Assert.True(scrollStart >= 0, "ChatScrollHost is missing.");
-        string scrollBlock = readingBlock[scrollStart..];
-        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", scrollBlock, StringComparison.Ordinal);
-        Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", scrollBlock, StringComparison.Ordinal);
-        Assert.Contains("<ScrollViewer.Resources>", scrollBlock, StringComparison.Ordinal);
-        Assert.Contains("x:Key=\"ScrollBarThumbFill\"", scrollBlock, StringComparison.Ordinal);
-        Assert.Contains("x:Key=\"ScrollBarSize\">8", scrollBlock, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ChatContentGrid\"", scrollBlock, StringComparison.Ordinal);
-        Assert.Contains("HorizontalAlignment=\"Center\"", scrollBlock, StringComparison.Ordinal);
-
-        int applyWidthStart = codeBehind.IndexOf("private void ApplyInputWidth", StringComparison.Ordinal);
-        Assert.True(applyWidthStart >= 0, "ApplyInputWidth is missing.");
-        int nextMethod = codeBehind.IndexOf("\n        private", applyWidthStart + 1, StringComparison.Ordinal);
-        string applyWidthBody = nextMethod > applyWidthStart
-            ? codeBehind[applyWidthStart..nextMethod]
-            : codeBehind[applyWidthStart..];
-        Assert.DoesNotContain("ReadingColumn.Width", applyWidthBody, StringComparison.Ordinal);
-        Assert.Contains("ChatContentGrid.Width = targetWidth", applyWidthBody, StringComparison.Ordinal);
-        Assert.Contains("ChatListView.Width = targetWidth", applyWidthBody, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Agent_code_has_no_mode_switch_or_legacy_chat_transport_branch()
-    {
-        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        foreach (string retired in new[]
+        foreach (var retired in RetiredXamlNames)
         {
-            "_agentMode",
-            "SetAgentMode",
-            "OnAgentModeButtonClick",
-            "OnAgentModeOptionClick",
-            "ChatWebSocketClient",
-            "ChatTurnPresenter",
-            "OnWsFrameReceived",
-            "/chat"
-        })
-        {
-            Assert.DoesNotContain(retired, codeBehind, StringComparison.Ordinal);
+            Assert.False(named.ContainsKey(retired), $"{retired} was retired and must not return.");
         }
 
-        Assert.Contains("UpdateAgentComposerVisuals", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("SendAgentTurnAsync", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("_agentController.CreateAndRunAsync", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("OnAgentPresetChanged", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("SelectedAgentPreset", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("ConfirmTrustedAsync", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("EnsureAgentPresetAsync", codeBehind, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentSettingsFlyout", codeBehind, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentWorkspaceBox", codeBehind, StringComparison.Ordinal);
-        Assert.DoesNotContain("OnAgentTrustApproveClick", codeBehind, StringComparison.Ordinal);
-        Assert.DoesNotContain("OnAgentTrustDenyClick", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            GuiSource.ClickHandlers(document),
+            handler => handler.StartsWith("OnAgentMode", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Agent_starts_with_idle_status_hidden()
+    public void Attachment_and_agent_indicator_lead_the_composer_row()
     {
-        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
 
-        int visualStart = codeBehind.IndexOf("private void UpdateAgentComposerVisuals", StringComparison.Ordinal);
-        Assert.True(visualStart >= 0, "Agent composer visual setup is missing.");
-        int visualEnd = codeBehind.IndexOf("\n        private", visualStart + 1, StringComparison.Ordinal);
-        string visualBody = visualEnd > visualStart
-            ? codeBehind[visualStart..visualEnd]
-            : codeBehind[visualStart..];
-        Assert.Contains("AgentModeLabel.Text = \"Agent\"", visualBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("AgentPresetBox.SelectedIndex = 1", visualBody, StringComparison.Ordinal);
+        var composerRow = document.Descendants()
+            .FirstOrDefault(element => GuiSource.AttributeValue(element, "ColumnDefinitions") == "Auto,Auto,Auto,*,Auto");
+        Assert.True(composerRow is not null, "The composer row layout was not found.");
 
-        int sendStart = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
-        Assert.True(sendStart >= 0, "SendAgentTurnAsync is missing.");
-        int sendEnd = codeBehind.IndexOf("private void BeginAgentReply", sendStart, StringComparison.Ordinal);
-        Assert.True(sendEnd > sendStart);
-        string sendBody = codeBehind[sendStart..sendEnd];
-        Assert.Contains("ShowAgentInlineStatus(", sendBody, StringComparison.Ordinal);
-        Assert.Contains("SelectedAgentPreset()", sendBody, StringComparison.Ordinal);
-        Assert.Contains("EnsureAgentPresetAsync", sendBody, StringComparison.Ordinal);
-        Assert.Contains("ConfirmTrustedAsync", sendBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("SetAgentMode", sendBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"full_access\"", sendBody, StringComparison.Ordinal);
-    }
+        var attach = GuiSource.Require(document, "AttachImageButton");
+        var indicator = GuiSource.Require(document, "AgentModeButton");
 
-    [Fact]
-    public void Trusted_preset_flows_through_the_stored_session_selection()
-    {
-        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        int presetStart = codeBehind.IndexOf("private async Task<long> EnsureAgentPresetAsync", StringComparison.Ordinal);
-        Assert.True(presetStart >= 0, "EnsureAgentPresetAsync is missing.");
-        int presetEnd = codeBehind.IndexOf("\n        private", presetStart + 1, StringComparison.Ordinal);
-        string presetBody = presetEnd > presetStart
-            ? codeBehind[presetStart..presetEnd]
-            : codeBehind[presetStart..];
-        Assert.Contains("\"trusted\"", presetBody, StringComparison.Ordinal);
-        Assert.Contains("preset_version_conflict", presetBody, StringComparison.Ordinal);
-        Assert.Contains("interactive: true", presetBody, StringComparison.Ordinal);
-        Assert.Contains("SetSessionPresetAsync", presetBody, StringComparison.Ordinal);
-
-        int resetStart = codeBehind.IndexOf("private void ResetAgentState", StringComparison.Ordinal);
-        Assert.True(resetStart >= 0);
-        int resetEnd = codeBehind.IndexOf("\n        private", resetStart + 1, StringComparison.Ordinal);
-        string resetBody = resetEnd > resetStart ? codeBehind[resetStart..resetEnd] : codeBehind[resetStart..];
-        Assert.Contains("_agentPreset = AgentPermissionPreset.Standard", resetBody, StringComparison.Ordinal);
-        Assert.Contains("_agentPresetVersion = null", resetBody, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Agent_session_reset_clears_state_and_session_switch_cancels_before_replacement()
-    {
-        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        int resetStart = codeBehind.IndexOf("private void ResetAgentState", StringComparison.Ordinal);
-        Assert.True(resetStart >= 0);
-        int nextMethod = codeBehind.IndexOf("\n        private", resetStart + 1, StringComparison.Ordinal);
-        string resetBody = nextMethod > resetStart ? codeBehind[resetStart..nextMethod] : codeBehind[resetStart..];
-
-        Assert.Contains("AbandonActiveAgentReply", resetBody, StringComparison.Ordinal);
-        Assert.Contains("UpdateAgentComposerVisuals", resetBody, StringComparison.Ordinal);
-
-        int openStart = codeBehind.IndexOf("public async Task OpenSessionAsync", StringComparison.Ordinal);
-        int switchSession = codeBehind.IndexOf("_activeSessionId = sessionId;", openStart, StringComparison.Ordinal);
-        Assert.True(openStart >= 0);
-        Assert.True(switchSession > openStart);
+        // Both are direct children of the composer row, on the leading edge.
+        Assert.Same(composerRow, attach.Parent);
+        Assert.Same(composerRow, indicator.Parent);
+        Assert.Equal(0, GuiSource.IntAttribute(attach, "Column", -1));
+        Assert.Equal(1, GuiSource.IntAttribute(indicator, "Column", -1));
         Assert.True(
-            codeBehind.LastIndexOf("await StopActiveAgentAsync(force: true);", switchSession, StringComparison.Ordinal) > openStart);
+            GuiSource.DocumentOrder(document, attach) < GuiSource.DocumentOrder(document, indicator),
+            "The attachment button must precede the agent indicator.");
+
+        // The preset selector follows them, then the send control.
+        var preset = GuiSource.Require(document, "AgentPresetBox");
+        var send = GuiSource.Require(document, "SendButton");
+        Assert.True(
+            GuiSource.DocumentOrder(document, indicator) < GuiSource.DocumentOrder(document, preset),
+            "The agent indicator must precede the preset selector.");
+        Assert.True(
+            GuiSource.DocumentOrder(document, preset) < GuiSource.DocumentOrder(document, send),
+            "The preset selector must precede send.");
+
+        // The three interactive composer controls stay announceable. The send face
+        // resolves through AgentComposerPresentation so the markup and the runtime
+        // assignment cannot hold two copies of the same word.
+        Assert.Equal("SendButton", GuiSource.AttributeValue(send, "AutomationId"));
+        Assert.Equal("{x:Bind SendFaceName}", GuiSource.AttributeValue(send, "Name"));
+        Assert.Equal("{x:Bind SendFaceGlyph}", GuiSource.AttributeValue(GuiSource.Require(document, "SendButtonIcon"), "Glyph"));
+
+        Assert.Equal("AttachImageButton", GuiSource.AttributeValue(attach, "AutomationId"));
+        Assert.Equal("AgentPresetBox", GuiSource.AttributeValue(preset, "AutomationId"));
+        Assert.Equal("Agent permission preset", GuiSource.AttributeValue(preset, "Name"));
+
+        // The two view properties the markup binds to, and the runtime assignment in
+        // UpdateSendButtonMode, all resolve from the one vocabulary. ChatView itself
+        // cannot be constructed here — it needs the XAML runtime — so the link is
+        // checked by reading the source that makes it.
+        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        Assert.Contains("SendFaceName => AgentComposerPresentation.SendName", code, StringComparison.Ordinal);
+        Assert.Contains("SendFaceGlyph => AgentComposerPresentation.SendGlyph", code, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.SetName(SendButton, AgentComposerPresentation.StopName)", code, StringComparison.Ordinal);
+        Assert.Contains("SendButtonIcon.Glyph = AgentComposerPresentation.StopGlyph", code, StringComparison.Ordinal);
     }
 
-    private static string FindSource(params string[] parts)
+    [Fact]
+    public void The_transcript_keeps_a_full_width_scroll_host_and_a_centered_reading_column()
     {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+
+        var readingColumn = GuiSource.Require(document, "ReadingColumn");
+        var inputContainer = GuiSource.Require(document, "InputContainer");
+        var contentGrid = GuiSource.Require(document, "ChatContentGrid");
+        var list = GuiSource.Require(document, "ChatListView");
+
+        // The composer sits outside the reading column so it is never scrolled away.
+        Assert.False(GuiSource.IsDescendantOf(inputContainer, readingColumn));
+
+        // The scrolling host lives inside the reading column, with the list inside it.
+        Assert.True(GuiSource.IsDescendantOf(contentGrid, readingColumn));
+        Assert.True(GuiSource.IsDescendantOf(list, contentGrid));
+
+        // The column spans the window; the scroll host inside it is centred and
+        // carries the scroll behaviour, which is what keeps the transcript centred
+        // at wide sizes without pinning it at narrow ones.
+        Assert.Equal("Stretch", GuiSource.AttributeValue(readingColumn, "HorizontalAlignment"));
+        Assert.Equal("Center", GuiSource.AttributeValue(contentGrid, "HorizontalAlignment"));
+        Assert.Equal("Auto", GuiSource.AttributeValue(list, "VerticalScrollBarVisibility"));
+        Assert.Equal("Disabled", GuiSource.AttributeValue(list, "HorizontalScrollBarVisibility"));
+
+        // The scrollbar is themed through resources declared in the list's scope.
+        // Keys live in the x: namespace, which AttributeValue deliberately skips, so
+        // they are read directly here.
+        var keys = list.Descendants()
+            .Select(element => element.Attribute(GuiSource.Xaml + "Key")?.Value)
+            .Where(key => key is not null)
+            .ToList();
+        Assert.Contains("ScrollBarThumbFill", keys);
+        Assert.Contains("ScrollBarSize", keys);
+    }
+
+    [Fact]
+    public void Only_the_content_surface_is_width_managed_at_runtime()
+    {
+        // The reading column is a layout constant; the runtime resize path owns the
+        // content grid and the list, which is what makes a narrow window usable.
+        var view = typeof(RuApp.Views.ChatView);
+        var applyInputWidth = view.GetMethod(
+            "ApplyInputWidth",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(applyInputWidth);
+
+        // No retired mode or transport members survive on the type.
+        var members = view
+            .GetMembers(BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            .Select(member => member.Name)
+            .ToList();
+
+        foreach (var retired in new[]
+                 {
+                     "SetAgentMode", "OnAgentModeButtonClick", "OnAgentModeOptionClick",
+                     "ChatWebSocketClient", "ChatTurnPresenter", "OnWsFrameReceived",
+                     "OnAgentTrustApproveClick", "OnAgentTrustDenyClick",
+                 })
         {
-            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
-            if (Directory.Exists(sourceRoot))
-            {
-                return Path.Combine(new[] { sourceRoot }.Concat(parts).ToArray());
-            }
+            Assert.DoesNotContain(members, member => member.Contains(retired, StringComparison.Ordinal));
         }
 
-        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
+        Assert.Contains("UpdateAgentComposerVisuals", members);
+        Assert.Contains("SendAgentTurnAsync", members);
+        Assert.Contains("ResetAgentState", members);
+        Assert.Contains("AbandonActiveAgentReply", members);
+    }
+
+    [Fact]
+    public void The_composer_offers_standard_and_trusted_but_never_the_legacy_value()
+    {
+        // FullAccess still exists on the enum as legacy wire compatibility, but the
+        // composer must not offer it as a choice.
+        Assert.Contains(AgentPermissionPreset.Standard, Enum.GetValues<AgentPermissionPreset>());
+        Assert.Contains(AgentPermissionPreset.Trusted, Enum.GetValues<AgentPermissionPreset>());
+
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var presetBox = GuiSource.Require(document, "AgentPresetBox");
+
+        var tags = presetBox.Descendants()
+            .Select(element => GuiSource.AttributeValue(element, "Tag"))
+            .Where(tag => tag is not null)
+            .ToList();
+
+        Assert.Contains("standard", tags);
+        Assert.Contains("trusted", tags);
+        Assert.DoesNotContain("full_access", tags);
+    }
+
+    [Fact]
+    public void Selecting_a_session_preset_is_version_fenced()
+    {
+        // A preset write carries the version it was read at, so a concurrent change
+        // surfaces as a conflict the caller resolves instead of silently overwriting.
+        var method = typeof(AgentRunController).GetMethod(nameof(AgentRunController.SetSessionPresetAsync));
+
+        Assert.NotNull(method);
+        var parameters = method!.GetParameters().Select(parameter => parameter.Name).ToList();
+
+        Assert.Contains("expectedVersion", parameters);
+        Assert.Contains("interactive", parameters);
     }
 }

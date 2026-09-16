@@ -1,235 +1,299 @@
-using System.Linq;
+using System.Reflection;
+using System.Xml.Linq;
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
+using RuApp.Models;
 using Xunit;
 
 namespace RuApp.Tests;
 
+/// <summary>
+/// Agent activity feed and terminal panel.
+///
+/// The feed's contract is about which state and metadata reach the screen, so it is
+/// asserted on the item model and on the template's bindings rather than on the text
+/// of the code-behind. The terminal block's bound is asserted by feeding it more than
+/// it may keep.
+/// </summary>
 public sealed class AgentActivityUiSourceContractTests
 {
     [Fact]
-    public void Activity_feed_is_separate_from_messages_and_lives_inside_the_existing_scroll_host()
+    public void The_feed_lives_inside_the_transcript_scroll_host()
     {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-        var model = File.ReadAllText(FindSource("Models", "AgentActivityItem.cs"));
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var contentGrid = GuiSource.Require(document, "ChatContentGrid");
+        var list = GuiSource.Require(document, "ChatListView");
 
-        Assert.Contains("ObservableCollection<AgentActivityItem> AgentActivities", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentActivityFeed\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ItemsControl", xaml, StringComparison.Ordinal);
-        Assert.Contains("ChatContentGrid", xaml, StringComparison.Ordinal);
-        Assert.Contains("AgentActivityItem", model, StringComparison.Ordinal);
-        Assert.DoesNotContain("ObservableCollection<ChatMessageItem> AgentActivities", codeBehind, StringComparison.Ordinal);
+        // One scroll host, inside the transcript list, and the feed lives inside it:
+        // the feed never grows a second scroller.
+        Assert.True(GuiSource.IsDescendantOf(list, contentGrid));
+        Assert.Equal("Auto", GuiSource.AttributeValue(list, "VerticalScrollBarVisibility"));
+        Assert.Equal("Disabled", GuiSource.AttributeValue(list, "HorizontalScrollBarVisibility"));
 
-        var scrollStart = xaml.IndexOf("<ScrollViewer x:Name=\"ChatScrollHost\"", StringComparison.Ordinal);
-        var scrollEnd = xaml.IndexOf("</ScrollViewer>", scrollStart, StringComparison.Ordinal);
-        Assert.True(scrollStart >= 0 && scrollEnd > scrollStart, "ChatScrollHost must wrap the transcript.");
-        var scrollBlock = xaml[scrollStart..scrollEnd];
-        Assert.Equal(1, scrollBlock.Split("VerticalScrollBarVisibility=\"Auto\"", StringSplitOptions.None).Length - 1);
-        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", scrollBlock, StringComparison.Ordinal);
-        Assert.DoesNotContain("ScrollViewer VerticalScrollBarVisibility", scrollBlock, StringComparison.Ordinal);
+        var feed = document.Descendants()
+            .FirstOrDefault(element => GuiSource.AttributeValue(element, "AutomationId") == "AgentActivityFeed");
+        Assert.True(feed is not null, "AgentActivityFeed must exist.");
+        Assert.Equal("ItemsControl", feed!.Name.LocalName);
     }
 
     [Fact]
-    public void Activity_feed_is_rendered_before_assistant_content()
+    public void The_assistant_template_renders_the_feed_above_its_content()
     {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
 
-        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", StringComparison.Ordinal);
-        var assistantEnd = xaml.IndexOf("</DataTemplate>", assistantStart, StringComparison.Ordinal);
-        var feedStart = xaml.IndexOf("AutomationProperties.AutomationId=\"AgentActivityFeed\"", assistantStart, StringComparison.Ordinal);
-        var markdownStart = xaml.IndexOf("<controls:MarkdownBlock", assistantStart, StringComparison.Ordinal);
+        var template = document.Descendants()
+            .FirstOrDefault(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "AssistantMessageTemplate");
+        Assert.True(template is not null, "AssistantMessageTemplate must exist.");
 
-        Assert.True(assistantStart >= 0 && assistantEnd > assistantStart, "AssistantMessageTemplate is missing.");
-        Assert.True(feedStart > assistantStart && feedStart < assistantEnd, "AgentActivityFeed must belong to the assistant template.");
-        Assert.True(markdownStart > feedStart && markdownStart < assistantEnd, "Assistant content must follow AgentActivityFeed.");
+        var feed = template!.Descendants()
+            .FirstOrDefault(element => GuiSource.AttributeValue(element, "AutomationId") == "AgentActivityFeed");
+        Assert.True(feed is not null, "AgentActivityFeed must belong to the assistant template.");
+
+        var markdown = template.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "MarkdownBlock");
+        Assert.True(markdown is not null, "The assistant template must render MarkdownBlock.");
+
+        Assert.True(
+            GuiSource.DocumentOrder(document, feed!) < GuiSource.DocumentOrder(document, markdown!),
+            "Assistant content must follow the activity feed.");
     }
 
     [Fact]
-    public void Feed_template_exposes_only_safe_state_and_metadata_visuals()
+    public void The_feed_template_binds_only_safe_state_and_metadata()
     {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var feedStart = xaml.IndexOf("<DataTemplate x:Key=\"AgentActivityTemplate\"", StringComparison.Ordinal);
-        Assert.True(feedStart >= 0, "AgentActivityFeed is missing.");
-        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", feedStart, StringComparison.Ordinal);
-        Assert.True(assistantStart > feedStart, "AssistantMessageTemplate must follow AgentActivityTemplate.");
-        var feedBlock = xaml[feedStart..assistantStart];
+        var template = ActivityTemplate();
 
         foreach (var state in new[] { "IsRunning", "IsCompleted", "IsFailed", "IsWaiting" })
         {
-            Assert.Contains($"x:Bind {state}, Mode=OneWay", feedBlock, StringComparison.Ordinal);
+            Assert.True(Binds(template, state), $"AgentActivityTemplate must bind {state}.");
         }
-        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", feedBlock, StringComparison.Ordinal);
-        Assert.Contains("MetadataText", feedBlock, StringComparison.Ordinal);
-        foreach (var forbidden in new[] { "Command", "Arguments", "Diff", "Stdout", "Stderr", "Path" })
+
+        Assert.True(Binds(template, "MetadataText"), "AgentActivityTemplate must bind MetadataText.");
+
+        // The live region is on the row root inside the template, where the state
+        // actually changes.
+        Assert.Contains(
+            template.DescendantsAndSelf(),
+            element => GuiSource.AttributeValue(element, "LiveSetting") == "Polite");
+    }
+
+    [Fact]
+    public void The_feed_template_binds_bounded_detail_and_edit_preview()
+    {
+        var template = ActivityTemplate();
+
+        Assert.True(Binds(template, "Detail"));
+        Assert.True(Binds(template, "HasDetail"));
+        Assert.True(Binds(template, "HasEditPreview"));
+        Assert.True(Binds(template, "EditBeforeText"));
+        Assert.True(Binds(template, "EditAfterText"));
+    }
+
+    [Fact]
+    public void The_activity_item_carries_no_raw_payload_or_reasoning()
+    {
+        // The row is presentation only: anything the host keeps private must have no
+        // property to travel in, and model reasoning must not surface here.
+        var forbidden = new[]
         {
-            Assert.DoesNotContain(forbidden, feedBlock, StringComparison.OrdinalIgnoreCase);
+            "TransientData", "Command", "Arguments", "Diff",
+            "Stdout", "Stderr", "Reasoning", "Payload",
+        };
+
+        var properties = typeof(AgentActivityItem)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToList();
+
+        Assert.NotEmpty(properties);
+        foreach (var name in forbidden)
+        {
+            Assert.DoesNotContain(properties, property => property.Contains(name, StringComparison.OrdinalIgnoreCase));
         }
     }
 
     [Fact]
-    public void Feed_template_renders_bounded_detail_below_the_headline()
+    public void Activity_lifecycle_flags_follow_the_wire_state()
     {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var feedStart = xaml.IndexOf("<DataTemplate x:Key=\"AgentActivityTemplate\"", StringComparison.Ordinal);
-        Assert.True(feedStart >= 0, "AgentActivityTemplate is missing.");
-        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", feedStart, StringComparison.Ordinal);
-        var feedBlock = xaml[feedStart..assistantStart];
+        var running = Item(AgentActivityState.Started);
+        var completed = Item(AgentActivityState.Completed);
+        var failed = Item(AgentActivityState.Failed);
+        var waiting = Item(AgentActivityState.Waiting);
 
-        Assert.Contains("x:Bind Detail, Mode=OneWay", feedBlock, StringComparison.Ordinal);
-        Assert.Contains("x:Bind HasDetail, Mode=OneWay", feedBlock, StringComparison.Ordinal);
+        Assert.True(running.IsRunning);
+        Assert.False(running.IsCompleted);
+
+        Assert.True(completed.IsCompleted);
+        Assert.False(completed.IsRunning);
+
+        Assert.True(failed.IsFailed);
+        Assert.True(waiting.IsWaiting);
+
+        // Every state has its own glyph, so the row reads without relying on colour.
+        var glyphs = new[] { running, completed, failed, waiting }.Select(item => item.StatusGlyph).ToList();
+        Assert.Equal(glyphs.Count, glyphs.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
-    public void Feed_template_renders_bounded_edit_preview_below_the_headline()
+    public void An_interrupted_run_settles_a_running_row_instead_of_leaving_it_spinning()
     {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var feedStart = xaml.IndexOf("<DataTemplate x:Key=\"AgentActivityTemplate\"", StringComparison.Ordinal);
-        Assert.True(feedStart >= 0, "AgentActivityTemplate is missing.");
-        var assistantStart = xaml.IndexOf("<DataTemplate x:Key=\"AssistantMessageTemplate\"", feedStart, StringComparison.Ordinal);
-        var feedBlock = xaml[feedStart..assistantStart];
+        var item = Item(AgentActivityState.Started);
+        Assert.True(item.IsRunning);
 
-        Assert.Contains("x:Bind HasEditPreview, Mode=OneWay", feedBlock, StringComparison.Ordinal);
-        Assert.Contains("x:Bind EditBeforeText, Mode=OneWay", feedBlock, StringComparison.Ordinal);
-        Assert.Contains("x:Bind EditAfterText, Mode=OneWay", feedBlock, StringComparison.Ordinal);
+        item.SettleInterruptedRun();
+
+        Assert.False(item.IsRunning);
+        Assert.False(item.IsCompleted);
     }
 
     [Fact]
-    public void Agent_send_adds_a_temporary_user_message_and_activity_lifecycle_clears()
+    public void Detail_and_edit_preview_are_mutually_exclusive()
     {
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-        var sendStart = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
-        var sendEnd = codeBehind.IndexOf("private void BeginAgentReply", sendStart, StringComparison.Ordinal);
-        Assert.True(sendStart >= 0 && sendEnd > sendStart, "SendAgentTurnAsync is missing.");
-        var sendBlock = codeBehind[sendStart..sendEnd];
+        // A live edit row shows the before/after preview; other rows show the detail
+        // line. Both at once would print the change twice.
+        var edit = Item(
+            AgentActivityState.Started,
+            detail: "@@ using System; ==> using System.Text;",
+            kind: AgentActivityKind.Edit);
+
+        Assert.True(edit.IsEditPreview);
+        Assert.True(edit.HasEditPreview);
+        Assert.False(edit.HasDetail);
+        Assert.Equal("using System;", edit.EditBeforeText);
+        Assert.Equal("using System.Text;", edit.EditAfterText);
+
+        var prose = Item(AgentActivityState.Completed, detail: "Considering folder scope.");
+        Assert.False(prose.IsEditPreview);
+        Assert.True(prose.HasDetail);
+
+        // An edit row that already completed is no longer a live preview, so its
+        // detail line shows again.
+        var completedEdit = Item(
+            AgentActivityState.Completed,
+            detail: "@@ a ==> b",
+            kind: AgentActivityKind.Edit);
+        Assert.False(completedEdit.IsEditPreview);
+        Assert.True(completedEdit.HasDetail);
+    }
+
+    [Fact]
+    public void A_blank_detail_never_renders_an_empty_row()
+    {
+        Assert.False(Item(AgentActivityState.Completed, detail: "   ").HasDetail);
+        Assert.False(Item(AgentActivityState.Completed, detail: null).HasDetail);
+    }
+
+    [Fact]
+    public void The_terminal_panel_is_hosted_by_the_chat_view_and_owns_its_own_controls()
+    {
+        var chatView = GuiSource.Xml("Views", "ChatView.xaml");
+
+        // The view hosts the panel; the panel itself lives in its own control.
+        // x:Name is in the x: namespace, which AttributeValue deliberately skips, so
+        // it is read directly here.
+        Assert.Contains(
+            chatView.Descendants(),
+            element => element.Name.LocalName == "TerminalPanelControl"
+                && element.Attribute(GuiSource.Xaml + "Name")?.Value is { Length: > 0 });
+
+        var terminal = GuiSource.NamedElements(GuiSource.Xml("Controls", "TerminalPanelControl.xaml"));
+        Assert.True(terminal.ContainsKey("Panel"), "The terminal control must own its panel.");
+        Assert.True(terminal.ContainsKey("TerminalScrollHost"), "It must own its scroll host.");
+
+        // Presented as terminal output for assistive technology.
+        Assert.Equal("TerminalPanel", GuiSource.AttributeValue(terminal["Panel"], "AutomationId"));
+
+        // Every element with an automation id, not only the named ones: the clear
+        // button carries an id but no x:Name.
+        var ids = GuiSource.Xml("Controls", "TerminalPanelControl.xaml").Descendants()
+            .SelectMany(element => element.Attributes())
+            .Where(attribute => attribute.Name.LocalName.EndsWith(".AutomationId", StringComparison.Ordinal))
+            .Select(attribute => attribute.Value)
+            .ToList();
+        Assert.Contains("TerminalClearButton", ids);
+        Assert.Contains("TerminalCollapseButton", ids);
+    }
+
+    [Fact]
+    public void The_terminal_block_bounds_what_it_keeps()
+    {
+        var block = new TerminalOutputBlock("exec_1", "git status");
+
+        // Feed it far more than the budget, one line at a time.
+        for (var index = 0; index < 400; index++)
+        {
+            block.AppendText(new string('x', 1024) + "\n");
+        }
+
+        Assert.True(block.IsTruncated, "Overrunning the budget must mark the block truncated.");
         Assert.True(
-            sendBlock.Contains("ClearAgentActivities()", StringComparison.Ordinal) || sendBlock.Contains("StartNewAgentActivityRun()", StringComparison.Ordinal),
-            "SendAgentTurnAsync must reset per-run activities via ClearAgentActivities or StartNewAgentActivityRun.");
-
-        var replyEnd = codeBehind.IndexOf("private async Task CompleteActiveAgentTurnAsync", sendEnd, StringComparison.Ordinal);
-        Assert.True(replyEnd > sendEnd, "BeginAgentReply must remain a separate helper.");
-        var replyBlock = codeBehind[sendEnd..replyEnd];
-        Assert.Contains("Messages.Add(new ChatMessageItem", replyBlock, StringComparison.Ordinal);
-
-        foreach (var method in new[] { "private async Task<string?> ReloadSessionHistoryAsync", "private void ResetAgentState" })
-        {
-            var start = codeBehind.IndexOf(method, StringComparison.Ordinal);
-            Assert.True(start >= 0, $"Missing {method}.");
-            var next = codeBehind.IndexOf("\n        private", start + method.Length, StringComparison.Ordinal);
-            var body = next > start ? codeBehind[start..next] : codeBehind[start..];
-            if (method.Contains("ResetAgentState", StringComparison.Ordinal))
-            {
-                Assert.Contains("ClearAgentActivities()", body, StringComparison.Ordinal);
-            }
-            else
-            {
-                Assert.DoesNotContain("ClearAgentActivities()", body, StringComparison.Ordinal);
-            }
-        }
-
-        var clearStart = codeBehind.IndexOf("private void ClearAgentActivities", StringComparison.Ordinal);
-        Assert.True(clearStart >= 0, "ClearAgentActivities is missing.");
-        var clearEnd = codeBehind.IndexOf("\n        private", clearStart + 1, StringComparison.Ordinal);
-        var clearBlock = clearEnd > clearStart ? codeBehind[clearStart..clearEnd] : codeBehind[clearStart..];
-        Assert.Contains("AgentActivities.Clear()", clearBlock, StringComparison.Ordinal);
+            block.Text.Length <= TerminalOutputBlock.MaximumCharacters,
+            $"Kept {block.Text.Length} characters, budget is {TerminalOutputBlock.MaximumCharacters}.");
+        Assert.True(
+            block.Text.Count(character => character == '\n') <= TerminalOutputBlock.MaximumLines,
+            "Kept more lines than the block may show.");
+        Assert.Equal("… output truncated", block.FooterText);
     }
 
     [Fact]
-    public void Agent_reply_anchor_is_added_before_streaming_deltas_arrive()
+    public void The_terminal_block_completes_with_a_typed_state_and_wording()
     {
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-        var beginStart = codeBehind.IndexOf("private void BeginAgentReply", StringComparison.Ordinal);
-        var beginEnd = codeBehind.IndexOf("private async Task CompleteActiveAgentTurnAsync", beginStart, StringComparison.Ordinal);
-        Assert.True(beginStart >= 0 && beginEnd > beginStart, "BeginAgentReply is missing.");
+        var ok = new TerminalOutputBlock("exec_1", "build");
+        ok.AppendText("done\n");
+        ok.Complete(failed: false);
 
-        var beginBlock = codeBehind[beginStart..beginEnd];
-        var userAdd = beginBlock.IndexOf("Messages.Add(new ChatMessageItem", StringComparison.Ordinal);
-        var anchorStart = beginBlock.IndexOf("_activeAgentAssistantMessage = new ChatMessageItem", StringComparison.Ordinal);
-        var anchorAdd = beginBlock.IndexOf("Messages.Add(_activeAgentAssistantMessage)", anchorStart, StringComparison.Ordinal);
+        Assert.True(ok.IsCompleted);
+        Assert.False(ok.IsFailed);
+        Assert.False(ok.IsTruncated);
+        Assert.Equal(string.Empty, ok.FooterText);
 
-        Assert.True(userAdd >= 0, "BeginAgentReply must add the user message.");
-        Assert.True(anchorStart >= 0, "BeginAgentReply must create an assistant anchor.");
-        Assert.True(anchorAdd > userAdd, "The assistant anchor must follow the user message.");
-        Assert.True(anchorAdd > anchorStart, "The assistant anchor must be visible before the first delta arrives.");
+        var bad = new TerminalOutputBlock("exec_2", "build");
+        bad.Complete(failed: true);
+
+        Assert.True(bad.IsCompleted);
+        Assert.True(bad.IsFailed);
+        Assert.NotEqual(ok.StateText, bad.StateText);
     }
 
-    [Fact]
-    public void Terminal_panel_streams_tool_output_below_the_transcript()
+    private static XElement ActivityTemplate()
     {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-        var model = File.ReadAllText(FindSource("Models", "TerminalOutputBlock.cs"));
+        var template = GuiSource.Xml("Views", "ChatView.xaml").Descendants()
+            .FirstOrDefault(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "AgentActivityTemplate");
 
-        Assert.Contains("AutomationProperties.AutomationId=\"TerminalPanel\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("TerminalBlocks", xaml, StringComparison.Ordinal);
-        Assert.Contains("TerminalClearButton", xaml, StringComparison.Ordinal);
-        Assert.Contains("TerminalCollapseButton", xaml, StringComparison.Ordinal);
-        Assert.Contains("ToolOutputReceived", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("ApplyAgentToolOutput", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("MaximumTerminalBlocks", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("MaximumLines", model, StringComparison.Ordinal);
-        Assert.Contains("MaximumCharacters", model, StringComparison.Ordinal);
+        Assert.True(template is not null, "AgentActivityTemplate must exist.");
+        return template!;
     }
 
-    [Fact]
-    public void Activity_item_contains_no_raw_payload_storage_or_reasoning_text()
-    {
-        var model = File.ReadAllText(FindSource("Models", "AgentActivityItem.cs"));
+    /// <summary>
+    /// Whether the subtree binds the member. <c>{x:Bind Member, Mode=OneWay}</c>
+    /// arrives as an attribute literally named <c>Bind</c>, so the markup name is
+    /// not the property name and the binding has to be read from the value.
+    /// </summary>
+    private static bool Binds(XElement root, string member) =>
+        root.DescendantsAndSelf().Any(element =>
+            element.Attributes().Any(attribute =>
+                attribute.Value.Contains("x:Bind " + member, StringComparison.Ordinal)));
 
-        Assert.DoesNotContain("TransientData", model, StringComparison.Ordinal);
-        Assert.DoesNotContain("Command", model, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Arguments", model, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Diff", model, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Stdout", model, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Stderr", model, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Reasoning", model, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("StartedText", model, StringComparison.Ordinal);
-        Assert.Contains("CompletedText", model, StringComparison.Ordinal);
-        Assert.Contains("FailedText", model, StringComparison.Ordinal);
-        Assert.Contains("WaitingText", model, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Activity_feed_supports_fluid_color_wave_animation_and_lifecycle_binding()
-    {
-        var xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        // DataContextChanged hooked for robust template recycling
-        Assert.Contains("DataContextChanged=\"OnActivityItemDataContextChanged\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("OnActivityItemDataContextChanged", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("AttachActivityItem", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("DetachActivityItem", codeBehind, StringComparison.Ordinal);
-
-        // Fluid chromatic wave animation engine
-        Assert.Contains("StartTextSweep", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("StopTextSweep", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("StopAllTextSweeps", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("SampleAuroraColor", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("UpdateWaveTextBlock", codeBehind, StringComparison.Ordinal);
-
-        // The sweep must target the display label (flat row column 0),
-        // never the metadata line: sweeping an empty/short metadata block
-        // is what made the wave look gone.
-        Assert.Contains("Grid.GetColumn(tb) == 0", codeBehind, StringComparison.Ordinal);
-        var palette = File.ReadAllText(FindSource("Services", "AgentActivityPalette.cs"));
-        Assert.Contains("56, 189, 248", palette, StringComparison.Ordinal); // Soft Cyan
-        Assert.Contains("129, 140, 248", palette, StringComparison.Ordinal); // Soft Violet / Indigo
-        Assert.Contains("224, 242, 254", palette, StringComparison.Ordinal); // Luminous Glow
-        Assert.Contains("AgentActivityPalette.SampleAuroraColor", codeBehind, StringComparison.Ordinal);
-    }
-
-    private static string FindSource(params string[] parts)
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
-        {
-            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
-            if (Directory.Exists(sourceRoot))
-            {
-                return Path.Combine(new[] { sourceRoot }.Concat(parts).ToArray());
-            }
-        }
-
-        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
-    }
+    private static AgentActivityItem Item(
+        AgentActivityState state,
+        string? detail = null,
+        string? toolDisplay = null,
+        AgentActivityKind kind = AgentActivityKind.Analyze) =>
+        new(new AgentActivityModel(
+            "act_11111111111111111111111111111111",
+            kind,
+            state,
+            FileName: "ChatView.xaml.cs",
+            LineStart: 1,
+            LineEnd: 2,
+            Symbol: null,
+            Count: null,
+            Added: null,
+            Removed: null,
+            DurationMs: null,
+            SafeCode: "succeeded",
+            ToolDisplay: toolDisplay,
+            DurableSequence: null,
+            TransientSequence: 1,
+            Detail: detail));
 }

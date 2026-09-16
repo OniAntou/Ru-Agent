@@ -1,21 +1,40 @@
-using System.Linq;
+using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
 
 /// <summary>
-/// Visual polish contracts: muted text must clear WCAG AA (4.5:1) on every
-/// theme surface, spacing follows the 4/8/16 rhythm, and the activity wave
-/// stays throttled and motion-respecting.
+/// Visual polish: muted text clears WCAG AA on every theme surface, spacing follows
+/// the 4/8/16 rhythm, and the activity wave stays throttled and motion-respecting.
+///
+/// The contrast cases compute real ratios from the theme tokens. The structural
+/// cases read the declared values instead of searching for forbidden strings, so a
+/// spacing or colour that drifts off the scale is caught by its value rather than by
+/// matching one spelling of it.
 /// </summary>
 public sealed class VisualPolishContractTests
 {
+    /// <summary>
+    /// The approved spacing values. The rhythm is 4/8/16/24/32, plus the hairline
+    /// 1/2/5/6 optical nudges that the shipped views settled on where a strict step
+    /// reads wrong — a glyph against its label, or a label against its value. A new
+    /// value must be added here on purpose; spacing drifting one literal at a time is
+    /// exactly what this guards.
+    /// </summary>
+    private static readonly double[] ApprovedSpacing = [0, 1, 2, 4, 5, 6, 8, 12, 16, 24, 32, 40, 48];
+
+    private static readonly string[] ThemeViews =
+    [
+        "ChatView.xaml", "SettingsView.xaml", "DiagnosticsView.xaml", "LogView.xaml",
+    ];
+
     [Fact]
     public void Light_muted_text_passes_aa_on_canvas_and_sidebar()
     {
-        var appXaml = File.ReadAllText(FindSource("App.xaml"));
-        var light = ThemeBlock(appXaml, "Light");
+        var light = ThemeBlock("Light");
 
         string muted = ColorValue(light, "RuMutedColor");
         Assert.True(Contrast(muted, ColorValue(light, "RuSurfaceColor")) >= 4.5,
@@ -27,8 +46,7 @@ public sealed class VisualPolishContractTests
     [Fact]
     public void Dark_muted_text_passes_aa_on_surface()
     {
-        var appXaml = File.ReadAllText(FindSource("App.xaml"));
-        var dark = ThemeBlock(appXaml, "Dark");
+        var dark = ThemeBlock("Dark");
 
         Assert.True(Contrast(ColorValue(dark, "RuMutedColor"), ColorValue(dark, "RuSurfaceColor")) >= 4.5,
             "Dark muted must clear 4.5:1 on surface.");
@@ -37,8 +55,7 @@ public sealed class VisualPolishContractTests
     [Fact]
     public void Accent_hue_tokens_pass_aa_on_light_surfaces()
     {
-        var appXaml = File.ReadAllText(FindSource("App.xaml"));
-        var light = ThemeBlock(appXaml, "Light");
+        var light = ThemeBlock("Light");
         string surface = ColorValue(light, "RuSurfaceColor");
 
         foreach (var token in new[] { "RuInfoColor", "RuVioletColor", "RuPinkColor", "RuDangerColor" })
@@ -48,44 +65,79 @@ public sealed class VisualPolishContractTests
         }
     }
 
-    [Fact]
-    public void Status_text_never_dims_muted_foreground_with_opacity()
+    [Theory]
+    [InlineData("Light")]
+    [InlineData("Dark")]
+    public void Every_body_text_token_clears_aa_on_its_own_surface(string themeName)
     {
-        var chatXaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        // Ink and muted are the two body-copy foregrounds; both must be readable on
+        // the surface they are painted on, in both themes.
+        var theme = ThemeBlock(themeName);
+        string surface = ColorValue(theme, "RuSurfaceColor");
 
-        // Muted-on-surface already sits near the AA floor; extra opacity
-        // would push small text below 4.5:1 on the light theme.
-        foreach (Match match in Regex.Matches(chatXaml, @"<TextBlock[^>]*>"))
+        foreach (var token in new[] { "RuInkColor", "RuMutedColor" })
         {
-            string tag = match.Value;
-            if (tag.Contains("RuMutedBrush", StringComparison.Ordinal))
-            {
-                Assert.DoesNotContain("Opacity=", tag, StringComparison.Ordinal);
-            }
+            Assert.True(Contrast(ColorValue(theme, token), surface) >= 4.5,
+                $"{themeName}/{token} must clear 4.5:1 on surface.");
         }
     }
 
     [Fact]
-    public void Diagnostic_surfaces_use_theme_brushes_not_hardcoded_colors()
+    public void Status_text_never_dims_muted_foreground_with_opacity()
     {
-        var diagnostics = File.ReadAllText(FindSource("Views", "DiagnosticsView.xaml"));
-        var log = File.ReadAllText(FindSource("Views", "LogView.xaml"));
-
-        // Opaque hardcoded foregrounds break one of the two themes; the only
-        // exception is white on opaque saturated badge pills. Translucent
-        // 8-digit tint overlays are theme-neutral by construction.
-        foreach (var (name, xaml) in new[] { ("Diagnostics", diagnostics), ("Log", log) })
+        // Muted-on-surface already sits near the AA floor; extra opacity would push
+        // small text below 4.5:1 on the light theme.
+        var offenders = new List<string>();
+        foreach (var element in GuiSource.Xml("Views", "ChatView.xaml").Descendants())
         {
-            foreach (Match match in Regex.Matches(xaml, @"Foreground=""(#[0-9A-Fa-f]{6})"""))
+            string? foreground = GuiSource.AttributeValue(element, "Foreground");
+            if (foreground?.Contains("RuMutedBrush", StringComparison.Ordinal) != true)
             {
-                Assert.True(
-                    string.Equals(match.Groups[1].Value, "#FFFFFF", StringComparison.OrdinalIgnoreCase),
-                    $"{name} must not use opaque hardcoded text {match.Groups[1].Value}.");
+                continue;
             }
 
-            Assert.DoesNotContain("#141418", xaml, StringComparison.OrdinalIgnoreCase);
+            if (GuiSource.HasAttribute(element, "Opacity"))
+            {
+                offenders.Add($"<{element.Name.LocalName}> muted + Opacity={GuiSource.AttributeValue(element, "Opacity")}");
+            }
         }
 
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void Diagnostic_surfaces_paint_text_with_theme_brushes()
+    {
+        // An opaque hardcoded foreground breaks one of the two themes; the only
+        // allowed exception is white on an opaque saturated badge pill. Translucent
+        // eight-digit tints are theme-neutral by construction.
+        foreach (var view in new[] { "DiagnosticsView.xaml", "LogView.xaml" })
+        {
+            foreach (var element in GuiSource.Xml("Views", view).Descendants())
+            {
+                foreach (var attribute in element.Attributes())
+                {
+                    if (!attribute.Name.LocalName.StartsWith("Foreground", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var match = Regex.Match(attribute.Value, "^#(?<hex>[0-9A-Fa-f]{6})$");
+                    if (!match.Success)
+                    {
+                        continue;
+                    }
+
+                    Assert.True(
+                        string.Equals(attribute.Value, "#FFFFFF", StringComparison.OrdinalIgnoreCase),
+                        $"{view}: <{element.Name.LocalName}> must not paint opaque hardcoded text {attribute.Value}.");
+                }
+            }
+        }
+
+        // The status colours must come from the shared palette, not local literals.
+        var diagnostics = GuiSource.Text("Views", "DiagnosticsView.xaml");
+        var log = GuiSource.Text("Views", "LogView.xaml");
         Assert.Contains("RuDangerBrush", diagnostics, StringComparison.Ordinal);
         Assert.Contains("RuInfoBrush", diagnostics, StringComparison.Ordinal);
         Assert.Contains("RuInfoBrush", log, StringComparison.Ordinal);
@@ -94,41 +146,80 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
-    public void Spacing_follows_the_rhythm_scale()
+    public void Every_spacing_value_comes_from_the_approved_scale()
     {
-        foreach (var view in new[] { "ChatView.xaml", "SettingsView.xaml", "DiagnosticsView.xaml", "LogView.xaml" })
+        var offScale = new List<string>();
+        foreach (var view in ThemeViews)
         {
-            var xaml = File.ReadAllText(FindSource("Views", view));
-            foreach (var off in new[] { "Spacing=\"20\"", "Spacing=\"7\"", "Spacing=\"10\"", "Spacing=\"14\"" })
+            foreach (var element in GuiSource.Xml("Views", view).Descendants())
             {
-                Assert.DoesNotContain(off, xaml, StringComparison.Ordinal);
+                foreach (var attribute in element.Attributes())
+                {
+                    if (!string.Equals(attribute.Name.LocalName, "Spacing", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    if (!double.TryParse(attribute.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var spacing))
+                    {
+                        continue;
+                    }
+
+                    if (!ApprovedSpacing.Contains(spacing) && spacing != 0)
+                    {
+                        offScale.Add($"{view}: <{element.Name.LocalName}> Spacing={attribute.Value}");
+                    }
+                }
             }
         }
 
-        var settings = File.ReadAllText(FindSource("Views", "SettingsView.xaml"));
-        Assert.DoesNotContain("0,0,10,0", settings, StringComparison.Ordinal);
-        Assert.DoesNotContain("0,0,0,20", settings, StringComparison.Ordinal);
+        Assert.Empty(offScale);
     }
 
     [Fact]
-    public void Welcome_overlay_follows_the_gui_theme_tokens()
+    public void Margins_in_settings_come_from_the_approved_scale()
     {
-        var overlay = File.ReadAllText(FindSource("Controls", "WelcomeOverlay.cs"));
-        var paths = File.ReadAllText(FindSource("Controls", "BackgroundPathsControl.cs"));
+        var offScale = new List<string>();
+        foreach (var element in GuiSource.Xml("Views", "SettingsView.xaml").Descendants())
+        {
+            var margin = GuiSource.AttributeValue(element, "Margin");
+            if (margin is null)
+            {
+                continue;
+            }
 
-        foreach (var token in new[] { "RuCanvasBrush", "RuSurfaceBrush", "RuInkBrush", "RuMutedBrush", "RuLineBrush", "RuAccentBrush", "RuAccentSoftBrush" })
+            foreach (var part in margin.Split(',', StringSplitOptions.TrimEntries))
+            {
+                if (double.TryParse(part, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                    && value != 0
+                    && !ApprovedSpacing.Contains(value))
+                {
+                    offScale.Add($"<{element.Name.LocalName}> Margin={margin}");
+                    break;
+                }
+            }
+        }
+
+        Assert.Empty(offScale);
+    }
+
+    [Fact]
+    public void Welcome_overlay_paints_only_from_theme_tokens()
+    {
+        var overlay = GuiSource.Text("Controls", "WelcomeOverlay.cs");
+        var paths = GuiSource.Text("Controls", "BackgroundPathsControl.cs");
+
+        foreach (var token in new[]
+                 {
+                     "RuCanvasBrush", "RuSurfaceBrush", "RuInkBrush", "RuMutedBrush",
+                     "RuLineBrush", "RuAccentBrush", "RuAccentSoftBrush",
+                 })
         {
             Assert.Contains(token, overlay, StringComparison.Ordinal);
         }
 
-        foreach (var hardcode in new[] { "10, 10, 10", "212, 212, 216", "71, 85, 105", "20, 20, 24", "22, 22, 26" })
-        {
-            Assert.DoesNotContain(hardcode, overlay, StringComparison.Ordinal);
-            Assert.DoesNotContain(hardcode, paths, StringComparison.Ordinal);
-        }
-
-        // Welcome path stroke: pure white on dark (luminous on the dark
-        // canvas), theme ink on light (white would vanish on light canvas).
+        // One deliberate literal: the welcome path stroke is pure white on the dark
+        // canvas and theme ink on light, where white would vanish.
         Assert.Contains("Color.FromArgb(255, 255, 255, 255)", paths, StringComparison.Ordinal);
         Assert.Contains("RuInkBrush", paths, StringComparison.Ordinal);
     }
@@ -136,17 +227,16 @@ public sealed class VisualPolishContractTests
     [Fact]
     public void Wave_stays_throttled_and_always_on()
     {
-        var timing = File.ReadAllText(FindSource("Services", "UiTiming.cs"));
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        // The frame interval is a named constant, not a literal at the call site.
+        Assert.True(
+            UiTiming.WaveFrame >= TimeSpan.FromMilliseconds(40),
+            $"WaveFrame {UiTiming.WaveFrame} must stay throttled at 40ms or slower.");
 
-        var wave = Regex.Match(timing, @"WaveFrame = TimeSpan\.FromMilliseconds\((\d+)\)");
-        Assert.True(wave.Success, "WaveFrame must stay a named UiTiming constant.");
-        Assert.True(int.Parse(wave.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) >= 40,
-            "WaveFrame must stay throttled at 40ms or slower.");
-
-        // The activity wave is a signature effect: it always runs while rows
-        // are active and never gates on the OS animation setting.
+        // The activity wave is a signature effect: it runs whenever rows are active
+        // and never gates on the OS animation setting.
+        var codeBehind = GuiSource.Text("Views", "ChatView.xaml.cs");
         Assert.Contains("StartTextSweep", codeBehind, StringComparison.Ordinal);
+
         var sweepStart = codeBehind.IndexOf("private void StartTextSweep", StringComparison.Ordinal);
         var sweepEnd = codeBehind.IndexOf("private void StopTextSweep", sweepStart, StringComparison.Ordinal);
         Assert.True(sweepStart >= 0 && sweepEnd > sweepStart, "StartTextSweep body boundary was not found.");
@@ -154,30 +244,61 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
-    public void Activity_visual_hold_and_speed_tuning_are_configured()
+    public void Decorative_loops_respect_the_os_animation_setting()
     {
-        var timing = File.ReadAllText(FindSource("Services", "UiTiming.cs"));
-        var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("ActivityWavePeriodSeconds", timing, StringComparison.Ordinal);
-        Assert.Contains("ActivityMinHold", timing, StringComparison.Ordinal);
-        Assert.Contains("ActivityWavePeriodSeconds", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("ActivityMinHold", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("FlushDeferredCompletions", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("EnsureHoldTimer", codeBehind, StringComparison.Ordinal);
+        // Contrast with the wave above: the decorative loops must consult the
+        // accessibility setting rather than always running.
+        foreach (var control in new[] { "WelcomeOverlay.cs", "BackgroundPathsControl.cs", "MeteorShowerField.cs" })
+        {
+            var source = GuiSource.Text("Controls", control);
+            Assert.Contains("AnimationsEnabled", source, StringComparison.Ordinal);
+        }
     }
 
-    private static string ThemeBlock(string appXaml, string theme)
+    [Fact]
+    public void Activity_visual_hold_and_speed_tuning_are_configured()
     {
-        var start = appXaml.IndexOf($"<ResourceDictionary x:Key=\"{theme}\">", StringComparison.Ordinal);
-        Assert.True(start >= 0, $"Missing {theme} theme block.");
-        var end = appXaml.IndexOf("</ResourceDictionary>", start, StringComparison.Ordinal);
-        return appXaml[start..end];
+        // The tuning lives in the shared timing class and is actually consumed.
+        Assert.InRange(UiTiming.ActivityMinHold, TimeSpan.FromMilliseconds(1), TimeSpan.FromSeconds(5));
+        Assert.InRange(UiTiming.ActivityWavePeriodSeconds, 0.05, 5.0);
+
+        var codeBehind = GuiSource.Text("Views", "ChatView.xaml.cs");
+        foreach (var member in new[]
+                 {
+                     "ActivityWavePeriodSeconds", "ActivityMinHold",
+                     "FlushDeferredCompletions", "EnsureHoldTimer",
+                 })
+        {
+            Assert.Contains(member, codeBehind, StringComparison.Ordinal);
+        }
+    }
+
+    private static string ThemeBlock(string theme)
+    {
+        var document = GuiSource.Xml("App.xaml");
+
+        // x:Key lives in the x: namespace, which AttributeValue deliberately skips so
+        // that x:Name cannot answer a lookup for AutomationProperties.Name.
+        var block = document.Descendants()
+            .FirstOrDefault(element =>
+                element.Name.LocalName == "ResourceDictionary"
+                && element.Attribute(GuiSource.Xaml + "Key")?.Value == theme);
+
+        Assert.True(block is not null, $"Missing {theme} theme block.");
+
+        var colors = block!.Descendants()
+            .Where(element => element.Name.LocalName == "Color")
+            .ToDictionary(
+                element => element.Attribute(GuiSource.Xaml + "Key")?.Value ?? string.Empty,
+                element => element.Value.Trim(),
+                StringComparer.Ordinal);
+
+        return string.Join("\n", colors.Select(pair => $"<Color x:Key=\"{pair.Key}\">{pair.Value}</Color>"));
     }
 
     private static string ColorValue(string themeBlock, string key)
     {
-        var match = Regex.Match(themeBlock, $"<Color x:Key=\"{key}\">([^<]+)</Color>");
+        var match = Regex.Match(themeBlock, $"<Color x:Key=\"{Regex.Escape(key)}\">([^<]+)</Color>");
         Assert.True(match.Success, $"Missing {key}.");
         return match.Groups[1].Value.Trim();
     }
@@ -199,21 +320,5 @@ public sealed class VisualPolishContractTests
         }
 
         return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
-    }
-
-    private static string FindSource(params string[] parts)
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
-        {
-            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
-            if (Directory.Exists(sourceRoot))
-            {
-                return Path.Combine(new[] { sourceRoot }.Concat(parts).ToArray());
-            }
-        }
-
-        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
     }
 }

@@ -121,6 +121,17 @@ public sealed class TuiTranscript
         _surface.Flush();
     }
 
+    /// <summary>
+    /// Drops text held back for the current streamed answer. A retried model step
+    /// replaces the attempt that failed, so the pending buffer must not leak into
+    /// the new attempt's text. Text already flushed to the surface cannot be
+    /// un-written in a terminal; it is superseded by the retry's output.
+    /// </summary>
+    public void ResetAssistant()
+    {
+        _lineBuffer = string.Empty;
+    }
+
     public void Flush()
     {
         if (_lineBuffer.Length == 0)

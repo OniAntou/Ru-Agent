@@ -106,6 +106,12 @@ public sealed class HarnessLiveEventHub
         return TryPublish(new RunId(delta.RunId), "tool.output.delta", data);
     }
 
+    /// <summary>
+    /// Enqueues <paramref name="data"/> on every matching subscriber's channel and
+    /// returns true. Channels use <see cref="BoundedChannelFullMode.DropOldest"/>,
+    /// so <c>TryWrite</c> never rejects: drops are counted asynchronously by the
+    /// channel callbacks (<see cref="DroppedCount"/>, <see cref="ActivityDroppedCount"/>).
+    /// </summary>
     public bool TryPublish(RunId runId, string kind, string data)
     {
         if (_subscriptions.IsEmpty)
@@ -116,7 +122,6 @@ public sealed class HarnessLiveEventHub
 
         var seq = Interlocked.Increment(ref _localSequence);
         var frame = new TransientFrame(seq, runId, kind, data);
-        var delivered = true;
         var activity = IsActivityKind(kind);
         foreach (var pair in _subscriptions)
         {
@@ -126,25 +131,12 @@ public sealed class HarnessLiveEventHub
             }
 
             var channel = activity ? pair.Value.ActivityChannel : pair.Value.Channel;
-            if (!channel.Writer.TryWrite(frame))
-            {
-                var subscription = pair.Value;
-                if (activity)
-                {
-                    Interlocked.Increment(ref subscription.ActivityDropped);
-                    Interlocked.Increment(ref _activityDroppedCount);
-                }
-                else
-                {
-                    Interlocked.Increment(ref subscription.Dropped);
-                }
-
-                Interlocked.Increment(ref _droppedCount);
-                delivered = false;
-            }
+            // DropOldest guarantees acceptance; a slow reader's loss surfaces
+            // through the per-subscription dropped counters instead.
+            channel.Writer.TryWrite(frame);
         }
 
-        return delivered;
+        return true;
     }
 
     private static bool IsActivityKind(string kind) =>

@@ -13,7 +13,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -39,7 +39,7 @@ public static class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -47,7 +47,7 @@ public static class HarnessSqliteSchema
             if (existingVersion == 2)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix;
+                migration.CommandText = SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -57,7 +57,7 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 3)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix;
+                migration.CommandText = SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -67,7 +67,7 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 4)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionFourFinalGate + SchemaVersionFiveToSix;
+                migration.CommandText = SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -77,7 +77,17 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 5)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionFiveToSix;
+                migration.CommandText = SchemaVersionFiveToSix + SchemaVersionSixToSeven;
+                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await using var verCmd = connection.CreateCommand();
+                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 6)
+            {
+                await using var migration = connection.CreateCommand();
+                migration.CommandText = SchemaVersionSixToSeven;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -87,7 +97,14 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 0)
             {
                 await using var command = connection.CreateCommand();
-                command.CommandText = SchemaVersionThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate;
+                // A fresh database must reach the same shape a migrated one does, so
+                // every migration constant belongs in this batch. Omitting one left
+                // new installs a version behind the schema the validator expects.
+                command.CommandText = SchemaVersionThree
+                    + SchemaVersionThreeToFour
+                    + SchemaVersionFourFinalGate
+                    + SchemaVersionFiveToSix
+                    + SchemaVersionSixToSeven;
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -392,17 +409,17 @@ public static class HarnessSqliteSchema
         CREATE INDEX IF NOT EXISTS ix_workspace_change_journal_sequence
             ON workspace_change_journal(workspace_id, commit_sequence, created_at_utc);
 
-        CREATE TABLE IF NOT EXISTS workspace_mutations (
-            mutation_id TEXT PRIMARY KEY,
-            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
-            run_id TEXT NULL REFERENCES agent_runs(run_id) ON DELETE SET NULL,
-            change_id TEXT NULL REFERENCES workspace_change_journal(change_id) ON DELETE SET NULL,
-            idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 1 AND 256),
-            operation TEXT NOT NULL CHECK(length(operation) BETWEEN 1 AND 64),
-            state TEXT NOT NULL CHECK(state IN ('prepared', 'applied', 'rejected', 'restored')),
+        CREATE TABLE IF NOT EXISTS agent_file_recovery (
+            recovery_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            canonical_path TEXT NOT NULL CHECK(length(canonical_path) BETWEEN 1 AND 4096),
+            content_sha256 TEXT NOT NULL CHECK(length(content_sha256) = 64),
+            content_length INTEGER NOT NULL CHECK(content_length >= 0),
             created_at_utc TEXT NOT NULL,
-            UNIQUE(workspace_id, idempotency_key)
+            consumed_at_utc TEXT NULL
         );
+
+        CREATE INDEX IF NOT EXISTS ix_agent_file_recovery_run ON agent_file_recovery(run_id);
         """;
 
     // Named final-gate migration. The legacy unique index remains in place
@@ -465,5 +482,29 @@ public static class HarnessSqliteSchema
             WHERE terminal_at_utc IS NULL;
 
         PRAGMA foreign_keys=ON;
+        """;
+
+    // Version 7 brings the file-recovery table under the versioned schema. It was
+    // created lazily by FileRecoveryStore on first use, so it could drift from the
+    // schema contract and escaped both the migration chain and the validator. The
+    // statement is idempotent, so an existing database that already has the table
+    // (created lazily) keeps its rows.
+    //
+    // It also drops workspace_mutations: no production code ever read or wrote it,
+    // and a table that looks like durable authority but is never used misleads
+    // every future reader of the schema.
+    private const string SchemaVersionSixToSeven = """
+        CREATE TABLE IF NOT EXISTS agent_file_recovery (
+            recovery_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            canonical_path TEXT NOT NULL CHECK(length(canonical_path) BETWEEN 1 AND 4096),
+            content_sha256 TEXT NOT NULL CHECK(length(content_sha256) = 64),
+            content_length INTEGER NOT NULL CHECK(content_length >= 0),
+            created_at_utc TEXT NOT NULL,
+            consumed_at_utc TEXT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_agent_file_recovery_run ON agent_file_recovery(run_id);
+
+        DROP TABLE IF EXISTS workspace_mutations;
         """;
 }

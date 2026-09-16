@@ -276,6 +276,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             text = frame.Content,
             model_step_id = frame.ModelStepId?.Value,
             execution_id = frame.ExecutionId?.Value,
+            // Emitted only for a superseded attempt: the desktop client's delta
+            // parser rejects unknown fields, so an ordinary frame must keep the
+            // exact shape it has always had.
+            reset = frame.IsReset ? true : (bool?)null,
         });
         hub.TryPublish(frame.RunId, kind, data);
     }

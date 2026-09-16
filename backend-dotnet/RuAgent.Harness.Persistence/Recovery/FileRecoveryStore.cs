@@ -23,23 +23,16 @@ public sealed class FileRecoveryStore
         _payloadStore = new HarnessPayloadStore(options, cryptography, redactor);
     }
 
-    public async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Retained for call-site clarity: the recovery table is part of the versioned
+    /// schema since version 7, so HarnessSqliteSchema.InitializeAsync owns it. A
+    /// second DDL copy here is what let the table drift outside the migration chain
+    /// and the schema validator.
+    /// </summary>
+    public Task EnsureSchemaAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS agent_file_recovery (
-                recovery_id TEXT PRIMARY KEY,
-                run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
-                canonical_path TEXT NOT NULL CHECK(length(canonical_path) BETWEEN 1 AND 4096),
-                content_sha256 TEXT NOT NULL CHECK(length(content_sha256) = 64),
-                content_length INTEGER NOT NULL CHECK(content_length >= 0),
-                created_at_utc TEXT NOT NULL,
-                consumed_at_utc TEXT NULL
-            );
-            CREATE INDEX IF NOT EXISTS ix_agent_file_recovery_run ON agent_file_recovery(run_id);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        _ = cancellationToken;
+        return Task.CompletedTask;
     }
 
     public async Task<FileRecoveryReference> CreateRecoveryAsync(

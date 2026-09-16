@@ -318,9 +318,19 @@ public static class AgentActivityProjector
         catch
         {
             // Activity is observational only. A disconnected or invalid live sink must
-            // never fail a model/tool step or alter durable harness state.
+            // never fail a model/tool step or alter durable harness state. Count the
+            // loss so a silent sink cannot hide forever (see DroppedPublishCount).
+            Interlocked.Increment(ref _droppedPublishCount);
         }
     }
+
+    /// <summary>
+    /// Number of activity frames lost to sink failures via <see cref="PublishSafe"/>.
+    /// Core stays dependency-free, so observability is a counter, not a log call.
+    /// </summary>
+    public static long DroppedPublishCount => Volatile.Read(ref _droppedPublishCount);
+
+    private static long _droppedPublishCount;
 
     private static string? ToolDisplayFor(ToolProposal proposal) =>
         (proposal.ToolId, ReadOp(proposal)) switch

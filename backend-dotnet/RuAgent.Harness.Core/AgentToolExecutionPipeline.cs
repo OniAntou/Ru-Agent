@@ -299,6 +299,11 @@ internal sealed class AgentToolExecutionPipeline
         List<(int ModelOrder, ToolExecutionReceipt Receipt)> orderedReceipts,
         CancellationToken cancellationToken)
     {
+        var reconciliationRequired = false;
+        // Whether the gate was armed when this batch started. Cleared by the first
+        // succeeded read-only call so a second read-only call in the same batch
+        // cannot record the inspection twice.
+        var gateArmedBeforeThisCall = _inspectionGate?.IsMutationDenied(run.RunId) == true;
         foreach (var call in prepared.OrderBy(call => call.ModelOrder))
         {
             var preparationPayloads = call.PreparationPayloads
@@ -450,13 +455,32 @@ internal sealed class AgentToolExecutionPipeline
                     toolCallId: receipt.ToolCallId,
                     executionId: receipt.ExecutionId,
                     safeCode: receipt.Code));
+                // Entering ReconciliationRequired parks the run: the runtime loop stops
+                // driving it and the only way out is a user reconciliation command. The
+                // transition itself must therefore be visible, or the client sits on a
+                // stale "Running" status forever with no explanation and no next step.
+                events.Add(new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.RunStateChanged,
+                    safeCode: "reconciliation_required"));
+                reconciliationRequired = true;
             }
-            else if (call.AccessKind == ToolAccessKind.ReadOnly
+            else if (gateArmedBeforeThisCall
+                     && call.AccessKind == ToolAccessKind.ReadOnly
                      && receipt.Outcome == ToolExecutionOutcome.Succeeded)
             {
                 // A durable read-only inspection receipt is what clears the
-                // UnknownContinue mutation gate.
+                // UnknownContinue mutation gate. The clearing is recorded in the
+                // stream as well: the gate has to be reconstructable after a host
+                // restart, and only a durable event can carry that.
                 _inspectionGate?.RecordInspection(run.RunId);
+                gateArmedBeforeThisCall = false;
+                events.Add(new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.ReconciliationResolved,
+                    toolCallId: receipt.ToolCallId,
+                    executionId: receipt.ExecutionId,
+                    safeCode: ReconciliationGateProjection.InspectionRecordedCode));
             }
 
             if (proposals.TryGetValue(call.ModelOrder, out var proposal))
@@ -476,6 +500,22 @@ internal sealed class AgentToolExecutionPipeline
                         durationMs: toolDurations.TryGetValue(call.ExecutionId.Value, out var elapsedMs)
                             ? elapsedMs
                             : null));
+            }
+
+            if (reconciliationRequired)
+            {
+                // The tool row above only says the call ended ambiguously; without a
+                // reason row the user sees a paused run with no stated cause and no
+                // stated way out. Mirror the inspection gate's reason activity so every
+                // parked-on-reconciliation state carries its own explanation.
+                AgentActivityProjector.PublishSafe(
+                    _activitySink,
+                    run.RunId,
+                    AgentActivityProjector.ProjectStatus(
+                        AgentActivityProjector.ActivityId(receipt.ToolCallId.Value) + "_reconciliation",
+                        AgentActivityState.Waiting,
+                        "reconciliation_required",
+                        "Run paused: the last action was interrupted or timed out, so its side effects are unverified. Send Continue to resume with a read-only inspection, or stop the run."));
             }
 
             var next = run.Advance(

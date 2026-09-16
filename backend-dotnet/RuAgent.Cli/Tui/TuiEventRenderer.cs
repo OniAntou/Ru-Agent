@@ -119,6 +119,12 @@ public sealed class TuiSessionRenderer
     {
         if (AgentAssistantDeltaModel.TryParse(frame, out var delta) && delta is not null)
         {
+            if (delta.IsReset)
+            {
+                _transcript.ResetAssistant();
+                return;
+            }
+
             _transcript.AppendAssistant(delta.Text);
             return;
         }

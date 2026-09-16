@@ -96,6 +96,29 @@ public sealed partial class AgentV1Service
             });
         }
 
+        return await ApplyReconciliationAsync(run, command, intentCode, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Commits one accepted reconciliation decision. Shared by the strict
+    /// reconcile endpoint (which first proves the caller saw the current
+    /// workspace hash) and by Continue on a parked run, where the user's
+    /// explicit continue is itself the decision and no snapshot proof is
+    /// required.
+    /// </summary>
+    private async Task<AgentServiceResult> ApplyReconciliationAsync(
+        AgentRun run,
+        ReconciliationCommand command,
+        string? intentCode,
+        CancellationToken cancellationToken)
+    {
+        var runId = run.RunId;
+        var runIdRaw = runId.Value;
+        if (_inspectionGate is null)
+        {
+            return BoundedError(409, "reconciliation_unavailable", "Reconciliation services are not available.");
+        }
+
         var transition = AgentRunStateMachine.TryTransition(
             run.Status,
             HarnessRunTransition.ApplyReconciliation);

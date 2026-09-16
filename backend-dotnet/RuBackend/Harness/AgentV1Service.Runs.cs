@@ -760,6 +760,36 @@ public sealed partial class AgentV1Service
             return BoundedError(404, "run_not_found", "Run not found.");
         }
 
+        if (run.State == HarnessRunState.ReconciliationRequired)
+        {
+            // A run parked on an ambiguous tool outcome has exactly one way out:
+            // a reconciliation decision. The desktop client has no reconcile
+            // endpoint of its own, and Continue is the only affordance it offers
+            // here, so Continue *is* that decision — resolve it as a continue with
+            // inspection rather than bouncing the user with invalid_run_transition.
+            if (_snapshots is null || _inspectionGate is null)
+            {
+                return BoundedError(409, "reconciliation_unavailable", "Reconciliation services are not available.");
+            }
+
+            string? intentCode = null;
+            await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+            {
+                if (envelope.Event.Kind == "reconciliation.required"
+                    && envelope.Event.SafeCode is { } code)
+                {
+                    intentCode = code;
+                }
+            }
+
+            return await ApplyReconciliationAsync(
+                    run,
+                    UnknownContinueCommand,
+                    intentCode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Continue);
         if (!transition.Accepted)
         {
@@ -923,28 +953,8 @@ public sealed partial class AgentV1Service
         return connection;
     }
 
-    private static AgentRun ReadAgentRun(SqliteDataReader reader, int startIndex = 0)
-    {
-        var state = (HarnessRunState)reader.GetInt32(startIndex + 3);
-        HistoryWaitKind? historyWaitKind = reader.IsDBNull(startIndex + 4) ? null : (HistoryWaitKind)reader.GetInt32(startIndex + 4);
-        return new AgentRun(
-            new RunId(reader.GetString(startIndex)),
-            new SessionId(reader.GetString(startIndex + 1)),
-            new WorkspaceId(reader.GetString(startIndex + 2)),
-            new HarnessRunStatus(state, historyWaitKind),
-            reader.GetInt64(startIndex + 5),
-            reader.GetInt64(startIndex + 6),
-            reader.GetInt32(startIndex + 7),
-            reader.GetInt32(startIndex + 8),
-            reader.GetInt32(startIndex + 9),
-            (AgentPermissionPreset)reader.GetInt32(startIndex + 10),
-            reader.GetInt64(startIndex + 11),
-            reader.GetString(startIndex + 12),
-            DateTimeOffset.Parse(reader.GetString(startIndex + 13), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind),
-            DateTimeOffset.Parse(reader.GetString(startIndex + 14), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind),
-            reader.IsDBNull(startIndex + 15) ? null : DateTimeOffset.Parse(reader.GetString(startIndex + 15), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind),
-            reader.IsDBNull(startIndex + 16) ? null : reader.GetString(startIndex + 16));
-    }
+    private static AgentRun ReadAgentRun(SqliteDataReader reader, int startIndex = 0) =>
+        RuAgent.Harness.Persistence.HarnessSqliteMapper.ReadRun(reader, startIndex);
 
     private static AgentRun AdvanceRun(AgentRun current, HarnessRunStatus nextStatus, int nextBudgetWindow, int nextModelSteps, int nextToolCalls, long appendedCount, DateTimeOffset updatedAt, string? terminalErrorCode = null)
     {

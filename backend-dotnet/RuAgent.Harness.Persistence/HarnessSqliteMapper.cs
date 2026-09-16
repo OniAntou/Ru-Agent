@@ -5,9 +5,13 @@ using RuAgent.Harness.Core.Persistence;
 
 namespace RuAgent.Harness.Persistence;
 
-internal static class HarnessSqliteMapper
+/// <summary>
+/// Shared SQLite row mapping for harness runs. Public so the host layer reuses
+/// this instead of keeping a second, drift-prone copy of the column offsets.
+/// </summary>
+public static class HarnessSqliteMapper
 {
-    internal const string RunColumns = """
+    public const string RunColumns = """
         run_id,
         session_id,
         workspace_id,
@@ -27,7 +31,7 @@ internal static class HarnessSqliteMapper
         terminal_error_code
         """;
 
-    internal static AgentRun ReadRun(SqliteDataReader reader, int startIndex = 0)
+    public static AgentRun ReadRun(SqliteDataReader reader, int startIndex = 0)
     {
         var state = (HarnessRunState)reader.GetInt32(startIndex + 3);
         HistoryWaitKind? historyWaitKind = reader.IsDBNull(startIndex + 4)

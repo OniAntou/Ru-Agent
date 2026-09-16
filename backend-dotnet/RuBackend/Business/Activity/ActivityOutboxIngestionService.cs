@@ -9,6 +9,7 @@ using RuBackend.Diagnostics;
 public sealed class ActivityOutboxIngestionService : BackgroundService
 {
     private const int MaximumRecordBytes = 256_000;
+    private const int MaximumLeftoverFilesPerPass = 16;
     private readonly IActivityLogStore _activityLogStore;
     private readonly string _logRoot;
     private readonly string _outboxFile;
@@ -30,11 +31,13 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
     {
         var totalIngested = 0;
 
-        // 1. Process any leftover .processing files from previous runs
+        // 1. Process any leftover .processing files from previous runs.
+        // Capped per pass so a crash burst cannot stall this poll iteration.
         if (Directory.Exists(_logRoot))
         {
             var leftoverFiles = Directory.GetFiles(_logRoot, "activity_outbox.*.processing");
-            foreach (var leftover in leftoverFiles)
+            Array.Sort(leftoverFiles, StringComparer.Ordinal);
+            foreach (var leftover in leftoverFiles.Take(MaximumLeftoverFilesPerPass))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 totalIngested += await IngestProcessingFileAsync(leftover, cancellationToken).ConfigureAwait(false);
@@ -111,16 +114,28 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
             {
                 if (JsonNode.Parse(line) is JsonObject root)
                 {
-                    var ts = root.TryGetPropertyValue("ts", out var tsv) && tsv is JsonValue tv && tv.TryGetValue<double>(out var t) ? t : 0;
-                    var iso = root.TryGetPropertyValue("iso", out var isov) && isov is JsonValue isv ? isv.GetValue<string>() : string.Empty;
-                    var type = root.TryGetPropertyValue("type", out var typev) && typev is JsonValue tyv ? tyv.GetValue<string>() : "chat";
-                    var eventId = root.TryGetPropertyValue("event_id", out var eidv) && eidv is JsonValue eiv ? eiv.GetValue<string>() : null;
-                    var sessionId = root.TryGetPropertyValue("session_id", out var sidv) && sidv is JsonValue sv ? sv.GetValue<string>() : null;
-                    var data = root.TryGetPropertyValue("data", out var datav) && datav is JsonObject d ? d : new JsonObject();
-
-                    var evt = new ActivityEvent(eventId, ts, iso, type, sessionId, data);
-                    await _activityLogStore.AppendAsync(evt, cancellationToken).ConfigureAwait(false);
-                    ingestedCount++;
+                    var evt = new ActivityEvent(
+                        ReadOptionalString(root, "event_id"),
+                        ReadNumber(root, "ts"),
+                        ReadOptionalString(root, "iso") ?? string.Empty,
+                        ReadOptionalString(root, "type") ?? "chat",
+                        ReadOptionalString(root, "session_id"),
+                        root.TryGetPropertyValue("data", out var datav) && datav is JsonObject d ? d : new JsonObject());
+                    try
+                    {
+                        await _activityLogStore.AppendAsync(evt, cancellationToken).ConfigureAwait(false);
+                        ingestedCount++;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // One poison row must not abort the rest of the file.
+                        // Duplicates from a later re-ingest are suppressed by
+                        // the store's event-id dedup.
+                    }
                 }
             }
             catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException)
@@ -138,6 +153,43 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
         return ingestedCount;
     }
 
+    private static string? ReadOptionalString(JsonObject root, string key)
+    {
+        if (root.TryGetPropertyValue(key, out var node)
+            && node is JsonValue value
+            && value.TryGetValue<string>(out var text))
+        {
+            return text;
+        }
+
+        return null;
+    }
+
+    private static double ReadNumber(JsonObject root, string key)
+    {
+        if (!root.TryGetPropertyValue(key, out var node) || node is not JsonValue value)
+        {
+            return 0;
+        }
+
+        if (value.TryGetValue<int>(out var integer))
+        {
+            return integer;
+        }
+
+        if (value.TryGetValue<long>(out var longInteger))
+        {
+            return longInteger;
+        }
+
+        if (value.TryGetValue<double>(out var number) && double.IsFinite(number))
+        {
+            return number;
+        }
+
+        return 0;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -153,7 +205,16 @@ public sealed class ActivityOutboxIngestionService : BackgroundService
             }
             catch (Exception)
             {
-                // Prevent crash on loop iteration
+                // Prevent crash on loop iteration, but back off so a persistent
+                // failure cannot spin the loop.
+                try
+                {
+                    await Task.Delay(_pollingInterval, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
     }

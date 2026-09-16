@@ -66,11 +66,19 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         _options.Validate();
 
         // Bounded retry for Worker-reported transient failures (e.g.
-        // provider_rate_limited): each attempt gets a fresh socket and a
-        // fresh single-use provider bootstrap, and deltas stay buffered
-        // until Done, so retries never duplicate visible output.
+        // provider_rate_limited): each attempt gets a fresh socket and a fresh
+        // single-use provider bootstrap. Deltas are forwarded to the client as
+        // they arrive so the answer streams live; attempt N+1 first publishes a
+        // reset frame so a client can drop the partial text of the attempt that
+        // failed instead of appending the retry onto it.
         var attempt = 0;
         string? selectionFeedbackCode = null;
+
+        // The worker restarts its per-attempt sequence at 1, so the runner keeps
+        // the client-facing sequence monotonic across attempts: repeated keys
+        // would otherwise make the client silently drop every retry frame as a
+        // duplicate. The next attempt continues past what was already published.
+        long publishedSequences = 0;
         while (true)
         {
         string? providerBootstrapPath = null;
@@ -231,11 +239,27 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
         await SendAsync(socket, startEnvelope, cancellationToken).ConfigureAwait(false);
 
+        // A retried attempt replaces the previous attempt's answer: tell the
+        // client to drop the partial text it already rendered before any of this
+        // attempt's text arrives. Attempt 1 has nothing to supersede.
+        if (publishedSequences > 0)
+        {
+            await publishDelta(new AssistantDelta(
+                    request.ModelStepId,
+                    checked(publishedSequences + 1),
+                    string.Empty,
+                    isReset: true))
+                .ConfigureAwait(false);
+            publishedSequences++;
+        }
+
+        // The worker numbers its frames from 1 on every attempt, so re-base this
+        // attempt's deltas onto the client-facing sequence already published.
+        var sequenceBase = publishedSequences;
         long expectedSeq = 1;
         AssistantStep? finalStep = null;
         SystemPromptReceipt? finalReceipt = null;
         string? finalReasoningText = null;
-        var bufferedDeltas = new List<AssistantDelta>();
         bool doneReceived = false;
 
         while (!cancellationToken.IsCancellationRequested)
@@ -298,9 +322,16 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             {
                 case WorkerV2Contracts.AgentStepDelta:
                     var text = reply.Payload["text"] is JsonValue tv && tv.TryGetValue<string>(out var t) ? t : throw new WorkerProtocolException("invalid_delta");
-                    var delta = new AssistantDelta(request.ModelStepId, expectedSeq, text);
-                    bufferedDeltas.Add(delta);
+                    var delta = new AssistantDelta(
+                        request.ModelStepId,
+                        checked(sequenceBase + expectedSeq),
+                        text);
                     expectedSeq++;
+                    publishedSequences++;
+                    // Forward the delta now: buffering until Done made the whole
+                    // answer appear at once, so the turn looked frozen while the
+                    // model was actually writing.
+                    await publishDelta(delta).ConfigureAwait(false);
                     break;
 
                 case WorkerV2Contracts.AgentStepDone:
@@ -422,11 +453,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             throw new WorkerProtocolException("missing_done");
         }
 
-        foreach (var delta in bufferedDeltas)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await publishDelta(delta).ConfigureAwait(false);
-        }
+        // Deltas were already forwarded live as they arrived; nothing to replay.
 
         // Ensure exactly one final step was received.
         return new ModelStepResult(

@@ -11,7 +11,8 @@ public sealed record AgentAssistantDeltaModel(
     string Text,
     string ModelStepId,
     string? ExecutionId,
-    long TransientSequence)
+    long TransientSequence,
+    bool IsReset = false)
 {
     public const int MaximumTextCharacters = 64 * 1024;
 
@@ -37,7 +38,7 @@ public sealed record AgentAssistantDeltaModel(
             }
 
             using var inner = JsonDocument.Parse(innerJson);
-            if (!TryReadInner(inner.RootElement, out var text, out var modelStepId, out var executionId))
+            if (!TryReadInner(inner.RootElement, out var text, out var modelStepId, out var executionId, out var isReset))
             {
                 return false;
             }
@@ -46,7 +47,8 @@ public sealed record AgentAssistantDeltaModel(
                 text,
                 modelStepId,
                 executionId,
-                frame.TransientSequence.Value);
+                frame.TransientSequence.Value,
+                isReset);
             return true;
         }
         catch (JsonException)
@@ -93,11 +95,13 @@ public sealed record AgentAssistantDeltaModel(
         JsonElement root,
         out string text,
         out string modelStepId,
-        out string? executionId)
+        out string? executionId,
+        out bool isReset)
     {
         text = string.Empty;
         modelStepId = string.Empty;
         executionId = null;
+        isReset = false;
         if (root.ValueKind != JsonValueKind.Object)
         {
             return false;
@@ -129,6 +133,9 @@ public sealed record AgentAssistantDeltaModel(
                 case "execution_id" when property.Value.ValueKind == JsonValueKind.Null:
                     executionId = null;
                     break;
+                case "reset" when property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    isReset = property.Value.GetBoolean();
+                    break;
                 default:
                     return false;
             }
@@ -136,8 +143,10 @@ public sealed record AgentAssistantDeltaModel(
 
         return hasText
             && hasModelStepId
-            && text.Length is >= 1 and <= MaximumTextCharacters
-            && !text.Contains('\0')
+            // A reset frame is deliberately empty: it carries no answer text.
+            && (isReset
+                ? text.Length == 0
+                : text.Length is >= 1 and <= MaximumTextCharacters && !text.Contains('\0'))
             && IsGeneratedId(modelStepId, "step_")
             && (executionId is null || IsGeneratedId(executionId, "exec_"));
     }

@@ -68,7 +68,11 @@ public sealed class StreamingProcessRunner
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(spec);
-        if (spec.TimeoutMs is < 1 or > 300_000 || spec.OutputLimitBytes < 1)
+        // The protocol maximum is the single source of truth: the tool schema and
+        // the policy evaluator both accept up to TerminalLimits.HardMaxTimeoutMs,
+        // so a runner with a tighter private cap would reject an approved request.
+        if (spec.TimeoutMs is < 1 or > RuAgent.Protocol.TerminalLimits.HardMaxTimeoutMs
+            || spec.OutputLimitBytes < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(spec));
         }

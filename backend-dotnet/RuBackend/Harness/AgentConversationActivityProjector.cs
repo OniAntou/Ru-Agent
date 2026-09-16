@@ -17,6 +17,9 @@ public sealed class AgentConversationActivityProjector
     private readonly IActivityLogStore _activity;
     private readonly ILogger<AgentConversationActivityProjector>? _logger;
     private readonly ConcurrentDictionary<string, byte> _projected = new(StringComparer.Ordinal);
+    private readonly Queue<string> _projectedOrder = new();
+    private readonly object _projectedOrderGate = new();
+    private const int MaxProjectedKeys = 10000;
 
     public AgentConversationActivityProjector(
         IActivityLogStore activity,
@@ -42,6 +45,7 @@ public sealed class AgentConversationActivityProjector
             return;
         }
 
+        TrackProjectedKey(intentId.Value);
         try
         {
             await _activity.AppendAsync(
@@ -64,11 +68,13 @@ public sealed class AgentConversationActivityProjector
             _projected.TryRemove(intentId.Value, out _);
             throw;
         }
-        catch
+        catch (Exception ex)
         {
             // Activity is observational. A failed append must not block history or run
-            // progress, and the in-process key prevents a replay storm.
-            _logger?.LogWarning("agent_user_activity_projection_failed");
+            // progress. Release the key so a redelivery can retry; a persisted append
+            // stays guarded by the key, with the store's event-id dedup as backup.
+            _projected.TryRemove(intentId.Value, out _);
+            _logger?.LogWarning(ex, "agent_user_activity_projection_failed");
         }
     }
 
@@ -89,6 +95,7 @@ public sealed class AgentConversationActivityProjector
             return;
         }
 
+        TrackProjectedKey(key);
         try
         {
             await _activity.AppendAsync(
@@ -112,9 +119,22 @@ public sealed class AgentConversationActivityProjector
             _projected.TryRemove(key, out _);
             throw;
         }
-        catch
+        catch (Exception ex)
         {
-            _logger?.LogWarning("agent_assistant_activity_projection_failed");
+            _projected.TryRemove(key, out _);
+            _logger?.LogWarning(ex, "agent_assistant_activity_projection_failed");
+        }
+    }
+
+    private void TrackProjectedKey(string key)
+    {
+        lock (_projectedOrderGate)
+        {
+            _projectedOrder.Enqueue(key);
+            while (_projectedOrder.Count > MaxProjectedKeys && _projectedOrder.TryDequeue(out var oldest))
+            {
+                _projected.TryRemove(oldest, out _);
+            }
         }
     }
 }

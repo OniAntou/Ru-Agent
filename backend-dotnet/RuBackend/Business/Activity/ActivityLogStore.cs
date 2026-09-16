@@ -21,7 +21,6 @@ public sealed class ActivityLogStore : IActivityLogStore
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly HashSet<string> _seenEventIds = new(StringComparer.Ordinal);
     private readonly Queue<string> _seenOrder = new();
-    private int _appendsSinceTrim = 0;
 
     public ActivityLogStore(DataPaths paths, TimeProvider? clock = null)
     {
@@ -80,10 +79,11 @@ public sealed class ActivityLogStore : IActivityLogStore
                 }
             }
 
+            // Trim only when the file actually needs it. A small file is left
+            // alone so steady appends never pay for a full scan-and-rewrite.
             var fileInfo = new FileInfo(_logFile);
-            if (fileInfo.Length > 400_000 || _seenOrder.Count >= MaximumEntries || ++_appendsSinceTrim >= 50)
+            if (fileInfo.Length > 400_000 || _seenOrder.Count >= MaximumEntries)
             {
-                _appendsSinceTrim = 0;
                 await TrimUnlockedAsync(cancellationToken).ConfigureAwait(false);
             }
         }
@@ -98,6 +98,7 @@ public sealed class ActivityLogStore : IActivityLogStore
         CancellationToken cancellationToken)
     {
         var boundedLimit = Math.Clamp(limit, 1, MaximumRead);
+        byte[] snapshot;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -106,15 +107,30 @@ public sealed class ActivityLogStore : IActivityLogStore
                 return [];
             }
 
-            var events = new Queue<ActivityEvent>(MaximumEntries);
-            await using var stream = new FileStream(
-                _logFile,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite,
-                4096,
-                useAsync: true);
-            using var reader = new BoundedTextLineReader(new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true), MaximumRecordBytes);
+            // Snapshot the bytes under a short gate hold so appends and trims are
+            // never stalled by parsing and re-sanitizing the whole file.
+            try
+            {
+                snapshot = await File.ReadAllBytesAsync(_logFile, cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                return [];
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return [];
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        var events = new Queue<ActivityEvent>(MaximumEntries);
+        var observedIds = new List<string>();
+        using (var reader = new BoundedTextLineReader(new StreamReader(new MemoryStream(snapshot), Encoding.UTF8, detectEncodingFromByteOrderMarks: true), MaximumRecordBytes))
+        {
             while (true)
             {
                 var read = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
@@ -131,27 +147,46 @@ public sealed class ActivityLogStore : IActivityLogStore
                         events.Dequeue();
                     }
 
-                    events.Enqueue(ActivityPreview.SanitizeEvent(parsed, _clock));
+                    var sanitized = ActivityPreview.SanitizeEvent(parsed, _clock);
+                    events.Enqueue(sanitized);
+                    if (!string.IsNullOrWhiteSpace(sanitized.EventId))
+                    {
+                        observedIds.Add(sanitized.EventId);
+                    }
                 }
             }
+        }
 
-            return events
-                .OrderBy(activity => activity.Ts)
-                .TakeLast(boundedLimit)
-                .ToArray();
-        }
-        catch (IOException)
+        // Warm the in-memory dedup set so a redelivery after a process restart
+        // does not re-append rows that are already on disk.
+        if (observedIds.Count > 0)
         {
-            return [];
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                foreach (var eventId in observedIds)
+                {
+                    if (_seenEventIds.Add(eventId))
+                    {
+                        _seenOrder.Enqueue(eventId);
+                        if (_seenOrder.Count > MaximumEntries)
+                        {
+                            var oldest = _seenOrder.Dequeue();
+                            _seenEventIds.Remove(oldest);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
         }
-        catch (UnauthorizedAccessException)
-        {
-            return [];
-        }
-        finally
-        {
-            _gate.Release();
-        }
+
+        return events
+            .OrderBy(activity => activity.Ts)
+            .TakeLast(boundedLimit)
+            .ToArray();
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken)
@@ -171,6 +206,13 @@ public sealed class ActivityLogStore : IActivityLogStore
 
     private async Task TrimUnlockedAsync(CancellationToken cancellationToken)
     {
+        // Fast path: a small file never needs a rewrite, so skip the scan.
+        var fileInfo = new FileInfo(_logFile);
+        if (fileInfo.Length <= 400_000)
+        {
+            return;
+        }
+
         var retained = new Queue<string>(MaximumEntries);
         var total = 0;
         await using (var stream = new FileStream(

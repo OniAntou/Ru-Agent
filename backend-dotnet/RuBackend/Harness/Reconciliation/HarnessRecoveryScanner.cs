@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 using RuAgent.Harness.Persistence.Workspace;
@@ -336,6 +337,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
     private readonly HarnessPolicySnapshotService? _policySnapshots;
     private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly ReconciliationInspectionGate? _inspectionGate;
 
     public HarnessRecoveryStartupService(
         IHarnessEventStore store,
@@ -345,7 +347,8 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         SqliteWorkspaceStore? workspaceStore = null,
         HarnessPolicySnapshotService? policySnapshots = null,
         IAgentRuntimeRootRegistry? runtimeRoots = null,
-        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        ReconciliationInspectionGate? inspectionGate = null)
     {
         _store = store;
         _sqliteOptions = sqliteOptions;
@@ -355,6 +358,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         _policySnapshots = policySnapshots;
         _runtimeRoots = runtimeRoots;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _inspectionGate = inspectionGate;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -398,6 +402,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         {
             var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
             var scanned = await ScanRunsStageAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
+            await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             var reconciled = await ReconcileMembershipsStageAsync(stoppingToken).ConfigureAwait(false);
             await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             return scanned && reconciled;
@@ -445,6 +450,66 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
             _logger.LogError(error, "startup recovery run scan failed");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Re-arms the mutation gate for every non-terminal run whose durable history
+    /// still says its mutations are gated. The gate is process-local, so without
+    /// this a host restart silently released a run the user had put under
+    /// inspection and let mutations through again.
+    /// </summary>
+    private async Task RearmInspectionGatesAsync(
+        IReadOnlyList<RunId> pendingRunIds,
+        CancellationToken stoppingToken)
+    {
+        if (_inspectionGate is null || pendingRunIds.Count == 0)
+        {
+            return;
+        }
+
+        var armed = new List<RunId>();
+        foreach (var runId in pendingRunIds)
+        {
+            try
+            {
+                var events = new List<RuAgent.Harness.Core.HarnessEvent>();
+                await foreach (var envelope in _store.ReadEventsAsync(runId, 0, stoppingToken).ConfigureAwait(false))
+                {
+                    events.Add(envelope.Event);
+                }
+
+                if (RuAgent.Harness.Core.Reconciliation.ReconciliationGateProjection
+                    .IsMutationDenied(events))
+                {
+                    armed.Add(runId);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                // An unreadable run must not abort re-arming the others. Fail closed:
+                // if the history cannot be read, keep the gate on rather than let a
+                // possibly-gated run mutate.
+                _logger.LogWarning(
+                    error,
+                    "could not rebuild the inspection gate for run {RunId}; keeping it armed",
+                    runId.Value);
+                armed.Add(runId);
+            }
+        }
+
+        if (armed.Count == 0)
+        {
+            return;
+        }
+
+        _inspectionGate.Seed(armed);
+        _logger.LogWarning(
+            "re-armed the mutation inspection gate for {Count} run(s) after restart",
+            armed.Count);
     }
 
     private async Task<bool> ReconcileMembershipsStageAsync(CancellationToken stoppingToken)

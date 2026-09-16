@@ -17,7 +17,8 @@ public sealed record HarnessTransientFrame
         long sequence,
         string content,
         ModelStepId? modelStepId = null,
-        ExecutionId? executionId = null)
+        ExecutionId? executionId = null,
+        bool isReset = false)
     {
         _ = runId.Value;
         if (!Enum.IsDefined(kind))
@@ -30,7 +31,14 @@ public sealed record HarnessTransientFrame
             throw new ArgumentOutOfRangeException(nameof(sequence));
         }
 
-        if (string.IsNullOrEmpty(content) || content.Length > 64 * 1024)
+        if (isReset)
+        {
+            if (!string.IsNullOrEmpty(content))
+            {
+                throw new ArgumentException("A reset frame must not carry content.", nameof(content));
+            }
+        }
+        else if (string.IsNullOrEmpty(content) || content.Length > 64 * 1024)
         {
             throw new ArgumentException("Transient content must be bounded.", nameof(content));
         }
@@ -51,6 +59,7 @@ public sealed record HarnessTransientFrame
         Content = content;
         ModelStepId = modelStepId;
         ExecutionId = executionId;
+        IsReset = isReset;
     }
 
     public RunId RunId { get; }
@@ -59,6 +68,12 @@ public sealed record HarnessTransientFrame
     public string Content { get; }
     public ModelStepId? ModelStepId { get; }
     public ExecutionId? ExecutionId { get; }
+
+    /// <summary>
+    /// True when this frame tells the client to discard the text it has already
+    /// streamed for this stream (a superseded model-step attempt).
+    /// </summary>
+    public bool IsReset { get; }
 }
 
 public sealed class TransientFrameBuffer

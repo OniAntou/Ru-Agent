@@ -73,7 +73,7 @@ public sealed record ModelStepRequest
 
 public sealed record AssistantDelta
 {
-    public AssistantDelta(ModelStepId modelStepId, long sequence, string content)
+    public AssistantDelta(ModelStepId modelStepId, long sequence, string content, bool isReset = false)
     {
         _ = modelStepId.Value;
         if (sequence <= 0)
@@ -81,7 +81,16 @@ public sealed record AssistantDelta
             throw new ArgumentOutOfRangeException(nameof(sequence));
         }
 
-        if (string.IsNullOrEmpty(content) || content.Length > 64 * 1024)
+        if (isReset)
+        {
+            // A reset frame carries no text: it tells the client to drop whatever
+            // partial answer a superseded attempt had already streamed.
+            if (!string.IsNullOrEmpty(content))
+            {
+                throw new ArgumentException("A reset delta must not carry content.", nameof(content));
+            }
+        }
+        else if (string.IsNullOrEmpty(content) || content.Length > 64 * 1024)
         {
             throw new ArgumentException("Assistant delta must be bounded and non-empty.", nameof(content));
         }
@@ -89,9 +98,18 @@ public sealed record AssistantDelta
         ModelStepId = modelStepId;
         Sequence = sequence;
         Content = content;
+        IsReset = isReset;
     }
 
     public ModelStepId ModelStepId { get; }
     public long Sequence { get; }
     public string Content { get; }
+
+    /// <summary>
+    /// True when this frame supersedes the text streamed so far for the step. The
+    /// step runner retries a transient failure on a fresh socket, so the client
+    /// must discard the failed attempt's partial answer instead of appending the
+    /// retry onto it.
+    /// </summary>
+    public bool IsReset { get; }
 }

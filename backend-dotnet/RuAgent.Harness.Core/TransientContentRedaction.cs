@@ -91,6 +91,31 @@ internal sealed class TransientContentStream
         }
     }
 
+    /// <summary>
+    /// Publishes a reset frame so a client drops the text it already rendered for
+    /// this stream. Used when a superseded model-step attempt had already streamed
+    /// partial output that the retry replaces.
+    /// </summary>
+    internal void Reset()
+    {
+        lock (_gate)
+        {
+            if (_completed)
+            {
+                throw new InvalidOperationException("transient_redaction_completed");
+            }
+
+            _frames.TryPublish(new HarnessTransientFrame(
+                _runId,
+                _kind,
+                checked(++_sequence),
+                string.Empty,
+                _modelStepId,
+                _executionId,
+                isReset: true));
+        }
+    }
+
     private void Publish(string? content)
     {
         if (content is null)

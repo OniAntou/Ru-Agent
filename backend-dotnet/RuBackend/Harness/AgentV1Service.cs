@@ -62,6 +62,14 @@ public sealed partial class AgentV1Service
     private const int ApprovalArgumentMaxLength = 4096;
     private const int ApprovalScriptMaxLength = 16_000;
 
+    /// <summary>
+    /// The reconciliation decision a user's Continue implies on a run parked by an
+    /// ambiguous tool outcome: resume, but keep mutations behind one read-only
+    /// inspection until the workspace is proven clean.
+    /// </summary>
+    private static readonly ReconciliationCommand UnknownContinueCommand =
+        new(ReconciliationCommandKind.UnknownContinue);
+
     public static bool IsVisionModel(string? model) => ModelImage.IsVisionModel(model);
 
     public AgentV1Service(

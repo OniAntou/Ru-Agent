@@ -13,10 +13,12 @@ namespace RuBackend.Harness;
 public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
 {
     private const int MaximumTerminalSummaries = 256;
+    private const int MaximumActiveStates = 4096;
 
     private readonly HarnessLiveEventHub _liveEvents;
     private readonly AgentActivityLivePublisher _activityPublisher;
     private readonly ConcurrentDictionary<string, SummaryState> _states = new(StringComparer.Ordinal);
+    private readonly SummaryState _discardedOverflowState = new();
     private readonly ConcurrentDictionary<string, byte> _reserved = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, AgentRunSummary> _terminalSummaries = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _terminalOrder = new();
@@ -41,7 +43,7 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
             return;
         }
 
-        var state = _states.GetOrAdd(runId.Value, _ => new SummaryState());
+        var state = GetOrCreateState(runId.Value);
         if (TryGetTerminalSummary(runId.Value, out _))
         {
             _states.TryRemove(runId.Value, out _);
@@ -69,7 +71,7 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
             return;
         }
 
-        var state = _states.GetOrAdd(runId.Value, _ => new SummaryState());
+        var state = GetOrCreateState(runId.Value);
         if (TryGetTerminalSummary(runId.Value, out _))
         {
             _states.TryRemove(runId.Value, out _);
@@ -122,7 +124,7 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
             return cached;
         }
 
-        var state = _states.GetOrAdd(run.RunId.Value, _ => new SummaryState());
+        var state = GetOrCreateState(run.RunId.Value);
         var summary = AgentRunSummary.FromTerminalRun(
             run,
             state.WorkspaceLabel,
@@ -161,6 +163,26 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
 
     private bool TryGetTerminalSummary(string runId, out AgentRunSummary summary) =>
         _terminalSummaries.TryGetValue(runId, out summary!);
+
+    /// <summary>
+    /// Gets the live state for a run, or a shared discard state once too many runs
+    /// are active at once. Hung runs never reach the terminal cache, so the live map
+    /// must stay bounded even if that costs one pathological run its summary.
+    /// </summary>
+    private SummaryState GetOrCreateState(string runId)
+    {
+        if (_states.TryGetValue(runId, out var existing))
+        {
+            return existing;
+        }
+
+        if (_states.Count >= MaximumActiveStates)
+        {
+            return _discardedOverflowState;
+        }
+
+        return _states.GetOrAdd(runId, _ => new SummaryState());
+    }
 
     private void CacheTerminalSummary(string runId, AgentRunSummary summary)
     {

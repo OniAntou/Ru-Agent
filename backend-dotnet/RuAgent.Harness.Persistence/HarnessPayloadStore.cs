@@ -234,6 +234,36 @@ public sealed partial class HarnessPayloadStore
             "payload_model_forbidden",
             cancellationToken);
 
+    /// <summary>
+    /// Lists the payload ids of one kind for a run in insertion order. Callers
+    /// that need the bytes still go through <see cref="ReadForModelAsync"/> or
+    /// <see cref="ReadForClientAsync"/> so the audience rule stays enforced; this
+    /// only replaces hand-written SQL in the host layer.
+    /// </summary>
+    public async Task<IReadOnlyList<PayloadId>> ListPayloadIdsAsync(
+        RunId runId,
+        HarnessPayloadKind kind,
+        CancellationToken cancellationToken)
+    {
+        _ = runId.Value;
+        var options = RequireOptions();
+        await using var connection = await options.OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT payload_id FROM agent_payloads WHERE run_id = $runId AND kind = $kind ORDER BY rowid ASC";
+        command.Parameters.AddWithValue("$runId", runId.Value);
+        command.Parameters.AddWithValue("$kind", (int)kind);
+        var ids = new List<PayloadId>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            ids.Add(new PayloadId(reader.GetString(0)));
+        }
+
+        return ids;
+    }
+
     public async Task<HarnessPayloadContent> ReadRecoveryOnceAsync(
         RunId runId,
         PayloadId payloadId,

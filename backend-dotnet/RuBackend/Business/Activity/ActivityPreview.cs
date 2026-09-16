@@ -6,22 +6,30 @@ using System.Text.RegularExpressions;
 public static class ActivityPreview
 {
     private const int MaxActivityOriginalLength = 50_000;
-    private static readonly Regex UrlPattern = new(@"https?://\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex BearerPattern = new(@"Bearer\s+\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex KeyPattern = new(@"(?:sk-|key=)[a-zA-Z0-9_\-]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex ControlMarkerPattern = new(@"\[\[.*?\]\]", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex PathPattern = new(@"(?:[a-zA-Z]:\\|\b/)[a-zA-Z0-9_\-\\/.]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
+    private static readonly Regex UrlPattern = new(@"https?://\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
+    private static readonly Regex BearerPattern = new(@"Bearer\s+\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
+    private static readonly Regex KeyPattern = new(@"(?:sk-|key=)[a-zA-Z0-9_\-]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
+    private static readonly Regex ControlMarkerPattern = new(@"\[\[.*?\]\]", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
+    private static readonly Regex PathPattern = new(@"(?:[a-zA-Z]:\\|\b/)[a-zA-Z0-9_\-\\/.]+", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
-    public static (string Preview, int OriginalLength, bool Redacted) FormatPreview(string? text, int maxLength = 160)
+    /// <summary>
+    /// Builds a bounded preview. <c>PrivacyRedacted</c> is true only when a
+    /// secret, token, URL, path or control marker was actually scrubbed;
+    /// <c>Truncated</c> is true when the text was cut for length. The two are
+    /// tracked separately so readers can tell "shortened" apart from "scrubbed".
+    /// </summary>
+    public static (string Preview, int OriginalLength, bool PrivacyRedacted, bool Truncated) FormatPreview(string? text, int maxLength = 160)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            return (string.Empty, 0, false);
+            return (string.Empty, 0, false, false);
         }
 
         var origLen = text.Length;
         maxLength = Math.Clamp(maxLength, 0, MaxActivityOriginalLength);
-        var redacted = text.Length > MaxActivityOriginalLength;
+        var privacyRedacted = false;
+        var truncated = text.Length > MaxActivityOriginalLength;
 
         // Keep the privacy regex pipeline bounded even when a malformed or
         // hostile event supplies an enormous content string. Preserve the
@@ -30,40 +38,51 @@ public static class ActivityPreview
             ? text[..MaxActivityOriginalLength]
             : text;
 
-        // Strip control markers
-        var cleaned = ControlMarkerPattern.Replace(boundedText, _ =>
+        string cleaned;
+        try
         {
-            redacted = true;
-            return string.Empty;
-        });
+            // Strip control markers
+            cleaned = ControlMarkerPattern.Replace(boundedText, _ =>
+            {
+                privacyRedacted = true;
+                return string.Empty;
+            });
 
-        // Redact keys
-        cleaned = KeyPattern.Replace(cleaned, _ =>
-        {
-            redacted = true;
-            return "[REDACTED_KEY]";
-        });
+            // Redact keys
+            cleaned = KeyPattern.Replace(cleaned, _ =>
+            {
+                privacyRedacted = true;
+                return "[REDACTED_KEY]";
+            });
 
-        // Redact bearer tokens
-        cleaned = BearerPattern.Replace(cleaned, _ =>
-        {
-            redacted = true;
-            return "[REDACTED_TOKEN]";
-        });
+            // Redact bearer tokens
+            cleaned = BearerPattern.Replace(cleaned, _ =>
+            {
+                privacyRedacted = true;
+                return "[REDACTED_TOKEN]";
+            });
 
-        // Redact URLs
-        cleaned = UrlPattern.Replace(cleaned, _ =>
-        {
-            redacted = true;
-            return "[URL]";
-        });
+            // Redact URLs
+            cleaned = UrlPattern.Replace(cleaned, _ =>
+            {
+                privacyRedacted = true;
+                return "[URL]";
+            });
 
-        // Redact absolute paths
-        cleaned = PathPattern.Replace(cleaned, _ =>
+            // Redact absolute paths
+            cleaned = PathPattern.Replace(cleaned, _ =>
+            {
+                privacyRedacted = true;
+                return "[PATH]";
+            });
+        }
+        catch (RegexMatchTimeoutException)
         {
-            redacted = true;
-            return "[PATH]";
-        });
+            // Hostile input that blows the redaction budget must not stall the
+            // pipeline. Keep the length-bounded text and flag it as redacted.
+            cleaned = boundedText;
+            privacyRedacted = true;
+        }
 
         // Normalize whitespace
         var normalized = string.Join(' ', cleaned.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).Trim();
@@ -74,14 +93,14 @@ public static class ActivityPreview
             preview = maxLength <= 3
                 ? "..."[..maxLength]
                 : normalized[..(maxLength - 3)].TrimEnd() + "...";
-            redacted = true;
+            truncated = true;
         }
         else
         {
             preview = normalized;
         }
 
-        return (preview, origLen, redacted);
+        return (preview, origLen, privacyRedacted, truncated);
     }
 
     public static ActivityEvent SanitizeEvent(ActivityEvent evt, TimeProvider? clock = null)
@@ -99,83 +118,62 @@ public static class ActivityPreview
 
         if (type is "chat" or "agent")
         {
-            var role = rawData.TryGetPropertyValue("role", out var r) && r is JsonValue rv
-                ? rv.GetValue<string>()
-                : "assistant";
+            var role = ReadBoundedString(rawData, "role", "assistant", 32);
 
-            string? rawContent = null;
-            if (rawData.TryGetPropertyValue("content", out var c) && c is JsonValue cv)
-            {
-                rawContent = cv.GetValue<string>();
-            }
-            else if (rawData.TryGetPropertyValue("preview", out var p) && p is JsonValue pv)
-            {
-                rawContent = pv.GetValue<string>();
-            }
+            string? rawContent = ReadString(rawData, "content") ?? ReadString(rawData, "preview");
 
-            var (preview, origLen, redacted) = FormatPreview(rawContent);
+            var (preview, origLen, privacyRedacted, truncated) = FormatPreview(rawContent);
 
             origLen = NormalizeOriginalLength(rawData, "original_length", origLen);
-            if (rawData.TryGetPropertyValue("redacted", out var red) && red is JsonValue redv && redv.TryGetValue<bool>(out var parsedRed))
+            if (ReadOptionalBool(rawData, "redacted"))
             {
-                redacted = redacted || parsedRed;
+                // Legacy files merged truncation into this flag: stay fail-closed.
+                privacyRedacted = true;
             }
 
             sanitizedData["role"] = role;
             sanitizedData["preview"] = preview;
             sanitizedData["original_length"] = origLen;
-            sanitizedData["redacted"] = redacted;
+            sanitizedData["redacted"] = privacyRedacted;
+            sanitizedData["truncated"] = truncated;
         }
         else if (type == "emotion")
         {
-            var emotion = rawData.TryGetPropertyValue("emotion", out var em) && em is JsonValue emv
-                ? emv.GetValue<string>()
-                : (rawData.TryGetPropertyValue("name", out var n) && n is JsonValue nv ? nv.GetValue<string>() : "neutral");
+            var emotion = ReadBoundedString(
+                rawData, "emotion",
+                ReadBoundedString(rawData, "name", "neutral", 64), 64);
 
-            var status = rawData.TryGetPropertyValue("status", out var st) && st is JsonValue stv
-                ? stv.GetValue<string>()
-                : "succeeded";
+            var status = ReadBoundedString(rawData, "status", "succeeded", 64);
 
             sanitizedData["emotion"] = emotion;
             sanitizedData["status"] = status;
         }
         else if (type == "vts_action")
         {
-            var category = rawData.TryGetPropertyValue("category", out var cat) && cat is JsonValue catv
-                ? catv.GetValue<string>()
-                : (rawData.TryGetPropertyValue("action", out var act) && act is JsonValue actv ? actv.GetValue<string>() : "vts_action");
+            var category = ReadBoundedString(
+                rawData, "category",
+                ReadBoundedString(rawData, "action", "vts_action", 100), 100);
 
-            var status = rawData.TryGetPropertyValue("status", out var st) && st is JsonValue stv
-                ? stv.GetValue<string>()
-                : "succeeded";
+            var status = ReadBoundedString(rawData, "status", "succeeded", 64);
 
             sanitizedData["category"] = category;
             sanitizedData["status"] = status;
         }
         else if (type == "observation_reaction")
         {
-            string? rawPreview = null;
-            if (rawData.TryGetPropertyValue("text", out var textValue) && textValue is JsonValue textJson)
-            {
-                textJson.TryGetValue<string>(out rawPreview);
-            }
-            else if (rawData.TryGetPropertyValue("preview", out var previewValue) && previewValue is JsonValue previewJson)
-            {
-                previewJson.TryGetValue<string>(out rawPreview);
-            }
+            string? rawPreview = ReadString(rawData, "text") ?? ReadString(rawData, "preview");
 
-            var (preview, originalLength, redacted) = FormatPreview(rawPreview, 120);
+            var (preview, originalLength, privacyRedacted, truncated) = FormatPreview(rawPreview, 120);
             originalLength = NormalizeOriginalLength(rawData, "original_length", originalLength);
-            if (rawData.TryGetPropertyValue("redacted", out var redactedValue) &&
-                redactedValue is JsonValue redactedJson &&
-                redactedJson.TryGetValue<bool>(out var parsedRedacted))
+            if (ReadOptionalBool(rawData, "redacted"))
             {
-                redacted = redacted || parsedRedacted;
+                privacyRedacted = true;
             }
 
             sanitizedData["preview"] = preview;
             sanitizedData["original_length"] = originalLength;
-            sanitizedData["redacted"] = redacted;
+            sanitizedData["redacted"] = privacyRedacted;
+            sanitizedData["truncated"] = truncated;
 
             CopyBoundedString(rawData, sanitizedData, "scene", 100);
             CopyBoundedString(rawData, sanitizedData, "event", 100);
@@ -183,9 +181,7 @@ public static class ActivityPreview
         }
         else if (type == "observation")
         {
-            var status = rawData.TryGetPropertyValue("status", out var st) && st is JsonValue stv
-                ? stv.GetValue<string>()
-                : "succeeded";
+            var status = ReadBoundedString(rawData, "status", "succeeded", 64);
 
             sanitizedData["status"] = status;
 
@@ -197,22 +193,13 @@ public static class ActivityPreview
         else
         {
             // Strictly bounded fallback for unclassified activity types
-            if (rawData.TryGetPropertyValue("status", out var st) && st is JsonValue stv && stv.TryGetValue<string>(out var stStr))
-            {
-                sanitizedData["status"] = stStr;
-            }
-            if (rawData.TryGetPropertyValue("category", out var cat) && cat is JsonValue catv && catv.TryGetValue<string>(out var catStr))
-            {
-                sanitizedData["category"] = catStr;
-            }
+            CopyBoundedString(rawData, sanitizedData, "status", 64);
+            CopyBoundedString(rawData, sanitizedData, "category", 100);
             if (rawData.TryGetPropertyValue("duration_ms", out var dur) && dur is JsonValue durv && durv.TryGetValue<double>(out var durVal))
             {
                 sanitizedData["duration_ms"] = Math.Round(durVal, 2);
             }
-            if (rawData.TryGetPropertyValue("error_code", out var err) && err is JsonValue errv && errv.TryGetValue<string>(out var errStr))
-            {
-                sanitizedData["error_code"] = errStr;
-            }
+            CopyBoundedString(rawData, sanitizedData, "error_code", 100);
         }
 
         return new ActivityEvent(
@@ -220,8 +207,55 @@ public static class ActivityPreview
             ts,
             iso,
             type,
-            evt.SessionId,
+            SanitizeSessionId(evt.SessionId),
             sanitizedData);
+    }
+
+    private static string? ReadString(JsonObject source, string key)
+    {
+        if (source.TryGetPropertyValue(key, out var value)
+            && value is JsonValue json
+            && json.TryGetValue<string>(out var text))
+        {
+            return text;
+        }
+
+        return null;
+    }
+
+    private static string ReadBoundedString(JsonObject source, string key, string fallback, int maxLength)
+    {
+        var text = ReadString(source, key);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return fallback;
+        }
+
+        var trimmed = text.Trim();
+        return trimmed[..Math.Min(maxLength, trimmed.Length)];
+    }
+
+    private static string? SanitizeSessionId(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        var trimmed = sessionId.Trim();
+        return trimmed[..Math.Min(128, trimmed.Length)];
+    }
+
+    private static bool ReadOptionalBool(JsonObject source, string key)
+    {
+        if (source.TryGetPropertyValue(key, out var value)
+            && value is JsonValue json
+            && json.TryGetValue<bool>(out var flag))
+        {
+            return flag;
+        }
+
+        return false;
     }
 
     private static void CopyBoundedString(JsonObject source, JsonObject target, string key, int maxLength)

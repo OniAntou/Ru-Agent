@@ -293,6 +293,12 @@ internal sealed class AgentModelInvocation
             throw new InvalidOperationException("model_delta_identity_mismatch");
         }
 
+        if (delta.IsReset)
+        {
+            stream.Reset();
+            return ValueTask.CompletedTask;
+        }
+
         stream.Append(delta.Content);
         return ValueTask.CompletedTask;
     }

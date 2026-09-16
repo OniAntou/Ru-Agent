@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using RuAgent.Harness.Core;
 using RuApp.Models;
 using RuApp.Services;
 
@@ -19,9 +21,140 @@ namespace RuApp.Views
         private bool _saveInProgress;
         private bool _saveRequestedDuringSave;
 
+        public event Action<UiTheme>? ThemeChanged;
+        public event Action<AgentPermissionPreset>? PresetChanged;
+
+        private string _themeChoice = "dark";
+        private string _presetChoice = "standard";
+        private string _providerChoice = "opencode";
+
+        private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value);
+        private IReadOnlyList<DropdownOption>? _themeOptions;
+        private IReadOnlyList<DropdownOption>? _presetOptions;
+        private IReadOnlyList<DropdownOption>? _providerOptions;
+
+        private static readonly HashSet<string> KnownProviders = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "opencode", "kilo", "openai", "anthropic", "custom",
+        };
+
+        public void SetCurrentTheme(UiTheme theme)
+        {
+            _themeChoice = theme == UiTheme.Light ? "light" : "dark";
+            RefreshThemeUI();
+        }
+
+        public void SetCurrentPreset(AgentPermissionPreset preset)
+        {
+            _presetChoice = preset == AgentPermissionPreset.Trusted ? "trusted" : "standard";
+            RefreshPresetUI();
+        }
+
+        public void SetCurrentProvider(string backendChoice)
+        {
+            _providerChoice = KnownProviders.Contains(backendChoice ?? string.Empty)
+                ? backendChoice!
+                : "opencode";
+            RefreshProviderUI();
+        }
+
+        private void RefreshThemeUI()
+        {
+            if (_themeOptions == null || ThemeButtonLabel == null) return;
+            RefreshDropdownUI(_themeOptions, _themeChoice, ThemeButtonLabel);
+        }
+
+        private void RefreshPresetUI()
+        {
+            if (_presetOptions == null || PresetButtonLabel == null) return;
+            RefreshDropdownUI(_presetOptions, _presetChoice, PresetButtonLabel);
+        }
+
+        private void RefreshProviderUI()
+        {
+            if (_providerOptions == null || ProviderButtonLabel == null) return;
+            RefreshDropdownUI(_providerOptions, _providerChoice, ProviderButtonLabel);
+        }
+
+        private static void RefreshDropdownUI(
+            IReadOnlyList<DropdownOption> options,
+            string current,
+            TextBlock triggerLabel)
+        {
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            var selectedBrush = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+            foreach (var option in options)
+            {
+                bool isSelected = string.Equals(option.Value, current, StringComparison.OrdinalIgnoreCase);
+                option.Button.Background = isSelected ? selectedBrush : transparent;
+                option.Check.Visibility = isSelected ? Visibility.Visible : Visibility.Collapsed;
+                option.Label.FontWeight = isSelected
+                    ? Microsoft.UI.Text.FontWeights.SemiBold
+                    : Microsoft.UI.Text.FontWeights.Normal;
+                option.Label.Opacity = isSelected ? 1.0 : 0.88;
+                if (isSelected)
+                {
+                    triggerLabel.Text = option.Label.Text;
+                }
+            }
+        }
+
+        private void InitDropdownOptions()
+        {
+            _themeOptions = new[]
+            {
+                new DropdownOption(ThemeDarkOption, ThemeDarkText, ThemeDarkCheck, "dark"),
+                new DropdownOption(ThemeLightOption, ThemeLightText, ThemeLightCheck, "light"),
+            };
+            _presetOptions = new[]
+            {
+                new DropdownOption(PresetStandardOption, PresetStandardText, PresetStandardCheck, "standard"),
+                new DropdownOption(PresetTrustedOption, PresetTrustedText, PresetTrustedCheck, "trusted"),
+            };
+            _providerOptions = new[]
+            {
+                new DropdownOption(ProviderOpencodeOption, ProviderOpencodeText, ProviderOpencodeCheck, "opencode"),
+                new DropdownOption(ProviderKiloOption, ProviderKiloText, ProviderKiloCheck, "kilo"),
+                new DropdownOption(ProviderOpenaiOption, ProviderOpenaiText, ProviderOpenaiCheck, "openai"),
+                new DropdownOption(ProviderAnthropicOption, ProviderAnthropicText, ProviderAnthropicCheck, "anthropic"),
+                new DropdownOption(ProviderCustomOption, ProviderCustomText, ProviderCustomCheck, "custom"),
+            };
+            foreach (var options in new[] { _themeOptions, _presetOptions, _providerOptions })
+            {
+                AttachDropdownHover(options);
+            }
+            RefreshThemeUI();
+            RefreshPresetUI();
+            RefreshProviderUI();
+        }
+
+        private static void AttachDropdownHover(IReadOnlyList<DropdownOption> options)
+        {
+            foreach (var option in options)
+            {
+                // Selected-aware hover mirrors the prompt ModelPicker rows.
+                option.Button.PointerEntered += (_, _) => option.Button.Background = IsOptionSelected(options, option)
+                    ? (Brush)Application.Current.Resources["RuLineBrush"]
+                    : (Brush)Application.Current.Resources["RuCanvasBrush"];
+                option.Button.PointerExited += (_, _) => option.Button.Background = IsOptionSelected(options, option)
+                    ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
+                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                option.Button.PointerCanceled += (_, _) => option.Button.Background = IsOptionSelected(options, option)
+                    ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
+                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                option.Button.PointerCaptureLost += (_, _) => option.Button.Background = IsOptionSelected(options, option)
+                    ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
+                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            }
+        }
+
+        private static bool IsOptionSelected(IReadOnlyList<DropdownOption> options, DropdownOption option) =>
+            option.Check.Visibility == Visibility.Visible;
+
         public SettingsView()
         {
             this.InitializeComponent();
+            InitDropdownOptions();
             InitializeSettingsHoverEffects();
         }
 
@@ -43,7 +176,6 @@ namespace RuApp.Views
             };
             _autoSaveTimer.Tick += OnAutoSaveTimerTick;
 
-            BackendComboBox.SelectionChanged += AutoSaveHandler;
             OpenCodeApiKeyBox.PasswordChanged += AutoSaveHandler;
             KiloApiKeyBox.PasswordChanged += AutoSaveHandler;
             OpenAiApiKeyBox.PasswordChanged += AutoSaveHandler;
@@ -64,7 +196,6 @@ namespace RuApp.Views
         private void ScheduleAutoSave()
         {
             if (_loading) return;
-            AutoSaveStatusText.Text = "Saving...";
             _autoSaveTimer?.Stop();
             _autoSaveTimer?.Start();
         }
@@ -76,18 +207,7 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 settings ??= new AppSettingsDto();
-                foreach (ComboBoxItem item in BackendComboBox.Items)
-                {
-                    if ((item.Tag as string) == settings.BackendChoice)
-                    {
-                        BackendComboBox.SelectedItem = item;
-                        break;
-                    }
-                }
-                if (BackendComboBox.SelectedItem == null && BackendComboBox.Items.Count > 0)
-                {
-                    BackendComboBox.SelectedIndex = 0;
-                }
+                SetCurrentProvider(settings.BackendChoice ?? "opencode");
 
                 OpenCodeApiKeyBox.Password = string.Empty;
                 OpenCodeApiKeyBox.PlaceholderText = settings.HasOpenCodeKey
@@ -115,8 +235,8 @@ namespace RuApp.Views
                 {
                 }
 
-                UpdateVisibilityForBackend(settings.BackendChoice);
-                _providerCatalogController?.SetBackend(settings.BackendChoice);
+                UpdateVisibilityForBackend(_providerChoice);
+                _providerCatalogController?.SetBackend(_providerChoice);
             }
             _loading = false;
         }
@@ -132,14 +252,19 @@ namespace RuApp.Views
 
         }
 
-        private void OnBackendSelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnProviderOptionClick(object sender, RoutedEventArgs e)
         {
-            if (_loading || BackendComboBox.SelectedItem == null) return;
-            string choice = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
+            if (_loading) return;
+            if (sender is not Button button || button.Tag is not string choice) return;
+            if (!KnownProviders.Contains(choice)) return;
+            _providerChoice = choice;
+            RefreshProviderUI();
+            (ProviderButton.Flyout as Flyout)?.Hide();
 
             UpdateVisibilityForBackend(choice);
             _providerCatalogController?.SetBackend(choice);
             _ = _providerCatalogController?.RefreshAsync(force: true);
+            ScheduleAutoSave();
         }
 
         public async Task RefreshProviderCatalogAsync()
@@ -162,7 +287,7 @@ namespace RuApp.Views
 
             try
             {
-                string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
+                string backend = _providerChoice;
 
                 var dto = new ProviderSettingsUpdateDto
                 {
@@ -176,7 +301,6 @@ namespace RuApp.Views
                 };
 
                 bool ok = await _apiService.SaveProviderSettingsAsync(dto);
-                AutoSaveStatusText.Text = ok ? "Saved" : "Save failed";
                 if (!ok)
                 {
                     System.Diagnostics.Debug.WriteLine("[Settings] Auto-save failed");
@@ -184,7 +308,6 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                AutoSaveStatusText.Text = "Save error";
                 System.Diagnostics.Debug.WriteLine($"[Settings] Auto-save error: {ex.Message}");
             }
             finally
@@ -222,12 +345,9 @@ namespace RuApp.Views
                     ClearProviderKeyInput(alias);
                     await LoadSettingsAsync();
                 }
-
-                AutoSaveStatusText.Text = ok ? "Provider signed out" : "Sign out failed";
             }
             catch (Exception ex)
             {
-                AutoSaveStatusText.Text = "Sign out error";
                 System.Diagnostics.Debug.WriteLine($"[Settings] Sign out error: {ex.Message}");
             }
             finally
@@ -275,7 +395,6 @@ namespace RuApp.Views
 
         private void DisposeEventHandlers()
         {
-            BackendComboBox.SelectionChanged -= AutoSaveHandler;
             OpenCodeApiKeyBox.PasswordChanged -= AutoSaveHandler;
             KiloApiKeyBox.PasswordChanged -= AutoSaveHandler;
             OpenAiApiKeyBox.PasswordChanged -= AutoSaveHandler;
@@ -288,35 +407,89 @@ namespace RuApp.Views
                 _autoSaveTimer.Stop();
                 _autoSaveTimer = null;
             }
-            {
-            }
-            {
-            }
         }
 
         private void AutoSaveHandler(object sender, RoutedEventArgs e) => ScheduleAutoSave();
 
         private void AutoSaveTextHandler(object sender, TextChangedEventArgs e) => ScheduleAutoSave();
 
+        private void OnThemeOptionClick(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            if (sender is not Button button || button.Tag is not string tag) return;
+            _themeChoice = string.Equals(tag, "light", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
+            RefreshThemeUI();
+            (ThemeButton.Flyout as Flyout)?.Hide();
+            var theme = _themeChoice == "light" ? UiTheme.Light : UiTheme.Dark;
+            ThemeChanged?.Invoke(theme);
+        }
+
+        private void OnPresetOptionClick(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            if (sender is not Button button || button.Tag is not string tag) return;
+            _presetChoice = string.Equals(tag, "trusted", StringComparison.OrdinalIgnoreCase) ? "trusted" : "standard";
+            RefreshPresetUI();
+            (PresetButton.Flyout as Flyout)?.Hide();
+            var preset = _presetChoice == "trusted" ? AgentPermissionPreset.Trusted : AgentPermissionPreset.Standard;
+            PresetChanged?.Invoke(preset);
+        }
+
         private void InitializeSettingsHoverEffects()
         {
-            if (NavModelsBtn != null)
-            {
-                NavModelsBtn.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
-                NavModelsBtn.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
-                NavModelsBtn.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-            }
+            SelectTab(isGeneral: true);
+        }
+
+        private void OnNavGeneralClick(object sender, RoutedEventArgs e)
+        {
+            SelectTab(isGeneral: true);
         }
 
         private void OnNavModelsClick(object sender, RoutedEventArgs e)
         {
-            if (NavModelsBtn != null)
-            {
-                NavModelsBtn.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
-                NavModelsBtn.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
-                NavModelsBtn.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-            }
+            SelectTab(isGeneral: false);
             _ = _providerCatalogController?.RefreshAsync(force: true);
+        }
+
+        private void SelectTab(bool isGeneral)
+        {
+            if (PanelGeneralScrollViewer != null)
+            {
+                PanelGeneralScrollViewer.Visibility = isGeneral ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (PanelModelsScrollViewer != null)
+            {
+                PanelModelsScrollViewer.Visibility = isGeneral ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            if (isGeneral)
+            {
+                if (CategoryTitleText != null) CategoryTitleText.Text = "General";
+                if (CategorySubtitleText != null) CategorySubtitleText.Text = "Manage application theme and agent defaults.";
+                HighlightNavButton(NavGeneralBtn, NavModelsBtn);
+            }
+            else
+            {
+                if (CategoryTitleText != null) CategoryTitleText.Text = "Models & Providers";
+                if (CategorySubtitleText != null) CategorySubtitleText.Text = "Configure cloud AI model providers, API credentials, and server connections.";
+                HighlightNavButton(NavModelsBtn, NavGeneralBtn);
+            }
+        }
+
+        private void HighlightNavButton(Button? active, Button? inactive)
+        {
+            if (active != null)
+            {
+                active.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
+                active.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+                active.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+            }
+            if (inactive != null)
+            {
+                inactive.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                inactive.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+                inactive.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
+            }
         }
     }
 }

@@ -195,6 +195,7 @@
                         <Border x:Name="SidebarBottomDivider" Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
 
                         <Button x:Name="ThemeToggleButton"
+                                Visibility="Collapsed"
                                 Click="OnThemeToggleClick"
                                 HorizontalAlignment="Stretch"
                                 Background="Transparent"

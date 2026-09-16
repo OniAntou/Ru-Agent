@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="RuApp.Controls.TerminalPanelControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:RuApp.Models"
+    xmlns:controls="using:RuApp.Controls"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <Border x:Name="Panel"
+            Visibility="Collapsed"
+            Background="{StaticResource RuSurfaceBrush}"
+            BorderBrush="{StaticResource RuLineBrush}"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="12,8"
+            Margin="0,0,0,8"
+            AutomationProperties.AutomationId="TerminalPanel"
+            AutomationProperties.Name="Terminal output">
+        <Grid RowDefinitions="Auto,Auto">
+            <Grid Grid.Row="0"
+                  ColumnDefinitions="*,Auto,Auto"
+                  ColumnSpacing="8"
+                  VerticalAlignment="Center">
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE756;"
+                              FontSize="13"
+                              Foreground="{StaticResource RuAccentBrush}"
+                              VerticalAlignment="Center" />
+                    <TextBlock Text="Terminal"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12.5"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource RuInkBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="Clear"
+                        Click="OnTerminalClearClick"
+                        Padding="10,4"
+                        AutomationProperties.AutomationId="TerminalClearButton"
+                        AutomationProperties.Name="Clear terminal output" />
+                <Button x:Name="CollapseButton"
+                        Grid.Column="2"
+                        Content="Hide"
+                        Click="OnTerminalCollapseClick"
+                        Padding="10,4"
+                        AutomationProperties.AutomationId="TerminalCollapseButton"
+                        AutomationProperties.Name="Hide terminal output" />
+            </Grid>
+            <ScrollViewer x:Name="TerminalScrollHost"
+                          Grid.Row="1"
+                          MaxHeight="180"
+                          Margin="0,8,0,0"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{x:Bind TerminalBlocks, Mode=OneWay}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:TerminalOutputBlock">
+                            <StackPanel Spacing="2" Margin="0,0,0,8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{x:Bind Title, Mode=OneWay}"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock Text="{x:Bind StateText, Mode=OneWay}"
+                                               FontFamily="{StaticResource RuMonoFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource RuMutedBrush}" />
+                                </StackPanel>
+                                <TextBlock Text="{x:Bind Text, Mode=OneWay}"
+                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource RuInkBrush}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind FooterText, Mode=OneWay}"
+                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource RuMutedBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>

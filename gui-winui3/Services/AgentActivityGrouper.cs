@@ -63,11 +63,23 @@ internal static class AgentActivityGrouper
                 continue;
             }
 
+            // The key covers everything the row renders (kind, target, counts,
+            // deltas, detail preview, safe code). DurationMs is excluded on
+            // purpose: only Thinking renders a duration and Thinking never
+            // collapses, so two otherwise identical rows read exactly the same.
             if (current.Kind == previous.Kind
                 && string.Equals(current.FileName, previous.FileName, StringComparison.Ordinal)
                 && string.Equals(current.Symbol, previous.Symbol, StringComparison.Ordinal)
-                && string.Equals(current.ToolDisplay, previous.ToolDisplay, StringComparison.Ordinal))
+                && string.Equals(current.ToolDisplay, previous.ToolDisplay, StringComparison.Ordinal)
+                && Nullable.Equals(current.Count, previous.Count)
+                && Nullable.Equals(current.Added, previous.Added)
+                && Nullable.Equals(current.Removed, previous.Removed)
+                && string.Equals(current.Detail, previous.Detail, StringComparison.Ordinal)
+                && string.Equals(current.SafeCode, previous.SafeCode, StringComparison.Ordinal))
             {
+                // Fold the hidden row's duration into the survivor so the total
+                // time is preserved instead of silently dropped.
+                current.CollapsedDurationMs += previous.EffectiveDurationMs ?? 0;
                 previous.IsVisibleInFeed = false;
             }
         }

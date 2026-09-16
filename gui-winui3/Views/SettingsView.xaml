@@ -43,6 +43,35 @@
                 <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
                 <Setter Property="FontSize" Value="12.5" />
                 <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="RootBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="{TemplateBinding CornerRadius}"
+                                    Padding="{TemplateBinding Padding}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver" />
+                                        <VisualState x:Name="Pressed" />
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity" To="0.6" Duration="0" />
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -64,6 +93,11 @@
             <Grid Padding="12,16,12,16">
                 <StackPanel Spacing="4">
                     <TextBlock Text="Settings" Style="{StaticResource SidebarCategoryHeadingStyle}" Margin="8,0,8,6" />
+                    <!-- General Tab Button -->
+                    <Button x:Name="NavGeneralBtn"
+                            Content="General"
+                            Click="OnNavGeneralClick"
+                            Style="{StaticResource SidebarNavButtonStyle}" />
                     <!-- Models / AI Providers Tab Button -->
                     <Button x:Name="NavModelsBtn"
                             Content="Models &amp; Providers"
@@ -77,49 +111,216 @@
         <Grid Grid.Column="1" Background="{StaticResource RuSurfaceBrush}" RowDefinitions="Auto,*">
             <!-- Header Bar (Category Title & Subtitle) -->
             <Grid Grid.Row="0" Padding="28,20,56,16" BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel Grid.Column="0" Spacing="4">
-                        <TextBlock x:Name="CategoryTitleText"
-                                   Text="Models &amp; Providers"
-                                   FontSize="20"
-                                   FontWeight="Bold"
-                                   FontFamily="{StaticResource RuDisplayFontFamily}"
-                                   Foreground="{StaticResource RuInkBrush}" />
-                        <TextBlock x:Name="CategorySubtitleText"
-                                   Text="Configure cloud AI model providers, API credentials, and server connections."
-                                   FontSize="12.5"
-                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                   Foreground="{StaticResource RuMutedBrush}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                    <!-- Auto-Save Status Badge -->
-                    <Border Grid.Column="1"
-                            VerticalAlignment="Center"
-                            Padding="12,6"
-                            Background="{StaticResource RuAccentSoftBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RuControlCornerRadius}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="7" Height="7" Fill="{StaticResource RuSuccessBrush}" />
-                            <TextBlock x:Name="AutoSaveStatusText"
-                                       Text="Auto-save"
-                                       FontSize="12"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontWeight="Medium"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                        </StackPanel>
-                    </Border>
-                </Grid>
+                <StackPanel Spacing="4">
+                    <TextBlock x:Name="CategoryTitleText"
+                               Text="General"
+                               FontSize="20"
+                               FontWeight="Bold"
+                               FontFamily="{StaticResource RuDisplayFontFamily}"
+                               Foreground="{StaticResource RuInkBrush}" />
+                    <TextBlock x:Name="CategorySubtitleText"
+                               Text="Manage application theme and agent defaults."
+                               FontSize="12.5"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
             </Grid>
 
             <!-- Panels Area -->
+            <!-- General Settings Panel -->
+            <ScrollViewer x:Name="PanelGeneralScrollViewer"
+                          Grid.Row="1"
+                          Padding="28,20,28,32"
+                          Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          Visibility="Visible">
+                <StackPanel Spacing="16">
+                    <!-- Appearance Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="16">
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Appearance" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Switch between Dark and Light mode theme" Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <Button x:Name="ThemeButton"
+                                        Grid.Column="1"
+                                        Width="260"
+                                        MinHeight="36"
+                                        Style="{StaticResource RuDropdownButtonStyle}"
+                                        AutomationProperties.Name="Appearance theme">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock x:Name="ThemeButtonLabel"
+                                                   Text="Dark"
+                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="Medium"
+                                                   Foreground="{StaticResource RuInkBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE70D;"
+                                                  FontSize="9"
+                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="8,0,0,0" />
+                                    </Grid>
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
+                                            <StackPanel Width="260" Spacing="2">
+                                                <Button x:Name="ThemeDarkOption"
+                                                        Tag="dark"
+                                                        Click="OnThemeOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Dark theme">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ThemeDarkText"
+                                                                   Text="Dark"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ThemeDarkCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ThemeLightOption"
+                                                        Tag="light"
+                                                        Click="OnThemeOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Light theme">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ThemeLightText"
+                                                                   Text="Light"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ThemeLightCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Agent Capabilities Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="16">
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock Text="Standard asks before mutations; Trusted auto-allows workspace actions" Style="{StaticResource SettingDescStyle}" />
+                                </StackPanel>
+                                <Button x:Name="PresetButton"
+                                        Grid.Column="1"
+                                        Width="260"
+                                        MinHeight="36"
+                                        Style="{StaticResource RuDropdownButtonStyle}"
+                                        AutomationProperties.Name="Permission preset">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock x:Name="PresetButtonLabel"
+                                                   Text="Standard"
+                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="Medium"
+                                                   Foreground="{StaticResource RuInkBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE70D;"
+                                                  FontSize="9"
+                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="8,0,0,0" />
+                                    </Grid>
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
+                                            <StackPanel Width="260" Spacing="2">
+                                                <Button x:Name="PresetStandardOption"
+                                                        Tag="standard"
+                                                        Click="OnPresetOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Standard preset">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="PresetStandardText"
+                                                                   Text="Standard"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="PresetStandardCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="PresetTrustedOption"
+                                                        Tag="trusted"
+                                                        Click="OnPresetOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Trusted preset">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="PresetTrustedText"
+                                                                   Text="Trusted"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="PresetTrustedCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Models / Providers Panel -->
             <ScrollViewer x:Name="PanelModelsScrollViewer"
                           Grid.Row="1"
                           Padding="28,20,28,32"
                           Background="Transparent"
                           HorizontalScrollBarVisibility="Disabled"
-                          VerticalScrollBarVisibility="Auto">
+                          VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
                 <StackPanel Spacing="16">
                     <!-- Main Provider & Keys Card -->
                     <Border Style="{StaticResource FluentCardStyle}">
@@ -130,18 +331,150 @@
                                     <TextBlock Text="Active Provider" Style="{StaticResource SettingLabelStyle}" />
                                     <TextBlock Text="Choose cloud AI provider or custom server" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
-                                <ComboBox x:Name="BackendComboBox"
-                                          Grid.Column="1"
-                                          Width="260"
-                                          Height="36"
-                                          CornerRadius="{StaticResource RuControlCornerRadius}"
-                                          SelectionChanged="OnBackendSelectionChanged">
-                                    <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode" />
-                                    <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo" />
-                                    <ComboBoxItem Content="OpenAI (Official API)" Tag="openai" />
-                                    <ComboBoxItem Content="Anthropic Claude (Official API)" Tag="anthropic" />
-                                    <ComboBoxItem Content="Custom OpenAI Server" Tag="custom" />
-                                </ComboBox>
+                                <Button x:Name="ProviderButton"
+                                        Grid.Column="1"
+                                        Width="260"
+                                        MinHeight="36"
+                                        Style="{StaticResource RuDropdownButtonStyle}"
+                                        AutomationProperties.Name="Active provider">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock x:Name="ProviderButtonLabel"
+                                                   Text="OpenCode Zen (Cloud API)"
+                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                   FontSize="13"
+                                                   FontWeight="Medium"
+                                                   Foreground="{StaticResource RuInkBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE70D;"
+                                                  FontSize="9"
+                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="8,0,0,0" />
+                                    </Grid>
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
+                                            <StackPanel Width="260" Spacing="2">
+                                                <Button x:Name="ProviderOpencodeOption"
+                                                        Tag="opencode"
+                                                        Click="OnProviderOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="OpenCode Zen provider">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ProviderOpencodeText"
+                                                                   Text="OpenCode Zen (Cloud API)"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ProviderOpencodeCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ProviderKiloOption"
+                                                        Tag="kilo"
+                                                        Click="OnProviderOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Kilo Gateway provider">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ProviderKiloText"
+                                                                   Text="Kilo Gateway (Cloud API)"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ProviderKiloCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ProviderOpenaiOption"
+                                                        Tag="openai"
+                                                        Click="OnProviderOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="OpenAI provider">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ProviderOpenaiText"
+                                                                   Text="OpenAI (Official API)"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ProviderOpenaiCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ProviderAnthropicOption"
+                                                        Tag="anthropic"
+                                                        Click="OnProviderOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Anthropic provider">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ProviderAnthropicText"
+                                                                   Text="Anthropic Claude (Official API)"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ProviderAnthropicCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                                <Button x:Name="ProviderCustomOption"
+                                                        Tag="custom"
+                                                        Click="OnProviderOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Custom server provider">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="ProviderCustomText"
+                                                                   Text="Custom OpenAI Server"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="ProviderCustomCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
                             </Grid>
 
                             <!-- OpenCode API Key Row -->

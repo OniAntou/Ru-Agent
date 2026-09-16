@@ -59,6 +59,58 @@
                     <SolidColorBrush x:Key="ListViewItemForegroundPointerOver" Color="#0F172A" />
                     <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#0F172A" />
                     <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="#0F172A" />
+
+                    <!-- ComboBox (Ru theme: Canvas input-well on Surface cards) -->
+                    <SolidColorBrush x:Key="ComboBoxBackground" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushFocused" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushUnfocused" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxForeground" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundDisabled" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundFocused" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundFocusedPressed" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundDisabled" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocused" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownForeground" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForeground" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundPointerOver" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundPressed" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundDisabled" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundFocused" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundPointerOver" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundPressed" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundSelectedPointerOver" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundDisabled" Color="#5B6B82" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackground" Color="Transparent" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedUnfocused" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundDisabled" Color="Transparent" />
+                    <!-- Pill + popup hover: unmistakably Ru (not default blue accent) -->
+                    <SolidColorBrush x:Key="ComboBoxItemPillFillBrush" Color="#1E293B" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerOver" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerPressed" Color="#CBD5E1" />
+                    <CornerRadius x:Key="ComboBoxHiglightBorderCornerRadius">6</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxDropDownButtonBackgroundCornerRadius">6</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxItemCornerRadius">4</CornerRadius>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <Color x:Key="RuCanvasColor">#16181D</Color>
@@ -107,6 +159,58 @@
                     <SolidColorBrush x:Key="ListViewItemForegroundPointerOver" Color="#F1F5F9" />
                     <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#F1F5F9" />
                     <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="#F1F5F9" />
+
+                    <!-- ComboBox (Ru theme: Canvas input-well on Surface cards) -->
+                    <SolidColorBrush x:Key="ComboBoxBackground" Color="#16181D" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#282D37" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#16181D" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused" Color="#16181D" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#16181D" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushFocused" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxBackgroundBorderBrushUnfocused" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxForeground" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundDisabled" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundFocused" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxForegroundFocusedPressed" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownGlyphForeground" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundDisabled" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownGlyphForegroundFocused" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownForeground" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#20232A" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForeground" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundPointerOver" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundPressed" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundDisabled" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxPlaceHolderForegroundFocused" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundPointerOver" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundPressed" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundSelectedPointerOver" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ComboBoxItemForegroundDisabled" Color="#94A3B8" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackground" Color="Transparent" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="#16181D" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="#282D37" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#282D37" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedUnfocused" Color="#282D37" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="#334155" />
+                    <SolidColorBrush x:Key="ComboBoxItemBackgroundDisabled" Color="Transparent" />
+                    <!-- Pill + popup hover: unmistakably Ru (not default blue accent) -->
+                    <SolidColorBrush x:Key="ComboBoxItemPillFillBrush" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerOver" Color="#282D37" />
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerPressed" Color="#334155" />
+                    <CornerRadius x:Key="ComboBoxHiglightBorderCornerRadius">6</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxDropDownButtonBackgroundCornerRadius">6</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxItemCornerRadius">4</CornerRadius>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
@@ -183,6 +287,134 @@
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
                 <Setter Property="Padding" Value="16,12" />
+            </Style>
+
+            <!-- Ru ComboBox Item: matches FluentCard typography + rounded hover -->
+            <Style x:Key="RuComboBoxItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource DefaultComboBoxItemStyle}">
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Padding" Value="12,8" />
+                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+
+            <!-- Ru ComboBox: Canvas input-well, Line border, Ink text -->
+            <Style x:Key="RuComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="Medium" />
+                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+                <Setter Property="Background" Value="{StaticResource RuCanvasBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                <Setter Property="Padding" Value="12,0,0,0" />
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="ItemContainerStyle" Value="{StaticResource RuComboBoxItemStyle}" />
+            </Style>
+
+            <!-- Ru Dropdown Button: input-well trigger mirroring the prompt ModelPicker trigger -->
+            <Style x:Key="RuDropdownButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource RuCanvasBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="Medium" />
+                <Setter Property="Padding" Value="12,0" />
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="RootBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="{TemplateBinding CornerRadius}"
+                                    Padding="{TemplateBinding Padding}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuLineBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity" To="0.6" Duration="0" />
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Ru Dropdown Flyout: same presenter chrome as the prompt ModelPicker -->
+            <Style x:Key="RuDropdownFlyoutStyle" TargetType="FlyoutPresenter">
+                <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="4" />
+                <Setter Property="Width" Value="268" />
+                <Setter Property="MinWidth" Value="268" />
+                <Setter Property="MaxWidth" Value="268" />
+                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
+                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+                <Setter Property="ScrollViewer.VerticalScrollMode" Value="Auto" />
+            </Style>
+
+            <!-- Ru Dropdown Item: same row chrome as the prompt ModelPicker rows -->
+            <Style x:Key="RuDropdownItemButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="8,6,8,6" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="MinHeight" Value="32" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="CornerRadius" Value="5" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter x:Name="Root"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Background="{TemplateBinding Background}"
+                                              BorderBrush="{TemplateBinding BorderBrush}"
+                                              BorderThickness="{TemplateBinding BorderThickness}"
+                                              CornerRadius="{TemplateBinding CornerRadius}" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
         </ResourceDictionary>

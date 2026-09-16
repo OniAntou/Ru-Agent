@@ -14,99 +14,82 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
 {
     private readonly IAgentPolicyClient _client;
     private readonly Action<Action>? _synchronize;
-    private readonly object _gate = new();
-
-    private bool _isBusy;
-    private string _statusText = "Policies not loaded.";
+    private readonly OperationStatus _status;
 
     public AgentPolicyController(IAgentPolicyClient client, Action<Action>? synchronize = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _synchronize = synchronize;
+        _status = new OperationStatus(RunOnUi, "Policies not loaded.");
+        _status.PropertyChanged += (_, e) => OnPropertyChanged(e.PropertyName!);
     }
 
     public ObservableCollection<AgentPolicyModel> Policies { get; } = new();
 
-    public bool IsBusy
-    {
-        get { lock (_gate) return _isBusy; }
-        private set { lock (_gate) { _isBusy = value; } OnPropertyChanged(nameof(IsBusy)); }
-    }
+    // The busy flag and status line live in OperationStatus, shared with the run
+    // controller so both present one shape to the view.
+    public bool IsBusy => _status.IsBusy;
 
-    public string StatusText
-    {
-        get { lock (_gate) return _statusText; }
-        private set { lock (_gate) { _statusText = value; } OnPropertyChanged(nameof(StatusText)); }
-    }
+    public string StatusText => _status.StatusText;
 
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        RunOnUi(() => { IsBusy = true; StatusText = "Loading policies..."; });
-        try
-        {
-            var items = await _client.ListPoliciesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            var models = new List<AgentPolicyModel>();
-            foreach (var element in items)
+        await _status.RunAsync(
+            "Loading policies...",
+            async () => await _client.ListPoliciesAsync(cancellationToken: cancellationToken).ConfigureAwait(false),
+            items =>
             {
-                if (AgentPolicyModel.TryParse(element, out var model))
+                var models = new List<AgentPolicyModel>();
+                foreach (var element in items)
                 {
-                    models.Add(model);
-                }
-            }
-
-            RunOnUi(() =>
-            {
-                Policies.Clear();
-                foreach (var model in models)
-                {
-                    Policies.Add(model);
+                    if (AgentPolicyModel.TryParse(element, out var model))
+                    {
+                        models.Add(model);
+                    }
                 }
 
-                StatusText = $"Loaded {models.Count} rules.";
-            });
-        }
-        catch (Exception ex)
-        {
-            RunOnUi(() => { StatusText = $"Load error: {ex.Message}"; });
-            throw;
-        }
-        finally
-        {
-            RunOnUi(() => { IsBusy = false; });
-        }
+                RunOnUi(() =>
+                {
+                    Policies.Clear();
+                    foreach (var model in models)
+                    {
+                        Policies.Add(model);
+                    }
+                });
+
+                return $"Loaded {models.Count} rules.";
+            },
+            ex => $"Load error: {ex.Message}").ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(string id, CancellationToken cancellationToken = default)
     {
-        RunOnUi(() => { IsBusy = true; StatusText = $"Deleting {id}..."; });
-        try
-        {
-            // A button click is an explicit interactive confirmation. Global policy
-            // deletion is rejected by the API unless this bit is propagated.
-            await _client.DeletePolicyAsync(id, interactive: true, cancellationToken).ConfigureAwait(false);
-            RunOnUi(() =>
+        await _status.RunAsync(
+            $"Deleting {id}...",
+            async () =>
             {
-                for (var i = 0; i < Policies.Count; i++)
+                // A button click is an explicit interactive confirmation. Global policy
+                // deletion is rejected by the API unless this bit is propagated.
+                await _client.DeletePolicyAsync(id, interactive: true, cancellationToken).ConfigureAwait(false);
+                return true;
+            },
+            _ =>
+            {
+                RunOnUi(() =>
                 {
-                    if (Policies[i].Id == id)
+                    for (var i = 0; i < Policies.Count; i++)
                     {
-                        Policies.RemoveAt(i);
-                        break;
+                        if (Policies[i].Id == id)
+                        {
+                            Policies.RemoveAt(i);
+                            break;
+                        }
                     }
-                }
+                });
 
-                StatusText = "Rule deleted.";
-            });
-        }
-        catch (Exception ex)
-        {
-            RunOnUi(() => { StatusText = $"Delete error: {ex.Message}"; });
-            throw;
-        }
-        finally
-        {
-            RunOnUi(() => { IsBusy = false; });
-        }
+                return "Rule deleted.";
+            },
+            ex => $"Delete error: {ex.Message}").ConfigureAwait(false);
     }
 
     public async Task CreateAsync(AgentPolicyModel model, CancellationToken cancellationToken = default)
@@ -130,27 +113,21 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
             ["matcher"] = matcher,
         };
 
-        RunOnUi(() => { IsBusy = true; StatusText = $"Creating {model.Id}..."; });
-        try
-        {
-            // Creating a rule is an explicit action in the policy panel. This is
-            // required for global rules and is safe for project-scoped rules.
-            await _client.CreatePolicyAsync(body, interactive: true, cancellationToken).ConfigureAwait(false);
-            RunOnUi(() =>
+        await _status.RunAsync(
+            $"Creating {model.Id}...",
+            async () =>
             {
-                Policies.Add(model);
-                StatusText = "Rule created.";
-            });
-        }
-        catch (Exception ex)
-        {
-            RunOnUi(() => { StatusText = $"Create error: {ex.Message}"; });
-            throw;
-        }
-        finally
-        {
-            RunOnUi(() => { IsBusy = false; });
-        }
+                // Creating a rule is an explicit action in the policy panel. This is
+                // required for global rules and is safe for project-scoped rules.
+                await _client.CreatePolicyAsync(body, interactive: true, cancellationToken).ConfigureAwait(false);
+                return true;
+            },
+            _ =>
+            {
+                RunOnUi(() => Policies.Add(model));
+                return "Rule created.";
+            },
+            ex => $"Create error: {ex.Message}").ConfigureAwait(false);
     }
 
     private void RunOnUi(Action action)

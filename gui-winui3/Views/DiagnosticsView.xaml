@@ -74,11 +74,8 @@
                      CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
 
             <ComboBox x:Name="LevelFilterCombo" AutomationProperties.Name="Filter by level" SelectionChanged="OnLevelSelectionChanged" SelectedIndex="0" Margin="4,0" Width="105"
+                      ItemsSource="{x:Bind LevelFilterLabels}"
                       CornerRadius="{StaticResource AppControlCornerRadius}">
-                <ComboBoxItem Content="All Levels"/>
-                <ComboBoxItem Content="info"/>
-                <ComboBoxItem Content="warning"/>
-                <ComboBoxItem Content="error"/>
             </ComboBox>
 
             <Button x:Name="PauseButton" AutomationProperties.Name="Pause diagnostics refresh" Content="Pause" FontSize="12.5" Padding="12,6" Margin="4,0"

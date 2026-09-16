@@ -45,6 +45,28 @@ public sealed class AgentReplyAccumulator
         }
     }
 
+    /// <summary>
+    /// Drops the text streamed so far for the active run. A model step retried
+    /// after a transient failure re-runs on a fresh socket, and its answer
+    /// replaces the partial one that had already been rendered.
+    /// </summary>
+    public bool TryReset(string runId, string modelStepId, long sequence)
+    {
+        if (string.IsNullOrEmpty(runId) || string.IsNullOrEmpty(modelStepId)) return false;
+        lock (_gate)
+        {
+            if (_runId is null || _sessionId is null) return false;
+            if (!string.Equals(_runId, runId, StringComparison.Ordinal)) return false;
+            var key = $"{runId}:{modelStepId}:{sequence}";
+            if (!_seenKeys.Add(key)) return false;
+            _builder.Clear();
+            // Report the empty snapshot so the view clears the superseded text
+            // instead of leaving it on screen until the retry writes again.
+            _hasNewText = true;
+            return true;
+        }
+    }
+
     public AgentReplySnapshot? TakeSnapshot()
     {
         lock (_gate)

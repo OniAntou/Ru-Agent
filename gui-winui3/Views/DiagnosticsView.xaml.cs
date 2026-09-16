@@ -28,6 +28,10 @@ namespace RuApp.Views
 
         public BatchObservableCollection<DiagnosticRow> Rows { get; } = new();
 
+        // The level picker's entries come from the same module that maps them back to a
+        // filter, so what the user picks and what is filtered on cannot drift.
+        public IReadOnlyList<string> LevelFilterLabels => DiagnosticSeverityFilter.PickerLabels;
+
         private static readonly TimeZoneInfo VietnamZone =
             TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
 
@@ -311,13 +315,7 @@ namespace RuApp.Views
 
         private void ApplyFilter()
         {
-            string? selectedLevel = LevelFilterCombo.SelectedIndex switch
-            {
-                1 => "info",
-                2 => "warning",
-                3 => "error",
-                _ => null
-            };
+            string? selectedLevel = DiagnosticSeverityFilter.ForSelectedIndex(LevelFilterCombo.SelectedIndex);
 
             string compFilter = ComponentFilterBox.Text?.Trim() ?? "";
             string eventCodeFilter = EventCodeFilterBox.Text?.Trim() ?? "";
@@ -483,13 +481,7 @@ namespace RuApp.Views
                 ExportButton.IsEnabled = false;
                 ExportButton.Content = "Dang xuat...";
 
-                string? selectedLevel = LevelFilterCombo.SelectedIndex switch
-                {
-                    1 => "info",
-                    2 => "warning",
-                    3 => "error",
-                    _ => null
-                };
+                string? selectedLevel = DiagnosticSeverityFilter.ForSelectedIndex(LevelFilterCombo.SelectedIndex);
                 string? corr = string.IsNullOrWhiteSpace(CorrelationFilterBox.Text) ? null : CorrelationFilterBox.Text.Trim();
                 string? component = string.IsNullOrWhiteSpace(ComponentFilterBox.Text) ? null : ComponentFilterBox.Text.Trim();
                 string? eventCode = string.IsNullOrWhiteSpace(EventCodeFilterBox.Text) ? null : EventCodeFilterBox.Text.Trim();

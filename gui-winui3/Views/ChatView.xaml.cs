@@ -22,6 +22,7 @@ using RuAgent.Protocol.Harness;
 using RuApp.Models;
 using RuApp.Services;
 using Windows.Storage.Streams;
+using System.IO;
 
 namespace RuApp.Views
 {
@@ -68,8 +69,7 @@ namespace RuApp.Views
 
     public sealed partial class ChatView : UserControl, IDisposable
     {
-        private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
-        private const double ReadingColumnMaxWidth = 820;
+                private const double ReadingColumnMaxWidth = 820;
         private const double NarrowWidthThreshold = 900;
         private const double MediumWidthThreshold = 1280;
         private const double NarrowHorizontalInset = 24;
@@ -89,7 +89,6 @@ namespace RuApp.Views
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
-        private bool _agentActivityVisible;
         private bool _agentBusySeen;
         private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
         private string? _agentPresetSessionId;
@@ -226,9 +225,9 @@ namespace RuApp.Views
             {
                 WelcomeHeroPanel.Visibility = hasMessages ? Visibility.Collapsed : Visibility.Visible;
             }
-            if (ChatScrollHost != null)
+            if (ChatContentGrid != null)
             {
-                ChatScrollHost.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
+                ChatContentGrid.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
             }
             if (MeteorShowerField != null)
             {
@@ -281,6 +280,7 @@ namespace RuApp.Views
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
             _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
+            ApprovalPanel.DecisionRequested += OnApprovalDecisionRequested;
             UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
 
@@ -690,80 +690,78 @@ namespace RuApp.Views
         public void UpdateContextUsage()
         {
             if (_suppressContextUsageUpdate) return;
+            // This walks the whole transcript, so running it on every streamed
+            // snapshot turns chat history length into per-frame UI cost and
+            // starves the activity feed. A one-second-old meter is plenty fresh.
+            long now = Environment.TickCount64;
+            if (now - _lastContextUsageTick < ContextUsageMinIntervalMs)
+            {
+                return;
+            }
+
+            _lastContextUsageTick = now;
             string currentModel = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedModel)
                 ? _groupedCatalogs.State.SelectedModel
                 : _selectedModel;
             int? catalogCtx = GetCurrentModelContextLength();
             var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel, catalogCtx);
 
-            int totalChars = 0;
-            int totalImages = 0;
-            int reportedTokens = 0;
-
-            foreach (var msg in Messages)
-            {
-                if (!string.IsNullOrEmpty(msg.Content))
-                {
-                    totalChars += msg.Content.Length;
-                }
-                if (msg.Attachments != null)
-                {
-                    totalImages += msg.Attachments.Count;
-                }
-                if (msg.Usage is { } usage)
-                {
-                    reportedTokens = Math.Max(reportedTokens, ResolveUsageTotal(usage));
-                }
-            }
-
-            if (_activeAgentUsage is { } activeUsage)
-            {
-                reportedTokens = Math.Max(reportedTokens, ResolveUsageTotal(activeUsage));
-            }
-
             // Include draft input so the meter moves while typing, not only after send.
+            string draftText = string.Empty;
             try
             {
-                if (ChatInputTextBox != null && !string.IsNullOrEmpty(ChatInputTextBox.Text))
-                {
-                    totalChars += ChatInputTextBox.Text.Length;
-                }
+                draftText = ChatInputTextBox?.Text ?? string.Empty;
             }
             catch
             {
                 // Input box may not be ready during init; estimate stays history-only.
             }
 
-            foreach (var att in PendingAttachments)
+            var (totalChars, totalImages) = AgentContextMeterPolicy.Measure(
+                Messages.Select(message => (message.Content, message.Attachments?.Count ?? 0)),
+                draftText,
+                PendingAttachments.Count);
+
+            var reportedTotals = Messages
+                .Where(message => message.Usage is not null)
+                .Select(message => ResolveUsageTotal(message.Usage!))
+                .ToList();
+            if (_activeAgentUsage is { } activeUsage)
             {
-                totalImages++;
+                reportedTotals.Add(ResolveUsageTotal(activeUsage));
             }
 
-            int estimatedTokens = ModelContextSpecs.EstimateTokens(totalChars, totalImages);
-            // Provider-reported total already includes system/tools/history and is
-            // authoritative when present. Char estimate is only a fallback.
-            int usedTokens = Math.Max(estimatedTokens, reportedTokens);
+            int reportedTokens = AgentContextMeterPolicy.MaxReportedTokens(reportedTotals);
 
-            if (maxTokens > 0)
+            int estimatedTokens = ModelContextSpecs.EstimateTokens(totalChars, totalImages);
+            var meter = AgentContextMeterPolicy.Evaluate(maxTokens, displayLimit, estimatedTokens, reportedTokens);
+            int usedTokens = meter.UsedTokens;
+
+            if (meter.HasBudget)
             {
-                double percentage = Math.Min(100.0, (usedTokens * 100.0) / maxTokens);
+                double percentage = meter.Percentage;
 
                 ContextProgressRing.Value = percentage;
                 ContextProgressBar.Value = percentage;
                 ContextProgressBar.Visibility = Visibility.Visible;
 
-                var brush = percentage > 90
-                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuDangerBrush"]
-                    : percentage > 70
-                        ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuWarningBrush"]
-                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
+                var brush = meter.Severity switch
+                {
+                    AgentContextMeterSeverity.Danger =>
+                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuDangerBrush"],
+                    AgentContextMeterSeverity.Warning =>
+                        (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuWarningBrush"],
+                    _ => (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"],
+                };
 
                 ContextProgressRing.Foreground = brush;
                 ContextProgressBar.Foreground = brush;
 
-                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} / {displayLimit}";
+                ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
                 ContextPercentLabel.Text = $"{percentage:0.#}%";
-                ContextPercentLabel.Foreground = percentage > 70 ? brush : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+                ContextPercentLabel.Foreground = meter.Severity == AgentContextMeterSeverity.Normal
+                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
+                    : brush;
             }
             else
             {
@@ -777,7 +775,7 @@ namespace RuApp.Views
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
         {
-            _composerDraftBySession[_activeSessionId] = ChatInputTextBox.Text ?? string.Empty;
+            _composerDrafts.Save(_activeSessionId, ChatInputTextBox.Text);
             ScheduleContextMeterUpdate();
             if (string.IsNullOrEmpty(ChatInputTextBox.Text))
             {
@@ -787,6 +785,8 @@ namespace RuApp.Views
 
         private DispatcherQueueTimer? _contextMeterTimer;
         private bool _contextMeterScheduled;
+        private long _lastContextUsageTick;
+        private const long ContextUsageMinIntervalMs = 1000;
 
         private void ScheduleContextMeterUpdate()
         {
@@ -854,7 +854,10 @@ namespace RuApp.Views
                 return;
             }
 
-            DispatcherQueue.TryEnqueue(() => EnqueueAgentActivity(activity));
+            if (!DispatcherQueue.TryEnqueue(() => EnqueueAgentActivity(activity)))
+            {
+                System.Diagnostics.Debug.WriteLine("[ChatView] Dropped activity frame: dispatcher queue rejected enqueue.");
+            }
         }
 
         private void EnqueueAgentActivity(AgentActivityModel activity)
@@ -945,7 +948,7 @@ namespace RuApp.Views
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
         {
-            if ((!allowWhenIdle && _agentController?.IsBusy != true && !IsActiveAgentRunPending())
+            if ((!allowWhenIdle && !HasRunInHand())
                 || string.IsNullOrWhiteSpace(activity.ActivityId))
             {
                 return;
@@ -980,8 +983,10 @@ namespace RuApp.Views
                     _activityStartTicks.TryAdd(activity.ActivityId, Environment.TickCount64);
                 }
 
-                existing.UpdateFrom(activity);
-                TrackTerminalToolState(existing);
+                if (existing.UpdateFrom(activity))
+                {
+                    TrackTerminalToolState(existing);
+                }
             }
             else
             {
@@ -1187,7 +1192,13 @@ namespace RuApp.Views
                     _activityStartTicks.Remove(key);
                     if (_agentActivityById.TryGetValue(key, out var existing))
                     {
-                        existing.UpdateFrom(deferred.Model);
+                        // A row settled as interrupted after the run ended is
+                        // newer than any deferred frame: keep the truthful state.
+                        if (!existing.IsSettledInterruption)
+                        {
+                            existing.UpdateFrom(deferred.Model);
+                        }
+
                         TrackTerminalToolState(existing);
                     }
                 }
@@ -1206,7 +1217,10 @@ namespace RuApp.Views
         {
             if (!DispatcherQueue.HasThreadAccess)
             {
-                DispatcherQueue.TryEnqueue(FlushDeferredCompletions);
+                if (!DispatcherQueue.TryEnqueue(FlushDeferredCompletions))
+                {
+                    System.Diagnostics.Debug.WriteLine("[ChatView] Deferred completions stuck: dispatcher queue rejected enqueue.");
+                }
                 return;
             }
 
@@ -1221,7 +1235,11 @@ namespace RuApp.Views
                 _activityStartTicks.Remove(kvp.Key);
                 if (_agentActivityById.TryGetValue(kvp.Key, out var existing))
                 {
-                    existing.UpdateFrom(kvp.Value.Model);
+                    if (!existing.IsSettledInterruption)
+                    {
+                        existing.UpdateFrom(kvp.Value.Model);
+                    }
+
                     TrackTerminalToolState(existing);
                 }
             }
@@ -1240,7 +1258,7 @@ namespace RuApp.Views
 
             if (item.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
             {
-                _lastTerminalToolLabel = item.DisplayText;
+                TerminalPanelControl.NoteToolLabel(item.DisplayText);
                 return;
             }
 
@@ -1264,7 +1282,7 @@ namespace RuApp.Views
 
         private void ApplyAgentRunSummary(AgentRunSummaryModel summary)
         {
-            if (_agentController?.IsBusy != true)
+            if (!AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy)
             {
                 return;
             }
@@ -1316,7 +1334,7 @@ namespace RuApp.Views
             }
 
             AgentRunModel? run = _agentController?.CurrentRun;
-            if (run is null || (_agentController?.IsBusy != true && !IsActiveAgentRunPending()))
+            if (run is null || !HasRunInHand())
             {
                 return;
             }
@@ -1359,7 +1377,10 @@ namespace RuApp.Views
             }
 
             // Use accumulator as single authority for dedup + text; also keep legacy set for now
-            if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
+            bool accepted = delta.IsReset
+                ? _replyAccumulator.TryReset(run.RunId, delta.ModelStepId, delta.TransientSequence)
+                : _replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text);
+            if (!accepted)
             {
                 // If no active accumulator (e.g., after Invalidate), begin with real runId and retry once
                 if (!_replyAccumulator.HasSession
@@ -1373,7 +1394,10 @@ namespace RuApp.Views
                 {
                     _activeAgentRunId = run.RunId;
                 }
-                if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
+                accepted = delta.IsReset
+                    ? _replyAccumulator.TryReset(run.RunId, delta.ModelStepId, delta.TransientSequence)
+                    : _replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text);
+                if (!accepted)
                 {
                     return;
                 }
@@ -1495,12 +1519,8 @@ namespace RuApp.Views
         }
 
         // ── Terminal output panel ──────────────────────────────
-        private const int MaximumTerminalBlocks = 5;
-        private string? _lastTerminalToolLabel;
-        private bool _terminalCollapsed;
-
-        public ObservableCollection<TerminalOutputBlock> TerminalBlocks { get; } = new();
-
+        // The block list, its bound, the label carried onto the next block, and the
+        // show/hide state all live in TerminalPanelControl. The view only forwards.
         private void OnAgentToolOutputReceived(object? sender, AgentToolOutputModel output)
         {
             if (DispatcherQueue.HasThreadAccess)
@@ -1514,67 +1534,21 @@ namespace RuApp.Views
 
         private void ApplyAgentToolOutput(AgentToolOutputModel output)
         {
-            if (_agentController?.IsBusy != true)
+            if (!AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy)
             {
                 return;
             }
 
-            var block = TerminalBlocks.FirstOrDefault(candidate =>
-                string.Equals(candidate.ExecutionId, output.ExecutionId, StringComparison.Ordinal));
-            if (block is null)
-            {
-                block = new TerminalOutputBlock(
-                    output.ExecutionId,
-                    string.IsNullOrWhiteSpace(_lastTerminalToolLabel)
-                        ? "Command output"
-                        : _lastTerminalToolLabel);
-                TerminalBlocks.Add(block);
-                while (TerminalBlocks.Count > MaximumTerminalBlocks)
-                {
-                    TerminalBlocks.RemoveAt(0);
-                }
-            }
-
-            block.AppendText(output.Text);
-            _terminalCollapsed = false;
-            TerminalPanel.Visibility = Visibility.Visible;
-            TerminalScrollHost.ChangeView(null, double.MaxValue, null);
+            TerminalPanelControl.AppendOutput(output.ExecutionId, output.Text);
         }
 
-        private void CompleteTerminalBlock(string label, bool failed)
-        {
-            TerminalOutputBlock? block = null;
-            foreach (var candidate in TerminalBlocks)
-            {
-                if (!candidate.IsCompleted
-                    && string.Equals(candidate.Title, label, StringComparison.Ordinal))
-                {
-                    block = candidate;
-                }
-            }
+        private void CompleteTerminalBlock(string label, bool failed) =>
+            TerminalPanelControl.CompleteBlock(label, failed);
 
-            block ??= TerminalBlocks.LastOrDefault(candidate => !candidate.IsCompleted);
-            block?.Complete(failed);
-        }
-
-        private void ClearTerminalBlocks()
-        {
-            TerminalBlocks.Clear();
-            _lastTerminalToolLabel = null;
-            TerminalPanel.Visibility = Visibility.Collapsed;
-        }
-
-        private void OnTerminalClearClick(object sender, RoutedEventArgs e) => ClearTerminalBlocks();
-
-        private void OnTerminalCollapseClick(object sender, RoutedEventArgs e)
-        {
-            _terminalCollapsed = !_terminalCollapsed;
-            TerminalScrollHost.Visibility = _terminalCollapsed ? Visibility.Collapsed : Visibility.Visible;
-            ((Button)sender).Content = _terminalCollapsed ? "Show" : "Hide";
-        }
+        private void ClearTerminalBlocks() => TerminalPanelControl.Clear();
 
         // ── Activity text wave animation ──────────────────────────────
-        private readonly HashSet<TextBlock> _activeWaveTextBlocks = new();
+        private readonly Dictionary<TextBlock, AgentActivityItem> _activeWaveTextBlocks = new();
         private DispatcherQueueTimer? _waveTimer;
         private readonly System.Diagnostics.Stopwatch _waveStopwatch = new();
 
@@ -1704,7 +1678,7 @@ namespace RuApp.Views
         {
             if (item.IsRunning)
             {
-                StartTextSweep(textBlock);
+                StartTextSweep(textBlock, item);
             }
             else
             {
@@ -1722,15 +1696,14 @@ namespace RuApp.Views
             }
         }
 
-        private void StartTextSweep(TextBlock textBlock)
+        private void StartTextSweep(TextBlock textBlock, AgentActivityItem item)
         {
-            if (!_activeWaveTextBlocks.Add(textBlock))
-                return;
+            _activeWaveTextBlocks[textBlock] = item;
 
             if (_waveTimer == null)
             {
                 _waveTimer = DispatcherQueue.CreateTimer();
-                _waveTimer.Interval = Services.UiTiming.WaveFrame; // ~20 FPS
+                _waveTimer.Interval = Services.UiTiming.WaveFrame; // 25 FPS
                 _waveTimer.Tick += OnWaveTimerTick;
             }
 
@@ -1785,9 +1758,13 @@ namespace RuApp.Views
             var baseColor = ResolveWaveBaseColor();
 
             List<TextBlock>? deadBlocks = null;
-            foreach (var tb in _activeWaveTextBlocks)
+            foreach (var kvp in _activeWaveTextBlocks)
             {
-                if (tb.XamlRoot == null)
+                var tb = kvp.Key;
+                var owner = kvp.Value;
+                if (tb.XamlRoot == null
+                    || !owner.IsRunning
+                    || !owner.IsVisibleInFeed)
                 {
                     deadBlocks ??= new List<TextBlock>();
                     deadBlocks.Add(tb);
@@ -1853,12 +1830,17 @@ namespace RuApp.Views
 
         private void ShowAgentInlineStatus(string status)
         {
-            _agentActivityVisible = false;
             AgentStatusText.Text = status;
             AgentStatusText.Visibility = string.IsNullOrWhiteSpace(status)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
+
+        // The markup binds its initial send face to these, so the XAML and the runtime
+        // assignment below read the same vocabulary instead of holding two copies.
+        public string SendFaceGlyph => AgentComposerPresentation.SendGlyph;
+
+        public string SendFaceName => AgentComposerPresentation.SendName;
 
         private void UpdateAgentComposerVisuals()
         {
@@ -1867,16 +1849,28 @@ namespace RuApp.Views
                 return;
             }
 
-            AgentModeLabel.Text = "Agent";
-            AgentModeIcon.Glyph = "\uEC25";
+            AgentModeLabel.Text = AgentComposerPresentation.AgentModeLabelText;
+            AgentModeIcon.Glyph = AgentComposerPresentation.AgentModeGlyph;
             AgentModeButton.Visibility = Visibility.Collapsed;
             AutomationProperties.SetName(
                 AgentModeButton,
-                "Coding Agent");
+                AgentComposerPresentation.AgentModeName);
             if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex < 0 && AgentPresetBox.Items.Count > 0)
             {
                 AgentPresetBox.SelectedIndex = 0;
             }
+        }
+
+        public AgentPermissionPreset CurrentAgentPreset => _agentPreset;
+
+        public void SetAgentPreset(AgentPermissionPreset preset)
+        {
+            _agentPreset = preset;
+            if (AgentPresetBox is not null)
+            {
+                AgentPresetBox.SelectedIndex = preset == AgentPermissionPreset.Trusted ? 1 : 0;
+            }
+            UpdateAgentInlineState();
         }
 
         private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs e)
@@ -1913,33 +1907,33 @@ namespace RuApp.Views
             {
                 if (SendButtonIcon is not null)
                 {
-                    SendButtonIcon.Glyph = "\uE71A";
+                    SendButtonIcon.Glyph = AgentComposerPresentation.StopGlyph;
                     SendButtonIcon.Margin = new Thickness(0);
                     if (Application.Current.Resources.TryGetValue("RuDangerBrush", out var dangerBrush) && dangerBrush is Brush danger)
                     {
                         SendButtonIcon.Foreground = danger;
                     }
                 }
-                AutomationProperties.SetName(SendButton, "Stop Coding Agent");
+                AutomationProperties.SetName(SendButton, AgentComposerPresentation.StopName);
             }
             else
             {
                 if (SendButtonIcon is not null)
                 {
-                    SendButtonIcon.Glyph = "\uE725";
+                    SendButtonIcon.Glyph = AgentComposerPresentation.SendGlyph;
                     SendButtonIcon.Margin = new Thickness(-1, 1, 0, 0);
                     if (Application.Current.Resources.TryGetValue("RuInkBrush", out var inkBrush) && inkBrush is Brush ink)
                     {
                         SendButtonIcon.Foreground = ink;
                     }
                 }
-                AutomationProperties.SetName(SendButton, "Send message");
+                AutomationProperties.SetName(SendButton, AgentComposerPresentation.SendName);
             }
         }
 
         private void UpdateAgentInlineState()
         {
-            bool agentBusy = _agentController?.IsBusy == true;
+            bool agentBusy = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy;
             if (_agentBusySeen && !agentBusy)
             {
                 SettleAgentActivitiesAfterRun();
@@ -1947,132 +1941,82 @@ namespace RuApp.Views
 
             _agentBusySeen = agentBusy;
 
-            if (_agentController is null)
+            // The rules live in AgentInlinePanelPolicy; this method only projects the
+            // controller and assigns the result to controls.
+            var controller = _agentController;
+            var hasController = controller is not null;
+            bool runBelongsToAnotherSession = controller?.CurrentRun is { } currentRun
+                && !string.Equals(currentRun.SessionId, _activeSessionId, StringComparison.Ordinal);
+            bool keepTerminalFailureVisible = hasController
+                && AgentFailurePresentation.ShouldKeepVisible(
+                    controller!.CurrentRun?.Status,
+                    ResolveFailureReason(controller));
+            bool isRunningForStatus = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).ShowsStopAffordance;
+            string statusText = hasController
+                ? AgentFailurePresentation.InlineFailureStatus(
+                    controller!.CurrentRun?.Status,
+                    ResolveFailureReason(controller),
+                    isRunningForStatus,
+                    HasRenderedAgentReply())
+                : string.Empty;
+
+            var state = AgentInlinePanelPolicy.Evaluate(new AgentInlinePanelInput(
+                HasController: hasController,
+                RunBelongsToAnotherSession: runBelongsToAnotherSession,
+                IsBusy: controller?.IsBusy == true,
+                CanCancel: controller?.CanCancel == true,
+                HasPendingApproval: controller?.HasPendingApproval == true,
+                NeedsWorkspaceTrust: controller?.NeedsWorkspaceTrust == true,
+                CanContinue: controller?.CanContinue == true,
+                KeepTerminalFailureVisible: keepTerminalFailureVisible,
+                RunPending: IsActiveAgentRunPending(),
+                StatusText: statusText,
+                InteractionPending: _agentActionPending));
+
+            UpdateSendButtonMode(isAgentRunning: state.IsRunning);
+
+            if (state.ClearActivityVisibility)
             {
-                AgentInlinePanel.Visibility = _agentActivityVisible ? Visibility.Visible : Visibility.Collapsed;
-                if (!_agentActivityVisible)
-                {
-                    AgentStatusText.Text = string.Empty;
-                }
-            AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentApprovalPanel.Visibility = Visibility.Collapsed;
-                UpdateSendButtonMode(isAgentRunning: false);
-                return;
             }
 
-            if (_agentController.CurrentRun is { } currentRun
-                && !string.Equals(currentRun.SessionId, _activeSessionId, StringComparison.Ordinal))
+            if (state.AutoApproveWorkspaceTrust && controller is not null)
             {
-                AgentInlinePanel.Visibility = _agentActivityVisible ? Visibility.Visible : Visibility.Collapsed;
-                if (!_agentActivityVisible)
-                {
-                    AgentStatusText.Text = string.Empty;
-                }
-            AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentApprovalPanel.Visibility = Visibility.Collapsed;
-                UpdateSendButtonMode(isAgentRunning: false);
-                return;
+                // Workspace trust is auto-granted: a project-root chat starts silently.
+                _ = controller.TrustAsync(approve: true);
             }
 
-            bool keepTerminalFailureVisible = AgentFailurePresentation.ShouldKeepVisible(
-                _agentController.CurrentRun?.Status,
-                ResolveFailureReason(_agentController));
+            AgentInlinePanel.Visibility = state.ShowInlinePanel ? Visibility.Visible : Visibility.Collapsed;
 
-            if (_agentController.IsBusy != true
-                && !_agentController.CanCancel
-                && !_agentController.HasPendingApproval
-                && !_agentController.NeedsWorkspaceTrust
-                && !_agentController.CanContinue
-                && !keepTerminalFailureVisible)
-            {
-                _agentActivityVisible = false;
-                AgentInlinePanel.Visibility = Visibility.Collapsed;
-                AgentStatusText.Text = string.Empty;
-            AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentApprovalPanel.Visibility = Visibility.Collapsed;
-                UpdateSendButtonMode(isAgentRunning: false);
-                return;
-            }
-
-            bool isRunning = _agentController.CanCancel || IsActiveAgentRunPending();
-            UpdateSendButtonMode(isAgentRunning: isRunning);
-
-            // Terminal failure copy lives in the transcript as an error message
-            // only when no reply was rendered; otherwise this inline copy is the
-            // actionable signal and must stay visible.
-            string safeStatus = AgentFailurePresentation.InlineFailureStatus(
-                _agentController.CurrentRun?.Status,
-                ResolveFailureReason(_agentController),
-                isRunning,
-                HasRenderedAgentReply());
-            AgentStatusText.Text = safeStatus;
-            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(safeStatus)
+            AgentStatusText.Text = state.ShowInlinePanel ? state.StatusText : string.Empty;
+            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(AgentStatusText.Text)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
-            AgentStopButton.Visibility = Visibility.Collapsed;
+            AgentStopButton.Visibility = state.ShowStop ? Visibility.Visible : Visibility.Collapsed;
 
-            // Workspace trust is auto-granted: a project-root chat starts silently.
-            if (_agentController.NeedsWorkspaceTrust)
+            if (state.ShowApproval && controller is not null)
             {
-                _ = _agentController.TrustAsync(approve: true);
-                AgentApprovalPanel.Visibility = Visibility.Collapsed;
-                return;
-            }
+                string summary = AgentApprovalSummaryPresentation.Render(
+                    controller.PendingApprovalSummary);
+                string? terminalCommand = AgentApprovalPresentation.ResolveTerminalCommand(
+                    controller.PendingApprovalCommand,
+                    AgentActivities);
 
-            bool approvalPending = _agentController.HasPendingApproval;
-            AgentApprovalPanel.Visibility = approvalPending ? Visibility.Visible : Visibility.Collapsed;
-            if (approvalPending)
-            {
-                AgentApprovalSummaryText.Text = RenderApprovalSummary(
-                    _agentController.PendingApprovalSummary);
+                ApprovalPanel.Show(summary, terminalCommand);
 
-                string? terminalCommand = _agentController.PendingApprovalCommand;
-                if (string.IsNullOrWhiteSpace(terminalCommand))
-                {
-                    var terminalActivity = AgentActivities.LastOrDefault(a =>
-                        a.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Terminal && !string.IsNullOrWhiteSpace(a.Detail));
-                    terminalCommand = terminalActivity?.Detail;
-                }
-
-                if (!string.IsNullOrWhiteSpace(terminalCommand))
-                {
-                    AgentApprovalCommandText.Text = terminalCommand;
-                    AgentApprovalCommandContainer.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    AgentApprovalCommandText.Text = string.Empty;
-                    AgentApprovalCommandContainer.Visibility = Visibility.Collapsed;
-                }
-
-                // Approval arrives via SSE while the user may be scrolled up;
-                // bring the Approve/Deny panel into view.
+                // Approval arrives via SSE while the user may be scrolled up; bring
+                // the Approve/Deny prompt into view and put the keyboard on it.
                 ScrollChatToBottom();
-                AgentApproveButton?.Focus(FocusState.Programmatic);
+                ApprovalPanel.FocusDecision();
             }
             else
             {
-                AgentApprovalCommandText.Text = string.Empty;
-                AgentApprovalCommandContainer.Visibility = Visibility.Collapsed;
+                ApprovalPanel.Hide();
             }
 
-            bool hasInlineAction = approvalPending
-                || _agentController.CanContinue
-                || keepTerminalFailureVisible;
-            AgentInlinePanel.Visibility = hasInlineAction ? Visibility.Visible : Visibility.Collapsed;
-
-            bool actionsEnabled = !_agentActionPending;
-            if (AgentApproveButton is not null)
-            {
-                AgentApproveButton.IsEnabled = actionsEnabled;
-            }
-            if (AgentDenyButton is not null)
-            {
-                AgentDenyButton.IsEnabled = actionsEnabled;
-            }
+            ApprovalPanel.SetDecisionEnabled(!state.SuppressInteraction);
             if (AgentStopButton is not null)
             {
-                AgentStopButton.IsEnabled = actionsEnabled;
+                AgentStopButton.IsEnabled = !state.SuppressInteraction;
             }
         }
 
@@ -2118,72 +2062,56 @@ namespace RuApp.Views
         /// web_approval_required, terminal_unknown_executable);
         /// unknown values stay generic.
         /// </summary>
-        private static string RenderApprovalSummary(string? summary)
+        private static string RenderApprovalSummary(string? summary) =>
+            AgentApprovalSummaryPresentation.Render(summary);
+
+        private static string BoundedDisplay(string value, int maxLength) =>
+            AgentApprovalSummaryPresentation.Bounded(value, maxLength);
+
+        // ── Run activity ───────────────────────────────────────
+        // "Is a run in hand for this session?" is one question with one answer, asked
+        // by the send guard, the delta gate, the tool-output gate, the inline panel,
+        // and the composer mode. It lives in AgentRunActivityPolicy; the view only
+        // projects its own state and the controller's into it.
+        private AgentRunActivityInput SnapshotRunActivity()
         {
-            string trimmed = BoundedDisplay(summary ?? string.Empty, 64);
-            if (string.Equals(trimmed, "external_directory_required", StringComparison.Ordinal))
-            {
-                return "Ru needs to access a directory outside the project in this chat until the app closes.";
-            }
-            if (string.Equals(trimmed, "terminal_delete_requires_approval", StringComparison.Ordinal))
-            {
-                return "This terminal command will delete files.";
-            }
-            if (string.Equals(trimmed, "terminal_external_mutation_requires_approval", StringComparison.Ordinal))
-            {
-                return "This terminal command changes something outside the workspace (network, install).";
-            }
-            if (string.Equals(trimmed, "terminal_timeout_requires_approval", StringComparison.Ordinal))
-            {
-                return "This terminal command runs longer than the standard window.";
-            }
-            if (string.Equals(trimmed, "web_approval_required", StringComparison.Ordinal))
-            {
-                return "Ru needs approval to fetch this web content.";
-            }
-            if (string.Equals(trimmed, "terminal_unknown_executable", StringComparison.Ordinal))
-            {
-                return "Ru has not recognized the executable for this terminal command.";
-            }
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                return "Agent is requesting an action that requires approval.";
-            }
-            return trimmed;
+            string? runSessionId = _agentController?.CurrentRun?.SessionId;
+            return new AgentRunActivityInput(
+                IsSendingTurn: _isSendingUserTurn,
+                HasRun: _agentController?.CurrentRun is not null,
+                RunSessionId: runSessionId,
+                ActiveSessionId: _activeSessionId,
+                CanCancel: _agentController?.CanCancel == true,
+                HasPendingApproval: _agentController?.HasPendingApproval == true,
+                NeedsWorkspaceTrust: _agentController?.NeedsWorkspaceTrust == true,
+                IsBusy: _agentController?.IsBusy == true);
         }
 
-        private static string BoundedDisplay(string value, int maxLength)
-        {
-            string normalized = (value ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
-            return normalized.Length <= maxLength ? normalized : normalized[..maxLength] + "…";
-        }
+        /// <summary>
+        /// True while this session has a run in hand, including the send window. The
+        /// synchronous send guard lives here: entry points (Enter key, Send click) use
+        /// this, so a second Enter during the create-run await cannot produce a
+        /// duplicate user bubble and a duplicate run.
+        /// </summary>
+        private bool IsActiveAgentRunPending() =>
+            AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsGuarded;
 
-        private bool IsActiveAgentRunPending()
-        {
-            // Synchronous send guard: _isSendingUserTurn covers the race between
-            // tapping Send and the first await (session ensure + create run),
-            // during which CanCancel/HasPendingApproval are still false and a
-            // second Enter would otherwise create a duplicate user bubble + run.
-            // Entry points (Enter key, Send click) use this; SendAgentTurnAsync
-            // itself must use IsControllerRunPending or it would block its own
-            // caller, which already holds the flag.
-            return _isSendingUserTurn || IsControllerRunPending();
-        }
+        /// <summary>
+        /// Whether a live stream frame belongs in this chat: the controller is busy on
+        /// this session, or the view is between tapping Send and the run existing. Every
+        /// live-stream gate asks this one question.
+        /// </summary>
+        private bool HasRunInHand() =>
+            AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()) is { IsSessionBusy: true }
+                or { Reason: AgentRunActivityReason.Sending };
 
-        private bool IsControllerRunPending()
-        {
-            if (_agentController is null)
-            {
-                return false;
-            }
-
-            AgentRunModel? run = _agentController.CurrentRun;
-            return run is not null
-                && string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal)
-                && (_agentController.CanCancel
-                    || _agentController.HasPendingApproval
-                    || _agentController.NeedsWorkspaceTrust);
-        }
+        /// <summary>
+        /// The controller's own view of the run, without the send guard.
+        /// SendAgentTurnAsync must use this: it already holds the guard, so asking the
+        /// guarded question there would block its own caller.
+        /// </summary>
+        private bool IsControllerRunPending() =>
+            AgentRunActivityPolicy.IsControllerRunPending(SnapshotRunActivity());
 
         private void ResetAgentState()
         {
@@ -2193,7 +2121,6 @@ namespace RuApp.Views
             _agentMonitorCts = null;
             monitor?.Cancel();
             monitor?.Dispose();
-            _agentActivityVisible = false;
             _agentActionPending = false;
             _isSendingUserTurn = false;
             _activeAgentUsage = null;
@@ -2208,7 +2135,7 @@ namespace RuApp.Views
                 AgentPresetBox.SelectedIndex = 0;
             }
             AgentInlinePanel.Visibility = Visibility.Collapsed;
-            AgentApprovalPanel.Visibility = Visibility.Collapsed;
+            ApprovalPanel.Hide();
             AgentStopButton.Visibility = Visibility.Collapsed;
             AgentStatusText.Text = string.Empty;
             AgentStatusText.Visibility = Visibility.Collapsed;
@@ -2216,10 +2143,7 @@ namespace RuApp.Views
         }
 
 
-        private static string StripDisplayMarkers(string content)
-        {
-            return Regex.Replace(content, VtsMarkerPattern, "").Trim();
-        }
+        private static string StripDisplayMarkers(string content) => ChatDisplayMarkers.Strip(content);
 
         private async void OnSuggestionClick(object sender, RoutedEventArgs e)
         {
@@ -2242,7 +2166,7 @@ namespace RuApp.Views
         {
             try
             {
-                if (_isSendButtonInStopMode || IsActiveAgentRunPending() || _agentController?.CanCancel == true)
+                if (_isSendButtonInStopMode || IsActiveAgentRunPending())
                 {
                     await StopActiveAgentAsync();
                     return;
@@ -2256,6 +2180,23 @@ namespace RuApp.Views
             }
         }
 
+
+
+        private void OnRemoveAttachmentClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string id)
+            {
+                var item = PendingAttachments.FirstOrDefault(a => a.Id == id);
+                if (item != null)
+                {
+                    PendingAttachments.Remove(item);
+                }
+                if (PendingAttachments.Count == 0)
+                {
+                    AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+                }
+            }
+        }
         private async void OnChatInputPreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             try
@@ -2298,51 +2239,6 @@ namespace RuApp.Views
             }
         }
 
-        private async void OnAttachImageClick(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var picker = new Windows.Storage.Pickers.FileOpenPicker();
-                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
-                picker.FileTypeFilter.Add("*");
-
-                if (MainWindow.Instance != null)
-                {
-                    var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance);
-                    WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
-                }
-
-                var files = await picker.PickMultipleFilesAsync();
-                if (files != null && files.Count > 0)
-                {
-                    foreach (var file in files)
-                    {
-                        await AddFileAttachmentAsync(file);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error picking files: {ex.Message}");
-            }
-        }
-
-        private void OnRemoveAttachmentClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button btn && btn.Tag is string id)
-            {
-                var item = PendingAttachments.FirstOrDefault(a => a.Id == id);
-                if (item != null)
-                {
-                    PendingAttachments.Remove(item);
-                }
-                if (PendingAttachments.Count == 0)
-                {
-                    AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
-                }
-            }
-        }
-
         private void OnInputDragOver(object sender, DragEventArgs e)
         {
             if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
@@ -2351,232 +2247,6 @@ namespace RuApp.Views
                 e.DragUIOverride.Caption = "Drop to attach files / images";
                 e.DragUIOverride.IsContentVisible = true;
             }
-        }
-
-        private async void OnInputDrop(object sender, DragEventArgs e)
-        {
-            try
-            {
-                if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
-                {
-                    var items = await e.DataView.GetStorageItemsAsync();
-                    foreach (var storageItem in items)
-                    {
-                        if (storageItem is Windows.Storage.StorageFile file)
-                        {
-                            await AddFileAttachmentAsync(file);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error dropping files: {ex.Message}");
-            }
-        }
-
-        private async Task TryPasteImageFromClipboardAsync()
-        {
-            try
-            {
-                var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
-                if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
-                {
-                    if (PendingAttachments.Count(static a => a.IsImage) >= 4)
-                    {
-                        ShowAgentInlineStatus("Maximum 4 images per turn; please remove some images before adding.");
-                        return;
-                    }
-
-                    var streamRef = await package.GetBitmapAsync();
-                    using var sourceStream = await streamRef.OpenReadAsync();
-                    if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
-                    {
-                        ShowAgentInlineStatus("Clipboard image exceeds the allowed 10MB limit.");
-                        return;
-                    }
-
-                    var (bytes, mimeType, width, height) = await ImageAttachmentResizer.ResizeIfNeededAsync(sourceStream, "image/png");
-                    string base64 = Convert.ToBase64String(bytes);
-
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    using (var previewMs = new InMemoryRandomAccessStream())
-                    {
-                        using (var writer = new DataWriter(previewMs.GetOutputStreamAt(0)))
-                        {
-                            writer.WriteBytes(bytes);
-                            await writer.StoreAsync();
-                        }
-                        previewMs.Seek(0);
-                        await bitmap.SetSourceAsync(previewMs);
-                    }
-
-                    var item = new ImageAttachmentItem
-                    {
-                        FileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
-                        ByteSize = bytes.Length,
-                        Base64Data = base64,
-                        MimeType = mimeType,
-                        IsImage = true,
-                        PreviewImage = bitmap,
-                        ThumbnailImage = bitmap
-                    };
-
-                    PendingAttachments.Add(item);
-                    AttachmentPreviewContainer.Visibility = Visibility.Visible;
-                }
-                else if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
-                {
-                    var items = await package.GetStorageItemsAsync();
-                    foreach (var storageItem in items)
-                    {
-                        if (storageItem is Windows.Storage.StorageFile file)
-                        {
-                            await AddFileAttachmentAsync(file);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Clipboard image paste error: {ex.Message}");
-            }
-        }
-
-        private async Task AddFileAttachmentAsync(Windows.Storage.StorageFile file)
-        {
-            try
-            {
-                var props = await file.GetBasicPropertiesAsync();
-                bool isImage = IsImageFile(file.Name);
-                if (!isImage && !IsTextOrCodeFile(file.Name))
-                {
-                    ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images and text/code files are accepted.");
-                    return;
-                }
-
-                if (isImage)
-                {
-                    if (PendingAttachments.Count(static a => a.IsImage) >= 4)
-                    {
-                        ShowAgentInlineStatus("Maximum 4 images per turn; please remove some images before adding.");
-                        return;
-                    }
-
-                    if (props.Size > MaxImageAttachmentBytes)
-                    {
-                        ShowAgentInlineStatus($"Image '{file.Name}' exceeds the allowed 10MB limit.");
-                        return;
-                    }
-
-                    string inputMime = Services.ChatAttachmentPolicy.MimeForExtension(file.Name);
-
-                    using var sourceStream = await file.OpenReadAsync();
-                    if (sourceStream.Size > (ulong)MaxImageAttachmentBytes)
-                    {
-                        ShowAgentInlineStatus($"Image '{file.Name}' exceeds the allowed 10MB limit.");
-                        return;
-                    }
-
-                    var (bytes, mimeType, width, height) = await ImageAttachmentResizer.ResizeIfNeededAsync(sourceStream, inputMime);
-                    string base64 = Convert.ToBase64String(bytes);
-
-                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                    using (var previewMs = new InMemoryRandomAccessStream())
-                    {
-                        using (var writer = new DataWriter(previewMs.GetOutputStreamAt(0)))
-                        {
-                            writer.WriteBytes(bytes);
-                            await writer.StoreAsync();
-                        }
-                        previewMs.Seek(0);
-                        await bitmap.SetSourceAsync(previewMs);
-                    }
-
-                    var item = new ImageAttachmentItem
-                    {
-                        FileName = file.Name,
-                        FilePath = file.Path,
-                        ByteSize = bytes.Length,
-                        Base64Data = base64,
-                        MimeType = mimeType,
-                        IsImage = true,
-                        PreviewImage = bitmap,
-                        ThumbnailImage = bitmap
-                    };
-
-                    PendingAttachments.Add(item);
-                }
-                else
-                {
-                    if (props.Size > MaxTextAttachmentBytes)
-                    {
-                        ShowAgentInlineStatus($"File '{file.Name}' exceeds the allowed 5MB limit.");
-                        return;
-                    }
-
-                    string? textContent = null;
-                    if (IsTextOrCodeFile(file.Name))
-                    {
-                        try
-                        {
-                            using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
-                            var bytes = await ReadBoundedBytesAsync(readStream, MaxTextAttachmentBytes);
-                            if (bytes is null)
-                            {
-                                ShowAgentInlineStatus($"File '{file.Name}' exceeds the allowed 5MB limit.");
-                                return;
-                            }
-
-                            using var textStream = new System.IO.MemoryStream(bytes, writable: false);
-                            using var reader = new System.IO.StreamReader(textStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-                            textContent = await reader.ReadToEndAsync();
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[ChatView] Could not read file as UTF-8: {ex.Message}");
-                        }
-                    }
-
-                    var item = new ImageAttachmentItem
-                    {
-                        FileName = file.Name,
-                        FilePath = file.Path,
-                        ByteSize = (long)props.Size,
-                        TextContent = textContent,
-                        IsImage = false,
-                        MimeType = "application/octet-stream"
-                    };
-
-                    PendingAttachments.Add(item);
-                }
-
-                AttachmentPreviewContainer.Visibility = Visibility.Visible;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error adding attachment: {ex.Message}");
-            }
-        }
-
-        private static Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes) =>
-            Services.ChatAttachmentPolicy.ReadBoundedBytesAsync(stream, maximumBytes);
-
-        private static bool IsImageFile(string name) => Services.ChatAttachmentPolicy.IsImageFile(name);
-
-        private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
-
-        /// <summary>
-        /// A bare typed "Continue" (no attachments) resumes a resumable run
-        /// instead of starting a new turn. Case-insensitive; surrounding
-        /// whitespace is ignored.
-        /// </summary>
-        public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
-        {
-            ArgumentNullException.ThrowIfNull(text);
-            ArgumentNullException.ThrowIfNull(attachments);
-            return attachments.Count == 0
-                && string.Equals(text.Trim(), "Continue", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task SendCurrentMessageAsync()
@@ -2679,8 +2349,8 @@ namespace RuApp.Views
                 return;
             }
 
-            await EnsureAgentSessionAsync(cancellationToken);
 
+            await EnsureAgentSessionAsync(cancellationToken);
             string workspace = AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)
                 ?? Environment.CurrentDirectory;
 
@@ -2863,13 +2533,25 @@ namespace RuApp.Views
             }
 
             _terminalFailureCardContent = null;
-
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
             _agentDeltaKeys.Clear();
-            _agentActivityVisible = false;
             UpdateAgentInlineState();
         }
+        public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            ArgumentNullException.ThrowIfNull(attachments);
+            return attachments.Count == 0
+                && string.Equals(text.Trim(), "Continue", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes) =>
+            Services.ChatAttachmentPolicy.ReadBoundedBytesAsync(stream, maximumBytes);
+
+        private static bool IsImageFile(string name) => Services.ChatAttachmentPolicy.IsImageFile(name);
+
+        private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
 
         private void FailActiveAgentReply(Exception exception)
         {
@@ -3095,32 +2777,6 @@ namespace RuApp.Views
             return false;
         }
 
-        private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement fe && fe.Tag is ImageAttachmentItem item && item.PreviewImage is not null && XamlRoot is not null)
-            {
-                var image = new Image
-                {
-                    Source = item.PreviewImage,
-                    Stretch = Stretch.Uniform,
-                    MaxWidth = 800,
-                    MaxHeight = 600,
-                };
-                var dialog = new ContentDialog
-                {
-                    Title = string.IsNullOrWhiteSpace(item.FileName) ? "Attached image" : item.FileName,
-                    Content = new ScrollViewer
-                    {
-                        Content = image,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    },
-                    CloseButtonText = "Close",
-                    XamlRoot = XamlRoot,
-                };
-                await dialog.ShowAsync();
-            }
-        }
 
         private static bool IsTerminalStatus(string? status) => status is
             "completed" or "failed" or "cancelled" or "interrupted";
@@ -3134,24 +2790,12 @@ namespace RuApp.Views
 
             string status = exception switch
             {
-                AgentApiException api => api.ErrorCode switch
-                {
-                    "invalid_workspace" => "Invalid or non-existent workspace folder.",
-                    "workspace_busy" => "Workspace is currently in use by another Agent session.",
-                    "preset_mismatch" or "preset_version_conflict" => "Permission preset has changed. Please select a preset and try again.",
-                    "session_create_failed" => "Failed to create a session for Coding Agent. Check backend and try again.",
-                    "session_not_found" or "invalid_session_id" => "Chat session is no longer valid. Send a message to create a new session.",
-                    "unauthorized" => "Agent session credentials are no longer valid. Please restart backend.",
-                    "agent_store_unavailable" or "harness_store_unavailable" => "Agent database is temporarily unavailable. Check permissions or restart.",
-                    _ => !string.IsNullOrWhiteSpace(api.Message) && !string.Equals(api.Message, api.ErrorCode, StringComparison.OrdinalIgnoreCase)
-                        ? $"Coding Agent could not start ({api.ErrorCode}: {api.Message}). Open Tools → Activity Log to check."
-                        : $"Coding Agent could not start ({api.ErrorCode}). Open Tools → Activity Log to check."
-                },
+                AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message),
                 _ => $"Coding Agent could not start: {exception.Message}"
             };
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentApprovalPanel.Visibility = Visibility.Collapsed;
+            ApprovalPanel.Hide();
         }
 
         private bool HasRenderedAgentReply() =>
@@ -3215,17 +2859,14 @@ namespace RuApp.Views
                 return null;
             }
 
-            var normalizedHistory = history
-                .Select(item => (
-                    item.Role,
-                    Content: string.Equals(item.Role, "assistant", StringComparison.Ordinal)
-                        ? StripDisplayMarkers(item.Content)
-                        : item.Content))
+            var projectedHistory = SessionHistoryProjection.Project(history);
+            var normalizedHistory = projectedHistory
+                .Select(row => (row.Role, row.Content))
                 .ToList();
-            string? latestAssistant = history
-                .LastOrDefault(item => string.Equals(item.Role, "assistant", StringComparison.Ordinal))
-                .Content;
-            latestAssistant = StripDisplayMarkers(latestAssistant ?? string.Empty);
+            string? latestAssistant = projectedHistory
+                .LastOrDefault(row => string.Equals(row.Role, "assistant", StringComparison.Ordinal))
+                ?.Content ?? string.Empty;
+            int lastAssistantIndex = SessionHistoryProjection.LastAssistantIndex(history);
             bool preserveStreamedReply = ChatHistoryReloadPolicy.ShouldPreserveStreamedReply(
                 normalizedHistory,
                 streamedReply);
@@ -3236,9 +2877,7 @@ namespace RuApp.Views
                 try
                 {
                     if (preserveStreamedReply
-                        && _activeAgentAssistantMessage is { } streamedMessage
-                        && !string.IsNullOrWhiteSpace(streamedReply)
-                        && !ModelToolSelectionParser.LooksLikeToolSelection(streamedReply))
+                        && _activeAgentAssistantMessage is { } streamedMessage)
                     {
                         if (!Messages.Contains(streamedMessage))
                         {
@@ -3273,18 +2912,25 @@ namespace RuApp.Views
                     DetachAgentActivitiesFromMessages();
                     Messages.Clear();
                     int assistantCount = 0;
-                    int lastAssistantIndex = history.FindLastIndex(
-                        item => string.Equals(item.Role, "assistant", StringComparison.Ordinal));
-                    for (int index = 0; index < history.Count; index++)
+                    // Live rows belong to the turn that just ended. They may only
+                    // ride on history's last assistant when it is the final
+                    // persisted message; otherwise the turn has no persisted
+                    // assistant yet (deny/fail) and the rows need their own bubble.
+                    bool attachLive = SessionHistoryProjection.AttachLiveToLastAssistant(
+                        projectedHistory.Count, lastAssistantIndex, AgentActivities.Count);
+                    bool liveAttached = false;
+                    for (int index = 0; index < projectedHistory.Count; index++)
                     {
-                        var (role, content) = history[index];
+                        var row = projectedHistory[index];
                         // A machine tool envelope must never render as chat text
                         // (e.g. a repeated call that failed the run). Drop it.
-                        if (string.Equals(role, "assistant", StringComparison.Ordinal)
-                            && ModelToolSelectionParser.LooksLikeToolSelection(StripDisplayMarkers(content)))
+                        if (!row.Render)
                         {
                             continue;
                         }
+
+                        string role = row.Role;
+                        string content = row.Content;
 
                         ObservableCollection<AgentActivityItem>? activities = null;
                         List<ActivitySplitOffset>? splitOffsets = null;
@@ -3292,12 +2938,17 @@ namespace RuApp.Views
                         {
                             if (index == lastAssistantIndex)
                             {
-                                activities = AgentActivities.Count > 0
-                                    ? new ObservableCollection<AgentActivityItem>(AgentActivities)
-                                    : (assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null);
-                                splitOffsets = AgentActivities.Count > 0
-                                    ? TakeSplitOffsetSnapshot(AgentActivities)
-                                    : (assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null);
+                                if (attachLive)
+                                {
+                                    activities = new ObservableCollection<AgentActivityItem>(AgentActivities);
+                                    splitOffsets = TakeSplitOffsetSnapshot(AgentActivities);
+                                    liveAttached = true;
+                                }
+                                else
+                                {
+                                    activities = assistantCount < existingActivities.Count ? existingActivities[assistantCount] : null;
+                                    splitOffsets = assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null;
+                                }
                             }
                             else if (assistantCount < existingActivities.Count)
                             {
@@ -3317,6 +2968,23 @@ namespace RuApp.Views
                         };
                         RebuildMessageSegments(restoredMessage);
                         Messages.Add(restoredMessage);
+                    }
+
+                    if (Services.ReloadActivitiesPolicy.AppendOrphanedActivities(AgentActivities.Count, liveAttached))
+                    {
+                        // The ended turn has live rows but no persisted assistant
+                        // (denied/failed before any reply text). Keep the rows in
+                        // their own trailing bubble instead of dropping them.
+                        var orphan = new ChatMessageItem
+                        {
+                            Role = "assistant",
+                            Content = StripDisplayMarkers(streamedReply ?? string.Empty),
+                            Usage = _activeAgentUsage,
+                            AgentActivities = new ObservableCollection<AgentActivityItem>(AgentActivities),
+                            ActivitySplitOffsets = TakeSplitOffsetSnapshot(AgentActivities),
+                        };
+                        RebuildMessageSegments(orphan);
+                        Messages.Add(orphan);
                     }
 
                     if (history.Count > 0)
@@ -3363,54 +3031,107 @@ namespace RuApp.Views
             return preserveStreamedReply ? streamedReply : latestAssistant;
         }
 
-        private void ApplyInputWidth()
+
+        private ScrollViewer? _chatScrollViewer;
+
+        /// <summary>
+        /// The ListView's own scroll host. The transcript ListView virtualizes,
+        /// so scrolling, offsets and follow state all come from this host.
+        /// Resolved lazily because the template part only exists after render.
+        /// </summary>
+        private ScrollViewer? ChatScrollViewer
         {
-            if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
-
-            double horizontalInset = RootGrid.ActualWidth < NarrowWidthThreshold
-                ? NarrowHorizontalInset
-                : RootGrid.ActualWidth < MediumWidthThreshold
-                    ? MediumHorizontalInset
-                    : WideHorizontalInset;
-            double availableWidth = Math.Max(MinAvailableInputWidth, RootGrid.ActualWidth - horizontalInset);
-            double targetWidth = Math.Min(ReadingColumnMaxWidth, availableWidth);
-
-            if (WelcomeHeroPanel != null)
+            get
             {
-                WelcomeHeroPanel.Width = targetWidth;
-            }
+                if (_chatScrollViewer is null && ChatListView is not null)
+                {
+                    _chatScrollViewer = FindDescendantScrollViewer(ChatListView);
+                }
 
-            if (InputContainer != null)
-            {
-                InputContainer.Width = targetWidth;
-            }
-
-            if (InputBorder != null)
-            {
-                InputBorder.Width = targetWidth;
-            }
-
-            if (ChatContentGrid != null)
-            {
-                ChatContentGrid.Width = targetWidth;
-            }
-
-            if (ChatListView != null)
-            {
-                ChatListView.Width = targetWidth;
+                return _chatScrollViewer;
             }
         }
 
+        private static ScrollViewer? FindDescendantScrollViewer(DependencyObject root)
+        {
+            var queue = new Queue<DependencyObject>();
+            queue.Enqueue(root);
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                if (current is ScrollViewer viewer)
+                {
+                    return viewer;
+                }
+
+                for (var index = 0; index < VisualTreeHelper.GetChildrenCount(current); index++)
+                {
+                    queue.Enqueue(VisualTreeHelper.GetChild(current, index));
+                }
+            }
+
+            return null;
+        }
+
+        private async void OnImageAttachmentClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.Tag is ImageAttachmentItem item && item.PreviewImage is not null && XamlRoot is not null)
+            {
+                var image = new Image
+                {
+                    Source = item.PreviewImage,
+                    Stretch = Stretch.Uniform,
+                    MaxWidth = 800,
+                    MaxHeight = 600,
+                };
+                var dialog = new ContentDialog
+                {
+                    Title = string.IsNullOrWhiteSpace(item.FileName) ? "Attached image" : item.FileName,
+                    Content = new ScrollViewer
+                    {
+                        Content = image,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    },
+                    CloseButtonText = "Close",
+                    XamlRoot = XamlRoot,
+                };
+                await dialog.ShowAsync();
+            }
+        }
+
+
         private void ScrollChatToBottom()
         {
-            if (ChatScrollHost.ScrollableHeight > 0)
+            var scroller = ChatScrollViewer;
+            if (scroller is null)
             {
-                double verticalOffset = ChatScrollHost.VerticalOffset;
-                double maxOffset = ChatScrollHost.ScrollableHeight;
+                QueueScrollRetry();
+                return;
+            }
+
+            if (scroller.ScrollableHeight > 0)
+            {
+                double verticalOffset = scroller.VerticalOffset;
+                double maxOffset = scroller.ScrollableHeight;
                 bool nearBottom = maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
                 if (nearBottom || _followOutput)
                 {
-                    ChatScrollHost.ChangeView(null, maxOffset, null, disableAnimation: true);
+                    // Streaming snapshots and activity batches can arrive dozens
+                    // of times per second. A ChangeView forces a layout pass, so
+                    // coalesce them: the eye cannot track faster than this, but
+                    // the dispatcher queue can drown in it and stall the feed
+                    // into visible bursts.
+                    long now = Environment.TickCount64;
+                    if (now - _lastScrollChangeTick >= ScrollChangeMinIntervalMs)
+                    {
+                        _lastScrollChangeTick = now;
+                        scroller.ChangeView(null, maxOffset, null, disableAnimation: true);
+                    }
+                    else
+                    {
+                        QueueScrollRetry();
+                    }
                 }
                 else
                 {
@@ -3418,19 +3139,38 @@ namespace RuApp.Views
                 }
                 return;
             }
+            QueueScrollRetry();
+        }
+
+        private void QueueScrollRetry()
+        {
+            if (_scrollRetryQueued)
+            {
+                return;
+            }
+
+            _scrollRetryQueued = true;
             DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RetryScrollAfterLayout);
         }
 
         private void RetryScrollAfterLayout()
         {
-            if (ChatScrollHost.ScrollableHeight > 0)
+            _scrollRetryQueued = false;
+            var scroller = ChatScrollViewer;
+            if (scroller is null)
             {
-                double verticalOffset = ChatScrollHost.VerticalOffset;
-                double maxOffset = ChatScrollHost.ScrollableHeight;
+                return;
+            }
+
+            if (scroller.ScrollableHeight > 0)
+            {
+                double verticalOffset = scroller.VerticalOffset;
+                double maxOffset = scroller.ScrollableHeight;
                 bool nearBottom = maxOffset - verticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
                 if (nearBottom)
                 {
-                    ChatScrollHost.ChangeView(null, maxOffset, null, disableAnimation: true);
+                    _lastScrollChangeTick = Environment.TickCount64;
+                    scroller.ChangeView(null, maxOffset, null, disableAnimation: true);
                 }
                 else
                 {
@@ -3439,43 +3179,56 @@ namespace RuApp.Views
             }
         }
 
-        private readonly Dictionary<string, string> _composerDraftBySession = new(StringComparer.Ordinal);
+        private long _lastScrollChangeTick;
+        private bool _scrollRetryQueued;
+        private const long ScrollChangeMinIntervalMs = 120;
+
+        // The draft rule (what survives a session switch, what an empty box means)
+        // lives in ComposerDraftStore; the view only moves text in and out of the box.
+        private readonly ComposerDraftStore _composerDrafts = new();
         private bool _newMessagesPillWired;
         private bool _followOutput = true;
 
         private void RestoreComposerDraft(string sessionId)
         {
-            if (_composerDraftBySession.TryGetValue(sessionId, out var draft)
-                && ChatInputTextBox is not null
+            string draft = _composerDrafts.Restore(sessionId);
+            if (ChatInputTextBox is not null
                 && !string.Equals(ChatInputTextBox.Text, draft, StringComparison.Ordinal))
             {
                 ChatInputTextBox.Text = draft;
             }
         }
 
-        private void ClearComposerDraft(string sessionId) => _composerDraftBySession.Remove(sessionId);
+        private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
 
         private void EnsureNewMessagesPillWired()
         {
-            if (_newMessagesPillWired || ChatScrollHost is null)
+            if (_newMessagesPillWired)
+            {
+                return;
+            }
+
+            var scroller = ChatScrollViewer;
+            if (scroller is null)
             {
                 return;
             }
 
             _newMessagesPillWired = true;
-            ChatScrollHost.ViewChanged += (_, _) => OnChatScrollViewChanged();
+            scroller.ViewChanged += (_, _) => OnChatScrollViewChanged();
         }
 
         private void OnChatScrollViewChanged()
         {
-            if (ChatScrollHost is null || NewMessagesPill is null)
+            var scroller = ChatScrollViewer;
+            if (scroller is null || NewMessagesPill is null)
             {
                 return;
             }
 
-            double maxOffset = ChatScrollHost.ScrollableHeight;
+            double maxOffset = scroller.ScrollableHeight;
             _followOutput = maxOffset <= 0
-                || maxOffset - ChatScrollHost.VerticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
+                || maxOffset - scroller.VerticalOffset <= Services.UiTiming.ChatFollowThresholdPx;
             if (_followOutput)
             {
                 NewMessagesPill.Visibility = Visibility.Collapsed;
@@ -3500,7 +3253,7 @@ namespace RuApp.Views
                 NewMessagesPill.Visibility = Visibility.Collapsed;
             }
 
-            ChatScrollHost?.ChangeView(null, ChatScrollHost?.ScrollableHeight, null, disableAnimation: true);
+            ChatScrollViewer?.ChangeView(null, ChatScrollViewer?.ScrollableHeight, null, disableAnimation: true);
             ChatInputTextBox?.Focus(FocusState.Programmatic);
         }
 
@@ -3538,18 +3291,13 @@ namespace RuApp.Views
             await StopActiveAgentAsync();
         }
 
-        private async void OnAgentApproveClick(object sender, RoutedEventArgs e)
+        private async void OnApprovalDecisionRequested(object? sender, Controls.AgentApprovalDecidedEventArgs e)
         {
             await RunAgentActionAsync(
-                () => _agentController?.ApproveAsync() ?? Task.CompletedTask,
-                "Submitting approval…");
-        }
-
-        private async void OnAgentDenyClick(object sender, RoutedEventArgs e)
-        {
-            await RunAgentActionAsync(
-                () => _agentController?.DenyAsync() ?? Task.CompletedTask,
-                "Denying approval…");
+                () => e.Approved
+                    ? _agentController?.ApproveAsync() ?? Task.CompletedTask
+                    : _agentController?.DenyAsync() ?? Task.CompletedTask,
+                e.Approved ? "Submitting approval…" : "Denying approval…");
         }
 
         private async Task RunAgentActionAsync(Func<Task> action, string status)
@@ -3588,7 +3336,7 @@ namespace RuApp.Views
                 // cancellation races the next create request and surfaces as the
                 // misleading "workspace busy" error.
                 await StopActiveAgentAsync(force: true);
-                _composerDraftBySession[_activeSessionId] = ChatInputTextBox?.Text ?? string.Empty;
+                _composerDrafts.Save(_activeSessionId, ChatInputTextBox?.Text);
                 _activeSessionId = sessionId;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
@@ -3637,6 +3385,43 @@ namespace RuApp.Views
             }
         }
 
+        private void ApplyInputWidth()
+        {
+            if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
+
+            double horizontalInset = RootGrid.ActualWidth < NarrowWidthThreshold
+                ? NarrowHorizontalInset
+                : RootGrid.ActualWidth < MediumWidthThreshold
+                    ? MediumHorizontalInset
+                    : WideHorizontalInset;
+            double availableWidth = Math.Max(MinAvailableInputWidth, RootGrid.ActualWidth - horizontalInset);
+            double targetWidth = Math.Min(ReadingColumnMaxWidth, availableWidth);
+
+            if (WelcomeHeroPanel != null)
+            {
+                WelcomeHeroPanel.Width = targetWidth;
+            }
+
+            if (InputContainer != null)
+            {
+                InputContainer.Width = targetWidth;
+            }
+
+            if (InputBorder != null)
+            {
+                InputBorder.Width = targetWidth;
+            }
+
+            if (ChatContentGrid != null)
+            {
+                ChatContentGrid.Width = targetWidth;
+            }
+
+            if (ChatListView != null)
+            {
+                ChatListView.Width = targetWidth;
+            }
+        }
         private void OnCopyMessageContentClick(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement element && element.Tag is ChatMessageItem msg && !string.IsNullOrEmpty(msg.Content))
@@ -3778,6 +3563,199 @@ namespace RuApp.Views
             {
                 _waveTimer.Tick -= OnWaveTimerTick;
                 _waveTimer = null;
+            }
+        }
+        /// <summary>
+        /// Reads one picked file into an attachment. Images are bounded by the
+        /// image cap and decoded for the preview thumbnail; text and code files
+        /// are bounded by the text cap and read as UTF-8.
+        /// </summary>
+        private async Task AddFileAttachmentAsync(Windows.Storage.StorageFile file)
+        {
+            try
+            {
+                var props = await file.GetBasicPropertiesAsync();
+                bool isImage = IsImageFile(file.Name);
+                if (!isImage && !IsTextOrCodeFile(file.Name))
+                {
+                    ShowAgentInlineStatus($"File '{file.Name}' is not supported. Only images and text/code files are accepted.");
+                    return;
+                }
+
+                int maximumBytes = isImage ? MaxImageAttachmentBytes : MaxTextAttachmentBytes;
+                if (props.Size > (ulong)maximumBytes)
+                {
+                    ShowAgentInlineStatus(isImage
+                        ? $"Image '{file.Name}' exceeds the {maximumBytes / (1024 * 1024)} MB attachment limit."
+                        : $"File '{file.Name}' exceeds the {maximumBytes / (1024 * 1024)} MB attachment limit.");
+                    return;
+                }
+
+                using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
+                byte[]? bytes = await ReadBoundedBytesAsync(readStream, maximumBytes);
+                if (bytes is null)
+                {
+                    ShowAgentInlineStatus($"File '{file.Name}' could not be read within the attachment limit.");
+                    return;
+                }
+
+                string mimeType = isImage
+                    ? Services.ChatAttachmentPolicy.MimeForExtension(file.Name)
+                    : "text/plain";
+
+                if (isImage)
+                {
+                    // Images are normalized on the client: over-large dimensions are
+                    // scaled down and the backend's decoded-size limit is enforced
+                    // before the bytes ever leave the desktop.
+                    using var original = new System.IO.MemoryStream(bytes);
+                    using var originalStream = original.AsRandomAccessStream();
+                    var resized = await Services.ImageAttachmentResizer.ResizeIfNeededAsync(originalStream, mimeType);
+                    bytes = resized.Bytes;
+                    mimeType = resized.MimeType;
+                }
+
+                var item = new ImageAttachmentItem
+                {
+                    FileName = file.Name,
+                    FilePath = file.Path,
+                    ByteSize = bytes.LongLength,
+                    IsImage = isImage,
+                    MimeType = mimeType,
+                };
+
+                if (isImage)
+                {
+                    item.Base64Data = Convert.ToBase64String(bytes);
+                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    using var previewBytes = new System.IO.MemoryStream(bytes);
+                    using var previewStream = previewBytes.AsRandomAccessStream();
+                    await bitmap.SetSourceAsync(previewStream);
+                    item.PreviewImage = bitmap;
+                }
+                else
+                {
+                    item.TextContent = System.Text.Encoding.UTF8.GetString(bytes);
+                }
+
+                PendingAttachments.Add(item);
+                AttachmentPreviewContainer.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error adding attachment: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Ctrl+V: a clipboard bitmap becomes a screenshot attachment, clipboard
+        /// files go through the same path as the file picker.
+        /// </summary>
+        private async Task TryPasteImageFromClipboardAsync()
+        {
+            try
+            {
+                var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+                if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
+                {
+                    var streamRef = await package.GetBitmapAsync();
+                    using var stream = await streamRef.OpenReadAsync();
+                    using var readStream = stream.AsStreamForRead();
+                    byte[]? bytes = await ReadBoundedBytesAsync(readStream, MaxImageAttachmentBytes);
+                    if (bytes is null)
+                    {
+                        ShowAgentInlineStatus("The pasted image exceeds the attachment limit.");
+                        return;
+                    }
+
+                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    using var previewBytes = new System.IO.MemoryStream(bytes);
+                    using var previewStream = previewBytes.AsRandomAccessStream();
+                    await bitmap.SetSourceAsync(previewStream);
+
+                    PendingAttachments.Add(new ImageAttachmentItem
+                    {
+                        FileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
+                        ByteSize = bytes.LongLength,
+                        Base64Data = Convert.ToBase64String(bytes),
+                        MimeType = "image/png",
+                        IsImage = true,
+                        PreviewImage = bitmap,
+                    });
+
+                    AttachmentPreviewContainer.Visibility = Visibility.Visible;
+                }
+                else if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+                {
+                    var items = await package.GetStorageItemsAsync();
+                    foreach (var storageItem in items)
+                    {
+                        if (storageItem is Windows.Storage.StorageFile file)
+                        {
+                            await AddFileAttachmentAsync(file);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Clipboard image paste error: {ex.Message}");
+            }
+        }
+
+
+        private async void OnAttachImageClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var picker = new Windows.Storage.Pickers.FileOpenPicker();
+                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+                picker.FileTypeFilter.Add("*");
+
+                if (MainWindow.Instance != null)
+                {
+                    var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance);
+                    WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+                }
+
+                var files = await picker.PickMultipleFilesAsync();
+                if (files != null && files.Count > 0)
+                {
+                    foreach (var file in files)
+                    {
+                        await AddFileAttachmentAsync(file);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error picking files: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Drag-and-drop: every dropped storage file goes through the same
+        /// attachment path as the picker, so the size and type limits apply once.
+        /// </summary>
+        private async void OnInputDrop(object sender, DragEventArgs e)
+        {
+            try
+            {
+                if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+                {
+                    var items = await e.DataView.GetStorageItemsAsync();
+                    foreach (var storageItem in items)
+                    {
+                        if (storageItem is Windows.Storage.StorageFile file)
+                        {
+                            await AddFileAttachmentAsync(file);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error dropping files: {ex.Message}");
             }
         }
     }

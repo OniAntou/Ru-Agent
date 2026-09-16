@@ -176,11 +176,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// The run ended before this row's completion frame was applied: the frame can
     /// lose the race with the run's terminal transition, and frames are ignored
     /// once the controller is idle. Settle the row so it never keeps a running
-    /// affordance, and report the interruption instead of a false completion.
+    /// (or forever-waiting) affordance, and report the interruption instead of a
+    /// false completion.
     /// </summary>
     public void SettleInterruptedRun()
     {
-        if (State != AgentActivityState.Started)
+        if (State != AgentActivityState.Started && State != AgentActivityState.Waiting)
         {
             return;
         }
@@ -342,7 +343,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         _ => "Working…",
     };
 
-    public void UpdateFrom(AgentActivityModel activity)
+    /// <summary>
+    /// Applies a newer frame for the same activity id. A stale <c>Started</c>
+    /// frame arriving after the row already settled (reorder or retry) is
+    /// ignored so a finished row can never resurrect. Returns false when skipped.
+    /// </summary>
+    public bool UpdateFrom(AgentActivityModel activity)
     {
         ArgumentNullException.ThrowIfNull(activity);
         if (!string.Equals(ActivityId, activity.ActivityId, StringComparison.Ordinal))
@@ -350,8 +356,23 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             throw new ArgumentException("Activity id cannot change.", nameof(activity));
         }
 
+        if (activity.State == AgentActivityState.Started
+            && State is AgentActivityState.Completed or AgentActivityState.Failed)
+        {
+            return false;
+        }
+
         Apply(activity);
+        return true;
     }
+
+    /// <summary>
+    /// True when the row was settled by <see cref="SettleInterruptedRun"/> instead
+    /// of a real completion frame. Deferred terminal frames must not overwrite it.
+    /// </summary>
+    public bool IsSettledInterruption =>
+        State == AgentActivityState.Failed
+        && string.Equals(SafeCode, "interrupted", StringComparison.Ordinal);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

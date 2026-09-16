@@ -253,6 +253,20 @@ namespace RuApp
 
                 _settingsView = new SettingsView();
                 _settingsView.Initialize(_apiService, _providerCatalogController);
+                _settingsView.SetCurrentTheme(_currentTheme);
+                if (_chatView is not null)
+                {
+                    _settingsView.SetCurrentPreset(_chatView.CurrentAgentPreset);
+                }
+                _settingsView.ThemeChanged += nextTheme =>
+                {
+                    ApplyTheme(nextTheme);
+                    _themePreferenceStore.TrySave(nextTheme);
+                };
+                _settingsView.PresetChanged += nextPreset =>
+                {
+                    _chatView?.SetAgentPreset(nextPreset);
+                };
                 SettingsModalContent.Content = _settingsView;
 
                 _logView = new LogView();
@@ -476,6 +490,11 @@ namespace RuApp
                 SettingsModalCard.Width = Math.Min(880, Math.Max(400, SettingsModalOverlay.ActualWidth - 48));
                 SettingsModalCard.Height = Math.Min(560, Math.Max(360, SettingsModalOverlay.ActualHeight - 40));
             }
+            _settingsView?.SetCurrentTheme(_currentTheme);
+            if (_chatView is not null)
+            {
+                _settingsView?.SetCurrentPreset(_chatView.CurrentAgentPreset);
+            }
             _ = _settingsView?.RefreshProviderCatalogAsync();
 
             NavSettings.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
@@ -532,16 +551,9 @@ namespace RuApp
                 CloseSettingsPopup();
                 SetActiveNav(btn);
 
-                ContentFrame.Content = tag switch
-                {
-                    "chat" => _chatView,
-                    "log" => _logView,
-                    "diagnostics" => _diagnosticsView,
-                    "policy" => _policyControlPanel,
-                    "audit" => _auditPanel,
-                    _ => _chatView
-                };
-                if (tag == "chat")
+                var destination = Services.ShellRoutePolicy.Resolve(tag);
+                ContentFrame.Content = ViewFor(destination);
+                if (Services.ShellRoutePolicy.KeepsCatalogPolling(tag))
                 {
                     _ = _chatView?.LoadChatModelsAsync();
                     _providerCatalogController?.SetPollingActive(true);
@@ -555,10 +567,19 @@ namespace RuApp
                     _groupedCatalogs?.SetPollingActive(false);
                     _providerCatalogTimer?.Stop();
                 }
-                _diagnosticsView?.SetActive(tag == "diagnostics");
-                _logView?.SetActive(tag == "log");
+                _diagnosticsView?.SetActive(Services.ShellRoutePolicy.IsDiagnosticsActive(tag));
+                _logView?.SetActive(Services.ShellRoutePolicy.IsLogActive(tag));
             }
         }
+
+        private object? ViewFor(Services.ShellDestination destination) => destination switch
+        {
+            Services.ShellDestination.Log => _logView,
+            Services.ShellDestination.Diagnostics => _diagnosticsView,
+            Services.ShellDestination.Policy => _policyControlPanel,
+            Services.ShellDestination.Audit => _auditPanel,
+            _ => _chatView,
+        };
 
         private void OnToolsMenuItemClick(object sender, RoutedEventArgs e)
         {
@@ -571,16 +592,9 @@ namespace RuApp
             _groupedCatalogs?.SetPollingActive(false);
             _providerCatalogTimer?.Stop();
 
-            ContentFrame.Content = tag switch
-            {
-                "log" => _logView,
-                "diagnostics" => _diagnosticsView,
-                "policy" => _policyControlPanel,
-                "audit" => _auditPanel,
-                _ => _chatView
-            };
-            _diagnosticsView?.SetActive(tag == "diagnostics");
-            _logView?.SetActive(tag == "log");
+            ContentFrame.Content = ViewFor(Services.ShellRoutePolicy.Resolve(tag));
+            _diagnosticsView?.SetActive(Services.ShellRoutePolicy.IsDiagnosticsActive(tag));
+            _logView?.SetActive(Services.ShellRoutePolicy.IsLogActive(tag));
         }
 
         public void NavigateToDiagnostics(string? correlationId = null)

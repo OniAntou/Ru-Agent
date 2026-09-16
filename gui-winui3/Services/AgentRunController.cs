@@ -20,11 +20,21 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private readonly HashSet<string> _assistantDeltaKeys = new(StringComparer.Ordinal);
     private readonly HashSet<string> _toolOutputKeys = new(StringComparer.Ordinal);
 
+    // The busy flag and status line live in OperationStatus, shared with the policy
+    // controller so both present one shape to the view. The `using static` below keeps
+    // the existing assignments and reads unchanged.
+    private readonly OperationStatus _status;
+
     private AgentRunModel? _currentRun;
-    private string _statusText = "Ready";
-    private bool _isBusy;
     private string? _currentRunId;
     private string? _waitKind;
+
+    /// <summary>
+    /// Wait kind for a run the host parked in ReconciliationRequired. Matches the
+    /// durable <c>run.state_changed</c> safe summary the host publishes for it.
+    /// </summary>
+    private const string ReconciliationWaitKind = "reconciliation_required";
+
     private string? _pendingApprovalId;
     private string? _pendingApprovalSummary;
     private string? _pendingApprovalCommand;
@@ -38,9 +48,31 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         _sink = sink;
         _synchronize = synchronize;
         _auditSink = auditSink;
+        _status = new OperationStatus(RunOnUi, "Ready");
+        _status.PropertyChanged += (_, e) => OnPropertyChanged(e.PropertyName!);
     }
 
     public ObservableCollection<AgentEventModel> Events { get; } = new();
+
+    /// <summary>True while a run is being driven. See <see cref="OperationStatus"/>.</summary>
+    public bool IsBusy => _isBusy;
+
+    /// <summary>The line the composer shows. See <see cref="OperationStatus"/>.</summary>
+    public string StatusText => _statusText;
+
+    // Internal aliases so the assignments below read as they always did while the
+    // state itself lives in OperationStatus.
+    private bool _isBusy
+    {
+        get => _status.IsBusy;
+        set => _status.SetBusy(value);
+    }
+
+    private string _statusText
+    {
+        get => _status.StatusText;
+        set => _status.SetStatus(value);
+    }
 
     public AgentRunModel? CurrentRun
     {
@@ -55,18 +87,6 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             OnPropertyChanged(nameof(CurrentRun));
             OnPropertyChanged(nameof(NeedsWorkspaceTrust));
         }
-    }
-
-    public string StatusText
-    {
-        get { lock (_gate) return _statusText; }
-        private set { lock (_gate) { _statusText = value; } OnPropertyChanged(nameof(StatusText)); }
-    }
-
-    public bool IsBusy
-    {
-        get { lock (_gate) return _isBusy; }
-        private set { lock (_gate) { _isBusy = value; } OnPropertyChanged(nameof(IsBusy)); }
     }
 
     public string? PendingApprovalId
@@ -125,7 +145,18 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     public bool CanContinue
     {
-        get { lock (_gate) return _currentRunId is not null && _waitKind == "waiting_user" && !_isCancelRequested; }
+        get
+        {
+            lock (_gate)
+            {
+                // A run parked on reconciliation also resumes through Continue: the
+                // host resolves it as an inspection-gated resume. Without this the
+                // panel offers Stop only and the run can never be resumed.
+                return _currentRunId is not null
+                    && (_waitKind == "waiting_user" || _waitKind == ReconciliationWaitKind)
+                    && !_isCancelRequested;
+            }
+        }
     }
 
     public async Task CreateAndRunAsync(CreateAgentRunRequest request, CancellationToken externalCancellation = default)
@@ -178,8 +209,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             {
                 CurrentRun = run;
                 _currentRunId = run.RunId;
-                _waitKind = run.HistoryWaitKind;
-                StatusText = $"Running: {run.RunId}";
+                _waitKind = WaitKindFor(run);
+                _statusText = $"Running: {run.RunId}";
                 RefreshCommands();
             });
 
@@ -221,17 +252,20 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     if (!_isCancelRequested
                         && !string.Equals(CurrentRun?.Status, "failed", StringComparison.Ordinal))
                     {
-                        StatusText = string.Empty;
+                        _statusText = string.Empty;
                     }
                 }
                 else if (!_isCancelRequested)
                 {
-                    StatusText = _waitKind == "waiting_user"
-                        ? "Waiting to continue. Type Continue to resume."
-                        : "Event stream ended before run completed.";
+                    _statusText = _waitKind switch
+                    {
+                        "waiting_user" => "Waiting to continue. Type Continue to resume.",
+                        ReconciliationWaitKind => "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.",
+                        _ => "Event stream ended before run completed.",
+                    };
                 }
 
-                IsBusy = false;
+                _isBusy = false;
                 RefreshCommands();
             });
         }
@@ -239,8 +273,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = "Event monitoring stopped.";
-                IsBusy = false;
+                _statusText = "Event monitoring stopped.";
+                _isBusy = false;
                 RefreshCommands();
             });
         }
@@ -252,10 +286,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 // may still own the run. Keep the run reference (Stop stays
                 // available) and say what the user can do instead of leaving a
                 // silent dead end.
-                StatusText = string.Equals(ex.GetType().Name, "OperationCanceledException", StringComparison.Ordinal)
+                _statusText = string.Equals(ex.GetType().Name, "OperationCanceledException", StringComparison.Ordinal)
                     ? "Event monitoring stopped."
                     : "Event stream ended unexpectedly. Use Stop to end the run, then send again.";
-                IsBusy = false;
+                _isBusy = false;
                 RefreshCommands();
             });
             throw;
@@ -294,7 +328,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         }
         RunOnUi(() =>
         {
-            StatusText = "Cancelling run...";
+            _statusText = "Cancelling run...";
             RefreshCommands();
         });
 
@@ -313,8 +347,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     CurrentRun = null;
                 }
 
-                StatusText = "Cancellation request sent.";
-                IsBusy = false;
+                _statusText = "Cancellation request sent.";
+                _isBusy = false;
                 RefreshCommands();
             });
         }
@@ -322,8 +356,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = $"Cancel error: {ex.Message}";
-                IsBusy = false;
+                _statusText = $"Cancel error: {ex.Message}";
+                _isBusy = false;
                 RefreshCommands();
             });
         }
@@ -348,7 +382,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             RunOnUi(() =>
             {
                 _waitKind = null;
-                StatusText = "Resume request sent.";
+                _statusText = "Resume request sent.";
                 RefreshCommands();
             });
         }
@@ -356,7 +390,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             RunOnUi(() =>
             {
-                StatusText = $"Resume error: {ex.Message}";
+                _statusText = $"Resume error: {ex.Message}";
                 RefreshCommands();
             });
         }
@@ -371,7 +405,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             throw new InvalidOperationException("No workspace trust request is pending.");
         }
 
-        RunOnUi(() => StatusText = approve
+        RunOnUi(() => _statusText = approve
             ? "Confirming workspace..."
             : "Rejecting workspace...");
         await _client.TrustAsync(
@@ -393,7 +427,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             throw new InvalidOperationException("No Agent approval is pending.");
         }
 
-        RunOnUi(() => StatusText = "Submitting approval...");
+        RunOnUi(() => _statusText = "Submitting approval...");
         // Session permission is decided server-side: Host picks the right
         // one-time token (session directory grant or ephemeral terminal token)
         // from the pending approval binding. The UI never selects a scope.
@@ -410,7 +444,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             throw new InvalidOperationException("No Agent approval is pending.");
         }
 
-        RunOnUi(() => StatusText = "Denying approval...");
+        RunOnUi(() => _statusText = "Denying approval...");
         await _client.DenyAsync(runId, approvalId, cancellationToken).ConfigureAwait(false);
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -432,7 +466,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             }
 
             CurrentRun = run;
-            _waitKind = run.HistoryWaitKind;
+            _waitKind = WaitKindFor(run);
             if (!string.Equals(run.Status, "waiting_approval", StringComparison.Ordinal))
             {
                 PendingApprovalId = null;
@@ -521,12 +555,24 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             Events.Add(model);
             if (!string.IsNullOrEmpty(model.SafeSummary))
             {
-                StatusText = model.SafeSummary;
+                _statusText = model.SafeSummary;
             }
 
-            if (!model.IsTransient && model.EventType == "continue.requested")
+            if (!model.IsTransient
+                && model.EventType == "continue.requested")
             {
                 _waitKind = "waiting_user";
+            }
+
+            // The host parks a run in ReconciliationRequired after an ambiguous
+            // tool outcome and stops driving it. Surface that as a resumable wait
+            // so the user gets a Continue affordance instead of a silent panel.
+            if (!model.IsTransient
+                && model.EventType == "run.state_changed"
+                && string.Equals(model.SafeSummary, ReconciliationWaitKind, StringComparison.Ordinal))
+            {
+                _waitKind = ReconciliationWaitKind;
+                _statusText = "Run paused: the last action was interrupted. Send Continue to resume with a read-only inspection.";
             }
 
             if (!model.IsTransient
@@ -791,6 +837,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     private static bool IsTerminalStatus(string? status) => status is
         "completed" or "failed" or "cancelled" or "interrupted";
+
+    /// <summary>
+    /// Derives the wait kind the command surface acts on from a durable run. A run
+    /// parked on reconciliation is as resumable as one parked on WaitingUser, but
+    /// it carries no HistoryWaitKind, so the status string is the only signal.
+    /// </summary>
+    private static string? WaitKindFor(AgentRunModel? run) =>
+        run?.Status == ReconciliationWaitKind ? ReconciliationWaitKind : run?.HistoryWaitKind;
 
     private bool TryApplyTerminalStreamSnapshot()
     {

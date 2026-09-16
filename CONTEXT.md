@@ -117,11 +117,12 @@ _Avoid_: global allowlist
 
 **Capability Profile**:
 The session-scoped Agent preset (`standard`, opt-in `trusted`).
-The model-visible Worker v2 list is the runtime projection of six Protocol
-definitions (`read`, `write`, `edit`, `bash`, including offline `read` with
-`op=help`, plus independently enabled standalone `web_search`/`web_fetch`
-tools with `network.search`/`network.fetch` scopes, Google HTML primary with
-DuckDuckGo HTML fallback) (approval-gated). Standard is the default: every
+The model-visible Worker v2 list is the runtime projection of eight Protocol
+definitions (`read` with `op=list|read|help`, `grep`, `glob`, `write` with
+`op=write|delete|restore`, `edit`, `bash`, plus the independently enabled
+standalone `web_search`/`web_fetch` tools with `network.search`/`network.fetch`
+scopes, Google HTML primary with DuckDuckGo HTML fallback) (approval-gated).
+Standard is the default: every
 run starts standard unless the stored session selection says trusted. Trusted
 is opt-in per session with interactive confirmation; on a clean workspace it
 auto-allows in-workspace terminal/external-directory/delete/unknown-executable

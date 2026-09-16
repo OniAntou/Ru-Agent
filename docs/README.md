@@ -2,17 +2,11 @@
 
 This directory contains only current operating documentation and accepted
 architecture decisions. Completed implementation plans and design drafts are
-kept in Git history instead of the working tree. Plans with unchecked steps
-under `docs/superpowers/plans/` and `docs/superpowers/specs/` are active work,
-not archives — see the verification note below before deleting them.
+kept in Git history instead of the working tree.
 
-> **Active plans (2026-09-10, unchecked steps remain):**
-> `plans/2026-09-10-tui-sticky-footer.md`,
-> `plans/2026-09-10-god-class-slice2.md`,
-> `specs/2026-09-10-tui-sticky-footer-design.md`.
-> The `test_completed_implementation_archives_are_not_kept_in_the_checkout`
-> guard fails while they exist; that failure is intentional until the plans
-> land, and only completed plans are removed afterwards.
+`docs/superpowers/plans/` and `docs/superpowers/specs/` are kept empty by the
+`test_completed_implementation_archives_are_not_kept_in_the_checkout` guard:
+completed plans must be removed from the checkout rather than archived here.
 
 ## Current system
 
@@ -42,6 +36,7 @@ not archives — see the verification note below before deleting them.
 - [Capability profiles](adr/0007-mode-capability-profiles.md)
 - [Shared workspace coordination](adr/0008-shared-workspace-coordination.md)
 - [Broker execution authority](adr/0009-broker-execution-authority.md)
+- [Product logic outside WinUI code-behind](adr/0010-product-logic-outside-winui-code-behind.md)
 
 Git history is the recovery source for removed dated plans and specifications.
 

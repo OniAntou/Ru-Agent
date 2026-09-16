@@ -188,6 +188,26 @@ if "%RU_XBF_FAIL%"=="1" (
 )
 echo Published !RU_XBF_COUNT! view XAML files.
 
+REM A control with its own markup compiles to Controls\*.xbf. Nothing published
+REM that folder while every control was code-only, so the first control with XAML
+REM would have loaded at runtime without its compiled markup and failed.
+if exist "%OBJ_DIR%\Controls\*.xbf" (
+    if not exist "%PUBLISH_DIR%\Controls" mkdir "%PUBLISH_DIR%\Controls"
+    set "RU_XBF_FAIL=0"
+    set /a RU_CTRL_XBF_COUNT=0
+    for %%f in ("%OBJ_DIR%\Controls\*.xbf") do (
+        copy /Y "%%f" "%PUBLISH_DIR%\Controls\"
+        if errorlevel 1 set "RU_XBF_FAIL=1"
+        if not exist "%PUBLISH_DIR%\Controls\%%~nxf" set "RU_XBF_FAIL=1"
+        set /a RU_CTRL_XBF_COUNT+=1
+    )
+    if "!RU_XBF_FAIL!"=="1" (
+        echo BUILD FAILED: Could not publish compiled control XAML.
+        exit /b 1
+    )
+    echo Published !RU_CTRL_XBF_COUNT! control XAML files.
+)
+
 call dotnet build-server shutdown >nul 2>&1
 
 echo [12/12] Build complete!

@@ -154,9 +154,12 @@ public static class DiagnosticEventPolicy
             ? evt.Component.Trim().ToLowerInvariant()
             : "host";
 
+        // The fallback code comes from the shared list. Writing the value here as well
+        // would let a record this policy sanitizes stop being recognised by whoever
+        // filters on DiagnosticCodes.Unclassified.
         var eventCode = !string.IsNullOrWhiteSpace(evt.EventCode) && SafeCodePattern.IsMatch(evt.EventCode.Trim().ToLowerInvariant())
             ? evt.EventCode.Trim().ToLowerInvariant()
-            : "diagnostic_unclassified";
+            : DiagnosticCodes.Unclassified;
 
         string? correlationId = null;
         if (!string.IsNullOrWhiteSpace(evt.CorrelationId))

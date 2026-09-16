@@ -95,15 +95,19 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("AgentPresetBox", GuiSource.AttributeValue(preset, "AutomationId"));
         Assert.Equal("Agent permission preset", GuiSource.AttributeValue(preset, "Name"));
 
-        // The two view properties the markup binds to, and the runtime assignment in
-        // UpdateSendButtonMode, all resolve from the one vocabulary. ChatView itself
-        // cannot be constructed here — it needs the XAML runtime — so the link is
-        // checked by reading the source that makes it.
+        // The markup binds the send face to the shared vocabulary, and the runtime
+        // assignment in UpdateSendButtonMode reads the same vocabulary: the two faces
+        // carry no literal glyph or announced name of their own. ChatView cannot be
+        // constructed here — it needs the XAML runtime — so the invariant is read off
+        // the method that does the assigning.
         var code = GuiSource.Text("Views", "ChatView.xaml.cs");
-        Assert.Contains("SendFaceName => AgentComposerPresentation.SendName", code, StringComparison.Ordinal);
-        Assert.Contains("SendFaceGlyph => AgentComposerPresentation.SendGlyph", code, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.SetName(SendButton, AgentComposerPresentation.StopName)", code, StringComparison.Ordinal);
-        Assert.Contains("SendButtonIcon.Glyph = AgentComposerPresentation.StopGlyph", code, StringComparison.Ordinal);
+        var literals = GuiSource.StringLiterals(GuiSource.MethodBody(code, "UpdateSendButtonMode"));
+
+        Assert.DoesNotContain(
+            literals,
+            literal => literal.Length == 1 && literal[0] >= '\uE000' && literal[0] <= '\uF8FF');
+        Assert.DoesNotContain("Send message", literals);
+        Assert.DoesNotContain("Stop Coding Agent", literals);
     }
 
     [Fact]

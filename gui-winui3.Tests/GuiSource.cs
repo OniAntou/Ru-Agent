@@ -192,4 +192,80 @@ internal static class GuiSource
 
         return element;
     }
+
+    /// <summary>
+    /// The body of a C# member, from its signature line to its matching close brace.
+    ///
+    /// Reading a method keeps an assertion about what it does honest, and unlike
+    /// searching the whole file it cannot be satisfied by an unrelated line elsewhere.
+    /// </summary>
+    public static string MethodBody(string code, string memberName)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
+
+        // The name must be the first identifier on a line: matching it anywhere would
+        // also match a call or a control statement such as `if (` inside another body,
+        // and the brace scan would then run from the wrong place. The parameter list is
+        // consumed so the scan resumes where the body must begin.
+        var signature = new System.Text.RegularExpressions.Regex(
+            @"(?m)^[ \t]*(?:[A-Za-z_][\w<>\[\],\.\?]*[ \t]+)*"
+            + System.Text.RegularExpressions.Regex.Escape(memberName)
+            + @"[ \t]*\([^)]*\)");
+        var match = signature.Match(code);
+        if (!match.Success)
+        {
+            throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" was not found.");
+        }
+
+        // The opening brace must be the next non-space character after the parameter
+        // list. Searching forward for any '{' would land on an enclosing type's body
+        // and silently return the whole class for an expression-bodied member.
+        int cursor = match.Index + match.Length;
+        while (cursor < code.Length && char.IsWhiteSpace(code[cursor]))
+        {
+            cursor++;
+        }
+
+        if (cursor >= code.Length || code[cursor] != '{')
+        {
+            throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" has no block body.");
+        }
+
+        int open = cursor;
+
+        var depth = 0;
+        for (var index = open; index < code.Length; index++)
+        {
+            if (code[index] == '{')
+            {
+                depth++;
+            }
+            else if (code[index] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return code[open..(index + 1)];
+                }
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" has an unbalanced body.");
+    }
+
+    /// <summary>Every string literal in a snippet, in source order.</summary>
+    public static IReadOnlyList<string> StringLiterals(string snippet)
+    {
+        ArgumentNullException.ThrowIfNull(snippet);
+
+        var literals = new List<string>();
+        foreach (System.Text.RegularExpressions.Match match in
+                 System.Text.RegularExpressions.Regex.Matches(snippet, "\"((?:[^\"\\\\]|\\\\.)*)\""))
+        {
+            literals.Add(match.Groups[1].Value);
+        }
+
+        return literals;
+    }
 }

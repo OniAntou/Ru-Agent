@@ -166,14 +166,15 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.False(prose.IsEditPreview);
         Assert.True(prose.HasDetail);
 
-        // An edit row that already completed is no longer a live preview, so its
-        // detail line shows again.
-        var completedEdit = Item(
+        // The marker decides the rendering, whatever the state carries it. In practice
+        // only the Started frame gets a preview, but if a marker ever arrives on another
+        // frame the row must render the two panes rather than print "@@ a ==> b" raw.
+        var markerOnAnotherFrame = Item(
             AgentActivityState.Completed,
             detail: "@@ a ==> b",
             kind: AgentActivityKind.Edit);
-        Assert.False(completedEdit.IsEditPreview);
-        Assert.True(completedEdit.HasDetail);
+        Assert.True(markerOnAnotherFrame.IsEditPreview);
+        Assert.False(markerOnAnotherFrame.HasDetail);
     }
 
     [Fact]

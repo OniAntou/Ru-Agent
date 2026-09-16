@@ -8,6 +8,67 @@ namespace RuApp.Tests;
 public sealed class AgentActivityItemTests
 {
     [Fact]
+    public void A_running_row_reports_how_long_it_has_been_running()
+    {
+        // A frame carries no duration until the tool finishes, so without a reading
+        // taken here a long call and a hung one look exactly the same.
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
+        Assert.Null(item.RunningElapsedText);
+
+        item.MarkStarted(Environment.TickCount64 - 4_000);
+
+        Assert.True(item.HasRunningElapsed);
+        Assert.Equal("4s", item.RunningElapsedText);
+    }
+
+    [Fact]
+    public void The_first_mark_wins_so_a_later_frame_cannot_reset_the_clock()
+    {
+        // A running row receives further frames; restarting on each would keep the
+        // reading near zero for as long as the tool kept reporting.
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
+
+        item.MarkStarted(Environment.TickCount64 - 8_000);
+        item.MarkStarted(Environment.TickCount64);
+
+        Assert.Equal("8s", item.RunningElapsedText);
+    }
+
+    [Fact]
+    public void A_settled_row_reports_no_running_elapsed()
+    {
+        // Once it settles the row carries the producer's own duration, and the running
+        // clock would be a second, disagreeing source for the same fact.
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
+        item.MarkStarted(Environment.TickCount64 - 3_000);
+
+        item.UpdateFrom(Activity(AgentActivityState.Completed, durationMs: 2_500));
+
+        Assert.False(item.HasRunningElapsed);
+        Assert.Null(item.RunningElapsedText);
+        Assert.Equal("2.5s", item.DurationShortText);
+    }
+
+    [Fact]
+    public void Long_running_rows_read_in_minutes()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
+        item.MarkStarted(Environment.TickCount64 - 95_000);
+
+        Assert.Equal("1m 35s", item.RunningElapsedText);
+    }
+
+    [Fact]
+    public void A_clock_that_has_not_moved_yet_does_not_render_a_negative_reading()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
+        item.MarkStarted(Environment.TickCount64 + 5_000);
+
+        Assert.Null(item.RunningElapsedText);
+        Assert.False(item.HasRunningElapsed);
+    }
+
+    [Fact]
     public void Item_renders_safe_file_metadata_and_updates_state_text()
     {
         var started = Activity(
@@ -256,6 +317,8 @@ public sealed class AgentActivityItemTests
             detail: "@@ line one\\nline two ==> line one\\nline TWO");
         var item = new AgentActivityItem(model);
 
+        // The preview marker is what chooses the two-pane rendering, so the plain
+        // detail line stands down: the row shows one or the other, never both.
         Assert.True(item.HasEditPreview);
         Assert.False(item.HasDetail);
         Assert.Equal("line one\nline two", item.EditBeforeText);
@@ -263,15 +326,32 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void Edit_completed_frame_has_no_two_pane_preview()
+    public void A_running_edit_shows_its_preview()
     {
-        var model = Activity(
+        // The regression this pins: the preview exists only on the Started frame, and
+        // the row used to hide the detail of a running edit — so the diff for the edit
+        // in front of the user was the one thing never rendered.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ a ==> b"));
+
+        Assert.True(item.IsRunning);
+        Assert.True(item.HasEditPreview);
+    }
+
+    [Fact]
+    public void An_edit_frame_without_a_preview_marker_shows_a_plain_detail()
+    {
+        // Completion frames carry no detail at all, but a frame that ever arrives with
+        // ordinary text must render as text rather than as a broken two-pane preview.
+        var item = new AgentActivityItem(Activity(
             AgentActivityState.Completed,
             kind: AgentActivityKind.Edit,
-            detail: "@@ a ==> b");
-        var item = new AgentActivityItem(model);
+            detail: "wrote 12 lines"));
 
         Assert.False(item.HasEditPreview);
+        Assert.True(item.HasDetail);
         Assert.Equal(string.Empty, item.EditBeforeText);
         Assert.Equal(string.Empty, item.EditAfterText);
     }

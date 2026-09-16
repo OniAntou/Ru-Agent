@@ -108,12 +108,23 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _detail, value);
     }
 
+    /// <summary>
+    /// Whether the row shows the plain detail line.
+    ///
+    /// The producer decides when a detail is worth sending: a terminal command while it
+    /// waits for approval, an edit preview while the edit runs. The view renders
+    /// whatever arrives. It used to hide the detail of a running edit, which is the one
+    /// frame that carries the preview at all — so the diff for the edit in front of the
+    /// user was the single thing never shown.
+    ///
+    /// A preview is not a detail line: it renders as two panes, and both at once would
+    /// print the change twice.
+    /// </summary>
     public bool HasDetail => !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
 
     /// <summary>Two-pane edit preview marker: "@@ old ==&gt; new" with escaped newlines.</summary>
     public bool IsEditPreview =>
         Kind == AgentActivityKind.Edit
-        && State == AgentActivityState.Started
         && Detail is { } detail
         && detail.StartsWith("@@ ", StringComparison.Ordinal)
         && detail.Contains(" ==> ", StringComparison.Ordinal);
@@ -319,6 +330,72 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     public bool HasDuration => DurationShortText != null;
 
+    private long _startedTick;
+
+    private bool _isElapsedTracked;
+
+    /// <summary>
+    /// Marks when this row started, so a running row can report how long it has been
+    /// running.
+    ///
+    /// A settled row carries its own duration from the producer, but a row that is
+    /// still running carries none — there is nothing to carry until it finishes. The
+    /// only clock available to the view is the wall clock, so it is recorded here and
+    /// the view refreshes the label while the row runs.
+    /// </summary>
+    public void MarkStarted(long tickCount)
+    {
+        if (_isElapsedTracked)
+        {
+            return;
+        }
+
+        _startedTick = tickCount;
+        _isElapsedTracked = true;
+    }
+
+    public bool HasStartedTick => _isElapsedTracked;
+
+    /// <summary>
+    /// How long a still-running row has been running, or null once it settles.
+    /// This is what separates a long tool call from a hung one: without it a stuck
+    /// row and a working row look identical.
+    /// </summary>
+    public string? RunningElapsedText
+    {
+        get
+        {
+            if (!IsRunning || !_isElapsedTracked)
+            {
+                return null;
+            }
+
+            long elapsedMs = Environment.TickCount64 - _startedTick;
+            return elapsedMs < 0 ? null : FormatElapsed(elapsedMs);
+        }
+    }
+
+    /// <summary>Re-reads <see cref="RunningElapsedText"/> after the clock has moved.</summary>
+    public void RefreshElapsed() => OnPropertyChanged(nameof(RunningElapsedText));
+
+    public bool HasRunningElapsed => RunningElapsedText != null;
+
+    private static string FormatElapsed(long elapsedMs)
+    {
+        if (elapsedMs < 10_000)
+        {
+            return $"{elapsedMs / 1000d:0.#}s";
+        }
+
+        var totalSeconds = (long)(elapsedMs / 1000);
+        if (totalSeconds < 60)
+        {
+            return $"{totalSeconds}s";
+        }
+
+        return $"{totalSeconds / 60}m {totalSeconds % 60:00}s";
+    }
+
     /// <summary>Glanceable duration chip for settled non-thinking rows.
     /// Thinking rows already spell the duration out in words.</summary>
     public string? DurationShortText
@@ -417,6 +494,8 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasEditPreview));
         OnPropertyChanged(nameof(EditBeforeText));
         OnPropertyChanged(nameof(EditAfterText));
+        OnPropertyChanged(nameof(RunningElapsedText));
+        OnPropertyChanged(nameof(HasRunningElapsed));
     }
 
     private string FormatSearch(string prefix)

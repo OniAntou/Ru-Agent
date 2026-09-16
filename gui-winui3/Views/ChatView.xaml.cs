@@ -961,6 +961,14 @@ namespace RuApp.Views
             {
                 var item = new AgentActivityItem(activity);
 
+                // A row that arrives already running starts its clock now: the frame
+                // carries no duration until it finishes, so this is the only reading the
+                // view can offer while the tool is still working.
+                if (item.IsRunning)
+                {
+                    item.MarkStarted(Environment.TickCount64);
+                }
+
                 _agentActivityById.Add(item.ActivityId, item);
                 InsertActivityInFeedOrder(item);
                 FreezeTextSegmentForActivity(item);
@@ -1629,6 +1637,12 @@ namespace RuApp.Views
                     continue;
                 }
                 UpdateWaveTextBlock(tb, phase, baseColor);
+
+                // The same tick is the only clock a running row has: a frame carries no
+                // duration until the tool finishes, so an elapsed reading is what tells
+                // a long call apart from a hung one. This timer already runs while any
+                // row is active, so the reading costs no additional timer.
+                owner.RefreshElapsed();
             }
 
             if (deadBlocks != null)

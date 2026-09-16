@@ -166,12 +166,38 @@ namespace RuApp.Models
                     return;
                 }
 
+                if (_segments is not null)
+                {
+                    _segments.CollectionChanged -= OnSegmentsChanged;
+                }
+
                 _segments = value;
+                if (_segments is not null)
+                {
+                    _segments.CollectionChanged += OnSegmentsChanged;
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasSegments));
                 OnPropertyChanged(nameof(ShowLegacyActivityFeed));
                 OnPropertyChanged(nameof(ShowLegacyText));
             }
+        }
+
+        /// <summary>
+        /// <see cref="HasSegments"/> is derived from the collection's count, so it has to
+        /// follow the collection and not only the reference. The live turn creates the
+        /// collection empty and then adds to it, so a notification raised only by the
+        /// setter left <see cref="HasSegments"/> stuck false for the whole turn: the
+        /// segments control stayed collapsed and the legacy feed stayed on screen, which
+        /// is what made the transcript appear to empty itself mid-turn and fill in again
+        /// when the reload rebuilt the collection in one assignment.
+        /// </summary>
+        private void OnSegmentsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            OnPropertyChanged(nameof(HasSegments));
+            OnPropertyChanged(nameof(ShowLegacyActivityFeed));
+            OnPropertyChanged(nameof(ShowLegacyText));
         }
 
         public bool HasSegments => Segments?.Count > 0;

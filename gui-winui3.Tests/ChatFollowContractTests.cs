@@ -22,21 +22,20 @@ public sealed class ChatFollowContractTests
     }
 
     [Fact]
-    public void Batch_and_hold_timings_keep_progress_rows_readable()
+    public void Batch_and_wave_timings_keep_progress_rows_readable()
     {
-        // A burst of deltas is coalesced into one render pass...
-        Assert.InRange(UiTiming.ActivityFlushBatch, TimeSpan.FromMilliseconds(16), TimeSpan.FromMilliseconds(250));
+        // A burst of deltas is coalesced into one render pass, but the window must not
+        // outlast the burst: measured against a real run the frames of a single tool
+        // call span about 47ms, and a window longer than that held the whole call back
+        // and rendered it in one lump. Above one 60Hz frame, below the shortest burst.
+        Assert.InRange(UiTiming.ActivityFlushBatch, TimeSpan.FromMilliseconds(16), TimeSpan.FromMilliseconds(32));
 
-        // ...but a fast-finishing row is still held long enough to be seen, which
-        // only works if the hold outlasts the batch window.
+        // A lone frame skips the window entirely and renders on the next dispatcher
+        // turn. There is deliberately no minimum hold on a completion: holding a
+        // finished row is what made the feed stand still and then jump.
         Assert.True(
-            UiTiming.ActivityMinHold > UiTiming.ActivityFlushBatch,
-            $"MinHold {UiTiming.ActivityMinHold} must exceed FlushBatch {UiTiming.ActivityFlushBatch}.");
-
-        // The wave clock must be the fastest of the three so it animates within a hold.
-        Assert.True(
-            UiTiming.WaveFrame < UiTiming.ActivityMinHold,
-            $"WaveFrame {UiTiming.WaveFrame} must be shorter than MinHold {UiTiming.ActivityMinHold}.");
+            UiTiming.WaveFrame < TimeSpan.FromMilliseconds(47),
+            $"WaveFrame {UiTiming.WaveFrame} must be shorter than one tool-call burst.");
 
         Assert.InRange(UiTiming.ActivityWavePeriodSeconds, 0.1, 5.0);
     }

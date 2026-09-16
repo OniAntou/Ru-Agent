@@ -260,21 +260,18 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
-    public void Activity_visual_hold_and_speed_tuning_are_configured()
+    public void Activity_speed_tuning_is_configured_and_consumed()
     {
-        // The tuning lives in the shared timing class and is actually consumed.
-        Assert.InRange(UiTiming.ActivityMinHold, TimeSpan.FromMilliseconds(1), TimeSpan.FromSeconds(5));
         Assert.InRange(UiTiming.ActivityWavePeriodSeconds, 0.05, 5.0);
+        Assert.InRange(UiTiming.ActivityFlushBatch, TimeSpan.FromMilliseconds(16), TimeSpan.FromMilliseconds(250));
 
         var codeBehind = GuiSource.Text("Views", "ChatView.xaml.cs");
-        foreach (var member in new[]
-                 {
-                     "ActivityWavePeriodSeconds", "ActivityMinHold",
-                     "FlushDeferredCompletions", "EnsureHoldTimer",
-                 })
-        {
-            Assert.Contains(member, codeBehind, StringComparison.Ordinal);
-        }
+        Assert.Contains("ActivityWavePeriodSeconds", codeBehind, StringComparison.Ordinal);
+
+        // The feed renders every frame as it arrives. A completion used to wait out a
+        // minimum hold, which is what made the feed stand still and then jump.
+        Assert.DoesNotContain("ActivityMinHold", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("ActivityFlushBatch", codeBehind, StringComparison.Ordinal);
     }
 
     private static string ThemeBlock(string theme)

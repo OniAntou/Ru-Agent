@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Harness.Core;
 using RuBackend.Business;
 using RuBackend.Diagnostics;
 using Xunit;
@@ -103,6 +104,60 @@ public sealed class DiagnosticEndpointsTests
         Assert.True(root.ContainsKey("total_log_files"));
         Assert.True(root.ContainsKey("total_size_bytes"));
         Assert.True(root.ContainsKey("writer"));
+    }
+
+    [Fact]
+    public async Task GetStatus_reports_live_activity_loss()
+    {
+        // Live activity is best-effort by design: the hub drops the oldest frame rather
+        // than block a slow reader, and the projector swallows a sink that throws. Those
+        // are the right behaviours, but without these counters a frame that never
+        // arrived was indistinguishable from one that was never published.
+        //
+        // The publisher counter is process-wide, so this reads a delta rather than
+        // assuming a fresh process: other tests in this assembly publish too.
+        using var factory = new BackendWebApplicationFactory();
+        var paths = factory.Services.GetRequiredService<DataPaths>();
+        Directory.CreateDirectory(paths.LogRoot);
+
+        using var client = factory.CreateAuthenticatedClient();
+
+        static async Task<long> ReadPublisherFailuresAsync(HttpClient client)
+        {
+            var response = await client.GetAsync("/diagnostics/status");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var root = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+            return root["live_activity"]!.AsObject()["publisher_failures"]!.GetValue<long>();
+        }
+
+        long before = await ReadPublisherFailuresAsync(client);
+
+        // Force one counted loss through the same seam the runtime uses.
+        AgentActivityProjector.PublishSafe(
+            new ThrowingActivitySink(),
+            new RunId("run_" + new string('a', 32)),
+            AgentActivityProjector.ProjectModelStep(
+                new ModelStepId("step_" + new string('b', 32)),
+                AgentActivityState.Started));
+
+        long after = await ReadPublisherFailuresAsync(client);
+        Assert.Equal(before + 1, after);
+
+        var live = JsonNode.Parse(
+            await (await client.GetAsync("/diagnostics/status")).Content.ReadAsStringAsync())!
+            .AsObject()["live_activity"]!.AsObject();
+
+        Assert.True(live.ContainsKey("dropped_frames"));
+        Assert.True(live.ContainsKey("dropped_activity_frames"));
+        Assert.True(live["dropped_frames"]!.GetValue<long>() >= 0);
+        Assert.True(live["dropped_activity_frames"]!.GetValue<long>() >= 0);
+    }
+
+    /// <summary>A sink that fails the way a disconnected live subscriber does.</summary>
+    private sealed class ThrowingActivitySink : IAgentActivitySink
+    {
+        public void Publish(RunId runId, AgentActivity activity) =>
+            throw new InvalidOperationException("sink unavailable");
     }
 
     [Theory]

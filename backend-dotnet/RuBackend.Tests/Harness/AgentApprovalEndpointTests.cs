@@ -10,6 +10,17 @@ namespace RuBackend.Tests.Harness;
 
 public sealed class AgentApprovalEndpointTests
 {
+    /// <summary>
+    /// How long a run is given to reach an expected state.
+    ///
+    /// A guard against a hang, not a performance budget. Several of these tests drive
+    /// three runs in sequence through a real loopback host while the rest of the suite
+    /// runs in parallel, and at thirty seconds the last one in the chain expired often
+    /// enough to fail as "did not ask again" — a message that points at the approval
+    /// logic rather than at the clock.
+    /// </summary>
+    private static readonly TimeSpan StateDeadline = TimeSpan.FromSeconds(90);
+
     private static async Task<string> CreateSessionAsync(HttpClient client)
     {
         using var resp = await client.PostAsync("/sessions/new", null);
@@ -229,7 +240,7 @@ public sealed class AgentApprovalEndpointTests
             var runId = created.GetProperty("run_id").GetString()!;
             var workspaceId = created.GetProperty("workspace_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "run never reached waiting_approval");
             var approvalId = await ReadLatestApprovalIdAsync(client, runId);
             Assert.NotNull(approvalId);
@@ -282,7 +293,7 @@ public sealed class AgentApprovalEndpointTests
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "grant reuse");
             var runId = created.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "run never reached waiting_approval");
             var approvalId = await ReadLatestApprovalIdAsync(client, runId);
             Assert.NotNull(approvalId);
@@ -298,7 +309,7 @@ public sealed class AgentApprovalEndpointTests
                     client,
                     runId,
                     new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
-                    TimeSpan.FromSeconds(60)),
+                    StateDeadline),
                 "run did not complete after grant");
             var events = await ReadEventsAsync(client, runId);
             Assert.Equal(1, events.Count(e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested"));
@@ -338,7 +349,7 @@ public sealed class AgentApprovalEndpointTests
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "first grant");
             var runId = created.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "first run never reached waiting_approval");
             var approvalId = await ReadLatestApprovalIdAsync(client, runId);
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
@@ -347,14 +358,14 @@ public sealed class AgentApprovalEndpointTests
                 new { scope = "once", decision = "allow" });
             Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(60)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, StateDeadline),
                 "first run did not finish before second session run");
 
             var otherSessionId = await CreateSessionAsync(client);
             var otherCreated = await CreateRunAndTrustAsync(client, otherSessionId, wsPath, "new session asks");
             var otherRunId = otherCreated.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, otherRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, otherRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "new session run did not ask again");
             var otherApprovalId = await ReadLatestApprovalIdAsync(client, otherRunId);
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
@@ -363,7 +374,7 @@ public sealed class AgentApprovalEndpointTests
                 new { scope = "once", decision = "allow" });
             Assert.Equal(HttpStatusCode.OK, otherApprovalResponse.StatusCode);
             Assert.True(
-                await WaitForStatusAsync(client, otherRunId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(60)),
+                await WaitForStatusAsync(client, otherRunId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, StateDeadline),
                 "new session run did not finish before forked session run");
 
             using var forkResp = await client.PostAsJsonAsync(
@@ -375,7 +386,7 @@ public sealed class AgentApprovalEndpointTests
             var forkedCreated = await CreateRunAndTrustAsync(client, forkedSessionId, wsPath, "forked session asks");
             var forkedRunId = forkedCreated.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, forkedRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, forkedRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "forked session run did not ask again");
         }
         finally
@@ -409,7 +420,7 @@ public sealed class AgentApprovalEndpointTests
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "grant then delete");
             var runId = created.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "run never reached waiting_approval");
             var approvalId = await ReadLatestApprovalIdAsync(client, runId);
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
@@ -418,7 +429,7 @@ public sealed class AgentApprovalEndpointTests
                 new { scope = "once", decision = "allow" });
             Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, TimeSpan.FromSeconds(60)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, StateDeadline),
                 "granted run did not finish before delete");
 
             using var deleteResp = await client.DeleteAsync($"/sessions/{sessionId}");
@@ -429,7 +440,7 @@ public sealed class AgentApprovalEndpointTests
             var freshCreated = await CreateRunAndTrustAsync(client, freshSessionId, wsPath, "after delete asks");
             var freshRunId = freshCreated.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, freshRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, freshRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "fresh session run did not ask after delete");
         }
         finally
@@ -462,7 +473,7 @@ public sealed class AgentApprovalEndpointTests
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "terminal reason");
             var runId = created.GetProperty("run_id").GetString()!;
             Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
                 "terminal run never reached waiting_approval");
             var events = await ReadEventsAsync(client, runId);
             Assert.Contains(
@@ -533,7 +544,7 @@ public sealed class AgentApprovalEndpointTests
         trustResp.EnsureSuccessStatusCode();
 
         Assert.True(
-            await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, TimeSpan.FromSeconds(30)),
+            await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
             "run never reached waiting_approval");
 
         var approvalId = await ReadLatestApprovalIdAsync(client, runId);

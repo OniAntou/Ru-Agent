@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using RuBackend.Business;
+using ActivityProjector = RuAgent.Harness.Core.AgentActivityProjector;
+using LiveEventHub = RuBackend.Harness.HarnessLiveEventHub;
 
 public static class DiagnosticEndpoints
 {
@@ -100,7 +102,8 @@ public static class DiagnosticEndpoints
 
     public static IResult GetStatusAsync(
         [FromServices] DataPaths paths,
-        [FromServices] StructuredDiagnosticLogWriter? writer = null)
+        [FromServices] StructuredDiagnosticLogWriter? writer = null,
+        [FromServices] LiveEventHub? liveEvents = null)
     {
         var logDir = paths.LogRoot;
         long totalBytes = 0;
@@ -128,12 +131,23 @@ public static class DiagnosticEndpoints
             TotalBytes: totalBytes,
             ActiveFilesCount: fileCount);
 
+        // Live activity is delivered on a best-effort basis: the hub drops the oldest
+        // frame rather than block a slow reader, and the projector swallows a sink that
+        // throws. Both are the right behaviour, but until these were reported a dropped
+        // frame was invisible — there was no way to tell an activity row that never
+        // arrived from one that was never published.
         var response = new
         {
             status = "healthy",
             total_log_files = fileCount,
             total_size_bytes = totalBytes,
-            writer = snapshot
+            writer = snapshot,
+            live_activity = new
+            {
+                dropped_frames = liveEvents?.DroppedCount ?? 0,
+                dropped_activity_frames = liveEvents?.ActivityDroppedCount ?? 0,
+                publisher_failures = ActivityProjector.DroppedPublishCount,
+            }
         };
 
         return Results.Ok(response);

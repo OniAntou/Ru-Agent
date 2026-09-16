@@ -14,13 +14,21 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class SkillConnectionTests
 {
+    /// <summary>
+    /// Deadline for the websocket round trips these tests make. It guards against a
+    /// hang, not a performance budget: at five seconds it expired often enough to fail
+    /// roughly one run in four while the rest of the suite ran in parallel, and the
+    /// failure surfaced as a bare assertion with no frame to show.
+    /// </summary>
+    private static readonly TimeSpan ReceiveDeadline = TimeSpan.FromSeconds(30);
+
     [Fact]
     public async Task Skill_start_emits_bounded_events_and_one_result()
     {
         await using var fixture = await Fixture.StartAsync();
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource(ReceiveDeadline);
         await socket.ConnectAsync(fixture.WebSocketUri, cancellation.Token);
 
         await SendAsync(socket, Envelope("hello", AgentMessageTypes.Hello, new JsonObject { ["profile"] = "agent" }), cancellation.Token);
@@ -43,6 +51,11 @@ public sealed class SkillConnectionTests
         // The Broker emits one SkillEvent per executed step and exactly one
         // SkillResult. Asserting "one event then the result" only held while this
         // skill happened to execute a single step; drain until the result instead.
+        //
+        // The deadline guarding these receives is a hang guard, not a budget: it was
+        // five seconds, which is under what a dozen websocket round trips take while
+        // the rest of the suite runs in parallel, and it expired often enough to fail
+        // roughly one run in four on a loaded machine.
         var steps = new List<AgentEnvelope>();
         AgentEnvelope resultEnvelope;
         while (true)
@@ -54,7 +67,11 @@ public sealed class SkillConnectionTests
                 break;
             }
 
-            Assert.Equal(AgentMessageTypes.SkillEvent, next.MessageType);
+            // Name the frame that arrived instead of failing on a bare mismatch: this
+            // loop is the only place a wrong message type would surface.
+            Assert.True(
+                next.MessageType == AgentMessageTypes.SkillEvent,
+                $"Expected a SkillEvent or the SkillResult, received {next.MessageType}.");
 
             // A step event never carries the skill's output payload.
             Assert.DoesNotContain("output", next.Payload);
@@ -91,7 +108,7 @@ public sealed class SkillConnectionTests
         await using var fixture = await Fixture.StartAsync();
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource(ReceiveDeadline);
         await socket.ConnectAsync(fixture.WebSocketUri, cancellation.Token);
         await SendAsync(socket, Envelope("hello", AgentMessageTypes.Hello, new JsonObject()), cancellation.Token);
         _ = await ReceiveAsync(socket, cancellation.Token);
@@ -124,7 +141,7 @@ public sealed class SkillConnectionTests
         await using var fixture = await Fixture.StartAsync();
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource(ReceiveDeadline);
         await socket.ConnectAsync(fixture.WebSocketUri, cancellation.Token);
 
         await SendAsync(socket, Envelope("hello", AgentMessageTypes.Hello, new JsonObject { ["profile"] = "agent" }), cancellation.Token);
@@ -158,7 +175,7 @@ public sealed class SkillConnectionTests
         await using var fixture = await Fixture.StartAsync();
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource(ReceiveDeadline);
         await socket.ConnectAsync(fixture.WebSocketUri, cancellation.Token);
 
         await SendAsync(socket, Envelope("hello", AgentMessageTypes.Hello, new JsonObject()), cancellation.Token);
@@ -206,8 +223,7 @@ public sealed class SkillConnectionTests
             var token = "token-" + Guid.NewGuid().ToString("N");
             var descriptorPath = Path.Combine(root, "broker.json");
             var descriptor = new BrokerSessionDescriptor(
-                "http://127.0.0.1:" + GetFreePort(), token, 1, sessionRoot, DateTimeOffset.UtcNow.AddMinutes(5));
-            File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+                "http://127.0.0.1:" + GetFreePort(), token, 1, sessionRoot, DateTimeOffset.UtcNow.AddMinutes(5));            File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
             var skill = new SkillManifest(
                 "workspace.list.skill", "1.0.0",
                 new JsonObject { ["type"] = "object" },
@@ -245,8 +261,25 @@ public sealed class SkillConnectionTests
 
     private static async Task<AgentEnvelope> ReceiveAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
+        // A websocket message can arrive in several frames, and ReceiveAsync returns one
+        // frame at a time. Parsing the first frame alone reads whatever bytes happened to
+        // land together, which is truncated JSON whenever the split falls mid message —
+        // the source of the intermittent failure this helper used to cause.
         var buffer = new byte[64 * 1024];
-        var result = await socket.ReceiveAsync(buffer, cancellationToken);
-        return AgentEnvelopeCodec.Parse(Encoding.UTF8.GetString(buffer, 0, result.Count));
+        using var payload = new MemoryStream();
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await socket.ReceiveAsync(buffer, cancellationToken);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                throw new InvalidOperationException("The broker closed the socket before replying.");
+            }
+
+            payload.Write(buffer, 0, result.Count);
+        }
+        while (!result.EndOfMessage);
+
+        return AgentEnvelopeCodec.Parse(Encoding.UTF8.GetString(payload.GetBuffer(), 0, (int)payload.Length));
     }
 }

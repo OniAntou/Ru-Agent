@@ -6,6 +6,7 @@ using Xunit;
 
 namespace RuAgent.Broker.Tests.Diagnostics;
 
+[Collection(nameof(TelemetryGlobalStateCollection))]
 public sealed class BrokerTelemetryTests
 {
     [Fact]
@@ -94,3 +95,12 @@ public sealed class BrokerTelemetryTests
         Assert.NotNull(provider);
     }
 }
+
+/// <summary>
+/// OpenTelemetry listener registration is process-global: building a provider
+/// attaches a listener to every ActivitySource, and a test asserting the source is
+/// silent therefore only holds while no other test is building one. These two
+/// tests must not overlap, and neither may overlap the rest of the suite.
+/// </summary>
+[CollectionDefinition(nameof(TelemetryGlobalStateCollection), DisableParallelization = true)]
+public sealed class TelemetryGlobalStateCollection;

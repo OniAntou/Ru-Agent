@@ -339,6 +339,37 @@ public sealed class AgentActivityLifecycleTests
         Assert.Contains("Continue", reason.Activity.Detail, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Reconciliation_required_publishes_waiting_reason_activity()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(MutationToolStep());
+        var gateway = new FakeToolGateway(ToolAccessKind.Mutation)
+        {
+            ForcedReceipt = new ToolExecutionReceipt(
+                new ExecutionId("exec_22222222222222222222222222222222"),
+                new ToolCallId("call_22222222222222222222222222222222"),
+                ToolExecutionOutcome.Cancelled,
+                "process_cancelled",
+                null,
+                sideEffectsPossible: true),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
+        var reason = Assert.Single(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Status
+                && item.Activity.State == AgentActivityState.Waiting);
+        Assert.Equal("reconciliation_required", reason.Activity.SafeCode);
+        Assert.Contains("paused", reason.Activity.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         FakeToolGateway gateway,

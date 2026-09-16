@@ -402,8 +402,11 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task RunStepAsync_does_not_publish_deltas_before_receipt_validation()
+    public async Task RunStepAsync_streams_deltas_live_but_still_fails_on_an_invalid_receipt()
     {
+        // Deltas are forwarded as they arrive so the answer streams while the
+        // model writes. The receipt is still validated before the step is
+        // reported as successful: a bad receipt fails the step regardless.
         await StartServer(async context =>
         {
             using var socket = await context.WebSockets.AcceptWebSocketAsync();
@@ -430,7 +433,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                 ["type"] = "agent.step.delta",
                 ["seq"] = 1,
                 ["correlation_id"] = correlation,
-                ["payload"] = new JsonObject { ["text"] = "must stay buffered" },
+                ["payload"] = new JsonObject { ["text"] = "must stream live" },
             }.ToJsonString());
             await SendTextAsync(socket, new JsonObject
             {
@@ -478,7 +481,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                 CancellationToken.None));
 
         Assert.Equal("invalid_step", error.Code);
-        Assert.Empty(deltas);
+        // The delta reached the client live, and the rejected receipt still killed
+        // the step instead of reporting a successful one.
+        Assert.Equal(new[] { "must stream live" }, deltas);
     }
 
     [Fact]
@@ -734,7 +739,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
 
         var cancelJson = await cancelReceived.Task.WaitAsync(TimeSpan.FromSeconds(3));
         Assert.Contains("agent.step.cancel", cancelJson);
-        Assert.Empty(deltas);
+        // The single delta the worker sent before the cancel was streamed live:
+        // cancellation stops the step, it does not retract text already delivered.
+        Assert.Equal(new[] { "buffered" }, deltas);
     }
 
     [Fact]
@@ -825,6 +832,124 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal("recovered", result.Step.Text);
         Assert.Equal(["recovered"], deltas);
         Assert.Equal(2, starts);
+    }
+
+    [Fact]
+    public async Task RunStepAsync_streams_partial_text_live_and_resets_it_when_the_attempt_is_retried()
+    {
+        // The bug: deltas were buffered until Done, so a turn showed nothing while
+        // the model wrote. Streaming eagerly must not let a retried attempt stack
+        // its answer on top of the failed attempt's partial output, so attempt 2
+        // is preceded by a reset frame and continues the sequence monotonically.
+        var starts = 0;
+        await StartServer(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject { ["version"] = 2, ["capabilities"] = new JsonArray("agent.step") },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            var requestId = start["id"]!.GetValue<string>();
+            var correlation = start["correlation_id"]!.GetValue<string>();
+            if (Interlocked.Increment(ref starts) == 1)
+            {
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = requestId,
+                    ["type"] = "agent.step.delta",
+                    ["seq"] = 1,
+                    ["correlation_id"] = correlation,
+                    ["payload"] = new JsonObject { ["text"] = "half an ans" },
+                }.ToJsonString());
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = requestId,
+                    ["type"] = "error",
+                    ["seq"] = 2,
+                    ["correlation_id"] = correlation,
+                    ["payload"] = new JsonObject { ["code"] = "provider_rate_limited", ["retryable"] = true },
+                }.ToJsonString());
+                return;
+            }
+
+            // Attempt 2 restarts its own numbering at 1.
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = requestId,
+                ["type"] = "agent.step.delta",
+                ["seq"] = 1,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject { ["text"] = "the full answer" },
+            }.ToJsonString());
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = requestId,
+                ["type"] = "agent.step.done",
+                ["seq"] = 2,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "the full answer",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(new AgentWorkerClientOptions(new Uri(_url), _token))
+        {
+            StepRetryBackoffsOverride = [TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1)],
+        };
+        var request = new ModelStepRequest(
+            new RunId("run_44444444444444444444444444444444"),
+            new ModelStepId("step_44444444444444444444444444444444"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('d', 64));
+        var deltas = new List<AssistantDelta>();
+        var result = await runner.RunStepAsync(
+            request,
+            delta => { deltas.Add(delta); return ValueTask.CompletedTask; },
+            CancellationToken.None);
+
+        Assert.Equal("the full answer", result.Step.Text);
+        Assert.Equal(2, starts);
+
+        // The failed attempt's text was streamed immediately, not withheld.
+        Assert.Equal("half an ans", deltas[0].Content);
+        Assert.False(deltas[0].IsReset);
+
+        // The retry is announced by a reset, then carries the replacement answer.
+        Assert.True(deltas[1].IsReset);
+        Assert.Equal(string.Empty, deltas[1].Content);
+        Assert.Equal("the full answer", deltas[2].Content);
+
+        // Sequences stay monotonic so the client cannot mistake the retry for a
+        // duplicate frame and silently drop it.
+        var sequences = deltas.Select(delta => delta.Sequence).ToArray();
+        Assert.Equal(sequences.OrderBy(value => value).ToArray(), sequences);
+        Assert.Equal(sequences.Length, sequences.Distinct().Count());
     }
 
     [Fact]

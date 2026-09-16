@@ -22,7 +22,7 @@ public sealed class HarnessSqliteSchemaTests
         "workspace_path_claims",
         "workspace_file_snapshots",
         "workspace_change_journal",
-        "workspace_mutations",
+        "agent_file_recovery",
     ];
 
     private static readonly string[] RequiredIndexes =
@@ -61,6 +61,9 @@ public sealed class HarnessSqliteSchemaTests
         }
 
         Assert.All(RequiredTables, name => Assert.Contains(name, names));
+        // workspace_mutations was never read or written by production code; a
+        // fresh install must not create the table it was dropped from.
+        Assert.DoesNotContain("workspace_mutations", names);
         await using var indexCommand = connection.CreateCommand();
         indexCommand.CommandText =
             "SELECT name FROM sqlite_master WHERE type = 'index' AND (name LIKE '%agent_%' OR name LIKE '%workspace_%')";
@@ -82,6 +85,92 @@ public sealed class HarnessSqliteSchemaTests
         Assert.Equal(
             HarnessSqliteSchema.CurrentVersion,
             (long)(await versionCommand.ExecuteScalarAsync() ?? 0L));
+    }
+
+    [Fact]
+    public async Task Migrating_from_six_adds_file_recovery_and_drops_the_dead_mutations_table()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+
+        // Reproduce the pre-v7 shape: the lazily created recovery table is absent
+        // and the never-used workspace_mutations table is still present.
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var seed = connection.CreateCommand();
+            seed.CommandText =
+                """
+                DROP TABLE IF EXISTS agent_file_recovery;
+                CREATE TABLE IF NOT EXISTS workspace_mutations (
+                    mutation_id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    state TEXT NOT NULL
+                );
+                PRAGMA user_version = 6;
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        Assert.Equal(HarnessSqliteSchema.CurrentVersion, health.SchemaVersion);
+        await using var migrated = fixture.CreateRawConnection();
+        await migrated.OpenAsync();
+        Assert.True(await TableExistsAsync(migrated, "agent_file_recovery"));
+        Assert.False(await TableExistsAsync(migrated, "workspace_mutations"));
+    }
+
+    [Fact]
+    public async Task Migrating_from_six_preserves_recovery_rows_created_before_the_migration()
+    {
+        // A database that already wrote recovery copies through the old lazy
+        // creation must keep them: the migration is CREATE IF NOT EXISTS, not a
+        // rebuild.
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var seed = connection.CreateCommand();
+            seed.CommandText =
+                """
+                DROP TABLE IF EXISTS agent_file_recovery;
+                CREATE TABLE agent_file_recovery (
+                    recovery_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    canonical_path TEXT NOT NULL,
+                    content_sha256 TEXT NOT NULL,
+                    content_length INTEGER NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    consumed_at_utc TEXT NULL
+                );
+                INSERT INTO agent_file_recovery
+                    (recovery_id, run_id, canonical_path, content_sha256, content_length, created_at_utc, consumed_at_utc)
+                VALUES ('rec_1', 'run_1', 'C:\ws\a.txt', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 3, '2026-01-01T00:00:00Z', NULL);
+                PRAGMA user_version = 6;
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        var health = await HarnessSqliteSchema.InitializeAsync(fixture.Options, CancellationToken.None);
+
+        Assert.True(health.IsAvailable, health.ErrorCode);
+        await using var migrated = fixture.CreateRawConnection();
+        await migrated.OpenAsync();
+        await using var count = migrated.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM agent_file_recovery WHERE recovery_id = 'rec_1'";
+        Assert.Equal(1L, (long)(await count.ExecuteScalarAsync() ?? 0L));
+    }
+
+    private static async Task<bool> TableExistsAsync(SqliteConnection connection, string name)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name";
+        command.Parameters.AddWithValue("$name", name);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L) > 0;
     }
 
     [Fact]

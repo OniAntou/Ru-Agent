@@ -57,7 +57,7 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
     }
 
     [Fact]
-    public async Task Ingestion_skips_malformed_scalar_without_aborting_remaining_rows()
+    public async Task Ingestion_tolerates_malformed_scalar_with_safe_fallback()
     {
         var outboxPath = Path.Combine(_paths.LogRoot, "activity_outbox.jsonl");
         await File.WriteAllLinesAsync(outboxPath, new[]
@@ -70,9 +70,10 @@ public sealed class ActivityOutboxIngestionTests : IDisposable
         var ingestion = new ActivityOutboxIngestionService(_store, _paths);
         var ingested = await ingestion.IngestPendingAsync();
 
-        Assert.Equal(2, ingested);
+        Assert.Equal(3, ingested);
         Assert.False(File.Exists(outboxPath));
         var events = await _store.ReadAsync(100, CancellationToken.None);
-        Assert.Equal(new[] { "evt_before", "evt_after" }, events.Select(item => item.EventId));
+        Assert.Equal(new[] { "evt_before", "evt_bad", "evt_after" }, events.Select(item => item.EventId));
+        Assert.Equal("chat", events[1].Type);
     }
 }

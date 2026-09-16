@@ -199,6 +199,47 @@ public sealed class AgentReconcileEndpointTests
         }
     }
 
+    [Fact]
+    public async Task Continue_on_a_parked_run_resolves_reconciliation_without_a_snapshot_hash()
+    {
+        // The desktop client exposes only Continue for a parked run (it has no
+        // reconcile call and cannot obtain the workspace hash), so Continue must
+        // be the decision instead of answering invalid_run_transition and
+        // leaving the run stuck forever.
+        var factory = await CreateHostAsync();
+        try
+        {
+            await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
+
+            using var client = factory.CreateAuthenticatedClient();
+            using var response = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{ReconciledRunId}/continue",
+                new { });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            // Continue delegates to the reconciliation resolution, so the response
+            // carries the reconcile shape rather than the plain run projection.
+            Assert.Equal("unknown_continue", json.GetProperty("resolution").GetString());
+            Assert.Equal("running", json.GetProperty("state").GetString());
+
+            var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+            var events = new List<string>();
+            await foreach (var envelope in store.ReadEventsAsync(new RunId(ReconciledRunId), 0, CancellationToken.None))
+            {
+                events.Add(envelope.Event.Kind);
+            }
+
+            Assert.Contains("reconciliation.resolved", events);
+            var gate = factory.Services.GetRequiredService<ReconciliationInspectionGate>();
+            Assert.True(gate.IsMutationDenied(new RunId(ReconciledRunId)));
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
     // ------------------------------------------------------------------
     // Fixtures.
     // ------------------------------------------------------------------

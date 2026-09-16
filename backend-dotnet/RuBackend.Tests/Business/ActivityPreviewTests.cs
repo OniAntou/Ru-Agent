@@ -10,12 +10,13 @@ public sealed class ActivityPreviewTests
     public void FormatPreview_normalizes_whitespace_and_truncates_to_160_chars()
     {
         var longText = "  Hello   world!  " + new string('a', 200);
-        var (preview, origLen, redacted) = ActivityPreview.FormatPreview(longText);
+        var (preview, origLen, privacyRedacted, truncated) = ActivityPreview.FormatPreview(longText);
 
         Assert.True(preview.Length <= 160);
         Assert.EndsWith("...", preview);
         Assert.Equal(longText.Length, origLen);
-        Assert.True(redacted);
+        Assert.False(privacyRedacted);
+        Assert.True(truncated);
         Assert.StartsWith("Hello world! aaaa", preview);
     }
 
@@ -23,9 +24,10 @@ public sealed class ActivityPreviewTests
     public void FormatPreview_removes_private_control_metadata_and_secrets()
     {
         var text = "Check this: [[SEARCH: google]] with key sk-1234567890abcdef and Bearer token123 at https://openai.com and C:\\secret\\file.txt";
-        var (preview, _, redacted) = ActivityPreview.FormatPreview(text);
+        var (preview, _, privacyRedacted, truncated) = ActivityPreview.FormatPreview(text);
 
-        Assert.True(redacted);
+        Assert.True(privacyRedacted);
+        Assert.False(truncated);
         Assert.DoesNotContain("[[SEARCH", preview);
         Assert.DoesNotContain("sk-1234567890abcdef", preview);
         Assert.DoesNotContain("Bearer token123", preview);
@@ -40,12 +42,13 @@ public sealed class ActivityPreviewTests
     [Fact]
     public void FormatPreview_bounds_the_sanitization_input_and_requested_output()
     {
-        var (preview, originalLength, redacted) = ActivityPreview.FormatPreview(
+        var (preview, originalLength, privacyRedacted, truncated) = ActivityPreview.FormatPreview(
             new string('x', 60_000),
             int.MaxValue);
 
         Assert.Equal(60_000, originalLength);
-        Assert.True(redacted);
+        Assert.False(privacyRedacted);
+        Assert.True(truncated);
         Assert.Equal(50_000, preview.Length);
 
         Assert.Equal(string.Empty, ActivityPreview.FormatPreview("hello", 0).Preview);
@@ -75,6 +78,22 @@ public sealed class ActivityPreviewTests
         Assert.Equal("Hello Ru!", sanitized.Data["preview"]!.GetValue<string>());
         Assert.Equal(9, sanitized.Data["original_length"]!.GetValue<int>());
         Assert.False(sanitized.Data["redacted"]!.GetValue<bool>());
+        Assert.False(sanitized.Data["truncated"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public void SanitizeEvent_flags_truncated_without_confusing_it_with_redacted()
+    {
+        var rawEvent = new ActivityEvent(null, 100, "2026-08-20T00:00:00Z", "chat", "s1", new JsonObject
+        {
+            ["role"] = "user",
+            ["content"] = new string('a', 500),
+        });
+
+        var sanitized = ActivityPreview.SanitizeEvent(rawEvent);
+
+        Assert.False(sanitized.Data["redacted"]!.GetValue<bool>());
+        Assert.True(sanitized.Data["truncated"]!.GetValue<bool>());
     }
 
     [Fact]

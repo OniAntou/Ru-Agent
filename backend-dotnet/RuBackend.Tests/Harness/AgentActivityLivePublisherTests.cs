@@ -128,4 +128,41 @@ public sealed class AgentActivityLivePublisherTests
         Assert.Null(exception);
         Assert.Equal(0, hub.DroppedCount);
     }
+
+    [Fact]
+    public void Core_and_protocol_activity_kinds_stay_in_sync()
+    {
+        var core = Enum.GetNames(typeof(RuAgent.Harness.Core.AgentActivityKind));
+        var protocol = Enum.GetNames(typeof(RuAgent.Protocol.Harness.AgentActivityKind));
+        Assert.Equal(core, protocol);
+    }
+
+    [Fact]
+    public void Core_and_protocol_activity_states_stay_in_sync()
+    {
+        var core = Enum.GetNames(typeof(RuAgent.Harness.Core.AgentActivityState));
+        var protocol = Enum.GetNames(typeof(RuAgent.Protocol.Harness.AgentActivityState));
+        Assert.Equal(core, protocol);
+    }
+
+    [Fact]
+    public void PublishSafe_counts_sink_failures_without_throwing()
+    {
+        var before = AgentActivityProjector.DroppedPublishCount;
+        var activity = new AgentActivity(
+            "act_ffffffffffffffffffffffffffffffff",
+            AgentActivityKind.Status,
+            AgentActivityState.Started,
+            SafeCode: "in_progress");
+
+        AgentActivityProjector.PublishSafe(new ThrowingSink(), Run, activity);
+
+        Assert.Equal(before + 1, AgentActivityProjector.DroppedPublishCount);
+    }
+
+    private sealed class ThrowingSink : RuAgent.Harness.Core.IAgentActivitySink
+    {
+        public void Publish(RunId runId, AgentActivity activity) =>
+            throw new InvalidOperationException("sink is gone");
+    }
 }

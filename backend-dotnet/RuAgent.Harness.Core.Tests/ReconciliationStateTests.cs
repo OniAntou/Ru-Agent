@@ -246,6 +246,118 @@ public sealed class ReconciliationStateTests
             null,
             sideEffectsPossible: true);
 
+    // ------------------------------------------------------------------
+    // Durable gate projection: the gate must survive a host restart.
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void Gate_projection_is_disarmed_before_any_reconciliation()
+    {
+        Assert.False(ReconciliationGateProjection.IsMutationDenied(
+            [Event("run.state_changed", safeCode: "running")]));
+    }
+
+    [Fact]
+    public void Gate_projection_arms_on_unknown_continue()
+    {
+        Assert.True(ReconciliationGateProjection.IsMutationDenied(
+            [Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.UnknownContinueCode)]));
+    }
+
+    [Theory]
+    [InlineData("applied")]
+    [InlineData("not_applied")]
+    public void Gate_projection_stays_disarmed_for_a_direct_resolution(string resolution)
+    {
+        Assert.False(ReconciliationGateProjection.IsMutationDenied(
+            [Event("reconciliation.resolved", safeCode: resolution)]));
+    }
+
+    [Fact]
+    public void Gate_projection_clears_on_the_recorded_inspection()
+    {
+        Assert.False(ReconciliationGateProjection.IsMutationDenied(
+        [
+            Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.UnknownContinueCode),
+            Event("tool.execution.completed", safeCode: "read_only"),
+            Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.InspectionRecordedCode),
+        ]));
+    }
+
+    [Fact]
+    public void Gate_projection_rearms_when_a_later_resume_is_again_unknown()
+    {
+        // Two ambiguous outcomes in one run: the second unknown_continue must arm
+        // the gate again even though the first inspection released it.
+        Assert.True(ReconciliationGateProjection.IsMutationDenied(
+        [
+            Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.UnknownContinueCode),
+            Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.InspectionRecordedCode),
+            Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.UnknownContinueCode),
+        ]));
+    }
+
+    [Fact]
+    public void Gate_projection_ignores_a_read_only_receipt_that_is_not_the_recorded_inspection()
+    {
+        // Ordinary read-only work must not look like the inspection: only the
+        // recorded resolution releases the gate.
+        Assert.True(ReconciliationGateProjection.IsMutationDenied(
+        [
+            Event("reconciliation.resolved", safeCode: ReconciliationGateProjection.UnknownContinueCode),
+            Event("tool.execution.completed", safeCode: "read_only"),
+            Event("tool.execution.completed", safeCode: "read_only"),
+        ]));
+    }
+
+    [Fact]
+    public async Task Clearing_the_gate_is_recorded_durably_so_it_can_be_rebuilt()
+    {
+        // Arm the gate, then run one succeeded read-only call: the same commit must
+        // carry the durable marker the projection reads back.
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway(ToolAccessKind.ReadOnly)
+        {
+            ForcedReceipt = new ToolExecutionReceipt(
+                ExecutionId(),
+                ToolCallId(),
+                ToolExecutionOutcome.Succeeded,
+                "read_only",
+                null,
+                sideEffectsPossible: false),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var gate = new ReconciliationInspectionGate();
+        gate.Activate(RunId());
+        var coordinator = Coordinator(model, gateway, store, gate);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.False(gate.IsMutationDenied(RunId()));
+        var resolved = store.Commits
+            .SelectMany(commit => commit.Events)
+            .Where(item => item.Kind == HarnessEventKind.ReconciliationResolved)
+            .Select(item => item.SafeCode)
+            .ToList();
+        Assert.Contains(ReconciliationGateProjection.InspectionRecordedCode, resolved);
+    }
+
+    private static HarnessEvent Event(
+        string kind,
+        string? safeCode = null,
+        ToolExecutionOutcome? outcome = null) =>
+        new(
+            new EventId($"evt_{Guid.NewGuid():N}"),
+            RunId(),
+            1,
+            kind,
+            Epoch,
+            safeCode: safeCode,
+            toolOutcome: outcome,
+            sideEffectsPossible: outcome is null ? null : false);
+
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         FakeToolGateway gateway,

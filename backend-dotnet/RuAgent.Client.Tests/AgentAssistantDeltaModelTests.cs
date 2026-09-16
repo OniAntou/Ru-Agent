@@ -106,6 +106,32 @@ public sealed class AgentAssistantDeltaModelTests
         Assert.False(AgentAssistantDeltaModel.TryParse(duplicate, out _));
     }
 
+    [Fact]
+    public void TryParse_accepts_a_reset_frame_and_keeps_ordinary_frames_reset_free()
+    {
+        // The host emits a reset frame before a retried model step so the client
+        // drops the superseded attempt's partial text. Ordinary frames must stay
+        // exactly as they were: the parser rejects unknown fields.
+        var reset = Frame(5, new { text = string.Empty, model_step_id = StepId, reset = true });
+        var ordinary = Frame(6, new { text = "hello", model_step_id = StepId });
+
+        Assert.True(AgentAssistantDeltaModel.TryParse(reset, out var parsedReset));
+        Assert.True(parsedReset!.IsReset);
+        Assert.Equal(string.Empty, parsedReset.Text);
+
+        Assert.True(AgentAssistantDeltaModel.TryParse(ordinary, out var parsedOrdinary));
+        Assert.False(parsedOrdinary!.IsReset);
+        Assert.Equal("hello", parsedOrdinary.Text);
+    }
+
+    [Fact]
+    public void TryParse_rejects_a_reset_frame_that_carries_text()
+    {
+        var contradictory = Frame(7, new { text = "leaked", model_step_id = StepId, reset = true });
+
+        Assert.False(AgentAssistantDeltaModel.TryParse(contradictory, out _));
+    }
+
     private static SseFrame Frame(long sequence, object inner) =>
         new(
             null,

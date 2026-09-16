@@ -39,6 +39,37 @@ public sealed class StreamingProcessRunnerTests
         Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
 
     [Fact]
+    public async Task Runner_accepts_every_timeout_the_protocol_declares_valid()
+    {
+        // The tool schema and the policy evaluator both accept up to
+        // TerminalLimits.HardMaxTimeoutMs, and a request between the standard
+        // approval threshold and that maximum is exactly the case a user has to
+        // approve. The runner used to reject anything above 300 s, so an approved
+        // long-running command died as adapter_error after the user consented.
+        var runner = new StreamingProcessRunner();
+
+        var result = await runner.RunAsync(
+            CmdSpec("echo long-window", TerminalLimits.HardMaxTimeoutMs),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal("succeeded", result.Status);
+        Assert.Contains("long-window", result.StdoutHead, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Runner_rejects_a_timeout_above_the_protocol_maximum()
+    {
+        var runner = new StreamingProcessRunner();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            runner.RunAsync(
+                CmdSpec("echo too-long", TerminalLimits.HardMaxTimeoutMs + 1),
+                null,
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Normal_exit_streams_output_and_reports_success()
     {
         var runner = new StreamingProcessRunner();

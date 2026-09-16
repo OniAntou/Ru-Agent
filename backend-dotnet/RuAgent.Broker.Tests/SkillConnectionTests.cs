@@ -40,16 +40,51 @@ public sealed class SkillConnectionTests
             ["version"] = "1.0.0",
             ["input"] = new JsonObject(),
         }), cancellation.Token);
-        var eventEnvelope = await ReceiveAsync(socket, cancellation.Token);
-        var resultEnvelope = await ReceiveAsync(socket, cancellation.Token);
+        // The Broker emits one SkillEvent per executed step and exactly one
+        // SkillResult. Asserting "one event then the result" only held while this
+        // skill happened to execute a single step; drain until the result instead.
+        var steps = new List<AgentEnvelope>();
+        AgentEnvelope resultEnvelope;
+        while (true)
+        {
+            var next = await ReceiveAsync(socket, cancellation.Token);
+            if (next.MessageType == AgentMessageTypes.SkillResult)
+            {
+                resultEnvelope = next;
+                break;
+            }
 
-        Assert.Equal(AgentMessageTypes.SkillEvent, eventEnvelope.MessageType);
-        Assert.DoesNotContain("output", eventEnvelope.Payload);
+            Assert.Equal(AgentMessageTypes.SkillEvent, next.MessageType);
+
+            // A step event never carries the skill's output payload.
+            Assert.DoesNotContain("output", next.Payload);
+            Assert.NotNull(next.Payload["step_index"]);
+            steps.Add(next);
+        }
+
         Assert.Equal(AgentMessageTypes.SkillResult, resultEnvelope.MessageType);
-        Assert.Equal(ToolResultStatuses.Succeeded, resultEnvelope.Payload["status"]!.GetValue<string>());
-        Assert.NotNull(resultEnvelope.Payload["receipt_id"]);
-    }
 
+        // Report the Broker's own answer when the run did not succeed instead of
+        // failing on a bare status mismatch: a cancelled run (the receive deadline
+        // firing on a loaded machine) and a genuinely failed skill need different
+        // follow-up, and the error code is what tells them apart.
+        string status = resultEnvelope.Payload["status"]!.GetValue<string>();
+        string? errorCode = resultEnvelope.Payload["error_code"]?.GetValue<string>();
+        int reportedSteps = resultEnvelope.Payload["step_count"]!.GetValue<int>();
+
+        Assert.True(
+            string.Equals(status, ToolResultStatuses.Succeeded, StringComparison.Ordinal),
+            $"Skill did not succeed: status={status} error_code={errorCode ?? "(none)"} "
+                + $"state={resultEnvelope.Payload["state"]?.GetValue<string>()} steps={reportedSteps} "
+                + $"summary={resultEnvelope.Payload["safe_summary"]?.GetValue<string>()}");
+
+        Assert.NotNull(resultEnvelope.Payload["receipt_id"]);
+
+        // The result reports exactly the steps the stream carried, and a successful
+        // run always carried at least one.
+        Assert.Equal(steps.Count, reportedSteps);
+        Assert.NotEmpty(steps);
+    }
     [Fact]
     public async Task Skill_start_duplicate_request_id_conflicts_when_input_changes()
     {

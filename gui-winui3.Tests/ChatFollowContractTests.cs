@@ -69,12 +69,15 @@ public sealed class ChatFollowContractTests
         var pill = named["NewMessagesPill"];
         Assert.True(GuiSource.HasAttribute(pill, "AutomationId"), "The pill needs an automation id.");
 
-        // It is reachable: the markup binds it to a click handler the code-behind defines.
-        var handlers = GuiSource.ClickHandlers(document);
-        Assert.Contains(handlers, handler => handler.Contains("NewMessagesPill", StringComparison.Ordinal));
-
+        // It is reachable: every click handler the markup names is defined in the
+        // code-behind. Searching the file for one handler name would pass on a stale
+        // definition the markup no longer points at.
         var code = GuiSource.Text("Views", "ChatView.xaml.cs");
-        Assert.Contains("OnNewMessagesPillClick", code, StringComparison.Ordinal);
+        var handlers = GuiSource.ClickHandlers(document);
+        Assert.NotEmpty(handlers);
+        Assert.All(handlers, handler => Assert.True(
+            GuiSource.HasMember(code, handler),
+            $"Markup wires Click=\"{handler}\" but the code-behind does not define it."));
     }
 
     [Fact]
@@ -82,13 +85,18 @@ public sealed class ChatFollowContractTests
     {
         // Composer drafts are keyed by session, so switching chats must not carry
         // one session's half-typed message into another. The rule lives in
-        // ComposerDraftStore and is asserted there; this checks the view still uses
-        // it rather than keeping its own map.
+        // ComposerDraftStore and is asserted there; this checks the view reaches it
+        // rather than keeping a map of its own.
         var code = GuiSource.Text("Views", "ChatView.xaml.cs");
 
-        Assert.Contains("ComposerDraftStore", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("_composerDraftBySession", code, StringComparison.Ordinal);
-        Assert.Contains("RestoreComposerDraft", code, StringComparison.Ordinal);
-        Assert.Contains("ClearComposerDraft", code, StringComparison.Ordinal);
+        var restore = GuiSource.MethodBody(code, "RestoreComposerDraft");
+        Assert.Contains("_composerDrafts", restore, StringComparison.Ordinal);
+
+        // The view moves text; it does not decide what the text is. A body that reads
+        // the box to answer that would be re-deriving the rule the store already owns.
+        Assert.DoesNotContain("_composerDrafts.Save", restore, StringComparison.Ordinal);
+
+        Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.Save", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
     }
 }

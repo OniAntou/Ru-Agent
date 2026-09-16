@@ -90,11 +90,83 @@ public sealed class GuiSourceTests
     }
 
     [Fact]
-    public void An_expression_bodied_member_is_reported_as_having_no_block()
+    public void The_helpers_read_the_real_view()
     {
-        // Making this loud matters: silently returning the next method's body is how a
-        // structural assertion turns into a false pass.
-        Assert.ThrowsAny<Exception>(() => GuiSource.MethodBody(Sample, "First"));
+        // A sanity check on the shipped file: the members the contract tests extract
+        // must be extractable, so a failure there is about the view and not the helper.
+        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        Assert.Contains("_composerDrafts", GuiSource.MethodBody(code, "RestoreComposerDraft"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);
+        Assert.Contains("_composerDrafts.Save", GuiSource.MethodBody(code, "OnChatInputTyping"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_call_before_the_declaration_does_not_shadow_it()
+    {
+        // The bug this pins: a call on its own line reads exactly like a declaration, and
+        // the first match was the call — so the method appeared to have no body.
+        string source = """
+            private void Sender()
+            {
+                ClearComposerDraft(_activeSessionId);
+            }
+
+            private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
+            """;
+
+        string body = GuiSource.MethodBody(source, "ClearComposerDraft");
+
+        Assert.Contains("_composerDrafts.Clear", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("_activeSessionId", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_delegating_one_liner_is_read_without_its_neighbours()
+    {
+        // The exact shape that broke the first attempts: the member's own name also
+        // appears as a call on the same line, so the scan must anchor on the
+        // declaration and not on the call.
+        string source = """
+            private void Before() { }
+
+            private void ClearComposerDraft(string sessionId) => _composerDrafts.Clear(sessionId);
+
+            private void After() { }
+            """;
+
+        string body = GuiSource.MethodBody(source, "ClearComposerDraft");
+
+        Assert.Contains("_composerDrafts.Clear", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Before", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("After", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_block_member_whose_name_also_appears_as_a_call_is_read_correctly()
+    {
+        string source = """
+            private void RestoreComposerDraft(string sessionId)
+            {
+                _composerDrafts.Restore(sessionId);
+            }
+            """;
+
+        string body = GuiSource.MethodBody(source, "RestoreComposerDraft");
+
+        Assert.Contains("_composerDrafts.Restore", body, StringComparison.Ordinal);
+        Assert.EndsWith("}", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_expression_body_is_read_rather_than_rejected()
+    {
+        // A delegating one-liner is still the member's body, and that is what makes a
+        // "the view uses the store" assertion meaningful.
+        string body = GuiSource.MethodBody(Sample, "First");
+
+        Assert.Contains("expression", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Second", body, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -205,37 +205,71 @@ internal static class GuiSource
         ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
 
         // The name must be the first identifier on a line: matching it anywhere would
-        // also match a call or a control statement such as `if (` inside another body,
-        // and the brace scan would then run from the wrong place. The parameter list is
-        // consumed so the scan resumes where the body must begin.
-        var signature = new System.Text.RegularExpressions.Regex(
-            @"(?m)^[ \t]*(?:[A-Za-z_][\w<>\[\],\.\?]*[ \t]+)*"
-            + System.Text.RegularExpressions.Regex.Escape(memberName)
-            + @"[ \t]*\([^)]*\)");
-        var match = signature.Match(code);
-        if (!match.Success)
+        // also match a call such as `_store.Clear(` inside another body, and the brace
+        // scan would then run from the wrong place. The prefix therefore allows type
+        // words but not a qualified receiver, and the parameter list is consumed so the
+        // scan resumes where the body must begin.
+        var declaration = DeclarationPattern(memberName);
+
+        // A call on its own line reads exactly like a declaration, so the first match is
+        // often `ClearComposerDraft(sessionId);` rather than the method. Only a match
+        // followed by a body can be the declaration.
+        foreach (System.Text.RegularExpressions.Match candidate in declaration.Matches(code))
         {
-            throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" was not found.");
+            int afterParams = code.IndexOf(')', candidate.Index + candidate.Length - 1);
+            if (afterParams < 0)
+            {
+                continue;
+            }
+
+            int start = afterParams + 1;
+            while (start < code.Length && char.IsWhiteSpace(code[start]))
+            {
+                start++;
+            }
+
+            if (TryReadMemberBody(code, start, memberName, out var body))
+            {
+                return body;
+            }
         }
 
-        // The opening brace must be the next non-space character after the parameter
-        // list. Searching forward for any '{' would land on an enclosing type's body
-        // and silently return the whole class for an expression-bodied member.
-        int cursor = match.Index + match.Length;
-        while (cursor < code.Length && char.IsWhiteSpace(code[cursor]))
+        throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" was not found with a readable body.");
+    }
+
+    /// <summary>
+    /// Reads the body starting at <paramref name="start"/>, which must be an opening
+    /// brace or the arrow of an expression body.
+    /// </summary>
+    private static bool TryReadMemberBody(string code, int start, string memberName, out string body)
+    {
+        body = string.Empty;
+        if (start >= code.Length)
         {
-            cursor++;
+            return false;
         }
 
-        if (cursor >= code.Length || code[cursor] != '{')
+        // An expression-bodied member has no block, but it is still the member's body:
+        // reading it is how a delegating one-liner gets asserted.
+        if (code[start] == '=' && start + 1 < code.Length && code[start + 1] == '>')
         {
-            throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" has no block body.");
+            int expressionEnd = code.IndexOf(';', start);
+            if (expressionEnd < 0)
+            {
+                throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" has an unterminated expression body.");
+            }
+
+            body = code[start..(expressionEnd + 1)];
+            return true;
         }
 
-        int open = cursor;
+        if (code[start] != '{')
+        {
+            return false;
+        }
 
         var depth = 0;
-        for (var index = open; index < code.Length; index++)
+        for (var index = start; index < code.Length; index++)
         {
             if (code[index] == '{')
             {
@@ -246,12 +280,39 @@ internal static class GuiSource
                 depth--;
                 if (depth == 0)
                 {
-                    return code[open..(index + 1)];
+                    body = code[start..(index + 1)];
+                    return true;
                 }
             }
         }
 
         throw new Xunit.Sdk.XunitException($"Member \"{memberName}\" has an unbalanced body.");
+    }
+
+    /// <summary>
+    /// Matches a member declaration line.
+    ///
+    /// The prefix is kept to the pieces a declaration actually uses — modifiers, then
+    /// one return type — and joined to the name without allowing a space, because
+    /// allowing one lets <c>_store. Clear(</c> read as a declaration of <c>Clear</c>.
+    /// A dotted receiver never appears in the prefix, so a call cannot match.
+    /// </summary>
+    private static System.Text.RegularExpressions.Regex DeclarationPattern(string memberName) =>
+        new(@"(?m)^[ \t]*(?:(?:public|private|protected|internal|static|async|override|sealed|virtual|partial|readonly|unsafe|extern|new)[ \t]+)*"
+            + @"(?:[A-Za-z_][\w<>\[\],\?]*[ \t]+)?"
+            + System.Text.RegularExpressions.Regex.Escape(memberName)
+            + @"[ \t]*\(");
+
+    /// <summary>
+    /// Whether the code declares a member with this name.
+    ///
+    /// Used to close the loop between markup and code: a handler the XAML wires must
+    /// exist, or the control silently does nothing when clicked.
+    /// </summary>
+    public static bool HasMember(string code, string memberName)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        return !string.IsNullOrWhiteSpace(memberName) && DeclarationPattern(memberName).IsMatch(code);
     }
 
     /// <summary>Every string literal in a snippet, in source order.</summary>

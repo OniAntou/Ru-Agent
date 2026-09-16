@@ -10,6 +10,13 @@ namespace RuApp.Tests;
 /// changes, yet passes when the element stops being reachable. Reading the markup
 /// as markup keeps the test honest: it breaks on a real change to the tree and
 /// ignores formatting.
+///
+/// One kind of text assertion is still legitimate, and the helpers here exist to make
+/// it precise: that a decision lives in one place rather than being re-derived in the
+/// view. <see cref="MethodBody"/> scopes it to the member that makes the decision, and
+/// <see cref="StringLiterals"/> pins the absence of a literal that should have come
+/// from a shared module. Both are about the seam, not about wording. Asserting that a
+/// name merely appears somewhere in a file is not — that only breaks on a rename.
 /// </summary>
 internal static class GuiSource
 {

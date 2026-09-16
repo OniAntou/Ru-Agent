@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Text.Json;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
+using RuApp.Services;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -277,18 +278,36 @@ public sealed class ChatMessageAttachmentTests
     [Fact]
     public void ChatView_CS_allows_image_attachments_in_send()
     {
-        string csPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml.cs");
-        if (!File.Exists(csPath))
-        {
-            csPath = Path.Combine("Views", "ChatView.xaml.cs");
-        }
-        if (File.Exists(csPath))
-        {
-            string source = File.ReadAllText(csPath);
-            Assert.DoesNotContain("Đính kèm ảnh chưa được hỗ trợ trong Agent v1", source, StringComparison.Ordinal);
-            Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", source, StringComparison.Ordinal);
-            Assert.Contains("imageCount > 4", source, StringComparison.Ordinal);
-        }
+        // The send path caps the count from the policy constant and announces the cap
+        // from the same place. A literal in either would make the constant decorative:
+        // changing MaxImageCount would not change the limit, or the number the user reads.
+        var send = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SendCurrentMessageAsync");
+
+        Assert.Contains("ChatAttachmentPolicy.MaxImageCount", send, StringComparison.Ordinal);
+        Assert.Contains("ChatAttachmentPolicy.TooManyImagesStatus", send, StringComparison.Ordinal);
+        Assert.DoesNotContain("chưa được hỗ trợ", send, StringComparison.Ordinal);
+
+        // The attachment path resizes through the shared resizer rather than sending the
+        // original bytes.
+        var attach = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "AddFileAttachmentAsync");
+        Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", attach, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_image_cap_is_the_policy_constant()
+    {
+        // Pins the value itself, so a change on either side is deliberate.
+        Assert.Equal(4, ChatAttachmentPolicy.MaxImageCount);
+    }
+
+    [Fact]
+    public void The_too_many_images_line_names_the_cap_the_check_uses()
+    {
+        // The message and the check must not be able to disagree.
+        Assert.Contains(
+            ChatAttachmentPolicy.MaxImageCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ChatAttachmentPolicy.TooManyImagesStatus,
+            StringComparison.Ordinal);
     }
 
     [Fact]

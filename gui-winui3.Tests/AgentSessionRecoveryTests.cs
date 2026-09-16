@@ -34,42 +34,66 @@ public sealed class AgentSessionRecoveryTests
     [Fact]
     public void ChatView_retries_a_stale_session_only_through_the_recovery_helper()
     {
-        var source = File.ReadAllText(FindChatViewPath());
+        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SendAgentTurnAsync");
 
-        Assert.Contains("AgentSessionRecovery.IsRecoverable", source, StringComparison.Ordinal);
-        Assert.Contains("allowSessionRecovery", source, StringComparison.Ordinal);
-        Assert.Contains("RecoverAgentSessionAsync", source, StringComparison.Ordinal);
+        // The view asks the helper whether this failure is a stale session; it carries no
+        // list of codes of its own, which is what would drift from the API.
+        Assert.Contains("AgentSessionRecovery.IsRecoverable", body, StringComparison.Ordinal);
+
+        // The retry is gated by the caller's permission and by a one-shot claim, so a
+        // second stale failure inside the retry cannot loop.
+        Assert.Contains("allowSessionRecovery", body, StringComparison.Ordinal);
+        Assert.Contains("_agentSessionRecovery.TryBegin", body, StringComparison.Ordinal);
+
+        // And the retry disables the permission for itself.
+        Assert.Contains("allowSessionRecovery: false", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Recovery_replaces_the_session_before_replaying_the_turn()
+    {
+        // Replaying against the session that just failed would fail the same way.
+        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SendAgentTurnAsync");
+
+        int recover = body.IndexOf("await RecoverAgentSessionAsync(", StringComparison.Ordinal);
+        int replay = body.IndexOf("await SendAgentTurnAsync(", StringComparison.Ordinal);
+
+        Assert.True(recover >= 0, "A stale session must be replaced.");
+        Assert.True(replay >= 0, "The turn must be replayed once against the fresh session.");
+        Assert.True(recover < replay, "The session must be replaced before the turn is replayed.");
     }
 
     [Fact]
     public void ChatView_waits_for_the_previous_agent_run_to_cancel_before_switching_session()
     {
-        var source = File.ReadAllText(FindChatViewPath());
-        var openSession = source.IndexOf("public async Task OpenSessionAsync", StringComparison.Ordinal);
-        var switchSession = source.IndexOf("_activeSessionId = sessionId;", openSession, StringComparison.Ordinal);
+        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "OpenSessionAsync");
 
-        Assert.True(openSession >= 0);
-        Assert.True(switchSession > openSession);
-        var stopBeforeSwitch = source.LastIndexOf("await StopActiveAgentAsync(force: true);", switchSession, StringComparison.Ordinal);
+        int stop = body.IndexOf("await StopActiveAgentAsync(force: true);", StringComparison.Ordinal);
+        int switchSession = body.IndexOf("_activeSessionId = sessionId;", StringComparison.Ordinal);
+
+        Assert.True(stop >= 0, "Switching sessions must await cancellation of the previous run.");
+        Assert.True(switchSession >= 0, "OpenSessionAsync must set the active session.");
         Assert.True(
-            stopBeforeSwitch > openSession,
-            "Switching sessions must await cancellation of the previous run before changing the active session.");
+            stop < switchSession,
+            "The cancellation must be awaited before the active session changes: a "
+                + "fire-and-forget cancel races the next create request and surfaces as "
+                + "\"workspace busy\".");
     }
 
-    private static string FindChatViewPath()
+    [Fact]
+    public void The_outgoing_draft_is_saved_before_the_incoming_one_is_restored()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory.FullName, "gui-winui3", "Views", "ChatView.xaml.cs");
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
+        // Both halves key off the active session id, so saving after the switch would
+        // file the outgoing text under the incoming conversation, and restoring before
+        // it would look up the wrong id.
+        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "OpenSessionAsync");
 
-            directory = directory.Parent;
-        }
+        int save = body.IndexOf("Save(_activeSessionId", StringComparison.Ordinal);
+        int switchSession = body.IndexOf("_activeSessionId = sessionId;", StringComparison.Ordinal);
+        int restore = body.IndexOf("RestoreComposerDraft(sessionId)", StringComparison.Ordinal);
 
-        throw new FileNotFoundException("Could not locate ChatView.xaml.cs.");
+        Assert.True(save >= 0 && restore >= 0, "OpenSessionAsync must move the composer drafts.");
+        Assert.True(save < switchSession, "The outgoing draft must be saved under the outgoing session id.");
+        Assert.True(switchSession < restore, "The incoming draft must be restored after the switch.");
     }
 }

@@ -10,6 +10,14 @@ internal static class ChatAttachmentPolicy
     internal const int MaxTextAttachmentBytes = 5 * 1024 * 1024;
     internal const int MaxImageCount = 4;
 
+    /// <summary>
+    /// The line shown when a turn carries too many images. Composed from
+    /// <see cref="MaxImageCount"/> so the number the user reads cannot disagree with the
+    /// number the check uses.
+    /// </summary>
+    internal static string TooManyImagesStatus =>
+        $"Maximum {MaxImageCount} images per turn; please remove some images before sending.";
+
     internal static async Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes)
     {
         using var output = new System.IO.MemoryStream(System.Math.Min(maximumBytes, 81920));

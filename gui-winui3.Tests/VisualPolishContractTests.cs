@@ -247,11 +247,15 @@ public sealed class VisualPolishContractTests
     public void Decorative_loops_respect_the_os_animation_setting()
     {
         // Contrast with the wave above: the decorative loops must consult the
-        // accessibility setting rather than always running.
+        // accessibility setting rather than always running, and must ask the shared gate
+        // rather than reading the OS setting themselves — a second reader is how the
+        // loops come to disagree about the setting.
         foreach (var control in new[] { "WelcomeOverlay.cs", "BackgroundPathsControl.cs", "MeteorShowerField.cs" })
         {
             var source = GuiSource.Text("Controls", control);
-            Assert.Contains("AnimationsEnabled", source, StringComparison.Ordinal);
+
+            Assert.Contains("UiTiming.AnimationsEnabled", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
         }
     }
 

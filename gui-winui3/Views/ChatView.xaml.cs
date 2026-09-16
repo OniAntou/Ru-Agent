@@ -2278,9 +2278,9 @@ namespace RuApp.Views
                 UpdateSendButtonMode(isAgentRunning: true);
 
                 int imageCount = attachments.Count(static attachment => attachment.IsImage);
-                if (imageCount > 4)
+                if (imageCount > ChatAttachmentPolicy.MaxImageCount)
                 {
-                    ShowAgentInlineStatus("Maximum 4 images per turn; please remove some images before sending.");
+                    ShowAgentInlineStatus(ChatAttachmentPolicy.TooManyImagesStatus);
                     return;
                 }
 

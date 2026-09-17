@@ -293,6 +293,18 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 public sealed class AgentRuntimeLoopService : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// The interval used when no run is registered. The loop is the only thing that
+    /// can start a registered run, so an idle host must still poll — but at a quarter
+    /// of the active rate. This is a desktop agent that stays open for hours: four
+    /// wakeups per second with a database round trip each, while the user is doing
+    /// something else, is pure idle cost. The cost of the backoff is a sub-second
+    /// delay before a newly created run is picked up, which the user cannot perceive
+    /// because the first model step takes far longer than that.
+    /// </summary>
+    private static readonly TimeSpan IdlePollInterval = TimeSpan.FromMilliseconds(1000);
+
     private const int MaxConcurrentRuns = 4;
 
     private readonly AgentConversationOutboxDispatcher _dispatcher;
@@ -337,9 +349,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            var nextDelay = IdlePollInterval;
             try
             {
-                await StepOnceAsync(stoppingToken).ConfigureAwait(false);
+                var hasActiveRuns = await StepOnceAsync(stoppingToken).ConfigureAwait(false);
+                nextDelay = hasActiveRuns ? PollInterval : IdlePollInterval;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -350,11 +364,15 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 _logger.LogWarning(error, "agent runtime loop iteration failed");
             }
 
-            await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+            await Task.Delay(nextDelay, stoppingToken).ConfigureAwait(false);
         }
     }
 
-    private async Task StepOnceAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs one iteration. Returns true when at least one run is registered, which is
+    /// the signal the loop uses to choose its next poll interval.
+    /// </summary>
+    private async Task<bool> StepOnceAsync(CancellationToken cancellationToken)
     {
         // Outbox delivery first so history transitions land before any new model step.
         var dispatch = await _dispatcher.DispatchOnceAsync(cancellationToken).ConfigureAwait(false);
@@ -366,7 +384,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         var registrations = _roots.Snapshot();
         if (registrations.Count == 0)
         {
-            return;
+            return false;
         }
 
         // A long-running terminal command must not stall every other run. Keep a
@@ -394,6 +412,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         });
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
+        return true;
     }
 
     private async Task DriveRunIfRunningAsync(

@@ -17,4 +17,12 @@
     <EmbeddedResource Include="..\..\docs\operations\agent-tools.md" LogicalName="RuAgent.Broker.HelpDocs.agent-tools.md" />
     <EmbeddedResource Include="..\..\docs\operations\provider-catalog.md" LogicalName="RuAgent.Broker.HelpDocs.provider-catalog.md" />
   </ItemGroup>
+  <!-- Publish Properties -->
+  <PropertyGroup>
+    <!-- Release precompiles the assemblies to native code with crossgen2, so the
+         startup path does not pay JIT cost on first use. Debug stays uncompiled to
+         keep incremental builds fast. -->
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
+  </PropertyGroup>
 </Project>

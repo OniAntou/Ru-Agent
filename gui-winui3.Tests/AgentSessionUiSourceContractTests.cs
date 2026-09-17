@@ -244,6 +244,12 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("OnWorkspaceGroupAddClick", GuiSource.AttributeValue(groupAdd, "Click"));
         Assert.Equal("{StaticResource WorkspaceAddButtonStyle}", GuiSource.AttributeValue(groupAdd, "Style"));
 
+        // Pinned workspaces can be removed again; the folder and sessions stay.
+        var removeItem = groupTemplate.Descendants()
+            .First(element => element.Name.LocalName == "MenuFlyoutItem"
+                && GuiSource.AttributeValue(element, "Click") == "OnWorkspaceRemoveClick");
+        Assert.Equal("Remove workspace", GuiSource.AttributeValue(removeItem, "Text"));
+
         // The plus never paints a frame: every state keeps a transparent root
         // and hover only lights the glyph up.
         var addStyle = document.Descendants()
@@ -318,6 +324,10 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(
             "CreateSessionAsync",
             GuiSource.MethodBody(code, "OnWorkspaceGroupAddClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Unpin",
+            GuiSource.MethodBody(code, "OnWorkspaceRemoveClick"),
             StringComparison.Ordinal);
     }
 

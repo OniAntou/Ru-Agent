@@ -152,6 +152,15 @@
                     Background="Transparent" BorderThickness="0" Padding="10,6"
                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                     ToolTipService.ToolTip="{x:Bind Group.Path}">
+                <Button.ContextFlyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem Text="Remove workspace" Click="OnWorkspaceRemoveClick" Tag="{x:Bind Group.Key}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}"/>
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </Button.ContextFlyout>
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
                     <FontIcon Grid.Column="0" Glyph="&#xE8B7;" FontSize="14" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="1" Text="{x:Bind Group.Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
@@ -201,7 +210,7 @@
                             </Button>
 
                             <!-- Navigation Tabs -->
-                            <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
+                            <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch" Visibility="Collapsed"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
                                     AutomationProperties.Name="Chat">
@@ -278,9 +287,7 @@
                                        Foreground="{StaticResource RuMutedBrush}"
                                        TextTrimming="CharacterEllipsis"
                                        VerticalAlignment="Center" />
-                         </StackPanel>
-
-                        <Border x:Name="SidebarBottomDivider" Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
+                          </StackPanel>
 
                         <Button x:Name="ThemeToggleButton"
                                 Visibility="Collapsed"

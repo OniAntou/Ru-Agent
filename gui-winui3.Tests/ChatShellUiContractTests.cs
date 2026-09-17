@@ -21,6 +21,12 @@ public sealed class ChatShellUiContractTests
         Assert.Contains("NavChat", named);
         Assert.Contains("NavSettings", named);
 
+        // The Chat entry is retired from view but stays wired for routing.
+        Assert.Equal("Collapsed", named["NavChat"].Attribute("Visibility")?.Value);
+
+        // The footer divider above Settings is gone.
+        Assert.DoesNotContain("SidebarBottomDivider", named);
+
         // Removed surfaces must not come back as side-panel entries.
         Assert.DoesNotContain("NavVoice", named);
         Assert.DoesNotContain("NavTools", named);

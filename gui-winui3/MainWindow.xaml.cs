@@ -1281,6 +1281,22 @@ namespace RuApp
             }
         }
 
+        /// <summary>Removes a pinned workspace; its folder and sessions stay untouched.</summary>
+        private void OnWorkspaceRemoveClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement element || element.Tag is not string key) return;
+            var path = ResolveWorkspacePath(key);
+            if (path is null) return;
+
+            _workspacePins.Unpin(path);
+            if (_selectedWorkspaceKey == key)
+            {
+                _selectedWorkspaceKey = null;
+            }
+
+            RenderWorkspaceSidebar();
+        }
+
         private async void OnWorkspaceGroupAddClick(object sender, RoutedEventArgs e)
         {
             if (_apiService == null || _chatView == null) return;
@@ -1726,12 +1742,6 @@ namespace RuApp
                     SidebarBottomPanel.Padding = new Thickness(0, 8, 0, 14);
                     SidebarBottomPanel.HorizontalAlignment = HorizontalAlignment.Center;
                 }
-                if (SidebarBottomDivider != null)
-                {
-                    SidebarBottomDivider.Width = 36;
-                    SidebarBottomDivider.HorizontalAlignment = HorizontalAlignment.Center;
-                    SidebarBottomDivider.Margin = new Thickness(0, 4, 0, 8);
-                }
 
                 ConfigureMiniButton(NavNewChat, ContentNewChat, IconNewChat);
                 ConfigureMiniButton(NavChat, ContentChat, IconChat);
@@ -1757,12 +1767,6 @@ namespace RuApp
                 {
                     SidebarBottomPanel.Padding = new Thickness(14, 8, 14, 14);
                     SidebarBottomPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
-                }
-                if (SidebarBottomDivider != null)
-                {
-                    SidebarBottomDivider.Width = double.NaN;
-                    SidebarBottomDivider.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    SidebarBottomDivider.Margin = new Thickness(0, 0, 0, 8);
                 }
 
                 ConfigureFullButton(NavNewChat, ContentNewChat, IconNewChat, new Thickness(0, 0, 10, 0));

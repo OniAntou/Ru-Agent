@@ -328,6 +328,55 @@ public sealed class SessionStoreTests
         Assert.DoesNotContain(loaded.Messages, message => message == original);
     }
 
+    [Fact]
+    public async Task Append_stamps_agent_activity_only_for_ai_messages()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 17, 12, 0, 0, TimeSpan.Zero));
+        var (store, _) = CreateStore(clock);
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+
+        await store.AppendAsync(sessionId, [new SessionMessage("user", "hello")], CancellationToken.None);
+        var afterUser = await store.GetAsync(sessionId, CancellationToken.None);
+        Assert.NotNull(afterUser);
+        Assert.Null(afterUser!.LastAgentActivityAt);
+
+        clock.Advance(TimeSpan.FromMinutes(5));
+        await store.AppendAsync(sessionId, [new SessionMessage("ai", "hi")], CancellationToken.None);
+        var afterAi = await store.GetAsync(sessionId, CancellationToken.None);
+        Assert.NotNull(afterAi);
+        Assert.Equal(clock.GetUtcNow(), afterAi!.LastAgentActivityAt);
+
+        var summaries = await store.ListAsync(CancellationToken.None);
+        Assert.Equal(afterAi.LastAgentActivityAt, Assert.Single(summaries).LastAgentActivityAt);
+    }
+
+    [Fact]
+    public async Task Legacy_json_without_agent_activity_loads_with_null_stamp()
+    {
+        var (store, paths) = CreateStore();
+        const string sessionId = "22222222222222222222222222222222";
+        Directory.CreateDirectory(paths.SessionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(paths.SessionDirectory, $"{sessionId}.json"),
+            """
+            {
+              "id": "22222222222222222222222222222222",
+              "title": "Legacy",
+              "created_at": "2026-08-24T00:00:00+00:00",
+              "updated_at": "2026-08-24T00:00:00+00:00",
+              "messages": [
+                { "role": "user", "content": "old prompt" },
+                { "role": "ai", "content": "old reply" }
+              ]
+            }
+            """);
+
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded!.LastAgentActivityAt);
+    }
+
     private static (SessionStore Store, DataPaths Paths) CreateStore(TimeProvider? clock = null)
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-session-tests", Guid.NewGuid().ToString("N"));

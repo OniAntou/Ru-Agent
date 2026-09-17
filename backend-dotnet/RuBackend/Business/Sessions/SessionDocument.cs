@@ -30,7 +30,9 @@ public sealed record SessionDocument(
     [property: JsonPropertyName("parent_session_id")]
     string? ParentSessionId = null,
     [property: JsonPropertyName("forked_from_message_id")]
-    string? ForkedFromMessageId = null);
+    string? ForkedFromMessageId = null,
+    [property: JsonPropertyName("last_agent_activity_at")]
+    DateTimeOffset? LastAgentActivityAt = null);
 
 public sealed record SessionSummary(
     string Id,
@@ -42,7 +44,8 @@ public sealed record SessionSummary(
     string? ForkedFromMessageId = null,
     string? WorkspaceId = null,
     string? WorkspaceLabel = null,
-    string? WorkspacePath = null);
+    string? WorkspacePath = null,
+    DateTimeOffset? LastAgentActivityAt = null);
 
 public sealed record ConversationTurn(string Prompt, string Response);
 

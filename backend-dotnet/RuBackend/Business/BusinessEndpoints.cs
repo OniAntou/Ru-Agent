@@ -189,6 +189,7 @@ public static class BusinessEndpoints
                         title = value.Title,
                         created_at = value.CreatedAt.ToUniversalTime().ToString("O"),
                         updated_at = value.UpdatedAt.ToUniversalTime().ToString("O"),
+                        last_agent_activity_at = value.LastAgentActivityAt?.ToUniversalTime().ToString("O"),
                         message_count = value.MessageCount,
                         parent_session_id = value.ParentSessionId,
                         forked_from_message_id = value.ForkedFromMessageId,

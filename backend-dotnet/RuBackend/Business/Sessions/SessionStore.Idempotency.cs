@@ -101,10 +101,14 @@ public sealed partial class SessionStore
         var title = string.IsNullOrWhiteSpace(current.Title) || current.Title == DefaultTitle
             ? TitleFromMessages(merged)
             : current.Title;
+        var now = _clock.GetUtcNow().ToUniversalTime();
         var updated = current with
         {
             Title = title,
-            UpdatedAt = _clock.GetUtcNow().ToUniversalTime(),
+            UpdatedAt = now,
+            LastAgentActivityAt = messages.Any(message => message.Role == "ai")
+                ? now
+                : current.LastAgentActivityAt,
             Messages = merged.TakeLast(MaximumMessages).ToArray(),
             SourceMessageLedger = ledger.Count == 0 ? null : ledger,
         };

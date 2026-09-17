@@ -297,6 +297,8 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(GuiSource.NamedElements(document).ContainsKey("WorkspaceSearchCount"), "WorkspaceSearchCount must exist.");
 
         Assert.Contains("SessionTimeText", GuiSource.NamedElements(document).Keys);
+        var timeText = GuiSource.NamedElements(document)["SessionTimeText"];
+        Assert.Contains("DisplayTime", GuiSource.AttributeValue(timeText, "Text"));
 
         var app = GuiSource.Xml("App.xaml");
         Assert.True(app.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "SessionTimeConverter"));

@@ -870,6 +870,7 @@ namespace RuApp
                     existing.Title = incoming.Title;
                     existing.CreatedAt = incoming.CreatedAt;
                     existing.UpdatedAt = incoming.UpdatedAt;
+                    existing.LastAgentActivityAt = incoming.LastAgentActivityAt;
                     existing.ParentSessionId = incoming.ParentSessionId;
                     existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
                     existing.WorkspaceId = incoming.WorkspaceId;

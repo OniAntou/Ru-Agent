@@ -60,7 +60,8 @@ public sealed partial class SessionStore : ISessionStore
                     document.UpdatedAt,
                     document.Messages.Count,
                     document.ParentSessionId,
-                    document.ForkedFromMessageId));
+                    document.ForkedFromMessageId,
+                    LastAgentActivityAt: document.LastAgentActivityAt));
             }
 
             return sessions
@@ -432,7 +433,8 @@ public sealed partial class SessionStore : ISessionStore
                 messages,
                 ledger.Count == 0 ? null : ledger,
                 parentSessionId,
-                forkedFromMessageId);
+                forkedFromMessageId,
+                TryReadTimestamp(root, "last_agent_activity_at"));
         }
         catch (JsonException)
         {
@@ -564,6 +566,18 @@ public sealed partial class SessionStore : ISessionStore
             out var parsed)
             ? parsed.ToUniversalTime()
             : DateTimeOffset.UnixEpoch;
+    }
+
+    private static DateTimeOffset? TryReadTimestamp(JsonObject node, string key)
+    {
+        var raw = ReadNullableString(node, key);
+        return DateTimeOffset.TryParse(
+            raw,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? parsed.ToUniversalTime()
+            : null;
     }
 
     private static bool IsValidSessionId(string? sessionId) =>

@@ -17,6 +17,9 @@ namespace RuApp.Models
         [JsonPropertyName("updated_at")]
         public string UpdatedAt { get; set; } = string.Empty;
 
+        [JsonPropertyName("last_agent_activity_at")]
+        public string? LastAgentActivityAt { get; set; }
+
         [JsonPropertyName("message_count")]
         public int MessageCount { get; set; }
 
@@ -46,6 +49,9 @@ namespace RuApp.Models
 
         [JsonIgnore]
         public string TooltipText => IsForked ? $"{Title} (Branch)" : Title;
+
+        [JsonIgnore]
+        public string DisplayTime => string.IsNullOrEmpty(LastAgentActivityAt) ? UpdatedAt : LastAgentActivityAt;
     }
 
     public class SessionListResponse

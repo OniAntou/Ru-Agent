@@ -24,14 +24,14 @@ set "BACKEND_PUBLISH_DIR=%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x
 set "PUBLISH_DIR=%PROJECT_DIR%\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish"
 set "OBJ_DIR=%PROJECT_DIR%\obj\x64\Release\net10.0-windows10.0.26100.0\win-x64"
 
-echo [1/12] Cleaning previous build...
+echo [1/13] Cleaning previous build...
 call dotnet clean "%CSPROJ%" -r win-x64 -c Release -p:Platform=x64
 if errorlevel 1 (
     echo CLEAN FAILED!
     exit /b 1
 )
 
-echo [2/12] Building RuAgent.Harness.Core (deterministic, BCL-only, no deps)...
+echo [2/13] Building RuAgent.Harness.Core (deterministic, BCL-only, no deps)...
 call dotnet build "%HARNESS_CORE_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -39,7 +39,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/12] Building RuAgent.Harness.Persistence (Core + Microsoft.Data.Sqlite)...
+echo [3/13] Building RuAgent.Harness.Persistence (Core + Microsoft.Data.Sqlite)...
 call dotnet build "%HARNESS_PERSISTENCE_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -47,7 +47,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/12] Building RuAgent.Hosting (Worker/Broker Job Object + runtime descriptor)...
+echo [4/13] Building RuAgent.Hosting (Worker/Broker Job Object + runtime descriptor)...
 call dotnet build "%HOSTING_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -55,7 +55,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [5/12] Building RuAgent.Client (PublicHost start-or-attach + API/SSE clients)...
+echo [5/13] Building RuAgent.Client (PublicHost start-or-attach + API/SSE clients)...
 call dotnet build "%CLIENT_PROJECT%" -c Release --nologo
 if errorlevel 1 (
     echo.
@@ -63,7 +63,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [6/12] Publishing RuAgent.Cli headless tracer (self-contained, win-x64)...
+echo [6/13] Publishing RuAgent.Cli headless tracer (self-contained, win-x64)...
 call dotnet publish "%CLI_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -76,7 +76,7 @@ if not exist "%CLI_PUBLISH_DIR%\RuAgent.Cli.exe" (
     exit /b 1
 )
 
-echo [7/12] Publishing the managed Worker v2 (self-contained, win-x64)...
+echo [7/13] Publishing the managed Worker v2 (self-contained, win-x64)...
 call dotnet publish "%WORKER_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -89,7 +89,7 @@ if not exist "%WORKER_PUBLISH_DIR%\RuAgent.Runtime.Worker.exe" (
     exit /b 1
 )
 
-echo [8/12] Publishing RuAgentBroker (self-contained, win-x64)...
+echo [8/13] Publishing RuAgentBroker (self-contained, win-x64)...
 call dotnet publish "%BROKER_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -102,7 +102,7 @@ if not exist "%BROKER_PUBLISH_DIR%\RuAgent.Broker.exe" (
     exit /b 1
 )
 
-echo [9/12] Publishing ASP.NET Core backend (self-contained, win-x64)...
+echo [9/13] Publishing ASP.NET Core backend (self-contained, win-x64)...
 call dotnet publish "%BACKEND_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -115,7 +115,7 @@ if not exist "%BACKEND_PUBLISH_DIR%\RuBackend.exe" (
     exit /b 1
 )
 
-echo [10/12] Publishing Release GUI (self-contained, win-x64)...
+echo [10/13] Publishing Release GUI (self-contained, win-x64)...
 if exist "%PUBLISH_DIR%" (
     echo Removing stale GUI publish output...
     rmdir /s /q "%PUBLISH_DIR%"
@@ -150,7 +150,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [11/12] Copying compiled XAML (.xbf) files...
+echo [11/13] Copying compiled XAML (.xbf) files...
 if not exist "%PUBLISH_DIR%\Views" mkdir "%PUBLISH_DIR%\Views"
 if not exist "%OBJ_DIR%\App.xbf" (
     echo BUILD FAILED: Compiled XAML App.xbf was not created.
@@ -210,7 +210,61 @@ if exist "%OBJ_DIR%\Controls\*.xbf" (
 
 call dotnet build-server shutdown >nul 2>&1
 
-echo [12/12] Build complete!
+REM A flat layout is what makes the GUI runnable outside this repository. The
+REM launcher resolves its siblings first and the repository layout second, so
+REM without this step the published GUI only worked from a checkout.
+REM
+REM Copy order matters. The GUI and CLI ship older builds of eight shared
+REM Microsoft.Extensions assemblies than the three services do, so whichever tree
+REM is copied last wins those files. The services go last because they reference
+REM the newer versions; with the opposite order RuBackend.exe failed at startup
+REM with "Could not load file or assembly
+REM Microsoft.Extensions.Logging.Abstractions, Version=10.0.0.0".
+echo [12/13] Flattening the runtime into one distributable directory...
+set "RU_FLAT_FAIL=0"
+REM The GUI is already at the destination, so only the four service trees are
+REM copied. Including %PUBLISH_DIR% here made xcopy copy a directory into itself
+REM and fail with "Cannot perform a cyclic copy".
+for %%S in ("%CLI_PUBLISH_DIR%" "%WORKER_PUBLISH_DIR%" "%BROKER_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%") do (
+    if not exist "%%~S" (
+        echo BUILD FAILED: publish directory not found: %%~S
+        set "RU_FLAT_FAIL=1"
+    ) else (
+        xcopy /E /I /Y /Q "%%~S\*" "%PUBLISH_DIR%\" >nul
+        if errorlevel 1 (
+            echo BUILD FAILED: could not copy %%~S into the flat layout.
+            set "RU_FLAT_FAIL=1"
+        )
+    )
+)
+if "!RU_FLAT_FAIL!"=="1" exit /b 1
+for %%E in (RuBackend.exe RuAgent.Runtime.Worker.exe RuAgent.Broker.exe RuAgent.Cli.exe) do (
+    if not exist "%PUBLISH_DIR%\%%E" (
+        echo BUILD FAILED: %%E is missing from the flat layout at "%PUBLISH_DIR%".
+        exit /b 1
+    )
+)
+
+REM The GUI and CLI ship older builds of eight shared Microsoft.Extensions
+REM assemblies than the three services do. A size difference between trees is
+REM therefore expected rather than a defect: the flat layout holds the newer copy,
+REM which the older consumers load happily, while the reverse order left
+REM RuBackend.exe failing at startup with "Could not load file or assembly
+REM Microsoft.Extensions.Logging.Abstractions, Version=10.0.0.0". The build only
+REM fails when the flat layout is missing an assembly some tree needs.
+set "RU_FLAT_MISMATCH=0"
+for %%S in ("%CLI_PUBLISH_DIR%" "%WORKER_PUBLISH_DIR%" "%BROKER_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%") do (
+    for %%F in ("%%~S\Microsoft.Extensions.*.dll") do (
+        if not exist "%PUBLISH_DIR%\%%~nxF" (
+            echo BUILD FAILED: flat layout is missing %%~nxF, which %%~S provides.
+            set "RU_FLAT_MISMATCH=1"
+        )
+    )
+)
+if "!RU_FLAT_MISMATCH!"=="1" exit /b 1
+echo Flattened: RuApp, RuBackend, Worker, Broker, CLI in one directory.
+
+echo [13/13] Build complete!
 echo.
 echo ============================================
 echo  Harness.Core:       %HARNESS_CORE_PROJECT%
@@ -222,6 +276,7 @@ echo  Managed Worker:     %WORKER_PUBLISH_DIR%\RuAgent.Runtime.Worker.exe
 echo  Broker:             %BROKER_PUBLISH_DIR%\RuAgent.Broker.exe
 echo  Backend:            %BACKEND_PUBLISH_DIR%\RuBackend.exe
 echo  Output:             %PUBLISH_DIR%\RuApp.exe
+echo  Distributable:      %PUBLISH_DIR% (all five executables side by side)
 for %%I in ("%PUBLISH_DIR%\RuApp.exe") do echo  Published:          %%~tI
 echo  Launch:             start_dev.bat
 echo ============================================

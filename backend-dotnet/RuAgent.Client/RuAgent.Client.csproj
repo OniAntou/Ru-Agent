@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+    <ProjectReference Include="..\RuAgent.Hosting\RuAgent.Hosting.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="RuAgent.Client.Tests" />

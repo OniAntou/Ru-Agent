@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\backend-dotnet\RuAgent.Client\RuAgent.Client.csproj" />
+    <ProjectReference Include="..\backend-dotnet\RuAgent.Hosting\RuAgent.Hosting.csproj" />
     <ProjectReference Include="..\backend-dotnet\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\backend-dotnet\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />

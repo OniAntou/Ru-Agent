@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Media;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml.Automation;
+using RuAgent.Hosting;
 using RuApp.Models;
 using RuApp.Services;
 using RuApp.Views;
@@ -176,7 +177,11 @@ namespace RuApp
                 walk = Path.GetDirectoryName(walk);
             }
 
-            return null;
+            // No repository anywhere above us, which is the normal case for an
+            // installed copy. Returning null here stopped startup entirely; the
+            // directory holding the application is the only root that exists, and the
+            // caller picks the actual workspace.
+            return RuAppLayout.ResolveWorkingRoot(projectRoot: null, baseDir);
         }
 
         private async Task InitializeAppSafelyAsync()

@@ -54,26 +54,33 @@ public sealed class WorkerBrokerLaunchPlan
         var selectedBrokerPort = startup.BrokerPort ?? FindFreeLoopbackPort();
         ValidatePortSet(publicPort, startup.AgentWorkerPort, selectedBrokerPort);
 
+        // A distribution puts every executable beside the host; a repository checkout
+        // keeps each one under its own project. RuAppLayout resolves both, preferring
+        // the flat layout so a packaged install never depends on repository structure.
+        var appBaseDirectory = AppContext.BaseDirectory;
         var publishedBroker = startup.BrokerExecutable;
         if (string.IsNullOrWhiteSpace(publishedBroker))
         {
-            publishedBroker = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE");
+            publishedBroker = RuAppLayout.ResolveBrokerExecutable(root, appBaseDirectory);
         }
         if (string.IsNullOrWhiteSpace(publishedBroker))
         {
-            publishedBroker = Path.Combine(root, "backend-dotnet", "RuAgent.Broker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Broker.exe");
+            throw new FileNotFoundException(
+                $"Published {RuAppLayout.BrokerExecutableName} was not found. Expected it beside the host at '{appBaseDirectory}' or under the repository at '{root}'. Run build.bat, or set RU_AGENT_BROKER_EXE.");
         }
 
         publishedBroker = Path.GetFullPath(publishedBroker);
         if (!File.Exists(publishedBroker))
         {
-            throw new FileNotFoundException($"Published RuAgent.Broker.exe was not found at '{publishedBroker}'. Run build.bat before selecting Agent mode.", publishedBroker);
+            throw new FileNotFoundException(
+                $"Published {RuAppLayout.BrokerExecutableName} was not found at '{publishedBroker}'. Run build.bat, or set RU_AGENT_BROKER_EXE.");
         }
 
-        var workerExecutable = Path.Combine(root, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Runtime.Worker.exe");
-        if (!File.Exists(workerExecutable))
+        var workerExecutable = RuAppLayout.ResolveWorkerExecutable(root, appBaseDirectory);
+        if (string.IsNullOrWhiteSpace(workerExecutable) || !File.Exists(workerExecutable))
         {
-            throw new FileNotFoundException($"Published RuAgent.Runtime.Worker.exe was not found at '{workerExecutable}'. Run build.bat before selecting Agent mode.", workerExecutable);
+            throw new FileNotFoundException(
+                $"Published {RuAppLayout.WorkerExecutableName} was not found. Expected it beside the host at '{appBaseDirectory}' or under the repository at '{root}'. Run build.bat, or set RU_AGENT_WORKER_EXE.");
         }
 
         var providerBootstrapPath = Path.GetFullPath(startup.ProviderBootstrapPath);

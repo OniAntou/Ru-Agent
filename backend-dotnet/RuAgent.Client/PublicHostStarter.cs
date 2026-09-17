@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using RuAgent.Hosting;
 
 namespace RuAgent.Client;
 
@@ -145,28 +146,19 @@ public sealed class PublicHostStarter : IDisposable
     {
         try
         {
-            // Resolve RuBackend.exe publish path
-            var candidates = new[]
-            {
-                Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "win-x64", "publish", "RuBackend.exe"),
-                Path.Combine(projectRoot, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe"),
-                Path.Combine(AppContext.BaseDirectory, "RuBackend.exe"),
-            };
-            // When CLI runs outside the repo (eg ru.cmd pass-through from any workspace),
-            // fall back to the backend publish dir located next to the CLI publish dir.
-            for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null && dir.Parent is not null; dir = dir.Parent.Parent)
-            {
-                candidates = candidates.Append(Path.Combine(dir.FullName, "RuBackend", "bin", "Release", "net10.0", "win-x64", "publish", "RuBackend.exe")).ToArray();
-                candidates = candidates.Append(Path.Combine(dir.FullName, "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe")).ToArray();
-            }
-            string? exe = candidates.FirstOrDefault(File.Exists);
+            // A distribution keeps RuBackend.exe beside the client; a repository keeps
+            // it under the host project. RuAppLayout resolves both, flat layout first.
+            var appBaseDirectory = AppContext.BaseDirectory;
+            var exe = RuAppLayout.ResolveHostExecutable(projectRoot, appBaseDirectory);
             if (exe is null)
             {
-                // Fallback: try dotnet run? For now fail
                 return Task.FromResult(false);
             }
 
-            string actualProjectRoot = projectRoot;
+            // The host records this root and the worker derives its working directory
+            // from it. A flat install has no repository, so the application directory
+            // has to be an acceptable answer here rather than a null that stops startup.
+            var actualProjectRoot = projectRoot;
             if (!Directory.Exists(Path.Combine(actualProjectRoot, "backend-dotnet"))
                 && !File.Exists(Path.Combine(actualProjectRoot, "pyproject.toml")))
             {
@@ -181,6 +173,10 @@ public sealed class PublicHostStarter : IDisposable
                     }
                 }
             }
+
+            // Neither the caller's root nor any ancestor is a repository: this is a
+            // flat install, so the directory holding the executables is the root.
+            actualProjectRoot = RuAppLayout.ResolveWorkingRoot(actualProjectRoot, appBaseDirectory);
 
             var psi = new ProcessStartInfo
             {

@@ -153,6 +153,35 @@ def test_release_copies_x64_compiled_xaml(tmp_path: Path) -> None:
         assert artifact.read_text(encoding="utf-8") == f"compiled {relative}\n"
 
 
+def test_release_flattens_every_executable_into_one_directory(tmp_path: Path) -> None:
+    """A distribution is one directory. Without this stage the published GUI only
+    worked from a checkout, because the launcher resolved its siblings by
+    repository layout."""
+    result = _run_build_script(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Flattened:" in result.stdout
+
+    publish = tmp_path / "checkout/gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish"
+    for executable in (
+        "RuApp.exe",
+        "RuBackend.exe",
+        "RuAgent.Runtime.Worker.exe",
+        "RuAgent.Broker.exe",
+        "RuAgent.Cli.exe",
+    ):
+        assert (publish / executable).is_file(), f"Missing from the flat layout: {executable}"
+
+
+def test_flat_layout_stage_does_not_copy_the_destination_into_itself(tmp_path: Path) -> None:
+    """xcopy refuses a cyclic copy, so the GUI publish directory must not appear
+    among the sources: it already is the destination."""
+    result = _run_build_script(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "cyclic copy" not in result.stdout
+    assert "cyclic copy" not in result.stderr
+
+
 @pytest.mark.parametrize("missing_xaml", ["App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"])
 def test_missing_compiled_xaml_stops_release(tmp_path: Path, missing_xaml: str) -> None:
     result = _run_build_script(tmp_path, missing_xaml=missing_xaml)

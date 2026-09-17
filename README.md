@@ -52,12 +52,13 @@ Hệ sinh thái Ru được phân tách rõ ràng theo mô hình đa tầng (Mul
 ┌───────────────────────────────┐     ┌──────────────────────────────────┐
 │   RuAgent.Runtime.Worker      │     │      RuAgent.Broker (Sandbox)    │
 │   (Loopback Port 8005)        │     │   (Dynamic Loopback Port)        │
-│ - Worker v2: Model Step &     │     │ - read (list/glob/search/    │
-│   Reasoning Orchestration     │     │   read/help)                 │
-│ - Provider adapters (chat     │     │ - web_search / web_fetch     │
-│   completions / responses /   │     │ - write / edit               │
+│ - Worker v2: Model Step &     │     │ - read (list/read/help)      │
+│   Reasoning Orchestration     │     │ - grep / glob                │
+│ - Provider adapters (chat     │     │ - write (write/delete/       │
+│   completions / responses /   │     │   restore) / edit            │
 │   anthropic messages)         │     │ - bash (run/shell)           │
-│ - Single-use DPAPI bootstrap  │     │ - Policy & Approval Engine       │
+│ - Single-use DPAPI bootstrap  │     │ - web_search / web_fetch     │
+│                               │     │ - Policy & Approval Engine   │
 └───────────────────────────────┘     └──────────────────────────────────┘
 ```
 
@@ -142,23 +143,25 @@ dotnet run --project backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -- agent chat
 
 ## 5. Hệ thống công cụ Agent (Tool Capabilities)
 
-Ru Agent được trang bị 6 công cụ cốt lõi được định nghĩa chặt chẽ theo Protocol chuẩn:
+Ru Agent được trang bị **8 công cụ cốt lõi**, định nghĩa bất biến trong `RuAgent.Protocol` (`AgentToolDefinitionCatalog`, version `1.0.0`). Host chiếu cùng ID/version/scope/schema/digest cho cả prompt lẫn `model_tools`, nên không có bản sao định nghĩa thứ hai. Mọi schema đều strict (`additionalProperties: false`).
 
 | Nhóm công cụ | Tên công cụ (Tool ID) | Mô tả chức năng |
 | :--- | :--- | :--- |
 | **Duyệt tệp** | `read` + `op=list` | Liệt kê danh sách tệp/thư mục kèm metadata (kích thước, thời gian sửa đổi). |
-| | `read` + `op=glob` | Tìm kiếm tệp theo mẫu glob (ví dụ: `**/*.cs`, `src/**/*.ts`). |
-| | `read` + `op=search` | Tìm kiếm nội dung văn bản bên trong tệp (ripgrep-based regex search). |
-| **Thao tác tệp** | `read` + `op=read` | Đọc nội dung tệp (hỗ trợ phân trang và đọc theo khoảng dòng). |
-| | `write` + `op=write` | Tạo mới hoặc ghi đè toàn bộ nội dung tệp. |
+| | `read` + `op=read` | Đọc nội dung tệp (hỗ trợ `offset`/`limit` để đọc theo khoảng dòng). |
+| | `read` + `op=help` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
+| | `grep` | Tìm kiếm nội dung văn bản bên trong tệp (regex tuỳ chọn qua `is_regex`, lọc theo `file_glob`/`case_sensitive`, kết quả bị chặn trần). |
+| | `glob` | Tìm kiếm tệp theo mẫu glob (ví dụ: `**/*.cs`, `src/**/*.ts`), kết quả sắp xếp ordinal. |
+| **Thao tác tệp** | `write` + `op=write` | Tạo mới hoặc ghi đè toàn bộ nội dung tệp. |
 | | `edit` | Thay thế chính xác một khối nội dung trong tệp (atomic replacement). |
-| | `write` + `op=delete` | Xóa tệp có bảo hiểm (lưu preimage vào thùng rác an toàn để có thể phục hồi). |
+| | `write` + `op=delete` | Xóa tệp có bảo hiểm (lưu preimage vào vùng phục hồi mã hoá để có thể restore). |
 | | `write` + `op=restore` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
-| **Terminal** | `bash` + `mode=run` | Chạy lệnh trong shell PowerShell/cmd với giới hạn thời gian chờ. |
-| | `bash` + `mode=shell` | Mở phiên shell tương tác để quản lý tác vụ nền. |
-| **Tra cứu Web** | `web_search` | Tìm kiếm thông tin trên Web — Google HTML là engine chính, DuckDuckGo HTML fallback tự động (cần phê duyệt mỗi lần dùng). Hỗ trợ `query` (1–512 ký tự) và `max_results` (1–10, mặc định 10). |
-| | `web_fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
-| **Tài liệu** | `read` + `op=help` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
+| **Terminal** | `bash` + `mode=run` | Chạy một executable hoặc script với argument vector, working directory, `timeout_ms` và khai báo `network_intent`. |
+| | `bash` + `mode=shell` | Chạy một script qua runtime shell được allowlist (`powershell`/`pwsh`), output bị chặn trần và process tree bị kill khi hết hạn. |
+| **Tra cứu Web** | `web_search` | Tìm kiếm thông tin trên Web — Google HTML là engine chính, DuckDuckGo HTML fallback tự động (cần phê duyệt mỗi lần dùng). Hỗ trợ `query` (1–512 ký tự) và `max_results` (1–10). |
+| | `web_fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng, URL tối đa 2048 ký tự). |
+
+Ghi chú: `read` **không** có `op=glob`/`op=search` — hai thao tác đó đã tách thành tool độc lập `glob` và `grep`. `grep` là tìm kiếm nội dung có giới hạn của Ru, không phải ripgrep gọi ra ngoài. `files.apply_patch` tồn tại trong Broker nhưng là adapter nội bộ, **không** được advertise cho model.
 
 ---
 
@@ -185,35 +188,42 @@ Script `scripts/test_dotnet.ps1` tự phát hiện **12 test projects** (`*Tests
 │   ├── RuAgent.Client/          # Client thư viện kết nối Public Host
 │   ├── RuAgent.Cli/             # Giao diện dòng lệnh tương tác TUI
 │   ├── RuAgent.Protocol/        # Định nghĩa kiểu dữ liệu & hợp đồng Protocol
-│   ├── RuAgent.Harness.Core/    # Durable Harness Core (state machines, policy)
-│   ├── RuAgent.Harness.Persistence/ # Harness SQLite/payload/outbox stores
+│   ├── RuAgent.Harness.Core/    # Durable Harness Core (state machines, prompt, tool pipeline)
+│   ├── RuAgent.Harness.Persistence/ # Harness SQLite schema v7 + payload AES-GCM + outbox
+│   ├── RuAgent.Hosting/         # Vòng đời tiến trình con (Job Object), descriptor, single-instance
+│   ├── RuAgent.Runtime.Adapters/ # 3 dialect provider (chat completions / responses / messages)
+│   ├── RuAgent.Connectors/      # Thư viện connector calendar/task/mail (chưa advertise làm tool)
 │   └── *.Tests/                 # 11 test projects (cùng gui-winui3.Tests = 12)
 ├── gui-winui3/                  # Ứng dụng Desktop WinUI 3 (C# / XAML)
-│   ├── Views/                   # ChatView, SettingsView, LogView,...
-│   ├── Services/                # ApiService, HealthStatusService, Reconnect,...
+│   ├── Views/                   # ChatView, SettingsView (modal), DiagnosticsView, LogView, PolicyPanel, AuditLogPanel
+│   ├── Services/                # RuAppComposition (wiring), ApiService, AgentRunController, các *Policy
+│   ├── Controls/                # MarkdownBlock, TerminalPanelControl, AgentApprovalPanelControl,...
 │   ├── Models/                  # Data models cho giao diện
 │   └── RuApp.csproj             # Dự án chính WinUI 3
-├── gui-winui3.Tests/            # Unit tests cho GUI & Services
-├── gui-winui3.Harness/          # Harness composition cho GUI acceptance
+├── gui-winui3.Tests/            # Unit + source-contract tests cho GUI & Services
+├── gui-winui3.Harness/          # Harness composition cho GUI acceptance (UI Automation)
 ├── tests/                       # Python pytest suites (tooling, boundary, docs)
 ├── tools/                       # maintenance scripts
-├── skills/                      # Markdown skill packages (prompt guidance)
+├── skills/                      # Declarative SkillManifest examples (skill.json + instructions.md)
 ├── docs/                        # Tài liệu kiến trúc chuyên sâu
 │   ├── architecture.md          # Đặc tả kiến trúc tổng quan
-│   ├── operations/              # Runtime behavior, agent tools, verification
+│   ├── operations/              # Runtime behavior, agent tools, verification, logging
 │   └── adr/                     # Các quyết định thiết kế kiến trúc (ADR)
+├── backend-dotnet/public-route-contract.json # Nguồn sự thật của 37 route công khai
 ├── scripts/                     # Scripts hỗ trợ tự động hóa và kiểm tra
 ├── build.bat                    # Script build toàn bộ Release executables
 └── start_dev.bat                # Script chạy thử nghiệm môi trường phát triển
 ```
 
+Ghi chú: `skills/` ở gốc repo chứa **SkillManifest khai báo** (`skill.json` + `instructions.md`), không phải Markdown skill. Chúng không tự nạp; một skill chỉ chạy khi ID của nó nằm trong session grant (`/skills`, `/skill`). Format Markdown `SKILL.md` là đường prompt-guidance riêng, đọc từ `<workspace>/skills`, `<workspace>/.ru/skills`, hoặc `%LOCALAPPDATA%\Ru\skills`.
+
 ---
 
 ## 8. Bảo mật & Quản lý dữ liệu (Security & Data Privacy)
 
-- **Vị trí lưu trữ dữ liệu**: Dữ liệu phiên, cấu hình và lịch sử được lưu trữ độc quyền tại `%LOCALAPPDATA%\Ru`.
-- **Mã hóa khóa API**: Tất cả API keys (OpenCode, Kilo, OpenAI, Anthropic) được mã hóa bằng **Windows Credential Manager (DPAPI)**, không bao giờ lưu trữ dạng plain-text trên ổ đĩa.
-- **Bảo mật cơ sở dữ liệu**: Lịch sử phiên và artifacts của Agent Harness được lưu trữ tại `agent_harness.db` với mã hóa AES-GCM cho các payload nhạy cảm.
+- **Vị trí lưu trữ dữ liệu**: Dữ liệu phiên, cấu hình và lịch sử được lưu trữ độc quyền tại `%LOCALAPPDATA%\Ru`; biến môi trường `RU_DATA_ROOT` (và `RU_LOG_ROOT`) cho phép cô lập hoàn toàn cho test/CI.
+- **Mã hóa khóa API**: Tất cả API keys (OpenCode Zen, Kilo, OpenAI, Anthropic, Custom) được lưu qua **Windows Credential Manager (DPAPI)** phía Host, không bao giờ lưu dạng plain-text trên ổ đĩa. GUI không giữ credential: key được nhập vào `PasswordBox` rồi POST thẳng tới `/settings`.
+- **Bảo mật cơ sở dữ liệu**: Lịch sử phiên và artifacts của Agent Harness được lưu tại `agent_harness.db` (SQLite WAL, schema versioned) với mã hóa AES-GCM 256 cho mọi payload nhạy cảm; khoá mã hóa được bảo vệ bằng DPAPI (`harness_key.dat`) và **fail-closed** — mất khoá nghĩa là payload không đọc được, không có fallback.
 - **Quyền riêng tư tuyệt đối**: Các thông tin nhạy cảm như tokens, nội dung yêu cầu thô và metadata kiểm soát nội bộ bị chặn hoàn toàn không cho xuất hiện trong nhật ký (logs) hay lịch sử hội thoại hiển thị.
 
 ---

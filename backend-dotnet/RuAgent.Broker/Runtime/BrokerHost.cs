@@ -25,6 +25,9 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly TracerProvider? _telemetry;
     private readonly PendingApprovalStore _pendingV2 = new();
     private readonly ApprovalTokenService _authTokens = new();
+    // One probe per host so its short-lived cleanliness cache survives across
+    // tool evaluations; the trusted preset's auto-allow depends on this answer.
+    private readonly IWorkspaceCleanlinessProvider _cleanliness = new GitWorkspaceCleanlinessProvider();
     private bool _disposed;
 
     private BrokerHost(
@@ -169,7 +172,8 @@ public sealed class BrokerHost : IAsyncDisposable
             skillCatalogProvider: _tools.ListAllSkills,
             skillResolver: _tools.ResolveSkill,
             skillExecutor: _tools.ExecuteSkillAsync,
-            advertisedCapabilities: _session.AdvertisedCapabilities)
+            advertisedCapabilities: _session.AdvertisedCapabilities,
+            cleanliness: _cleanliness)
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
     }
 

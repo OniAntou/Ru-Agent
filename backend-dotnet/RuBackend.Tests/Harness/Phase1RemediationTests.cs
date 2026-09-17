@@ -10,7 +10,10 @@ namespace RuBackend.Tests.Harness;
 /// <summary>
 /// Phase 1 remediation regression tests: snake_case run states on the API surface and
 /// real trust challenges returned to clients instead of client-side fabricated values.
+/// The runtime-loop case drives a real in-process Broker, so it shares the non-parallel
+/// process-heavy collection.
 /// </summary>
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class Phase1RemediationTests
 {
     [Fact]

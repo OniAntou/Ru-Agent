@@ -14,10 +14,10 @@ public interface IWorkspaceCleanlinessProvider
 }
 
 /// <summary>
-/// Git-backed cleanliness probe. Only exit codes are observed
-/// (<c>rev-parse</c>, <c>diff --quiet</c>, <c>diff --cached --quiet</c>), so no
-/// command output is ever read and no stream deadlock is possible. Results are
-/// cached briefly per root; a dirty repo stays dirty for at most the TTL.
+/// Git-backed cleanliness probe. Only exit codes and whether the porcelain status is
+/// empty are observed, so no command output is ever parsed from a stream and no
+/// stream deadlock is possible. Results are cached briefly per root; a dirty repo
+/// stays dirty for at most the TTL.
 /// </summary>
 public sealed class GitWorkspaceCleanlinessProvider : IWorkspaceCleanlinessProvider
 {
@@ -42,17 +42,23 @@ public sealed class GitWorkspaceCleanlinessProvider : IWorkspaceCleanlinessProvi
         return clean;
     }
 
+    /// <summary>
+    /// A workspace is clean only when its porcelain status reports nothing at all.
+    /// <c>diff --quiet</c> plus <c>diff --cached --quiet</c> is not sufficient: neither
+    /// sees an untracked file, so a freshly created and never-committed <c>.env</c> or
+    /// credential file would have counted as clean and unlocked the trusted
+    /// relaxation over a workspace that is in fact carrying new secrets.
+    /// </summary>
     private static bool ProbeClean(string root) =>
-        RunGit(root, "rev-parse --is-inside-work-tree") == 0
-        && RunGit(root, "diff --quiet") == 0
-        && RunGit(root, "diff --cached --quiet") == 0;
+        RunGit(root, ["rev-parse", "--is-inside-work-tree"]) == 0
+        && RunGit(root, ["status", "--porcelain"], observeEmptyOutput: true) == 0;
 
-    private static int RunGit(string workingDirectory, string arguments)
+    private static int RunGit(string workingDirectory, string[] arguments, bool observeEmptyOutput = false)
     {
         try
         {
             using var process = new Process();
-            process.StartInfo = new ProcessStartInfo("git", arguments)
+            process.StartInfo = new ProcessStartInfo("git")
             {
                 WorkingDirectory = workingDirectory,
                 UseShellExecute = false,
@@ -60,12 +66,17 @@ public sealed class GitWorkspaceCleanlinessProvider : IWorkspaceCleanlinessProvi
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
+            foreach (var argument in arguments)
+            {
+                process.StartInfo.ArgumentList.Add(argument);
+            }
+
             if (!process.Start())
             {
                 return -1;
             }
 
-            process.StandardOutput.ReadToEnd();
+            var stdout = process.StandardOutput.ReadToEnd();
             process.StandardError.ReadToEnd();
             if (!process.WaitForExit(10_000))
             {
@@ -81,7 +92,12 @@ public sealed class GitWorkspaceCleanlinessProvider : IWorkspaceCleanlinessProvi
                 return -1;
             }
 
-            return process.ExitCode;
+            if (process.ExitCode != 0)
+            {
+                return process.ExitCode;
+            }
+
+            return !observeEmptyOutput || string.IsNullOrWhiteSpace(stdout) ? 0 : 1;
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {

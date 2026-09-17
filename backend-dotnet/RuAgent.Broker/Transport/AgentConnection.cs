@@ -27,6 +27,7 @@ public sealed partial class AgentConnection
     private readonly Func<string, string, SkillManifest?>? _skillResolver;
     private readonly Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? _skillExecutor;
     private readonly IReadOnlyList<string>? _advertisedCapabilities;
+    private readonly IWorkspaceCleanlinessProvider? _cleanliness;
     private readonly Dictionary<string, SkillRequestReplay> _skillRequests = new(StringComparer.Ordinal);
 
     private sealed record SkillRequestReplay(
@@ -45,7 +46,8 @@ public sealed partial class AgentConnection
         Func<IReadOnlyList<SkillManifest>>? skillCatalogProvider = null,
         Func<string, string, SkillManifest?>? skillResolver = null,
         Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? skillExecutor = null,
-        IReadOnlyList<string>? advertisedCapabilities = null)
+        IReadOnlyList<string>? advertisedCapabilities = null,
+        IWorkspaceCleanlinessProvider? cleanliness = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _capabilityProvider = capabilityProvider ?? throw new ArgumentNullException(nameof(capabilityProvider));
@@ -64,6 +66,7 @@ public sealed partial class AgentConnection
         _skillResolver = skillResolver;
         _skillExecutor = skillExecutor;
         _advertisedCapabilities = advertisedCapabilities;
+        _cleanliness = cleanliness;
     }
 
     internal PendingApprovalStore PendingV2Store => _pendingV2;

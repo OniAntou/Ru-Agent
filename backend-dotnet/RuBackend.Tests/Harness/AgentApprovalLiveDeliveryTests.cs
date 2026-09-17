@@ -17,6 +17,7 @@ namespace RuBackend.Tests.Harness;
 /// for unrelated live activity to arrive, otherwise an interactive client never
 /// learns that a run is parked and never offers the approval surface.
 /// </summary>
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class AgentApprovalLiveDeliveryTests
 {
     [Fact]

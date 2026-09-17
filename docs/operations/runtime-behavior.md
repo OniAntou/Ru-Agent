@@ -186,7 +186,8 @@ remains a user-run acceptance check.
 
 The current Agent composer uses the same tiers. The shell and conversation view use the
 Editorial reading room presentation: the approved light mineral palette as the
-baseline, a flat sidebar, and a centered document-style reading column.
+baseline, a sidebar grouped by workspace (`WORKSPACES` with collapsible folder
+groups, search, and relative timestamps), and a centered document-style reading column.
 Log, Diagnostics, and Settings retain their existing layout
 in this phase while inheriting the active shared Light or Dark token set.
 The application keeps Light as its fallback and MainWindow can request the

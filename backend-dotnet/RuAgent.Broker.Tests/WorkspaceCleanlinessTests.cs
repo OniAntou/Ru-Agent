@@ -37,6 +37,25 @@ public sealed class WorkspaceCleanlinessTests
         Assert.False(new GitWorkspaceCleanlinessProvider().IsWorkspaceClean(temp.Path));
     }
 
+    /// <summary>
+    /// An untracked file is dirt. This is the case that matters most: a secret dropped
+    /// into a workspace is normally never staged, and <c>git diff --quiet</c> plus
+    /// <c>git diff --cached --quiet</c> both report a clean tree for it, which would
+    /// unlock the trusted preset's auto-allow over a workspace carrying new credentials.
+    /// </summary>
+    [Fact]
+    public void Untracked_file_makes_the_workspace_dirty()
+    {
+        using var temp = TempDir.Create();
+        Git(temp.Path, "init");
+        Git(temp.Path, "-c user.email=t@t -c user.name=t commit --allow-empty -m seed");
+        Assert.True(new GitWorkspaceCleanlinessProvider().IsWorkspaceClean(temp.Path));
+
+        File.WriteAllText(Path.Combine(temp.Path, ".env"), "SECRET=1");
+
+        Assert.False(new GitWorkspaceCleanlinessProvider().IsWorkspaceClean(temp.Path));
+    }
+
     private static void Git(string workingDirectory, string arguments)
     {
         using var process = new Process();

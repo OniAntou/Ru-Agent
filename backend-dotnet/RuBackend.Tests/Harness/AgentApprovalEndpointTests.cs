@@ -8,6 +8,13 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
+/// <summary>
+/// Approval semantics over the real host runtime with a scripted model. Each case
+/// drives the run to a parked state, so it waits on process spawning and the shared
+/// workspace; running it beside the other terminal-spawning suites starves those
+/// deadlines, so it shares the non-parallel process-heavy collection.
+/// </summary>
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class AgentApprovalEndpointTests
 {
     /// <summary>

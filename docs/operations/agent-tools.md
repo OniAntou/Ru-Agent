@@ -6,11 +6,11 @@ v2 surfaces (2026-09-05).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
-This checkpoint includes declarative Skills, interactive Windows ConPTY
-terminal sessions, session branching/fork/rewind, managed Git commit workflow,
-and dynamic model context compaction. The MCP stdio bridge is tested
-infrastructure but is not production-composed; connector libraries are not
-advertised Agent tools.
+This checkpoint includes declarative Skills, bounded headless terminal execution
+(`bash` with `mode=run` or `mode=shell`), session branching/fork/rewind, managed
+Git commit workflow, and dynamic model context compaction. The MCP stdio bridge
+is tested infrastructure but is not production-composed; connector libraries are
+not advertised Agent tools.
 
 > **Current checkpoint (Agent-only generation, 2026-09-05):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
@@ -47,7 +47,7 @@ advertised Agent tools.
 >   `POST /agent/v1/runs/{runId}/reconcile` resolves ambiguous dispatch and
 >   reconciliation outcomes. `--json` cannot create global rules or confirm
 >   trust/approval.
->   Headless terminal requests and interactive Windows ConPTY sessions are available
+>   Headless terminal requests (`bash` with `mode=run` or `mode=shell`) are available
 >   under the policy/approval boundary; the managed Git commit workflow is fully shipped
 >   with temporary index isolation and path attribution rollback.
 >   Typed command dispatch is available through `POST /agent/v1/runs/{runId}/commands`;

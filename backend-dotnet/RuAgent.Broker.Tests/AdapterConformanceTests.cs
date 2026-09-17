@@ -41,28 +41,41 @@ public sealed class AdapterConformanceTests
         Assert.False(Directory.Exists(root));
     }
 
+    /// <summary>
+    /// The bounded-status contract of the production terminal runner: a non-zero exit is
+    /// never promoted to success, a killed command reports <c>timed_out</c> rather than a
+    /// bare failure, and a command the shell cannot resolve still reports the real child
+    /// exit code instead of being laundered into success.
+    /// </summary>
     [Fact]
     public async Task Process_results_never_promote_nonzero_timeout_or_start_failure()
     {
+        var runner = new StreamingProcessRunner();
         string root = TemporaryRoot();
         try
         {
-            var runner = new ProcessTreeRunner();
-            ProcessRunResult nonzero = await runner.RunAsync(
-                Spec("cmd.exe", ["/c", "exit", "7"], root, 5_000),
+            StreamingProcessResult nonzero = await runner.RunAsync(
+                Spec("exit", "7", root),
+                null,
                 CancellationToken.None);
-            ProcessRunResult timeout = await runner.RunAsync(
-                Spec("cmd.exe", ["/c", "ping", "127.0.0.1", "-n", "10"], root, 50),
+            StreamingProcessResult timeout = await runner.RunAsync(
+                Spec("ping", "127.0.0.1 -n 10 > nul", root, timeoutMs: 50),
+                null,
                 CancellationToken.None);
-            ProcessRunResult startFailure = await runner.RunAsync(
-                Spec("ru-harness-missing-executable.exe", [], root, 5_000),
+            // A command the shell cannot resolve is not a start failure: the runner must
+            // report the real child exit code instead of laundering it into success, and
+            // it must never fabricate a null exit code for a process that did run.
+            StreamingProcessResult missingCommand = await runner.RunAsync(
+                Spec("ru-harness-missing-" + Guid.NewGuid().ToString("N"), string.Empty, root),
+                null,
                 CancellationToken.None);
 
             Assert.Equal("failed", nonzero.Status);
             Assert.Equal(7, nonzero.ExitCode);
             Assert.Equal("timed_out", timeout.Status);
-            Assert.Equal("failed", startFailure.Status);
-            Assert.Null(startFailure.ExitCode);
+            Assert.Equal("failed", missingCommand.Status);
+            Assert.NotNull(missingCommand.ExitCode);
+            Assert.NotEqual(0, missingCommand.ExitCode);
         }
         finally
         {
@@ -83,20 +96,14 @@ public sealed class AdapterConformanceTests
         DateTimeOffset.UtcNow.AddMinutes(30));
 
     private static ProcessRunSpec Spec(
-        string executable,
-        IReadOnlyList<string> arguments,
+        string command,
+        string arguments,
         string root,
-        int timeoutMs) => new(
-            executable,
-            arguments,
+        int timeoutMs = 5_000) => new(
+            Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe",
+            ["/d", "/s", "/c", string.Join(' ', command, arguments).Trim()],
             root,
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["PATH"] = Environment.GetEnvironmentVariable("PATH") ?? string.Empty,
-                ["PATHEXT"] = Environment.GetEnvironmentVariable("PATHEXT") ?? string.Empty,
-                ["SYSTEMROOT"] = Environment.GetEnvironmentVariable("SYSTEMROOT") ?? string.Empty,
-            },
+            new AgentCommandEnvironment().ChildEnvironment,
             timeoutMs,
             4_096);
-
 }

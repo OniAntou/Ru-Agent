@@ -51,7 +51,7 @@ public sealed partial class AgentConnection
             return Task.FromResult(DecisionReply(request, "deny", error.Code, null, error.Hint));
         }
 
-        var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
+        var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants, cleanliness: _cleanliness)
             .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
 
         string? authorizationToken = null;

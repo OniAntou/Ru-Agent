@@ -1626,10 +1626,7 @@ public sealed class BrokerHostTests
         {
             await Host.DisposeAsync();
             Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", PreviousWorkspaceRoot);
-            if (Directory.Exists(Root))
-            {
-                Directory.Delete(Root, recursive: true);
-            }
+            DeleteDirectoryResilient(Root);
         }
 
         private static int GetFreePort()
@@ -1638,6 +1635,167 @@ public sealed class BrokerHostTests
             listener.Start();
             return ((IPEndPoint)listener.LocalEndpoint).Port;
         }
+    }
+
+    /// <summary>
+    /// The trusted preset's promised relaxation must be reachable through the real
+    /// connection path. It depends on the evaluator receiving a workspace cleanliness
+    /// provider: when <c>AgentConnection</c> omitted it, the provider defaulted to
+    /// <c>null</c>, the guard <c>_cleanliness?.IsWorkspaceClean(...) != true</c> was
+    /// always true, and every trusted session silently kept asking. This asserts the
+    /// wired end-to-end decision so that regression cannot come back unnoticed.
+    /// </summary>
+    [Fact]
+    public async Task V2_trusted_preset_auto_allows_workspace_risk_when_the_repo_is_clean()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        InitializeCleanGitWorkspace(fixture.Root);
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-trusted-clean";
+        const string runId = "run_trusted_clean111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-trusted-clean", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(
+                    runId,
+                    sessionId,
+                    fixture.Root,
+                    EnvelopeTestSnapshots.Snapshot(1, "trusted", []))),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        // An unknown executable inside the workspace with no network intent is the
+        // documented trusted_workspace_allow case; standard keeps asking for it.
+        var riskyArgs = new JsonObject
+        {
+            ["executable"] = "where.exe",
+            ["arguments"] = new JsonArray("dotnet"),
+            ["working_directory"] = ".",
+        };
+
+        await SendAsync(socket, Evaluate("evaluate-trusted-clean", sessionId, runId, "terminal.run", riskyArgs.DeepClone().AsObject()), cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("trusted_workspace_allow", decision.Payload["reason_code"]!.GetValue<string>());
+        Assert.False(string.IsNullOrWhiteSpace(decision.Payload["authorization_token"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task V2_trusted_preset_still_asks_when_the_workspace_is_dirty()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        InitializeCleanGitWorkspace(fixture.Root);
+        File.WriteAllText(Path.Combine(fixture.Root, "uncommitted.txt"), "dirty");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-trusted-dirty";
+        const string runId = "run_trusted_dirty111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-trusted-dirty", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(
+                    runId,
+                    sessionId,
+                    fixture.Root,
+                    EnvelopeTestSnapshots.Snapshot(1, "trusted", []))),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        await SendAsync(
+            socket,
+            Evaluate(
+                "evaluate-trusted-dirty",
+                sessionId,
+                runId,
+                "terminal.run",
+                new JsonObject
+                {
+                    ["executable"] = "where.exe",
+                    ["arguments"] = new JsonArray("dotnet"),
+                    ["working_directory"] = ".",
+                }),
+            cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("ask", decision.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("terminal_unknown_executable", decision.Payload["reason_code"]!.GetValue<string>());
+    }
+
+    /// <summary>
+    /// Removes a temporary root whose git object files are read-only, which is the
+    /// normal state of a fresh <c>git init</c> on Windows and makes a plain recursive
+    /// delete fail.
+    /// </summary>
+    private static void DeleteDirectoryResilient(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        {
+            try
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+            catch (IOException)
+            {
+                // A locked file still gets removed with its directory below.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        Directory.Delete(path, recursive: true);
+    }
+
+    /// <summary>
+    /// Leaves <paramref name="root"/> as a commit-clean git work tree so the
+    /// cleanliness probe reports it clean. Config is injected per invocation instead
+    /// of written to the user's global git config, and the fixture deletes the root.
+    /// </summary>
+    private static void InitializeCleanGitWorkspace(string root)
+    {
+        File.WriteAllText(Path.Combine(root, "probe.txt"), "workspace-probe");
+        RunGit(root, "init", "--quiet");
+        RunGit(root, "add", "--all");
+        RunGit(
+            root,
+            "-c", "user.email=broker-tests@example.invalid",
+            "-c", "user.name=Broker Tests",
+            "-c", "commit.gpgsign=false",
+            "commit", "--quiet", "--no-gpg-sign", "-m", "seed");
+    }
+
+    private static void RunGit(string workingDirectory, params string[] arguments)
+    {
+        using var process = new System.Diagnostics.Process();
+        process.StartInfo = new System.Diagnostics.ProcessStartInfo("git")
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        Assert.True(process.Start(), "git is required by the Broker test suite");
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        Assert.True(process.WaitForExit(30_000), "git did not exit within the test budget");
+        Assert.True(
+            process.ExitCode == 0,
+            $"git {string.Join(' ', arguments)} failed with {process.ExitCode}: {stdout}{stderr}");
     }
 
     private static AgentEnvelope Evaluate(

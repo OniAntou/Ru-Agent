@@ -13,6 +13,12 @@ using BrokerTestHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 
 namespace RuBackend.Tests.Harness;
 
+/// <summary>
+/// Conformance suite over a real loopback BrokerHost. Every case allocates a loopback
+/// port and spawns real processes, so it shares the non-parallel process-heavy
+/// collection with the other terminal-spawning suites.
+/// </summary>
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class BrokerToolGatewayConformanceTests : ToolGatewayConformance
 {
     private readonly List<BrokerTestHost> _hosts = [];

@@ -20,12 +20,8 @@ public sealed class HelpDocsTool
     {
         ArgumentNullException.ThrowIfNull(arguments);
         cancellationToken.ThrowIfCancellationRequested();
-        var op = arguments["op"]?.GetValue<string>();
-        if (!string.Equals(op, "help", StringComparison.Ordinal))
-        {
-            throw new ArgumentException("unknown_read_op");
-        }
-
+        // help is its own tool now, so there is no op discriminator to check; its
+        // strict schema is what rejects an undeclared property.
         var query = arguments["query"]?.GetValue<string>()?.Trim() ?? throw new ArgumentException("invalid_query");
         if (query.EnumerateRunes().Count() is < 1 or > 256)
         {

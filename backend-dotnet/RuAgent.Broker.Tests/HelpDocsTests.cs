@@ -106,13 +106,20 @@ public sealed class HelpDocsTests
     }
 
     [Fact]
-    public void Tool_rejects_blank_or_extra_arguments()
+    public void Tool_rejects_blank_query_and_out_of_range_max_results()
     {
         var tool = new HelpDocsTool(BundledHelpDocsCatalog.LoadDefault());
 
-        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["op"] = "help", ["query"] = "   " }));
-        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["op"] = "read", ["query"] = "tools" }));
-        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "tools" }));
+        // help no longer has an op discriminator; the strict schema rejects undeclared
+        // properties before this tool is reached, so only query and max_results
+        // validity are its job.
+        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "   " }));
+        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "tools", ["max_results"] = 0 }));
+        Assert.Throws<ArgumentException>(() => tool.Execute(new JsonObject { ["query"] = "tools", ["max_results"] = 6 }));
+
+        // A query with no max_results is valid and defaults to three results.
+        var output = tool.Execute(new JsonObject { ["query"] = "tools" });
+        Assert.True(output["results"] is JsonArray results && results.Count <= 3);
     }
 
     [Fact]

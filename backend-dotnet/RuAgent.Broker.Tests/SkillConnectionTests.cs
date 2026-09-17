@@ -228,7 +228,7 @@ public sealed class SkillConnectionTests
                 "workspace.list.skill", "1.0.0",
                 new JsonObject { ["type"] = "object" },
                 new JsonObject { ["type"] = "object" },
-                new HashSet<string>(["read"]),
+                new HashSet<string>(["list"]),
                 new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SystemRead, ToolScope.SkillExecute]),
                 [new SkillStep(SkillStepKind.CallTool, "list", "list", new JsonObject { ["path"] = ".", ["max_entries"] = 8 })],
                 false, 4, 30_000, "builtin", "Data only.");

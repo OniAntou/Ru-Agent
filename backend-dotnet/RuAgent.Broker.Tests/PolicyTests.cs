@@ -381,10 +381,11 @@ public sealed class PolicyEvaluationTests
     {
         var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
 
-        var readWithoutOp = Assert.Throws<PolicyContextException>(
-            () => factory.Create("read", "1.0.0", new JsonObject { ["path"] = "notes/a.txt" }));
-        Assert.Equal("malformed_call", readWithoutOp.Code);
-        Assert.Contains("read requires op", readWithoutOp.Hint);
+        // read no longer takes an op, so the malformed case is write without one.
+        var writeWithoutOp = Assert.Throws<PolicyContextException>(
+            () => factory.Create("write", "1.0.0", new JsonObject { ["path"] = "notes/a.txt", ["content"] = "x" }));
+        Assert.Equal("malformed_call", writeWithoutOp.Code);
+        Assert.Contains("write requires op", writeWithoutOp.Hint);
 
         var bashWithoutExecutable = Assert.Throws<PolicyContextException>(
             () => factory.Create("bash", "1.0.0", new JsonObject { ["working_directory"] = "." }));

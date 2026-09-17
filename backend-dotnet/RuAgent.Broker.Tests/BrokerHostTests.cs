@@ -744,8 +744,10 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
+        // This fixture runs without a web executor, so the advertised set is the
+        // canonical surface minus the two network tools.
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "write" },
             ids);
     }
 

@@ -3,7 +3,10 @@ namespace RuApp.Services;
 /// <summary>Pure view projection: sessions grouped by workspace for the sidebar.</summary>
 public static class WorkspaceSessionProjection
 {
-    public static WorkspaceProjection Project(
+    public const string UngroupedKey = "ungrouped";
+
+    public static string KeyFor(Models.SessionInfo session) =>
+        string.IsNullOrEmpty(session.WorkspaceId) ? UngroupedKey : session.WorkspaceId;    public static WorkspaceProjection Project(
         IReadOnlyList<Models.SessionInfo> sessions,
         string? search)
     {
@@ -13,7 +16,7 @@ public static class WorkspaceSessionProjection
 
         foreach (var session in sessions)
         {
-            var key = string.IsNullOrEmpty(session.WorkspaceId) ? "ungrouped" : session.WorkspaceId;
+            var key = KeyFor(session);
             var label = string.IsNullOrEmpty(session.WorkspaceLabel) ? "Ungrouped" : session.WorkspaceLabel;
             if (!byKey.TryGetValue(key, out var list))
             {

@@ -233,6 +233,20 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
+    public void Sidebar_render_wires_projection_and_new_chat_cascade()
+    {
+        var code = GuiSource.Text("MainWindow.xaml.cs");
+        Assert.Contains(
+            "WorkspaceSessionProjection.Project",
+            GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ResolveNewChatWorkspace",
+            GuiSource.MethodBody(code, "OnNewChatClick"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_composer_offers_standard_and_trusted_but_never_the_legacy_value()
     {
         // FullAccess still exists on the enum as legacy wire compatibility, but the

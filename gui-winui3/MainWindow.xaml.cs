@@ -192,7 +192,7 @@ namespace RuApp
 
         private async Task InitializeAppAsync()
         {
-            SidebarSessionList.ItemsSource = Sessions;
+            SidebarSessionList.ItemsSource = _sidebarRows;
             StatusText.Text = $"Starting {_backendProvider.DisplayName} Backend...";
             StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
             WelcomeOverlay?.SetStatus($"Starting {_backendProvider.DisplayName}...", isReady: false);
@@ -895,11 +895,14 @@ namespace RuApp
                     Sessions.RemoveAt(i);
                 }
             }
+
+            RenderWorkspaceSidebar();
         }
 
         private void SyncSidebarSelection(string sessionId)
         {
             if (string.IsNullOrEmpty(sessionId)) return;
+            _activeSessionId = sessionId;
             foreach (var item in Sessions)
             {
                 if (item.Id == sessionId)
@@ -979,29 +982,154 @@ namespace RuApp
             if (session != null)
             {
                 await LoadSessionsAsync();
-                
+
+                var target = ResolveNewChatWorkspace();
+                if (target is not null)
+                {
+                    _workspaceGroups.SetExpanded(target, true);
+                    RenderWorkspaceSidebar();
+                }
+
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());
-                
+
                 // Tell ChatView to switch to this new session
                 await _chatView.OpenSessionAsync(session.Id, session.Title);
             }
         }
 
+        private string? ResolveNewChatWorkspace()
+        {
+            var active = _activeSessionId is null
+                ? null
+                : Sessions.FirstOrDefault(s => s.Id == _activeSessionId);
+            if (active is not null)
+            {
+                return WorkspaceSessionProjection.KeyFor(active);
+            }
+
+            var newest = Sessions.FirstOrDefault();
+            return newest is null ? null : WorkspaceSessionProjection.KeyFor(newest);
+        }
+
         private async void OnSessionSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_suppressSidebarSelection)
+            {
+                return;
+            }
+
             if (SidebarSessionList.SelectedItem is SessionInfo selected && _chatView != null)
             {
+                _activeSessionId = selected.Id;
+
+                var key = WorkspaceSessionProjection.KeyFor(selected);
+                if (!_workspaceGroups.IsExpanded(key, defaultExpanded: true))
+                {
+                    _workspaceGroups.SetExpanded(key, true);
+                    RenderWorkspaceSidebar();
+                }
+
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());
                 await _chatView.OpenSessionAsync(selected.Id, selected.Title);
+            }
+            else if (SidebarSessionList.SelectedItem is not null)
+            {
+                _suppressSidebarSelection = true;
+                try
+                {
+                    SidebarSessionList.SelectedItem = null;
+                }
+                finally
+                {
+                    _suppressSidebarSelection = false;
+                }
             }
         }
 
         private string _workspaceSearchText = string.Empty;
         private bool _workspaceFilterActive;
+        private string? _activeSessionId;
+        private bool _suppressSidebarSelection;
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? _workspaceSearchTimer;
+        private const int WorkspaceGroupPageSize = 5;
+        private readonly ObservableCollection<object> _sidebarRows = new();
         private readonly WorkspaceGroupPreferenceStore _workspaceGroups = new();
         private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
+
+        private void RenderWorkspaceSidebar()
+        {
+            var sessions = Sessions.ToList();
+            var activeKey = ActiveWorkspaceKey();
+            if (_workspaceFilterActive && activeKey is not null)
+            {
+                sessions = sessions
+                    .Where(session => WorkspaceSessionProjection.KeyFor(session) == activeKey)
+                    .ToList();
+            }
+
+            var projection = WorkspaceSessionProjection.Project(sessions, _workspaceSearchText);
+
+            _suppressSidebarSelection = true;
+            try
+            {
+                _sidebarRows.Clear();
+                var first = true;
+                foreach (var group in projection.Groups)
+                {
+                    var expanded = _workspaceGroups.IsExpanded(
+                        group.Key,
+                        defaultExpanded: activeKey is null ? first : group.Key == activeKey);
+                    first = false;
+                    _sidebarRows.Add(new WorkspaceGroupRow(group, expanded));
+                    if (!expanded)
+                    {
+                        continue;
+                    }
+
+                    if (group.Sessions.Count > WorkspaceGroupPageSize
+                        && !_groupShowAll.Contains(group.Key))
+                    {
+                        foreach (var session in group.Sessions.Take(WorkspaceGroupPageSize))
+                        {
+                            _sidebarRows.Add(session);
+                        }
+
+                        _sidebarRows.Add(new WorkspaceShowMoreRow(
+                            group.Key,
+                            $"Show {group.Sessions.Count - WorkspaceGroupPageSize} more"));
+                    }
+                    else
+                    {
+                        foreach (var session in group.Sessions)
+                        {
+                            _sidebarRows.Add(session);
+                        }
+                    }
+                }
+
+                if (_activeSessionId is not null)
+                {
+                    SyncSidebarSelection(_activeSessionId);
+                }
+            }
+            finally
+            {
+                _suppressSidebarSelection = false;
+            }
+        }
+
+        private string? ActiveWorkspaceKey()
+        {
+            if (_activeSessionId is null)
+            {
+                return null;
+            }
+
+            var active = Sessions.FirstOrDefault(session => session.Id == _activeSessionId);
+            return active is null ? null : WorkspaceSessionProjection.KeyFor(active);
+        }
 
         private void OnWorkspaceSearchClick(object sender, RoutedEventArgs e)
         {
@@ -1015,6 +1143,19 @@ namespace RuApp
             {
                 _workspaceSearchText = box.Text;
             }
+
+            _workspaceSearchTimer ??= DispatcherQueue.CreateTimer();
+            _workspaceSearchTimer.Interval = TimeSpan.FromMilliseconds(250);
+            _workspaceSearchTimer.Tick -= OnWorkspaceSearchTick;
+            _workspaceSearchTimer.Tick += OnWorkspaceSearchTick;
+            _workspaceSearchTimer.Stop();
+            _workspaceSearchTimer.Start();
+        }
+
+        private void OnWorkspaceSearchTick(Microsoft.UI.Dispatching.DispatcherQueueTimer timer, object args)
+        {
+            timer.Stop();
+            RenderWorkspaceSidebar();
         }
 
         private void OnWorkspaceSearchKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
@@ -1024,12 +1165,17 @@ namespace RuApp
                 _workspaceSearchText = string.Empty;
                 WorkspaceSearchBox.Text = string.Empty;
                 WorkspaceSearchBox.Visibility = Visibility.Collapsed;
+                RenderWorkspaceSidebar();
             }
         }
 
         private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e)
         {
             _workspaceFilterActive = !_workspaceFilterActive;
+            WorkspaceFilterButton.Background = _workspaceFilterActive
+                ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
+                : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            RenderWorkspaceSidebar();
         }
 
         private void OnWorkspaceGroupClick(object sender, RoutedEventArgs e)
@@ -1037,6 +1183,7 @@ namespace RuApp
             if (sender is Button button && button.Tag is string key)
             {
                 _workspaceGroups.SetExpanded(key, !_workspaceGroups.IsExpanded(key, defaultExpanded: true));
+                RenderWorkspaceSidebar();
             }
         }
 
@@ -1045,6 +1192,7 @@ namespace RuApp
             if (sender is Button button && button.Tag is string key)
             {
                 _groupShowAll.Add(key);
+                RenderWorkspaceSidebar();
             }
         }
 

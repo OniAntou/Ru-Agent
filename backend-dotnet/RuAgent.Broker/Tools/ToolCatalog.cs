@@ -28,6 +28,15 @@ public sealed class ToolCatalog
             throw new InvalidOperationException("incomplete_tool_binding");
         }
 
+        // The binding relation must hold in both directions. Without this check the
+        // catalog could grow past the manifests and the model would be offered a tool
+        // the execution authority has no binding for.
+        var boundIds = manifests.Select(manifest => manifest.Id).ToHashSet(StringComparer.Ordinal);
+        if (BoundIds.Any(id => !boundIds.Contains(id)))
+        {
+            throw new InvalidOperationException("incomplete_tool_catalog");
+        }
+
         foreach (var manifest in manifests)
         {
             var definition = AgentToolDefinitionCatalog.Find(manifest.Id, manifest.Version);
@@ -67,7 +76,9 @@ public sealed class ToolCatalog
 
     private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
-        yield return Manifest("read", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
+        yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
+        yield return Manifest("list", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
+        yield return Manifest("help", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
         yield return Manifest("grep", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("glob", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);

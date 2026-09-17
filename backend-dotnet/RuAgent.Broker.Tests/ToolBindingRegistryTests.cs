@@ -14,7 +14,38 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Chat)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Equal(new HashSet<string> { "read", "grep", "glob", "web_fetch", "web_search" }, ids);
+        // list and help are read-only, so the Chat profile advertises them too.
+        Assert.Equal(
+            new HashSet<string> { "read", "list", "help", "grep", "glob", "web_fetch", "web_search" },
+            ids);
+    }
+
+    /// <summary>
+    /// The binding set must equal the canonical catalog. This is the structural half of
+    /// the <c>incomplete_tool_catalog</c> guard in the constructor: the guard fails closed
+    /// at runtime, this fails loudly in the suite and names the tool that went missing.
+    /// Order is not compared here — <see cref="ToolBindingRegistry.List"/> sorts by id
+    /// (ordinal), which is deliberately independent of the catalog's prompt ordinal.
+    /// </summary>
+    [Fact]
+    public void Binding_set_equals_the_canonical_catalog()
+    {
+        var bound = new ToolCatalog(ExecutableStubs()).Registry.List()
+            .Select(binding => binding.Manifest.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var canonical = AgentToolDefinitionCatalog.Get()
+            .Select(definition => definition.ToolId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(canonical, bound);
+
+        // Named per tool so a missing binding reports which tool, not just a count.
+        foreach (var definition in AgentToolDefinitionCatalog.Get())
+        {
+            Assert.True(
+                bound.Contains(definition.ToolId),
+                $"The Broker has no binding for the canonical tool '{definition.ToolId}'.");
+        }
     }
 
     [Fact]
@@ -80,21 +111,32 @@ public sealed class ToolBindingRegistryTests
         Assert.Equal("unknown_tool_executor", error.Message);
     }
 
+    /// <summary>
+    /// The manifest declarations themselves must stay in the catalog's ordinal order.
+    /// The registry cannot observe this — it sorts by id — so this compares the declared
+    /// order through the catalog, which is what the prompt ordinal depends on. A tool
+    /// declared out of order still binds and still executes, but it silently moves in the
+    /// model-facing tool list.
+    /// </summary>
     [Fact]
-    public void Catalog_contains_only_bound_v1_tools()
+    public void Binding_set_covers_every_canonical_tool()
     {
-        var ids = new ToolCatalog(ExecutableStubs()).Registry.List()
+        var bound = new ToolCatalog(ExecutableStubs()).Registry.List()
             .Select(binding => binding.Manifest.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(new[]
-        {
-            "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write",
-        }, ids);
-        Assert.DoesNotContain("app.open", ids);
-        Assert.DoesNotContain("workspace.search", ids);
-        Assert.DoesNotContain("web.search", ids);
-        Assert.DoesNotContain("mail.send", ids);
+        Assert.Equal(
+            new[]
+            {
+                "bash", "edit", "glob", "grep", "help", "list",
+                "read", "web_fetch", "web_search", "write",
+            },
+            bound);
+        Assert.DoesNotContain("app.open", bound);
+        Assert.DoesNotContain("workspace.search", bound);
+        Assert.DoesNotContain("web.search", bound);
+        Assert.DoesNotContain("mail.send", bound);
     }
 
     internal static ToolBindingRegistry CatalogForTests() =>
@@ -103,6 +145,8 @@ public sealed class ToolBindingRegistryTests
     internal static Dictionary<string, ToolExecutor> ExecutableStubs() => new(StringComparer.Ordinal)
     {
         ["read"] = Succeeded,
+        ["list"] = Succeeded,
+        ["help"] = Succeeded,
         ["grep"] = Succeeded,
         ["glob"] = Succeeded,
         ["write"] = Succeeded,

@@ -894,6 +894,10 @@ namespace RuApp
                 {
                     Sessions.RemoveAt(i);
                 }
+                else if (!string.IsNullOrEmpty(Sessions[i].WorkspacePath))
+                {
+                    _sessionWorkspaces.Remove(Sessions[i].Id);
+                }
             }
 
             RenderWorkspaceSidebar();
@@ -983,7 +987,17 @@ namespace RuApp
             {
                 await LoadSessionsAsync();
 
-                var target = ResolveNewChatWorkspace();
+                var selectedPath = _selectedWorkspaceKey is null
+                    ? null
+                    : ResolveWorkspacePath(_selectedWorkspaceKey);
+                if (selectedPath is not null)
+                {
+                    _sessionWorkspaces.Set(session.Id, selectedPath);
+                }
+
+                _chatView.SetRequestedWorkspace(selectedPath);
+
+                var target = _selectedWorkspaceKey ?? ResolveNewChatWorkspace();
                 if (target is not null)
                 {
                     _workspaceGroups.SetExpanded(target, true);
@@ -1036,10 +1050,35 @@ namespace RuApp
                     RenderWorkspaceSidebar();
                 }
 
+                _chatView.SetRequestedWorkspace(
+                    !string.IsNullOrEmpty(selected.WorkspacePath)
+                        ? selected.WorkspacePath
+                        : _sessionWorkspaces.Lookup(selected.Id));
+
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());
                 await _chatView.OpenSessionAsync(selected.Id, selected.Title);
                 SidebarSessionList.ScrollIntoView(selected);
+            }
+            else if (SidebarSessionList.SelectedItem is WorkspaceGroupRow groupRow)
+            {
+                if (_selectedWorkspaceKey == groupRow.Group.Key)
+                {
+                    _selectedWorkspaceKey = null;
+                    _suppressSidebarSelection = true;
+                    try
+                    {
+                        SidebarSessionList.SelectedItem = null;
+                    }
+                    finally
+                    {
+                        _suppressSidebarSelection = false;
+                    }
+                }
+                else
+                {
+                    _selectedWorkspaceKey = groupRow.Group.Key;
+                }
             }
             else if (SidebarSessionList.SelectedItem is not null)
             {
@@ -1058,12 +1097,19 @@ namespace RuApp
         private string _workspaceSearchText = string.Empty;
         private bool _workspaceFilterActive;
         private string? _activeSessionId;
+        private string? _selectedWorkspaceKey;
         private bool _suppressSidebarSelection;
         private Microsoft.UI.Dispatching.DispatcherQueueTimer? _workspaceSearchTimer;
         private const int WorkspaceGroupPageSize = 5;
         private readonly ObservableCollection<object> _sidebarRows = new();
+        private readonly List<WorkspaceGroup> _lastWorkspaceGroups = new();
         private readonly WorkspaceGroupPreferenceStore _workspaceGroups = new();
+        private readonly WorkspacePinStore _workspacePins = new();
+        private readonly SessionWorkspaceMapStore _sessionWorkspaces = new();
         private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
+
+        private static string PathStateKey(string canonicalPath) =>
+            "path:" + canonicalPath.ToLowerInvariant();
 
         private void RenderWorkspaceSidebar()
         {
@@ -1078,18 +1124,29 @@ namespace RuApp
 
             var projection = WorkspaceSessionProjection.Project(sessions, _workspaceSearchText);
             var searching = !string.IsNullOrWhiteSpace(_workspaceSearchText);
+            var groups = WorkspaceSessionProjection.MergePinned(
+                projection.Groups,
+                _workspacePins.PinnedPaths);
+            if (searching)
+            {
+                groups = groups.Where(group => group.Sessions.Count > 0).ToList();
+            }
 
             _suppressSidebarSelection = true;
             try
             {
                 _sidebarRows.Clear();
+                _lastWorkspaceGroups.Clear();
+                _lastWorkspaceGroups.AddRange(groups);
                 var first = true;
-                foreach (var group in projection.Groups)
+                foreach (var group in groups)
                 {
                     var expanded = searching
                         || _workspaceGroups.IsExpanded(
                             group.Key,
-                            defaultExpanded: activeKey is null ? first : group.Key == activeKey);
+                            defaultExpanded: activeKey is null ? first : group.Key == activeKey)
+                        || (!string.IsNullOrEmpty(group.Path)
+                            && _workspaceGroups.IsExpanded(PathStateKey(group.Path), defaultExpanded: false));
                     first = false;
                     _sidebarRows.Add(new WorkspaceGroupRow(group, expanded));
                     if (!expanded)
@@ -1222,6 +1279,62 @@ namespace RuApp
                 _groupShowAll.Add(key);
                 RenderWorkspaceSidebar();
             }
+        }
+
+        private async void OnWorkspaceAddClick(object sender, RoutedEventArgs e)
+        {
+            var picker = new Windows.Storage.Pickers.FolderPicker();
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker,
+                WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is null)
+            {
+                return;
+            }
+
+            var canonical = WorkspacePinStore.Canonicalize(folder.Path);
+            _workspacePins.Pin(canonical);
+            _workspaceGroups.SetExpanded(PathStateKey(canonical), true);
+            RenderWorkspaceSidebar();
+
+            foreach (var group in _lastWorkspaceGroups)
+            {
+                if (!string.IsNullOrEmpty(group.Path)
+                    && string.Equals(group.Path, canonical, StringComparison.OrdinalIgnoreCase))
+                {
+                    _workspaceGroups.SetExpanded(group.Key, true);
+                    RenderWorkspaceSidebar();
+                    break;
+                }
+            }
+        }
+
+        private string? ResolveWorkspacePath(string key)
+        {
+            foreach (var group in _lastWorkspaceGroups)
+            {
+                if (group.Key == key)
+                {
+                    return group.Path;
+                }
+
+                if (!string.IsNullOrEmpty(group.Path) && PathStateKey(group.Path) == key)
+                {
+                    return group.Path;
+                }
+            }
+
+            foreach (var pinned in _workspacePins.PinnedPaths)
+            {
+                if (PathStateKey(pinned) == key)
+                {
+                    return pinned;
+                }
+            }
+
+            return null;
         }
 
         private void WorkspaceGroupToggle_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
@@ -1577,6 +1690,7 @@ namespace RuApp
             if (WorkspaceHeaderPanel != null) WorkspaceHeaderPanel.Visibility = labelVis;
             if (StatusText != null) StatusText.Visibility = labelVis;
             if (SidebarSessionList != null) SidebarSessionList.Visibility = labelVis;
+            if (WorkspaceAddButton != null) WorkspaceAddButton.Visibility = labelVis;
 
             if (isNarrow)
             {

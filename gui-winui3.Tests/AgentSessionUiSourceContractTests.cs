@@ -233,6 +233,8 @@ public sealed class AgentSessionUiSourceContractTests
 
         var app = GuiSource.Xml("App.xaml");
         Assert.True(app.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "RelativeTimeConverter"));
+
+        Assert.Contains("WorkspaceAddButton", GuiSource.NamedElements(document).Keys);
     }
 
     [Fact]
@@ -250,6 +252,14 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(
             "VirtualKey.Enter",
             GuiSource.MethodBody(code, "OnWorkspaceSearchKeyDown"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "FolderPicker",
+            GuiSource.MethodBody(code, "OnWorkspaceAddClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "MergePinned",
+            GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
             StringComparison.Ordinal);
     }
 

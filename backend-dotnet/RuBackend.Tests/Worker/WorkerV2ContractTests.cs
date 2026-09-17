@@ -232,8 +232,8 @@ public sealed class WorkerV2ContractTests
         Assert.DoesNotContain(offlineTools, definition => definition.ToolId == "web_search");
         Assert.DoesNotContain(offlineTools, definition => definition.ToolId == "web_fetch");
         var read = Assert.Single(offlineTools, definition => definition.ToolId == "read");
-        Assert.DoesNotContain("web_search", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.DoesNotContain("web_fetch", read.InputSchema["properties"]!["op"]!["enum"]!.AsArray().Select(item => item!.GetValue<string>()));
+        // read has no op discriminator at all now, so the web tools cannot appear in one.
+        Assert.False(read.InputSchema["properties"]!.AsObject().ContainsKey("op"));
     }
 
     [Fact]

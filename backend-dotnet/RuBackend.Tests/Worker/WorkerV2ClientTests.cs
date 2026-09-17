@@ -624,12 +624,19 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             new[]
             {
-                "read", "grep", "glob", "write", "edit", "bash", "web_search", "web_fetch",
+                "read", "list", "help", "grep", "glob",
+                "write", "edit", "bash", "web_search", "web_fetch",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(
-            ["workspace.read"],
+            ["system.read"],
             tools["read"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["workspace.read"],
+            tools["list"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["system.read"],
+            tools["help"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Equal(
             ["workspace.write"],
             tools["write"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));

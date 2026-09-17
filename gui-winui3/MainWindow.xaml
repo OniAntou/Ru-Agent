@@ -3,7 +3,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:RuApp.Models"
-    xmlns:controls="using:RuApp.Controls">
+    xmlns:controls="using:RuApp.Controls"
+    xmlns:services="using:RuApp.Services"
+    xmlns:views="using:RuApp.Views">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="Base" />
@@ -49,7 +51,7 @@
                             <Setter Target="LabelChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelThemeToggle.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelSettings.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelRecents.Visibility" Value="Collapsed"/>
+                            <Setter Target="WorkspaceHeaderPanel.Visibility" Value="Collapsed"/>
                             <Setter Target="NavNewChat.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavChat.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="ThemeToggleButton.HorizontalContentAlignment" Value="Center"/>
@@ -73,6 +75,66 @@
 
             <!-- Navigation Sidebar -->
             <Border Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
+                <Border.Resources>
+        <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
+            <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneTime}"
+                  PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent">
+                <Grid.ContextFlyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem Text="Fork New Branch" Click="OnForkSessionMenuClick" Tag="{x:Bind Id}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE8D8;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem Text="Delete Session" Click="OnDeleteSessionClick" Tag="{x:Bind Id}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </Grid.ContextFlyout>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
+                           TextTrimming="CharacterEllipsis" 
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock x:Name="RelativeTimeText" Grid.Column="1" Text="{Binding UpdatedAt, Converter={StaticResource RelativeTimeConverter}}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
+                         Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
+                         Tag="{x:Bind Id}" Opacity="0" IsTabStop="False" ToolTipService.ToolTip="Delete session">
+                    <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
+                </Button>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="WorkspaceGroupTemplate" x:DataType="services:WorkspaceGroupRow">
+            <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}"
+                    Background="Transparent" BorderThickness="0" Padding="10,6"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                    ToolTipService.ToolTip="{x:Bind Group.Path}">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                    <FontIcon Grid.Column="0" Glyph="&#xE8B7;" FontSize="14" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{x:Bind Group.Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="{x:Bind Group.Sessions.Count}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                    <FontIcon Grid.Column="3" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                </Grid>
+            </Button>
+        </DataTemplate>
+        <DataTemplate x:Key="WorkspaceShowMoreTemplate" x:DataType="services:WorkspaceShowMoreRow">
+            <Button Click="OnWorkspaceShowMoreClick" Tag="{x:Bind GroupKey}" Background="Transparent" BorderThickness="0" Padding="10,4"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                <TextBlock Text="{x:Bind DisplayText}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuAccentBrush}"/>
+            </Button>
+        </DataTemplate>
+        <views:SidebarRowTemplateSelector x:Key="SidebarRowSelector"
+                                          GroupTemplate="{StaticResource WorkspaceGroupTemplate}"
+                                          SessionTemplate="{StaticResource WorkspaceSessionTemplate}"
+                                          ShowMoreTemplate="{StaticResource WorkspaceShowMoreTemplate}" />
+                </Border.Resources>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -113,17 +175,38 @@
                             </Button>
                         </StackPanel>
 
-                        <!-- Recent Chats Header -->
-                        <Grid Grid.Row="1" Margin="14,20,14,6" ColumnDefinitions="*,Auto">
-                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="CONVERSATIONS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
-                                       Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                        </Grid>
                         
+                        <!-- Workspaces Header -->
+                        <Grid x:Name="WorkspaceHeaderPanel" Grid.Row="1" Margin="14,20,14,6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
+                                <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                <Button x:Name="WorkspaceSearchButton" Grid.Column="1" Click="OnWorkspaceSearchClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="Search sessions" AutomationProperties.Name="Search sessions">
+                                    <FontIcon Glyph="&#xE721;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
+                                </Button>
+                                <Button x:Name="WorkspaceFilterButton" Grid.Column="2" Click="OnWorkspaceFilterClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="Show only the current workspace" AutomationProperties.Name="Filter to current workspace">
+                                    <FontIcon Glyph="&#xE71C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
+                                </Button>
+                                <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnNewChatClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="New chat" AutomationProperties.Name="New chat">
+                                    <FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
+                                </Button>
+                            </Grid>
+                            <TextBox x:Name="WorkspaceSearchBox" Grid.Row="1" Margin="0,6,0,0" PlaceholderText="Search sessions"
+                                     Visibility="Collapsed" TextChanged="OnWorkspaceSearchTextChanged" KeyDown="OnWorkspaceSearchKeyDown"/>
+                        </Grid>
+
                         <!-- Sessions List -->
                         <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single"
                                   AutomationProperties.AutomationId="SessionList"
                                   SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16"
-                                  Background="Transparent" BorderThickness="0">
+                                  Background="Transparent" BorderThickness="0" ItemTemplateSelector="{StaticResource SidebarRowSelector}">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -133,40 +216,6 @@
                                     <Setter Property="Margin" Value="0,1" />
                                 </Style>
                             </ListView.ItemContainerStyle>
-                            <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="models:SessionInfo">
-                                    <Grid Margin="{x:Bind ItemMargin, Mode=OneTime}" ToolTipService.ToolTip="{x:Bind TooltipText, Mode=OneTime}"
-                                          PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent">
-                                        <Grid.ContextFlyout>
-                                            <MenuFlyout>
-                                                <MenuFlyoutItem Text="Fork New Branch" Click="OnForkSessionMenuClick" Tag="{x:Bind Id}">
-                                                    <MenuFlyoutItem.Icon>
-                                                        <FontIcon Glyph="&#xE8D8;" />
-                                                    </MenuFlyoutItem.Icon>
-                                                </MenuFlyoutItem>
-                                                <MenuFlyoutSeparator />
-                                                <MenuFlyoutItem Text="Delete Session" Click="OnDeleteSessionClick" Tag="{x:Bind Id}">
-                                                    <MenuFlyoutItem.Icon>
-                                                        <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}" />
-                                                    </MenuFlyoutItem.Icon>
-                                                </MenuFlyoutItem>
-                                            </MenuFlyout>
-                                        </Grid.ContextFlyout>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
-                                                   TextTrimming="CharacterEllipsis" 
-                                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                        <Button Grid.Column="1" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
-                                                 Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
-                                                 Tag="{x:Bind Id}" Opacity="0" IsTabStop="False" ToolTipService.ToolTip="Delete session">
-                                            <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
-                                        </Button>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
                         </ListView>
                     </Grid>
 

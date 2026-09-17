@@ -998,6 +998,56 @@ namespace RuApp
             }
         }
 
+        private string _workspaceSearchText = string.Empty;
+        private bool _workspaceFilterActive;
+        private readonly WorkspaceGroupPreferenceStore _workspaceGroups = new();
+        private readonly HashSet<string> _groupShowAll = new(StringComparer.Ordinal);
+
+        private void OnWorkspaceSearchClick(object sender, RoutedEventArgs e)
+        {
+            WorkspaceSearchBox.Visibility = Visibility.Visible;
+            WorkspaceSearchBox.Focus(FocusState.Programmatic);
+        }
+
+        private void OnWorkspaceSearchTextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sender is TextBox box)
+            {
+                _workspaceSearchText = box.Text;
+            }
+        }
+
+        private void OnWorkspaceSearchKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (e.Key == Windows.System.VirtualKey.Escape)
+            {
+                _workspaceSearchText = string.Empty;
+                WorkspaceSearchBox.Text = string.Empty;
+                WorkspaceSearchBox.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e)
+        {
+            _workspaceFilterActive = !_workspaceFilterActive;
+        }
+
+        private void OnWorkspaceGroupClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string key)
+            {
+                _workspaceGroups.SetExpanded(key, !_workspaceGroups.IsExpanded(key, defaultExpanded: true));
+            }
+        }
+
+        private void OnWorkspaceShowMoreClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string key)
+            {
+                _groupShowAll.Add(key);
+            }
+        }
+
         private void OnShellPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
             if (e.Key == Windows.System.VirtualKey.Escape && _isSettingsModalOpen)
@@ -1332,7 +1382,7 @@ namespace RuApp
             if (LabelChat != null) LabelChat.Visibility = labelVis;
             if (LabelThemeToggle != null) LabelThemeToggle.Visibility = labelVis;
             if (LabelSettings != null) LabelSettings.Visibility = labelVis;
-            if (LabelRecents != null) LabelRecents.Visibility = labelVis;
+            if (WorkspaceHeaderPanel != null) WorkspaceHeaderPanel.Visibility = labelVis;
             if (StatusText != null) StatusText.Visibility = labelVis;
             if (SidebarSessionList != null) SidebarSessionList.Visibility = labelVis;
 

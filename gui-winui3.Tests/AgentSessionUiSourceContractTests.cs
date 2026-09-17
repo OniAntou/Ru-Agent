@@ -207,6 +207,32 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
+    public void Sidebar_groups_sessions_under_workspace_headers()
+    {
+        var document = GuiSource.Xml("MainWindow.xaml");
+
+        var header = GuiSource.Require(document, "WorkspaceHeader");
+        Assert.Equal("WORKSPACES", GuiSource.AttributeValue(header, "Text"));
+
+        foreach (var name in new[] { "WorkspaceSearchButton", "WorkspaceFilterButton", "WorkspaceNewButton", "WorkspaceSearchBox" })
+        {
+            Assert.True(GuiSource.NamedElements(document).ContainsKey(name), $"{name} must exist.");
+        }
+
+        var groupTemplate = document.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "WorkspaceGroupTemplate");
+        var toggle = groupTemplate.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupToggle");
+        Assert.Equal("Button", toggle.Name.LocalName);
+        Assert.Equal("OnWorkspaceGroupClick", GuiSource.AttributeValue(toggle, "Click"));
+
+        Assert.True(GuiSource.NamedElements(document).ContainsKey("RelativeTimeText"), "RelativeTimeText must exist.");
+
+        var app = GuiSource.Xml("App.xaml");
+        Assert.True(app.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "RelativeTimeConverter"));
+    }
+
+    [Fact]
     public void The_composer_offers_standard_and_trusted_but_never_the_legacy_value()
     {
         // FullAccess still exists on the enum as legacy wire compatibility, but the

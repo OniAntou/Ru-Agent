@@ -61,3 +61,12 @@ public sealed record WorkspaceGroup(
     IReadOnlyList<Models.SessionInfo> Sessions);
 
 public sealed record WorkspaceProjection(IReadOnlyList<WorkspaceGroup> Groups);
+
+/// <summary>Sidebar row for a workspace header; chevron follows expand state.</summary>
+public sealed record WorkspaceGroupRow(WorkspaceGroup Group, bool IsExpanded)
+{
+    public string ChevronGlyph => IsExpanded ? "" : "";
+}
+
+/// <summary>Sidebar row expanding a folded group.</summary>
+public sealed record WorkspaceShowMoreRow(string GroupKey, string DisplayText);

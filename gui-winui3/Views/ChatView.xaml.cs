@@ -96,6 +96,7 @@ namespace RuApp.Views
         private long? _agentPresetVersion;
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
+        private string? _requestedWorkspace;
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
@@ -2210,8 +2211,9 @@ namespace RuApp.Views
 
 
             await EnsureAgentSessionAsync(cancellationToken);
-            string workspace = AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)
-                ?? Environment.CurrentDirectory;
+            string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
+                ?? _defaultAgentWorkspace
+                ?? throw new InvalidOperationException("App root workspace is not configured.");
 
             _agentWorkspace = workspace;
 
@@ -3183,8 +3185,13 @@ namespace RuApp.Views
             }
         }
 
-        public async Task OpenSessionAsync(string sessionId, string title)
+        /// <summary>Overrides the workspace for the next runs; null restores the app root default.</summary>
+        public void SetRequestedWorkspace(string? workspacePath)
         {
+            _requestedWorkspace = string.IsNullOrWhiteSpace(workspacePath) ? null : workspacePath.Trim();
+        }
+
+        public async Task OpenSessionAsync(string sessionId, string title)       {
             try
             {
                 if (_apiService == null) return;

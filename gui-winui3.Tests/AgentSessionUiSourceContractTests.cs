@@ -254,6 +254,19 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
+    public void ChatView_runs_in_the_requested_workspace_with_app_root_default()
+    {
+        Assert.NotNull(typeof(RuApp.Views.ChatView).GetMethod(
+            "SetRequestedWorkspace",
+            BindingFlags.Instance | BindingFlags.Public));
+
+        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var body = GuiSource.MethodBody(code, "SendAgentTurnAsync");
+        Assert.Contains("_requestedWorkspace", body, StringComparison.Ordinal);
+        Assert.Contains("App root workspace is not configured", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_composer_offers_standard_and_trusted_but_never_the_legacy_value()
     {
         // FullAccess still exists on the enum as legacy wire compatibility, but the

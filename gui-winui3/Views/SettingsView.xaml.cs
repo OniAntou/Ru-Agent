@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using RuAgent.Harness.Core;
@@ -27,6 +28,12 @@ namespace RuApp.Views
         private string _themeChoice = "dark";
         private string _presetChoice = "standard";
         private string _providerChoice = "opencode";
+
+        /// <summary>
+        /// The stored conversation text size, read once at construction so the picker
+        /// opens on the size the transcript is already using.
+        /// </summary>
+        private double _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
 
         private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value);
         private IReadOnlyList<DropdownOption>? _themeOptions;
@@ -128,9 +135,56 @@ namespace RuApp.Views
             RefreshProviderUI();
         }
 
-        private static void AttachDropdownHover(IReadOnlyList<DropdownOption> options)
+        /// <summary>
+        /// Builds the conversation text size rows and selects the stored size.
+        /// </summary>
+        /// <remarks>
+        /// Rows are created rather than declared because the range belongs to
+        /// <see cref="TranscriptFontSizeStore"/>: a declared list would be a second
+        /// copy of it, and the two could disagree.
+        /// </remarks>
+        private void InitTranscriptSizeOptions()
         {
-            foreach (var option in options)
+            if (TranscriptSizeOptionsPanel == null || TranscriptSizeButtonLabel == null)
+            {
+                return;
+            }
+
+            TranscriptSizeOptionsPanel.Children.Clear();
+            foreach (var size in TranscriptSizePickerProjection.Sizes())
+            {
+                var row = new RadioButton
+                {
+                    Content = TranscriptSizePickerProjection.LabelWithActivity(size),
+                    Tag = size,
+                    GroupName = "TranscriptFontSize",
+                    MinHeight = 32,
+                    IsChecked = Math.Abs(size - _transcriptSize) < 0.001,
+                };
+                AutomationProperties.SetAutomationId(
+                    row,
+                    TranscriptSizePickerProjection.OptionAutomationId(size));
+                row.Checked += OnTranscriptSizeOptionChecked;
+                TranscriptSizeOptionsPanel.Children.Add(row);
+            }
+
+            TranscriptSizeButtonLabel.Text = TranscriptSizePickerProjection.Label(_transcriptSize);
+        }
+
+        private void OnTranscriptSizeOptionChecked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not RadioButton { Tag: double size })
+            {
+                return;
+            }
+
+            TranscriptTypography.Instance.MessageFontSize = size;
+            _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
+            TranscriptSizeButtonLabel.Text = TranscriptSizePickerProjection.Label(_transcriptSize);
+        }
+
+        private static void AttachDropdownHover(IReadOnlyList<DropdownOption> options)
+        {            foreach (var option in options)
             {
                 // Selected-aware hover mirrors the prompt ModelPicker rows.
                 option.Button.PointerEntered += (_, _) => option.Button.Background = IsOptionSelected(options, option)
@@ -155,6 +209,7 @@ namespace RuApp.Views
         {
             this.InitializeComponent();
             InitDropdownOptions();
+            InitTranscriptSizeOptions();
             InitializeSettingsHoverEffects();
         }
 

@@ -89,7 +89,7 @@
                         </ItemsControl>
 
                         <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                                FontSize="14"
+                                                FontSize="{Binding MessageFontSize, Source={StaticResource TranscriptTypography}}"
                                                 Foreground="{StaticResource RuInkBrush}"
                                                 FontFamily="{StaticResource RuUiFontFamily}" />
                     </StackPanel>
@@ -119,7 +119,7 @@
                      <TextBlock Grid.Column="0"
                                 Text="{x:Bind DisplayText, Mode=OneWay}"
                                 FontFamily="{StaticResource RuUiFontFamily}"
-                                FontSize="13"
+                                FontSize="{Binding ActivityFontSize, Source={StaticResource TranscriptTypography}}"
                                FontWeight="Medium"
                                Foreground="{StaticResource RuInkBrush}"
                                TextWrapping="Wrap"
@@ -243,7 +243,7 @@
                     </ItemsControl>
                     <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                            FontSize="14"
+                                            FontSize="{Binding MessageFontSize, Source={StaticResource TranscriptTypography}}"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
                     <!--

@@ -150,8 +150,6 @@ namespace RuApp.Views
             var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             var ink = (Brush)Application.Current.Resources["RuInkBrush"];
             var muted = (Brush)Application.Current.Resources["RuMutedBrush"];
-            var accentSoft = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
-            var line = (Brush)Application.Current.Resources["RuLineBrush"];
 
             if (AttachImageButton != null)
             {
@@ -164,18 +162,6 @@ namespace RuApp.Views
                 {
                     AttachImageButton.Background = transparent;
                     if (AttachImageIcon != null) AttachImageIcon.Foreground = muted;
-                };
-            }
-
-            if (SendButton != null)
-            {
-                SendButton.PointerEntered += (s, e) =>
-                {
-                    SendButton.Background = line;
-                };
-                SendButton.PointerExited += (s, e) =>
-                {
-                    SendButton.Background = accentSoft;
                 };
             }
 

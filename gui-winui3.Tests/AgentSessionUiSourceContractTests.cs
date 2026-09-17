@@ -370,6 +370,11 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("RuOnAccentBrush", sendFace, StringComparison.Ordinal);
         Assert.DoesNotContain("RuInkBrush", sendFace, StringComparison.Ordinal);
         Assert.DoesNotContain("RuDangerBrush", sendFace, StringComparison.Ordinal);
+
+        // The primary-button template owns Send hover via VSM; the legacy
+        // code-behind hover must not fight it with local Background values.
+        var hoverFx = GuiSource.MethodBody(code, "InitializeChatHoverEffects");
+        Assert.DoesNotContain("SendButton", hoverFx, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1769,9 +1769,9 @@ namespace RuApp.Views
                 {
                     SendButtonIcon.Glyph = AgentComposerPresentation.StopGlyph;
                     SendButtonIcon.Margin = new Thickness(0);
-                    if (Application.Current.Resources.TryGetValue("RuDangerBrush", out var dangerBrush) && dangerBrush is Brush danger)
+                    if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccentStop) && onAccentStop is Brush onAccentStopBrush)
                     {
-                        SendButtonIcon.Foreground = danger;
+                        SendButtonIcon.Foreground = onAccentStopBrush;
                     }
                 }
                 AutomationProperties.SetName(SendButton, AgentComposerPresentation.StopName);
@@ -1782,9 +1782,9 @@ namespace RuApp.Views
                 {
                     SendButtonIcon.Glyph = AgentComposerPresentation.SendGlyph;
                     SendButtonIcon.Margin = new Thickness(-1, 1, 0, 0);
-                    if (Application.Current.Resources.TryGetValue("RuInkBrush", out var inkBrush) && inkBrush is Brush ink)
+                    if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccentBrush) && onAccentBrush is Brush onAccent)
                     {
-                        SendButtonIcon.Foreground = ink;
+                        SendButtonIcon.Foreground = onAccent;
                     }
                 }
                 AutomationProperties.SetName(SendButton, AgentComposerPresentation.SendName);

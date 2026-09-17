@@ -363,6 +363,13 @@ public sealed class AgentSessionUiSourceContractTests
         var body = GuiSource.MethodBody(code, "SendAgentTurnAsync");
         Assert.Contains("_requestedWorkspace", body, StringComparison.Ordinal);
         Assert.Contains("App root workspace is not configured", body, StringComparison.Ordinal);
+
+        // The send/stop glyph must stay legible on the solid accent fill in both
+        // themes, so the face update paints OnAccent — never Ink or Danger.
+        var sendFace = GuiSource.MethodBody(code, "UpdateSendButtonMode");
+        Assert.Contains("RuOnAccentBrush", sendFace, StringComparison.Ordinal);
+        Assert.DoesNotContain("RuInkBrush", sendFace, StringComparison.Ordinal);
+        Assert.DoesNotContain("RuDangerBrush", sendFace, StringComparison.Ordinal);
     }
 
     [Fact]

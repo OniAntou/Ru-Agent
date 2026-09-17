@@ -123,7 +123,7 @@
                     <Color x:Key="RuLineColor">#334155</Color>
                     <Color x:Key="RuAccentColor">#E2E8F0</Color>
                     <Color x:Key="RuAccentSoftColor">#282D37</Color>
-                    <Color x:Key="RuAccentHoverColor">#FFFFFF</Color>
+                    <Color x:Key="RuAccentHoverColor">#F1F5F9</Color>
                     <Color x:Key="RuAccentPressedColor">#CBD5E1</Color>
                     <Color x:Key="RuSuccessColor">#34D399</Color>
                     <Color x:Key="RuWarningColor">#FBBF24</Color>

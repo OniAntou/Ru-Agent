@@ -110,6 +110,50 @@
                 </Button>
             </Grid>
         </DataTemplate>
+        <Style x:Key="WorkspaceAddButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="Root" Background="{TemplateBinding Background}" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1"/>
+                            </Grid.RenderTransform>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal"/>
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="Transparent"/>
+                                            <Setter Target="Glyph.Foreground" Value="{StaticResource RuAccentBrush}"/>
+                                            <Setter Target="Scale.ScaleX" Value="1.3"/>
+                                            <Setter Target="Scale.ScaleY" Value="1.3"/>
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="Transparent"/>
+                                            <Setter Target="Glyph.Foreground" Value="{StaticResource RuAccentBrush}"/>
+                                            <Setter Target="Scale.ScaleX" Value="1.1"/>
+                                            <Setter Target="Scale.ScaleY" Value="1.1"/>
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="Root.Background" Value="Transparent"/>
+                                            <Setter Target="Glyph.Opacity" Value="0.4"/>
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <FontIcon x:Name="Glyph" Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <DataTemplate x:Key="WorkspaceGroupTemplate" x:DataType="services:WorkspaceGroupRow">
             <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}" PointerEntered="WorkspaceGroupToggle_PointerEntered" PointerExited="WorkspaceGroupToggle_PointerExited"
                     Background="Transparent" BorderThickness="0" Padding="10,6"
@@ -119,7 +163,7 @@
                     <FontIcon Grid.Column="0" Glyph="&#xE8B7;" FontSize="14" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="1" Text="{x:Bind Group.Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Button x:Name="WorkspaceGroupAddButton" Grid.Column="2" Click="OnWorkspaceGroupAddClick" Tag="{x:Bind Group.Key}" Background="Transparent" BorderThickness="0" Padding="6,4" VerticalAlignment="Center" ToolTipService.ToolTip="New chat here" AutomationProperties.Name="New chat here"><FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/></Button>
+                    <Button x:Name="WorkspaceGroupAddButton" Grid.Column="2" Click="OnWorkspaceGroupAddClick" Tag="{x:Bind Group.Key}" Style="{StaticResource WorkspaceAddButtonStyle}" VerticalAlignment="Center" ToolTipService.ToolTip="New chat here" AutomationProperties.Name="New chat here"/>
                     <FontIcon Grid.Column="3" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                 </Grid>
             </Button>

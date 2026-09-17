@@ -242,6 +242,23 @@ public sealed class AgentSessionUiSourceContractTests
             .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupAddButton");
         Assert.Equal("Button", groupAdd.Name.LocalName);
         Assert.Equal("OnWorkspaceGroupAddClick", GuiSource.AttributeValue(groupAdd, "Click"));
+        Assert.Equal("{StaticResource WorkspaceAddButtonStyle}", GuiSource.AttributeValue(groupAdd, "Style"));
+
+        // The plus never paints a frame: every state keeps a transparent root
+        // and hover only lights the glyph up.
+        var addStyle = document.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "WorkspaceAddButtonStyle");
+        var pointerOver = addStyle.Descendants()
+            .First(element => element.Name.LocalName == "VisualState"
+                && element.Attribute(GuiSource.Xaml + "Name")?.Value == "PointerOver");
+        var setters = pointerOver.Descendants()
+            .Where(element => element.Name.LocalName == "Setter")
+            .ToList();
+        Assert.Contains(setters, setter =>
+            GuiSource.AttributeValue(setter, "Target") == "Root.Background"
+            && GuiSource.AttributeValue(setter, "Value") == "Transparent");
+        Assert.Contains(setters, setter =>
+            GuiSource.AttributeValue(setter, "Target") == "Glyph.Foreground");
 
         // One frame only: the container carries no padding so each row's own
         // control paints full-bleed; the session root keeps the old 10,4 inset.

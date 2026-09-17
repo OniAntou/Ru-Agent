@@ -216,7 +216,7 @@ public sealed class AgentSessionUiSourceContractTests
 
         foreach (var name in new[] { "WorkspaceSearchButton", "WorkspaceFilterButton", "WorkspaceNewButton", "WorkspaceSearchBox" })
         {
-            Assert.True(GuiSource.NamedElements(document).ContainsKey(name), $"{name} must exist.");
+            Assert.Contains(name, GuiSource.NamedElements(document).Keys);
         }
 
         var groupTemplate = document.Descendants()

@@ -205,7 +205,7 @@ function Get-DescendantIds {
     $changed = $true
     while ($changed) {
         $changed = $false
-        foreach ($entry in $Parents.GetEnumerator()) {
+        foreach ($entry in @($Parents.GetEnumerator())) {
             if ($ids.Contains([int]$entry.Value) -and -not $ids.Contains([int]$entry.Key)) {
                 [void]$ids.Add([int]$entry.Key)
                 $changed = $true
@@ -329,7 +329,7 @@ while ([datetime]::UtcNow -lt $deadline) {
     $counters = Read-TreeCounters -ProcessIds (Get-DescendantIds -RootId $rootId -Parents $parents)
 
     $totalCpuSeconds = 0.0
-    foreach ($entry in $counters.cpu_seconds.GetEnumerator()) {
+    foreach ($entry in @($counters.cpu_seconds.GetEnumerator())) {
         if ($previousCpu.ContainsKey($entry.Key)) {
             $totalCpuSeconds += [math]::Max(0, $entry.Value - $previousCpu[$entry.Key])
         }

@@ -587,6 +587,21 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                     continue;
                 }
 
+                // Triage hook: surface the terminal reason alongside the exception dump.
+                var terminalDiagnostic = Environment.GetEnvironmentVariable("RU_DRIVE_FAILURE_DIAGNOSTIC");
+                if (!string.IsNullOrWhiteSpace(terminalDiagnostic) && result.ErrorCode is not null)
+                {
+                    try
+                    {
+                        File.AppendAllText(
+                            terminalDiagnostic,
+                            $"{DateTimeOffset.UtcNow:O} {runIdValue}: error_code={result.ErrorCode} state={result.Run.State}{Environment.NewLine}");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
                 if (result.Run.State.IsTerminal())
                 {
                     _summaryPublisher?.TryPublishSummary(result.Run);
@@ -598,6 +613,22 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
+            // Triage hook: the normalized terminal code hides the underlying exception,
+            // which makes a drive failure hard to diagnose from a test. Set
+            // RU_DRIVE_FAILURE_DIAGNOSTIC to a file path to dump the full exception.
+            var diagnosticPath = Environment.GetEnvironmentVariable("RU_DRIVE_FAILURE_DIAGNOSTIC");
+            if (!string.IsNullOrWhiteSpace(diagnosticPath))
+            {
+                try
+                {
+                    File.AppendAllText(diagnosticPath, $"{DateTimeOffset.UtcNow:O} {runIdValue}: {error}{Environment.NewLine}");
+                }
+                catch (Exception)
+                {
+                    // Diagnostics must never change run behaviour.
+                }
+            }
+
             _logger.LogWarning(error, "run {RunId} failed during runtime drive", runIdValue);
             if (coordinator is null)
             {

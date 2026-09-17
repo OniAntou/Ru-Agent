@@ -125,9 +125,9 @@ public sealed class Phase1RemediationTests
             {
                 new RuAgent.Harness.Core.ModelToolCall(
                     null,
-                    "read",
+                    "list",
                     "1.0.0",
-                    JsonDocument.Parse("{\"op\":\"list\",\"path\":\".\"}").RootElement),
+                    JsonDocument.Parse("{\"path\":\".\"}").RootElement),
             },
             RuAgent.Harness.Core.AssistantFinishReason.ToolCalls,
             0));

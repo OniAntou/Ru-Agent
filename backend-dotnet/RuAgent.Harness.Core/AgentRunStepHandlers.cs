@@ -63,7 +63,11 @@ internal sealed class AgentRunStepHandlers
         var assistantPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.InternalOnly,
+            // AssistantStep is an AuthenticatedClient|ModelContext payload in the store
+            // policy; InternalOnly here made the failure path throw payload_audience_invalid
+            // instead of reporting the failure, which surfaced as runtime_drive_failed.
+            HarnessPayloadAudience.AuthenticatedClient
+            | HarnessPayloadAudience.ModelContext,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);
@@ -298,7 +302,10 @@ internal sealed class AgentRunStepHandlers
         var assistantPayload = new HarnessPayloadIntent(
             assistantPayloadId,
             HarnessPayloadKind.AssistantStep,
-            HarnessPayloadAudience.InternalOnly,
+            // Same store-policy mismatch as the unverified-failure path: this one made
+            // the repeated-tool-call termination throw instead of terminating the run.
+            HarnessPayloadAudience.AuthenticatedClient
+            | HarnessPayloadAudience.ModelContext,
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);

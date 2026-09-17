@@ -264,6 +264,20 @@ for %%S in ("%CLI_PUBLISH_DIR%" "%WORKER_PUBLISH_DIR%" "%BROKER_PUBLISH_DIR%" "%
 if "!RU_FLAT_MISMATCH!"=="1" exit /b 1
 echo Flattened: RuApp, RuBackend, Worker, Broker, CLI in one directory.
 
+REM The GUI must carry the Windows App Runtime itself. Without it the publish
+REM output holds only the bootstrap shim, which fails at startup on a machine with
+REM no framework package installed, so the user would have to install one. These
+REM files come from the framework payload and are absent in framework-dependent
+REM mode, which makes them the check that the property is still in effect.
+for %%R in (Microsoft.WindowsAppRuntime.dll Microsoft.UI.Xaml.dll DWriteCore.dll MRM.dll) do (
+    if not exist "%PUBLISH_DIR%\%%R" (
+        echo BUILD FAILED: %%R is missing, so the GUI would need the Windows App Runtime installed.
+        echo   WindowsAppSDKSelfContained must stay true in gui-winui3\RuApp.csproj.
+        exit /b 1
+    )
+)
+echo Windows App Runtime bundled: the app installs nothing.
+
 echo [13/13] Build complete!
 echo.
 echo ============================================
@@ -277,6 +291,7 @@ echo  Broker:             %BROKER_PUBLISH_DIR%\RuAgent.Broker.exe
 echo  Backend:            %BACKEND_PUBLISH_DIR%\RuBackend.exe
 echo  Output:             %PUBLISH_DIR%\RuApp.exe
 echo  Distributable:      %PUBLISH_DIR% (all five executables side by side)
+echo  Self-contained:     .NET runtime and Windows App Runtime both included
 for %%I in ("%PUBLISH_DIR%\RuApp.exe") do echo  Published:          %%~tI
 echo  Launch:             start_dev.bat
 echo ============================================

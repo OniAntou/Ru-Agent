@@ -75,5 +75,12 @@
          launches, so its startup path is the one that most benefits. -->
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
     <PublishTrimmed>False</PublishTrimmed>
+    <!--
+      Ship the Windows App Runtime inside the app instead of requiring it on the
+      machine. Without this the publish output carries only the bootstrap shim,
+      which fails at startup when no framework package is installed. Requires an
+      explicit Platform and RuntimeIdentifier, both of which the build supplies.
+    -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
 </Project>

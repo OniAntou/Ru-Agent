@@ -12,15 +12,27 @@ import pytest
 
 def _write_stub_commands(
     root: Path, *, gui_publish_exists: bool = True, missing_artifact: str = "",
+    missing_runtime: str = "",
 ) -> None:
     bin_dir = root / "bin"
     bin_dir.mkdir()
     gui_publish = (
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\" >nul 2>&1\n"
         "  echo gui > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\RuApp.exe\"\n"
+        "  echo runtime > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\Microsoft.WindowsAppRuntime.dll\"\n"
+        "  echo xaml > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\Microsoft.UI.Xaml.dll\"\n"
+        "  echo dwrite > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\DWriteCore.dll\"\n"
+        "  echo mrm > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\MRM.dll\"\n"
         if gui_publish_exists
         else ""
     )
+    # A framework-dependent publish carries the bootstrap shim instead of the
+    # runtime, which is the failure the close-out check exists to catch.
+    if missing_runtime:
+        gui_publish += (
+            f'  del /q "%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0'
+            f'\\win-x64\\publish\\{missing_runtime}" >nul 2>&1\n'
+        )
     omitted_path = {
         "worker": r"backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe",
         "runtimeconfig": r"gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.runtimeconfig.json",
@@ -62,6 +74,7 @@ def _run_build_script(
     gui_publish_exists: bool = True,
     missing_artifact: str = "",
     missing_xaml: str = "",
+    missing_runtime: str = "",
 ) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_root = tmp_path / "checkout"
@@ -90,7 +103,12 @@ def _run_build_script(
     )
     (build_root / "scripts").mkdir()
 
-    _write_stub_commands(tmp_path, gui_publish_exists=gui_publish_exists, missing_artifact=missing_artifact)
+    _write_stub_commands(
+        tmp_path,
+        gui_publish_exists=gui_publish_exists,
+        missing_artifact=missing_artifact,
+        missing_runtime=missing_runtime,
+    )
     env = os.environ.copy()
     env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
     env["RU_BUILD_TEST_ROOT"] = str(build_root)
@@ -180,6 +198,40 @@ def test_flat_layout_stage_does_not_copy_the_destination_into_itself(tmp_path: P
     assert result.returncode == 0, result.stdout + result.stderr
     assert "cyclic copy" not in result.stdout
     assert "cyclic copy" not in result.stderr
+
+
+def test_release_reports_the_windows_app_runtime_as_bundled(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Windows App Runtime bundled" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "missing_runtime",
+    ["Microsoft.WindowsAppRuntime.dll", "Microsoft.UI.Xaml.dll", "DWriteCore.dll", "MRM.dll"],
+)
+def test_framework_dependent_gui_stops_the_release_build(
+    tmp_path: Path, missing_runtime: str,
+) -> None:
+    """These files only appear when WindowsAppSDKSelfContained is in effect. A
+    publish without them needs the Windows App Runtime installed on the target
+    machine, which is exactly what the release must not require."""
+    result = _run_build_script(tmp_path, missing_runtime=missing_runtime)
+
+    assert result.returncode != 0
+    assert "would need the Windows App Runtime installed" in result.stdout
+    assert "WindowsAppSDKSelfContained" in result.stdout
+    assert "Build complete" not in result.stdout
+
+
+def test_gui_project_ships_the_windows_app_runtime_self_contained() -> None:
+    """The build check fails if this property is dropped; this makes the intent
+    explicit where someone would look to change it."""
+    repo_root = Path(__file__).resolve().parents[1]
+    project = (repo_root / "gui-winui3" / "RuApp.csproj").read_text(encoding="utf-8")
+
+    assert "<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>" in project
 
 
 @pytest.mark.parametrize("missing_xaml", ["App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"])

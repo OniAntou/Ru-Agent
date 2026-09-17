@@ -133,13 +133,32 @@ public abstract class ToolGatewayConformance : IDisposable
     [Fact]
     public async Task Malformed_read_call_is_denied_with_a_repair_hint()
     {
+        // read no longer takes an op, so it has no malformed-call shape left; write
+        // is the tool that still requires a discriminator.
         var decision = await Gateway.EvaluateAsync(
-            Proposal("read", new JsonObject { ["path"] = "notes/a.txt" }),
+            Proposal("write", new JsonObject { ["path"] = "notes/a.txt", ["content"] = "x" }),
             CancellationToken.None);
 
         Assert.Equal(PolicyDecision.Deny, decision.Decision);
         Assert.Equal("malformed_call", decision.SafeCode);
-        Assert.Contains("read requires op", decision.DenyHint);
+        Assert.Contains("write requires op", decision.DenyHint);
+    }
+
+    [Fact]
+    public async Task List_and_help_are_first_class_tools_without_a_discriminator()
+    {
+        // Both used to be reached through read ops. A bare path for list and a bare
+        // query for help must evaluate without an op, or the split did not happen.
+        var list = await Gateway.EvaluateAsync(
+            Proposal("list", new JsonObject { ["path"] = "notes" }),
+            CancellationToken.None);
+        Assert.Equal(PolicyDecision.Allow, list.Decision);
+
+        var help = await Gateway.EvaluateAsync(
+            Proposal("help", new JsonObject { ["query"] = "approval" }),
+            CancellationToken.None);
+        Assert.Equal(PolicyDecision.Allow, help.Decision);
+        Assert.Equal(ToolAccessKind.ReadOnly, help.AccessKind);
     }
 
     [Fact]

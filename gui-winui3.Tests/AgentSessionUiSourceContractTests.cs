@@ -233,6 +233,15 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("OnWorkspaceGroupClick", GuiSource.AttributeValue(toggle, "Click"));
         Assert.Equal("WorkspaceGroupToggle_PointerEntered", GuiSource.AttributeValue(toggle, "PointerEntered"));
         Assert.Equal("WorkspaceGroupToggle_PointerExited", GuiSource.AttributeValue(toggle, "PointerExited"));
+        Assert.Equal("-10,-4", GuiSource.AttributeValue(toggle, "Margin"));
+        Assert.DoesNotContain(
+            GuiSource.NamedElements(document).Keys,
+            name => string.Equals(name, "WorkspaceGroupCount", StringComparison.Ordinal));
+
+        var groupAdd = groupTemplate.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupAddButton");
+        Assert.Equal("Button", groupAdd.Name.LocalName);
+        Assert.Equal("OnWorkspaceGroupAddClick", GuiSource.AttributeValue(groupAdd, "Click"));
         Assert.True(GuiSource.NamedElements(document).ContainsKey("WorkspaceSearchCount"), "WorkspaceSearchCount must exist.");
 
         Assert.Contains("RelativeTimeText", GuiSource.NamedElements(document).Keys);
@@ -265,6 +274,10 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(
             "MergePinned",
             GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CreateSessionAsync",
+            GuiSource.MethodBody(code, "OnWorkspaceGroupAddClick"),
             StringComparison.Ordinal);
     }
 

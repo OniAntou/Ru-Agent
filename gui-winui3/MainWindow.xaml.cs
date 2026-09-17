@@ -1281,6 +1281,28 @@ namespace RuApp
             }
         }
 
+        private async void OnWorkspaceGroupAddClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService == null || _chatView == null) return;
+            if (sender is not Button button || button.Tag is not string key) return;
+            var path = ResolveWorkspacePath(key);
+            if (path is null) return;
+
+            var session = await _apiService.CreateSessionAsync();
+            if (session is null) return;
+            _sessionWorkspaces.Set(session.Id, path);
+            _chatView.SetRequestedWorkspace(path);
+            await LoadSessionsAsync();
+
+            _activeSessionId = session.Id;
+            _selectedWorkspaceKey = key;
+            _workspaceGroups.SetExpanded(key, true);
+            RenderWorkspaceSidebar();
+
+            OnNavClick(NavChat, new RoutedEventArgs());
+            await _chatView.OpenSessionAsync(session.Id, session.Title);
+        }
+
         private async void OnWorkspaceAddClick(object sender, RoutedEventArgs e)
         {
             var picker = new Windows.Storage.Pickers.FolderPicker();

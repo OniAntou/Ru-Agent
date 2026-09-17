@@ -9,7 +9,9 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolCatalogTests
 {
     [Theory]
-    [InlineData("read", "workspace.read", RiskClass.Read, false, false)]
+    [InlineData("read", "system.read", RiskClass.Read, false, false)]
+    [InlineData("list", "workspace.read", RiskClass.Read, false, false)]
+    [InlineData("help", "system.read", RiskClass.Read, false, false)]
     public void First_usable_tool_set_has_explicit_policy(
         string toolId,
         string scope,
@@ -75,7 +77,7 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        Assert.Equal(8, capabilities.Count);
+        Assert.Equal(10, capabilities.Count);
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
 
         foreach (var binding in catalog.Registry.List())
@@ -195,26 +197,38 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void Read_tool_has_bounded_union_schema_with_op_discriminator()
+    public void Read_list_and_help_schemas_are_single_purpose_and_reject_removed_fields()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+
         var readSchema = catalog.Registry.Get("read", "1.0.0").Manifest.InputSchema;
-        var properties = readSchema["properties"]!.AsObject();
-
-        foreach (var field in new[] { "op", "path", "offset", "limit", "max_entries", "query", "max_results" })
+        var readProperties = readSchema["properties"]!.AsObject();
+        foreach (var field in new[] { "path", "offset", "limit" })
         {
-            Assert.True(properties.ContainsKey(field));
+            Assert.True(readProperties.ContainsKey(field));
         }
-        Assert.False(properties.ContainsKey("url"));
-        Assert.False(properties.ContainsKey("pattern"));
+        ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "a.txt" });
+        ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "a.txt", ["offset"] = 0, ["limit"] = 64 });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject()));
+        // The discriminator is gone: op is not a declared property any more, so the
+        // strict schema rejects it instead of dispatching on it.
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "read", ["path"] = "a.txt" }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "list", ["path"] = "." }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "help", ["query"] = "approvals" }));
 
-        ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "list", ["path"] = "." });
-        ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "read", ["path"] = "a.txt" });
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "glob", ["pattern"] = "*.cs" }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "search", ["query"] = "hello" }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "web_search", ["query"] = "hello" }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "." }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "unknown_op" }));
+        var listSchema = catalog.Registry.Get("list", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(listSchema, new JsonObject());
+        ToolSchemaValidator.Validate(listSchema, new JsonObject { ["path"] = "." });
+        ToolSchemaValidator.Validate(listSchema, new JsonObject { ["path"] = "src", ["max_entries"] = 8 });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(listSchema, new JsonObject { ["max_entries"] = 0 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(listSchema, new JsonObject { ["max_entries"] = 513 }));
+
+        var helpSchema = catalog.Registry.Get("help", "1.0.0").Manifest.InputSchema;
+        ToolSchemaValidator.Validate(helpSchema, new JsonObject { ["query"] = "approvals" });
+        ToolSchemaValidator.Validate(helpSchema, new JsonObject { ["query"] = "approvals", ["max_results"] = 3 });
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(helpSchema, new JsonObject()));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(helpSchema, new JsonObject { ["query"] = "" }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(helpSchema, new JsonObject { ["query"] = "approvals", ["max_results"] = 6 }));
 
         // Catalog contract schemas match
         var contract = AgentModelToolContractCatalog.Get("read", "1.0.0");

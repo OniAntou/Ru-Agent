@@ -66,13 +66,13 @@ public static class BrokerPolicyContracts
             "network_intent",
         ];
 
-    public static IReadOnlyList<string> AuthoritativeFallbackCapabilities()
-    {
-        return new[]
-        {
-            "read", "grep", "glob", "write", "edit", "bash", "web_search", "web_fetch",
-        };
-    }
+    /// <summary>
+    /// The capability set a Broker connection must advertise. Projected from the tool
+    /// definition catalog so tool identity has exactly one source: a hand-maintained copy
+    /// here could fall behind the catalog and only fail at run-open.
+    /// </summary>
+    public static IReadOnlyList<string> AuthoritativeFallbackCapabilities() =>
+        AgentToolDefinitionCatalog.Get().Select(definition => definition.ToolId).ToArray();
 
     public static bool IsReadOnlyTool(string toolId) =>
         toolId is "read" or "grep" or "glob";

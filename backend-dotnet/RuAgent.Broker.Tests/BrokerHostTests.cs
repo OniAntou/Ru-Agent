@@ -83,7 +83,9 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "glob", "grep", "read" }, ids);
+        // help and read are system.read; list is workspace.read. All three are
+        // read-only, so the chat profile advertises them alongside grep and glob.
+        Assert.Equal(new[] { "glob", "grep", "help", "list", "read" }, ids);
         Assert.Empty(hello.Payload["skills"]!.AsArray());
     }
 
@@ -632,7 +634,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task V2_run_open_advertises_all_eight_capabilities()
+    public async Task V2_run_open_advertises_all_ten_capabilities()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -662,7 +664,9 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write" }, caps);
+        Assert.Equal(
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            caps);
     }
 
     [Fact]
@@ -699,7 +703,9 @@ public sealed class BrokerHostTests
         var opened = await ReceiveAsync(socket, cts.Token);
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "web_fetch", "web_search", "write" }, caps);
+        Assert.Equal(
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            caps);
     }
 
     [Fact]
@@ -738,7 +744,9 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "bash", "edit", "glob", "grep", "read", "write" }, ids);
+        Assert.Equal(
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            ids);
     }
 
     [Fact]

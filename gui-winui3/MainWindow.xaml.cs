@@ -1409,13 +1409,12 @@ namespace RuApp
         {
             if (button.FindName("WorkspaceGroupAddButton") is Button addButton)
             {
-                addButton.Opacity = visible ? 1.0 : 0.0;
-                addButton.IsTabStop = visible;
+                addButton.Opacity = visible ? 1.0 : 0.55;
             }
 
             if (button.FindName("WorkspaceGroupChevron") is UIElement chevron)
             {
-                chevron.Opacity = visible ? 1.0 : 0.0;
+                chevron.Opacity = visible ? 1.0 : 0.55;
             }
         }
 
@@ -1582,7 +1581,6 @@ namespace RuApp
                 if (deleteBtn != null)
                 {
                     deleteBtn.Opacity = 1.0;
-                    deleteBtn.IsTabStop = true;
                 }
             }
         }
@@ -1594,8 +1592,7 @@ namespace RuApp
                 var deleteBtn = grid.Children.OfType<Button>().FirstOrDefault();
                 if (deleteBtn != null)
                 {
-                    deleteBtn.Opacity = 0.0;
-                    deleteBtn.IsTabStop = false;
+                    deleteBtn.Opacity = 0.55;
                 }
             }
         }

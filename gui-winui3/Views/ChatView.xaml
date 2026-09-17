@@ -56,7 +56,7 @@
                                     <Grid Margin="0,0,0,4">
                                         <!-- Image Rendering -->
                                         <Border Visibility="{x:Bind IsImage, Mode=OneWay}"
-                                                MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="8"
+                                                 MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="{StaticResource AppCardCornerRadius}"
                                                 Background="{StaticResource RuCanvasBrush}"
                                                 BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
                                                 ToolTipService.ToolTip="Click to view full image">
@@ -165,12 +165,12 @@
                                 Background="{StaticResource AppCardBackgroundBrush}"
                                 BorderBrush="{StaticResource AppCardBorderSubtleBrush}"
                                 BorderThickness="1"
-                                CornerRadius="5"
+                                CornerRadius="{StaticResource AppPillCornerRadius}"
                                 Padding="6,1"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{x:Bind DurationShortText, Mode=OneWay}"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="10.5"
+                                       FontSize="11"
                                        Foreground="{StaticResource RuMutedBrush}"
                                        VerticalAlignment="Center" />
                         </Border>
@@ -342,7 +342,8 @@
                 <TextBlock x:Name="WelcomeIntro"
                            Text="Hello. Where should we start today?"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
-                           FontSize="28"
+                           FontSize="30"
+                           FontWeight="SemiBold"
                            Foreground="{StaticResource RuInkBrush}"
                            HorizontalAlignment="Left"
                            TextWrapping="Wrap" />
@@ -436,7 +437,7 @@
                 Foreground="{StaticResource RuInkBrush}"
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="1"
-                CornerRadius="16"
+                CornerRadius="{StaticResource AppPillCornerRadius}"
                 Padding="12,6">
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE74B;" FontSize="12" Foreground="{StaticResource RuAccentBrush}" />
@@ -485,9 +486,10 @@
             <Border x:Name="InputBorder"
                     Grid.Row="3"
                     Background="{StaticResource RuSurfaceBrush}"
-                    BorderBrush="{StaticResource RuLineBrush}"
-                    BorderThickness="1"
-                    CornerRadius="10"
+                    BorderThickness="0"
+                    CornerRadius="{StaticResource AppCardCornerRadius}"
+                    Translation="0,0,6"
+                    Shadow="{StaticResource RuRestShadow}"
                     Padding="12,10,12,8"
                     AllowDrop="True"
                     DragOver="OnInputDragOver"
@@ -514,14 +516,14 @@
                                         <!-- Image Thumbnail Box -->
                                         <Grid Visibility="{x:Bind IsImage, Mode=OneWay}" Width="60" Height="60"
                                               ToolTipService.ToolTip="{x:Bind FormattedSize, Mode=OneWay}">
-                                             <Border CornerRadius="8" Background="{StaticResource RuCanvasBrush}"
+                                             <Border CornerRadius="{StaticResource RuControlCornerRadius}" Background="{StaticResource RuCanvasBrush}"
                                                      BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
                                                  <Image Source="{x:Bind PreviewImage, Mode=OneWay}" Stretch="UniformToFill" AutomationProperties.Name="{x:Bind FileName, Mode=OneWay}"/>
                                              </Border>
                                             <Button HorizontalAlignment="Right" VerticalAlignment="Top"
                                                     Width="18" Height="18" Padding="0" Margin="2"
                                                     Background="#C0000000" Foreground="White"
-                                                    BorderThickness="0" CornerRadius="9"
+                                                    BorderThickness="0" CornerRadius="{StaticResource AppPillCornerRadius}"
                                                     Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}">
                                                 <FontIcon Glyph="&#xE711;" FontSize="8"/>
                                             </Button>
@@ -538,7 +540,7 @@
                                                     <TextBlock Text="{x:Bind FormattedSize, Mode=OneWay}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,2,0"/>
                                                     <Button Width="18" Height="18" Padding="0"
                                                             Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                                            BorderThickness="0" CornerRadius="9"
+                                                            BorderThickness="0" CornerRadius="{StaticResource AppPillCornerRadius}"
                                                             Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}">
                                                         <FontIcon Glyph="&#xE711;" FontSize="8"/>
                                                     </Button>
@@ -733,7 +735,7 @@
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
-                                                <Setter Property="CornerRadius" Value="8" />
+                                                <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
                                                 <Setter Property="Padding" Value="4" />
                                                 <Setter Property="Width" Value="320" />
                                                 <Setter Property="MinWidth" Value="320" />
@@ -827,7 +829,7 @@
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
-                                                <Setter Property="CornerRadius" Value="8" />
+                                                <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
                                                 <Setter Property="Padding" Value="4" />
                                                 <Setter Property="MinWidth" Value="140" />
                                                 <Setter Property="MaxWidth" Value="220" />
@@ -854,7 +856,7 @@
                                     VerticalContentAlignment="Center"
                                     Background="Transparent"
                                     BorderThickness="0"
-                                    CornerRadius="13"
+                                    CornerRadius="{StaticResource AppPillCornerRadius}"
                                     VerticalAlignment="Center">
                                 <Button.Resources>
                                     <Style TargetType="Button">
@@ -866,7 +868,7 @@
                                             <Setter.Value>
                                                 <ControlTemplate TargetType="Button">
                                                     <Border Background="{TemplateBinding Background}"
-                                                            CornerRadius="13"
+                                                            CornerRadius="{StaticResource AppPillCornerRadius}"
                                                             Width="26"
                                                             Height="26">
                                                         <ContentPresenter Content="{TemplateBinding Content}"
@@ -899,7 +901,7 @@
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
-                                                <Setter Property="CornerRadius" Value="8" />
+                                                <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
                                                 <Setter Property="Padding" Value="8,6" />
                                                 <Setter Property="MinWidth" Value="130" />
                                                 <Setter Property="MaxWidth" Value="180" />
@@ -943,14 +945,10 @@
                                     Width="32"
                                     Height="32"
                                     Padding="0"
-                                    HorizontalContentAlignment="Center"
-                                    VerticalContentAlignment="Center"
                                     CornerRadius="{StaticResource RuControlCornerRadius}"
-                                    Background="{StaticResource RuAccentSoftBrush}"
-                                    BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1"
+                                    Style="{StaticResource RuPrimaryButtonStyle}"
                                     VerticalAlignment="Center">
-                                <FontIcon x:Name="SendButtonIcon" Glyph="{x:Bind SendFaceGlyph}" FontSize="13" Foreground="{StaticResource RuInkBrush}" Margin="-1,1,0,0" />
+                                <FontIcon x:Name="SendButtonIcon" Glyph="{x:Bind SendFaceGlyph}" FontSize="13" Foreground="{StaticResource RuOnAccentBrush}" Margin="-1,1,0,0" />
                             </Button>
                         </StackPanel>
                     </Grid>

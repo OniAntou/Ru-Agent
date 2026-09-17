@@ -21,6 +21,8 @@
                     <Color x:Key="RuLineColor">#CBD5E1</Color>
                     <Color x:Key="RuAccentColor">#1E293B</Color>
                     <Color x:Key="RuAccentSoftColor">#E2E8F0</Color>
+                    <Color x:Key="RuAccentHoverColor">#334155</Color>
+                    <Color x:Key="RuAccentPressedColor">#0B1220</Color>
                     <Color x:Key="RuSuccessColor">#10B981</Color>
                     <Color x:Key="RuWarningColor">#F59E0B</Color>
                     <Color x:Key="RuDangerColor">#B91C1C</Color>
@@ -108,9 +110,9 @@
                     <SolidColorBrush x:Key="ComboBoxItemPillFillBrush" Color="#1E293B" />
                     <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerOver" Color="#E2E8F0" />
                     <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerPressed" Color="#CBD5E1" />
-                    <CornerRadius x:Key="ComboBoxHiglightBorderCornerRadius">6</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxHighlightBorderCornerRadius">6</CornerRadius>
                     <CornerRadius x:Key="ComboBoxDropDownButtonBackgroundCornerRadius">6</CornerRadius>
-                    <CornerRadius x:Key="ComboBoxItemCornerRadius">4</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxItemCornerRadius">6</CornerRadius>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <Color x:Key="RuCanvasColor">#16181D</Color>
@@ -121,6 +123,8 @@
                     <Color x:Key="RuLineColor">#334155</Color>
                     <Color x:Key="RuAccentColor">#E2E8F0</Color>
                     <Color x:Key="RuAccentSoftColor">#282D37</Color>
+                    <Color x:Key="RuAccentHoverColor">#FFFFFF</Color>
+                    <Color x:Key="RuAccentPressedColor">#CBD5E1</Color>
                     <Color x:Key="RuSuccessColor">#34D399</Color>
                     <Color x:Key="RuWarningColor">#FBBF24</Color>
                     <Color x:Key="RuDangerColor">#F87171</Color>
@@ -208,9 +212,9 @@
                     <SolidColorBrush x:Key="ComboBoxItemPillFillBrush" Color="#E2E8F0" />
                     <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerOver" Color="#282D37" />
                     <SolidColorBrush x:Key="ComboBoxDropDownBackgroundPointerPressed" Color="#334155" />
-                    <CornerRadius x:Key="ComboBoxHiglightBorderCornerRadius">6</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxHighlightBorderCornerRadius">6</CornerRadius>
                     <CornerRadius x:Key="ComboBoxDropDownButtonBackgroundCornerRadius">6</CornerRadius>
-                    <CornerRadius x:Key="ComboBoxItemCornerRadius">4</CornerRadius>
+                    <CornerRadius x:Key="ComboBoxItemCornerRadius">6</CornerRadius>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
@@ -220,13 +224,16 @@
             <converters:SessionTimeConverter x:Key="SessionTimeConverter" />
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
-            <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" Opacity="0.90" />
+            <SolidColorBrush x:Key="RuSidebarBrush" Color="Transparent" />
             <SolidColorBrush x:Key="RuSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
             <SolidColorBrush x:Key="RuInkBrush" Color="{ThemeResource RuInkColor}" />
             <SolidColorBrush x:Key="RuMutedBrush" Color="{ThemeResource RuMutedColor}" />
             <SolidColorBrush x:Key="RuLineBrush" Color="{ThemeResource RuLineColor}" />
             <SolidColorBrush x:Key="RuAccentBrush" Color="{ThemeResource RuAccentColor}" />
             <SolidColorBrush x:Key="RuAccentSoftBrush" Color="{ThemeResource RuAccentSoftColor}" />
+            <SolidColorBrush x:Key="RuAccentHoverBrush" Color="{ThemeResource RuAccentHoverColor}" />
+            <SolidColorBrush x:Key="RuAccentPressedBrush" Color="{ThemeResource RuAccentPressedColor}" />
+            <SolidColorBrush x:Key="RuOnAccentBrush" Color="{ThemeResource RuCanvasColor}" />
             <SolidColorBrush x:Key="RuSuccessBrush" Color="{ThemeResource RuSuccessColor}" />
             <SolidColorBrush x:Key="RuWarningBrush" Color="{ThemeResource RuWarningColor}" />
             <SolidColorBrush x:Key="RuDangerBrush" Color="{ThemeResource RuDangerColor}" />
@@ -235,7 +242,7 @@
             <SolidColorBrush x:Key="RuPinkBrush" Color="{ThemeResource RuPinkColor}" />
 
             <FontFamily x:Key="RuUiFontFamily">Segoe UI Variable</FontFamily>
-            <FontFamily x:Key="RuDisplayFontFamily">Cambria</FontFamily>
+            <FontFamily x:Key="RuDisplayFontFamily">Segoe UI Variable</FontFamily>
             <FontFamily x:Key="RuMonoFontFamily">Consolas</FontFamily>
             <CornerRadius x:Key="RuControlCornerRadius">6</CornerRadius>
 
@@ -267,18 +274,73 @@
             <SolidColorBrush x:Key="AppDangerBrush" Color="{ThemeResource RuDangerColor}" />
             <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
 
-            <!-- CornerRadius Design Tokens -->
-            <CornerRadius x:Key="AppCardCornerRadius">6</CornerRadius>
+            <!-- CornerRadius Design Tokens: control 6, card 12, flyout/modal 14-16, pill 999 -->
+            <CornerRadius x:Key="AppCardCornerRadius">12</CornerRadius>
             <CornerRadius x:Key="AppControlCornerRadius">6</CornerRadius>
-            <CornerRadius x:Key="AppPillCornerRadius">6</CornerRadius>
+            <CornerRadius x:Key="AppPillCornerRadius">999</CornerRadius>
+            <CornerRadius x:Key="AppFlyoutCornerRadius">14</CornerRadius>
+
+            <!-- Elevation: shared theme shadows; depth comes from shadow, not borders -->
+            <ThemeShadow x:Key="RuRestShadow" />
+            <ThemeShadow x:Key="RuRaisedShadow" />
 
             <!-- Card Border Style -->
             <Style x:Key="FluentCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{StaticResource AppCardBackgroundBrush}" />
-                <Setter Property="BorderBrush" Value="{StaticResource AppCardBorderBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="CornerRadius" Value="{StaticResource AppCardCornerRadius}" />
                 <Setter Property="Padding" Value="24,20" />
+                <Setter Property="Shadow" Value="{StaticResource RuRestShadow}" />
+            </Style>
+
+            <!-- Primary CTA: solid accent fill, canvas glyph, tonal hover/pressed -->
+            <Style x:Key="RuPrimaryButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource RuAccentBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Foreground" Value="{StaticResource RuOnAccentBrush}" />
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="RootBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="{TemplateBinding CornerRadius}"
+                                    Padding="{TemplateBinding Padding}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentHoverBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentPressedBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity" To="0.5" Duration="0" />
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  Foreground="{TemplateBinding Foreground}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <!-- Smooth Action Button Style -->
@@ -379,7 +441,7 @@
                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
                 <Setter Property="Padding" Value="4" />
                 <Setter Property="Width" Value="268" />
                 <Setter Property="MinWidth" Value="268" />
@@ -399,7 +461,7 @@
                 <Setter Property="MinHeight" Value="32" />
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="CornerRadius" Value="5" />
+                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">

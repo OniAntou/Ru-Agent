@@ -123,7 +123,7 @@
         </Border>
 
         <!-- Diagnostics Container -->
-        <Border Grid.Row="3" Style="{StaticResource FluentCardStyle}" Padding="16">
+        <Border Grid.Row="3" Style="{StaticResource FluentCardStyle}" Translation="0,0,4" Padding="16">
             <ListView x:Name="DiagnosticsList"
                       AutomationProperties.Name="Diagnostics entries"
                       ItemsSource="{x:Bind Rows}"

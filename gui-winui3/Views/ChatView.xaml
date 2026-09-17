@@ -170,23 +170,6 @@
                                        Foreground="{StaticResource RuMutedBrush}"
                                        VerticalAlignment="Center" />
                         </Border>
-                        <!-- Elapsed while still running. A frame carries no duration
-                             until the tool finishes, so without this a long call and a
-                             hung one look exactly alike. -->
-                        <Border Visibility="{x:Bind HasRunningElapsed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                Background="{StaticResource AppCardBackgroundBrush}"
-                                BorderBrush="{StaticResource AppCardBorderSubtleBrush}"
-                                BorderThickness="1"
-                                CornerRadius="5"
-                                Padding="6,1"
-                                VerticalAlignment="Center"
-                                AutomationProperties.Name="Elapsed while running">
-                            <TextBlock Text="{x:Bind RunningElapsedText, Mode=OneWay}"
-                                       FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="10.5"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       VerticalAlignment="Center" />
-                        </Border>
                     </StackPanel>
                 </Grid>
                 <TextBlock Grid.Row="1"

@@ -8,64 +8,13 @@ namespace RuApp.Tests;
 public sealed class AgentActivityItemTests
 {
     [Fact]
-    public void A_running_row_reports_how_long_it_has_been_running()
+    public void A_settled_row_keeps_its_producer_duration()
     {
-        // A frame carries no duration until the tool finishes, so without a reading
-        // taken here a long call and a hung one look exactly the same.
         var item = new AgentActivityItem(Activity(AgentActivityState.Started));
-        Assert.Null(item.RunningElapsedText);
-
-        item.MarkStarted(Environment.TickCount64 - 4_000);
-
-        Assert.True(item.HasRunningElapsed);
-        Assert.Equal("4s", item.RunningElapsedText);
-    }
-
-    [Fact]
-    public void The_first_mark_wins_so_a_later_frame_cannot_reset_the_clock()
-    {
-        // A running row receives further frames; restarting on each would keep the
-        // reading near zero for as long as the tool kept reporting.
-        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
-
-        item.MarkStarted(Environment.TickCount64 - 8_000);
-        item.MarkStarted(Environment.TickCount64);
-
-        Assert.Equal("8s", item.RunningElapsedText);
-    }
-
-    [Fact]
-    public void A_settled_row_reports_no_running_elapsed()
-    {
-        // Once it settles the row carries the producer's own duration, and the running
-        // clock would be a second, disagreeing source for the same fact.
-        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
-        item.MarkStarted(Environment.TickCount64 - 3_000);
 
         item.UpdateFrom(Activity(AgentActivityState.Completed, durationMs: 2_500));
 
-        Assert.False(item.HasRunningElapsed);
-        Assert.Null(item.RunningElapsedText);
         Assert.Equal("2.5s", item.DurationShortText);
-    }
-
-    [Fact]
-    public void Long_running_rows_read_in_minutes()
-    {
-        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
-        item.MarkStarted(Environment.TickCount64 - 95_000);
-
-        Assert.Equal("1m 35s", item.RunningElapsedText);
-    }
-
-    [Fact]
-    public void A_clock_that_has_not_moved_yet_does_not_render_a_negative_reading()
-    {
-        var item = new AgentActivityItem(Activity(AgentActivityState.Started));
-        item.MarkStarted(Environment.TickCount64 + 5_000);
-
-        Assert.Null(item.RunningElapsedText);
-        Assert.False(item.HasRunningElapsed);
     }
 
     [Fact]

@@ -146,7 +146,6 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
                         <!-- Primary Navigation Items -->
@@ -195,8 +194,8 @@
                                         ToolTipService.ToolTip="Show only the current workspace" AutomationProperties.Name="Filter to current workspace">
                                     <FontIcon Glyph="&#xE71C;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
                                 </Button>
-                                <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnNewChatClick" Background="Transparent" BorderThickness="0" Padding="6,4"
-                                        ToolTipService.ToolTip="New chat" AutomationProperties.Name="New chat">
+                                <Button x:Name="WorkspaceNewButton" Grid.Column="3" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="6,4"
+                                        ToolTipService.ToolTip="Add workspace" AutomationProperties.Name="Add workspace">
                                     <FontIcon Glyph="&#xE710;" FontSize="12" Foreground="{StaticResource RuMutedBrush}"/>
                                 </Button>
                             </Grid>
@@ -220,14 +219,6 @@
                                 </Style>
                             </ListView.ItemContainerStyle>
                         </ListView>
-                        <Button x:Name="WorkspaceAddButton" Grid.Row="3" Click="OnWorkspaceAddClick" Background="Transparent" BorderThickness="0" Padding="10,8" Margin="8,4,8,8"
-                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                ToolTipService.ToolTip="Add a workspace folder" AutomationProperties.Name="Add workspace">
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
-                                <TextBlock Text="Add workspace" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
                     </Grid>
 
                     <!-- Status and settings -->

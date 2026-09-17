@@ -1690,7 +1690,6 @@ namespace RuApp
             if (WorkspaceHeaderPanel != null) WorkspaceHeaderPanel.Visibility = labelVis;
             if (StatusText != null) StatusText.Visibility = labelVis;
             if (SidebarSessionList != null) SidebarSessionList.Visibility = labelVis;
-            if (WorkspaceAddButton != null) WorkspaceAddButton.Visibility = labelVis;
 
             if (isNarrow)
             {

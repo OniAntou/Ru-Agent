@@ -219,6 +219,12 @@ public sealed class AgentSessionUiSourceContractTests
             Assert.Contains(name, GuiSource.NamedElements(document).Keys);
         }
 
+        var addButton = GuiSource.Require(document, "WorkspaceNewButton");
+        Assert.Equal("OnWorkspaceAddClick", GuiSource.AttributeValue(addButton, "Click"));
+        Assert.DoesNotContain(
+            GuiSource.NamedElements(document).Keys,
+            name => string.Equals(name, "WorkspaceAddButton", StringComparison.Ordinal));
+
         var groupTemplate = document.Descendants()
             .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "WorkspaceGroupTemplate");
         var toggle = groupTemplate.Descendants()
@@ -234,7 +240,6 @@ public sealed class AgentSessionUiSourceContractTests
         var app = GuiSource.Xml("App.xaml");
         Assert.True(app.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "RelativeTimeConverter"));
 
-        Assert.Contains("WorkspaceAddButton", GuiSource.NamedElements(document).Keys);
     }
 
     [Fact]

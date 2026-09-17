@@ -236,8 +236,6 @@ public sealed class WelcomeOverlay : Grid, IDisposable
                 await DismissAsync();
             }
         };
-
-        _backgroundPaths.StartAnimations();
     }
 
     private void PlayTitleEntrance()

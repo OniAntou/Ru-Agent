@@ -36,6 +36,7 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
     private double _lastElapsedSeconds;
     private bool _isRendering;
     private bool _isDisposed;
+    private SolidColorBrush? _sharedStrokeBrush;
 
     public BackgroundPathsControl()
     {
@@ -107,6 +108,8 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
             ? Color.FromArgb(255, 255, 255, 255)
             : (Application.Current.Resources["RuInkBrush"] as SolidColorBrush)?.Color
                 ?? Color.FromArgb(255, 15, 23, 42);
+
+        _sharedStrokeBrush = new SolidColorBrush(baseColor);
 
         int[] positions = { 1, -1 };
         int streamIndex = 0;
@@ -184,7 +187,7 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
                 var pathElement = new XamlPath
                 {
                     Data = geometry,
-                    Stroke = new SolidColorBrush(baseColor),
+                    Stroke = _sharedStrokeBrush,
                     StrokeThickness = strokeWidth,
                     Opacity = targetAlpha,
                     StrokeDashArray = new DoubleCollection { dashUnits, gapUnits },
@@ -213,8 +216,10 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
         double currentSeconds = _stopwatch.Elapsed.TotalSeconds;
         double dt = currentSeconds - _lastElapsedSeconds;
 
-        // Throttle updates to ~60 FPS so high-refresh displays (144Hz/240Hz) run silky-smooth without UI thread hitch
-        if (dt < 0.015)
+        // Throttle to ~30 FPS: dash flow moves 42-111px/s so 33ms steps are
+        // 1.4-3.7px/frame and visually identical, while halving UI-thread sets
+        // from ~4750/s to ~2160/s on laptop iGPUs.
+        if (dt < 0.033)
         {
             return;
         }
@@ -222,7 +227,7 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
         _lastElapsedSeconds = currentSeconds;
         if (dt > 0.1)
         {
-            dt = 0.016; // clamp on tab-out or frame hitch
+            dt = 0.033; // clamp on tab-out or frame hitch
         }
 
         for (int i = 0; i < TotalStreams; i++)
@@ -282,12 +287,9 @@ public sealed class BackgroundPathsControl : Grid, IDisposable
             ? Color.FromArgb(255, 255, 255, 255)
             : (Application.Current.Resources["RuInkBrush"] as SolidColorBrush)?.Color
                 ?? Color.FromArgb(255, 15, 23, 42);
-        for (int i = 0; i < TotalStreams; i++)
+        if (_sharedStrokeBrush is not null)
         {
-            if (_paths[i] is { } path)
-            {
-                path.Stroke = new SolidColorBrush(baseColor);
-            }
+            _sharedStrokeBrush.Color = baseColor;
         }
     }
 

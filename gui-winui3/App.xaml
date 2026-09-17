@@ -217,7 +217,7 @@
             <!-- Converters -->
             <converters:ErrorColorConverter x:Key="ErrorColorConverter" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-            <converters:RelativeTimeConverter x:Key="RelativeTimeConverter" />
+            <converters:SessionTimeConverter x:Key="SessionTimeConverter" />
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
             <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" Opacity="0.90" />

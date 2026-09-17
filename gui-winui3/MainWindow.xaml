@@ -102,7 +102,7 @@
                 <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                            TextTrimming="CharacterEllipsis" 
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBlock x:Name="RelativeTimeText" Grid.Column="1" Text="{Binding UpdatedAt, Converter={StaticResource RelativeTimeConverter}}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock x:Name="SessionTimeText" Grid.Column="1" Text="{Binding UpdatedAt, Converter={StaticResource SessionTimeConverter}}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
                          Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
                          Tag="{x:Bind Id}" Opacity="0" IsTabStop="False" ToolTipService.ToolTip="Delete session">

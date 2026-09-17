@@ -117,7 +117,11 @@ public sealed partial class HarnessPayloadStore
             [HarnessPayloadKind.AssistantStep] = new(
                 2 * 1024 * 1024,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
-                [HarnessPayloadEncoding.Json]),
+                new HashSet<HarnessPayloadEncoding> { HarnessPayloadEncoding.Json },
+                // Suppressed prose, an empty model reply, and the other failure paths
+                // record the same payload shape for audit only, so both audiences are
+                // valid for this kind.
+                AlternateAudience: HarnessPayloadAudience.InternalOnly),
             [HarnessPayloadKind.ModelContextBase] = new(
                 4 * 1024 * 1024,
                 HarnessPayloadAudience.ModelContext,
@@ -179,7 +183,7 @@ public sealed partial class HarnessPayloadStore
             throw new HarnessStoreException("payload_size_exceeded");
         }
 
-        if (intent.Audience != policy.Audience)
+        if (!policy.Allows(intent.Audience))
         {
             throw new HarnessStoreException("payload_audience_invalid");
         }
@@ -197,10 +201,14 @@ public sealed partial class HarnessPayloadStore
             throw new HarnessStoreException("payload_size_exceeded");
         }
 
+        // Carry the caller's audience rather than the policy's primary one. The policy
+        // has already validated it, and the audience is what keeps suppressed prose out
+        // of client reads; rewriting it here would publish exactly what a handler
+        // deliberately marked audit-only.
         var normalized = new HarnessPayloadIntent(
             intent.PayloadId,
             intent.Kind,
-            policy.Audience,
+            intent.Audience,
             intent.Encoding,
             policy.MaximumBytes,
             protectedPlaintext);
@@ -363,7 +371,8 @@ public sealed partial class HarnessPayloadStore
     private sealed record PayloadPolicy(
         int MaximumBytes,
         HarnessPayloadAudience Audience,
-        IReadOnlySet<HarnessPayloadEncoding> Encodings)
+        IReadOnlySet<HarnessPayloadEncoding> Encodings,
+        HarnessPayloadAudience AlternateAudience = HarnessPayloadAudience.None)
     {
         public PayloadPolicy(
             int maximumBytes,
@@ -372,6 +381,15 @@ public sealed partial class HarnessPayloadStore
             : this(maximumBytes, audience, encodings.ToHashSet())
         {
         }
+
+        /// <summary>
+        /// A kind may be legitimately recorded at more than one audience when the same
+        /// payload shape carries both visible output and suppressed-for-audit output.
+        /// An unattested single-audience policy is what let a handler pick a valid
+        /// audience and still be rejected at write time.
+        /// </summary>
+        public bool Allows(HarnessPayloadAudience audience) =>
+            audience == Audience || (AlternateAudience != HarnessPayloadAudience.None && audience == AlternateAudience);
     }
 
 }

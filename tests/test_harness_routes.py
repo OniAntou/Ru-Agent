@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from harness.model import CheckResult
@@ -35,18 +36,38 @@ def test_registry_covers_the_current_contract_without_silent_skips() -> None:
 
 
 def test_registry_exposes_no_websocket_or_chat_route() -> None:
+    """The retired media and chat transports must not come back.
+
+    This used to grep a benchmark script for the forbidden paths. That script is
+    gone, and a contract assertion is the stronger check anyway: it reads the
+    canonical route list rather than one consumer of it.
+    """
     repo_root = Path(__file__).resolve().parents[1]
     registry = build_route_registry(load_contract(repo_root))
 
     websocket_paths = [entry.path for entry in registry if entry.transport == "websocket"]
     assert websocket_paths == []
-    assert all(entry.path != "/chat" for entry in registry)
 
-    benchmark = (repo_root / "scripts" / "benchmark_backend.py").read_text(
-        encoding="utf-8"
+    retired_prefixes = ("/chat", "/voice", "/vts", "/observation")
+    leaked = [
+        entry.path
+        for entry in registry
+        if entry.path == "/chat" or entry.path.startswith(retired_prefixes)
+    ]
+    assert leaked == []
+
+    # The canonical contract file itself, independent of how it is projected.
+    contract = json.loads(
+        (repo_root / "backend-dotnet" / "public-route-contract.json").read_text(
+            encoding="utf-8"
+        )
     )
-    assert '"/voice/stream"' not in benchmark
-    assert '"/chat"' not in benchmark
+    assert [
+        entry["path"]
+        for entry in contract
+        if entry["path"] == "/chat" or entry["path"].startswith(retired_prefixes)
+    ] == []
+    assert all(entry["transport"] == "http" for entry in contract)
 
 
 class FakeHttpClient:

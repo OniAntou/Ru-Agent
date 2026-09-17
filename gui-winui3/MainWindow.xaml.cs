@@ -1023,6 +1023,12 @@ namespace RuApp
             {
                 _activeSessionId = selected.Id;
 
+                if (!string.IsNullOrWhiteSpace(_workspaceSearchText))
+                {
+                    ClearWorkspaceSearch();
+                    RenderWorkspaceSidebar();
+                }
+
                 var key = WorkspaceSessionProjection.KeyFor(selected);
                 if (!_workspaceGroups.IsExpanded(key, defaultExpanded: true))
                 {
@@ -1033,6 +1039,7 @@ namespace RuApp
                 // Select Chat tab if not selected
                 OnNavClick(NavChat, new RoutedEventArgs());
                 await _chatView.OpenSessionAsync(selected.Id, selected.Title);
+                SidebarSessionList.ScrollIntoView(selected);
             }
             else if (SidebarSessionList.SelectedItem is not null)
             {
@@ -1070,6 +1077,7 @@ namespace RuApp
             }
 
             var projection = WorkspaceSessionProjection.Project(sessions, _workspaceSearchText);
+            var searching = !string.IsNullOrWhiteSpace(_workspaceSearchText);
 
             _suppressSidebarSelection = true;
             try
@@ -1078,9 +1086,10 @@ namespace RuApp
                 var first = true;
                 foreach (var group in projection.Groups)
                 {
-                    var expanded = _workspaceGroups.IsExpanded(
-                        group.Key,
-                        defaultExpanded: activeKey is null ? first : group.Key == activeKey);
+                    var expanded = searching
+                        || _workspaceGroups.IsExpanded(
+                            group.Key,
+                            defaultExpanded: activeKey is null ? first : group.Key == activeKey);
                     first = false;
                     _sidebarRows.Add(new WorkspaceGroupRow(group, expanded));
                     if (!expanded)
@@ -1118,6 +1127,12 @@ namespace RuApp
             {
                 _suppressSidebarSelection = false;
             }
+
+            var matchCount = _sidebarRows.OfType<SessionInfo>().Count();
+            WorkspaceSearchCount.Text = matchCount == 0
+                ? "No matches"
+                : matchCount == 1 ? "1 result" : $"{matchCount} results";
+            WorkspaceSearchCount.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private string? ActiveWorkspaceKey()
@@ -1162,11 +1177,24 @@ namespace RuApp
         {
             if (e.Key == Windows.System.VirtualKey.Escape)
             {
-                _workspaceSearchText = string.Empty;
-                WorkspaceSearchBox.Text = string.Empty;
-                WorkspaceSearchBox.Visibility = Visibility.Collapsed;
+                ClearWorkspaceSearch();
                 RenderWorkspaceSidebar();
             }
+            else if (e.Key == Windows.System.VirtualKey.Enter)
+            {
+                var first = _sidebarRows.OfType<SessionInfo>().FirstOrDefault();
+                if (first is not null)
+                {
+                    SidebarSessionList.SelectedItem = first;
+                }
+            }
+        }
+
+        private void ClearWorkspaceSearch()
+        {
+            _workspaceSearchText = string.Empty;
+            WorkspaceSearchBox.Text = string.Empty;
+            WorkspaceSearchBox.Visibility = Visibility.Collapsed;
         }
 
         private void OnWorkspaceFilterClick(object sender, RoutedEventArgs e)
@@ -1193,6 +1221,22 @@ namespace RuApp
             {
                 _groupShowAll.Add(key);
                 RenderWorkspaceSidebar();
+            }
+        }
+
+        private void WorkspaceGroupToggle_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+            }
+        }
+
+        private void WorkspaceGroupToggle_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             }
         }
 

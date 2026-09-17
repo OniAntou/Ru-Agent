@@ -111,7 +111,7 @@
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="WorkspaceGroupTemplate" x:DataType="services:WorkspaceGroupRow">
-            <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}"
+            <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}" PointerEntered="WorkspaceGroupToggle_PointerEntered" PointerExited="WorkspaceGroupToggle_PointerExited"
                     Background="Transparent" BorderThickness="0" Padding="10,6"
                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                     ToolTipService.ToolTip="{x:Bind Group.Path}">
@@ -119,7 +119,7 @@
                     <FontIcon Grid.Column="0" Glyph="&#xE8B7;" FontSize="14" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="1" Text="{x:Bind Group.Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="2" Text="{x:Bind Group.Sessions.Count}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                    <Border Grid.Column="2" Background="{StaticResource RuAccentSoftBrush}" CornerRadius="8" Padding="6,1" VerticalAlignment="Center"><TextBlock x:Name="WorkspaceGroupCount" Text="{x:Bind Group.Sessions.Count}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource RuAccentBrush}"/></Border>
                     <FontIcon Grid.Column="3" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                 </Grid>
             </Button>
@@ -181,6 +181,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
                                 <TextBlock x:Name="WorkspaceHeader" Grid.Column="0" Text="WORKSPACES" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
@@ -200,6 +201,7 @@
                             </Grid>
                             <TextBox x:Name="WorkspaceSearchBox" Grid.Row="1" Margin="0,6,0,0" PlaceholderText="Search sessions"
                                      Visibility="Collapsed" TextChanged="OnWorkspaceSearchTextChanged" KeyDown="OnWorkspaceSearchKeyDown"/>
+                            <TextBlock x:Name="WorkspaceSearchCount" Grid.Row="2" Margin="2,4,0,0" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" Visibility="Collapsed"/>
                         </Grid>
 
                         <!-- Sessions List -->

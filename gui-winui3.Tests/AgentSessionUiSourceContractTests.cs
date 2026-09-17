@@ -225,6 +225,9 @@ public sealed class AgentSessionUiSourceContractTests
             .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupToggle");
         Assert.Equal("Button", toggle.Name.LocalName);
         Assert.Equal("OnWorkspaceGroupClick", GuiSource.AttributeValue(toggle, "Click"));
+        Assert.Equal("WorkspaceGroupToggle_PointerEntered", GuiSource.AttributeValue(toggle, "PointerEntered"));
+        Assert.Equal("WorkspaceGroupToggle_PointerExited", GuiSource.AttributeValue(toggle, "PointerExited"));
+        Assert.True(GuiSource.NamedElements(document).ContainsKey("WorkspaceSearchCount"), "WorkspaceSearchCount must exist.");
 
         Assert.True(GuiSource.NamedElements(document).ContainsKey("RelativeTimeText"), "RelativeTimeText must exist.");
 
@@ -243,6 +246,10 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(
             "ResolveNewChatWorkspace",
             GuiSource.MethodBody(code, "OnNewChatClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "VirtualKey.Enter",
+            GuiSource.MethodBody(code, "OnWorkspaceSearchKeyDown"),
             StringComparison.Ordinal);
     }
 

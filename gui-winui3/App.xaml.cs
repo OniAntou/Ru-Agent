@@ -23,6 +23,22 @@ public partial class App : Application
                 e.Exception,
                 exception => Services.GuiDiagnosticWriter.WriteCrashEvent(exception));
         };
+
+        // A fail-fast inside the XAML framework never reaches UnhandledException, so
+        // the crash log stayed empty and a report could name only a fault module and
+        // an offset. This domain handler runs as the process tears down and is the
+        // only chance to record what actually threw.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            try
+            {
+                Services.GuiDiagnosticWriter.WriteCrashEvent(e.ExceptionObject as Exception);
+            }
+            catch
+            {
+                // Nothing left to report to: the process is already terminating.
+            }
+        };
     }
 
     /// <summary>

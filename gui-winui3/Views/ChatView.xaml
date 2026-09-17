@@ -246,6 +246,23 @@
                                             FontSize="14"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
+                    <!--
+                      An error that has somewhere to go next offers that place. A
+                      missing provider key is the case this exists for: the message
+                      names the fix and the button opens the screen that performs it.
+                    -->
+                    <Button AutomationProperties.AutomationId="ChatMessageActionButton"
+                            Content="{x:Bind ActionLabel, Mode=OneWay}"
+                            Tag="{x:Bind ActionKind, Mode=OneWay}"
+                            Click="OnMessageActionClick"
+                            Margin="0,4,0,0"
+                            HorizontalAlignment="Left"
+                            Background="{StaticResource RuSurfaceBrush}"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource RuInkBrush}"
+                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                            Visibility="{x:Bind HasAction, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                 </StackPanel>
                 </Grid>
             </Grid>

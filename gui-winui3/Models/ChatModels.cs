@@ -21,6 +21,8 @@ namespace RuApp.Models
         private DateTime _timestamp = DateTime.Now;
         private bool _isStreaming = false;
         private bool _isError = false;
+        private string? _actionLabel;
+        private string? _actionKind;
         private string? _turnId;
         private string? _sessionId;
         private AgentModelUsage? _usage;
@@ -89,6 +91,40 @@ namespace RuApp.Models
             get => _isError;
             set => SetProperty(ref _isError, value);
         }
+
+        /// <summary>
+        /// Label for the button shown under an error that has a place to go next,
+        /// for example fixing a provider that has no API key.
+        /// </summary>
+        /// <remarks>
+        /// A plain string rather than a command: the transcript is a data template,
+        /// so the view dispatches on which action this label names. Null means the
+        /// message is informational and no button is shown.
+        /// </remarks>
+        public string? ActionLabel
+        {
+            get => _actionLabel;
+            set
+            {
+                if (SetProperty(ref _actionLabel, value))
+                {
+                    OnPropertyChanged(nameof(HasAction));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Identifies what the action button should do. Currently only
+        /// <c>open_provider_settings</c>, kept as data so a future action does not
+        /// need a new field on every message.
+        /// </summary>
+        public string? ActionKind
+        {
+            get => _actionKind;
+            set => SetProperty(ref _actionKind, value);
+        }
+
+        public bool HasAction => !string.IsNullOrWhiteSpace(ActionLabel);
 
         public string? TurnId
         {

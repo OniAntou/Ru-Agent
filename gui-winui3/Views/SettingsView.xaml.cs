@@ -451,6 +451,19 @@ namespace RuApp.Views
             _ = _providerCatalogController?.RefreshAsync(force: true);
         }
 
+        /// <summary>
+        /// Opens the provider section from outside the settings surface, for a
+        /// failure message whose fix lives here.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately the same path as clicking the Models tab: a deep link that
+        /// skipped the catalog refresh would show stale providers.
+        /// </remarks>
+        public void ShowProviders()
+        {
+            OnNavModelsClick(this, new RoutedEventArgs());
+        }
+
         private void SelectTab(bool isGeneral)
         {
             if (PanelGeneralScrollViewer != null)

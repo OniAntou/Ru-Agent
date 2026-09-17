@@ -41,23 +41,25 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void Every_provider_except_custom_points_at_where_a_key_comes_from()
+    public void Every_provider_names_where_its_key_is_created()
     {
         foreach (var provider in ProviderSetupGuidance.All)
         {
             Assert.False(string.IsNullOrWhiteSpace(provider.KeyHint));
-
-            if (provider.Alias == "custom")
-            {
-                // A custom endpoint is whatever URL the user typed, so there is no
-                // single page to send them to.
-                Assert.Null(provider.KeyUrl);
-                continue;
-            }
-
-            Assert.False(string.IsNullOrWhiteSpace(provider.KeyUrl));
-            Assert.StartsWith("https://", provider.KeyUrl, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void Provider_guidance_carries_no_link()
+    {
+        // Settings shows the hint as text. A URL field was added and then removed
+        // because nothing rendered it; this keeps a dead field from coming back.
+        var properties = typeof(ProviderSetupGuidance.ProviderInfo)
+            .GetProperties()
+            .Select(property => property.Name)
+            .ToArray();
+
+        Assert.DoesNotContain("KeyUrl", properties);
     }
 
     [Fact]
@@ -122,7 +124,6 @@ public sealed class ProviderSetupGuidanceTests
 
         Assert.NotNull(custom);
         Assert.True(custom.KeyIsOptional);
-        Assert.Null(custom.KeyUrl);
     }
 
     [Fact]
@@ -162,15 +163,6 @@ public sealed class ProviderSetupGuidanceTests
         // The message carries the human hint; the URL is a separate field so the
         // settings screen can offer it as a link rather than pasted text.
         Assert.Contains("OpenAI platform", message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_openai_provider_exposes_its_key_page_for_a_link()
-    {
-        var provider = ProviderSetupGuidance.Find("openai");
-
-        Assert.NotNull(provider);
-        Assert.Equal("https://platform.openai.com/api-keys", provider.KeyUrl);
     }
 
     [Fact]

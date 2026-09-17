@@ -236,6 +236,12 @@ namespace RuApp.Views
         private bool _ownsGroupedCatalogs;
         private string _selectedModel = string.Empty;
         private string _selectedBackend = string.Empty;
+
+        /// <summary>
+        /// The last settings payload read from the backend, used to name the provider
+        /// that is missing a key without a second request while reporting a failure.
+        /// </summary>
+        private AppSettingsDto? _currentSettings;
         private string _selectedReasoningEffort = "default";
         private DispatcherTimer? _modelSaveFailureTimer;
 
@@ -330,6 +336,9 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 if (settings == null) return;
+                // Kept so a failed send can name the provider that has no key
+                // without asking the backend again while reporting a failure.
+                _currentSettings = settings;
                 string backend = settings.BackendChoice ?? "opencode";
                 string currentModel = ProviderModelSelection.GetSelectedModel(settings, backend);
 
@@ -2639,9 +2648,62 @@ namespace RuApp.Views
                 AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message),
                 _ => $"Coding Agent could not start: {exception.Message}"
             };
+
+            // A send that failed because no provider is configured is the first
+            // failure a new user meets. Saying which provider is missing a key, and
+            // offering the screen that fixes it, turns a dead end into one click.
+            if (ProviderSetupGuidance.IsMissingKey(_currentSettings, _selectedBackend))
+            {
+                status = ProviderSetupGuidance.MissingKeyMessage(_currentSettings, _selectedBackend);
+                ShowAgentInlineStatus(status);
+                ShowProviderSetupCard(status);
+                AgentStopButton.Visibility = Visibility.Collapsed;
+                ApprovalPanel.Hide();
+                return;
+            }
+
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
             ApprovalPanel.Hide();
+        }
+
+        /// <summary>
+        /// Puts the provider-setup message in the transcript with a button that
+        /// opens the screen where a key is added.
+        /// </summary>
+        private void ShowProviderSetupCard(string content)
+        {
+            _terminalFailureCardContent = content;
+            Messages.Add(new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = content,
+                IsError = true,
+                ActionLabel = AgentFailurePresentation.OpenProviderSettingsLabel,
+                ActionKind = AgentFailurePresentation.OpenProviderSettingsAction,
+            });
+            ScrollChatToBottom();
+        }
+
+        /// <summary>
+        /// Raised when an error message offers to open provider settings. The window
+        /// owns the settings surface, so it performs the navigation.
+        /// </summary>
+        public event EventHandler? ProviderSettingsRequested;
+
+        private void OnMessageActionClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement element
+                || element.Tag is not string action
+                || !string.Equals(
+                    action,
+                    AgentFailurePresentation.OpenProviderSettingsAction,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            ProviderSettingsRequested?.Invoke(this, EventArgs.Empty);
         }
 
         private bool HasRenderedAgentReply() =>

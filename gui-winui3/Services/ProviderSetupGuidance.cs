@@ -25,18 +25,19 @@ internal static class ProviderSetupGuidance
         string Alias,
         string DisplayName,
         Func<AppSettingsDto, bool> HasKey,
-        string? KeyUrl,
         string KeyHint,
         bool KeyIsOptional = false);
 
     /// <summary>
-    /// Every provider the picker offers, with where a key comes from.
+    /// Every provider the picker offers, with the hint shown beside its key input.
     /// </summary>
     /// <remarks>
-    /// KeyHint is shown beside the input so the user is not left guessing. The
-    /// custom provider has no key page because its endpoint is whatever base URL
-    /// the user typed, and its key is optional because only that endpoint can say
-    /// whether it wants one.
+    /// The hint is plain text naming where a key is created. There is deliberately no
+    /// URL: the user is already in the provider's own dashboard when they have one,
+    /// and a link from settings added a field nothing else used.
+    ///
+    /// The custom provider's key is optional because only its endpoint can say
+    /// whether one is wanted; see IsMissingKey.
     /// </remarks>
     internal static readonly IReadOnlyList<ProviderInfo> All =
     [
@@ -44,31 +45,26 @@ internal static class ProviderSetupGuidance
             "opencode",
             "OpenCode Zen",
             settings => settings.HasOpenCodeKey,
-            "https://opencode.ai/zen",
             "Create a key in the OpenCode Zen dashboard."),
         new(
             "kilo",
             "Kilo Gateway",
             settings => settings.HasKiloKey,
-            "https://kilocode.ai/",
             "Create a key in the Kilo dashboard."),
         new(
             "openai",
             "OpenAI",
             settings => settings.HasOpenAiKey,
-            "https://platform.openai.com/api-keys",
             "Create a key under API keys in the OpenAI platform."),
         new(
             "anthropic",
             "Anthropic",
             settings => settings.HasAnthropicKey,
-            "https://console.anthropic.com/settings/keys",
             "Create a key under API keys in the Anthropic console."),
         new(
             "custom",
             "Custom endpoint",
             settings => settings.HasCustomKey,
-            null,
             "Paste the key this endpoint expects. Leave it empty if your base URL does not need one.",
             KeyIsOptional: true),
     ];

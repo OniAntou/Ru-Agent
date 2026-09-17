@@ -255,6 +255,9 @@ namespace RuApp
                     _groupedCatalogs);
                 _chatView.SessionOpened += OnChatSessionOpened;
                 _chatView.SessionForked += OnChatSessionForked;
+                // A failure message that offers to open provider settings needs the
+                // window: the settings surface belongs to it, not to the transcript.
+                _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
 
                 _settingsView = new SettingsView();
                 _settingsView.Initialize(_apiService, _providerCatalogController);
@@ -495,6 +498,16 @@ namespace RuApp
             NavSettings.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
             NavSettings.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
             CloseSettingsButton?.Focus(FocusState.Programmatic);
+        }
+
+        /// <summary>
+        /// Opens settings with the provider section already showing, for a transcript
+        /// message whose fix is adding or replacing a provider key.
+        /// </summary>
+        private void OnProviderSettingsRequested(object? sender, EventArgs e)
+        {
+            OpenSettingsPopup();
+            _settingsView?.ShowProviders();
         }
 
         private void CloseSettingsPopup()

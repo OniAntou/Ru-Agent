@@ -2,6 +2,17 @@ namespace RuApp.Services;
 
 internal static class AgentFailurePresentation
 {
+    /// <summary>
+    /// Label on the button that opens the provider settings from a failure message.
+    /// </summary>
+    internal const string OpenProviderSettingsLabel = "Open provider settings";
+
+    /// <summary>
+    /// Action identifier carried by that button. Data rather than a method reference,
+    /// so a message can describe what it offers without holding a view.
+    /// </summary>
+    internal const string OpenProviderSettingsAction = "open_provider_settings";
+
     internal static bool ShouldKeepVisible(string? runStatus, string? safeStatus) =>
         string.Equals(runStatus, "failed", StringComparison.Ordinal)
         && !string.IsNullOrWhiteSpace(Render(safeStatus));

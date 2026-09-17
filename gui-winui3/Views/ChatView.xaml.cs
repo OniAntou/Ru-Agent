@@ -19,6 +19,7 @@ using RuAgent.Client;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuApp.Controls;
 using RuApp.Models;
 using RuApp.Services;
 using Windows.Storage.Streams;
@@ -121,6 +122,9 @@ namespace RuApp.Views
         public ChatView()
         {
             this.InitializeComponent();
+            // A size chosen while the transcript is open repaints the rows already on
+            // screen; without this only rows created afterwards would pick it up.
+            TranscriptTypography.Instance.PropertyChanged += OnTranscriptTypographyChanged;
             _replyRenderScheduler = new AgentReplyRenderScheduler(
                 _replyAccumulator,
                 callback =>
@@ -2691,8 +2695,82 @@ namespace RuApp.Views
         /// </summary>
         public event EventHandler? ProviderSettingsRequested;
 
-        private void OnMessageActionClick(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Applies the conversation typography to a message row once its template has
+        /// been realised.
+        /// </summary>
+        /// <remarks>
+        /// Set from code rather than bound in markup. A binding inside a data template
+        /// cannot reach the typography by name: x:Bind is compiled before the resource
+        /// exists, and a classic Binding with a StaticResource source asks the template
+        /// to resolve an application resource while it is being parsed. The singleton is
+        /// directly reachable here, which removes that lookup entirely.
+        ///
+        /// Both MarkdownBlock and TextBlock raise a change callback when FontSize is
+        /// set, so a message already on screen re-renders when the size changes.
+        /// </remarks>
+        private void ApplyTranscriptTypography(DependencyObject root)
         {
+            var typography = TranscriptTypography.Instance;
+
+            foreach (var element in EnumerateDescendants(root))
+            {
+                switch (element)
+                {
+                    case MarkdownBlock reply:
+                        reply.FontSize = typography.MessageFontSize;
+                        break;
+                    case TextBlock { Name: "AgentActivityText" } activity:
+                        activity.FontSize = typography.ActivityFontSize;
+                        break;
+                }
+            }
+        }
+
+        private static IEnumerable<DependencyObject> EnumerateDescendants(DependencyObject root)
+        {
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int index = 0; index < count; index++)
+            {
+                var child = VisualTreeHelper.GetChild(root, index);
+                yield return child;
+                foreach (var descendant in EnumerateDescendants(child))
+                {
+                    yield return descendant;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Re-applies typography to every realised message row, for a size change made
+        /// while the transcript is on screen.
+        /// </summary>
+        private void RefreshTranscriptTypography()
+        {
+            if (ChatListView is null)
+            {
+                return;
+            }
+
+            foreach (object entry in ChatListView.Items)
+            {
+                if (ChatListView.ContainerFromItem(entry) is DependencyObject container)
+                {
+                    ApplyTranscriptTypography(container);
+                }
+            }
+        }
+
+        private void OnTranscriptTypographyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(TranscriptTypography.MessageFontSize)
+                or nameof(TranscriptTypography.ActivityFontSize))
+            {
+                RefreshTranscriptTypography();
+            }
+        }
+
+        private void OnMessageActionClick(object sender, RoutedEventArgs e)        {
             if (sender is not FrameworkElement element
                 || element.Tag is not string action
                 || !string.Equals(
@@ -3333,6 +3411,9 @@ namespace RuApp.Views
         {
             if (sender is FrameworkElement column)
             {
+                // The row's template is realised by now, so its text elements exist and
+                // can take the conversation size.
+                ApplyTranscriptTypography(column);
                 LayoutMessageColumn(column);
             }
         }

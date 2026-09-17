@@ -88,8 +88,8 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                                FontSize="{Binding MessageFontSize, Source={StaticResource TranscriptTypography}}"
+                        <controls:MarkdownBlock x:Name="AgentLegacyTextBlock"
+                                                MarkdownText="{x:Bind Content, Mode=OneWay}"
                                                 Foreground="{StaticResource RuInkBrush}"
                                                 FontFamily="{StaticResource RuUiFontFamily}" />
                     </StackPanel>
@@ -117,9 +117,9 @@
                       HorizontalAlignment="Left"
                       VerticalAlignment="Center">
                      <TextBlock Grid.Column="0"
+                                x:Name="AgentActivityText"
                                 Text="{x:Bind DisplayText, Mode=OneWay}"
                                 FontFamily="{StaticResource RuUiFontFamily}"
-                                FontSize="{Binding ActivityFontSize, Source={StaticResource TranscriptTypography}}"
                                FontWeight="Medium"
                                Foreground="{StaticResource RuInkBrush}"
                                TextWrapping="Wrap"
@@ -241,9 +241,9 @@
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
-                    <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
+                    <controls:MarkdownBlock x:Name="AgentReplyTextBlock"
+                                            MarkdownText="{x:Bind Content, Mode=OneWay}"
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                            FontSize="{Binding MessageFontSize, Source={StaticResource TranscriptTypography}}"
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
                     <!--

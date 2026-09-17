@@ -16,50 +16,36 @@ namespace RuApp.Tests;
 public sealed class TranscriptSizeUiSourceContractTests
 {
     [Fact]
-    public void The_transcript_binds_its_message_size_to_the_shared_instance()
+    public void The_transcript_text_elements_are_addressable_by_name()
     {
         var document = GuiSource.Xml("Views", "ChatView.xaml");
 
-        var bound = document.Descendants()
-            .Where(element =>
-                (GuiSource.AttributeValue(element, "FontSize") ?? string.Empty)
-                    .Contains("MessageFontSize", StringComparison.Ordinal))
-            .ToArray();
+        // The size is applied from code when a row's template is realised, so the
+        // elements have to be findable. Two message surfaces: the segmented reply and
+        // the legacy block a failure card renders into.
+        Assert.Single(document.Descendants().Where(element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentLegacyTextBlock"));
+        Assert.Single(document.Descendants().Where(element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentReplyTextBlock"));
 
-        // Both transcript text surfaces: the segmented reply and the legacy block a
-        // failure card is rendered into. A hardcoded size on either leaves half the
-        // conversation ignoring the setting.
-        Assert.Equal(2, bound.Length);
-    }
-
-    [Fact]
-    public void The_activity_line_binds_to_the_smaller_size()
-    {
-        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        // The activity line lives in the activity template.
         var activity = document.Descendants()
-            .FirstOrDefault(element =>
-                (GuiSource.AttributeValue(element, "Key") is null)
-                && (GuiSource.AttributeValue(element, "FontSize") ?? string.Empty)
-                    .Contains("ActivityFontSize", StringComparison.Ordinal));
+            .Where(element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentActivityText")
+            .First();
 
-        Assert.NotNull(activity);
-
-        // The activity line must be inside the activity template, not the message one:
-        // binding a message row to the smaller size would shrink the wrong text.
-        var template = document.Descendants()
-            .FirstOrDefault(element =>
-                (string?)element.Attribute(GuiSource.Xaml + "Key") == "AgentActivityTemplate");
+        var template = document.Descendants().FirstOrDefault(element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Key") == "AgentActivityTemplate");
 
         Assert.NotNull(template);
         Assert.True(GuiSource.IsDescendantOf(activity, template));
     }
 
     [Fact]
-    public void The_size_is_read_through_a_binding_that_can_change()
+    public void No_font_size_binding_asks_a_template_to_resolve_a_resource()
     {
-        // x:Bind is compiled once per template and cannot follow a value that changes
-        // at runtime, so these bindings must be classic bindings with the shared
-        // instance as their source.
+        // The crash this replaced: a StaticResource lookup inside a DataTemplate for a
+        // resource registered after the markup was compiled, which surfaced as
+        // E_XAMLPARSEFAILED as soon as a message rendered.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
 
         foreach (var element in document.Descendants())
@@ -70,10 +56,31 @@ public sealed class TranscriptSizeUiSourceContractTests
                 continue;
             }
 
-            Assert.Contains("Binding ", fontSize, StringComparison.Ordinal);
-            Assert.Contains("Source={StaticResource TranscriptTypography}", fontSize, StringComparison.Ordinal);
-            Assert.DoesNotContain("x:Bind", fontSize, StringComparison.Ordinal);
+            Assert.DoesNotContain("StaticResource", fontSize, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void The_code_applies_both_sizes_from_the_shared_instance()
+    {
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        Assert.True(GuiSource.HasMember(code, "ApplyTranscriptTypography"));
+        string body = GuiSource.MethodBody(code, "ApplyTranscriptTypography");
+
+        Assert.Contains("TranscriptTypography.Instance", body, StringComparison.Ordinal);
+        Assert.Contains("MessageFontSize", body, StringComparison.Ordinal);
+        Assert.Contains("ActivityFontSize", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_realised_row_applies_the_size_when_its_template_loads()
+    {
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string body = GuiSource.MethodBody(code, "OnMessageColumnLoaded");
+
+        // Without this the size would only apply to rows created after a change.
+        Assert.Contains("ApplyTranscriptTypography", body, StringComparison.Ordinal);
     }
 
     [Fact]

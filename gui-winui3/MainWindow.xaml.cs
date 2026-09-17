@@ -848,6 +848,10 @@ namespace RuApp
 
         private void ApplySessions(SessionListResponse result)
         {
+            // The sessions poll fires every few seconds; rebuilding the sidebar rows
+            // on every poll visibly flickers group chrome, so only re-render when
+            // the list (order, membership, or row content) actually changed.
+            var before = Services.SidebarRowFingerprint.ForSessions(Sessions);
             var seen = new HashSet<string>();
             int insertAt = 0;
             foreach (var incoming in result.Sessions)
@@ -891,7 +895,13 @@ namespace RuApp
                 }
             }
 
-            RenderWorkspaceSidebar();
+            if (!string.Equals(
+                Services.SidebarRowFingerprint.ForSessions(Sessions),
+                before,
+                StringComparison.Ordinal))
+            {
+                RenderWorkspaceSidebar();
+            }
         }
 
         private void SyncSidebarSelection(string sessionId)

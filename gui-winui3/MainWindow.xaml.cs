@@ -378,16 +378,6 @@ namespace RuApp
                 ThemeToggleButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                 ThemeToggleButton.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
             };
-
-            // New Chat button
-            NavNewChat.PointerEntered += (s, e) =>
-            {
-                NavNewChat.Background = (Brush)Application.Current.Resources["RuLineBrush"];
-            };
-            NavNewChat.PointerExited += (s, e) =>
-            {
-                NavNewChat.Background = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
-            };
         }
 
         private void SetupNavHover(Button btn)

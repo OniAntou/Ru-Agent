@@ -198,9 +198,9 @@
                         <StackPanel x:Name="SidebarTopPanel" Grid.Row="0" Padding="14,16,14,0" Spacing="2">
                             <!-- New Chat Button -->
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
-                                    Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
+                                    Padding="10,8"
                                     CornerRadius="{StaticResource RuControlCornerRadius}" HorizontalContentAlignment="Stretch"
+                                    Style="{StaticResource RuSecondaryButtonStyle}"
                                     AutomationProperties.AutomationId="NewSessionButton"
                                     AutomationProperties.Name="New Chat">
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">

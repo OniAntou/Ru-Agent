@@ -375,6 +375,12 @@ public sealed class AgentSessionUiSourceContractTests
         // code-behind hover must not fight it with local Background values.
         var hoverFx = GuiSource.MethodBody(code, "InitializeChatHoverEffects");
         Assert.DoesNotContain("SendButton", hoverFx, StringComparison.Ordinal);
+
+        // Same deal for the secondary New Chat CTA: the template owns hover,
+        // so the sidebar hover setup must not touch it either.
+        var shellCode = GuiSource.Text("MainWindow.xaml.cs");
+        var sidebarHover = GuiSource.MethodBody(shellCode, "InitializeSidebarHoverEffects");
+        Assert.DoesNotContain("NavNewChat", sidebarHover, StringComparison.Ordinal);
     }
 
     [Fact]

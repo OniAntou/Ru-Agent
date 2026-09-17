@@ -260,6 +260,17 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(setters, setter =>
             GuiSource.AttributeValue(setter, "Target") == "Glyph.Foreground");
 
+        // No zoom on hover: the style carries no Scale setters at all.
+        Assert.DoesNotContain(
+            addStyle.Descendants().Where(element => element.Name.LocalName == "Setter"),
+            setter => (GuiSource.AttributeValue(setter, "Target") ?? string.Empty)
+                .StartsWith("Scale.", StringComparison.Ordinal));
+
+        // The footer status notice is gone from the sidebar.
+        Assert.Equal(
+            "Collapsed",
+            GuiSource.AttributeValue(GuiSource.Require(document, "ShellStatusRow"), "Visibility"));
+
         // One frame only: the container carries no padding so each row's own
         // control paints full-bleed; the session root keeps the old 10,4 inset.
         var sessionTemplate = document.Descendants()

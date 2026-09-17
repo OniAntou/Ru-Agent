@@ -68,7 +68,7 @@ public sealed class AgentWebToolExecutorTests
             CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentException>(() => executor.ExecuteAsync(
             "read",
-            new JsonObject { ["op"] = "read", ["path"] = "a.txt" },
+            new JsonObject { ["path"] = "a.txt" },
             CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentException>(() => executor.ExecuteAsync(
             "totally.unknown",

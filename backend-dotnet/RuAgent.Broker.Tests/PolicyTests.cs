@@ -277,7 +277,7 @@ public sealed class PolicyEvaluationTests
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
             PolicyEvalSnapshots.AllowAllRule()));
-        var context = factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "notes/a.txt" });
+        var context = factory.Create("read", "1.0.0", new JsonObject { ["path"] = "notes/a.txt" });
         var evaluator = new PolicySnapshotEvaluator();
 
         AssertDeny(evaluator.Evaluate(lease.Snapshot, context, Inv(schemaValid: false), Now), "schema_invalid");
@@ -299,7 +299,7 @@ public sealed class PolicyEvaluationTests
         var (firstLease, firstFactory) = Bind(allowThenDeny);
         var first = new PolicySnapshotEvaluator().Evaluate(
             firstLease.Snapshot,
-            firstFactory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "a.txt" }),
+            firstFactory.Create("read", "1.0.0", new JsonObject { ["path"] = "a.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("deny", first.Decision);
@@ -308,7 +308,7 @@ public sealed class PolicyEvaluationTests
         var (secondLease, secondFactory) = Bind(denyThenAllow);
         var second = new PolicySnapshotEvaluator().Evaluate(
             secondLease.Snapshot,
-            secondFactory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "a.txt" }),
+            secondFactory.Create("read", "1.0.0", new JsonObject { ["path"] = "a.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("allow", second.Decision);
@@ -328,7 +328,7 @@ public sealed class PolicyEvaluationTests
         var (lease, factory) = Bind(expired);
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = "a.txt" }),
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = "a.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -342,10 +342,10 @@ public sealed class PolicyEvaluationTests
     {
         var cases = new (string PiId, JsonObject Args)[]
         {
-            ("read", new JsonObject { ["op"] = "list", ["path"] = "." }),
+            ("list", new JsonObject { ["path"] = "." }),
             ("glob", new JsonObject { ["pattern"] = "*.txt", ["path"] = "." }),
             ("grep", new JsonObject { ["query"] = "x", ["path"] = "." }),
-            ("read", new JsonObject { ["op"] = "read", ["path"] = "src/read.txt" }),
+            ("read", new JsonObject { ["path"] = "src/read.txt" }),
             ("write", new JsonObject { ["op"] = "write", ["path"] = "src/write.txt" }),
             ("edit", new JsonObject { ["path"] = "src/edit.txt", ["old_string"] = "a" }),
         };
@@ -368,7 +368,7 @@ public sealed class PolicyEvaluationTests
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluation = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = @"C:\Windows\outside.txt" }),
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\Windows\outside.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
 
@@ -400,7 +400,7 @@ public sealed class PolicyEvaluationTests
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var protectedPath = new PolicySnapshotEvaluator().Evaluate(
             lease.Snapshot,
-            factory.Create("read", "1.0.0", new JsonObject { ["op"] = "read", ["path"] = ".env.local" }),
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = ".env.local" }),
             PolicyRequestInvariants.Valid,
             Now);
         var delete = new PolicySnapshotEvaluator().Evaluate(

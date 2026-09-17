@@ -156,31 +156,51 @@ public sealed class PolicyContextFactory
         }
         else
         {
-            var op = toolId switch
+            string? op;
+            switch (toolId)
             {
-                "read" => OptionalText(arguments, "op")
-                    ?? throw new PolicyContextException(
+                case "read":
+                    op = null;
+                    break;
+                case "list":
+                    op = "list";
+                    break;
+                case "help":
+                    op = "help";
+                    break;
+                case "write":
+                    var writeOp = OptionalText(arguments, "op")
+                        ?? throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "write requires op: \"write\", \"delete\", or \"restore\".");
+                    if (writeOp is not ("write" or "delete" or "restore"))
+                    {
+                        throw new PolicyContextException(
+                            "malformed_call",
+                            hint: "write op must be write|delete|restore.");
+                    }
+
+                    op = writeOp;
+                    break;
+                case "edit":
+                    op = "edit";
+                    break;
+                case "grep":
+                    op = "grep";
+                    break;
+                case "glob":
+                    op = "glob";
+                    break;
+                case "web_search":
+                    op = "web_search";
+                    break;
+                case "web_fetch":
+                    op = "web_fetch";
+                    break;
+                default:
+                    throw new PolicyContextException(
                         "malformed_call",
-                        hint: "read requires op: \"list\", \"read\", or \"help\"."),
-                "write" => OptionalText(arguments, "op")
-                    ?? throw new PolicyContextException(
-                        "malformed_call",
-                        hint: "write requires op: \"write\", \"delete\", or \"restore\"."),
-                "edit" => "edit",
-                "grep" => "grep",
-                "glob" => "glob",
-                "web_search" => "web_search",
-                "web_fetch" => "web_fetch",
-                _ => throw new PolicyContextException(
-                    "malformed_call",
-                    hint: "unknown tool id; use read, grep, glob, write, edit, bash, web_search, or web_fetch."),
-            };
-            if ((toolId == "read" && op is not ("list" or "read" or "help"))
-                || (toolId == "write" && op is not ("write" or "delete" or "restore")))
-            {
-                throw new PolicyContextException(
-                    "malformed_call",
-                    hint: "read op must be list|read|help and write op must be write|delete|restore.");
+                        hint: "unknown tool id; use read, list, help, grep, glob, write, edit, bash, web_search, or web_fetch.");
             }
 
             if (IsTargetFreeOp(toolId, op))
@@ -299,7 +319,9 @@ public sealed class PolicyContextFactory
 
     private static string OperationClassFor(string toolId, JsonObject arguments) => toolId switch
     {
-        "read" => ReadOpClass(OptionalText(arguments, "op")),
+        "read" => PolicyOperationClasses.Read,
+        "list" => PolicyOperationClasses.List,
+        "help" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
         "write" => WriteOpClass(OptionalText(arguments, "op")),
@@ -307,14 +329,6 @@ public sealed class PolicyContextFactory
         "bash" => PolicyOperationClasses.Terminal,
         "web_search" or "web_fetch" => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
-    };
-
-    private static string ReadOpClass(string? op) => op switch
-    {
-        "read" => PolicyOperationClasses.Read,
-        "list" => PolicyOperationClasses.List,
-        "help" => PolicyOperationClasses.Read,
-        _ => PolicyOperationClasses.Read,
     };
 
     private static string WriteOpClass(string? op) => op switch
@@ -328,7 +342,7 @@ public sealed class PolicyContextFactory
     private static bool IsTargetFreeTool(string toolId) => false;
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
-        (toolId == "read" && op is "help")
+        toolId == "help"
         || toolId is "web_search" or "web_fetch";
 
     private static string? ReadOpOf(string toolId, JsonObject arguments) =>

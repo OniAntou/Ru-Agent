@@ -200,7 +200,7 @@ public sealed class AgentApprovalLiveDeliveryTests
         var node = JsonNode.Parse(argumentsJson) as JsonObject ?? new JsonObject();
         if (toolId == "files.read")
         {
-            node["op"] = "read";
+            // read no longer carries an op discriminator.
             toolId = "read";
         }
 

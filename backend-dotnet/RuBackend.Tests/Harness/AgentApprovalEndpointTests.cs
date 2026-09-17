@@ -703,10 +703,10 @@ public sealed class AgentApprovalEndpointTests
         var id = toolId;
         switch (toolId)
         {
-            case "files.list": id = "read"; node["op"] = "list"; break;
-            case "files.glob": id = "read"; node["op"] = "glob"; break;
-            case "files.search": id = "read"; node["op"] = "search"; break;
-            case "files.read": id = "read"; node["op"] = "read"; break;
+            case "files.list": id = "list"; node.Remove("op"); break;
+            case "files.glob": id = "glob"; node.Remove("op"); break;
+            case "files.search": id = "grep"; node.Remove("op"); break;
+            case "files.read": id = "read"; node.Remove("op"); break;
             case "files.write": id = "write"; node["op"] = "write"; break;
             case "files.edit": id = "edit"; break;
             case "files.delete": id = "write"; node["op"] = "delete"; break;
@@ -715,7 +715,7 @@ public sealed class AgentApprovalEndpointTests
             case "terminal.shell": id = "bash"; node["mode"] = "shell"; break;
             case "web.search": id = "web_search"; node.Remove("op"); break;
             case "web.fetch": id = "web_fetch"; node.Remove("op"); break;
-            case "help.docs": id = "read"; node["op"] = "help"; break;
+            case "help.docs": id = "help"; node.Remove("op"); break;
         }
         return (id, node.ToJsonString());
     }

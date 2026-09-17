@@ -213,6 +213,7 @@ public sealed class ToolCatalogTests
         // The discriminator is gone: op is not a declared property any more, so the
         // strict schema rejects it instead of dispatching on it.
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "read", ["path"] = "a.txt" }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["path"] = "a.txt", ["limit"] = 300 * 1024 }));
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "list", ["path"] = "." }));
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(readSchema, new JsonObject { ["op"] = "help", ["query"] = "approvals" }));
 

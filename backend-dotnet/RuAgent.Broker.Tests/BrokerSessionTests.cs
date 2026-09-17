@@ -338,7 +338,7 @@ public sealed class BrokerSessionTests
                 LeaseTestSnapshots.StandardEmpty());
             var factory = new RuAgent.Broker.Policy.PolicyContextFactory(lease);
             var context = factory.Create("read", "1.0.0",
-                new System.Text.Json.Nodes.JsonObject { ["op"] = "read", ["path"] = "probe.txt" });
+                new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" });
 
             Assert.True(context.Target!.IsInsideWorkspace);
             Assert.Equal(

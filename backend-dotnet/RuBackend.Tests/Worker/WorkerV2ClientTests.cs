@@ -217,7 +217,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                         ["provider_call_id"] = "call-1",
                         ["tool_id"] = "read",
                         ["tool_version"] = "1.0.0",
-                        ["arguments"] = new JsonObject { ["op"] = "read", ["path"] = "README.md" },
+                        ["arguments"] = new JsonObject { ["path"] = "README.md" },
                     }),
                     ["finish_reason"] = "tool_calls",
                     ["prompt_receipt"] = PromptReceiptJson(),

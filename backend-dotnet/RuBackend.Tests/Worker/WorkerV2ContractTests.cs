@@ -239,7 +239,7 @@ public sealed class WorkerV2ContractTests
     [Fact]
     public void Rejects_oversized_arguments()
     {
-        var largeArgs = new JsonObject { ["op"] = "read", ["path"] = new string('a', 64 * 1024 + 1) };
+        var largeArgs = new JsonObject { ["path"] = new string('a', 64 * 1024 + 1) };
         var payload = new JsonObject
         {
             ["text"] = null,

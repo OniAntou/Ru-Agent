@@ -318,9 +318,9 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject
                 {
-                    ["tool_id"] = "read",
+                    ["tool_id"] = "list",
                     ["tool_version"] = "1.0.0",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "src" },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "src" },
                 }), cancellation.Token);
         var result = await ReceiveAsync(socket, cancellation.Token);
 
@@ -776,7 +776,7 @@ public sealed class BrokerHostTests
                     ["run_id"] = "run_flow111111111111111111111111111",
                     ["tool_id"] = "read",
                     ["tool_version"] = "1.0.0",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "read", ["path"] = "probe.txt" },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
                 }),
             cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
@@ -795,7 +795,7 @@ public sealed class BrokerHostTests
                     ["tool_id"] = "read",
                     ["tool_version"] = "1.0.0",
                     ["authorization_token"] = authorizationToken,
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "read", ["path"] = "probe.txt" },
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
                 }),
             cts.Token);
         var result = await ReceiveAsync(socket, cts.Token);
@@ -1452,8 +1452,8 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = runId,
-                    ["tool_id"] = "read",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "." },
+                    ["tool_id"] = "list",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
                 }),
             cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
@@ -1523,8 +1523,8 @@ public sealed class BrokerHostTests
                 new System.Text.Json.Nodes.JsonObject
                 {
                     ["run_id"] = runId,
-                    ["tool_id"] = "read",
-                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["op"] = "list", ["path"] = "." },
+                    ["tool_id"] = "list",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
                 }),
             cts.Token);
         var rejected = await ReceiveAsync(socket, cts.Token);

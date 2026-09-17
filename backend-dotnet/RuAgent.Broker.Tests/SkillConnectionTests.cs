@@ -230,7 +230,7 @@ public sealed class SkillConnectionTests
                 new JsonObject { ["type"] = "object" },
                 new HashSet<string>(["read"]),
                 new HashSet<string>([ToolScope.WorkspaceRead, ToolScope.SystemRead, ToolScope.SkillExecute]),
-                [new SkillStep(SkillStepKind.CallTool, "list", "read", new JsonObject { ["op"] = "list", ["path"] = ".", ["max_entries"] = 8 })],
+                [new SkillStep(SkillStepKind.CallTool, "list", "list", new JsonObject { ["path"] = ".", ["max_entries"] = 8 })],
                 false, 4, 30_000, "builtin", "Data only.");
             var host = await BrokerHost.StartAsync(new BrokerOptions(descriptorPath, BuiltinSkills: [skill]));
             return new Fixture(root, token, host);

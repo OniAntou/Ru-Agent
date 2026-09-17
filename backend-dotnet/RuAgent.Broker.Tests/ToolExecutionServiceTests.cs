@@ -44,11 +44,11 @@ public sealed class ToolExecutionServiceTests
                     30_000,
                     new JsonObject
                     {
-                        ["tool_id"] = "read",
+                        ["tool_id"] = "help",
                         ["tool_version"] = "1.0.0",
                         ["capability_class"] = "internal",
                         ["run_id"] = "session-help",
-                        ["arguments"] = new JsonObject { ["op"] = "help", ["query"] = "approvals", ["max_results"] = 1 },
+                        ["arguments"] = new JsonObject { ["query"] = "approvals", ["max_results"] = 1 },
                     }),
                 CancellationToken.None);
 

@@ -152,7 +152,9 @@ public sealed partial class ToolExecutionService : IToolInvoker
     {
         var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
-            ["read"] = ExecuteReadOpAsync,
+            ["read"] = ExecuteReadAsync,
+            ["list"] = ExecuteListAsync,
+            ["help"] = ExecuteHelpAsync,
             ["grep"] = async (context, arguments, token) => ToolExecutionOutcome.Succeeded(
                 await ResolveTools(context, TargetPathOf(arguments)).Search.ExecuteAsync(
                     TranslateGrepArguments(arguments),

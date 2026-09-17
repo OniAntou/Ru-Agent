@@ -23,29 +23,40 @@ public sealed partial class ToolExecutionService : IToolInvoker
     private static HttpClient CreateWebHttpClient() =>
         new(WebConnectionPolicy.CreateHandler(), disposeHandler: true);
 
-    private ValueTask<ToolExecutionOutcome> ExecuteReadOpAsync(
+    private ValueTask<ToolExecutionOutcome> ExecuteReadAsync(
         ToolExecutionContext context,
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        var op = ReadOptionalString(arguments, "op") ?? "read";
-        return op switch
-        {
-            "list" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
-                ToolVerificationStates.NotRequired,
-                "Workspace entries listed.")),
-            "read" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-                ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
-                ToolVerificationStates.NotRequired,
-                "Workspace file read.")),
-            "help" => ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-                _helpDocs.Execute(arguments, cancellationToken),
-                ToolVerificationStates.NotRequired,
-                "Bundled Ru documentation searched.")),
-            "web_search" or "web_fetch" => throw new ArgumentException("web_moved_to_standalone_tool"),
-            _ => throw new ArgumentException("unknown_read_op"),
-        };
+        _ = cancellationToken;
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            ResolveTools(context, TargetPathOf(arguments)).Read.Execute(arguments),
+            ToolVerificationStates.NotRequired,
+            "Workspace file read."));
+    }
+
+    private ValueTask<ToolExecutionOutcome> ExecuteListAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            ResolveTools(context, TargetPathOf(arguments)).List.Execute(arguments),
+            ToolVerificationStates.NotRequired,
+            "Workspace entries listed."));
+    }
+
+    private ValueTask<ToolExecutionOutcome> ExecuteHelpAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        _ = context;
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            _helpDocs.Execute(arguments, cancellationToken),
+            ToolVerificationStates.NotRequired,
+            "Bundled Ru documentation searched."));
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(

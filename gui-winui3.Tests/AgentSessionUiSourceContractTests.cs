@@ -95,6 +95,18 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("AgentPresetBox", GuiSource.AttributeValue(preset, "AutomationId"));
         Assert.Equal("Agent permission preset", GuiSource.AttributeValue(preset, "Name"));
 
+        // Model + reasoning live in one pill well and share one toolbar style.
+        var model = GuiSource.Require(document, "ChatModelButton");
+        var reasoning = GuiSource.Require(document, "ChatReasoningButton");
+        Assert.Equal("{StaticResource RuToolbarButtonStyle}", GuiSource.AttributeValue(model, "Style"));
+        Assert.Equal("{StaticResource RuToolbarButtonStyle}", GuiSource.AttributeValue(reasoning, "Style"));
+        var well = model.Ancestors()
+            .First(element => element.Name.LocalName == "Border"
+                && (GuiSource.AttributeValue(element, "Background") ?? string.Empty).Contains("RuCanvasBrush"));
+        Assert.True(
+            well.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "ChatReasoningButton"),
+            "The model/reasoning well must contain both dropdowns.");
+
         // The markup binds the send face to the shared vocabulary, and the runtime
         // assignment in UpdateSendButtonMode reads the same vocabulary: the two faces
         // carry no literal glyph or announced name of their own. ChatView cannot be

@@ -8,12 +8,14 @@ public sealed class HelpDocsTests
 {
     private static readonly string[] CurrentToolIds =
     [
-        "read", "grep", "glob", "write", "edit", "bash", "web_search", "web_fetch",
+        "read", "list", "help", "grep", "glob",
+        "write", "edit", "bash", "web_search", "web_fetch",
     ];
 
+    // read and list carry no discriminator since the split; only write and bash do.
     private static readonly string[] CurrentOps =
     [
-        "op=read", "op=write", "mode=run", "mode=shell",
+        "op=write", "mode=run", "mode=shell",
     ];
 
     private static readonly string[] RetiredToolIds =
@@ -59,7 +61,7 @@ public sealed class HelpDocsTests
     {
         var tool = new HelpDocsTool(BundledHelpDocsCatalog.LoadDefault());
 
-        var output = tool.Execute(new JsonObject { ["op"] = "help", ["query"] = "approvals", ["path"] = "." });
+        var output = tool.Execute(new JsonObject { ["query"] = "approvals" });
 
         Assert.Equal("approvals", output["query"]!.GetValue<string>());
         var results = output["results"]!.AsArray();
@@ -76,9 +78,7 @@ public sealed class HelpDocsTests
     {
         var output = HelpDocsTool.CreateDefault().Execute(new JsonObject
         {
-            ["op"] = "help",
             ["query"] = query,
-            ["path"] = ".",
             ["max_results"] = 5,
         });
 
@@ -92,9 +92,7 @@ public sealed class HelpDocsTests
     {
         var output = HelpDocsTool.CreateDefault().Execute(new JsonObject
         {
-            ["op"] = "help",
             ["query"] = "current capability matrix",
-            ["path"] = ".",
             ["max_results"] = 5,
         });
 

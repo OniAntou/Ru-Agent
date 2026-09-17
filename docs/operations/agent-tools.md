@@ -19,8 +19,9 @@ not advertised Agent tools.
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
 >   `/agent/v1/*` (20 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
->   This checkpoint exposes Broker-backed model tools (`read` with
->   `op=list|read|help` plus offset/limit, `glob`/`grep` for bounded discovery,
+>   This checkpoint exposes Broker-backed model tools (`read` for one file with
+>   offset/limit, `list` for one directory, `help` for the bundled docs,
+>   `glob`/`grep` for bounded discovery,
 >   `write` with `op=write`,
 >   `edit`, one-time `write` with `op=restore`) through a durable Core (state machines incl.
 >   `tool.execution_requested`, SQLite WAL `agent_harness.db`, AES-GCM
@@ -103,13 +104,13 @@ boundary.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `glob`, `grep` | always advertised | automatic inside the trusted or session-granted root |
-| `read` with `op=list`, `op=read` | always advertised | automatic inside the trusted or session-granted root |
+| `glob`, `grep`, `list` | always advertised | automatic inside the trusted or session-granted root |
+| `read` | always advertised | automatic inside the trusted or session-granted root; `read` carries no `op` discriminator |
 | `write` with `op=write`, `edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion, unknown executables, git `-C` directory overrides, non-inert `git -c key=value` config overrides, and `git config --global`/`--system`/`--file`/`--edit` require one-time approval |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | approval-gated (`web_approval_required`), bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
-| `read` with `op=help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents |
+| `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
@@ -190,13 +191,13 @@ was rejected and to re-issue exactly one complete call. `invalid_selection`
 from the text contract retries the same way. Wire, invariant, and security
 violations stay terminal and are never retried.
 
-Use `read` with `op=help` when the user asks how Ru's own features, architecture,
+Use the `help` tool when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
 bounded excerpts from the five current bundled documents (`ru-overview`,
 `architecture`, `runtime`, `agent-tools`, and `provider-catalog`). Use runtime
 context or an advertised terminal tool for live machine, process, device, and
 workspace state. There is no second docs alias or fallback tool; the only
-model-visible bundled-help contract is `read` with `op=help` on tool
+model-visible bundled-help contract is `help` on tool
 `1.0.0`.
 
 ## One execution path

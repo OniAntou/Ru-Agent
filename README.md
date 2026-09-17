@@ -143,25 +143,25 @@ dotnet run --project backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -- agent chat
 
 ## 5. Hệ thống công cụ Agent (Tool Capabilities)
 
-Ru Agent được trang bị **8 công cụ cốt lõi**, định nghĩa bất biến trong `RuAgent.Protocol` (`AgentToolDefinitionCatalog`, version `1.0.0`). Host chiếu cùng ID/version/scope/schema/digest cho cả prompt lẫn `model_tools`, nên không có bản sao định nghĩa thứ hai. Mọi schema đều strict (`additionalProperties: false`).
+Ru Agent được trang bị **10 công cụ cốt lõi**, định nghĩa bất biến trong `RuAgent.Protocol` (`AgentToolDefinitionCatalog`, version `1.0.0`). Host chiếu cùng ID/version/scope/schema/digest cho cả prompt lẫn `model_tools`, nên không có bản sao định nghĩa thứ hai. Mọi schema đều strict (`additionalProperties: false`).
 
-| Nhóm công cụ | Tên công cụ (Tool ID) | Mô tả chức năng |
-| :--- | :--- | :--- |
-| **Duyệt tệp** | `read` + `op=list` | Liệt kê danh sách tệp/thư mục kèm metadata (kích thước, thời gian sửa đổi). |
-| | `read` + `op=read` | Đọc nội dung tệp (hỗ trợ `offset`/`limit` để đọc theo khoảng dòng). |
-| | `read` + `op=help` | Tra cứu tài liệu hướng dẫn nội bộ của hệ thống Ru ngay tại local. |
-| | `grep` | Tìm kiếm nội dung văn bản bên trong tệp (regex tuỳ chọn qua `is_regex`, lọc theo `file_glob`/`case_sensitive`, kết quả bị chặn trần). |
-| | `glob` | Tìm kiếm tệp theo mẫu glob (ví dụ: `**/*.cs`, `src/**/*.ts`), kết quả sắp xếp ordinal. |
-| **Thao tác tệp** | `write` + `op=write` | Tạo mới hoặc ghi đè toàn bộ nội dung tệp. |
-| | `edit` | Thay thế chính xác một khối nội dung trong tệp (atomic replacement). |
-| | `write` + `op=delete` | Xóa tệp có bảo hiểm (lưu preimage vào vùng phục hồi mã hoá để có thể restore). |
-| | `write` + `op=restore` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
-| **Terminal** | `bash` + `mode=run` | Chạy một executable hoặc script với argument vector, working directory, `timeout_ms` và khai báo `network_intent`. |
-| | `bash` + `mode=shell` | Chạy một script qua runtime shell được allowlist (`powershell`/`pwsh`), output bị chặn trần và process tree bị kill khi hết hạn. |
-| **Tra cứu Web** | `web_search` | Tìm kiếm thông tin trên Web — Google HTML là engine chính, DuckDuckGo HTML fallback tự động (cần phê duyệt mỗi lần dùng). Hỗ trợ `query` (1–512 ký tự) và `max_results` (1–10). |
-| | `web_fetch` | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng, URL tối đa 2048 ký tự). |
+| Nhóm công cụ | Tên công cụ (Tool ID) | Tham số | Mô tả chức năng |
+| :--- | :--- | :--- | :--- |
+| **Duyệt tệp** | `read` | `path`, `offset`, `limit` | Đọc nội dung một tệp (phân trang theo khoảng dòng). |
+| | `list` | `path`, `max_entries` (1–512) | Liệt kê một thư mục kèm metadata (kích thước, thời gian sửa đổi). |
+| | `grep` | `query`, `path`, `file_glob`, `case_sensitive`, `is_regex`, `max_results` (1–64) | Tìm kiếm nội dung văn bản bên trong tệp, kết quả bị chặn trần. |
+| | `glob` | `pattern`, `path`, `max_results` (1–64) | Tìm kiếm tệp theo mẫu glob (ví dụ `**/*.cs`), kết quả sắp xếp ordinal. |
+| **Tài liệu** | `help` | `query` (1–256), `max_results` (1–5) | Tra cứu 5 tài liệu offline nhúng sẵn của Ru; không đọc tệp trong workspace. |
+| **Thao tác tệp** | `write` + `op=write` | `path`, `content`, `overwrite` | Tạo mới hoặc ghi đè toàn bộ nội dung tệp. |
+| | `edit` | `path`, `old_string`, `new_string` | Thay thế chính xác một khối nội dung trong tệp (atomic replacement). |
+| | `write` + `op=delete` | `path` | Xóa tệp có bảo hiểm (lưu preimage vào vùng phục hồi mã hoá để có thể restore). |
+| | `write` + `op=restore` | `recovery_id` | Khôi phục lại tệp đã bị xóa một lần từ bản sao lưu tạm thời. |
+| **Terminal** | `bash` + `mode=run` | `executable`, `arguments`, `working_directory`, `timeout_ms`, `network_intent` | Chạy một executable hoặc script với argument vector. |
+| | `bash` + `mode=shell` | `script`, `working_directory`, `timeout_ms` | Chạy một script qua runtime shell được allowlist (`powershell`/`pwsh`); output bị chặn trần và process tree bị kill khi hết hạn. |
+| **Tra cứu Web** | `web_search` | `query` (1–512), `max_results` (1–10) | Tìm kiếm thông tin trên Web — Google HTML là engine chính, DuckDuckGo HTML fallback tự động (cần phê duyệt mỗi lần dùng). |
+| | `web_fetch` | `url` (≤2048) | Tải và trích xuất nội dung văn bản tĩnh từ URL web (cần phê duyệt mỗi lần dùng). |
 
-Ghi chú: `read` **không** có `op=glob`/`op=search` — hai thao tác đó đã tách thành tool độc lập `glob` và `grep`. `grep` là tìm kiếm nội dung có giới hạn của Ru, không phải ripgrep gọi ra ngoài. `files.apply_patch` tồn tại trong Broker nhưng là adapter nội bộ, **không** được advertise cho model.
+Ghi chú: `read`, `list` và `help` **là ba tool riêng**, không còn là `op` của `read` — `read` không có discriminator nào, schema của nó chỉ còn `{path, offset, limit}` với đúng một trường bắt buộc. `write` và `bash` vẫn giữ `op`/`mode` vì các biến thể của chúng là cùng một thao tác tài nguyên dưới các verdict chính sách khác nhau. `grep` là tìm kiếm nội dung có giới hạn của Ru, không phải ripgrep gọi ra ngoài. `files.apply_patch` tồn tại trong Broker nhưng là adapter nội bộ, **không** được advertise cho model.
 
 ---
 

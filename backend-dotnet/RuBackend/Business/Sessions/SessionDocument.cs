@@ -39,7 +39,10 @@ public sealed record SessionSummary(
     DateTimeOffset UpdatedAt,
     int MessageCount,
     string? ParentSessionId = null,
-    string? ForkedFromMessageId = null);
+    string? ForkedFromMessageId = null,
+    string? WorkspaceId = null,
+    string? WorkspaceLabel = null,
+    string? WorkspacePath = null);
 
 public sealed record ConversationTurn(string Prompt, string Response);
 

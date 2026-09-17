@@ -38,8 +38,10 @@ public static class AgentToolDefinitionCatalog
 
     private static readonly IReadOnlyList<Entry> Entries =
     [
-        new("read", "Read-only workspace listing, file view, and bundled docs. Set op to list, read, or help." + FilePathGuidance, AgentToolScopes.WorkspaceRead, ReadSchema, () => new JsonObject { ["op"] = "read", ["path"] = "README.md" }),
-        new("grep", "Search workspace file contents. Ripgrep-based text search with regex, glob filter, and bounded results." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
+        new("read", "Read one workspace file as UTF-8 text. Use offset and limit to page through long files." + FilePathGuidance, AgentToolScopes.SystemRead, FileReadSchema, () => new JsonObject { ["path"] = "README.md" }),
+        new("list", "List one workspace directory's entries with metadata, bounded by max_entries." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "." }),
+        new("help", "Search Ru's bundled offline documentation for product behavior, architecture, configuration, tools, providers, and operating boundaries. Returns stable document IDs and excerpts only; it never reads workspace files.", AgentToolScopes.SystemRead, HelpDocsSchema, () => new JsonObject { ["query"] = "approval reasons" }),
+        new("grep", "Search workspace file contents. Text or regex search with a glob filter and bounded results." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
         new("glob", "Find workspace files by glob pattern. Bounded ordinal results with traversal caps." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GlobSchema, () => new JsonObject { ["pattern"] = "**/*.cs", ["path"] = "." }),
         new("write", "Write, delete, or restore a file; policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, WriteSchema, () => new JsonObject { ["op"] = "write", ["path"] = "notes.txt", ["content"] = "new content" }),
         new("edit", "Replace an exact non-empty string in a file." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, FileEditSchema, () => new JsonObject { ["path"] = "notes.txt", ["old_string"] = "old", ["new_string"] = "new" }),
@@ -99,17 +101,8 @@ public static class AgentToolDefinitionCatalog
         return true;
     }
 
-    private static JsonObject ReadSchema() => ObjectSchema(["op"], ReadSchemaProperties());
     private static JsonObject WriteSchema() => ObjectSchema(["op"], WriteSchemaProperties());
     private static JsonObject BashSchema() => ObjectSchema(["mode"], BashSchemaProperties());
-    private static (string Name, JsonObject Schema)[] ReadSchemaProperties() =>
-    [
-        ("op", EnumSchema(["list", "read", "help"])),
-        ("path", StringSchema()),
-        ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 256 * 1024)),
-        ("max_entries", IntegerSchema(1, 512)),
-        ("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5)),
-    ];
     private static JsonObject GrepSchema() => ObjectSchema(["query"], GrepSchemaProperties());
     private static (string Name, JsonObject Schema)[] GrepSchemaProperties() =>
     [

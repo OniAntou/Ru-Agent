@@ -100,51 +100,56 @@ public sealed class ProviderSetupGuidanceTests
         Assert.False(ProviderSetupGuidance.IsMissingKey(Empty(), "brand-new-provider"));
     }
 
-    [Theory]
-    [InlineData("http://localhost:8000/v1")]
-    [InlineData("http://127.0.0.1:11434/v1")]
-    [InlineData("http://[::1]:1234/v1")]
-    [InlineData("http://LOCALHOST:5000/v1")]
-    public void A_local_endpoint_does_not_need_a_key(string url)
+    [Fact]
+    public void A_custom_endpoint_is_never_reported_as_missing_a_key()
     {
-        // Ollama and LM Studio run on this machine and take no key. Warning here
-        // would be wrong for a setup that already works.
-        var settings = new AppSettingsDto { CustomUrl = url };
+        // A custom endpoint is whatever base URL the user pointed Ru at. Whether it
+        // wants a key is a property of that endpoint, not something the app can know,
+        // so it asks the endpoint through the connection test instead of guessing.
+        var settings = new AppSettingsDto
+        {
+            CustomUrl = "https://api.deepseek.com/v1",
+            HasCustomKey = false,
+        };
 
         Assert.False(ProviderSetupGuidance.IsMissingKey(settings, "custom"));
-        Assert.False(ProviderSetupGuidance.RequiresKey("custom", url));
-    }
-
-    [Theory]
-    [InlineData("https://api.example.com/v1")]
-    [InlineData("http://192.168.1.50:8000/v1")]
-    public void A_remote_custom_endpoint_still_needs_a_key(string url)
-    {
-        var settings = new AppSettingsDto { CustomUrl = url };
-
-        Assert.True(ProviderSetupGuidance.IsMissingKey(settings, "custom"));
-        Assert.True(ProviderSetupGuidance.RequiresKey("custom", url));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("not a url")]
-    public void An_unusable_custom_url_is_treated_as_needing_a_key(string url)
-    {
-        // Nothing can be assumed about a URL that does not parse, and a remote
-        // endpoint is the safer assumption: a missing key surfaces as an error,
-        // while a silently keyless request surfaces as a confusing 401.
-        Assert.True(ProviderSetupGuidance.RequiresKey("custom", url));
     }
 
     [Fact]
-    public void A_non_custom_provider_needs_a_key_regardless_of_the_custom_url()
+    public void The_custom_provider_is_marked_as_accepting_an_optional_key()
     {
-        // CustomUrl belongs to the custom provider; it must not suppress the
-        // warning for a hosted provider that happens to be selected.
-        Assert.True(ProviderSetupGuidance.RequiresKey("openai", "http://localhost:8000/v1"));
-        Assert.True(ProviderSetupGuidance.IsMissingKey(Empty(), "openai"));
+        var custom = ProviderSetupGuidance.Find("custom");
+
+        Assert.NotNull(custom);
+        Assert.True(custom.KeyIsOptional);
+        Assert.Null(custom.KeyUrl);
+    }
+
+    [Fact]
+    public void Every_hosted_provider_requires_a_key()
+    {
+        // The counterpart to the custom rule: these four cannot answer anything
+        // without a credential, so the warning has to stay for them.
+        foreach (var alias in new[] { "opencode", "kilo", "openai", "anthropic" })
+        {
+            var provider = ProviderSetupGuidance.Find(alias);
+
+            Assert.NotNull(provider);
+            Assert.False(provider.KeyIsOptional);
+            Assert.True(ProviderSetupGuidance.IsMissingKey(Empty(), alias));
+        }
+    }
+
+    [Fact]
+    public void A_custom_key_that_is_present_is_simply_not_reported()
+    {
+        var settings = new AppSettingsDto
+        {
+            CustomUrl = "https://api.example.com/v1",
+            HasCustomKey = true,
+        };
+
+        Assert.False(ProviderSetupGuidance.IsMissingKey(settings, "custom"));
     }
 
     [Fact]

@@ -26,14 +26,17 @@ internal static class ProviderSetupGuidance
         string DisplayName,
         Func<AppSettingsDto, bool> HasKey,
         string? KeyUrl,
-        string KeyHint);
+        string KeyHint,
+        bool KeyIsOptional = false);
 
     /// <summary>
     /// Every provider the picker offers, with where a key comes from.
     /// </summary>
     /// <remarks>
     /// KeyHint is shown beside the input so the user is not left guessing. The
-    /// custom provider has no URL because its endpoint is whatever the user types.
+    /// custom provider has no key page because its endpoint is whatever base URL
+    /// the user typed, and its key is optional because only that endpoint can say
+    /// whether it wants one.
     /// </remarks>
     internal static readonly IReadOnlyList<ProviderInfo> All =
     [
@@ -66,7 +69,8 @@ internal static class ProviderSetupGuidance
             "Custom endpoint",
             settings => settings.HasCustomKey,
             null,
-            "Paste the key your endpoint expects. A local server such as Ollama or LM Studio usually needs none."),
+            "Paste the key this endpoint expects. Leave it empty if your base URL does not need one.",
+            KeyIsOptional: true),
     ];
 
     /// <summary>
@@ -115,6 +119,17 @@ internal static class ProviderSetupGuidance
     /// returns false: claiming a key is missing without having read the settings
     /// would send the user to a settings screen that may already be correct.
     /// </param>
+    /// <remarks>
+    /// Only a hosted provider is checked. A custom endpoint is whatever base URL the
+    /// user pointed Ru at, and whether it wants a key is a property of that endpoint
+    /// rather than something the app can know: a provider's API, a company gateway,
+    /// and a server on this machine are all configured the same way and only differ
+    /// in what they answer. Declaring a key missing there would be guessing, so the
+    /// custom provider is left to the connection test, which asks the endpoint
+    /// instead of assuming. This matches how the DeepSeek Harness models a provider:
+    /// a base URL plus an optional key environment variable, with no hosted/local
+    /// distinction and no key validation.
+    /// </remarks>
     internal static bool IsMissingKey(AppSettingsDto? settings, string? backendChoice)
     {
         if (settings is null)
@@ -123,63 +138,12 @@ internal static class ProviderSetupGuidance
         }
 
         var provider = Find(backendChoice);
-        if (provider is null)
-        {
-            return false;
-        }
-
-        if (!RequiresKey(backendChoice, settings.CustomUrl))
+        if (provider is null || provider.KeyIsOptional)
         {
             return false;
         }
 
         return !provider.HasKey(settings);
-    }
-
-    /// <summary>
-    /// True when a provider needs a key before it can answer anything.
-    /// </summary>
-    /// <remarks>
-    /// A custom endpoint on this machine is the one exception. Pointing it at
-    /// localhost is how a local server such as Ollama or LM Studio is configured,
-    /// and those do not take a key, so warning about a missing one would be wrong
-    /// for a setup that works.
-    /// </remarks>
-    internal static bool RequiresKey(string? backendChoice, string? customUrl)
-    {
-        var provider = Find(backendChoice);
-        if (provider is null)
-        {
-            return false;
-        }
-
-        if (!string.Equals(provider.Alias, "custom", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return !IsLoopbackEndpoint(customUrl);
-    }
-
-    /// <summary>
-    /// True for a URL that addresses this machine, where a local model server
-    /// typically runs without authentication.
-    /// </summary>
-    internal static bool IsLoopbackEndpoint(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            // No endpoint configured yet, so there is nothing local to assume.
-            return false;
-        }
-
-        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var parsed))
-        {
-            return false;
-        }
-
-        return parsed.IsLoopback
-            || string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

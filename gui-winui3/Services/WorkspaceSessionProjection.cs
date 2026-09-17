@@ -6,7 +6,66 @@ public static class WorkspaceSessionProjection
     public const string UngroupedKey = "ungrouped";
 
     public static string KeyFor(Models.SessionInfo session) =>
-        string.IsNullOrEmpty(session.WorkspaceId) ? UngroupedKey : session.WorkspaceId;    public static WorkspaceProjection Project(
+        string.IsNullOrEmpty(session.WorkspaceId) ? UngroupedKey : session.WorkspaceId;
+
+    public static string LabelForPath(string path)
+    {
+        var label = System.IO.Path.GetFileName(
+            path.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
+        return string.IsNullOrEmpty(label) ? path : label;
+    }
+
+    /// <summary>Merges pinned directories ahead of server groups; a pin matching
+    /// a server group by canonical path folds into it, others render empty.</summary>
+    public static IReadOnlyList<WorkspaceGroup> MergePinned(
+        IReadOnlyList<WorkspaceGroup> serverGroups,
+        IReadOnlyList<string> pinnedPaths)
+    {
+        var merged = new List<WorkspaceGroup>();
+        var consumed = new HashSet<WorkspaceGroup>();
+        foreach (var pinned in pinnedPaths)
+        {
+            WorkspaceGroup? match = null;
+            foreach (var group in serverGroups)
+            {
+                if (consumed.Contains(group))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(group.Path)
+                    && string.Equals(group.Path, pinned, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = group;
+                    break;
+                }
+            }
+
+            if (match is not null)
+            {
+                consumed.Add(match);
+                merged.Add(match);
+            }
+            else
+            {
+                merged.Add(new WorkspaceGroup(
+                    "path:" + pinned.ToLowerInvariant(),
+                    LabelForPath(pinned),
+                    pinned,
+                    []));
+            }
+        }
+
+        foreach (var group in serverGroups)
+        {
+            if (!consumed.Contains(group))
+            {
+                merged.Add(group);
+            }
+        }
+
+        return merged;
+    }    public static WorkspaceProjection Project(
         IReadOnlyList<Models.SessionInfo> sessions,
         string? search)
     {

@@ -229,7 +229,7 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("WorkspaceGroupToggle_PointerExited", GuiSource.AttributeValue(toggle, "PointerExited"));
         Assert.True(GuiSource.NamedElements(document).ContainsKey("WorkspaceSearchCount"), "WorkspaceSearchCount must exist.");
 
-        Assert.True(GuiSource.NamedElements(document).ContainsKey("RelativeTimeText"), "RelativeTimeText must exist.");
+        Assert.Contains("RelativeTimeText", GuiSource.NamedElements(document).Keys);
 
         var app = GuiSource.Xml("App.xaml");
         Assert.True(app.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "RelativeTimeConverter"));

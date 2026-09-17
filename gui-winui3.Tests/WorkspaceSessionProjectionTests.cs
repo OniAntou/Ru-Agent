@@ -47,6 +47,31 @@ public sealed class WorkspaceSessionProjectionTests
         Assert.Equal(expected, AllIds(projection));
     }
 
+    [Fact]
+    public void LabelForPath_uses_folder_name()
+    {
+        Assert.Equal("LLM", WorkspaceSessionProjection.LabelForPath(@"D:\Work\LLM"));
+        Assert.Equal(@"D:\", WorkspaceSessionProjection.LabelForPath(@"D:\"));
+    }
+
+    [Fact]
+    public void MergePinned_puts_pinned_first_and_adds_empty_pinned_groups()
+    {
+        var server = WorkspaceSessionProjection.Project(
+            new List<SessionInfo> { S("a1", "A one", "ws_a", "Alpha", @"D:\Work\Alpha") },
+            "");
+
+        var merged = WorkspaceSessionProjection.MergePinned(
+            server.Groups,
+            new List<string> { @"D:\Work\Beta", @"D:\Work\Alpha" });
+
+        Assert.Equal(2, merged.Count);
+        Assert.Equal("Beta", merged[0].Label);
+        Assert.Empty(merged[0].Sessions);
+        Assert.Equal(@"D:\Work\Beta", merged[0].Path);
+        Assert.Equal(["a1"], Ids(merged[1]));
+    }
+
     private static SessionInfo S(string id, string title, string? wsId, string? label, string? path) =>
         new() { Id = id, Title = title, WorkspaceId = wsId, WorkspaceLabel = label, WorkspacePath = path };
 

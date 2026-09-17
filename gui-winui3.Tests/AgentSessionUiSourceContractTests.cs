@@ -231,6 +231,7 @@ public sealed class AgentSessionUiSourceContractTests
             .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupToggle");
         Assert.Equal("Button", toggle.Name.LocalName);
         Assert.Equal("OnWorkspaceGroupClick", GuiSource.AttributeValue(toggle, "Click"));
+        Assert.Contains("IsExpanded", GuiSource.AttributeValue(toggle, "CommandParameter"));
         Assert.Equal("WorkspaceGroupToggle_PointerEntered", GuiSource.AttributeValue(toggle, "PointerEntered"));
         Assert.Equal("WorkspaceGroupToggle_PointerExited", GuiSource.AttributeValue(toggle, "PointerExited"));
         Assert.Null(GuiSource.AttributeValue(toggle, "Margin"));
@@ -340,6 +341,14 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(
             "Opacity",
             GuiSource.MethodBody(code, "SetWorkspaceGroupChromeVisible"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CommandParameter",
+            GuiSource.MethodBody(code, "OnWorkspaceGroupClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "PathStateKey",
+            GuiSource.MethodBody(code, "OnWorkspaceGroupClick"),
             StringComparison.Ordinal);
     }
 

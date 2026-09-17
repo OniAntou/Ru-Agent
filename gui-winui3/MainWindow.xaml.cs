@@ -1268,7 +1268,18 @@ namespace RuApp
         {
             if (sender is Button button && button.Tag is string key)
             {
-                _workspaceGroups.SetExpanded(key, !_workspaceGroups.IsExpanded(key, defaultExpanded: true));
+                // Flip the row's effective state (not the stored default) and keep the
+                // group-key and path-key flags in sync; otherwise a pinned path flag
+                // left true by OnWorkspaceAddClick pins the group open forever.
+                var expanded = !(button.CommandParameter as bool?
+                    ?? _workspaceGroups.IsExpanded(key, defaultExpanded: true));
+                _workspaceGroups.SetExpanded(key, expanded);
+                var path = ResolveWorkspacePath(key);
+                if (!string.IsNullOrEmpty(path))
+                {
+                    _workspaceGroups.SetExpanded(PathStateKey(path), expanded);
+                }
+
                 RenderWorkspaceSidebar();
             }
         }

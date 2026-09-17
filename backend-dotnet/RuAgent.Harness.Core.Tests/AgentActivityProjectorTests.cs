@@ -422,6 +422,43 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Fact]
+    public void Write_started_frame_carries_full_content_preview_in_detail()
+    {
+        var proposal = Proposal(
+            "write",
+            "{\"op\":\"write\",\"path\":\"script.js\",\"content\":\"line one\\nline two\"}");
+
+        var started = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Edit, started.Kind);
+        Assert.Equal("Write", started.ToolDisplay);
+        Assert.Equal("@@  ==> line one\\nline two", started.Detail);
+
+        var completed = AgentActivityProjector.ProjectTool(
+            proposal,
+            AgentActivityState.Completed,
+            Receipt("{\"bytes\":42}"));
+        Assert.Null(completed.Detail);
+    }
+
+    [Fact]
+    public void Write_preview_skips_delete_restore_and_empty_content()
+    {
+        var deleted = Proposal("write", "{\"op\":\"delete\",\"path\":\"old.txt\"}");
+        Assert.Null(AgentActivityProjector.ProjectTool(deleted, AgentActivityState.Started).Detail);
+
+        var empty = Proposal("write", "{\"op\":\"write\",\"path\":\"new.txt\",\"content\":\"\"}");
+        Assert.Null(AgentActivityProjector.ProjectTool(empty, AgentActivityState.Started).Detail);
+
+        var big = Proposal(
+            "write",
+            "{\"op\":\"write\",\"path\":\"big.js\",\"content\":\"" + new string('a', 10_000) + "\"}");
+        var detail = AgentActivityProjector.ProjectTool(big, AgentActivityState.Started).Detail;
+        Assert.NotNull(detail);
+        Assert.True(detail.Length <= 4_000);
+    }
+
+    [Fact]
     public void ProjectTool_Maps_Unknown_Tool_To_Null_Label()
     {
         var proposal = Proposal("unknown.tool", "{\"query\":\"x\"}");

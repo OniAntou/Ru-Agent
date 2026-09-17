@@ -222,6 +222,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         {
             "Delete" => "Deleting",
             "Restore" => "Restoring",
+            "Write" => "Writing",
             _ => "Editing",
         },
         AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Running {ToolDisplay} task" : "Running terminal task",
@@ -245,6 +246,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         {
             "Delete" => "Deleted",
             "Restore" => "Restored",
+            "Write" => "Wrote",
             _ => "Edited",
         },
         AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Completed {ToolDisplay} task" : "Completed terminal task",
@@ -401,7 +403,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         DurationMs = activity.DurationMs;
         SafeCode = activity.SafeCode;
         ToolDisplay = activity.ToolDisplay;
-        Detail = activity.Detail;
+        // Producer only sends @@ old ==> new on Started; Completed carries
+        // Detail=null. Keep the preview so a fast edit stays visible after settle.
+        if (!string.IsNullOrWhiteSpace(activity.Detail) || !IsEditPreview)
+        {
+            Detail = activity.Detail;
+        }
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));

@@ -18,6 +18,25 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
+    public void A_completed_frame_without_detail_keeps_the_started_edit_preview()
+    {
+        // Producer only sends @@ old ==> new on Started; Completed carries
+        // Detail=null so Apply() must not wipe the preview the user is reading.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ a ==> b"));
+
+        Assert.True(item.HasEditPreview);
+
+        item.UpdateFrom(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit));
+
+        Assert.True(item.HasEditPreview);
+        Assert.Equal("a", item.EditBeforeText);
+        Assert.Equal("b", item.EditAfterText);
+    }
+
+    [Fact]
     public void Item_renders_safe_file_metadata_and_updates_state_text()
     {
         var started = Activity(
@@ -143,6 +162,7 @@ public sealed class AgentActivityItemTests
     [Theory]
     [InlineData("Delete", "Deleting", "Deleted")]
     [InlineData("Restore", "Restoring", "Restored")]
+    [InlineData("Write", "Writing", "Wrote")]
     public void DisplayText_Uses_Delete_Restore_Verbs(string label, string started, string completed)
     {
         var running = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, fileName: "obsolete.txt", toolDisplay: label));

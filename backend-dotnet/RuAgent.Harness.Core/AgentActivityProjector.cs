@@ -155,23 +155,54 @@ public static class AgentActivityProjector
     }
 
     /// <summary>
-    /// Live two-pane edit preview for the Started frame: the exact old/new
+    /// Live two-pane preview for the Started frame: the exact old/new
     /// strings from the proposal, bounded and control-char safe. Lines stay
     /// escaped so the wire keeps its single-line detail shape; the client
     /// splits them back into two panes. Receipts carry only counts, so this
     /// is the only frame that can show the change itself.
+    /// Write carries no old string, so its before pane stays empty and the
+    /// after pane shows the written content.
     /// </summary>
     private static string? ExtractEditPreview(ToolProposal proposal)
     {
-        if (!string.Equals(proposal.ToolId, "edit", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
         try
         {
             var arguments = proposal.Arguments;
             if (arguments.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (string.Equals(proposal.ToolId, "write", StringComparison.Ordinal))
+            {
+                if (!string.Equals(ReadOp(proposal), "write", StringComparison.Ordinal)
+                    && ReadOp(proposal) is not null)
+                {
+                    return null;
+                }
+
+                if (!arguments.TryGetProperty("content", out var contentNode)
+                    || contentNode.ValueKind != JsonValueKind.String)
+                {
+                    return null;
+                }
+
+                var content = contentNode.GetString() ?? string.Empty;
+                if (content.Length == 0)
+                {
+                    return null;
+                }
+
+                var afterSide = BoundPreviewSide(content, MaximumDetailLength - 8);
+                if (afterSide is null)
+                {
+                    return null;
+                }
+
+                return $"@@  ==> {afterSide}";
+            }
+
+            if (!string.Equals(proposal.ToolId, "edit", StringComparison.Ordinal))
             {
                 return null;
             }
@@ -346,7 +377,8 @@ public static class AgentActivityProjector
             ("read", "list") or ("glob", _) => "Explore",
             ("grep", _) or ("web_search", _) => "Search",
             ("read", "read") => "View",
-            ("write", "write") or ("edit", _) => "Edit",
+            ("write", "write") => "Write",
+            ("edit", _) => "Edit",
             ("write", "delete") => "Delete",
             ("write", "restore") => "Restore",
             ("bash", _) => "Terminal",

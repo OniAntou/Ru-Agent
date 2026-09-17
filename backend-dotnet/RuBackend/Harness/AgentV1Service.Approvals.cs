@@ -148,6 +148,7 @@ public sealed partial class AgentV1Service
 
         if (latestPendingId is null || !string.Equals(latestPendingId.Value.Value, approvalIdRaw, StringComparison.Ordinal))
         {
+
             return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
         }
 
@@ -403,9 +404,10 @@ public sealed partial class AgentV1Service
                 return null;
             }
 
-            if ((string.Equals(toolId, "read", StringComparison.Ordinal)
-                    || string.Equals(toolId, "write", StringComparison.Ordinal))
-                && op is null)
+            // write still discriminates by op, so it must carry one that maps. read does
+            // not any more: list and help are their own tools, so a missing op on read is
+            // no longer a malformed call.
+            if (string.Equals(toolId, "write", StringComparison.Ordinal) && MapPiOp(toolId, op) is null)
             {
                 return null;
             }
@@ -444,7 +446,7 @@ public sealed partial class AgentV1Service
                 return null;
             }
 
-            if (toolId is "read" or "write" or "edit" or "grep" or "glob"
+            if (toolId is "read" or "list" or "write" or "edit" or "grep" or "glob"
                 && canonicalPath is null
                 && !IsTargetFreePiOp(toolId, op))
             {
@@ -630,9 +632,11 @@ public sealed partial class AgentV1Service
 
     private static string? MapPiOp(string toolId, string? op) => (toolId, op) switch
     {
-        ("read", "list") => "list",
-        ("read", "read") => "read",
-        ("read", "help") => "help",
+        // read carries no discriminator since the surface split; list and help are
+        // first-class tools, so there is no (read, op) pair left to map.
+        ("read", _) => "read",
+        ("list", _) => "list",
+        ("help", _) => "help",
         ("grep", _) => "grep",
         ("glob", _) => "glob",
         ("web_search", _) => "web_search",
@@ -644,7 +648,7 @@ public sealed partial class AgentV1Service
     };
 
     private static bool IsTargetFreePiOp(string toolId, string? op) =>
-        string.Equals(toolId, "read", StringComparison.Ordinal) && string.Equals(op, "help", StringComparison.Ordinal)
+        string.Equals(toolId, "help", StringComparison.Ordinal)
         || string.Equals(toolId, "web_search", StringComparison.Ordinal)
         || string.Equals(toolId, "web_fetch", StringComparison.Ordinal);
 

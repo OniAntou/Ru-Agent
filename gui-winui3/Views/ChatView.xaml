@@ -14,6 +14,9 @@
     <UserControl.Resources>
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,8" HorizontalAlignment="Stretch">
+                <Grid x:Name="MessageColumn"
+                      HorizontalAlignment="Center"
+                      Loaded="OnMessageColumnLoaded">
                 <Border MaxWidth="620"
                         HorizontalAlignment="Right"
                         Background="{StaticResource RuSurfaceBrush}"
@@ -91,6 +94,7 @@
                                                 FontFamily="{StaticResource RuUiFontFamily}" />
                     </StackPanel>
                 </Border>
+                </Grid>
             </Grid>
         </DataTemplate>
 
@@ -190,7 +194,7 @@
                                                  AddedCount="{x:Bind Added, Mode=OneWay}"
                                                  RemovedCount="{x:Bind Removed, Mode=OneWay}"
                                                  Margin="0,6,0,0"
-                                                 MaxWidth="680"
+                                                 MaxWidth="760"
                                                  AutomationProperties.Name="File edit preview" />
                 <!-- State bindings (used by automation & contract tests) -->
                 <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
@@ -221,6 +225,9 @@
                         </MenuFlyoutItem>
                     </MenuFlyout>
                 </Grid.ContextFlyout>
+                <Grid x:Name="MessageColumn"
+                      HorizontalAlignment="Center"
+                      Loaded="OnMessageColumnLoaded">
                 <StackPanel MaxWidth="760"
                             HorizontalAlignment="Left"
                             Spacing="6">
@@ -253,6 +260,7 @@
                                             Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
                 </StackPanel>
+                </Grid>
             </Grid>
         </DataTemplate>
 
@@ -366,7 +374,7 @@
             <!-- Virtualized history: the ListView owns its scroll host so long
                  conversations realize only visible rows instead of the whole feed. -->
             <Grid x:Name="ChatContentGrid"
-                  HorizontalAlignment="Center"
+                  HorizontalAlignment="Stretch"
                   VerticalAlignment="Stretch"
                   Visibility="Collapsed">
                 <ListView x:Name="ChatListView"

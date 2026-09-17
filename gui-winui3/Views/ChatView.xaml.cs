@@ -70,6 +70,7 @@ namespace RuApp.Views
     public sealed partial class ChatView : UserControl, IDisposable
     {
                 private const double ReadingColumnMaxWidth = 820;
+        private const double MessageColumnMaxWidth = 820;
         private const double NarrowWidthThreshold = 900;
         private const double MediumWidthThreshold = 1280;
         private const double NarrowHorizontalInset = 24;
@@ -3268,14 +3269,47 @@ namespace RuApp.Views
                 InputBorder.Width = targetWidth;
             }
 
-            if (ChatContentGrid != null)
+            // The transcript scroll host stays full-width so its scrollbar docks
+            // at the window edge; each message root centers its own 820 column.
+            LayoutRealizedMessageColumns();
+        }
+
+        private void OnMessageColumnLoaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement column)
             {
-                ChatContentGrid.Width = targetWidth;
+                LayoutMessageColumn(column);
+            }
+        }
+
+        private void LayoutMessageColumn(FrameworkElement column)
+        {
+            if (ChatListView is null || ChatListView.ActualWidth <= 0)
+            {
+                return;
             }
 
-            if (ChatListView != null)
+            double viewport = Math.Max(
+                0,
+                ChatListView.ActualWidth - ChatListView.Padding.Left - ChatListView.Padding.Right);
+            column.Width = Math.Min(MessageColumnMaxWidth, viewport);
+        }
+
+        private void LayoutRealizedMessageColumns()
+        {
+            if (ChatListView is null || Messages.Count == 0)
             {
-                ChatListView.Width = targetWidth;
+                return;
+            }
+
+            for (var i = 0; i < Messages.Count; i++)
+            {
+                if (ChatListView.ContainerFromIndex(i) is ListViewItem container
+                    && container.ContentTemplateRoot is FrameworkElement root
+                    && root.FindName("MessageColumn") is FrameworkElement column)
+                {
+                    LayoutMessageColumn(column);
+                }
             }
         }
         private void OnCopyMessageContentClick(object sender, RoutedEventArgs e)

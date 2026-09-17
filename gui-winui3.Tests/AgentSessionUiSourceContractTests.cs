@@ -127,11 +127,37 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(GuiSource.IsDescendantOf(contentGrid, readingColumn));
         Assert.True(GuiSource.IsDescendantOf(list, contentGrid));
 
-        // The column spans the window; the scroll host inside it is centred and
-        // carries the scroll behaviour, which is what keeps the transcript centred
-        // at wide sizes without pinning it at narrow ones.
+        // The column spans the window; the scroll host stretches full-width so its
+        // scrollbar docks at the window edge, while each message row carries a
+        // code-sized MessageColumn (min 820, viewport) that centers itself —
+        // centred at wide sizes without pinning at narrow ones.
         Assert.Equal("Stretch", GuiSource.AttributeValue(readingColumn, "HorizontalAlignment"));
-        Assert.Equal("Center", GuiSource.AttributeValue(contentGrid, "HorizontalAlignment"));
+        Assert.Equal("Stretch", GuiSource.AttributeValue(contentGrid, "HorizontalAlignment"));
+
+        foreach (var key in new[] { "UserMessageTemplate", "AssistantMessageTemplate" })
+        {
+            var template = document.Descendants()
+                .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == key);
+            var root = template.Elements().First();
+            Assert.Equal("Stretch", GuiSource.AttributeValue(root, "HorizontalAlignment"));
+            Assert.Null(GuiSource.AttributeValue(root, "MaxWidth"));
+
+            var column = template.Descendants()
+                .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "MessageColumn");
+            Assert.Equal("Center", GuiSource.AttributeValue(column, "HorizontalAlignment"));
+            Assert.Equal("OnMessageColumnLoaded", GuiSource.AttributeValue(column, "Loaded"));
+        }
+
+        // The runtime sizes realized columns on load and on every resize, so a
+        // pooled container never keeps a stale width.
+        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        Assert.Contains(
+            "LayoutRealizedMessageColumns",
+            GuiSource.MethodBody(code, "ApplyInputWidth"),
+            StringComparison.Ordinal);
+        Assert.NotNull(typeof(RuApp.Views.ChatView).GetMethod(
+            "OnMessageColumnLoaded",
+            BindingFlags.Instance | BindingFlags.NonPublic));
         Assert.Equal("Auto", GuiSource.AttributeValue(list, "VerticalScrollBarVisibility"));
         Assert.Equal("Disabled", GuiSource.AttributeValue(list, "HorizontalScrollBarVisibility"));
 

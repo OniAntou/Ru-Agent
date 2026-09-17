@@ -1,72 +1,76 @@
 # Ru Agent
 
-A coding agent that runs as native processes on Windows. The overriding goal is
-**machine-resource efficiency**: a coding agent that is fast to talk to but holds
-a gigabyte of resident memory and a busy CPU costs the user more than one that
-stays near idle between turns.
+A coding agent for Windows, built entirely on the native Windows stack. Its
+overriding focus is **performance and speed**, and being native is how that is
+pursued: no Python, no Node, no virtual machine, no sidecar runtime between the
+user and the machine.
+
+.NET 10 compiled for `win-x64`, shipped self-contained, talking to Windows
+subsystems directly — WinUI 3 for the shell, Job Objects for process ownership,
+DPAPI for secrets, ConPTY for terminals.
 
 ---
 
 ## Contents
 
-- [1. The goal](#1-the-goal)
-- [2. What we measure](#2-what-we-measure)
+- [1. Focus](#1-focus)
+- [2. What "native" means here](#2-what-native-means-here)
 - [3. What runs on the machine](#3-what-runs-on-the-machine)
-- [4. How the design serves the goal](#4-how-the-design-serves-the-goal)
+- [4. How the design serves performance](#4-how-the-design-serves-performance)
 - [5. Agent tools](#5-agent-tools)
 - [6. Requirements](#6-requirements)
 - [7. Build and run](#7-build-and-run)
-- [8. Measuring resource cost](#8-measuring-resource-cost)
-- [9. Testing](#9-testing)
-- [10. Project layout](#10-project-layout)
-- [11. Security and data](#11-security-and-data)
-- [12. Not done yet](#12-not-done-yet)
+- [8. Testing](#8-testing)
+- [9. Project layout](#9-project-layout)
+- [10. Security and data](#10-security-and-data)
+- [11. Not done yet](#11-not-done-yet)
 
 ---
 
-## 1. The goal
+## 1. Focus
 
-This is a desktop coding agent. It sits next to the user's editor, terminal, and
-browser for hours at a time, and it competes with them for RAM, CPU, and GPU. So
-the number that matters is not how quickly a token appears on screen — a cloud
-provider mostly decides that — but **what the agent costs the machine while it is
-open, and while it is working.**
+Performance and speed, pursued through native implementation.
 
-The target is that an idle Ru costs almost nothing, and a working Ru costs only
-what the actual work needs.
+The reasoning is direct: every layer that is not native is a layer that has to be
+started, kept warm, marshalled across, and shut down. An interpreter runtime has
+to load. A sidecar has to be supervised. A foreign VM has to be bridged. Each one
+costs memory while idle and latency while working, and each one is a thing that
+can be slow or absent on the user's machine.
 
-| Principle | How it is done |
+So this project has none of them. Everything that runs is a Windows process built
+from this repository, and every capability it needs is a Windows capability.
+
+| Commitment | How it is honoured |
 | :--- | :--- |
-| No interpreter runtime | The whole system is .NET 10. No Python, no Node, no sidecar process to keep warm. |
-| No in-process model | Generation calls the configured cloud provider over HTTP/SSE. No weights in memory, no engine to load, no GPU allocation for inference. |
-| One worker, not a pool | Exactly one managed Worker process serves `/worker/v2`. Nothing else in the tree can generate text, so the cost does not scale with sessions. |
-| Bounded reads, always | Every tool that touches a file has a hard cap, so one large directory cannot turn into a memory spike. |
-| Proactive context compaction | The prompt budget is planned before each step instead of sending the whole history and letting the provider reject it. |
-| Children die with the parent | One Windows Job Object with `KillOnJobClose` owns Worker and Broker, so no orphaned process keeps holding memory between runs. |
-| No silent fallback | One provider, one model, one protocol per run. Retrying another provider is both a latency cost and a second set of buffers. |
+| No interpreter runtime | Pure .NET 10. There is no Python, Node, JVM, or Electron process anywhere in the product. |
+| No foreign VM or sidecar | Four Windows processes at steady state, all built here. Nothing is spawned to broker work. |
+| Self-contained delivery | `build.bat` publishes `win-x64` self-contained executables, so the machine needs no separate framework install to run them. |
+| Native Windows subsystems | WinUI 3 shell, Windows Job Objects, DPAPI, ConPTY, the K32 process snapshot API. |
+| Native process ownership | One Job Object with `KillOnJobClose` owns the whole child tree, so nothing is left resident when a run ends. |
+| No in-process model | Generation is a cloud call. No weights, no tokenizer, and no GPU allocation for inference are held by the agent. |
 
-## 2. What we measure
+## 2. What "native" means here
 
-Resource cost, per process tree, in three dimensions:
+Stated precisely, because the word is easy to overclaim:
 
-| Dimension | Metric | Why it is the one that matters |
-| :--- | :--- | :--- |
-| Memory | Working set (MiB) and private bytes (MiB) | Working set is what the user loses from available RAM. Private bytes catches leaks that the working set hides after trimming. |
-| CPU | Percent of the whole machine, normalised across logical processors | 100% means the tree saturated every core. A per-core figure flatters a multi-threaded tree. |
-| GPU | Utilization percent, Windows GPU Engine counters | An agent that is not doing inference should not be waking the GPU. |
+- **Yes:** every process is a native Windows executable built from this
+  repository. There is no interpreted language and no foreign runtime in the
+  product. Windows features — WinUI 3, Job Objects, DPAPI, ConPTY, the ToolHelp
+  and K32 process APIs — are called directly rather than through a portability
+  layer built to abstract them away.
+- **No:** the build is not ahead-of-time compiled to machine code.
+  `PublishReadyToRun` is explicitly `False` in the WinUI project for both Debug
+  and Release, and Native AOT is not enabled anywhere. The assemblies ship as
+  managed IL and are JIT-compiled at first use.
 
-All three are reported as p50/p95/p99/max over a sampling window, because an
-average hides the spike that actually makes a machine feel slow.
-
-**This is not a latency benchmark.** Time-to-first-token is dominated by the
-provider and by the network, which this repository does not control. The numbers
-here describe the agent's own footprint.
+That second point is not a contradiction of the goal, it is known headroom. The
+project is native by construction; making it precompiled is a further step that
+has not been taken, and section [11](#11-not-done-yet) says so.
 
 ## 3. What runs on the machine
 
 ```text
 RuApp.exe (WinUI 3)                 RuAgent.Cli.exe (TUI)
-  Mica/Acrylic · streaming md         REPL · slash commands
         │                                     │
         └─────── start-or-attach ─────────────┘
                  via RuAgent.Client
@@ -88,42 +92,47 @@ RuAgent.Runtime.Worker            RuAgent.Broker
   anthropic_messages
 ```
 
-Four processes at steady state: the UI, the Host, one Worker, one Broker. The
-Worker does not spawn per session and the Broker does not spawn per request, so
-opening a second chat does not double the footprint.
+Four processes at steady state: the UI, the Host, exactly one Worker, exactly one
+Broker. The Worker does not spawn per session and the Broker does not spawn per
+request, so opening a second chat does not add a process or a second copy of
+anything.
 
-The only client entry point is `RuAgent.Client`. It reads the loopback
-descriptor (validating PID and process start time) or starts the Host if none is
-running. Neither client ever talks to the Worker or the Broker directly.
+The only client entry point is `RuAgent.Client`. It reads the loopback descriptor
+(validating PID and process start time) or starts the Host if none is running.
+Neither client ever talks to the Worker or the Broker directly.
 
-## 4. How the design serves the goal
+## 4. How the design serves performance
 
-**Nothing is resident that is not needed.** Generation is a cloud call, so no
-model, tokenizer, or KV cache is held in the agent's own address space. That
-removes the single largest resident allocation a local agent would otherwise
-carry.
+**Nothing resident that is not needed.** Generation is a cloud call, so no model,
+tokenizer, or KV cache is held in the agent's address space. That removes the
+single largest resident allocation a local agent would otherwise carry.
 
-**One generation path.** `WorkerV2StepService` receives `agent.step.start`, calls
-exactly one provider adapter, and returns one `AssistantStep`. There is no model
-router, no queue, and no second transport — so there is no second set of buffers.
+**One generation path, not a pool.** `WorkerV2StepService` receives
+`agent.step.start`, calls exactly one provider adapter, and returns one
+`AssistantStep`. There is no model router, no queue, and no second transport, so
+there is no second set of buffers and no idle worker to keep warm.
 
-**The Worker has a fixed address.** It binds 8005 and the Broker takes whatever
-free loopback port the Host assigns through the descriptor, so no process
-discovery or polling loop is needed to find them.
+**The Worker has a fixed address.** It binds 8005; the Broker takes whatever free
+loopback port the Host assigns through the descriptor. No discovery, no scanning,
+no polling loop to find a peer.
+
+**Children die with their parent.** One Windows Job Object with `KillOnJobClose`
+owns Worker and Broker. A crashed or killed Host takes its whole tree with it, so
+no orphaned process keeps holding memory between runs. Each terminal call gets its
+own Job Object for the same reason.
 
 **Every tool call is bounded.** `read` caps at 256 KiB, `list` at 512 entries,
 `grep` at 64 results and 1 MiB per file, `glob` at 64 results, `bash` output is
-head/tail truncated, and every terminal call runs inside its own Job Object that
-is killed on timeout or cancellation. A pathological input degrades into a
-bounded result instead of a memory spike.
+head/tail truncated, and terminal calls are killed on timeout or cancellation. A
+pathological input degrades into a bounded result instead of a memory spike.
 
 **Context is compacted before it is sent.** `ContextCompactionPlanner` measures
-the token budget each step and replaces compacted ranges, rather than growing the
+the token budget each step and replaces compacted ranges, instead of growing the
 request until the provider refuses it.
 
-**Terminal work does not leak processes.** `StreamingProcessRunner` drains stdout
-and stderr concurrently into a head/tail buffer and kills the entire process tree
-on cancel or timeout, so a hung command cannot accumulate children.
+**No silent fallback.** One provider, one model, one protocol per run. Retrying
+another provider is both a latency cost and a second set of buffers, so it is not
+done behind the user's back.
 
 ## 5. Agent tools
 
@@ -152,8 +161,8 @@ id/version/scope/schema/digest into both the prompt and the Worker's
 ## 6. Requirements
 
 - **Windows 10 or 11, 64-bit** (22H2 or 24H2 recommended)
-- **.NET SDK 10.0** (x64)
-- **Python 3.11–3.14** — for test and repository tooling only, never the runtime
+- **.NET SDK 10.0** (x64) — to build; published output is self-contained
+- **Python 3.11–3.14** — for repository tooling only, never part of the product
 - **Visual Studio 2022 C++ Build Tools** if building native components from source
 
 ## 7. Build and run
@@ -161,15 +170,15 @@ id/version/scope/schema/digest into both the prompt and the Worker's
 Run every command from `%RU_ROOT%` (the directory holding `build.bat`).
 
 ```powershell
-# Repository tooling (optional; only needed for the Python checks)
+# Repository tooling (optional; only the Python checks need it)
 .venv\Scripts\python.exe -m pip install -e ".[dev,tooling]"
 
-# Build everything (Release, self-contained)
+# Build everything (Release, self-contained, win-x64)
 .\build.bat
 ```
 
 `build.bat` publishes the GUI, Worker, Broker, RuBackend, and CLI as
-self-contained win-x64 executables.
+self-contained `win-x64` executables.
 
 ```powershell
 # GUI
@@ -185,52 +194,7 @@ The GUI and CLI start-or-attach: if a Host is already running they attach to it,
 otherwise they start one, and that Host owns the Worker and Broker in a single
 Job Object.
 
-## 8. Measuring resource cost
-
-Measure a running tree by name or pid. The script never terminates the target.
-
-```powershell
-# Steady state, 60 seconds, gated at 250 MiB working set
-.\scripts\measure_resources.ps1 -Name RuBackend -DurationSeconds 60 `
-    -WarmupSeconds 5 -MaxWorkingSetMb 250 `
-    -Output artifacts\resources\backend-idle.json
-
-# Under load, while a run is in flight
-.\scripts\measure_resources.ps1 -Name RuBackend -DurationSeconds 120 `
-    -Output artifacts\resources\backend-load.json
-```
-
-It prints a JSON report and, when a limit is given, exits `2` if the p95 exceeds
-it — so the same script works as a CI gate:
-
-```json
-{
-  "cpu_percent":      { "sample_count": 60, "p50": 0.4, "p95": 3.1, "p99": 8.6, "max": 12.2 },
-  "working_set_mb":   { "sample_count": 60, "p50": 118.2, "p95": 131.7, "p99": 140.0, "max": 143.9 },
-  "private_bytes_mb": { "sample_count": 60, "p50": 124.9, "p95": 138.4, "p99": 147.2, "max": 151.0 },
-  "process_count":    { "sample_count": 60, "p50": 4, "p95": 4, "p99": 4, "max": 4 },
-  "gpu":              { "supported": true, "source": "windows_gpu_engine", "reads": 6,
-                        "utilization_pct": { "p50": 0, "p95": 0, "max": 0 } }
-}
-```
-
-Those values are the report's shape, not a captured baseline. **This repository
-does not yet contain a recorded Ru resource baseline** — see
-[Not done yet](#12-not-done-yet). Run the script against a published build to
-establish one for your machine.
-
-Three details worth knowing before comparing two runs:
-
-- **Windows PowerShell 5.1 is sufficient.** PowerShell 7 is not required and is
-  not installed by the build.
-- **GPU sampling is throttled** to one read per `-GpuEverySamples` (default 10)
-  because a single GPU Engine enumeration costs about 1.6 seconds on a 16-core
-  machine. Raise it for long runs, or set `1` when GPU resolution matters more
-  than CPU sample count.
-- **A machine without GPU Engine counters reports `gpu.supported: false` with a
-  reason.** That is a statement about the machine, not a passing measurement.
-
-## 9. Testing
+## 8. Testing
 
 ```powershell
 .\scripts\test_dotnet.ps1 -Configuration Debug
@@ -258,7 +222,7 @@ updating it fails CI.
 Test counts move with each gate; see
 [verification](docs/operations/verification.md) for the latest.
 
-## 10. Project layout
+## 9. Project layout
 
 ```text
 .\
@@ -282,7 +246,7 @@ Test counts move with each gate; see
 ├── gui-winui3.Tests/                  # Unit and source-contract tests
 ├── gui-winui3.Harness/                # GUI acceptance through UI Automation
 ├── tests/                             # Python guards (routes, docs, build, cleanup)
-├── scripts/                           # test_dotnet.ps1, measure_resources.ps1, launcher
+├── scripts/                           # test_dotnet.ps1, launcher, route checks
 ├── skills/                            # Example SkillManifest packages
 ├── docs/                              # Architecture, operations, ADRs
 ├── backend-dotnet/public-route-contract.json   # The 37 public routes
@@ -290,9 +254,9 @@ Test counts move with each gate; see
 └── start_dev.bat                      # Development launch
 ```
 
-## 11. Security and data
+## 10. Security and data
 
-Resource efficiency is not paid for with permissions:
+Performance is not paid for with permissions:
 
 - **Data** lives in `%LOCALAPPDATA%\Ru`. `RU_DATA_ROOT` and `RU_LOG_ROOT`
   isolate it completely for tests and CI.
@@ -317,19 +281,19 @@ Resource efficiency is not paid for with permissions:
 - **Workspace trust** binds to volume serial and root file identity, not to a
   marker file inside the repository.
 
-## 12. Not done yet
+## 11. Not done yet
 
 Stated plainly so the sections above are not read as stronger claims than they are:
 
-- **There is no recorded resource baseline.** `scripts/measure_resources.ps1`
-  exists and is verified against gates, a missing target, and an unsupported-GPU
-  machine, but no measurement of a published Ru build has been captured into the
-  repository yet. The JSON in section 8 shows the report's shape, not results.
-- **CI does not gate resource cost.** `ci.yml` runs the 12 test projects, the
-  route contract, and the repository guards. It does not call
-  `measure_resources.ps1`. The resource goal is currently a design commitment,
-  not an enforced property.
-- **GPU coverage is one source.** Only Windows GPU Engine counters are read.
-  Machines without them report `supported: false` rather than a number.
+- **Not ahead-of-time compiled.** `PublishReadyToRun` is `False` in the WinUI
+  project for both configurations and Native AOT is not enabled. The shipped
+  assemblies are managed IL, JIT-compiled at first use. Enabling precompilation is
+  the most direct remaining step toward the performance goal.
+- **No performance gate in CI.** `ci.yml` runs the 12 test projects, the route
+  contract, and the repository guards. Nothing measures or limits CPU, memory, or
+  GPU cost, so the focus described here is a design commitment rather than an
+  enforced property.
+- **No recorded baseline.** The repository contains no measurement of the
+  runtime's own footprint.
 - Out of scope for now: subagent orchestration, LSP integration, MCP discovery,
   and an OS-level filesystem/network sandbox.

@@ -266,6 +266,12 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(setters, setter =>
             GuiSource.AttributeValue(setter, "Target") == "Glyph.Foreground");
 
+        // The inline plus and chevron only appear on row hover.
+        Assert.Equal("0", GuiSource.AttributeValue(groupAdd, "Opacity"));
+        var chevron = groupTemplate.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupChevron");
+        Assert.Equal("0", GuiSource.AttributeValue(chevron, "Opacity"));
+
         // No zoom on hover: the style carries no Scale setters at all.
         Assert.DoesNotContain(
             addStyle.Descendants().Where(element => element.Name.LocalName == "Setter"),
@@ -328,6 +334,10 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains(
             "Unpin",
             GuiSource.MethodBody(code, "OnWorkspaceRemoveClick"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Opacity",
+            GuiSource.MethodBody(code, "SetWorkspaceGroupChromeVisible"),
             StringComparison.Ordinal);
     }
 

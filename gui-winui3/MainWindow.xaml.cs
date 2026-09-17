@@ -1380,6 +1380,7 @@ namespace RuApp
             if (sender is Button button)
             {
                 button.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+                SetWorkspaceGroupChromeVisible(button, visible: true);
             }
         }
 
@@ -1388,6 +1389,21 @@ namespace RuApp
             if (sender is Button button)
             {
                 button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                SetWorkspaceGroupChromeVisible(button, visible: false);
+            }
+        }
+
+        private static void SetWorkspaceGroupChromeVisible(Button button, bool visible)
+        {
+            if (button.FindName("WorkspaceGroupAddButton") is Button addButton)
+            {
+                addButton.Opacity = visible ? 1.0 : 0.0;
+                addButton.IsTabStop = visible;
+            }
+
+            if (button.FindName("WorkspaceGroupChevron") is UIElement chevron)
+            {
+                chevron.Opacity = visible ? 1.0 : 0.0;
             }
         }
 

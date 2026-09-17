@@ -165,8 +165,8 @@
                     <FontIcon Grid.Column="0" Glyph="&#xE8B7;" FontSize="14" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="1" Text="{x:Bind Group.Label}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Button x:Name="WorkspaceGroupAddButton" Grid.Column="2" Click="OnWorkspaceGroupAddClick" Tag="{x:Bind Group.Key}" Style="{StaticResource WorkspaceAddButtonStyle}" VerticalAlignment="Center" ToolTipService.ToolTip="New chat here" AutomationProperties.Name="New chat here"/>
-                    <FontIcon Grid.Column="3" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                    <Button x:Name="WorkspaceGroupAddButton" Grid.Column="2" Click="OnWorkspaceGroupAddClick" Tag="{x:Bind Group.Key}" Opacity="0" IsTabStop="False" Style="{StaticResource WorkspaceAddButtonStyle}" VerticalAlignment="Center" ToolTipService.ToolTip="New chat here" AutomationProperties.Name="New chat here"/>
+                    <FontIcon x:Name="WorkspaceGroupChevron" Grid.Column="3" Opacity="0" Glyph="{x:Bind ChevronGlyph}" FontSize="10" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                 </Grid>
             </Button>
         </DataTemplate>

@@ -471,6 +471,79 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task Session_list_carries_workspace_of_latest_run()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var createdResponse = await client.PostAsync("/sessions/new", null);
+        var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var sessionId = created.GetProperty("session_id").GetString()!;
+
+        var workspacePath = Path.Combine(Path.GetTempPath(), "ru-ws-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspacePath);
+        try
+        {
+            using var runResponse = await client.PostAsJsonAsync("/agent/v1/runs", new
+            {
+                session_id = sessionId,
+                workspace_path = workspacePath,
+                prompt = "do it",
+                preset = "standard",
+                idempotency_key = Guid.NewGuid().ToString("N"),
+            });
+            Assert.Equal(HttpStatusCode.Created, runResponse.StatusCode);
+
+            var listed = await client.GetFromJsonAsync<JsonElement>("/sessions");
+            JsonElement? entry = null;
+            foreach (var element in listed.GetProperty("sessions").EnumerateArray())
+            {
+                if (element.GetProperty("id").GetString() == sessionId)
+                {
+                    entry = element;
+                }
+            }
+
+            Assert.NotNull(entry);
+            Assert.Equal(Path.GetFileName(workspacePath), entry.Value.GetProperty("workspace_label").GetString());
+            Assert.Equal(workspacePath, entry.Value.GetProperty("workspace_path").GetString());
+            Assert.False(string.IsNullOrEmpty(entry.Value.GetProperty("workspace_id").GetString()));
+        }
+        finally
+        {
+            Directory.Delete(workspacePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Session_list_leaves_workspace_null_without_runs()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var createdResponse = await client.PostAsync("/sessions/new", null);
+        var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var sessionId = created.GetProperty("session_id").GetString()!;
+
+        var listed = await client.GetFromJsonAsync<JsonElement>("/sessions");
+        JsonElement? entry = null;
+        foreach (var element in listed.GetProperty("sessions").EnumerateArray())
+        {
+            if (element.GetProperty("id").GetString() == sessionId)
+            {
+                entry = element;
+            }
+        }
+
+        Assert.NotNull(entry);
+        Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("workspace_id").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("workspace_label").ValueKind);
+        Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("workspace_path").ValueKind);
+    }
+
+    [Fact]
     public async Task Activity_routes_preserve_existing_response_shapes()
     {
         using var data = TemporaryBusinessData.Create();

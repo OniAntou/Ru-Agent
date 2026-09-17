@@ -243,8 +243,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         var call = Assert.Single(result.Step.ToolCalls);
         Assert.Equal("call-1", call.ProviderCallId);
         Assert.Equal("read", call.ToolId);
-        Assert.Equal("read", call.Arguments.GetProperty("op").GetString());
         Assert.Equal("README.md", call.Arguments.GetProperty("path").GetString());
+        // read has no op discriminator any more, so the runner must not invent one.
+        Assert.False(call.Arguments.TryGetProperty("op", out _));
     }
 
     [Fact]

@@ -217,7 +217,14 @@ public sealed class Phase1RemediationTests
                 throw new InvalidOperationException("no scripted step left");
             }
 
-            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), SystemPromptReceipt.Empty));
+            // The coordinator validates the returned receipt against the prompt context
+            // it built, so an empty receipt fails as prompt_contract_invalid. The real
+            // runner composes this receipt; the scripted one has to do the same rather
+            // than stub it out.
+            var receipt = RuAgent.Harness.Core.Prompting.SystemPromptComposer
+                .Compose(request.PromptContext)
+                .Receipt;
+            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), receipt));
         }
     }
 

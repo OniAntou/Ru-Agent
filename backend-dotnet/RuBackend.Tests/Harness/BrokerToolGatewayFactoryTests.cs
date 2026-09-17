@@ -88,7 +88,6 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             var decision = await gateway.EvaluateAsync(
                 Proposal(runId, "read", new System.Text.Json.Nodes.JsonObject
                 {
-                    ["op"] = "read",
                     ["path"] = "notes/a.txt",
                 }),
                 CancellationToken.None);
@@ -118,7 +117,6 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         await File.WriteAllTextAsync(externalPath, "factory-external");
         var readArgs = new System.Text.Json.Nodes.JsonObject
         {
-            ["op"] = "read",
             ["path"] = externalPath,
         };
         var decision = await gateway.EvaluateAsync(
@@ -288,7 +286,6 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         {
             var readArgs = new System.Text.Json.Nodes.JsonObject
             {
-                ["op"] = "read",
                 ["path"] = externalPath,
             };
             var decision = await gateway.EvaluateAsync(

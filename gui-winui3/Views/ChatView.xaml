@@ -559,15 +559,15 @@
                               AutomationProperties.Name="Message input"
                               PlaceholderText="Message Ru…"
                              PreviewKeyDown="OnChatInputPreviewKeyDown"
-                             AcceptsReturn="True"
-                             MinHeight="44"
-                             MaxHeight="150"
+                              AcceptsReturn="True"
+                              MinHeight="56"
+                              MaxHeight="180"
                              VerticalAlignment="Stretch"
                              Background="Transparent"
                              BorderThickness="0"
-                             FontFamily="{StaticResource RuUiFontFamily}"
-                             FontSize="15"
-                             Padding="4,2,4,6"
+                              FontFamily="{StaticResource RuUiFontFamily}"
+                              FontSize="16"
+                              Padding="4,2,4,6"
                              Foreground="{StaticResource RuInkBrush}">
                         <TextBox.Resources>
                             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />

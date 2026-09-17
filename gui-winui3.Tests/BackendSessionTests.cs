@@ -45,4 +45,33 @@ public sealed class BackendSessionTests
         Assert.Equal("sess-root", session.ParentSessionId);
         Assert.Equal("msg-123", session.ForkedFromMessageId);
     }
+
+    [Fact]
+    public void SessionInfo_deserializes_nullable_workspace_fields()
+    {
+        const string json = """
+            {"id":"s1","title":"T","created_at":"2026-09-17T00:00:00Z","updated_at":"2026-09-17T01:00:00Z",
+             "message_count":2,"workspace_id":"ws_1","workspace_label":"LLM","workspace_path":"D:\\LLM"}
+            """;
+
+        var info = System.Text.Json.JsonSerializer.Deserialize<RuApp.Models.SessionInfo>(json)!;
+
+        Assert.Equal("ws_1", info.WorkspaceId);
+        Assert.Equal("LLM", info.WorkspaceLabel);
+        Assert.Equal(@"D:\LLM", info.WorkspacePath);
+    }
+
+    [Fact]
+    public void SessionInfo_missing_workspace_fields_deserialize_as_null()
+    {
+        const string json = """
+            {"id":"s1","title":"T","created_at":"2026-09-17T00:00:00Z","updated_at":"2026-09-17T01:00:00Z","message_count":2}
+            """;
+
+        var info = System.Text.Json.JsonSerializer.Deserialize<RuApp.Models.SessionInfo>(json)!;
+
+        Assert.Null(info.WorkspaceId);
+        Assert.Null(info.WorkspaceLabel);
+        Assert.Null(info.WorkspacePath);
+    }
 }

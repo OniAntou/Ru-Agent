@@ -872,6 +872,9 @@ namespace RuApp
                     existing.UpdatedAt = incoming.UpdatedAt;
                     existing.ParentSessionId = incoming.ParentSessionId;
                     existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
+                    existing.WorkspaceId = incoming.WorkspaceId;
+                    existing.WorkspaceLabel = incoming.WorkspaceLabel;
+                    existing.WorkspacePath = incoming.WorkspacePath;
                     int currentIndex = Sessions.IndexOf(existing);
                     if (currentIndex != insertAt)
                     {

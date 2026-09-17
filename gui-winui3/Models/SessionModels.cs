@@ -26,6 +26,15 @@ namespace RuApp.Models
         [JsonPropertyName("forked_from_message_id")]
         public string? ForkedFromMessageId { get; set; }
 
+        [JsonPropertyName("workspace_id")]
+        public string? WorkspaceId { get; set; }
+
+        [JsonPropertyName("workspace_label")]
+        public string? WorkspaceLabel { get; set; }
+
+        [JsonPropertyName("workspace_path")]
+        public string? WorkspacePath { get; set; }
+
         [JsonIgnore]
         public bool IsForked => !string.IsNullOrEmpty(ParentSessionId);
 

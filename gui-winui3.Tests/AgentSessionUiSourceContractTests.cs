@@ -233,7 +233,7 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Equal("OnWorkspaceGroupClick", GuiSource.AttributeValue(toggle, "Click"));
         Assert.Equal("WorkspaceGroupToggle_PointerEntered", GuiSource.AttributeValue(toggle, "PointerEntered"));
         Assert.Equal("WorkspaceGroupToggle_PointerExited", GuiSource.AttributeValue(toggle, "PointerExited"));
-        Assert.Equal("-10,-4", GuiSource.AttributeValue(toggle, "Margin"));
+        Assert.Null(GuiSource.AttributeValue(toggle, "Margin"));
         Assert.DoesNotContain(
             GuiSource.NamedElements(document).Keys,
             name => string.Equals(name, "WorkspaceGroupCount", StringComparison.Ordinal));
@@ -242,6 +242,18 @@ public sealed class AgentSessionUiSourceContractTests
             .First(element => element.Attribute(GuiSource.Xaml + "Name")?.Value == "WorkspaceGroupAddButton");
         Assert.Equal("Button", groupAdd.Name.LocalName);
         Assert.Equal("OnWorkspaceGroupAddClick", GuiSource.AttributeValue(groupAdd, "Click"));
+
+        // One frame only: the container carries no padding so each row's own
+        // control paints full-bleed; the session root keeps the old 10,4 inset.
+        var sessionTemplate = document.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "WorkspaceSessionTemplate");
+        Assert.Equal("10,4", GuiSource.AttributeValue(sessionTemplate.Elements().First(), "Padding"));
+        var containerStyle = GuiSource.Require(document, "SidebarSessionList").Descendants()
+            .First(element => element.Name.LocalName == "Style");
+        var paddingSetter = containerStyle.Descendants()
+            .First(element => element.Name.LocalName == "Setter"
+                && GuiSource.AttributeValue(element, "Property") == "Padding");
+        Assert.Equal("0", GuiSource.AttributeValue(paddingSetter, "Value"));
         Assert.True(GuiSource.NamedElements(document).ContainsKey("WorkspaceSearchCount"), "WorkspaceSearchCount must exist.");
 
         Assert.Contains("RelativeTimeText", GuiSource.NamedElements(document).Keys);

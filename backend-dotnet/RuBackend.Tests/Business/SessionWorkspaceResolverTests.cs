@@ -29,4 +29,20 @@ public sealed class SessionWorkspaceResolverTests
         Assert.Equal("LLM", back.WorkspaceLabel);
         Assert.Equal(@"D:\LLM", back.WorkspacePath);
     }
+
+    [Fact]
+    public void WorkspaceLabel_uses_folder_name_of_root()
+    {
+        Assert.Equal("LLM", SessionWorkspaceResolver.LabelForRoot(@"D:\LLM"));
+        Assert.Equal("LLM", SessionWorkspaceResolver.LabelForRoot(@"D:\LLM\"));
+        Assert.Equal("workspace", SessionWorkspaceResolver.LabelForRoot(@"D:\"));
+    }
+
+    [Fact]
+    public void LatestWorkspaceSql_returns_newest_run_per_session()
+    {
+        var sql = SessionWorkspaceResolver.LatestWorkspaceSql;
+        Assert.Contains("PARTITION BY session_id", sql, StringComparison.Ordinal);
+        Assert.Contains("created_at_utc", sql, StringComparison.OrdinalIgnoreCase);
+    }
 }

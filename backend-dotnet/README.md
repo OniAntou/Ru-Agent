@@ -83,8 +83,8 @@ and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 and encrypted policy snapshots) is the current path. Worker v2 performs
 exactly one `generate_reply` per `agent.step.start` and returns provider-neutral
 `AssistantStep(text, tool_calls, finish_reason)`. Its model-visible surface is
-the same six bindings in the single Agent profile: `read` with
-`op=list|glob|search|read|help` (offset/limit, streaming,
+the same ten tools in the single Agent profile: `read`, `list`, `grep`, `glob`
+and `help` (one purpose each; `read` takes `offset`/`limit`),
 bounded `truncated`),
 `write` with `op=write|delete|restore` plus `edit` (hash-guarded, one-time recoverable,
 `recovery_too_large` beyond 1 MiB,

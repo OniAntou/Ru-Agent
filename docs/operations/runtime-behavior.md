@@ -163,7 +163,7 @@ system overrides, Chat compatibility, UI redesign, and the OS-enforced
 filesystem/network sandbox are outside this implementation.
 
 When Ru needs product knowledge about its own features, tools, configuration,
-providers, or operating boundaries, it selects `read` with `op=help` (`read@1.0.0`). The op
+providers, or operating boundaries, it selects the `help` tool (`help@1.0.0`). It
 searches only five explicitly embedded Markdown resources and returns bounded,
 stable document IDs and excerpts. It is offline, read-only, workspace-
 independent, and approval-free. Runtime context and advertised terminal tools
@@ -283,8 +283,8 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings advertise six bindings: `read` with
-`op=list|glob|search|read|help`, `write` with
+The Worker v2 settings advertise ten tools, one purpose each: `read`, `list`,
+`grep`, `glob`, `help`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
 `web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root
@@ -329,8 +329,8 @@ startup constructs an enabled WebOptions instance with Google HTML primary
 `https://www.google.com/search` and automatic DuckDuckGo HTML fallback
 `https://html.duckduckgo.com/html/`; their bounded responses carry an
 explicit `untrusted` marker and never become instructions. `read` with
-`op=search` searches the workspace, while `web_search` searches
-the public web. `read` with `op=help`
+`grep` searches the workspace, while `web_search` searches
+the public web. `help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
 Declarative Skills are added only from validated manifests explicitly included

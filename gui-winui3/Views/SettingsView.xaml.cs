@@ -183,6 +183,81 @@ namespace RuApp.Views
             TranscriptSizeButtonLabel.Text = TranscriptSizePickerProjection.Label(_transcriptSize);
         }
 
+        /// <summary>
+        /// Asks the selected provider whether it answers, and reports what it said.
+        /// </summary>
+        /// <remarks>
+        /// The pending edit is saved first. The backend answers /models from stored
+        /// settings, and auto-save is debounced by 800 ms, so testing straight after
+        /// typing a key would otherwise prove the previous key.
+        /// </remarks>
+        private async void OnProviderTestClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService is null || _providerCatalogController is null)
+            {
+                ShowProviderTestResult(new ProviderConnectionTest(
+                    ProviderConnectionTest.ErrorTone,
+                    "The backend is not ready yet. Try again in a moment."));
+                return;
+            }
+
+            _autoSaveTimer?.Stop();
+            ProviderTestButton.IsEnabled = false;
+            ShowProviderTestResult(ProviderConnectionTestPresentation.Testing());
+
+            try
+            {
+                await SaveSettingsAsync();
+
+                // A forced refresh is what actually re-queries the provider.
+                await _providerCatalogController.RefreshAsync(force: true);
+                ShowProviderTestResult(ProviderConnectionTestPresentation.Project(
+                    _providerCatalogController.State));
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
+                ShowProviderTestResult(new ProviderConnectionTest(
+                    ProviderConnectionTest.ErrorTone,
+                    "The test could not run. Open Tools → Activity Log to check."));
+            }
+            finally
+            {
+                ProviderTestButton.IsEnabled = true;
+            }
+        }
+
+        private void ShowProviderTestResult(ProviderConnectionTest result)
+        {
+            if (ProviderTestStatusText is null)
+            {
+                return;
+            }
+
+            ProviderTestStatusText.Text = result.Message;
+            ProviderTestStatusText.Foreground = (Brush)Application.Current.Resources[
+                result.Tone switch
+                {
+                    ProviderConnectionTest.SuccessTone => "AppSuccessBrush",
+                    ProviderConnectionTest.ErrorTone => "AppDangerBrush",
+                    _ => "RuMutedBrush",
+                }];
+        }
+
+        /// <summary>
+        /// Reflects a background catalog failure in the status line, but never a
+        /// background success: the catalog also refreshes on a timer, and a result
+        /// appearing without the button being pressed would read as the user's own.
+        /// </summary>
+        private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
+        {
+            if (ProviderConnectionTestPresentation.ReportsFailure(
+                    ProviderConnectionTestPresentation.Project(state)))
+            {
+                ShowProviderTestResult(ProviderConnectionTestPresentation.Project(state));
+            }
+        }
+
         private static void AttachDropdownHover(IReadOnlyList<DropdownOption> options)
         {            foreach (var option in options)
             {
@@ -219,6 +294,7 @@ namespace RuApp.Views
             _apiService = apiService;
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController is null;
+            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
             _ = LoadSettingsAsync();
             SetupAutoSave();
         }
@@ -456,6 +532,10 @@ namespace RuApp.Views
             AnthropicApiKeyBox.PasswordChanged -= AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            if (_providerCatalogController is not null)
+            {
+                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
+            }
             if (_autoSaveTimer != null)
             {
                 _autoSaveTimer.Tick -= OnAutoSaveTimerTick;

@@ -518,6 +518,32 @@
                                 </Button>
                             </Grid>
 
+                            <!--
+                              A stored key is not a working key; this asks the endpoint.
+                              The status sits in the same grid so it reads as the result
+                              of the button beside it.
+                            -->
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                    <TextBlock Text="Connection" Style="{StaticResource SettingLabelStyle}" />
+                                    <TextBlock x:Name="ProviderTestStatusText"
+                                               Text="Not tested yet."
+                                               Style="{StaticResource SettingDescStyle}"
+                                               TextWrapping="Wrap"
+                                               AutomationProperties.LiveSetting="Polite" />
+                                </StackPanel>
+                                <Button x:Name="ProviderTestButton"
+                                        Grid.Column="1"
+                                        Width="260"
+                                        MinHeight="36"
+                                        Content="Test connection"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Center"
+                                        Style="{StaticResource RuDropdownButtonStyle}"
+                                        AutomationProperties.Name="Test provider connection"
+                                        Click="OnProviderTestClick" />
+                            </Grid>
+
                             <!-- OpenCode API Key Row -->
                             <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
                                 <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />

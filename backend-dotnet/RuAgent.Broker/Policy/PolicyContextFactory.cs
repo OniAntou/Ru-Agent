@@ -168,6 +168,12 @@ public sealed class PolicyContextFactory
                 case "help":
                     op = "help";
                     break;
+                case "todo_write":
+                    // The task list has no path, no scope beyond the session, and no
+                    // side effect outside the process: the policy only has to let it
+                    // through, so its "op" is its own tool id and it is target-free.
+                    op = "todo_write";
+                    break;
                 case "write":
                     var writeOp = OptionalText(arguments, "op")
                         ?? throw new PolicyContextException(
@@ -200,7 +206,7 @@ public sealed class PolicyContextFactory
                 default:
                     throw new PolicyContextException(
                         "malformed_call",
-                        hint: "unknown tool id; use read, list, help, grep, glob, write, edit, bash, web_search, or web_fetch.");
+                        hint: "unknown tool id; use read, list, help, todo_write, grep, glob, write, edit, bash, web_search, or web_fetch.");
             }
 
             if (IsTargetFreeOp(toolId, op))
@@ -344,6 +350,7 @@ public sealed class PolicyContextFactory
 
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId == "help"
+        || toolId == "todo_write"
         || toolId is "web_search" or "web_fetch";
 
     private static string? ReadOpOf(string toolId, JsonObject arguments) =>

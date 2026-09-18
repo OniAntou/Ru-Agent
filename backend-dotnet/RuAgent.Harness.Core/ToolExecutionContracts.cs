@@ -226,6 +226,18 @@ public sealed record ToolExecutionReceipt
 
     public HarnessPayloadEncoding ContentEncoding { get; }
 
+    /// <summary>
+    /// Returns a copy of this receipt that names the payload its content was stored under.
+    /// </summary>
+    /// <remarks>
+    /// The model content is carried over rather than dropped. This used to pass
+    /// <c>default</c>, which emptied it: the payload intent had already been handed to the
+    /// store, so the bytes were considered spent, but readers downstream still consult
+    /// <see cref="ModelContent"/> to build an edit preview and to raise derived activity.
+    /// Dropping it made those readers see an empty result for a call that succeeded, and
+    /// the failure was silent because an empty result is a legal thing for a tool to
+    /// return.
+    /// </remarks>
     internal ToolExecutionReceipt WithResultPayload(PayloadId payloadId) =>
         new(
             ExecutionId,
@@ -234,7 +246,7 @@ public sealed record ToolExecutionReceipt
             Code,
             payloadId,
             SideEffectsPossible,
-            default,
+            ModelContent,
             ContentEncoding);
 
     private static bool IsSafeCode(string? value) =>

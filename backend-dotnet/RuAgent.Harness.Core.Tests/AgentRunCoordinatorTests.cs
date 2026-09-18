@@ -248,7 +248,13 @@ public sealed class AgentRunCoordinatorTests
         Assert.Equal(
             resultPayload.PayloadId,
             Assert.Single(result.Receipts).ResultPayloadId);
-        Assert.True(Assert.Single(result.Receipts).ModelContent.IsEmpty);
+
+        // Naming the payload must not empty the content. This assertion used to require
+        // IsEmpty, which recorded a bug as intended behaviour: readers downstream consult
+        // ModelContent to build the edit preview and to raise a Search row's match count,
+        // so emptying it made a successful call look like it returned nothing. An empty
+        // result is a legal thing for a tool to return, which is why nothing failed loudly.
+        Assert.False(Assert.Single(result.Receipts).ModelContent.IsEmpty);
     }
 
     [Fact]

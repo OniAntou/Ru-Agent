@@ -131,11 +131,12 @@ public sealed class SystemPromptComposerTests
     public void Compose_mentions_only_available_tool_families()
     {
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(
-            capabilities: [PromptFixtures.Capability("read", "workspace.read")]));
+            capabilities: [PromptFixtures.Capability("help", "system.help")]));
 
-        Assert.Contains("read", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("op=help", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("help", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use help to look up Ru product behavior", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("Use bash for", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("op=help", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,9 +148,10 @@ public sealed class SystemPromptComposerTests
                 PromptFixtures.Capability("write", "workspace.write"),
                 PromptFixtures.Capability("bash", "terminal.execute"),
                 PromptFixtures.Capability("read", "workspace.read"),
+                PromptFixtures.Capability("help", "system.help"),
             ]));
 
-        Assert.Contains("Use read with op=help for Ru product behavior", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use help to look up Ru product behavior", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Use bash to run one bounded command (inspection, tests, builds, lint, local Git) or, with approval, a shell script.", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Use write with op=write to create or overwrite a file, op=delete to remove a file (recoverable once with op=restore).", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
@@ -159,6 +161,25 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("repair hint", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Do not invent aliases or fallback tools", snapshot.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compose_describes_each_advertised_tool_without_legacy_ops()
+    {
+        var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(
+            capabilities:
+            [
+                PromptFixtures.Capability("read", "workspace.read"),
+                PromptFixtures.Capability("list", "workspace.list"),
+                PromptFixtures.Capability("edit", "workspace.edit"),
+                PromptFixtures.Capability("todo_write", "session.tasks"),
+            ]));
+
+        Assert.Contains("Use read to read one file's content", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use list to enumerate one directory", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use edit to replace one exact string", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Use todo_write to replace the session task list", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"op\": \"read\"", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Theory]

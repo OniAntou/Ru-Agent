@@ -187,12 +187,20 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
     {
         try
         {
+            var snapshot = SystemPromptComposer.Compose(context, nativeToolCalling: true);
+            var receipt = snapshot.Receipt;
+            string sizes = string.Join(
+                ",",
+                receipt.BlockDigests.Select(d => $"{d.BlockId}={d.Sha256.Length}"));
+
             File.AppendAllText(
                 Path.Combine(Path.GetTempPath(), "ru-scripted-receipt-failure.txt"),
                 $"{DateTime.UtcNow:O} receipt rejected: {reason}{Environment.NewLine}" +
+                $"  promptTextBytes={System.Text.Encoding.UTF8.GetByteCount(snapshot.Text)}{Environment.NewLine}" +
                 $"  instructionBlocks={context.InstructionBlocks.Count}" +
                 $" capabilities={context.Capabilities.Count}" +
-                $" profile={context.AgentProfile}{Environment.NewLine}");
+                $" profile={context.AgentProfile}{Environment.NewLine}" +
+                $"  blocks={sizes}{Environment.NewLine}");
         }
         catch (IOException)
         {

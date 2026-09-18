@@ -125,11 +125,22 @@ public sealed record PromptCapability
 
 public sealed record PromptReference
 {
+    /// <summary>
+    /// The most content one reference may carry.
+    /// </summary>
+    /// <remarks>
+    /// Public because callers that build references from tool output have to fit inside it.
+    /// A reference over this bound is rejected, and a rejected reference fails the whole
+    /// prompt rather than the row that was too large -- a listing or a file read big enough
+    /// to exceed it used to end the run.
+    /// </remarks>
+    public const int ContentMaxBytes = 32 * 1024;
+
     public PromptReference(string kind, string label, string content)
     {
         Kind = PromptText.RequireIdentifier(kind, 64, nameof(kind));
         Label = PromptText.Require(label, 256, nameof(label));
-        Content = PromptText.NormalizeAndRequireBytes(content, 32 * 1024, nameof(content));
+        Content = PromptText.NormalizeAndRequireBytes(content, ContentMaxBytes, nameof(content));
     }
 
     public string Kind { get; }

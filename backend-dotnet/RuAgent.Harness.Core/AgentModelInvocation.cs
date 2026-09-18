@@ -81,8 +81,16 @@ internal sealed class AgentModelInvocation
             HarnessTelemetry.SetStepOutcome(telemetryActivity, "cancelled");
             throw;
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            // The provider could not build the prompt. This one really is a prompt failure,
+            // so it keeps the prompt code; only the model step's own failures below are
+            // classified differently.
+            RecordContractFailure(
+                "context-provider",
+                $"{error.GetType().Name}: {error.Message}",
+                context.Entries.Count,
+                capabilities: 0);
             await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity)
                 .ConfigureAwait(false);
             throw new InvalidOperationException("prompt_contract_invalid");
@@ -127,18 +135,20 @@ internal sealed class AgentModelInvocation
             HarnessTelemetry.SetStepOutcome(telemetryActivity, "cancelled");
             throw;
         }
-        catch (Exception)
+        catch (Exception error)
         {
             assistantStream.Complete();
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectModelStep(
-                    modelStepId,
-                    AgentActivityState.Failed,
-                    ElapsedMilliseconds(thinkingStartedAt),
-                    safeCode: "model_failed"));
-            HarnessTelemetry.SetStepOutcome(telemetryActivity, "model_failed");
+            // The runner threw, so the prompt is not what failed and saying it did points the
+            // reader at the wrong subsystem. The code is classified from the exception rather
+            // than forwarded, because a message can quote user content.
+            string code = ModelStepFailureCode(error);
+            RecordContractFailure(
+                "model-step",
+                $"{error.GetType().Name}: {error.Message}",
+                context.Entries.Count,
+                capabilities: 0);
+            await MarkModelStepFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity, code)
+                .ConfigureAwait(false);
             throw;
         }
         try
@@ -160,9 +170,18 @@ internal sealed class AgentModelInvocation
             HarnessTelemetry.SetStepOutcome(telemetryActivity, "cancelled");
             throw;
         }
-        catch (ArgumentException)
+        catch (ArgumentException error)
         {
             assistantStream.Complete();
+            // Two different failures land here -- a receipt that does not match the prompt,
+            // and a receipt too large to store -- and both used to surface as the same
+            // opaque code with the reason discarded. The text is safe: it names a rule, not
+            // any user content.
+            RecordContractFailure(
+                "validate",
+                error.Message,
+                promptContext.InstructionBlocks.Count,
+                promptContext.Capabilities.Count);
             await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity)
                 .ConfigureAwait(false);
             throw new InvalidOperationException("prompt_contract_invalid");
@@ -180,9 +199,14 @@ internal sealed class AgentModelInvocation
                 PromptReceiptPayloadCodec.MaximumBytes,
                 receiptBytes);
         }
-        catch (Exception)
+        catch (Exception error)
         {
             assistantStream.Complete();
+            RecordContractFailure(
+                "serialize",
+                error.Message,
+                promptContext.InstructionBlocks.Count,
+                promptContext.Capabilities.Count);
             await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt, telemetryActivity)
                 .ConfigureAwait(false);
             throw new InvalidOperationException("prompt_contract_invalid");
@@ -231,6 +255,76 @@ internal sealed class AgentModelInvocation
             promptReceiptPayload,
             promptComposedEvent,
             modelDroppedCount);
+    }
+
+    /// <summary>
+    /// Records why a prompt receipt was rejected, when diagnostics are asked for.
+    /// </summary>
+    /// <remarks>
+    /// The run reports one code for every rejection, which says a receipt was refused but
+    /// not which rule it broke, and the two rules here have nothing in common: a receipt can
+    /// disagree with the prompt, or be too large to store. Off unless RU_PROMPT_DIAGNOSTIC
+    /// names a file, because this writes on a failure path normal runs never take.
+    /// </remarks>
+    private static void RecordContractFailure(string stage, string reason, int instructionBlocks, int capabilities)
+    {
+        string? target = Environment.GetEnvironmentVariable("RU_PROMPT_DIAGNOSTIC");
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return;
+        }
+
+        try
+        {
+            System.IO.File.AppendAllText(
+                target,
+                $"{DateTime.UtcNow:O} {stage}: {reason} | instructionBlocks={instructionBlocks}" +
+                $" capabilities={capabilities}{Environment.NewLine}");
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// The code that describes why the model step itself failed.
+    /// </summary>
+    /// <remarks>
+    /// Every failure here used to be reported as prompt_contract_invalid, which named the
+    /// wrong subsystem: the prompt was fine, the runner was not, and the reader got a code
+    /// that pointed them at the prompt and no reason for anything. A prompt too large to
+    /// render and a provider that refused the call are different problems with different
+    /// fixes, so they get different codes. The message is classified, never forwarded: it can
+    /// quote user content, and these codes cross into the transcript.
+    /// </remarks>
+    private static string ModelStepFailureCode(Exception error) => error switch
+    {
+        ArgumentException => "prompt_too_large",
+        TimeoutException => "model_timeout",
+        OperationCanceledException => "cancelled",
+        _ => "model_failed",
+    };
+
+    private async Task MarkModelStepFailureAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        DateTimeOffset startedAt,
+        System.Diagnostics.Activity? telemetryActivity,
+        string safeCode)
+    {
+        HarnessTelemetry.SetStepOutcome(telemetryActivity, safeCode);
+        await _lifecycle.FailAsync(run.RunId, safeCode, CancellationToken.None).ConfigureAwait(false);
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectModelStep(
+                modelStepId,
+                AgentActivityState.Failed,
+                ElapsedMilliseconds(startedAt),
+                safeCode: safeCode));
     }
 
     private async Task MarkPromptContractFailureAsync(

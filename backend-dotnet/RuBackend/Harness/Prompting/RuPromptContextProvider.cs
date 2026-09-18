@@ -130,6 +130,36 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         return capabilities;
     }
 
+    /// <summary>
+    /// Shortens tool output that does not fit in one prompt reference.
+    /// </summary>
+    /// <remarks>
+    /// Measured in UTF-8 bytes, because that is the unit the bound is expressed in and a
+    /// character count would let multi-byte text through. The cut is made on a character
+    /// boundary so the result stays valid text.
+    ///
+    /// The marker is not decorative: without it a truncated result is indistinguishable from
+    /// a complete one, and the model would draw conclusions from half a listing without
+    /// knowing it was half.
+    /// </remarks>
+    internal static string FitReferenceContent(string content)
+    {
+        const string Note = "\n…(truncated: this tool result was longer than one prompt reference allows)";
+        int budget = PromptReference.ContentMaxBytes - System.Text.Encoding.UTF8.GetByteCount(Note);
+        if (budget <= 0 || System.Text.Encoding.UTF8.GetByteCount(content) <= PromptReference.ContentMaxBytes)
+        {
+            return content;
+        }
+
+        int length = content.Length;
+        while (length > 0 && System.Text.Encoding.UTF8.GetByteCount(content.AsSpan(0, length)) > budget)
+        {
+            length--;
+        }
+
+        return content[..length] + Note;
+    }
+
     private async Task<PromptRuntimeContext> BuildRuntimeContextAsync(
         AgentRun run,
         ModelContextSnapshot modelContext,
@@ -139,6 +169,12 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         // the model conversation additionally carries the exchange history
         // (see LoopbackModelStepRunner.BuildConversation) so the model knows
         // which calls already ran.
+        //
+        // Each reference is fitted to the bound a reference accepts. A reference over it is
+        // rejected, and a rejected reference fails the prompt, which fails the run -- so a
+        // listing or a file read larger than the bound used to end the turn outright instead
+        // of costing the model the tail of one result. The marker says the output was cut,
+        // because a silently shortened result reads as a complete one.
         var references = modelContext.Entries
             .Where(entry => entry.Kind == ModelContextEntryKind.ToolResult
                 && !string.IsNullOrWhiteSpace(entry.Content))
@@ -146,7 +182,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             .Select(entry => new PromptReference(
                 "tool_result",
                 "untrusted tool result",
-                entry.Content!))
+                FitReferenceContent(entry.Content!)))
             .ToList();
 
         if (_workspaceCoordinatorStore is not null)

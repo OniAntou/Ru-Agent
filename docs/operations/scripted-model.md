@@ -64,3 +64,19 @@ It is a development seam, not a product feature. It replaces the model, so it ca
 you anything about provider behaviour, streaming, token accounting or reasoning — those
 need a real endpoint. Do not ship a build that depends on it, and do not treat a scripted
 run as evidence that a provider path works.
+
+## Known limitation
+
+A script whose **second consecutive tool step** follows another tool call can fail the run
+as `prompt_contract_invalid`. The step's prompt receipt is composed here and then checked
+against the context the runtime built; after a tool result enters the context the two can
+disagree, and the coordinator rejects the step rather than running it.
+
+In practice: a script that calls one tool and then answers works, and so does a script with
+several consecutive tool calls where none of them returns content the prompt re-renders.
+A script that mixes tool kinds across three or more steps may stop after the first call.
+The check is the product's, not the fixture's, and loosening it to make a fixture pass would
+weaken a real guarantee — so the limitation is recorded instead.
+
+Assertions about the prompt contract itself live in `ScriptedModelReceiptTests`, which
+covers both capabilities renderings directly.

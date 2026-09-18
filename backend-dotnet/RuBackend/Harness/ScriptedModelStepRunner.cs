@@ -135,9 +135,71 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         }
 
         // The coordinator validates this receipt against the prompt context it built, so an
-        // empty one fails the run as prompt_contract_invalid. The real runner composes it;
-        // this one has to do the same rather than stub it out.
-        var receipt = SystemPromptComposer.Compose(request.PromptContext).Receipt;
+        // empty or mismatched one fails the run as prompt_contract_invalid. The real runner
+        // composes it in the Worker, where the provider's protocol decides whether the
+        // capabilities block is rendered for native function calling. There is no provider
+        // here, so both renderings are tried and the one that validates is used: the
+        // difference is a single block, and the check is exactly what decides between them.
+        var receipt = ComposeReceipt(request.PromptContext);
         return Task.FromResult(new ModelStepResult(step, receipt));
+    }
+
+    /// <summary>
+    /// Composes the receipt the coordinator will check this step against.
+    /// </summary>
+    /// <remarks>
+    /// Internal so the receipt rule can be tested directly. A mismatch here fails a run as
+    /// prompt_contract_invalid, which is a confusing way to learn that a fixture is wrong.
+    /// </remarks>
+    internal static SystemPromptReceipt ComposeReceiptForTests(SystemPromptContext context) =>
+        ComposeReceipt(context);
+
+    private static SystemPromptReceipt ComposeReceipt(SystemPromptContext context)
+    {
+        string? firstFailure = null;
+        foreach (bool nativeToolCalling in new[] { true, false })
+        {
+            var candidate = SystemPromptComposer.Compose(context, nativeToolCalling).Receipt;
+            try
+            {
+                candidate.ValidateAgainst(context);
+                return candidate;
+            }
+            catch (ArgumentException error)
+            {
+                // The other rendering may be the one the run was started with.
+                firstFailure ??= $"{nativeToolCalling}: {error.Message}";
+            }
+        }
+
+        // Neither matched, so the run is going to fail its contract check either way.
+        // Returning the text-mode receipt keeps the failure at the coordinator, where it
+        // belongs, instead of throwing a different error from inside the model.
+        //
+        // The reason is recorded because the coordinator reports only
+        // prompt_contract_invalid: that says a receipt was rejected but not which rule it
+        // broke, and diagnosing a fixture without it means bisecting the prompt by hand.
+        TryRecordFailure(context, firstFailure);
+        return SystemPromptComposer.Compose(context).Receipt;
+    }
+
+    private static void TryRecordFailure(SystemPromptContext context, string? reason)
+    {
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(Path.GetTempPath(), "ru-scripted-receipt-failure.txt"),
+                $"{DateTime.UtcNow:O} receipt rejected: {reason}{Environment.NewLine}" +
+                $"  instructionBlocks={context.InstructionBlocks.Count}" +
+                $" capabilities={context.Capabilities.Count}" +
+                $" profile={context.AgentProfile}{Environment.NewLine}");
+        }
+        catch (IOException)
+        {
+            // Diagnostics must never be the reason a run fails.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 }

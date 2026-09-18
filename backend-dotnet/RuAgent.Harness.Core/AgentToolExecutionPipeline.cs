@@ -752,33 +752,12 @@ internal sealed class AgentToolExecutionPipeline
     {
         if (_activitySink is null
             || proposal.ToolId is not "todo_write"
-            || receipt.Outcome != ToolExecutionOutcome.Succeeded
-            || receipt.ModelContent.IsEmpty)
+            || receipt.Outcome != ToolExecutionOutcome.Succeeded)
         {
             return;
         }
 
-        List<AgentTodoRow> rows;
-        try
-        {
-            if (JsonNode.Parse(receipt.ModelContent.Span) is not JsonObject payload
-                || payload["todos"] is not JsonArray todos)
-            {
-                return;
-            }
-
-            rows = new List<AgentTodoRow>(todos.Count);
-            foreach (var node in todos)
-            {
-                if (node is JsonObject row
-                    && row["content"]?.GetValue<string>() is { Length: > 0 } content
-                    && row["status"]?.GetValue<string>() is { Length: > 0 } status)
-                {
-                    rows.Add(new AgentTodoRow(content, status));
-                }
-            }
-        }
-        catch (JsonException)
+        if (AgentTodoPayload.TryRead(receipt.ModelContent.Span) is not { } rows)
         {
             return;
         }

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Prompting;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -50,6 +52,127 @@ public sealed class AgentRunActivitiesTests
         Assert.True(json.TryGetProperty("activities", out var activities));
         Assert.Equal(JsonValueKind.Array, activities.ValueKind);
         Assert.Equal(0, activities.GetArrayLength());
+    }
+
+    /// <summary>
+    /// The replayed feed must carry the agent's task list, not just its tool rows.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes the checklist survive leaving a session. The transcript is
+    /// rebuilt from this endpoint, so an activity kind the replay does not know about is
+    /// simply gone the next time the session is opened -- which is exactly the failure a
+    /// kind added later falls into, because nothing fails when a switch has no case for it.
+    /// </remarks>
+    [Fact]
+    public async Task Replayed_activities_include_the_task_list()
+    {
+        var steps = new Queue<AssistantStep>();
+        steps.Enqueue(new AssistantStep(
+            null,
+            new[]
+            {
+                new ModelToolCall(
+                    null,
+                    "todo_write",
+                    "1.0.0",
+                    JsonDocument.Parse("""
+                        {"todos":[
+                          {"content":"Read the failing test","status":"completed"},
+                          {"content":"Fix the validator","status":"in_progress"}]}
+                        """).RootElement),
+            },
+            AssistantFinishReason.ToolCalls,
+            0));
+        steps.Enqueue(new AssistantStep(
+            "planned",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            0));
+
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: tmp.DataPaths,
+            modelStepRunner: new ScriptedStepRunner(steps),
+            withInProcessBroker: true);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(
+            client, session, tmp.Path, "plan this", "todo-act-key-" + Guid.NewGuid().ToString("N"));
+        await TrustAsync(client, runId);
+        await WaitForTerminalAsync(client, runId);
+
+        using var resp = await client.GetAsync($"/agent/v1/runs/{runId}/activities");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        var activities = json.GetProperty("activities").EnumerateArray().ToArray();
+
+        // The tool row is replayed, as it always was. Which display label it carries is
+        // not this test's subject, so it is asserted only as "some non-todo row exists":
+        // pinning the label here would make a display change look like a replay failure.
+        Assert.Contains(
+            activities,
+            activity => activity.GetProperty("kind").GetString() != "todo");
+
+        var todos = activities
+            .Where(activity => activity.GetProperty("kind").GetString() == "todo")
+            .ToArray();
+        Assert.True(todos.Length == 1, $"expected one replayed todo activity, saw {todos.Length}");
+
+        var rows = todos[0].GetProperty("todos").EnumerateArray().ToArray();
+        Assert.Equal(2, rows.Length);
+        Assert.Equal("Read the failing test", rows[0].GetProperty("content").GetString());
+        Assert.Equal("completed", rows[0].GetProperty("status").GetString());
+        Assert.Equal("in_progress", rows[1].GetProperty("status").GetString());
+    }
+
+    /// <summary>
+    /// Approves the trust challenge a run raises for a workspace outside the project root.
+    /// </summary>
+    /// <remarks>
+    /// The challenge values come from the run status rather than the create response, so
+    /// this works whichever helper produced the run id.
+    /// </remarks>
+    private static async Task TrustAsync(HttpClient client, string runId)
+    {
+        using var statusResp = await client.GetAsync($"/agent/v1/runs/{runId}");
+        var status = await statusResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        if (!status.TryGetProperty("trust_request_id", out var trustRequestId)
+            || trustRequestId.ValueKind != JsonValueKind.String)
+        {
+            // Nothing to approve: the workspace was already trusted.
+            return;
+        }
+
+        using var resp = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            new
+            {
+                trust_request_id = trustRequestId.GetString(),
+                display_identity_hash = status.GetProperty("display_identity_hash").GetString(),
+                decision = "approve",
+            });
+        resp.EnsureSuccessStatusCode();
+    }
+
+    private static async Task WaitForTerminalAsync(HttpClient client, string runId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200);
+            using var response = await client.GetAsync($"/agent/v1/runs/{runId}");
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var status = document.RootElement.GetProperty("status").GetString();
+            if (status is "completed" or "failed")
+            {
+                Assert.True(status == "completed", $"run ended as {status}");
+                return;
+            }
+        }
+
+        Assert.Fail("run did not reach a terminal status in time");
     }
 
     private static async Task<string> CreateSessionAsync(HttpClient client)
@@ -110,6 +233,29 @@ public sealed class AgentRunActivitiesTests
         {
             try { Directory.Delete(_root, recursive: true); } catch { }
             try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
+        }
+    }
+
+    private sealed class ScriptedStepRunner : IModelStepRunner
+    {
+        private readonly Queue<AssistantStep> _steps;
+
+        public ScriptedStepRunner(Queue<AssistantStep> steps) => _steps = steps;
+
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            if (_steps.Count == 0)
+            {
+                throw new InvalidOperationException("no scripted step left");
+            }
+
+            // The coordinator validates the returned receipt against the prompt context it
+            // built, so an empty receipt fails as prompt_contract_invalid.
+            var receipt = SystemPromptComposer.Compose(request.PromptContext).Receipt;
+            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), receipt));
         }
     }
 }

@@ -125,6 +125,20 @@ public sealed partial class AgentV1Service
                 proposal);
 
             rows.Add(new ReplayedActivityRow(call.Sequence, activity));
+
+            // The task list rides on the same durable completion as the tool row it came
+            // from, because that is where it lives: the payload the model received. Emitting
+            // it here is what makes the checklist survive leaving a session -- without it
+            // the feed rebuilds and the plan is silently absent, which is indistinguishable
+            // from a turn that never wrote one.
+            if (proposal.ToolId is "todo_write"
+                && AgentTodoPayload.TryRead(receipt.ModelContent.Span) is { } todos)
+            {
+                rows.Add(new ReplayedActivityRow(
+                    call.Sequence,
+                    AgentActivityProjector.ProjectTodos(
+                        $"act_todo_replay_{call.ToolCallId.Value}", todos)));
+            }
         }
 
         // A call that was proposed but never completed is still in flight when the

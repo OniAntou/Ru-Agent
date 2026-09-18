@@ -13,6 +13,58 @@ public sealed class AgentActivityLivePublisherTests
     private const string ExecutionId = "exec_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
     [Fact]
+    public async Task A_todo_activity_carries_its_whole_list_to_the_client()
+    {
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(hub);
+        var activity = AgentActivityProjector.ProjectTodos(
+            "act_todo_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            [
+                new AgentTodoRow("Read the catalog", "completed"),
+                new AgentTodoRow("Add the tool", "in_progress"),
+                new AgentTodoRow("Write the docs", "pending"),
+            ]);
+
+        publisher.Publish(Run, activity);
+
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+        var parsed = RuAgent.Protocol.Harness.AgentActivityWireCodec.Parse(frame.Data);
+
+        Assert.Equal(RuAgent.Protocol.Harness.AgentActivityKind.Todo, parsed.Kind);
+        Assert.NotNull(parsed.Todos);
+
+        // The whole list travels, in order: a viewer that missed an earlier activity
+        // still draws the truth from the latest one.
+        Assert.Equal(3, parsed.Todos!.Count);
+        Assert.Equal("Read the catalog", parsed.Todos[0].Content);
+        Assert.Equal("completed", parsed.Todos[0].Status);
+        Assert.Equal("in_progress", parsed.Todos[1].Status);
+        Assert.Equal("pending", parsed.Todos[2].Status);
+    }
+
+    [Fact]
+    public async Task An_activity_without_a_list_carries_no_todos()
+    {
+        // "No list" and "an empty list" are different statements, and only the first is
+        // true of an edit activity.
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(hub);
+
+        publisher.Publish(Run, new AgentActivity(
+            "act_cccccccccccccccccccccccccccccccc",
+            AgentActivityKind.Edit,
+            AgentActivityState.Completed,
+            "ChatView.xaml",
+            SafeCode: "succeeded"));
+
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+
+        Assert.Null(RuAgent.Protocol.Harness.AgentActivityWireCodec.Parse(frame.Data).Todos);
+    }
+
+    [Fact]
     public async Task Publish_maps_safe_core_activity_to_agent_activity_transient_frame()
     {
         var hub = new HarnessLiveEventHub();

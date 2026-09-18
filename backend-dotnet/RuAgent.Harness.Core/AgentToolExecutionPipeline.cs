@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Reconciliation;
@@ -500,6 +501,8 @@ internal sealed class AgentToolExecutionPipeline
                         durationMs: toolDurations.TryGetValue(call.ExecutionId.Value, out var elapsedMs)
                             ? elapsedMs
                             : null));
+
+                PublishTodoIfPresent(run.RunId, proposal, receipt);
             }
 
             if (reconciliationRequired)
@@ -727,6 +730,63 @@ internal sealed class AgentToolExecutionPipeline
                 orderedReceipts,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publishes the agent's task list when a todo write succeeds.
+    /// </summary>
+    /// <remarks>
+    /// The list travels as its own activity rather than being inferred by the view from
+    /// the tool result, because the tool-output channel carries display text and this is
+    /// structured data. The pipeline is where the result is in hand, which is why the
+    /// executor does not publish it: the Broker has no activity sink, and handing it one
+    /// would put a presentation concern inside the execution authority.
+    ///
+    /// The rows are read from the receipt's model content, which is the same bytes the
+    /// model receives, so the activity and the model's view of the list cannot disagree.
+    /// A payload that is missing should be absent rather than fatal: the plan is a
+    /// display aid, and failing the run over it would trade a missing checklist for a
+    /// lost turn.
+    /// </remarks>
+    private void PublishTodoIfPresent(RunId runId, ToolProposal proposal, ToolExecutionReceipt receipt)
+    {
+        if (_activitySink is null
+            || proposal.ToolId is not "todo_write"
+            || receipt.Outcome != ToolExecutionOutcome.Succeeded
+            || receipt.ModelContent.IsEmpty)
+        {
+            return;
+        }
+
+        List<AgentTodoRow> rows;
+        try
+        {
+            if (JsonNode.Parse(receipt.ModelContent.Span) is not JsonObject payload
+                || payload["todos"] is not JsonArray todos)
+            {
+                return;
+            }
+
+            rows = new List<AgentTodoRow>(todos.Count);
+            foreach (var node in todos)
+            {
+                if (node is JsonObject row
+                    && row["content"]?.GetValue<string>() is { Length: > 0 } content
+                    && row["status"]?.GetValue<string>() is { Length: > 0 } status)
+                {
+                    rows.Add(new AgentTodoRow(content, status));
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            runId,
+            AgentActivityProjector.ProjectTodos($"act_todo_{Guid.NewGuid():N}", rows));
     }
 
     private async Task DiscardPreparedAsync(IEnumerable<PreparedToolExecution> prepared)

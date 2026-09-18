@@ -184,13 +184,54 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void The_provider_table_covers_every_alias_the_picker_offers()
+    public void The_provider_table_covers_every_option_the_picker_renders()
     {
-        // SettingsView.KnownProviders is the picker's list. If a provider is added
-        // there and not here, the new provider silently loses its guidance.
-        string[] pickerAliases = ["opencode", "kilo", "openai", "anthropic", "custom"];
-        var tableAliases = ProviderSetupGuidance.All.Select(p => p.Alias).ToArray();
+        // Read from the markup, which is the picker's real list, rather than from a
+        // third copy of the aliases. An earlier version of this test compared the
+        // table against a hardcoded array while the view kept its own set beside it,
+        // so three lists had to agree and the test checked only two of them.
+        var document = GuiSource.Xml("Views", "SettingsView.xaml");
 
-        Assert.Equal(pickerAliases.OrderBy(a => a, StringComparer.Ordinal), tableAliases.OrderBy(a => a, StringComparer.Ordinal));
+        var pickerAliases = document.Descendants()
+            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnProviderOptionClick")
+            .Select(element => GuiSource.AttributeValue(element, "Tag") ?? string.Empty)
+            .Where(tag => tag.Length > 0)
+            .OrderBy(tag => tag, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.NotEmpty(pickerAliases);
+
+        var tableAliases = ProviderSetupGuidance.All
+            .Select(provider => provider.Alias)
+            .OrderBy(alias => alias, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(pickerAliases, tableAliases);
+    }
+
+    [Fact]
+    public void Every_picker_option_is_a_provider_the_app_knows()
+    {
+        // The view asks this instead of keeping its own set, so an alias present in
+        // the markup but missing from the table would be shown yet unrecognised.
+        foreach (string alias in ProviderSetupGuidance.All.Select(provider => provider.Alias))
+        {
+            Assert.True(ProviderSetupGuidance.IsKnown(alias), alias + " is in the table but not known");
+        }
+
+        Assert.False(ProviderSetupGuidance.IsKnown("not-a-provider"));
+        Assert.False(ProviderSetupGuidance.IsKnown(null));
+        Assert.False(ProviderSetupGuidance.IsKnown("   "));
+    }
+
+    [Fact]
+    public void An_empty_alias_is_not_known_even_though_Find_defaults_it()
+    {
+        // Two different questions. Find answers "which provider should this be", so an
+        // empty alias becomes the default and the app still has something to show.
+        // IsKnown answers "is this a recognised alias", and a caller uses it to reject
+        // input. Collapsing them would make the picker accept an empty choice.
+        Assert.NotNull(ProviderSetupGuidance.Find(null));
+        Assert.False(ProviderSetupGuidance.IsKnown(null));
     }
 }

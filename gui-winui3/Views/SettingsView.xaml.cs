@@ -40,11 +40,6 @@ namespace RuApp.Views
         private IReadOnlyList<DropdownOption>? _presetOptions;
         private IReadOnlyList<DropdownOption>? _providerOptions;
 
-        private static readonly HashSet<string> KnownProviders = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "opencode", "kilo", "openai", "anthropic", "custom",
-        };
-
         public void SetCurrentTheme(UiTheme theme)
         {
             _themeChoice = theme == UiTheme.Light ? "light" : "dark";
@@ -59,7 +54,7 @@ namespace RuApp.Views
 
         public void SetCurrentProvider(string backendChoice)
         {
-            _providerChoice = KnownProviders.Contains(backendChoice ?? string.Empty)
+            _providerChoice = ProviderSetupGuidance.IsKnown(backendChoice)
                 ? backendChoice!
                 : "opencode";
             RefreshProviderUI();
@@ -387,7 +382,7 @@ namespace RuApp.Views
         {
             if (_loading) return;
             if (sender is not Button button || button.Tag is not string choice) return;
-            if (!KnownProviders.Contains(choice)) return;
+            if (!ProviderSetupGuidance.IsKnown(choice)) return;
             _providerChoice = choice;
             RefreshProviderUI();
             (ProviderButton.Flyout as Flyout)?.Hide();

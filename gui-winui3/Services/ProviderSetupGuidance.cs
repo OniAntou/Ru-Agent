@@ -92,6 +92,23 @@ internal static class ProviderSetupGuidance
     }
 
     /// <summary>
+    /// Whether an alias names a provider the app knows.
+    /// </summary>
+    /// <remarks>
+    /// The picker used to keep its own set of aliases beside this table, and a test
+    /// compared the two to catch drift. A second copy plus a test that it still
+    /// matches is a worse arrangement than having no second copy, so the question is
+    /// asked of the table instead.
+    ///
+    /// Deliberately stricter than <see cref="Find"/>: Find answers "which provider
+    /// should this be", so an empty alias becomes the default, while this answers
+    /// "is this an alias I recognise", where empty is simply not one. Callers use
+    /// this to reject input, and rejecting is the safe direction.
+    /// </remarks>
+    internal static bool IsKnown(string? backendChoice) =>
+        !string.IsNullOrWhiteSpace(backendChoice) && Find(backendChoice) is not null;
+
+    /// <summary>
     /// The display name for an alias, falling back to the raw alias so an
     /// unrecognised provider is still named rather than shown as blank.
     /// </summary>

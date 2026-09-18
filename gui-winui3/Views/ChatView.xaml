@@ -110,6 +110,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0"
                       ColumnDefinitions="Auto,Auto"
@@ -191,17 +192,24 @@
                   agent plans and the user watches. The rows come from the activity that
                   carries them, so the control has no binding of its own.
                 -->
-                <controls:TodoChecklistControl x:Name="TodoChecklist"
+                <controls:TodoChecklistControl Grid.Row="3"
+                                                x:Name="TodoChecklist"
                                                 Visibility="{x:Bind HasTodos, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                                 HorizontalAlignment="Stretch"
-                                                Margin="0,8,0,2"
-                                               MaxWidth="760"
-                                               AutomationProperties.Name="Agent task list" />
-                <!-- State bindings (used by automation & contract tests) -->
-                <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
-                <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
-                <Border Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
-                <Border Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                                                Margin="0,10,0,2"
+                                                MaxWidth="760"
+                                                AutomationProperties.Name="Agent task list" />
+                <!--
+                  State bindings for automation and contract tests. They sit in their own row
+                  and take no space. Anything without a Grid.Row lands in row 0 on top of the
+                  header, which is exactly how the checklist used to overlap its own label.
+                -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal">
+                    <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                    <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                    <Border Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                    <Border Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
+                </StackPanel>
             </Grid>
         </DataTemplate>
 

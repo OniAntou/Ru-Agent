@@ -284,7 +284,28 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         ? "Waiting for confirmation"
         : "Waiting to continue";
 
-    public string FailedText => "Failed";
+    /// <summary>
+    /// What a failed row says.
+    /// </summary>
+    /// <remarks>
+    /// A bare "Failed" leaves the reader with nothing to act on, and the row already carries
+    /// the reason in <see cref="SafeCode"/>. The code is a stable machine token, so it is
+    /// translated here rather than shown: `prompt_contract_invalid` is not a sentence.
+    /// An unrecognised code falls back to the token with its hyphens opened out, which is
+    /// still more than the word "Failed" says.
+    /// </remarks>
+    public string FailedText => Kind switch
+    {
+        // The run stopped part way; the call itself was never answered.
+        _ when SafeCode is "interrupted" => "Stopped before finishing",
+        _ when SafeCode is "model_failed" => "Model call failed",
+        _ when SafeCode is "prompt_contract_invalid" => "Prompt rejected by the runtime",
+        _ when SafeCode is "cancelled" => "Cancelled",
+        _ when SafeCode is "transport_failure" => "Lost connection to the tool",
+        _ when SafeCode is "reconciliation_required" => "Stopped: the last change is unverified",
+        _ when SafeCode is { Length: > 0 } code => "Failed: " + code.Replace('_', ' '),
+        _ => "Failed",
+    };
 
     public bool HasLineDelta => Kind == AgentActivityKind.Edit && (Added is not null || Removed is not null);
     public bool HasNoLineDelta => !HasLineDelta;

@@ -33,7 +33,7 @@ namespace RuApp.Controls
         private static readonly SolidColorBrush FallbackAccentBrush =
             new(Color.FromArgb(255, 129, 140, 248));
 
-        private readonly StackPanel _rows = new() { Spacing = 4 };
+        private readonly StackPanel _rows = new() { Spacing = 9 };
 
         public TodoChecklistControl()
         {
@@ -66,9 +66,11 @@ namespace RuApp.Controls
             var mark = new FontIcon
             {
                 Glyph = todo.MarkGlyph,
-                FontSize = 12,
+                // Scaled with the text so the mark never drifts out of proportion with the
+                // line it belongs to.
+                FontSize = RuApp.Services.TranscriptTypography.Instance.ActivityFontSize - 1.5,
                 VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 2, 0, 0),
+                Margin = new Thickness(0, 4, 0, 0),
                 Foreground = todo.IsInProgress ? Brush("RuAccentBrush", FallbackAccentBrush)
                     : todo.IsCompleted ? Brush("AppSuccessBrush", FallbackMutedBrush)
                     : Brush("RuMutedBrush", FallbackMutedBrush),
@@ -78,7 +80,9 @@ namespace RuApp.Controls
             {
                 Text = todo.Content,
                 FontFamily = UiFont,
-                FontSize = 13.5,
+                // One step below the conversation, the same relationship the activity line
+                // has to it. A fixed size ignored the reader's own choice.
+                FontSize = RuApp.Services.TranscriptTypography.Instance.ActivityFontSize,
                 TextWrapping = TextWrapping.Wrap,
                 // The active row is the only emphasised one, which is what the
                 // single-active rule buys the eye.

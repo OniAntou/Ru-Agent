@@ -87,7 +87,9 @@ public sealed class AgentActivityGrouperTests
 
         Assert.Equal(AgentActivityState.Failed, items[0].State);
         Assert.Equal("interrupted", items[0].SafeCode);
-        Assert.Equal("Failed", items[0].DisplayText);
+
+        // "Failed" alone left the reader unable to tell a stopped row from a refused one.
+        Assert.Equal("Stopped before finishing", items[0].DisplayText);
         Assert.True(items[0].IsVisibleInFeed);
         Assert.Equal(AgentActivityState.Failed, items[1].State);
         Assert.Equal(AgentActivityState.Completed, items[2].State);

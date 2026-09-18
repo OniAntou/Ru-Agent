@@ -71,7 +71,10 @@ public sealed class AgentActivityItemTests
             safeCode: "policy_denied"));
 
         Assert.True(item.IsFailed);
-        Assert.Equal("Failed", item.DisplayText);
+
+        // The row states the reason and the machine token stays in the metadata line, so a
+        // reader gets a sentence and a supporter gets the exact code.
+        Assert.Equal("Failed: policy denied", item.DisplayText);
         Assert.Equal("policy_denied", item.MetadataText);
     }
 
@@ -200,7 +203,7 @@ public sealed class AgentActivityItemTests
             AgentActivityState.Failed,
             kind: AgentActivityKind.Compaction,
             safeCode: "commit_conflict"));
-        Assert.Equal("Failed", compactionFailed.DisplayText);
+        Assert.Equal("Failed: commit conflict", compactionFailed.DisplayText);
         Assert.Equal("commit_conflict", compactionFailed.MetadataText);
 
         var retryStarted = new AgentActivityItem(Activity(
@@ -376,6 +379,52 @@ public sealed class AgentActivityItemTests
 
         Assert.True(applied);
         Assert.Equal(AgentActivityState.Completed, item.State);
+    }
+
+    /// <summary>
+    /// A failed row has to say something the reader can act on.
+    /// </summary>
+    /// <remarks>
+    /// It used to say "Failed" and nothing else, on every failure, while the row already
+    /// carried the reason in its safe code. Two very different problems — a lost connection
+    /// and a prompt the runtime refused — looked identical.
+    /// </remarks>
+    [Theory]
+    [InlineData("interrupted", "Stopped before finishing")]
+    [InlineData("model_failed", "Model call failed")]
+    [InlineData("prompt_contract_invalid", "Prompt rejected by the runtime")]
+    [InlineData("cancelled", "Cancelled")]
+    [InlineData("transport_failure", "Lost connection to the tool")]
+    [InlineData("reconciliation_required", "Stopped: the last change is unverified")]
+    public void A_failure_names_its_reason(string safeCode, string expected)
+    {
+        var item = new AgentActivityItem(
+            Activity(AgentActivityState.Failed, safeCode: safeCode));
+
+        Assert.Equal(expected, item.FailedText);
+    }
+
+    [Fact]
+    public void An_unrecognised_failure_code_is_still_more_than_the_word_failed()
+    {
+        // A code this build does not know must not degrade to a blank stare. The token is
+        // ugly, but it is a lead, and it is the only thing the row has.
+        var item = new AgentActivityItem(
+            Activity(AgentActivityState.Failed, safeCode: "some_new_reason"));
+
+        Assert.Equal("Failed: some new reason", item.FailedText);
+    }
+
+    [Fact]
+    public void Distinct_failures_do_not_read_the_same()
+    {
+        // The property that actually matters: the reader can tell two failures apart.
+        var lost = new AgentActivityItem(
+            Activity(AgentActivityState.Failed, safeCode: "transport_failure")).FailedText;
+        var refused = new AgentActivityItem(
+            Activity(AgentActivityState.Failed, safeCode: "prompt_contract_invalid")).FailedText;
+
+        Assert.NotEqual(lost, refused);
     }
 
     private static AgentActivityModel Activity(

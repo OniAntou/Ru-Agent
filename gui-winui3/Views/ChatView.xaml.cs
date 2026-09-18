@@ -1565,6 +1565,11 @@ namespace RuApp.Views
 
         private void ApplyActivityTextStyle(TextBlock textBlock, AgentActivityItem item)
         {
+            // Applied here rather than bound in markup. A binding inside a DataTemplate has
+            // to resolve the resource while the template is being parsed, and this one is
+            // registered from code, which is what made the app die on the first message.
+            textBlock.FontSize = Services.TranscriptTypography.Instance.ActivityFontSize;
+
             if (item.IsRunning)
             {
                 StartTextSweep(textBlock, item);

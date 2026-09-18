@@ -77,7 +77,7 @@ public sealed class ToolCatalogTests
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
 
         var capabilities = catalog.Registry.ListCapabilities();
-        Assert.Equal(10, capabilities.Count);
+        Assert.Equal(11, capabilities.Count);
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
 
         foreach (var binding in catalog.Registry.List())

@@ -79,6 +79,7 @@ public sealed class ToolCatalog
         yield return Manifest("read", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
         yield return Manifest("list", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("help", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
+        yield return Manifest("todo_write", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
         yield return Manifest("grep", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("glob", ToolScope.WorkspaceRead, RiskClass.Read, "builtin", workspace: false, extraScopes: [ToolScope.SystemRead]);
         yield return Manifest("write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);

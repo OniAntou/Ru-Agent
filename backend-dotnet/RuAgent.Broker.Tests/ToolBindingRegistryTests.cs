@@ -14,9 +14,9 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Chat)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        // list and help are read-only, so the Chat profile advertises them too.
+        // list, help and todo_write are read-only, so the Chat profile advertises them too.
         Assert.Equal(
-            new HashSet<string> { "read", "list", "help", "grep", "glob", "web_fetch", "web_search" },
+            new HashSet<string> { "read", "list", "help", "todo_write", "grep", "glob", "web_fetch", "web_search" },
             ids);
     }
 
@@ -130,7 +130,7 @@ public sealed class ToolBindingRegistryTests
             new[]
             {
                 "bash", "edit", "glob", "grep", "help", "list",
-                "read", "web_fetch", "web_search", "write",
+                "read", "todo_write", "web_fetch", "web_search", "write",
             },
             bound);
         Assert.DoesNotContain("app.open", bound);
@@ -147,6 +147,7 @@ public sealed class ToolBindingRegistryTests
         ["read"] = Succeeded,
         ["list"] = Succeeded,
         ["help"] = Succeeded,
+        ["todo_write"] = Succeeded,
         ["grep"] = Succeeded,
         ["glob"] = Succeeded,
         ["write"] = Succeeded,

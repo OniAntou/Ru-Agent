@@ -96,7 +96,7 @@ public sealed class BrokerSessionTests
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
             session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
@@ -177,7 +177,7 @@ public sealed class BrokerSessionTests
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
             lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 

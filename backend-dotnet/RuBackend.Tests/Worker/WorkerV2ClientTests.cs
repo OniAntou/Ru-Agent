@@ -625,7 +625,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             new[]
             {
-                "read", "list", "help", "grep", "glob",
+                "read", "list", "help", "todo_write", "grep", "glob",
                 "write", "edit", "bash", "web_search", "web_fetch",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));

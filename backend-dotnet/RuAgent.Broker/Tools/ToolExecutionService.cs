@@ -141,7 +141,13 @@ public sealed partial class ToolExecutionService : IToolInvoker
         _skillOrchestrator = new SkillOrchestrator(_catalog.Registry.Manifests, _policy, this);
     }
 
-    public void RemoveSession(string sessionId) => _approvals.RemoveSession(sessionId);
+    public void RemoveSession(string sessionId)
+    {
+        _approvals.RemoveSession(sessionId);
+        // A deleted session must not leave its plan behind: the store is keyed by
+        // session and nothing else would ever clear it.
+        _todos.Remove(sessionId);
+    }
 
     public void ClearPendingApprovals() => _approvals.Clear();
 
@@ -155,6 +161,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             ["read"] = ExecuteReadAsync,
             ["list"] = ExecuteListAsync,
             ["help"] = ExecuteHelpAsync,
+            ["todo_write"] = ExecuteTodoWriteAsync,
             ["grep"] = async (context, arguments, token) => ToolExecutionOutcome.Succeeded(
                 await ResolveTools(context, TargetPathOf(arguments)).Search.ExecuteAsync(
                     TranslateGrepArguments(arguments),

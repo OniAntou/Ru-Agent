@@ -322,6 +322,7 @@ public sealed class PolicyContextFactory
         "read" => PolicyOperationClasses.Read,
         "list" => PolicyOperationClasses.List,
         "help" => PolicyOperationClasses.Read,
+        "todo_write" => PolicyOperationClasses.Read,
         "grep" => PolicyOperationClasses.Search,
         "glob" => PolicyOperationClasses.Glob,
         "write" => WriteOpClass(OptionalText(arguments, "op")),

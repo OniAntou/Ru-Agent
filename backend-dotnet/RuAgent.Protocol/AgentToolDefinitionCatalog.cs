@@ -41,6 +41,7 @@ public static class AgentToolDefinitionCatalog
         new("read", "Read one workspace file as UTF-8 text. Use offset and limit to page through long files." + FilePathGuidance, AgentToolScopes.SystemRead, FileReadSchema, () => new JsonObject { ["path"] = "README.md" }),
         new("list", "List one workspace directory's entries with metadata, bounded by max_entries." + FilePathGuidance, AgentToolScopes.WorkspaceRead, FileListSchema, () => new JsonObject { ["path"] = "." }),
         new("help", "Search Ru's bundled offline documentation for product behavior, architecture, configuration, tools, providers, and operating boundaries. Returns stable document IDs and excerpts only; it never reads workspace files.", AgentToolScopes.SystemRead, HelpDocsSchema, () => new JsonObject { ["query"] = "approval reasons" }),
+        new("todo_write", "Replace the task list for this session. Send the complete list every time; it replaces the previous one. Use it to plan multi-step work and show progress: mark a task in_progress while working on it, completed the moment it is done, and keep at most one in_progress.", AgentToolScopes.SystemRead, TodoWriteSchema, () => new JsonObject { ["todos"] = new JsonArray(new JsonObject { ["content"] = "Read the failing test", ["status"] = "completed" }, new JsonObject { ["content"] = "Implement the validator", ["status"] = "in_progress" }) }),
         new("grep", "Search workspace file contents. Text or regex search with a glob filter and bounded results." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GrepSchema, () => new JsonObject { ["query"] = "TODO", ["path"] = "." }),
         new("glob", "Find workspace files by glob pattern. Bounded ordinal results with traversal caps." + FilePathGuidance, AgentToolScopes.WorkspaceRead, GlobSchema, () => new JsonObject { ["pattern"] = "**/*.cs", ["path"] = "." }),
         new("write", "Write, delete, or restore a file; policy still controls mutation and overwrite." + FilePathGuidance, AgentToolScopes.WorkspaceWrite, WriteSchema, () => new JsonObject { ["op"] = "write", ["path"] = "notes.txt", ["content"] = "new content" }),
@@ -144,6 +145,36 @@ public static class AgentToolDefinitionCatalog
     private static JsonObject FileDeleteSchema() => ObjectSchema(["path"], [("path", StringSchema())]);
     private static JsonObject FileRestoreSchema() => ObjectSchema(["recovery_id"], [("recovery_id", StringSchema(maxLength: 256))]);
     private static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
+
+    // The catalog declares its own bounds, as every other schema here does. Sharing the
+    // activity wire's constants would tie the model-visible contract to a display
+    // contract, and the two would then have to change together for no reason.
+    private const int MaximumTodoItems = 64;
+    private const int MaximumTodoContentLength = 200;
+
+    private static JsonObject TodoWriteSchema() => ObjectSchema(["todos"], [("todos", TodoListSchema())]);
+
+    /// <summary>
+    /// The task list argument.
+    /// </summary>
+    /// <remarks>
+    /// The schema enforces shape only: an array of objects carrying exactly these two
+    /// keys. It deliberately does NOT constrain content length or the status values, even
+    /// though it could. Doing so would make those two rejections unreachable in the
+    /// executor, and the model would see a generic `invalid_arguments` instead of
+    /// `todo_content_empty` or `todo_status_unknown` — leaving it no way to tell what was
+    /// wrong with the list it just sent. A stable, specific code is worth more than a
+    /// schema that says the same thing earlier and less helpfully.
+    /// </remarks>
+    private static JsonObject TodoListSchema() => new()
+    {
+        ["type"] = "array",
+        ["maxItems"] = MaximumTodoItems,
+        ["items"] = ObjectSchema(
+            ["content", "status"],
+            ("content", StringSchema(maxLength: MaximumTodoContentLength)),
+            ("status", StringSchema(maxLength: 32))),
+    };
     private static JsonObject TerminalRunSchema() => ObjectSchema(["executable"], [("executable", StringSchema(TerminalLimits.MaxExecutableChars)), ("arguments", ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars)), ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)), ("timeout_ms", IntegerSchema(1, TerminalLimits.HardMaxTimeoutMs)), ("network_intent", BooleanSchema()), ..TerminalWriteSetProperties()]);
     private static JsonObject TerminalShellSchema() => ObjectSchema(["script"], [("script", StringSchema(TerminalLimits.MaxScriptChars)), ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)), ("timeout_ms", IntegerSchema(1, TerminalLimits.HardMaxTimeoutMs)), ("network_intent", BooleanSchema()), ..TerminalWriteSetProperties()]);
     private static JsonObject WebSearchSchema() => ObjectSchema(["query"], [("query", StringSchema(512)), ("max_results", IntegerSchema(1, 10))]);

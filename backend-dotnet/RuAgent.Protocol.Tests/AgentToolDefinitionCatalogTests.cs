@@ -11,6 +11,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "read",
         "list",
         "help",
+        "todo_write",
         "grep",
         "glob",
         "write",
@@ -26,8 +27,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "system.status",
         "app.list",
         "notes.create",
-        "system.volume",
-        "files.list",
+        "system.volume",        "files.list",
         "files.glob",
         "files.search",
         "files.read",
@@ -48,7 +48,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(10, definitions.Count);
+        Assert.Equal(11, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }

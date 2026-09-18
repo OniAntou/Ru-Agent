@@ -85,7 +85,7 @@ public sealed class BrokerHostTests
             .ToArray();
         // help and read are system.read; list is workspace.read. All three are
         // read-only, so the chat profile advertises them alongside grep and glob.
-        Assert.Equal(new[] { "glob", "grep", "help", "list", "read" }, ids);
+        Assert.Equal(new[] { "glob", "grep", "help", "list", "read", "todo_write" }, ids);
         Assert.Empty(hello.Payload["skills"]!.AsArray());
     }
 
@@ -634,7 +634,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task V2_run_open_advertises_all_ten_capabilities()
+    public async Task V2_run_open_advertises_every_capability()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -665,7 +665,7 @@ public sealed class BrokerHostTests
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
             caps);
     }
 
@@ -704,7 +704,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
             caps);
     }
 
@@ -747,7 +747,7 @@ public sealed class BrokerHostTests
         // This fixture runs without a web executor, so the advertised set is the
         // canonical surface minus the two network tools.
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "write" },
             ids);
     }
 

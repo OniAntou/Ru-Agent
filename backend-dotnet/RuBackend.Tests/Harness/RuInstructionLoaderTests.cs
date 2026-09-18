@@ -96,8 +96,11 @@ public sealed class RuInstructionLoaderTests
         Assert.All(result.Blocks.Skip(1), block => Assert.Equal(PromptInstructionOrigin.ExternalSkill, block.Origin));
         Assert.Contains(result.Skips, skip => skip.Reason == "duplicate");
         var alpha = result.Blocks.Single(block => block.SourceId == "skill:alpha");
-        Assert.Contains("Workspace alpha", alpha.Content);
+        // Lazy skills: the prompt carries the name, description, and file path —
+        // never the full workflow body.
         Assert.Contains("Alpha", alpha.DisplayName, StringComparison.Ordinal);
+        Assert.Contains("SKILL.md", alpha.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("Workspace alpha", alpha.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("Alpha copy", StringComparison.Ordinal));
 
         var context = new SystemPromptContext(
@@ -114,7 +117,7 @@ public sealed class RuInstructionLoaderTests
     }
 
     [Fact]
-    public void Skips_later_skills_when_fixed_roots_consume_the_combined_instruction_cap()
+    public void Lazy_skill_descriptors_stay_small_no_matter_the_workflow_size()
     {
         using var fixture = TempRoot.Create();
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".ru"));
@@ -127,9 +130,13 @@ public sealed class RuInstructionLoaderTests
 
         var result = new RuInstructionLoader(localApplicationDataRoot: fixture.UserDataRoot).Load(fixture.Root);
 
+        // Descriptors are ~200 bytes each, so even 65KB workflows fit beside the
+        // fixed roots; the full bodies never enter the prompt.
         Assert.Contains(result.Blocks, block => block.SourceId == "skill:first");
-        Assert.DoesNotContain(result.Blocks, block => block.SourceId == "skill:second");
-        Assert.Contains(result.Skips, skip => skip.SourceId == "skill:second" && skip.Reason == "oversize");
+        Assert.Contains(result.Blocks, block => block.SourceId == "skill:second");
+        Assert.DoesNotContain(result.Skips, skip => skip.Reason == "oversize");
+        var first = result.Blocks.Single(block => block.SourceId == "skill:first");
+        Assert.DoesNotContain(new string('f', 100), first.Content, StringComparison.Ordinal);
     }
 
     private static void WriteSkill(string root, string directoryName, string content)

@@ -118,9 +118,8 @@ public sealed class SystemPromptComposerTests
         var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext());
 
         Assert.Contains("read@1.0.0", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("scope: workspace.read", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("input_schema:", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("example_arguments:", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("input_schema:", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("example_arguments:", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("\"tool_id\": \"read\"", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("emit exactly one JSON object", snapshot.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Do not claim success", snapshot.Text, StringComparison.Ordinal);

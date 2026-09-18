@@ -100,7 +100,10 @@ Describe the review workflow here.
 
 `allowed-tools` is descriptive metadata only; it never grants a tool, scope,
 path, network permission, approval, or Broker capability. The Host discovers
-only direct child skill directories and reads `SKILL.md`; adjacent
+only direct child skill directories and lists each skill lazily as
+name + description + `SKILL.md` path with the body version pinned in the
+receipt digest; the full workflow is pulled on demand with the read tool,
+never inlined. Adjacent
 `references/`, `assets/`, and `scripts/` files are ignored by discovery and are
 never automatically read or executed. Copying a package requires no downloader
 or package manager: the Host re-reads the roots when building a new prompt

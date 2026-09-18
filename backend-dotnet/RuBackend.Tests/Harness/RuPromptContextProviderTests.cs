@@ -56,7 +56,8 @@ public sealed class RuPromptContextProviderTests
         var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
         var thirdSkill = third.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
         Assert.NotEqual(firstSkill.ContentSha256, thirdSkill.ContentSha256);
-        Assert.Equal("changed skill body", thirdSkill.Content.Split("\n\n", 2)[1]);
+        Assert.Contains("SKILL.md", thirdSkill.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("changed skill body", thirdSkill.Content, StringComparison.Ordinal);
         Assert.NotEqual(first.InstructionBlocks[0].ContentSha256, second.InstructionBlocks[0].ContentSha256);
         Assert.Single(first.RuntimeContext.References);
         Assert.Equal("tool_result", first.RuntimeContext.References[0].Kind);

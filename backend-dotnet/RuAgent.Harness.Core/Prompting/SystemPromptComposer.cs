@@ -86,16 +86,13 @@ public static class SystemPromptComposer
         var lines = new List<string> { "HOST CAPABILITIES (host-derived; policy still applies):" };
         var available = capabilities.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
         bool Has(string id) => available.Contains(id);
+        // Thin listing (Pi-style): id, version, and one-line purpose only. Full
+        // schemas and examples travel through the provider's native tool
+        // interface and stay digest-bound in the receipt; pasting them here
+        // every step costs tokens without changing what the model may call.
         foreach (var item in capabilities)
         {
-            lines.Add($" - {item.Id}@{item.Version}");
-            lines.Add($"   description: {item.Description}");
-            lines.Add($"   scope: {item.Scope}; availability={item.Availability}");
-            lines.Add($"   input_schema: {item.InputSchemaJson}");
-            if (item.ExampleArgumentsJson is not null)
-            {
-                lines.Add($"   example_arguments: {item.ExampleArgumentsJson}");
-            }
+            lines.Add($" - {item.Id}@{item.Version}: {item.Description}");
         }
 
         if (nativeToolCalling)

@@ -73,8 +73,9 @@ is the only entry point: it reads the loopback descriptor or starts the Host.
 ## Tools
 
 **11 tools**, declared once in `RuAgent.Protocol` (`AgentToolDefinitionCatalog`). The
-Host projects the same id, version, scope, schema and digest into the prompt and the
-Worker's `model_tools`, and the Broker **refuses to start** if a manifest disagrees
+prompt lists each tool thinly (id, version, one-line purpose); the full schema
+and digest travel through the Worker's `model_tools` and stay digest-bound in
+the prompt receipt, and the Broker **refuses to start** if a manifest disagrees
 with the digest. Every schema is strict (`additionalProperties: false`).
 
 | Tool | Arguments | Purpose |

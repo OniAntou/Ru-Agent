@@ -3469,23 +3469,58 @@ namespace RuApp.Views
                 DetachAgentActivitiesFromMessages();
                 Messages.Clear();
                 var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
+                // Durable replay: session messages persist only role/content, so a session
+                // opened fresh would show a transcript of prose with every tool row missing.
+                // Rebuild the settled rows from each terminal run's durable events. This is
+                // what makes the activity feed survive leaving the session or closing the app;
+                // without it the rows exist only as transient frames and are gone the moment
+                // the live connection ends.
+                var replayedRuns = await LoadReplayedRunActivitiesAsync(CancellationToken.None);
+
+                static bool RendersAsAssistant(string role, string content) =>
+                    string.Equals(role, "assistant", StringComparison.Ordinal)
+                    && !ModelToolSelectionParser.LooksLikeToolSelection(StripDisplayMarkers(content));
+
+                int totalAssistants = history is null
+                    ? 0
+                    : history.Count(entry => RendersAsAssistant(entry.Role, entry.Content));
+
                 if (history != null)
                 {
+                    int assistantOrdinal = 0;
                     foreach (var (role, content) in history)
                     {
                         if (string.Equals(role, "assistant", StringComparison.Ordinal)
-                            && ModelToolSelectionParser.LooksLikeToolSelection(StripDisplayMarkers(content)))
+                            && !RendersAsAssistant(role, content))
                         {
                             continue;
                         }
 
-                        Messages.Add(new ChatMessageItem
+                        var item = new ChatMessageItem
                         {
                             Role = role,
                             Content = role == "assistant" ? StripDisplayMarkers(content) : content
-                        });
+                        };
+
+                        if (string.Equals(role, "assistant", StringComparison.Ordinal))
+                        {
+                            // The same tail-first alignment the end-of-turn reload uses, so a
+                            // session looks identical whether it was replayed on open or
+                            // rebuilt after its own turn.
+                            int replayIndex = ReloadActivitiesPolicy.ReplayIndexForAssistant(
+                                replayedRuns.Count, totalAssistants, assistantOrdinal);
+                            if (replayIndex >= 0 && replayedRuns[replayIndex].Count > 0)
+                            {
+                                item.AgentActivities =
+                                    new ObservableCollection<AgentActivityItem>(replayedRuns[replayIndex]);
+                            }
+
+                            assistantOrdinal++;
+                        }
+
+                        Messages.Add(item);
                     }
-                    
+
                     if (history.Count > 0)
                     {
                         ScrollChatToBottom();

@@ -87,9 +87,9 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, and
 references are not appended as separate system messages.
 
-Host capabilities are the runtime projection of the 8 Protocol-owned tool
-definitions: model tools (`read`, `grep`, `glob`, `write`, `edit`, `bash`,
-`web_search`, `web_fetch`). Each capability includes its ID/version, description, canonical
+Host capabilities are the runtime projection of the 11 Protocol-owned tool
+definitions: model tools (`read`, `list`, `help`, `todo_write`, `grep`, `glob`,
+`write`, `edit`, `bash`, `web_search`, `web_fetch`). Each capability includes its ID/version, description, canonical
 scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
 calls it through the provider's native function-calling interface when the
 dialect supports it (`chat_completions`; the adapter sends `tools` derived from
@@ -283,8 +283,8 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings advertise ten tools, one purpose each: `read`, `list`,
-`grep`, `glob`, `help`, `write` with
+The Worker v2 settings advertise eleven tools, one purpose each: `read`, `list`,
+`grep`, `glob`, `help`, `todo_write`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
 `web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root

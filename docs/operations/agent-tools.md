@@ -81,9 +81,15 @@ not advertised Agent tools.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 8 model-visible definitions (`read`,
-`glob`, `grep`, `write`, `edit`, `bash`, `web_search`, `web_fetch`). `read`
-carries an `op` discriminator (`list`, `read`, `help`); `glob` takes `pattern`
+The immutable Protocol catalog contains 11 model-visible definitions (`read`,
+`list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`,
+`web_search`, `web_fetch`). Each tool has one purpose: `read` takes `path` with
+optional `offset`/`limit` and reads one file; `list` takes `path` with optional
+`max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
+(1–5) and searches the five bundled offline documents; `todo_write` replaces the
+session task list (at most 64 rows of `content` plus a `status` of `pending`,
+`in_progress` or `completed`) and touches neither disk nor network.
+`glob` takes `pattern`
 (required) plus optional `path` and `max_results` (1–64, default 64) and returns
 stable sorted relative paths without content access; `grep` takes `query`
 (1–512 chars, required) plus optional `path`, `file_glob`, `case_sensitive`

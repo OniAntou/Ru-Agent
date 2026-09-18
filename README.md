@@ -59,7 +59,7 @@ RuBackend.exe --managed-runtime            127.0.0.1:8000
         ▼                  ▼
 RuAgent.Runtime.Worker            RuAgent.Broker
   127.0.0.1:8005                    dynamic loopback port
-  Worker v2: one step =             10 tools · policy · approvals
+  Worker v2: one step =             11 tools · policy · approvals
   one generate_reply                files · terminal · web
   chat_completions ·                path canonicalization · containment
   openai_responses ·                one Job Object per terminal call
@@ -72,7 +72,7 @@ is the only entry point: it reads the loopback descriptor or starts the Host.
 
 ## Tools
 
-**10 tools**, declared once in `RuAgent.Protocol` (`AgentToolDefinitionCatalog`). The
+**11 tools**, declared once in `RuAgent.Protocol` (`AgentToolDefinitionCatalog`). The
 Host projects the same id, version, scope, schema and digest into the prompt and the
 Worker's `model_tools`, and the Broker **refuses to start** if a manifest disagrees
 with the digest. Every schema is strict (`additionalProperties: false`).
@@ -84,13 +84,15 @@ with the digest. Every schema is strict (`additionalProperties: false`).
 | `grep` | `query`, `path`, `file_glob`, `case_sensitive`, `is_regex`, `max_results` (1–64) | Search file contents. |
 | `glob` | `pattern`, `path`, `max_results` (1–64) | Find files by pattern. |
 | `help` | `query` (1–256), `max_results` (1–5) | Search five bundled offline documents. |
+| `todo_write` | `todos` (max 64 rows of `content` + `status`) | Replace the session task list shown in the transcript. |
 | `write` | `op=write\|delete\|restore`, … | Write, delete with a recovery copy, or restore. |
 | `edit` | `path`, `old_string`, `new_string` | Replace an exact string. |
 | `bash` | `mode=run\|shell`, … | Run an executable or script with `timeout_ms`. |
 | `web_search` | `query` (1–512), `max_results` (1–10) | Search the web; approval each time. |
 | `web_fetch` | `url` (≤2048) | Fetch one page; approval each time. |
 
-`read`, `list`, `help`, `grep` and `glob` never prompt. `write`, `edit` and `bash` do.
+`read`, `list`, `help`, `todo_write`, `grep` and `glob` never prompt. `write`, `edit`
+and `bash` do.
 `web_search` and `web_fetch` always do.
 
 Every call is bounded — `read` caps at 256 KiB, `grep` at 64 results and 1 MiB per
@@ -171,7 +173,7 @@ Protocol digest, and the permission vocabulary below must stay accurate.
 │   ├── RuAgent.Runtime.Adapters/      # Three provider dialects
 │   ├── RuAgent.Harness.Core/          # State machines, prompt, tool pipeline
 │   ├── RuAgent.Harness.Persistence/   # SQLite schema v7, AES-GCM, outbox
-│   ├── RuAgent.Protocol/              # 10 tool definitions, envelopes, contracts
+│   ├── RuAgent.Protocol/              # 11 tool definitions, envelopes, contracts
 │   ├── RuAgent.Hosting/               # Layout, Job Object, descriptor
 │   ├── RuAgent.Client/                # Shared client library
 │   ├── RuAgent.Cli/                   # Terminal UI

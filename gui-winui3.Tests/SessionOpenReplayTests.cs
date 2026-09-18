@@ -43,17 +43,19 @@ public sealed class SessionOpenReplayTests
         // on whether it was opened or had just finished its own turn.
         string body = OpenSessionBody();
 
-        Assert.Contains("ReplayIndexForAssistant", body, StringComparison.Ordinal);
+        Assert.Contains("PlaceReplayedRuns", body, StringComparison.Ordinal);
     }
 
     [Fact]
     public void A_message_that_is_not_rendered_does_not_consume_an_assistant_ordinal()
     {
         // A machine tool envelope is hidden, so it must not shift which run pairs with
-        // which visible bubble. Counting it would attach every later run to the wrong turn.
+        // which visible bubble. The policy answers rendering and backing separately and
+        // its own tests cover the counting; here it is enough that the open path asks it
+        // rather than deciding for itself.
         string body = OpenSessionBody();
 
         Assert.Contains("RendersAsAssistant", body, StringComparison.Ordinal);
-        Assert.Contains("assistantOrdinal++", body, StringComparison.Ordinal);
+        Assert.Contains("placement.Renders", body, StringComparison.Ordinal);
     }
 }

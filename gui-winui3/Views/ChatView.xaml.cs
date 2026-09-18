@@ -3477,21 +3477,28 @@ namespace RuApp.Views
                 // the live connection ends.
                 var replayedRuns = await LoadReplayedRunActivitiesAsync(CancellationToken.None);
 
-                static bool RendersAsAssistant(string role, string content) =>
-                    string.Equals(role, "assistant", StringComparison.Ordinal)
-                    && !ModelToolSelectionParser.LooksLikeToolSelection(StripDisplayMarkers(content));
-
-                int totalAssistants = history is null
-                    ? 0
-                    : history.Count(entry => RendersAsAssistant(entry.Role, entry.Content));
-
                 if (history != null)
                 {
-                    int assistantOrdinal = 0;
-                    foreach (var (role, content) in history)
+                    // Which run backs which bubble is decided in one shared place, so this
+                    // path and the end-of-turn reload cannot drift apart. Rendering and
+                    // backing are separate answers: a bubble can render with no run behind
+                    // it, and a hidden envelope must consume neither a bubble nor a run.
+                    var placements = ReloadActivitiesPolicy.PlaceReplayedRuns(
+                        replayedRuns.Count,
+                        history
+                            .Select(entry => ReloadActivitiesPolicy.RendersAsAssistant(
+                                entry.Role,
+                                entry.Content,
+                                candidate => ModelToolSelectionParser.LooksLikeToolSelection(
+                                    StripDisplayMarkers(candidate))))
+                            .ToArray());
+
+                    for (int index = 0; index < history.Count; index++)
                     {
+                        var (role, content) = history[index];
+                        var placement = placements[index];
                         if (string.Equals(role, "assistant", StringComparison.Ordinal)
-                            && !RendersAsAssistant(role, content))
+                            && !placement.Renders)
                         {
                             continue;
                         }
@@ -3502,20 +3509,11 @@ namespace RuApp.Views
                             Content = role == "assistant" ? StripDisplayMarkers(content) : content
                         };
 
-                        if (string.Equals(role, "assistant", StringComparison.Ordinal))
+                        if (placement.ReplayIndex >= 0
+                            && replayedRuns[placement.ReplayIndex].Count > 0)
                         {
-                            // The same tail-first alignment the end-of-turn reload uses, so a
-                            // session looks identical whether it was replayed on open or
-                            // rebuilt after its own turn.
-                            int replayIndex = ReloadActivitiesPolicy.ReplayIndexForAssistant(
-                                replayedRuns.Count, totalAssistants, assistantOrdinal);
-                            if (replayIndex >= 0 && replayedRuns[replayIndex].Count > 0)
-                            {
-                                item.AgentActivities =
-                                    new ObservableCollection<AgentActivityItem>(replayedRuns[replayIndex]);
-                            }
-
-                            assistantOrdinal++;
+                            item.AgentActivities = new ObservableCollection<AgentActivityItem>(
+                                replayedRuns[placement.ReplayIndex]);
                         }
 
                         Messages.Add(item);

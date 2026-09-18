@@ -26,6 +26,64 @@ internal static class ReloadActivitiesPolicy
         liveCount > 0 && !liveAttached;
 
     /// <summary>
+    /// Whether a persisted message becomes a visible assistant bubble.
+    /// </summary>
+    /// <remarks>
+    /// A machine tool envelope is stored like any other assistant message but must never
+    /// render as chat text. It is the reason the ordinal below counts rendered bubbles
+    /// rather than persisted ones.
+    /// </remarks>
+    public static bool RendersAsAssistant(string? role, string? content, Func<string, bool> isToolSelection) =>
+        string.Equals(role, "assistant", StringComparison.Ordinal)
+        && !isToolSelection(content ?? string.Empty);
+
+    /// <summary>
+    /// What to render for one persisted message, and which run's rows back it.
+    /// </summary>
+    /// <param name="Renders">Whether the message becomes a visible assistant bubble.</param>
+    /// <param name="ReplayIndex">The run backing it, or -1 when no run does.</param>
+    public readonly record struct ReplayPlacement(bool Renders, int ReplayIndex);
+
+    /// <summary>
+    /// The run that backs each persisted message, oldest message first.
+    /// </summary>
+    /// <remarks>
+    /// One place decides which rows belong to which turn, shared by the open path and the
+    /// end-of-turn reload. Two rules would mean a session renders differently depending on
+    /// how it was reached, which is precisely the bug that made the feed look absent on
+    /// open while it was correct right after a turn.
+    ///
+    /// Rendering and backing are answered separately and deliberately. Deriving one from
+    /// the other is wrong in both directions: a bubble that renders may have no run behind
+    /// it, and a hidden machine envelope may sit in front of runs it must not claim.
+    /// </remarks>
+    public static IReadOnlyList<ReplayPlacement> PlaceReplayedRuns(
+        int runCount,
+        IReadOnlyList<bool> assistantFlags)
+    {
+        ArgumentNullException.ThrowIfNull(assistantFlags);
+
+        int totalAssistants = assistantFlags.Count(flag => flag);
+        var placements = new List<ReplayPlacement>(assistantFlags.Count);
+        int ordinal = 0;
+        foreach (bool renders in assistantFlags)
+        {
+            if (!renders)
+            {
+                placements.Add(new ReplayPlacement(false, -1));
+                continue;
+            }
+
+            placements.Add(new ReplayPlacement(
+                true,
+                ReplayIndexForAssistant(runCount, totalAssistants, ordinal)));
+            ordinal++;
+        }
+
+        return placements;
+    }
+
+    /// <summary>
     /// Maps a rendered assistant ordinal to its run's replayed rows, or -1 when
     /// no run backs it. Runs align tail-first: the newest run belongs to the
     /// newest assistant message. A denied/failed turn with no persisted text

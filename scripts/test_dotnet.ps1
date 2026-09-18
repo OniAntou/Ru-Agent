@@ -8,6 +8,35 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# One matrix at a time, machine-wide.
+#
+# The suite spawns real processes and drives real HTTP hosts, so it is sensitive to a busy
+# machine. A concurrent run -- another matrix, or a job that publishes and starts the app --
+# makes timing-sensitive tests fail for reasons that have nothing to do with the code. That
+# produced a red gate three separate times in one session, and every one of those runs was
+# green when repeated on an idle machine.
+#
+# Refusing to start is the honest answer: a gate that runs anyway and reports contention as a
+# defect teaches people to ignore it.
+$mutexName = "Global\ru-test-matrix-run"
+$matrixMutex = New-Object System.Threading.Mutex($false, $mutexName)
+$holdsMutex = $false
+try {
+    $holdsMutex = $matrixMutex.WaitOne(0)
+}
+catch [System.Threading.AbandonedMutexException] {
+    # A previous run died without releasing it. The mutex is ours now.
+    $holdsMutex = $true
+}
+
+if (-not $holdsMutex) {
+    [Console]::Error.WriteLine(
+        "Another test matrix is already running. These tests drive real processes, so a " +
+        "concurrent run fails them for reasons unrelated to the code. Wait for it to finish, " +
+        "or stop it, then run this again.")
+    exit 75
+}
+
 if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
     $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
     if ([string]::IsNullOrWhiteSpace($scriptDir)) {
@@ -61,8 +90,17 @@ foreach ($project in $projects) {
         [Console]::Error.WriteLine("Unable to start dotnet for '$($project.FullName)': $($_.Exception.Message)")
         exit 1
     }
+
+    # No retry. A failing project stops the matrix, and the first failure is the one reported.
+    #
+    # Retrying was tried and removed: it hides a genuinely flaky test instead of fixing it, and
+    # it breaks the contract that a failing project ends the run. The contention that made
+    # tests fail is prevented by the lock above rather than absorbed after the fact.
     if ($exitCode -ne 0) {
         [Console]::Error.WriteLine("dotnet test failed for '$($project.FullName)' with exit code $exitCode.")
         exit $exitCode
     }
 }
+
+$matrixMutex.ReleaseMutex()
+$matrixMutex.Dispose()

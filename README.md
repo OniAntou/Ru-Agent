@@ -129,9 +129,17 @@ Object.
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 3,349 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 3,478 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
+
+Run one matrix at a time. The suite starts real processes and drives real HTTP hosts, so a
+concurrent run — another matrix, or anything that publishes and starts the app — makes
+timing-sensitive tests fail for reasons that have nothing to do with the code. The script
+takes a machine-wide lock and refuses to start while one is held (exit code 75), rather than
+running anyway and reporting contention as a defect. That is the whole guard: a failure is
+reported as a failure, with no retry to blur it, because a retry would hide a genuinely
+flaky test instead of fixing it.
 
 `public-route-contract.json` is the source of truth for the **38 HTTP routes** (17
 non-Agent plus 21 under `/agent/v1/*`). A test compares the live `EndpointDataSource`

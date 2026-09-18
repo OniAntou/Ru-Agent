@@ -7,9 +7,16 @@ namespace RuApp.Controls
     /// <summary>Which decision the user made on a pending approval.</summary>
     public sealed class AgentApprovalDecidedEventArgs : EventArgs
     {
-        public AgentApprovalDecidedEventArgs(bool approved) => Approved = approved;
+        public AgentApprovalDecidedEventArgs(bool approved, string scope = "once")
+        {
+            Approved = approved;
+            Scope = scope;
+        }
 
         public bool Approved { get; }
+
+        /// <summary>Approval scope: "once" or "session" (external folders only).</summary>
+        public string Scope { get; }
     }
 
     /// <summary>
@@ -44,9 +51,11 @@ namespace RuApp.Controls
 
         /// <summary>
         /// Presents one pending approval. A blank command hides the command block, so
-        /// a non-terminal approval does not show an empty code box.
+        /// a non-terminal approval does not show an empty code box. The Always
+        /// affordance appears only for external-directory asks; every other reason
+        /// stays one-time because the server fails session scope closed for them.
         /// </summary>
-        public void Show(string summary, string? command)
+        public void Show(string summary, string? command, bool allowSessionDirectory = false)
         {
             SummaryText.Text = summary ?? string.Empty;
 
@@ -61,6 +70,8 @@ namespace RuApp.Controls
                 CommandContainer.Visibility = Visibility.Collapsed;
             }
 
+            AlwaysButton.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
+            SessionScopeHint.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
             Panel.Visibility = Visibility.Visible;
         }
 
@@ -69,6 +80,8 @@ namespace RuApp.Controls
             Panel.Visibility = Visibility.Collapsed;
             CommandText.Text = string.Empty;
             CommandContainer.Visibility = Visibility.Collapsed;
+            AlwaysButton.Visibility = Visibility.Collapsed;
+            SessionScopeHint.Visibility = Visibility.Collapsed;
         }
 
         /// <summary>
@@ -78,6 +91,7 @@ namespace RuApp.Controls
         public void SetDecisionEnabled(bool enabled)
         {
             ApproveButton.IsEnabled = enabled;
+            AlwaysButton.IsEnabled = enabled;
             DenyButton.IsEnabled = enabled;
         }
 
@@ -85,7 +99,10 @@ namespace RuApp.Controls
         public void FocusDecision() => ApproveButton?.Focus(FocusState.Programmatic);
 
         private void OnApproveClick(object sender, RoutedEventArgs e) =>
-            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true));
+            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "once"));
+
+        private void OnAlwaysClick(object sender, RoutedEventArgs e) =>
+            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "session"));
 
         private void OnDenyClick(object sender, RoutedEventArgs e) =>
             DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: false));

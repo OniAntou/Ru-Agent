@@ -24,4 +24,15 @@ internal static class ReloadActivitiesPolicy
     /// </summary>
     public static bool AppendOrphanedActivities(int liveCount, bool liveAttached) =>
         liveCount > 0 && !liveAttached;
+
+    /// <summary>
+    /// Maps a rendered assistant ordinal to its run's replayed rows, or -1 when
+    /// no run backs it. Runs align tail-first: the newest run belongs to the
+    /// newest assistant message. A denied/failed turn with no persisted text
+    /// shifts the head, never the tail, so recent turns stay correct.
+    /// </summary>
+    public static int ReplayIndexForAssistant(int runCount, int totalAssistants, int assistantOrdinal) =>
+        runCount - totalAssistants + assistantOrdinal is { } index && index >= 0 && index < runCount
+            ? index
+            : -1;
 }

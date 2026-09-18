@@ -141,6 +141,104 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
     }
 
 
+    /// <summary>
+    /// Lists the run ids of a session oldest-first. Fail-closed: any transport or
+    /// shape error surfaces as AgentApiException and the caller keeps the
+    /// text-only transcript instead of a partial activity feed.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListSessionRunIdsAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new AgentApiException("invalid_session_id", "Session id invalid.");
+        var url = new Uri(_session.BaseUri, $"agent/v1/sessions/{Uri.EscapeDataString(sessionId)}/runs?limit=100");
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
+        if (!resp.IsSuccessStatusCode)
+            throw new AgentApiException(ExtractErrorCode(body) ?? "session_runs_failed", body, (int)resp.StatusCode);
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<SessionRunsResponse>(body, JsonOptions);
+            if (result?.Items is null)
+                throw new AgentApiException("invalid_response", "Missing session run items.");
+            // Newest-first on the wire; the transcript aligns oldest-first.
+            return result.Items.Select(item => item.RunId).Reverse().ToArray();
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("invalid_response", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Replays a run's durable activity rows (tool + thinking) in feed order.
+    /// Each row parses through the same wire codec as the live transient frames,
+    /// so replayed rows render exactly like the ones watched live.
+    /// </summary>
+    public async Task<IReadOnlyList<AgentActivityModel>> ListRunActivitiesAsync(string runId, CancellationToken ct = default)
+    {
+        ValidateRunId(runId);
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/activities");
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
+        if (!resp.IsSuccessStatusCode)
+            throw new AgentApiException(ExtractErrorCode(body) ?? "run_activities_failed", body, (int)resp.StatusCode);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("activities", out var items)
+                || items.ValueKind != JsonValueKind.Array)
+                throw new AgentApiException("invalid_response", "Missing run activities.");
+            var rows = new List<AgentActivityModel>();
+            foreach (var item in items.EnumerateArray())
+            {
+                AgentActivityWire wire;
+                try
+                {
+                    wire = AgentActivityWireCodec.Parse(item.GetRawText());
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                rows.Add(new AgentActivityModel(
+                    wire.ActivityId,
+                    wire.Kind,
+                    wire.State,
+                    wire.FileName,
+                    wire.LineStart,
+                    wire.LineEnd,
+                    wire.Symbol,
+                    wire.Count,
+                    wire.Added,
+                    wire.Removed,
+                    wire.DurationMs,
+                    wire.SafeCode,
+                    wire.ToolDisplay,
+                    DurableSequence: null,
+                    TransientSequence: null,
+                    wire.Detail,
+                    wire.Todos));
+            }
+
+            return rows;
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("invalid_response", ex.Message);
+        }
+    }
+
     public async Task<string> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
     {
         ValidateRunId(runId);
@@ -287,8 +385,14 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
     {
         ValidateRunId(runId);
         if (string.IsNullOrWhiteSpace(approvalId)) throw new AgentApiException("invalid_approval_id", "approval_id invalid");
+        // Session scope exists only for external-directory approvals; the server
+        // fails anything else closed, so map explicitly and keep once as default.
+        string command = string.Equals(scope, "session", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(scope, "allow_session_directory", StringComparison.OrdinalIgnoreCase)
+            ? "allow_session_directory"
+            : "allow_once";
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/approvals/{approvalId}");
-        var payload = JsonSerializer.Serialize(new { command = "allow_once" });
+        var payload = JsonSerializer.Serialize(new { command });
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);

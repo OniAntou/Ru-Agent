@@ -18,6 +18,7 @@ public static class AgentV1Endpoints
         app.MapPost("/agent/v1/runs", CreateRunAsync);
         app.MapGet("/agent/v1/runs/{runId}", GetRunAsync);
         app.MapGet("/agent/v1/runs/{runId}/events", GetEventsAsync);
+        app.MapGet("/agent/v1/runs/{runId}/activities", GetRunActivitiesAsync);
         app.MapGet("/agent/v1/runs/{runId}/payloads/{payloadId}", GetPayloadAsync);
         app.MapPost("/agent/v1/runs/{runId}/approvals/{approvalId}", PostApprovalAsync);
         app.MapPost("/agent/v1/runs/{runId}/trust", PostTrustAsync);
@@ -168,6 +169,12 @@ public static class AgentV1Endpoints
     private static async Task<IResult> GetRunAsync(string runId, AgentV1Service service, CancellationToken ct)
     {
         var result = await service.GetRunAsync(runId, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> GetRunActivitiesAsync(string runId, AgentV1Service service, CancellationToken ct)
+    {
+        var result = await service.ListRunActivitiesAsync(runId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

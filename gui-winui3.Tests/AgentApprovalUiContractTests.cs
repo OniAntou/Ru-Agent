@@ -93,11 +93,12 @@ public sealed class AgentApprovalUiContractTests
 
         var named = GuiSource.NamedElements(GuiSource.Xml("Controls", "AgentApprovalPanelControl.xaml"));
 
-        // One panel, its summary, the command block, and the two decisions.
+        // One panel, its summary, the command block, the session-scope hint, and
+        // the three decisions (Always only appears for external folders).
         foreach (var required in new[]
                  {
                      "Panel", "SummaryText", "CommandContainer", "CommandText",
-                     "ApproveButton", "DenyButton",
+                     "ApproveButton", "AlwaysButton", "DenyButton", "SessionScopeHint",
                  })
         {
             Assert.True(named.ContainsKey(required), $"{required} must exist.");
@@ -130,6 +131,20 @@ public sealed class AgentApprovalUiContractTests
         var args = decision!.EventHandlerType!.GetMethod("Invoke")!.GetParameters()[1].ParameterType;
         Assert.Equal(typeof(RuApp.Controls.AgentApprovalDecidedEventArgs), args);
         Assert.NotNull(args.GetProperty("Approved"));
+        Assert.NotNull(args.GetProperty("Scope"));
+    }
+
+    [Fact]
+    public void Session_scope_is_offered_for_external_folders_only()
+    {
+        Assert.True(AgentApprovalPresentation.CanAllowSessionDirectory(
+            AgentApprovalSummaryPresentation.ExternalDirectoryRequired));
+        Assert.False(AgentApprovalPresentation.CanAllowSessionDirectory(
+            AgentApprovalSummaryPresentation.TerminalDeleteRequiresApproval));
+        Assert.False(AgentApprovalPresentation.CanAllowSessionDirectory(
+            AgentApprovalSummaryPresentation.WebApprovalRequired));
+        Assert.False(AgentApprovalPresentation.CanAllowSessionDirectory(null));
+        Assert.False(AgentApprovalPresentation.CanAllowSessionDirectory("future_reason_code"));
     }
 
     [Fact]
@@ -158,6 +173,7 @@ public sealed class AgentApprovalUiContractTests
         foreach (var method in new[]
                  {
                      nameof(AgentRunController.ApproveAsync),
+                     nameof(AgentRunController.ApproveSessionDirectoryAsync),
                      nameof(AgentRunController.DenyAsync),
                      nameof(AgentRunController.CancelAsync),
                  })

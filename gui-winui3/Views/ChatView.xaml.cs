@@ -1890,7 +1890,10 @@ namespace RuApp.Views
                     controller.PendingApprovalCommand,
                     AgentActivities);
 
-                ApprovalPanel.Show(summary, terminalCommand);
+                ApprovalPanel.Show(
+                    summary,
+                    terminalCommand,
+                    AgentApprovalPresentation.CanAllowSessionDirectory(controller.PendingApprovalSummary));
 
                 // Approval arrives via SSE while the user may be scrolled up; bring
                 // the Approve/Deny prompt into view and put the keyboard on it.
@@ -2887,6 +2890,11 @@ namespace RuApp.Views
                 normalizedHistory,
                 streamedReply);
 
+            // Durable replay: session messages persist only role/content, so a fresh
+            // load would drop every tool row. Rebuild settled rows from each terminal
+            // run's durable events; the live turn keeps its in-memory rows below.
+            var replayedRuns = await LoadReplayedRunActivitiesAsync(cancellationToken);
+
             void Apply()
             {
                 _suppressContextUsageUpdate = true;
@@ -2935,6 +2943,11 @@ namespace RuApp.Views
                     bool attachLive = SessionHistoryProjection.AttachLiveToLastAssistant(
                         projectedHistory.Count, lastAssistantIndex, AgentActivities.Count);
                     bool liveAttached = false;
+                    // Runs align to rendered assistant turns tail-first: the newest
+                    // run belongs to the newest assistant message. A denied/failed
+                    // turn with no persisted text shifts the head, never the tail.
+                    int totalAssistants = projectedHistory.Count(row =>
+                        string.Equals(row.Role, "assistant", StringComparison.Ordinal) && row.Render);
                     for (int index = 0; index < projectedHistory.Count; index++)
                     {
                         var row = projectedHistory[index];
@@ -2971,6 +2984,25 @@ namespace RuApp.Views
                                 activities = existingActivities[assistantCount];
                                 splitOffsets = assistantCount < existingOffsets.Count ? existingOffsets[assistantCount] : null;
                             }
+
+                            if (activities is null)
+                            {
+                                int replayIndex = Services.ReloadActivitiesPolicy.ReplayIndexForAssistant(
+                                    replayedRuns.Count, totalAssistants, assistantCount);
+                                if (replayIndex >= 0
+                                    && replayedRuns[replayIndex].Count > 0)
+                                {
+                                    activities = new ObservableCollection<AgentActivityItem>(replayedRuns[replayIndex]);
+                                    // Register by id so live frames for a still-running
+                                    // run update these rows in place instead of
+                                    // appending duplicates beside them.
+                                    foreach (var replayed in activities)
+                                    {
+                                        _agentActivityById.TryAdd(replayed.ActivityId, replayed);
+                                    }
+                                }
+                            }
+
                             assistantCount++;
                         }
 
@@ -3045,6 +3077,71 @@ namespace RuApp.Views
             }
 
             return preserveStreamedReply ? streamedReply : latestAssistant;
+        }
+
+        /// <summary>
+        /// Rebuilds settled activity rows for every terminal run of the session,
+        /// oldest-first and positionally aligned with the run list (a non-terminal
+        /// or unreadable run keeps an empty placeholder so tail alignment holds).
+        /// Best-effort: any failure yields empty rows and the text-only transcript.
+        /// </summary>
+        private async Task<IReadOnlyList<IReadOnlyList<AgentActivityItem>>> LoadReplayedRunActivitiesAsync(
+            CancellationToken cancellationToken)
+        {
+            var empty = Array.AsReadOnly(Array.Empty<IReadOnlyList<AgentActivityItem>>());
+            if (_apiService is null || string.IsNullOrWhiteSpace(_activeSessionId))
+            {
+                return empty;
+            }
+
+            var runs = await _apiService.ListSessionRunIdsAsync(_activeSessionId, cancellationToken);
+            if (runs is null || runs.Count == 0 || cancellationToken.IsCancellationRequested)
+            {
+                return empty;
+            }
+
+            var slots = new IReadOnlyList<AgentActivityItem>?[runs.Count];
+            using var gate = new SemaphoreSlim(4);
+            var tasks = new List<Task>(runs.Count);
+            for (int index = 0; index < runs.Count; index++)
+            {
+                int slot = index;
+                string runId = runs[slot].RunId;
+                tasks.Add(Task.Run(async () =>
+                {
+                    await gate.WaitAsync(cancellationToken);
+                    try
+                    {
+                        var models = await _apiService.ListRunActivitiesAsync(runId, cancellationToken);
+                        slots[slot] = models is null
+                            ? Array.AsReadOnly(Array.Empty<AgentActivityItem>())
+                            : models.Select(model => new AgentActivityItem(model)).ToArray();
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        slots[slot] = Array.AsReadOnly(Array.Empty<AgentActivityItem>());
+                    }
+                    catch (Exception)
+                    {
+                        slots[slot] = Array.AsReadOnly(Array.Empty<AgentActivityItem>());
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
+                }, cancellationToken));
+            }
+
+            try
+            {
+                await Task.WhenAll(tasks);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return empty;
+            }
+
+            return slots.Select(slot => slot ?? Array.AsReadOnly(Array.Empty<AgentActivityItem>())).ToArray();
         }
 
 
@@ -3310,7 +3407,9 @@ namespace RuApp.Views
         {
             await RunAgentActionAsync(
                 () => e.Approved
-                    ? _agentController?.ApproveAsync() ?? Task.CompletedTask
+                    ? string.Equals(e.Scope, "session", StringComparison.Ordinal)
+                        ? _agentController?.ApproveSessionDirectoryAsync() ?? Task.CompletedTask
+                        : _agentController?.ApproveAsync() ?? Task.CompletedTask
                     : _agentController?.DenyAsync() ?? Task.CompletedTask,
                 e.Approved ? "Submitting approval…" : "Denying approval…");
         }

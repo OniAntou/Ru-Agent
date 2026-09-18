@@ -196,6 +196,31 @@ public sealed class AgentApiClientTests
         Assert.Equal(3, result.RunVersion);
     }
 
+    [Theory]
+    [InlineData("once", "allow_once")]
+    [InlineData("session", "allow_session_directory")]
+    [InlineData("allow_session_directory", "allow_session_directory")]
+    [InlineData("bogus", "allow_once")]
+    public async Task Approve_maps_scope_to_exactly_one_server_command(string scope, string expectedCommand)
+    {
+        var session = Session();
+        string? sentCommand = null;
+        var handler = new FakeHandler(request =>
+        {
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            sentCommand = JsonDocument.Parse(body).RootElement.GetProperty("command").GetString();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}", Encoding.UTF8, "application/json"),
+            };
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        await client.ApproveAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", scope);
+
+        Assert.Equal(expectedCommand, sentCommand);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

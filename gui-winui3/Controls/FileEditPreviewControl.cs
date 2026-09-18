@@ -125,6 +125,7 @@ namespace RuApp.Controls
 
         public FileEditPreviewControl()
         {
+            HorizontalAlignment = HorizontalAlignment.Stretch;
             _fileNameBlock = new TextBlock
             {
                 FontFamily = UiFont,
@@ -258,6 +259,7 @@ namespace RuApp.Controls
             {
                 CornerRadius = new CornerRadius(8),
                 BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Background = GetThemeBrush("RuSurfaceBrush", FallbackSurfaceBrush),
                 BorderBrush = GetThemeBrush("RuLineBrush", FallbackLineBrush),
                 Child = rootGrid

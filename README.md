@@ -12,7 +12,7 @@ nothing to install.
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-3%2C349%20passing-3FB950)](#testing)
 [![Tools](https://img.shields.io/badge/tools-10-8B5CF6)](#tools)
-[![Routes](https://img.shields.io/badge/routes-37%20HTTP-6E7681)](#testing)
+[![Routes](https://img.shields.io/badge/routes-38%20HTTP-6E7681)](#testing)
 
 </div>
 
@@ -51,7 +51,7 @@ RuApp.exe (WinUI 3)                 RuAgent.Cli.exe (TUI)
                           │
                           ▼
 RuBackend.exe --managed-runtime            127.0.0.1:8000
-  ASP.NET Core Minimal APIs · 37 routes · loopback bearer
+  ASP.NET Core Minimal APIs · 38 routes · loopback bearer
   sessions · history · durable harness · SQLite WAL
   owns one Windows Job Object (kill-on-close) for the whole child tree
         │                                     │
@@ -132,8 +132,8 @@ Object.
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
-`public-route-contract.json` is the source of truth for the **37 HTTP routes** (17
-non-Agent plus 20 under `/agent/v1/*`). A test compares the live `EndpointDataSource`
+`public-route-contract.json` is the source of truth for the **38 HTTP routes** (17
+non-Agent plus 21 under `/agent/v1/*`). A test compares the live `EndpointDataSource`
 against that file, so adding or removing a route without updating it fails CI.
 
 Two guards protect the interface, not the wording: no tool manifest may drift from its

@@ -16,7 +16,7 @@
             Padding="14,12"
             Margin="0,0,0,4"
             AutomationProperties.AutomationId="AgentApprovalPanel">
-        <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE7BA;" FontSize="13" Foreground="{StaticResource RuWarningBrush}" VerticalAlignment="Center" />
                 <TextBlock Text="PERMISSION REQUIRED"
@@ -89,6 +89,28 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
+                <Button x:Name="AlwaysButton"
+                        Click="OnAlwaysClick"
+                        Visibility="Collapsed"
+                        AutomationProperties.AutomationId="AgentAlwaysButton"
+                        AutomationProperties.Name="Approve for this chat session"
+                        Background="Transparent"
+                        Foreground="{StaticResource RuInkBrush}"
+                        BorderBrush="{StaticResource RuLineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RuControlCornerRadius}"
+                        Padding="14,6"
+                        Height="32">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
+                        <TextBlock Text="Always"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12"
+                                   FontWeight="Medium"
+                                   Foreground="{StaticResource RuInkBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <Button x:Name="DenyButton"
                         Click="OnDenyClick"
                         AutomationProperties.AutomationId="AgentDenyButton"
@@ -111,6 +133,15 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
+            <TextBlock x:Name="SessionScopeHint"
+                       Grid.Row="4"
+                       Visibility="Collapsed"
+                       Text="Always opens this folder for the chat only. The grant is lost when the app closes."
+                       TextWrapping="Wrap"
+                       FontFamily="{StaticResource RuUiFontFamily}"
+                       FontSize="11"
+                       Foreground="{StaticResource RuMutedBrush}"
+                       AutomationProperties.AutomationId="AgentApprovalScopeHint" />
         </Grid>
     </Border>
 </UserControl>

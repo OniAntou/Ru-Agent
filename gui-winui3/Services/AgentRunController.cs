@@ -435,6 +435,25 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Approves an external-directory request for the whole chat session. Only
+    /// offered when the pending ask reason is external_directory_required; the
+    /// server fails anything else closed and the grant dies with the session.
+    /// </summary>
+    public async Task ApproveSessionDirectoryAsync(CancellationToken cancellationToken = default)
+    {
+        var runId = CurrentRun?.RunId;
+        var approvalId = PendingApprovalId;
+        if (runId is null || approvalId is null)
+        {
+            throw new InvalidOperationException("No Agent approval is pending.");
+        }
+
+        RunOnUi(() => _statusText = "Submitting approval...");
+        await _client.ApproveAsync(runId, approvalId, "session", cancellationToken).ConfigureAwait(false);
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task DenyAsync(CancellationToken cancellationToken = default)
     {
         var runId = CurrentRun?.RunId;

@@ -29,6 +29,16 @@
                         <Setter Target="HeaderActionsPanel.(Grid.Column)" Value="0"/>
                         <Setter Target="HeaderActionsPanel.(Grid.ColumnSpan)" Value="2"/>
                         <Setter Target="HeaderActionsPanel.HorizontalAlignment" Value="Left"/>
+                        <Setter Target="ResponsiveRoot.Padding" Value="20,16,20,20"/>
+                        <Setter Target="QueueMetricPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="DroppedMetricPanel.(Grid.Column)" Value="2"/>
+                        <Setter Target="DroppedMetricPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="FailuresMetricPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="FailuresMetricPanel.(Grid.Column)" Value="0"/>
+                        <Setter Target="FailuresMetricPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="FilesMetricPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="FilesMetricPanel.(Grid.Column)" Value="2"/>
+                        <Setter Target="FilesMetricPanel.(Grid.ColumnSpan)" Value="2"/>
                     </VisualState.Setters>
                 </VisualState>
 
@@ -48,6 +58,16 @@
                         <Setter Target="LevelFilterCombo.HorizontalAlignment" Value="Stretch"/>
                         <Setter Target="PauseButton.HorizontalAlignment" Value="Stretch"/>
                         <Setter Target="ExportButton.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="ResponsiveRoot.Padding" Value="12,12,12,16"/>
+                        <Setter Target="QueueMetricPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="DroppedMetricPanel.(Grid.Column)" Value="2"/>
+                        <Setter Target="DroppedMetricPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="FailuresMetricPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="FailuresMetricPanel.(Grid.Column)" Value="0"/>
+                        <Setter Target="FailuresMetricPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="FilesMetricPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="FilesMetricPanel.(Grid.Column)" Value="2"/>
+                        <Setter Target="FilesMetricPanel.(Grid.ColumnSpan)" Value="2"/>
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
@@ -60,7 +80,7 @@
                 <TextBlock Text="Monitor operational metrics, event codes, and correlation IDs in real time" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 
-            <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <VariableSizedWrapGrid x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" MaximumRowsOrColumns="6">
             <TextBox x:Name="ComponentFilterBox" PlaceholderText="Component…" AutomationProperties.Name="Filter by component" Width="120" Margin="4,0"
                      TextChanged="OnComponentFilterChanged" FontSize="12.5" Padding="8,6"
                      CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
@@ -86,7 +106,7 @@
                     Click="OnExportClicked" Foreground="{StaticResource AppAccentHoverBrush}" Background="{StaticResource AppAccentSubtleBrush}"
                     BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
                     HorizontalAlignment="Right"/>
-            </StackPanel>
+            </VariableSizedWrapGrid>
         </Grid>
 
         <!-- Warning Alert Banner -->

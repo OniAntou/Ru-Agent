@@ -7,7 +7,7 @@ date: 2026-08-13
 
 Ru keeps the authenticated public contract in ASP.NET Core. The original
 decision covered 41 HTTP routes and 2 WebSocket routes; the current contract is
-37 HTTP routes, including 20 `/agent/v1/*` routes, with no WebSocket route (the
+38 HTTP routes, including 21 `/agent/v1/*` routes, with no WebSocket route (the
 media surfaces were removed on 2026-09-13). Python product processes no longer
 exist; any future private
 adapter

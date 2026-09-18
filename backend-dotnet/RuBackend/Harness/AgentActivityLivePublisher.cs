@@ -4,6 +4,7 @@ using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
 using ProtocolActivityKind = RuAgent.Protocol.Harness.AgentActivityKind;
 using ProtocolActivityState = RuAgent.Protocol.Harness.AgentActivityState;
 using ProtocolActivityWire = RuAgent.Protocol.Harness.AgentActivityWire;
+using ProtocolTodoWire = RuAgent.Protocol.Harness.AgentTodoWire;
 using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness;
@@ -39,11 +40,23 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
             activity.DurationMs,
             activity.SafeCode,
             activity.ToolDisplay,
-            activity.Detail);
+            activity.Detail,
+            MapTodos(activity.Todos));
         AgentActivityWireValidator.Validate(wire);
         var json = AgentActivityWireCodec.Serialize(wire);
         _liveEvents.TryPublish(runId, "agent.activity", json);
     }
+
+    /// <summary>
+    /// Maps the Core task rows onto the wire form.
+    /// </summary>
+    /// <remarks>
+    /// A null list stays null rather than becoming an empty array: "this activity
+    /// carries no list" and "the list is empty" are different statements, and the
+    /// optional wire field already expresses the first.
+    /// </remarks>
+    private static IReadOnlyList<ProtocolTodoWire>? MapTodos(IReadOnlyList<AgentTodoRow>? todos) =>
+        todos?.Select(todo => new ProtocolTodoWire(todo.Content, todo.Status)).ToArray();
 
     private static ProtocolActivityKind MapKind(CoreActivityKind kind) => kind switch
     {
@@ -56,6 +69,7 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
         CoreActivityKind.Compaction => ProtocolActivityKind.Compaction,
         CoreActivityKind.Retry => ProtocolActivityKind.Retry,
         CoreActivityKind.Status => ProtocolActivityKind.Status,
+        CoreActivityKind.Todo => ProtocolActivityKind.Todo,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

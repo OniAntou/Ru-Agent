@@ -7,6 +7,118 @@ namespace RuBackend.Tests.Harness;
 public sealed class AgentActivityProtocolTests
 {
     [Fact]
+    public void Parse_accepts_a_todo_list_and_round_trips_it()
+    {
+        const string json = """
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded",
+             "todos":[{"content":"Read the catalog","status":"completed"},
+                      {"content":"Add the tool","status":"in_progress"}]}
+            """;
+
+        var wire = AgentActivityWireCodec.Parse(json);
+
+        Assert.NotNull(wire.Todos);
+        Assert.Equal(2, wire.Todos!.Count);
+        Assert.Equal("Read the catalog", wire.Todos[0].Content);
+        Assert.Equal("completed", wire.Todos[0].Status);
+        Assert.Equal("in_progress", wire.Todos[1].Status);
+        Assert.Equal(AgentActivityKind.Todo, wire.Kind);
+
+        var serialized = AgentActivityWireCodec.Serialize(wire);
+        Assert.Contains("todos", serialized, StringComparison.Ordinal);
+        Assert.Equal(2, AgentActivityWireCodec.Parse(serialized).Todos!.Count);
+    }
+
+    [Fact]
+    public void A_todo_activity_without_a_list_is_still_valid()
+    {
+        // The activity is a general envelope; a todo activity that clears the list
+        // carries no rows rather than an empty array.
+        var wire = AgentActivityWireCodec.Parse(
+            """{"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded"}""");
+
+        Assert.Null(wire.Todos);
+    }
+
+    [Theory]
+    [InlineData("blocked")]
+    [InlineData("")]
+    [InlineData("Pending")]
+    public void Parse_rejects_a_todo_with_an_unknown_status(string status)
+    {
+        var json = $$"""
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded",
+             "todos":[{"content":"x","status":"{{status}}"}]}
+            """;
+
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(json));
+    }
+
+    [Fact]
+    public void Parse_rejects_a_todo_with_an_unknown_key()
+    {
+        const string json = """
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded",
+             "todos":[{"content":"x","status":"pending","priority":1}]}
+            """;
+
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(json));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Parse_rejects_a_todo_with_blank_content(string content)
+    {
+        var json = $$"""
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded",
+             "todos":[{"content":"{{content}}","status":"pending"}]}
+            """;
+
+        // An empty array entry still reaches the validator, so this asserts the row
+        // check rather than the envelope check.
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(json));
+    }
+
+    [Fact]
+    public void Parse_rejects_more_todos_than_the_bound()
+    {
+        string items = string.Join(
+            ",",
+            Enumerable.Range(0, 65).Select(index => $$"""{"content":"t{{index}}","status":"pending"}"""));
+        var json = $$"""
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded","todos":[{{items}}]}
+            """;
+
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(json));
+    }
+
+    [Fact]
+    public void Parse_accepts_exactly_the_todo_bound()
+    {
+        string items = string.Join(
+            ",",
+            Enumerable.Range(0, 64).Select(index => $$"""{"content":"t{{index}}","status":"pending"}"""));
+        var json = $$"""
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded","todos":[{{items}}]}
+            """;
+
+        Assert.Equal(64, AgentActivityWireCodec.Parse(json).Todos!.Count);
+    }
+
+    [Fact]
+    public void Parse_rejects_todo_content_over_the_bound()
+    {
+        string content = new string('x', 201);
+        var json = $$"""
+            {"activity_id":"act_1","kind":"todo","state":"completed","safe_code":"succeeded",
+             "todos":[{"content":"{{content}}","status":"pending"}]}
+            """;
+
+        Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(json));
+    }
+
+    [Fact]
     public void Serialize_omits_unavailable_optional_fields_and_uses_wire_tokens()
     {
         var activity = new AgentActivityWire(

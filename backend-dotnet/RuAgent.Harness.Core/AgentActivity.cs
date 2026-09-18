@@ -11,6 +11,7 @@ public enum AgentActivityKind
     Compaction,
     Retry,
     Status,
+    Todo,
 }
 
 public enum AgentActivityState
@@ -20,6 +21,17 @@ public enum AgentActivityState
     Failed,
     Waiting,
 }
+
+/// <summary>
+/// One row of the agent's task list, inside the Core boundary.
+/// </summary>
+/// <remarks>
+/// The Core form of a task row. The Protocol has its own wire form and the Broker its
+/// own validated form, and each stays in its own layer: Core does not reference the
+/// Broker, so it cannot borrow that one, and reusing the wire record would put
+/// serialization attributes in the middle of the domain.
+/// </remarks>
+public sealed record AgentTodoRow(string Content, string Status);
 
 /// <summary>
 /// Safe activity data created inside the Core boundary. It intentionally has no raw
@@ -41,4 +53,5 @@ public sealed record AgentActivity(
     int? DurationMs = null,
     string SafeCode = "succeeded",
     string? ToolDisplay = null,
-    string? Detail = null);
+    string? Detail = null,
+    IReadOnlyList<AgentTodoRow>? Todos = null);

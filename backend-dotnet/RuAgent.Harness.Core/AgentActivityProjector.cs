@@ -319,6 +319,31 @@ public static class AgentActivityProjector
             ToolDisplay: null,
             Detail: ClampDetail(detail));
 
+    /// <summary>
+    /// Projects the agent's task list after a write.
+    /// </summary>
+    /// <remarks>
+    /// The whole list travels, never a delta. The model replaces the list wholesale, so
+    /// the view's state is always exactly what the last write said, and a viewer that
+    /// missed an earlier activity still draws the truth.
+    /// </remarks>
+    public static AgentActivity ProjectTodos(
+        string activityId,
+        IReadOnlyList<AgentTodoRow> todos)
+    {
+        ArgumentNullException.ThrowIfNull(activityId);
+        ArgumentNullException.ThrowIfNull(todos);
+
+        return new(
+            activityId,
+            AgentActivityKind.Todo,
+            AgentActivityState.Completed,
+            SafeCode: "succeeded",
+            ToolDisplay: null,
+            Detail: null,
+            Todos: todos.ToArray());
+    }
+
     public static AgentActivity ProjectDropped(
         ModelStepId modelStepId,
         bool toolFrames,

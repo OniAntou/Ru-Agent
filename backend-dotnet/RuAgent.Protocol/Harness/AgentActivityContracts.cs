@@ -14,6 +14,7 @@ public enum AgentActivityKind
     Compaction,
     Retry,
     Status,
+    Todo,
 }
 
 public enum AgentActivityState
@@ -23,6 +24,33 @@ public enum AgentActivityState
     Failed,
     Waiting,
 }
+
+/// <summary>
+/// The statuses a task list row may carry.
+/// </summary>
+public static class AgentTodoStatuses
+{
+    public const string Pending = "pending";
+    public const string InProgress = "in_progress";
+    public const string Completed = "completed";
+
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>(
+        [Pending, InProgress, Completed],
+        StringComparer.Ordinal);
+}
+
+/// <summary>
+/// One row of the agent's task list.
+/// </summary>
+/// <remarks>
+/// Deliberately minimal: a display line and a three-state status. The list is replaced
+/// wholesale on every write, so a row needs no stable identity, and an id would be one
+/// more field for the model to get wrong. Status is a plain string rather than an enum
+/// so an unrecognised value is a parse failure instead of a silent fallback.
+/// </remarks>
+public sealed record AgentTodoWire(
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("status")] string Status);
 
 public sealed record AgentActivityWire(
     [property: JsonPropertyName("activity_id")] string ActivityId,
@@ -38,7 +66,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("duration_ms")] int? DurationMs = null,
     [property: JsonPropertyName("safe_code")] string SafeCode = "succeeded",
     [property: JsonPropertyName("tool_display")] string? ToolDisplay = null,
-    [property: JsonPropertyName("detail")] string? Detail = null);
+    [property: JsonPropertyName("detail")] string? Detail = null,
+    [property: JsonPropertyName("todos")] IReadOnlyList<AgentTodoWire>? Todos = null);
 
 public static class AgentActivityWireCodec
 {
@@ -100,6 +129,8 @@ public static class AgentActivityWireValidator
     public const int MaximumSafeCodeLength = 64;
     public const int MaximumToolDisplayLength = 32;
     public const int MaximumDetailLength = 4_000;
+    public const int MaximumTodos = 64;
+    public const int MaximumTodoContentLength = 200;
 
     private static readonly HashSet<string> AllowedProperties = new(StringComparer.Ordinal)
     {
@@ -117,6 +148,7 @@ public static class AgentActivityWireValidator
         "safe_code",
         "tool_display",
         "detail",
+        "todos",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -189,6 +221,46 @@ public static class AgentActivityWireValidator
                 && value.ValueKind != JsonValueKind.String)
             {
                 throw new JsonException($"Activity field '{propertyName}' must be a string token.");
+            }
+        }
+
+        ValidateTodoShape(root);
+    }
+
+    /// <summary>
+    /// Rejects any key on a task list row besides content and status.
+    /// </summary>
+    /// <remarks>
+    /// The top-level allowlist does not reach into nested objects, so without this a row
+    /// could carry a field the contract does not define and the deserializer would
+    /// quietly drop it. A dropped `priority` is a field the model believes is working,
+    /// which is worse than a rejection it can see.
+    /// </remarks>
+    private static void ValidateTodoShape(JsonElement root)
+    {
+        if (!root.TryGetProperty("todos", out var todos))
+        {
+            return;
+        }
+
+        if (todos.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException("Activity field 'todos' must be an array.");
+        }
+
+        foreach (var row in todos.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("Activity todo row must be an object.");
+            }
+
+            foreach (var property in row.EnumerateObject())
+            {
+                if (property.Name is not ("content" or "status"))
+                {
+                    throw new JsonException($"Activity todo field '{property.Name}' is not allowed.");
+                }
             }
         }
     }
@@ -264,6 +336,40 @@ public static class AgentActivityWireValidator
 
         ValidateToolDisplay(activity.ToolDisplay);
         ValidateDetail(activity.Detail);
+        ValidateTodos(activity.Todos);
+    }
+
+    /// <summary>
+    /// Validates the task list carried by a todo activity.
+    /// </summary>
+    /// <remarks>
+    /// Each row is checked rather than trusted. The list is model-authored, so it is
+    /// input like any other tool argument: a blank line cannot be displayed, an
+    /// unrecognised status cannot be drawn, and an unbounded list would be an
+    /// unbounded allocation in the view.
+    /// </remarks>
+    private static void ValidateTodos(IReadOnlyList<AgentTodoWire>? todos)
+    {
+        if (todos is null)
+        {
+            return;
+        }
+
+        if (todos.Count > MaximumTodos)
+        {
+            throw new JsonException("Activity todo list is too long.");
+        }
+
+        foreach (var todo in todos)
+        {
+            if (todo is null
+                || string.IsNullOrWhiteSpace(todo.Content)
+                || todo.Content.Length > MaximumTodoContentLength
+                || !AgentTodoStatuses.All.Contains(todo.Status))
+            {
+                throw new JsonException("Activity todo item is invalid.");
+            }
+        }
     }
 
     private static void ValidateFileName(string? fileName)

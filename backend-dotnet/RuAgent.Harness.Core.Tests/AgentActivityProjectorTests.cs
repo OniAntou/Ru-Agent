@@ -520,6 +520,53 @@ public sealed class AgentActivityProjectorTests
         Assert.Equal("retrying", activity.SafeCode);
     }
 
+    /// <summary>
+    /// The task-list tool is its own kind, not a nameless status line.
+    /// </summary>
+    /// <remarks>
+    /// It used to match no case in the kind map, so it fell to the default, became a Status
+    /// activity, and had its metadata deliberately stripped -- the one row that explains the
+    /// plan said nothing about it. Nothing failed; the row simply read "Completed".
+    /// </remarks>
+    [Fact]
+    public void ProjectTool_gives_the_task_list_its_own_kind()
+    {
+        var proposal = Proposal("todo_write", "{\"todos\":[{\"content\":\"a\",\"status\":\"pending\"}]}");
+
+        var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Todo, activity.Kind);
+        Assert.Equal("Plan", activity.ToolDisplay);
+    }
+
+    [Fact]
+    public void ProjectTool_still_reports_an_unknown_tool_as_a_status_line()
+    {
+        // The default is for genuinely unknown tools, and must stay that way: giving the
+        // task list a case must not swallow everything else.
+        var proposal = Proposal("something_new", "{}");
+
+        var activity = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
+
+        Assert.Equal(AgentActivityKind.Status, activity.Kind);
+    }
+
+    [Fact]
+    public void ProjectTodos_carries_the_number_of_tasks()
+    {
+        // The row reads "Planned 4 tasks" from this count, and a replayed row is built from
+        // the same projection, so the live and restored feeds agree.
+        var activity = AgentActivityProjector.ProjectTodos(
+            "act_todo_11111111111111111111111111111111",
+            [
+                new AgentTodoRow("one", "pending"),
+                new AgentTodoRow("two", "in_progress"),
+            ]);
+
+        Assert.Equal(2, activity.Count);
+        Assert.Equal(2, activity.Todos!.Count);
+    }
+
     private static ToolProposal Proposal(string toolId, string arguments)
     {
         using var document = JsonDocument.Parse(arguments);

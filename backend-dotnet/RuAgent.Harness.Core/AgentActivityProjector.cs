@@ -48,6 +48,10 @@ public static class AgentActivityProjector
             ("read", "read") => AgentActivityKind.Analyze,
             ("write", _) or ("edit", _) => AgentActivityKind.Edit,
             ("bash", _) => AgentActivityKind.Terminal,
+            // Without this the tool fell to the default below and was reported as a bare
+            // status line with its metadata deliberately stripped, so the one row that
+            // explains the plan said nothing about it.
+            ("todo_write", _) => AgentActivityKind.Todo,
             _ => AgentActivityKind.Status,
         };
 
@@ -338,6 +342,7 @@ public static class AgentActivityProjector
             activityId,
             AgentActivityKind.Todo,
             AgentActivityState.Completed,
+            Count: todos.Count,
             SafeCode: "succeeded",
             ToolDisplay: null,
             Detail: null,
@@ -409,6 +414,7 @@ public static class AgentActivityProjector
             ("bash", _) => "Terminal",
             ("web_fetch", _) => "Fetch",
             ("read", "help") => "Docs",
+            ("todo_write", _) => "Plan",
             _ => null,
         };
 

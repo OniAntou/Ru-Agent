@@ -235,6 +235,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     public string StartedText => Kind switch
     {
         AgentActivityKind.Thinking => "Thinking",
+        AgentActivityKind.Todo => "Updating the plan",
         AgentActivityKind.Explore => FileName is { Length: > 0 } file
             ? $"Exploring {file}"
             : Count is { } count ? (count == 1 ? "Exploring 1 item" : $"Exploring {count} items") : "Exploring",
@@ -253,12 +254,31 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             : "Compacting context",
         AgentActivityKind.Retry => Count is { } attempt ? $"Retrying (attempt {attempt})" : "Retrying",
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
+        AgentActivityKind.Status => StatusWaitingText(SafeCode),
         _ => "Working…",
+    };
+
+    /// <summary>
+    /// What a waiting Status row says, by reason.
+    /// </summary>
+    /// <remarks>
+    /// These rows carry the only explanation of why a run is paused, so they state the
+    /// reason rather than repeating that something is waiting.
+    /// </remarks>
+    private static string StatusWaitingText(string safeCode) => safeCode switch
+    {
+        "inspection_required" => "Waiting: a read-only check is needed first",
+        "reconciliation_required" => "Stopped: the last change is unverified",
+        { Length: > 0 } code => "Waiting: " + code.Replace('_', ' '),
+        _ => "Waiting",
     };
 
     public string CompletedText => Kind switch
     {
         AgentActivityKind.Thinking => DurationText(),
+        AgentActivityKind.Todo => Count is { } planned
+            ? (planned == 1 ? "Planned 1 task" : $"Planned {planned} tasks")
+            : "Plan updated",
         AgentActivityKind.Explore => FileName is { Length: > 0 } file
             ? $"Explored {file}"
             : Count is { } count ? (count == 1 ? "Explored 1 item" : $"Explored {count} items") : "Explored",
@@ -276,13 +296,31 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             ? (compacted == 1 ? "Compacted 1 context item" : $"Compacted {compacted} context items")
             : "Compacted context",
         AgentActivityKind.Retry => "Retried",
-        AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
+        AgentActivityKind.Status => StatusText(SafeCode),
         _ => "Completed",
     };
 
     public string WaitingText => Kind == AgentActivityKind.Status
         ? "Waiting for confirmation"
         : "Waiting to continue";
+
+    /// <summary>
+    /// What a Status row says when its safe code names nothing more specific.
+    /// </summary>
+    /// <remarks>
+    /// The old default was the word "Completed", which described the state and not the
+    /// activity: several unrelated rows all read the same, and a reader could not tell what
+    /// had completed. A status row exists to explain something, so when it has no
+    /// explanation it falls back to naming itself rather than to a synonym for "done".
+    /// </remarks>
+    private static string StatusText(string safeCode) => safeCode switch
+    {
+        "frames_dropped" => "Some steps were temporarily skipped",
+        "inspection_required" => "Waiting: an action needs a read-only check first",
+        "reconciliation_required" => "Stopped: the last change is unverified",
+        { Length: > 0 } code => "Status: " + code.Replace('_', ' '),
+        _ => "Status update",
+    };
 
     /// <summary>
     /// What a failed row says.

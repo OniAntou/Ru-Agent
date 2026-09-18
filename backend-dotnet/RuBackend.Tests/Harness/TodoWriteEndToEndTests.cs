@@ -92,7 +92,11 @@ public sealed class TodoWriteEndToEndTests
         // the transcript renders from. The rows are asserted, not just the frame name: an
         // activity that arrived empty would pass a name-only check.
         var todos = await ReadTodoActivityAsync(lease);
-        Assert.True(todos is not null, "no todo activity was fanned out to the subscriber");
+        Assert.True(
+            todos is not null,
+            LastFrames.Count == 0
+                ? "no activity frame was fanned out to the subscriber"
+                : "no todo activity was fanned out; saw: " + string.Join(", ", LastFrames));
 
         Assert.Equal(3, todos!.Value.GetArrayLength());
         Assert.Equal("Read the failing test", todos.Value[0].GetProperty("content").GetString());
@@ -105,14 +109,26 @@ public sealed class TodoWriteEndToEndTests
 
 
     /// <summary>
-    /// Reads activity frames from the subscription until the todo list appears.
+    /// The frames the last read saw, so a missing row reports what arrived instead of only
+    /// that something did not.
+    /// </summary>
+    private static List<string> LastFrames { get; } = [];
+
+    /// <summary>
+    /// Reads activity frames until one carries the task list.
     /// </summary>
     /// <remarks>
+    /// The kind alone is not enough to identify the list. The tool row and the row holding
+    /// the list are both of kind todo -- the tool row goes out first, in its started state,
+    /// with no list on it -- so the frame is identified by carrying rows, not by its name.
+    /// Returning on the first frame of the right kind read the tool row and found nothing.
+    ///
     /// Returns null when the frames run out or the wait expires, so the caller reports a
     /// missing list rather than an unrelated timeout.
     /// </remarks>
     private static async Task<JsonElement?> ReadTodoActivityAsync(HarnessLiveEventHub.HubLease lease)
     {
+        LastFrames.Clear();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         while (!timeout.IsCancellationRequested)
         {
@@ -130,21 +146,22 @@ public sealed class TodoWriteEndToEndTests
                 return null;
             }
 
+            using var wire = JsonDocument.Parse(frame.Data);
+            string kind = wire.RootElement.TryGetProperty("kind", out var wireKind)
+                ? wireKind.GetString() ?? "?"
+                : "?";
+            LastFrames.Add($"{frame.Kind}/{kind}");
+
             if (!string.Equals(frame.Kind, "agent.activity", StringComparison.Ordinal))
             {
                 continue;
             }
 
-            using var wire = JsonDocument.Parse(frame.Data);
-            if (!wire.RootElement.TryGetProperty("kind", out var wireKind)
-                || wireKind.GetString() != "todo")
+            if (wire.RootElement.TryGetProperty("todos", out var todos)
+                && todos.ValueKind == JsonValueKind.Array)
             {
-                continue;
+                return todos.Clone();
             }
-
-            return wire.RootElement.TryGetProperty("todos", out var todos)
-                ? todos.Clone()
-                : null;
         }
 
         return null;

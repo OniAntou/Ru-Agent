@@ -1498,6 +1498,7 @@ namespace RuApp.Views
             if (displayText == null) return;
 
             ApplyActivityTextStyle(displayText, item);
+            RenderTodoChecklist(grid, item);
 
             PropertyChangedEventHandler handler = (s, args) =>
             {
@@ -1518,6 +1519,35 @@ namespace RuApp.Views
             };
             item.PropertyChanged += handler;
             grid.Tag = (handler, displayText, item);
+        }
+
+        /// <summary>
+        /// Draws the agent's task list on the activity that carries one.
+        /// </summary>
+        /// <remarks>
+        /// The rows are pushed into the control rather than bound, because the payload is
+        /// an array that arrives whole on each activity: there is nothing to observe and
+        /// no per-row change to propagate.
+        ///
+        /// A row without a list is left alone rather than cleared. Only the activity that
+        /// carries a list owns the checklist, so an unrelated activity arriving later
+        /// cannot blank the plan.
+        /// </remarks>
+        private static void RenderTodoChecklist(DependencyObject root, AgentActivityItem item)
+        {
+            if (item.Todos is not { Count: > 0 } todos)
+            {
+                return;
+            }
+
+            foreach (var descendant in EnumerateDescendants(root))
+            {
+                if (descendant is Controls.TodoChecklistControl checklist)
+                {
+                    checklist.Render(todos);
+                    return;
+                }
+            }
         }
 
         private void DetachActivityItem(Grid grid, bool clearEntrance = true)

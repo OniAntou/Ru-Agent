@@ -8,6 +8,7 @@ namespace RuApp.Models;
 public sealed class AgentActivityItem : INotifyPropertyChanged
 {
     private AgentActivityKind _kind;
+    private IReadOnlyList<TodoItemModel>? _todos;
     private AgentActivityState _state;
     private string? _fileName;
     private int? _lineStart;
@@ -35,6 +36,27 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         get => _kind;
         private set => SetProperty(ref _kind, value);
     }
+
+    /// <summary>
+    /// The agent's task list, or null for an activity that carries none.
+    /// </summary>
+    /// <remarks>
+    /// Rows rather than the wire record, so the template binds to display-ready state
+    /// and does not have to know about status strings.
+    /// </remarks>
+    public IReadOnlyList<TodoItemModel>? Todos
+    {
+        get => _todos;
+        private set
+        {
+            if (SetProperty(ref _todos, value))
+            {
+                OnPropertyChanged(nameof(HasTodos));
+            }
+        }
+    }
+
+    public bool HasTodos => _todos is { Count: > 0 };
 
     public AgentActivityState State
     {
@@ -409,6 +431,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         {
             Detail = activity.Detail;
         }
+
+        // The producer replaces the list wholesale, so the newest activity carrying one
+        // is the whole truth and there is nothing to merge here.
+        Todos = activity.Todos is { Count: > 0 } rows
+            ? rows.Select(row => new TodoItemModel(row.Content, row.Status)).ToArray()
+            : null;
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));

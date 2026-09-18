@@ -183,6 +183,16 @@
                                                  Margin="0,6,0,0"
                                                  MaxWidth="760"
                                                  AutomationProperties.Name="File edit preview" />
+                <!--
+                  The agent's task list. Read-only: nothing here is clickable, because the
+                  agent plans and the user watches. The rows come from the activity that
+                  carries them, so the control has no binding of its own.
+                -->
+                <controls:TodoChecklistControl x:Name="TodoChecklist"
+                                               Visibility="{x:Bind HasTodos, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                               Margin="0,6,0,0"
+                                               MaxWidth="760"
+                                               AutomationProperties.Name="Agent task list" />
                 <!-- State bindings (used by automation & contract tests) -->
                 <Border Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                 <Border Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />

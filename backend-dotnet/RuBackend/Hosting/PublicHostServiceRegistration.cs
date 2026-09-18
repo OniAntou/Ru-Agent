@@ -249,7 +249,18 @@ internal static class PublicHostServiceRegistration
                 var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
                 return run is null || run.TerminalAt.HasValue;
             }));
-        services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
+        // A scripted model replaces the worker connection entirely when requested, so the
+        // whole product can be exercised without a provider key. Registered before the
+        // loopback runner because the last registration wins, and this one has to win.
+        var scriptedRunner = RuBackend.Harness.ScriptedModelStepRunner.FromEnvironment();
+        if (scriptedRunner is not null)
+        {
+            services.AddSingleton<IModelStepRunner>(scriptedRunner);
+        }
+        else
+        {
+            services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
+        }
         if (isManagedRuntime)
         {
             services.AddHostedService<RuAgent.Hosting.ParentProcessWatcher>();

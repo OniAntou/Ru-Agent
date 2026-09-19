@@ -13,6 +13,19 @@
 | Plugins | Không còn plugin media trong repo: voice/STT, VTube Studio, screen observation và native overlay đã gỡ hẳn; `RU_MEDIA_SURFACES` không còn được đọc. `build.bat` chỉ còn 12 stage thuần coding core. Xem `docs/architecture.md` mục "Coding core and plugins". |
 | `git diff --check` | passed |
 
+> **Job Object: cửa sổ spawn trước khi assign đã đóng (2026-09-19).**
+> Trước đây `WorkerBrokerProcessManager` tạo con bằng `Process.Start` rồi mới `job.Assign`, nên một
+> tiến trình cháu sinh ra trong khoảng giữa hai bước đó không thuộc job nào và sống sót qua
+> `KILL_ON_JOB_CLOSE`. Đã tái hiện trên Windows: con trực tiếp chết, cháu sống. Nguyên nhân: .NET có
+> đưa con vào một job riêng, nhưng chuyển nó sang job của thư viện lại đưa nó ra khỏi job đó.
+> Nay con được tạo ở trạng thái suspended qua `CreateProcessW` + `CREATE_SUSPENDED`, assign vào job,
+> rồi mới `ResumeThread` (`SuspendedProcess`, `WorkerBrokerProcessManager`). Tiến trình suspended
+> không chạy code nào nên không thể sinh cháu trước khi vào job. Đã kiểm chứng end-to-end trên bản
+> publish: host lên, Worker/Broker phục vụ `/models` 200, stdout/stderr vẫn được ghi ra bootstrap log,
+> shutdown còn 0 process, descriptor và session root được xoá, 2 cổng nhả.
+> Test: `OwnedProcessTreeTests.DescendantCreatedAfterResumeCannotOutliveTheJob` (đã kiểm tra là fail
+> khi `Resume` bị vô hiệu, tức test thật sự bắt được hồi quy).
+
 ## Pi Phase 3: worker dual-port compat + /worker alias (2026-09-09, cập nhật 2026-09-10)
 
 > Ghi chú 2026-09-10: section này từng ghi "bind 1 port duy nhất" — đã sai sau

@@ -10,4 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RuAgent.Hosting.Tests" />
+  </ItemGroup>
 </Project>

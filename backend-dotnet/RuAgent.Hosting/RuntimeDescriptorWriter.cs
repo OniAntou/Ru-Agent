@@ -40,22 +40,17 @@ public sealed class RuntimeDescriptorWriter
         }
 
         var tempPath = _descriptorPath + ".tmp-" + Guid.NewGuid().ToString("N");
-        await File.WriteAllTextAsync(tempPath, json, cancellationToken).ConfigureAwait(false);
+        await OwnerOnlyFile.WriteAllTextAsync(tempPath, json, cancellationToken).ConfigureAwait(false);
 
         try
         {
-            if (OperatingSystem.IsWindows())
-            {
-                RestrictToCurrentUser(tempPath);
-            }
-
             // Atomic replace: move temp over target
             // Ensure atomic via File.Move with overwrite (NET 6+)
             File.Move(tempPath, _descriptorPath, overwrite: true);
 
             if (OperatingSystem.IsWindows())
             {
-                RestrictToCurrentUser(_descriptorPath);
+                OwnerOnlyFile.RestrictToCurrentUser(_descriptorPath);
             }
         }
         finally
@@ -180,22 +175,8 @@ public sealed class RuntimeDescriptorWriter
         }
     }
 
-    private static void RestrictToCurrentUser(string path)
-    {
-        if (!OperatingSystem.IsWindows()) return;
-        // Fail closed: a descriptor we cannot protect must not be published.
-        var fileInfo = new FileInfo(path);
-        var security = fileInfo.GetAccessControl();
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        var identity = WindowsIdentity.GetCurrent().User;
-        if (identity is not null)
-        {
-            var rule = new FileSystemAccessRule(identity, FileSystemRights.FullControl, AccessControlType.Allow);
-            security.SetAccessRule(rule);
-        }
-
-        fileInfo.SetAccessControl(security);
-    }
+    private static void RestrictToCurrentUser(string path) =>
+        OwnerOnlyFile.RestrictToCurrentUser(path);
 }
 
 public static class RuntimeDescriptorValidator

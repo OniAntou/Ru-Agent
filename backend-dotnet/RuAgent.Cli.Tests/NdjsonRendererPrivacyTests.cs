@@ -188,6 +188,49 @@ public sealed class NdjsonRendererPrivacyTests
         Assert.False(NdjsonEventRenderer.ContainsForbidden("{\"safe_summary\":\"ok\"}"));
     }
 
+    /// <summary>
+    /// The guard is applied to a serialized line, and System.Text.Json escapes a
+    /// content quote as <c>\u0022</c>. Before this was handled the check could never
+    /// fire on real serializer output — every forbidden name arrived escaped — so
+    /// the raw stream text it was meant to catch passed through.
+    /// </summary>
+    [Fact]
+    public void ContainsForbidden_SeesForbiddenNamesThroughJsonEscaping()
+    {
+        var escaped = JsonSerializer.Serialize(new
+        {
+            v = 1,
+            type = "transient",
+            data_preview = "{\"command\":\"git push origin main\",\"output\":\"stdout bytes\"}",
+        });
+
+        // The literal spelling is absent from the payload, which is why the old
+        // substring check was blind to it.
+        Assert.DoesNotContain("\"command\"", escaped, StringComparison.Ordinal);
+        Assert.True(NdjsonEventRenderer.ContainsForbidden(escaped));
+    }
+
+    /// <summary>
+    /// A transient frame carries raw model text or tool output. The documented
+    /// tracer contract is safe envelope fields only, so the payload text is
+    /// withheld and only its size is reported.
+    /// </summary>
+    [Fact]
+    public void Ndjson_TransientFrameNeverInlinesRawStreamContent()
+    {
+        const string rawContent = "SECRET_TOOL_STDOUT_0123456789";
+        var frame = new SseFrame(null, "transient", rawContent, true, 4);
+
+        var sw = new StringWriter();
+        NdjsonEventRenderer.RenderFrame(frame, sw);
+        var line = sw.ToString().Trim();
+
+        Assert.DoesNotContain(rawContent, line, StringComparison.Ordinal);
+        Assert.DoesNotContain("data_preview", line, StringComparison.Ordinal);
+        var doc = JsonDocument.Parse(line);
+        Assert.Equal(rawContent.Length, doc.RootElement.GetProperty("data_bytes").GetInt32());
+    }
+
     [Fact]
     public void Ndjson_Emits_Usage_Totals_When_Present()
     {

@@ -1,0 +1,342 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace RuAgent.Hosting;
+
+/// <summary>
+/// Starts a child process suspended, so it can be placed in a Job Object before it
+/// executes a single instruction.
+/// </summary>
+/// <remarks>
+/// <see cref="Process.Start"/> returns after the child's main thread is already
+/// running. Assigning the child to a job afterwards leaves a window in which the
+/// child can create a descendant that belongs to no job this application closes, so
+/// that descendant outlives the run. Measured on Windows: the direct child dies with
+/// the job, the descendant does not.
+///
+/// A child created with <c>CREATE_SUSPENDED</c> cannot run user code until
+/// <c>ResumeThread</c>, so no descendant can exist before the assignment. Verified to
+/// close the window end to end.
+///
+/// .NET still performs the process creation, so stdout/stderr capture, the working
+/// directory and the environment keep their existing shape: the read ends of two
+/// pipes are wrapped in <see cref="StreamReader"/> exactly as
+/// <c>Process.StandardOutput</c>/<c>StandardError</c> would be, and the caller's
+/// <see cref="ProcessStartInfo.Environment"/> is written to a Unicode environment
+/// block. .NET's own automatic job object is irrelevant here: the child is out of any
+/// job once it is assigned to this one, and because it was suspended there is nothing
+/// left behind when that happens.
+/// </remarks>
+internal static class SuspendedProcess
+{
+    private const uint CreateSuspended = 0x00000004;
+    private const uint CreateNoWindow = 0x08000000;
+    private const uint CreateUnicodeEnvironment = 0x00000400;
+    private const int StartfUseStdHandles = 0x00000100;
+    private const uint HandleFlagInherit = 0x00000001;
+
+    internal sealed record StartedProcess(
+        Process Process,
+        SafeFileHandle ThreadHandle,
+        StreamReader StandardOutput,
+        StreamReader StandardError);
+
+    /// <summary>
+    /// Creates the process described by <paramref name="startInfo"/> without letting it
+    /// run. The caller must assign it to a job and then call <see cref="Resume"/>.
+    /// </summary>
+    internal static StartedProcess StartSuspended(ProcessStartInfo startInfo)
+    {
+        ArgumentNullException.ThrowIfNull(startInfo);
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Suspended process creation requires Windows.");
+        }
+
+        SafeFileHandle? stdinRead = null;
+        SafeFileHandle? stdinWrite = null;
+        SafeFileHandle? stdoutRead = null;
+        SafeFileHandle? stdoutWrite = null;
+        SafeFileHandle? stderrRead = null;
+        SafeFileHandle? stderrWrite = null;
+        IntPtr environmentBlock = IntPtr.Zero;
+        var inheritHandles = new List<SafeFileHandle>();
+        try
+        {
+            // stdin is an empty pipe whose write end closes immediately: the child reads
+            // EOF instead of inheriting a console.
+            (stdinRead, stdinWrite) = CreateInheritablePipe();
+            stdinWrite.Dispose();
+            stdinWrite = null;
+
+            (stdoutRead, stdoutWrite) = CreateInheritablePipe();
+            (stderrRead, stderrWrite) = CreateInheritablePipe();
+
+            inheritHandles.Add(stdoutWrite);
+            inheritHandles.Add(stderrWrite);
+
+            var commandLine = BuildCommandLine(startInfo.FileName, startInfo.Arguments);
+            environmentBlock = BuildEnvironmentBlock(startInfo.Environment);
+
+            var startupInfo = new StartupInfo
+            {
+                cb = Marshal.SizeOf<StartupInfo>(),
+                dwFlags = StartfUseStdHandles,
+                hStdInput = stdinRead.DangerousGetHandle(),
+                hStdOutput = stdoutWrite.DangerousGetHandle(),
+                hStdError = stderrWrite.DangerousGetHandle(),
+            };
+
+            var workingDirectory = string.IsNullOrWhiteSpace(startInfo.WorkingDirectory)
+                ? null
+                : startInfo.WorkingDirectory;
+
+            var created = CreateProcess(
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                inheritHandles: true,
+                CreateSuspended | CreateNoWindow | CreateUnicodeEnvironment,
+                environmentBlock,
+                workingDirectory,
+                ref startupInfo,
+                out var processInformation);
+            if (!created)
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    $"Could not create {startInfo.FileName}.");
+            }
+
+            // The process handle is not needed: Process opens its own. The thread handle
+            // is what ResumeThread needs.
+            CloseHandle(processInformation.hProcess);
+
+            SafeFileHandle stdout = stdoutRead;
+            SafeFileHandle stderr = stderrRead;
+            stdoutRead = null;
+            stderrRead = null;
+
+            // Process.StandardOutput/StandardError are only populated by Process.Start,
+            // so the readers are handed back directly rather than attached to it.
+            var process = Process.GetProcessById(processInformation.dwProcessId);
+            var standardOutput = new StreamReader(
+                new FileStream(stdout, FileAccess.Read),
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true);
+            var standardError = new StreamReader(
+                new FileStream(stderr, FileAccess.Read),
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true);
+
+            return new StartedProcess(
+                process,
+                new SafeFileHandle(processInformation.hThread, ownsHandle: true),
+                standardOutput,
+                standardError);
+        }
+        catch
+        {
+            SafeClose(stdinRead);
+            SafeClose(stdoutRead);
+            SafeClose(stderrRead);
+            throw;
+        }
+        finally
+        {
+            SafeClose(stdinWrite);
+            SafeClose(stdoutWrite);
+            SafeClose(stderrWrite);
+            if (environmentBlock != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(environmentBlock);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lets the suspended main thread run. Returns false when the thread is already
+    /// gone, which means the process exited while it was suspended.
+    /// </summary>
+    internal static bool Resume(SafeFileHandle threadHandle)
+    {
+        ArgumentNullException.ThrowIfNull(threadHandle);
+        if (threadHandle.IsInvalid || threadHandle.IsClosed)
+        {
+            return false;
+        }
+
+        return ResumeThread(threadHandle) != unchecked((uint)-1);
+    }
+
+    private static (SafeFileHandle Read, SafeFileHandle Write) CreateInheritablePipe()
+    {
+        var attributes = new SecurityAttributes
+        {
+            nLength = Marshal.SizeOf<SecurityAttributes>(),
+            bInheritHandle = 1,
+        };
+        if (!CreatePipe(out var read, out var write, ref attributes, 0))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not create a child process pipe.");
+        }
+
+        // Only the end the child writes to travels across the process boundary.
+        if (!SetHandleInformation(read, HandleFlagInherit, 0))
+        {
+            var error = Marshal.GetLastWin32Error();
+            read.Dispose();
+            write.Dispose();
+            throw new Win32Exception(error, "Could not restrict pipe handle inheritance.");
+        }
+
+        return (read, write);
+    }
+
+    private static string BuildCommandLine(string executable, string arguments)
+    {
+        var builder = new StringBuilder();
+        AppendQuoted(builder, executable);
+        if (!string.IsNullOrWhiteSpace(arguments))
+        {
+            builder.Append(' ');
+            builder.Append(arguments);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Quotes one argument for the Windows command line the way the C runtime parses it.
+    /// </summary>
+    private static void AppendQuoted(StringBuilder builder, string argument)
+    {
+        builder.Append('"');
+        var backslashes = 0;
+        foreach (var character in argument)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                // Backslashes before a quote must be doubled, and the quote escaped.
+                builder.Append('\\', backslashes * 2 + 1);
+                builder.Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            builder.Append('\\', backslashes);
+            backslashes = 0;
+            builder.Append(character);
+        }
+
+        // Trailing backslashes would escape the closing quote.
+        builder.Append('\\', backslashes * 2);
+        builder.Append('"');
+    }
+
+    /// <summary>
+    /// Writes the caller's environment as a Unicode environment block (sorted,
+    /// double-null terminated), which is what <c>CREATE_UNICODE_ENVIRONMENT</c> expects.
+    /// </summary>
+    private static IntPtr BuildEnvironmentBlock(IDictionary<string, string?> environment)
+    {
+        var builder = new StringBuilder();
+        foreach (var pair in environment
+            .Where(pair => !string.IsNullOrEmpty(pair.Key) && pair.Value is not null)
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            builder.Append(pair.Key).Append('=').Append(pair.Value).Append('\0');
+        }
+
+        builder.Append('\0');
+        return Marshal.StringToHGlobalUni(builder.ToString());
+    }
+
+    private static void SafeClose(SafeFileHandle? handle)
+    {
+        try { handle?.Dispose(); } catch { }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfo
+    {
+        public int cb;
+        public string? lpReserved;
+        public string? lpDesktop;
+        public string? lpTitle;
+        public int dwX;
+        public int dwY;
+        public int dwXSize;
+        public int dwYSize;
+        public int dwXCountChars;
+        public int dwYCountChars;
+        public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessInformation
+    {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public int dwProcessId;
+        public int dwThreadId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    {
+        public int nLength;
+        public IntPtr lpSecurityDescriptor;
+        public int bInheritHandle;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateProcess(
+        string? lpApplicationName,
+        string lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+        uint dwCreationFlags,
+        IntPtr lpEnvironment,
+        string? lpCurrentDirectory,
+        ref StartupInfo lpStartupInfo,
+        out ProcessInformation lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreatePipe(
+        out SafeFileHandle hReadPipe,
+        out SafeFileHandle hWritePipe,
+        ref SecurityAttributes lpPipeAttributes,
+        int nSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetHandleInformation(SafeFileHandle hObject, uint dwMask, uint dwFlags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint ResumeThread(SafeFileHandle hThread);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
+}

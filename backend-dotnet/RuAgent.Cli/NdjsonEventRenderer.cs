@@ -51,21 +51,21 @@ public static class NdjsonEventRenderer
 
         if (frame.IsTransient)
         {
-            // For transient, emit versioned NDJSON with type transient but still safe
-            // Never fetch private payload automatically
-            var truncated = frame.Data.Length > 500 ? frame.Data.Substring(0, 500) : frame.Data;
+            // Transient frames are connection-local and carry raw model text or
+            // tool output in `data`. The documented tracer contract is that --json
+            // emits safe envelope fields only and never output/stdout/stderr, so
+            // the payload itself is withheld and only its bounded size is
+            // reported. A consumer that genuinely wants the streamed text reads
+            // the durable payload instead of the NDJSON trace.
             var obj = new
             {
                 v = Version,
                 type = "transient",
                 transient_sequence = frame.TransientSequence,
                 event_type = frame.EventType,
-                data_preview = truncated,
+                data_bytes = frame.Data.Length,
             };
-            var json = JsonSerializer.Serialize(obj);
-            if (ContainsForbidden(json))
-                throw new InvalidOperationException("Transient NDJSON contains forbidden field.");
-            writer.WriteLine(json);
+            writer.WriteLine(JsonSerializer.Serialize(obj));
             return;
         }
 
@@ -94,9 +94,22 @@ public static class NdjsonEventRenderer
         Render(envelope, writer);
     }
 
+    /// <summary>
+    /// Rejects a serialized line that names a forbidden field.
+    /// </summary>
+    /// <remarks>
+    /// The check has to survive JSON escaping. <c>System.Text.Json</c> writes a
+    /// content double quote as <c>\u0022</c>, so a forbidden name embedded in a
+    /// string value never appears as the literal <c>"output"</c> this used to
+    /// look for — the guard could not fire on serializer output at all, while the
+    /// tests that exercised it passed only because they fed it unescaped literals.
+    /// Both spellings are therefore normalized before matching.
+    /// </remarks>
     public static bool ContainsForbidden(string json)
     {
-        var lower = json.ToLowerInvariant();
+        var lower = json
+            .ToLowerInvariant()
+            .Replace("\\u0022", "\"", StringComparison.Ordinal);
         // Forbidden fields that must never appear in NDJSON tracer output
         string[] forbidden = ["\"prompt\"", "\"command\"", "\"output\"", "\"secret\"", "\"argv\"", "\"diff\"", "\"stdout\"", "\"stderr\"", "\"environment\"", "\"exception\""];
         foreach (var f in forbidden)

@@ -12,6 +12,12 @@ public interface IWorkerBrokerProcessHandle : IProcessHandle, IDisposable
     new bool HasExited { get; }
     void Kill();
     bool WaitForExit(TimeSpan timeout);
+
+    /// <summary>
+    /// Lets a process that was created suspended run. Called by the manager once the
+    /// process has been assigned to the job, so nothing it creates can escape it.
+    /// </summary>
+    void Resume();
 }
 
 public interface IWorkerBrokerJobFactory
@@ -137,9 +143,15 @@ public sealed class WorkerBrokerProcessManager : IDisposable
             job = _jobFactory.Create();
             foreach (var spec in plan.Children)
             {
+                // Created suspended: the child runs no code until Resume, so every
+                // descendant it goes on to create is already inside this job. Handing a
+                // running child to Assign instead left a window in which it could spawn
+                // one that belonged to no job this application closes, and that
+                // descendant then outlived the run.
                 var child = _processFactory.Start(spec);
                 startedChildren.Add(child);
                 job.Assign(child);
+                child.Resume();
             }
 
             var ready = await _readinessProbe.WaitUntilReadyAsync(plan.AgentWorkerPort, plan.BrokerPort, cancellationToken).ConfigureAwait(false);
@@ -332,28 +344,29 @@ public sealed class WindowsWorkerBrokerProcessFactory : IWorkerBrokerProcessFact
         Directory.CreateDirectory(Path.GetDirectoryName(spec.StandardOutputLogPath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(spec.StandardErrorLogPath)!);
         var startInfo = ChildProcessPolicy.CreateStartInfo(spec);
-        var process = new Process { StartInfo = startInfo };
+        var started = SuspendedProcess.StartSuspended(startInfo);
         try
         {
-            if (!process.Start())
-                throw new InvalidOperationException($"Could not start {spec.Role}.");
-            _ = DrainChildOutputAsync(process, spec);
-            return new WindowsWorkerBrokerProcessHandle(process);
+            _ = DrainChildOutputAsync(started, spec);
+            return new WindowsWorkerBrokerProcessHandle(started);
         }
         catch
         {
-            process.Dispose();
+            started.Process.Dispose();
+            started.ThreadHandle.Dispose();
+            started.StandardOutput.Dispose();
+            started.StandardError.Dispose();
             throw;
         }
     }
 
-    private static async Task DrainChildOutputAsync(Process process, WorkerBrokerProcessSpec spec)
+    private static async Task DrainChildOutputAsync(SuspendedProcess.StartedProcess started, WorkerBrokerProcessSpec spec)
     {
         try
         {
             await Task.WhenAll(
-                ChildProcessPolicy.DrainToSummaryAsync(process.StandardOutput, spec.StandardOutputLogPath, spec.Role, "stdout"),
-                ChildProcessPolicy.DrainToSummaryAsync(process.StandardError, spec.StandardErrorLogPath, spec.Role, "stderr"));
+                ChildProcessPolicy.DrainToSummaryAsync(started.StandardOutput, spec.StandardOutputLogPath, spec.Role, "stdout"),
+                ChildProcessPolicy.DrainToSummaryAsync(started.StandardError, spec.StandardErrorLogPath, spec.Role, "stderr"));
         }
         catch { }
     }
@@ -361,17 +374,39 @@ public sealed class WindowsWorkerBrokerProcessFactory : IWorkerBrokerProcessFact
 
 public sealed class WindowsWorkerBrokerProcessHandle : IWorkerBrokerProcessHandle
 {
-    private readonly Process _process;
-    public WindowsWorkerBrokerProcessHandle(Process process) => _process = process;
-    public IntPtr Handle => _process.Handle;
-    public bool HasExited => _process.HasExited;
-    public void Kill() { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
+    private readonly SuspendedProcess.StartedProcess _started;
+    private bool _resumed;
+
+    internal WindowsWorkerBrokerProcessHandle(SuspendedProcess.StartedProcess started) => _started = started;
+
+    public IntPtr Handle => _started.Process.Handle;
+    public bool HasExited => _started.Process.HasExited;
+    public void Kill() { if (!_started.Process.HasExited) _started.Process.Kill(entireProcessTree: true); }
+
+    public void Resume()
+    {
+        if (_resumed)
+        {
+            return;
+        }
+
+        _resumed = true;
+        SuspendedProcess.Resume(_started.ThreadHandle);
+    }
+
     public bool WaitForExit(TimeSpan timeout)
     {
         var ms = timeout == Timeout.InfiniteTimeSpan ? Timeout.Infinite : (int)Math.Clamp(timeout.TotalMilliseconds, 0, int.MaxValue);
-        return _process.WaitForExit(ms);
+        return _started.Process.WaitForExit(ms);
     }
-    public void Dispose() => _process.Dispose();
+
+    public void Dispose()
+    {
+        _started.ThreadHandle.Dispose();
+        _started.StandardOutput.Dispose();
+        _started.StandardError.Dispose();
+        _started.Process.Dispose();
+    }
 }
 
 public sealed class WindowsWorkerBrokerJobFactory : IWorkerBrokerJobFactory

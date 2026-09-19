@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Text.Json;
 using RuAgent.Hosting;
@@ -160,6 +161,79 @@ public sealed class RuntimeDescriptorTests : IDisposable
         {
             listener.Stop();
         }
+    }
+
+    /// <summary>
+    /// The descriptor carries the desktop bearer, and the Broker descriptor
+    /// carries the token that authenticates the execution authority. Both were
+    /// previously written with plain file APIs, inheriting whatever the root
+    /// grants — on a shared <c>RU_LOG_ROOT</c> that is every local principal.
+    /// The ACL now lands at creation time, so there is no window in which the
+    /// token exists with inherited rights.
+    /// </summary>
+    [Fact]
+    public async Task DescriptorIsWrittenOwnerOnlyEvenUnderAPermissiveDirectory()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // A directory that hands Everyone full control: inheritance would publish
+        // the token to every principal if the file itself were not restricted.
+        var openRoot = Path.Combine(_root, "open");
+        Directory.CreateDirectory(openRoot);
+        var directorySecurity = new DirectoryInfo(openRoot).GetAccessControl();
+        directorySecurity.AddAccessRule(new FileSystemAccessRule(
+            new System.Security.Principal.SecurityIdentifier("S-1-1-0"),
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        new DirectoryInfo(openRoot).SetAccessControl(directorySecurity);
+
+        var path = Path.Combine(openRoot, "runtime_descriptor.json");
+        var writer = new RuntimeDescriptorWriter(path);
+        await writer.WriteAsync(CreateValidDescriptor());
+
+        AssertOwnerOnly(path);
+    }
+
+    [Fact]
+    public void BrokerDescriptorIsWrittenOwnerOnlyEvenUnderAPermissiveDirectory()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var openRoot = Path.Combine(_root, "open-broker");
+        Directory.CreateDirectory(openRoot);
+        var directorySecurity = new DirectoryInfo(openRoot).GetAccessControl();
+        directorySecurity.AddAccessRule(new FileSystemAccessRule(
+            new System.Security.Principal.SecurityIdentifier("S-1-1-0"),
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        new DirectoryInfo(openRoot).SetAccessControl(directorySecurity);
+
+        var path = Path.Combine(openRoot, "broker.json");
+        OwnerOnlyFile.WriteAllText(path, "{\"auth_token\":\"secret\"}");
+
+        AssertOwnerOnly(path);
+        Assert.Equal("{\"auth_token\":\"secret\"}", File.ReadAllText(path));
+    }
+
+    private static void AssertOwnerOnly(string path)
+    {
+        var security = new FileInfo(path).GetAccessControl();
+        Assert.True(security.AreAccessRulesProtected, "inheritance must be disabled");
+
+        var identity = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+        var allowed = security
+            .GetAccessRules(includeExplicit: true, includeInherited: false, typeof(System.Security.Principal.SecurityIdentifier))
+            .OfType<FileSystemAccessRule>()
+            .Where(rule => rule.AccessControlType == AccessControlType.Allow)
+            .ToArray();
+        Assert.NotEmpty(allowed);
+        Assert.All(allowed, rule => Assert.Equal(identity, rule.IdentityReference));
     }
 
     private static bool IsPortOccupied(int port)

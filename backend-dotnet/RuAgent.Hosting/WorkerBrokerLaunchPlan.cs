@@ -123,7 +123,13 @@ public sealed class WorkerBrokerLaunchPlan
             AgentEnvelopeCodec.ProtocolVersion,
             brokerSessionRoot,
             DateTimeOffset.UtcNow.AddHours(1));
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        // The descriptor carries the Broker's bearer token, so it is written owner
+        // only. Every other credential writer here protects its file; this one
+        // previously inherited whatever the log root grants, which is every local
+        // principal whenever RU_LOG_ROOT points outside the user profile.
+        OwnerOnlyFile.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
         return new WorkerBrokerLaunchPlan(startup.AgentWorkerPort, selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
     }

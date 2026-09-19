@@ -170,6 +170,78 @@ public sealed class FileReadAdapterTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(result["sha256"]?.GetValue<string>()));
     }
 
+    /// <summary>
+    /// An NTFS hard link is reachable inside the workspace while the bytes live
+    /// outside it, and it carries no reparse point, so canonicalization cannot see
+    /// it: the resolver reports an ordinary in-workspace file. Reading it would
+    /// hand out the outside file's contents with no approval, which is the one
+    /// hole the name-based boundary cannot close on its own. The guard refuses the
+    /// ambiguous name instead.
+    /// </summary>
+    [Fact]
+    public void Read_denies_a_hard_link_that_names_a_file_outside_the_workspace()
+    {
+        var outsideDir = Path.Combine(Path.GetTempPath(), "ru-read-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideDir);
+        try
+        {
+            var secret = Path.Combine(outsideDir, "secret.env");
+            File.WriteAllText(secret, "API_KEY=SUPER_SECRET");
+            var link = FullPath("leak.txt");
+            if (!TryCreateHardLink(link, secret))
+            {
+                return; // hard links unavailable on this volume; nothing to assert
+            }
+
+            // The link is a plausible in-workspace path with no visible marker.
+            Assert.Null(new FileInfo(link).LinkTarget);
+            Assert.Equal("API_KEY=SUPER_SECRET", File.ReadAllText(link));
+
+            var error = Assert.Throws<UnauthorizedAccessException>(
+                () => _adapter.Execute(new JsonObject { ["path"] = "leak.txt" }));
+            Assert.Equal("hard_link_not_allowed", error.Message);
+        }
+        finally
+        {
+            try { Directory.Delete(outsideDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Read_still_allows_an_ordinary_single_name_file()
+    {
+        File.WriteAllText(FullPath("single.txt"), "one name");
+
+        var result = _adapter.Execute(new JsonObject { ["path"] = "single.txt" });
+
+        Assert.Equal("one name", result["content"]!.GetValue<string>());
+    }
+
+    private static bool TryCreateHardLink(string linkPath, string targetPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            "cmd.exe",
+            $"/c mklink /H \"{linkPath}\" \"{targetPath}\"")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        });
+        if (process is null)
+        {
+            return false;
+        }
+
+        process.WaitForExit(10_000);
+        return process.ExitCode == 0 && File.Exists(linkPath);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

@@ -152,6 +152,7 @@ public sealed class PolicyContextFactory
             if (string.Equals(mode, "run", StringComparison.Ordinal))
             {
                 terminalAnalysis = _commandAnalyzers.Analyze(resolvedExecutable, argv);
+                EnsureGitOutputTargetStaysInWorkspace(resolver, resolvedExecutable, argv);
             }
         }
         else
@@ -289,6 +290,89 @@ public sealed class PolicyContextFactory
             TerminalAnalysis: terminalAnalysis,
             ToolOp: toolId is "read" or "write" ? ReadOpOf(toolId, arguments) : null,
             BashMode: toolId == "bash" ? OptionalText(arguments, "mode") : null);
+    }
+
+    /// <summary>
+    /// Bounds the one Git form that names a filesystem target while still counting
+    /// as a recognized local mutation.
+    /// </summary>
+    /// <remarks>
+    /// <c>git &lt;verb&gt; --output=&lt;file&gt;</c> writes the verb's output to an
+    /// arbitrary path, so <c>--no-index</c> turns a read of any file the user can
+    /// read into a write inside the workspace:
+    /// <c>git diff --no-index --output=leak.txt &lt;outside file&gt; &lt;in-workspace file&gt;</c>
+    /// records the outside file's contents as diff lines. The analyzer classifies
+    /// every <c>--output</c> form as <c>GitMutation</c> (GitCommandAnalyzer), and
+    /// GitMutation is auto-executable and lifted by a clean trusted workspace, so
+    /// the call runs with no approval and no prompt. The evaluator cannot catch it
+    /// on its own: it checks the tool's target and working directory, and this
+    /// path is neither — it is an operand buried in argv.
+    ///
+    /// Silently writing outside the workspace contradicts the boundary the rest of
+    /// the tool surface enforces (an absolute outside path asks for
+    /// <c>external_directory_required</c>), and it lets a gated read be laundered
+    /// into an auto-allowed one. The operand is therefore rejected rather than
+    /// downgraded to an ask: a prompt for <c>--output=&lt;outside&gt;</c> would have to
+    /// explain an argument the approval preview does not surface.
+    ///
+    /// A relative target is resolved against the workspace root, matching how the
+    /// file tools read relative paths, so it is the workspace the caller believes
+    /// it is working in that decides containment.
+    /// </remarks>
+    private static void EnsureGitOutputTargetStaysInWorkspace(
+        CanonicalPathResolver resolver,
+        string? resolvedExecutable,
+        IReadOnlyList<string> argv)
+    {
+        if (resolvedExecutable is null
+            || !string.Equals(
+                GitCommandAnalyzer.BaseName(resolvedExecutable),
+                "git",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        for (var index = 0; index < argv.Count; index++)
+        {
+            var argument = argv[index];
+            string? target = null;
+            if (argument.StartsWith("--output=", StringComparison.Ordinal))
+            {
+                target = argument["--output=".Length..];
+            }
+            else if (string.Equals(argument, "--output", StringComparison.Ordinal)
+                && index + 1 < argv.Count)
+            {
+                target = argv[index + 1];
+            }
+
+            if (string.IsNullOrWhiteSpace(target))
+            {
+                continue;
+            }
+
+            ResolvedPath resolved;
+            try
+            {
+                resolved = resolver.Resolve(target);
+            }
+            catch (ArgumentException error)
+            {
+                throw new PolicyContextException(
+                    "invalid_path",
+                    innerException: error,
+                    hint: "the git --output target is not a usable path.");
+            }
+
+            if (!resolved.IsInsideWorkspace)
+            {
+                throw new PolicyContextException(
+                    "invalid_arguments",
+                    hint: "the git --output target must stay inside the workspace; "
+                        + "git cannot write its output to a path outside it.");
+            }
+        }
     }
 
     private ResolvedPath ResolveNonTerminalTarget(string pathInput)

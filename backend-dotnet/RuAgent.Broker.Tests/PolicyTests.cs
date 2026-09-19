@@ -840,8 +840,7 @@ public sealed class PolicyEvaluationTests
             arguments["timeout_ms"] = timeoutMs.Value;
         }
 
-        return factory.Create("bash", "1.0.0", arguments);
-    }
+        return factory.Create("bash", "1.0.0", arguments);    }
 
     private static PolicyContext Shell(PolicyContextFactory factory, string script, int? timeoutMs = null)
     {
@@ -864,6 +863,85 @@ public sealed class PolicyEvaluationTests
         Assert.Equal("deny", evaluation.Decision);
         Assert.Equal(reasonCode, evaluation.ReasonCode);
         Assert.Null(evaluation.MatchedRuleId);
+    }
+
+    /// <summary>
+    /// A git verb that writes its output to a named file is a recognized local
+    /// mutation, so it executes without approval. Letting the target be an
+    /// arbitrary path would therefore make the write — and, through
+    /// <c>--no-index</c>, a read of any file the user can read — silent, while the
+    /// equivalent path through the file tools still asks. The operand is rejected
+    /// before the evaluator ever runs.
+    /// </summary>
+    [Fact]
+    public void Git_output_target_outside_the_workspace_is_rejected()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var outside = Path.Combine(Path.GetTempPath(), "ru-outside-" + Guid.NewGuid().ToString("N"), "leak.txt");
+
+        var caught = Record.Exception(() => Terminal(
+            factory,
+            "git",
+            "diff",
+            "--no-index",
+            "--output=" + outside,
+            Path.Combine(LeaseRoot, "src"),
+            Path.Combine(LeaseRoot, "src")));
+
+        var error = Assert.IsType<PolicyContextException>(caught);
+        Assert.Equal("invalid_arguments", error.Code);
+    }
+
+    /// <summary>
+    /// Git also accepts the separated form (<c>--output &lt;file&gt;</c>), so that
+    /// spelling has to be covered by the same rule.
+    /// </summary>
+    [Fact]
+    public void Git_output_target_given_as_a_separate_argument_is_rejected()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var outside = Path.Combine(Path.GetTempPath(), "ru-outside-" + Guid.NewGuid().ToString("N"), "leak.txt");
+
+        var caught = Record.Exception(() => Terminal(
+            factory,
+            "git",
+            "log",
+            "--output",
+            outside));
+
+        var error = Assert.IsType<PolicyContextException>(caught);
+        Assert.Equal("invalid_arguments", error.Code);
+    }
+
+    [Fact]
+    public void Git_output_target_inside_the_workspace_still_resolves()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        // The bounded in-workspace form the analyzer already documents must keep
+        // working: this is the export case, not the escape.
+        var context = Terminal(
+            factory,
+            "git",
+            "diff",
+            "--no-index",
+            "--output=export.txt",
+            Path.Combine(LeaseRoot, "src"),
+            Path.Combine(LeaseRoot, "src"));
+
+        Assert.Equal(TerminalOperationClass.GitMutation, context.TerminalAnalysis!.OperationClass);
+    }
+
+    [Fact]
+    public void Non_git_commands_keep_their_own_output_arguments()
+    {
+        var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
+
+        // The rule is Git-specific: another tool's `--output` is not a filesystem
+        // target in the same sense, and narrowing it here would be a guess.
+        var context = Terminal(factory, "dotnet", "build", "--output", @"C:\elsewhere");
+
+        Assert.NotNull(context);
     }
 
     private static JsonObject Args(params (string Key, object Value)[] fields)

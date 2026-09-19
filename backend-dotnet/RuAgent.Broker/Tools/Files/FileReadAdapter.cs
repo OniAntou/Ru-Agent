@@ -97,6 +97,15 @@ public sealed class FileReadAdapter
         var info = new FileInfo(canonical);
         long fileLength = info.Length;
 
+        // A hard link is the one way a path can canonicalize inside the workspace
+        // and still name a file that lives outside it: it carries no reparse
+        // point, so nothing upstream can see it. Refuse the ambiguous name rather
+        // than read a file the boundary never admitted.
+        if (HardLinkGuard.HasMultipleLinks(canonical))
+        {
+            throw new UnauthorizedAccessException("hard_link_not_allowed");
+        }
+
         var sw = Stopwatch.StartNew();
         var buffer = new byte[limit];
         var observedFileLength = fileLength;

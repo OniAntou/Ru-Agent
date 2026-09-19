@@ -65,3 +65,6 @@ scythe_*.png
 candidate_logos.png
 render_candidates.py
 test_concepts.py
+
+# Impeccable design-review scratch (local critique notes, never committed)
+.impeccable/

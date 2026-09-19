@@ -7,6 +7,18 @@ using Xunit;
 
 namespace RuBackend.Tests.Harness;
 
+/// <summary>
+/// Exercises the replayed activity feed against a real in-process Broker.
+/// </summary>
+/// <remarks>
+/// This suite constructs <c>BackendWebApplicationFactory</c> with
+/// <c>withInProcessBroker: true</c>, so it belongs to the heavy collection: it gates
+/// on the same ports, process handles and CPU as the other heavy suites, and running
+/// it beside them starved the wall-clock deadlines its replay assertions wait on. The
+/// symptom was a replayed task list that arrived as zero rows in a full-assembly run
+/// while passing on its own, which is why the collection rule exists.
+/// </remarks>
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class AgentRunActivitiesTests
 {
     [Fact]
@@ -118,11 +130,7 @@ public sealed class AgentRunActivitiesTests
         // that kind: the tool row and the row holding the list. Only one of them is the
         // list, and that is the one this asserts -- counting rows of a kind would tie the
         // test to how many activities happen to share it.
-        var withList = activities
-            .Where(activity => activity.GetProperty("kind").GetString() == "todo")
-            .Where(activity => activity.TryGetProperty("todos", out var value)
-                && value.ValueKind == JsonValueKind.Array)
-            .ToArray();
+        var withList = SelectTaskLists(activities);
         Assert.True(withList.Length == 1, $"expected one replayed task list, saw {withList.Length}");
 
         var rows = withList[0].GetProperty("todos").EnumerateArray().ToArray();
@@ -161,6 +169,13 @@ public sealed class AgentRunActivitiesTests
             });
         resp.EnsureSuccessStatusCode();
     }
+
+    private static JsonElement[] SelectTaskLists(JsonElement[] activities) =>
+        activities
+            .Where(activity => activity.GetProperty("kind").GetString() == "todo")
+            .Where(activity => activity.TryGetProperty("todos", out var value)
+                && value.ValueKind == JsonValueKind.Array)
+            .ToArray();
 
     private static async Task WaitForTerminalAsync(HttpClient client, string runId)
     {

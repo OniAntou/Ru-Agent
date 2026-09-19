@@ -21,7 +21,13 @@ namespace RuBackend.Tests.Harness;
 ///
 /// A live model is not needed and not used: the scripted runner returns the tool call the
 /// way a provider would.
+///
+/// It constructs <c>BackendWebApplicationFactory</c> with <c>withInProcessBroker: true</c>,
+/// so it belongs to the heavy collection for the reason that collection documents: it
+/// competes for the same ports, process handles and CPU, and running it beside the other
+/// heavy suites made its activity-arrival deadline fail non-deterministically.
 /// </remarks>
+[Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class TodoWriteEndToEndTests
 {
     [Fact]

@@ -69,6 +69,11 @@ if ($projects.Count -eq 0) {
     exit 1
 }
 
+# The lock is released on every exit from here on, including a failing project.
+# Leaving it to the two statements at the end meant a red matrix skipped the
+# release, so the next run had to recover it from AbandonedMutexException and, on
+# the way there, could start while this run's child hosts were still exiting.
+try {
 foreach ($project in $projects) {
     $arguments = @(
         "test"
@@ -82,11 +87,18 @@ foreach ($project in $projects) {
     }
 
     Write-Host "Running dotnet test: $($project.FullName)"
+    $exitCode = 0
     try {
+        # The call is deliberately outside the try/catch that reports a start
+        # failure: dotnet writes test output to stderr, and letting a native
+        # command's stderr reach a caller that has $ErrorActionPreference set to
+        # Stop turns it into a terminating error. That path used to be reported as
+        # "Unable to start dotnet", which hides the real failure. The check below
+        # reads $LASTEXITCODE, so a genuine test failure is always reported as one.
         & dotnet @arguments
         $exitCode = $LASTEXITCODE
     }
-    catch {
+    catch [System.Management.Automation.CommandNotFoundException] {
         [Console]::Error.WriteLine("Unable to start dotnet for '$($project.FullName)': $($_.Exception.Message)")
         exit 1
     }
@@ -101,6 +113,8 @@ foreach ($project in $projects) {
         exit $exitCode
     }
 }
-
-$matrixMutex.ReleaseMutex()
-$matrixMutex.Dispose()
+}
+finally {
+    try { $matrixMutex.ReleaseMutex() } catch { }
+    $matrixMutex.Dispose()
+}

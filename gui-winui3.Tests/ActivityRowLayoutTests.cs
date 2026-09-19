@@ -65,15 +65,16 @@ public sealed class ActivityRowLayoutTests
     }
 
     [Fact]
-    public void The_checklist_has_a_row_below_the_preview()
+    public void The_checklist_no_longer_lives_in_the_activity_row()
     {
-        // The preview and the checklist never appear together in practice, but both belong
-        // to the same row layout and neither may share the header's row.
+        // The standing plan moved above the composer into its own panel. A
+        // checklist back inside the row would render twice and overlap the
+        // header again, so its absence here is asserted, not assumed.
         var grid = RowGrid();
-        var checklist = grid.Elements()
-            .First(element => element.Name.LocalName == "TodoChecklistControl");
 
-        Assert.True(int.Parse((string)checklist.Attribute("Grid.Row")!) > 0);
+        Assert.DoesNotContain(
+            grid.Elements(),
+            element => element.Name.LocalName == "TodoChecklistControl");
     }
 
     [Fact]

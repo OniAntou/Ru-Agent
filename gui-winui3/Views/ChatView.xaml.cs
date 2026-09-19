@@ -86,6 +86,8 @@ namespace RuApp.Views
         private string? _harnessScenario;
         private string _activeSessionId = "default";
         public string CurrentSessionId => _activeSessionId;
+        private IReadOnlyList<TodoItemModel>? _latestTodos;
+        private bool _todoPanelExpanded;
         private string _activeSessionTitle = "New Chat";
         public event EventHandler<SessionInfo>? SessionForked;
         private AgentRunController? _agentController;
@@ -1498,7 +1500,10 @@ namespace RuApp.Views
             if (displayText == null) return;
 
             ApplyActivityTextStyle(displayText, item);
-            RenderTodoChecklist(grid, item);
+            if (item.Todos is { Count: > 0 } latestTodos)
+            {
+                DispatcherQueue?.TryEnqueue(() => UpdateTodoPanel(latestTodos));
+            }
 
             PropertyChangedEventHandler handler = (s, args) =>
             {
@@ -1522,32 +1527,151 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Draws the agent's task list on the activity that carries one.
+        /// Draws the standing todo panel above the composer from the latest list.
         /// </summary>
         /// <remarks>
-        /// The rows are pushed into the control rather than bound, because the payload is
-        /// an array that arrives whole on each activity: there is nothing to observe and
-        /// no per-row change to propagate.
-        ///
-        /// A row without a list is left alone rather than cleared. Only the activity that
-        /// carries a list owns the checklist, so an unrelated activity arriving later
-        /// cannot blank the plan.
+        /// One block fused with the composer: the panel owns the top border and
+        /// top corners, the input owns the bottom ones. Every activity carrying
+        /// todos replaces the previous plan. Passing null or an empty list hides
+        /// the panel, and so does a fully completed list: a finished plan has
+        /// nothing left to watch. Collapsed shows just the one-line
+        /// header with the counts; expanded renders the whole list.
         /// </remarks>
-        private static void RenderTodoChecklist(DependencyObject root, AgentActivityItem item)
+        private void UpdateTodoPanel(IReadOnlyList<TodoItemModel>? todos)
         {
-            if (item.Todos is not { Count: > 0 } todos)
+            _latestTodos = todos;
+            if (TodoPanel is null || TodoPanelList is null || TodoPanelHeader is null
+                || TodoPanelCount is null || TodoPanelProgress is null)
             {
                 return;
             }
 
-            foreach (var descendant in EnumerateDescendants(root))
+            if (todos is not { Count: > 0 })
             {
-                if (descendant is Controls.TodoChecklistControl checklist)
+                TodoPanel.Visibility = Visibility.Collapsed;
+                RestoreInputBorder();
+                return;
+            }
+
+            int done = 0;
+            string? current = null;
+            foreach (var todo in todos)
+            {
+                if (todo.IsCompleted)
                 {
-                    checklist.Render(todos);
-                    return;
+                    done++;
+                }
+                else if (current is null)
+                {
+                    current = todo.Content;
                 }
             }
+
+            if (done == todos.Count)
+            {
+                ClearTodoPanel();
+                return;
+            }
+
+            TodoPanelCount.Text = $"{done}/{todos.Count}";
+            TodoPanelHeader.Text = current ?? "All tasks done";
+            TodoPanelProgress.Maximum = todos.Count;
+            TodoPanelProgress.Value = done;
+            string progressName = $"Tasks {done} of {todos.Count} done";
+            AutomationProperties.SetName(TodoPanelProgress, progressName);
+            ToolTipService.SetToolTip(TodoPanelProgress, progressName);
+            if (Application.Current?.Resources.TryGetValue(
+                    done == todos.Count ? "AppSuccessBrush" : "RuAccentBrush",
+                    out var countColor) == true
+                && countColor is Brush countBrush)
+            {
+                TodoPanelCount.Foreground = countBrush;
+            }
+
+            if (TodoPanelToggle is not null)
+            {
+                AutomationProperties.SetName(
+                    TodoPanelToggle,
+                    _todoPanelExpanded ? "Collapse task list" : "Expand task list");
+            }
+
+            TodoPanel.Visibility = Visibility.Visible;
+            FuseInputBorder();
+
+            if (_todoPanelExpanded)
+            {
+                TodoPanelList.Visibility = Visibility.Visible;
+                TodoPanelList.Render(todos);
+            }
+            else
+            {
+                TodoPanelList.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ClearTodoPanel()
+        {
+            _latestTodos = null;
+            _todoPanelExpanded = false;
+            if (TodoPanelToggleIcon is not null)
+            {
+                TodoPanelToggleIcon.Glyph = "\uE70E";
+            }
+
+            if (TodoPanel is not null)
+            {
+                TodoPanel.Visibility = Visibility.Collapsed;
+            }
+
+            RestoreInputBorder();
+        }
+
+        /// <summary>
+        /// Joins the input to the panel above it by squaring its top corners.
+        /// The panel carries no outline of its own; the input keeps its
+        /// borderless shadow style, so the two read as one block.
+        /// </summary>
+        private void FuseInputBorder()
+        {
+            if (InputBorder is null)
+            {
+                return;
+            }
+
+            InputBorder.CornerRadius = new CornerRadius(0, 0, 12, 12);
+        }
+
+        /// <summary>
+        /// Gives the input its own standalone border back when the panel hides.
+        /// </summary>
+        private void RestoreInputBorder()
+        {
+            if (InputBorder is null)
+            {
+                return;
+            }
+
+            InputBorder.BorderThickness = new Thickness(0);
+            if (Application.Current?.Resources.TryGetValue("AppCardCornerRadius", out var radius) == true
+                && radius is CornerRadius cornerRadius)
+            {
+                InputBorder.CornerRadius = cornerRadius;
+            }
+        }
+
+        /// <summary>
+        /// Expands or collapses the standing todo panel. Viewing only: the list
+        /// itself stays read-only, so this changes no plan state.
+        /// </summary>
+        private void OnTodoPanelToggleClick(object sender, RoutedEventArgs e)
+        {
+            _todoPanelExpanded = !_todoPanelExpanded;
+            if (TodoPanelToggleIcon is not null)
+            {
+                TodoPanelToggleIcon.Glyph = _todoPanelExpanded ? "\uE70D" : "\uE70E";
+            }
+
+            UpdateTodoPanel(_latestTodos);
         }
 
         private void DetachActivityItem(Grid grid, bool clearEntrance = true)
@@ -2013,6 +2137,7 @@ namespace RuApp.Views
         private void ResetAgentState()
         {
             ClearAgentActivities();
+            ClearTodoPanel();
 
             var monitor = _agentMonitorCts;
             _agentMonitorCts = null;

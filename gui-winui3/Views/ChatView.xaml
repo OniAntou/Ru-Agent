@@ -188,18 +188,6 @@
                                                  MaxWidth="760"
                                                  AutomationProperties.Name="File edit preview" />
                 <!--
-                  The agent's task list. Read-only: nothing here is clickable, because the
-                  agent plans and the user watches. The rows come from the activity that
-                  carries them, so the control has no binding of its own.
-                -->
-                <controls:TodoChecklistControl Grid.Row="3"
-                                                x:Name="TodoChecklist"
-                                                Visibility="{x:Bind HasTodos, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                HorizontalAlignment="Stretch"
-                                                Margin="0,10,0,2"
-                                                MaxWidth="760"
-                                                AutomationProperties.Name="Agent task list" />
-                <!--
                   State bindings for automation and contract tests. They sit in their own row
                   and take no space. Anything without a Grid.Row lands in row 0 on top of the
                   header, which is exactly how the checklist used to overlap its own label.
@@ -489,6 +477,122 @@
               HorizontalAlignment="Stretch">
             <controls:TerminalPanelControl x:Name="TerminalPanelControl"
                                         Grid.Row="0" />
+
+            <!--
+              The agent's standing task list. Fused with the composer into one
+              block with no outline ring: depth comes from shadow, per the app
+              card style. A count pill, the current task, and a progress
+              hairline lead; expanded adds the full read-only list, collapsed
+              keeps the header only. Hidden until the first todo write, cleared
+              on session switch.
+            -->
+            <Border x:Name="TodoPanel"
+                    Grid.Row="1"
+                    Visibility="Collapsed"
+                    Margin="8,0,8,0"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderThickness="0"
+                    CornerRadius="4,4,0,0"
+                    Translation="0,0,4"
+                    Shadow="{StaticResource RuRestShadow}"
+                    AutomationProperties.Name="Agent task list">
+                <Border.Resources>
+                    <!-- Collapse toggle: no surface of its own in any state, only
+                      the icon tints accent on hover and dims on press. -->
+                    <Style x:Key="TodoToggleButtonStyle" TargetType="Button">
+                        <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Padding" Value="6,2" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <ContentPresenter x:Name="Content"
+                                                      Foreground="{TemplateBinding Foreground}"
+                                                      Padding="{TemplateBinding Padding}"
+                                                      CornerRadius="6"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center">
+                                        <VisualStateManager.VisualStateGroups>
+                                            <VisualStateGroup x:Name="CommonStates">
+                                                <VisualState x:Name="Normal" />
+                                                <VisualState x:Name="PointerOver">
+                                                    <VisualState.Setters>
+                                                        <Setter Target="Content.Foreground" Value="{StaticResource RuAccentBrush}" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                                <VisualState x:Name="Pressed">
+                                                    <VisualState.Setters>
+                                                        <Setter Target="Content.Foreground" Value="{StaticResource RuAccentBrush}" />
+                                                        <Setter Target="Content.Opacity" Value="0.7" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                                <VisualState x:Name="Disabled">
+                                                    <VisualState.Setters>
+                                                        <Setter Target="Content.Opacity" Value="0.4" />
+                                                    </VisualState.Setters>
+                                                </VisualState>
+                                            </VisualStateGroup>
+                                        </VisualStateManager.VisualStateGroups>
+                                    </ContentPresenter>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Border.Resources>
+                <Grid RowDefinitions="Auto,Auto">
+                    <StackPanel Grid.Row="0" Spacing="6" Padding="12,10,12,8">
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TodoPanelCount"
+                                       Grid.Column="0"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuAccentBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="TodoPanelHeader"
+                                       Grid.Column="1"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxLines="1" />
+                            <Button x:Name="TodoPanelToggle"
+                                    Grid.Column="2"
+                                    Click="OnTodoPanelToggleClick"
+                                    Style="{StaticResource TodoToggleButtonStyle}"
+                                    AutomationProperties.Name="Expand or collapse task list">
+                                <FontIcon x:Name="TodoPanelToggleIcon" Glyph="&#xE70E;" FontSize="12" />
+                            </Button>
+                        </Grid>
+                        <ProgressBar x:Name="TodoPanelProgress"
+                                     Height="4"
+                                     CornerRadius="{StaticResource AppPillCornerRadius}"
+                                     Background="{StaticResource RuAccentSoftBrush}"
+                                     BorderThickness="0">
+                            <ProgressBar.Foreground>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Offset="0" Color="{ThemeResource RuAccentColor}" />
+                                    <GradientStop Offset="1" Color="{ThemeResource RuVioletColor}" />
+                                </LinearGradientBrush>
+                            </ProgressBar.Foreground>
+                        </ProgressBar>
+                        <controls:TodoChecklistControl x:Name="TodoPanelList"
+                                                       HorizontalAlignment="Stretch"
+                                                       AutomationProperties.Name="Agent task list" />
+                    </StackPanel>
+                    <Border Grid.Row="1"
+                            Height="1"
+                            Background="{StaticResource RuLineBrush}"
+                            Opacity="0.6" />
+                </Grid>
+            </Border>
 
             <StackPanel x:Name="AgentInlinePanel"
                         Grid.Row="2"

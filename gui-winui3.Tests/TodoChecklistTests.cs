@@ -4,7 +4,7 @@ using Xunit;
 namespace RuApp.Tests;
 
 /// <summary>
-/// The task list's display: a read-only checklist in the transcript.
+/// The task list's display: a read-only standing panel above the composer.
 /// </summary>
 /// <remarks>
 /// The validation and the store are asserted in the Broker suite. What is asserted here
@@ -14,62 +14,42 @@ namespace RuApp.Tests;
 /// </remarks>
 public sealed class TodoChecklistTests
 {
-    /// <summary>
-    /// The checklist element, found in an already loaded document.
-    /// </summary>
-    /// <remarks>
-    /// Takes the document rather than loading its own. GuiSource.Xml parses a fresh tree
-    /// on every call and IsDescendantOf compares by reference, so an element read from one
-    /// parse is never a descendant of a template read from another.
-    /// </remarks>
-    private static System.Xml.Linq.XElement ChecklistElement(System.Xml.Linq.XDocument document) =>
-        document.Descendants()
-            .Where(element => element.Name.LocalName == "TodoChecklistControl")
-            .First();
-
     [Fact]
-    public void The_checklist_is_inside_the_agent_activity_template()
+    public void The_panel_hides_without_a_list_and_shows_with_one()
     {
-        // An activity row is where a plan belongs; anywhere else it would render once,
-        // detached from the work it describes.
-        var document = GuiSource.Xml("Views", "ChatView.xaml");
-        var checklist = ChecklistElement(document);
+        // The panel owns visibility now, not a template binding: empty hides it,
+        // a fresh list shows it.
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
 
-        var template = document.Descendants().FirstOrDefault(element =>
-            (string?)element.Attribute(GuiSource.Xaml + "Key") == "AgentActivityTemplate");
-
-        Assert.NotNull(template);
-        Assert.True(GuiSource.IsDescendantOf(checklist, template));
-    }
-
-    [Fact]
-    public void The_checklist_is_shown_only_when_there_is_a_list()
-    {
-        var checklist = ChecklistElement(GuiSource.Xml("Views", "ChatView.xaml"));
-
-        Assert.Equal(
-            "{x:Bind HasTodos, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
-            GuiSource.AttributeValue(checklist, "Visibility"));
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.Contains("Visibility.Collapsed", update, StringComparison.Ordinal);
+        Assert.Contains("Visibility.Visible", update, StringComparison.Ordinal);
     }
 
     [Fact]
     public void The_checklist_offers_nothing_to_click()
     {
-        // The whole point of the read-only decision. A Click handler here would be an
-        // affordance the product does not implement.
-        var checklist = ChecklistElement(GuiSource.Xml("Views", "ChatView.xaml"));
+        // The rows stay read-only: the agent plans and the user watches. Only the
+        // expand/collapse toggle may be clicked, and it changes no plan state.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var list = GuiSource.Require(document, "TodoPanelList");
 
-        Assert.Null(GuiSource.AttributeValue(checklist, "Click"));
-        Assert.Null(GuiSource.AttributeValue(checklist, "Tapped"));
-        Assert.Null(GuiSource.AttributeValue(checklist, "SelectionChanged"));
+        Assert.Null(GuiSource.AttributeValue(list, "Click"));
+        Assert.Null(GuiSource.AttributeValue(list, "Tapped"));
+        Assert.Null(GuiSource.AttributeValue(list, "SelectionChanged"));
+
+        var toggle = GuiSource.Require(document, "TodoPanelToggle");
+        Assert.Equal("OnTodoPanelToggleClick", GuiSource.AttributeValue(toggle, "Click"));
     }
 
     [Fact]
     public void The_checklist_is_named_for_a_screen_reader()
     {
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+
         Assert.Equal(
             "Agent task list",
-            GuiSource.AttributeValue(ChecklistElement(GuiSource.Xml("Views", "ChatView.xaml")), "Name"));
+            GuiSource.AttributeValue(GuiSource.Require(document, "TodoPanel"), "Name"));
     }
 
     [Theory]
@@ -120,19 +100,164 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_checklist_is_rendered_from_the_activity_that_carries_it()
+    public void The_checklist_lives_above_the_composer_in_the_input_container()
+    {
+        // The standing plan sits above the composer, not inside a bubble: one
+        // block, updated in place, in the input container's free row.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var panel = GuiSource.Require(document, "TodoPanel");
+        var list = GuiSource.Require(document, "TodoPanelList");
+        var inputContainer = GuiSource.Require(document, "InputContainer");
+
+        Assert.True(GuiSource.IsDescendantOf(panel, inputContainer));
+        Assert.Equal("1", GuiSource.AttributeValue(panel, "Row"));
+        Assert.True(GuiSource.IsDescendantOf(list, panel));
+    }
+
+    [Fact]
+    public void The_collapsed_panel_keeps_only_its_header_line()
+    {
+        // Collapsed means exactly one header line: the rows hide until expanded.
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.Contains("TodoPanelList.Visibility", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_panel_is_fused_with_the_composer_into_one_block()
+    {
+        // One block, not two cards: no outline ring (depth comes from shadow,
+        // per the app card style), a count pill, a progress hairline, and the
+        // input's own top edge joining underneath.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var panel = GuiSource.Require(document, "TodoPanel");
+
+        Assert.Equal("8,0,8,0", GuiSource.AttributeValue(panel, "Margin"));
+        Assert.Equal("0", GuiSource.AttributeValue(panel, "BorderThickness"));
+        Assert.Equal("4,4,0,0", GuiSource.AttributeValue(panel, "CornerRadius"));
+        Assert.Contains("RuRestShadow", GuiSource.AttributeValue(panel, "Shadow"), StringComparison.Ordinal);
+
+        GuiSource.Require(document, "TodoPanelCount");
+        GuiSource.Require(document, "TodoPanelProgress");
+    }
+
+    [Fact]
+    public void The_header_shows_a_count_pill_and_a_progress_hairline()
     {
         string code = GuiSource.Text("Views", "ChatView.xaml.cs");
 
-        Assert.True(GuiSource.HasMember(code, "RenderTodoChecklist"));
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.Contains("TodoPanelCount", update, StringComparison.Ordinal);
+        Assert.Contains("TodoPanelProgress", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_progress_hairline_uses_a_gradient_fill()
+    {
+        // A flat accent fill reads generic; the hairline blends accent into
+        // violet from the app tokens.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var progress = GuiSource.Require(document, "TodoPanelProgress");
+
+        var gradient = progress.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "LinearGradientBrush");
+
+        Assert.NotNull(gradient);
+        Assert.True(
+            gradient!.Elements().Count(element => element.Name.LocalName == "GradientStop") >= 2);
+    }
+
+    [Fact]
+    public void The_panel_disappears_when_every_task_is_done()
+    {
+        // A finished plan has nothing to watch: the panel hides itself and
+        // gives the composer its standalone border back.
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.Contains("ClearTodoPanel", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_count_has_no_pill_and_the_toggle_only_tints_its_icon()
+    {
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+
+        var count = GuiSource.Require(document, "TodoPanelCount");
+        Assert.Equal("TextBlock", count.Name.LocalName);
+
+        var toggle = GuiSource.Require(document, "TodoPanelToggle");
+        Assert.Contains("TodoToggleButtonStyle", GuiSource.AttributeValue(toggle, "Style"), StringComparison.Ordinal);
+
+        var style = document.Descendants().FirstOrDefault(element =>
+            element.Name.LocalName == "Style"
+            && (string?)element.Attribute(GuiSource.Xaml + "Key") == "TodoToggleButtonStyle");
+
+        Assert.NotNull(style);
+        string styleXml = style!.ToString();
+        Assert.DoesNotContain("Background", styleXml, StringComparison.Ordinal);
+        Assert.Contains("RuAccentBrush", styleXml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_finished_count_turns_success_and_the_progress_announces_itself()
+    {
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.Contains("AppSuccessBrush", update, StringComparison.Ordinal);
+        Assert.Contains("SetToolTip", update, StringComparison.Ordinal);
+        Assert.Contains("Collapse task list", update, StringComparison.Ordinal);
+        Assert.Contains("Expand task list", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Showing_or_hiding_the_panel_rejoins_the_input_border()
+    {
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.Contains("FuseInputBorder", update, StringComparison.Ordinal);
+
+        string clear = GuiSource.MethodBody(code, "ClearTodoPanel");
+        Assert.Contains("RestoreInputBorder", clear, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_panel_always_stays_above_the_composer()
+    {
+        // Collapsed or expanded, the panel never leaves row 1 above the input:
+        // collapsing hides the rows, it does not move the block.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var panel = GuiSource.Require(document, "TodoPanel");
+
+        Assert.Equal("1", GuiSource.AttributeValue(panel, "Row"));
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
+        Assert.DoesNotContain("SetRow", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_panel_is_updated_from_the_activity_that_carries_todos()
+    {
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        Assert.True(GuiSource.HasMember(code, "UpdateTodoPanel"));
 
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
-        Assert.Contains("RenderTodoChecklist", attach, StringComparison.Ordinal);
+        Assert.Contains("UpdateTodoPanel", attach, StringComparison.Ordinal);
+    }
 
-        // A row without a list must not clear one: only the activity carrying a list
-        // owns the checklist, so an unrelated row cannot blank the plan.
-        string render = GuiSource.MethodBody(code, "RenderTodoChecklist");
-        Assert.Contains("is not { Count: > 0 }", render, StringComparison.Ordinal);
-        Assert.DoesNotContain(".Clear()", render, StringComparison.Ordinal);
+    [Fact]
+    public void Switching_session_clears_the_panel()
+    {
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        Assert.True(GuiSource.HasMember(code, "ClearTodoPanel"));
+
+        string reset = GuiSource.MethodBody(code, "ResetAgentState");
+        Assert.Contains("ClearTodoPanel", reset, StringComparison.Ordinal);
     }
 }

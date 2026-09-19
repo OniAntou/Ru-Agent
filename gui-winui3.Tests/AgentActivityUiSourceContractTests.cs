@@ -126,6 +126,83 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void A_failed_row_offers_its_error_to_copy()
+    {
+        // The row states the reason in words; one click carries the sentence
+        // plus the machine code to a bug report.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var template = document.Descendants().FirstOrDefault(element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Key") == "AgentActivityTemplate");
+
+        Assert.NotNull(template);
+        var copy = template!.Descendants().FirstOrDefault(element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Name") == "CopyActivityErrorButton");
+
+        Assert.NotNull(copy);
+        Assert.Equal(
+            "{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
+            GuiSource.AttributeValue(copy!, "Visibility"));
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        Assert.True(GuiSource.HasMember(code, "OnCopyActivityErrorClick"));
+    }
+
+    [Fact]
+    public void Motion_respects_the_os_animation_setting()
+    {
+        // Sweep and entrance stay off when the user disables animations: the
+        // running row falls back to a static tint.
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+
+        string attach = GuiSource.MethodBody(code, "AttachActivityItem");
+        Assert.Contains("AnimationsEnabled", attach, StringComparison.Ordinal);
+
+        string sweep = GuiSource.MethodBody(code, "StartTextSweep");
+        Assert.Contains("AnimationsEnabled", sweep, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_edit_preview_opens_while_unsettled_and_folds_when_done()
+    {
+        // A long diff must not shove the transcript while settled: open on
+        // Started/Waiting/Failed, folded on Completed. Widths match the detail
+        // line so the column never jogs.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var preview = document.Descendants().FirstOrDefault(element =>
+            element.Name.LocalName == "FileEditPreviewControl");
+
+        Assert.NotNull(preview);
+        Assert.Equal("560", GuiSource.AttributeValue(preview!, "MaxWidth"));
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string attach = GuiSource.MethodBody(code, "AttachActivityItem");
+        Assert.Contains("ApplyEditPreviewExpanded", attach, StringComparison.Ordinal);
+
+        string expanded = GuiSource.MethodBody(code, "ApplyEditPreviewExpanded");
+        Assert.Contains("IsExpanded", expanded, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_waiting_row_wears_a_warning_pill_and_announces_assertively()
+    {
+        // Waiting is the moment the user must not miss: a warning pill names
+        // it and the live setting turns assertive, set from code with the label.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var pill = GuiSource.Require(document, "AgentActivityWaitingPill");
+
+        Assert.Equal(
+            "{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
+            GuiSource.AttributeValue(pill, "Visibility"));
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string attach = GuiSource.MethodBody(code, "AttachActivityItem");
+        Assert.Contains("ApplyActivityLiveSetting", attach, StringComparison.Ordinal);
+
+        string live = GuiSource.MethodBody(code, "ApplyActivityLiveSetting");
+        Assert.Contains("Assertive", live, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_approval_panel_floats_above_the_composer_instead_of_pushing_it()
     {
         // The approval card overlays the composer: showing it must not shove

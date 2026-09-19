@@ -96,18 +96,31 @@
                 </Grid.ContextFlyout>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                            TextTrimming="CharacterEllipsis" 
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBlock x:Name="SessionTimeText" Grid.Column="1" Text="{Binding DisplayTime, Converter={StaticResource SessionTimeConverter}}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
-                         Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
-                         Tag="{x:Bind Id}" Opacity="0.55" IsTabStop="True" ToolTipService.ToolTip="Delete session">
-                    <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
-                </Button>
+                <!-- The clock owns the right edge. The delete control shares its
+                     cell and stays hidden until the row is hovered, at which
+                     point the clock steps aside for it: both are right-aligned in
+                     the same place, so the row never reflows, and the two never
+                     paint on top of each other. The control is hidden by
+                     opacity rather than by collapsing it so its width still
+                     reserves the cell's edge. -->
+                <Grid Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="SessionTimeText" HorizontalAlignment="Right"
+                               Text="{x:Bind DisplayTimeText, Mode=OneTime}"
+                               FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center"/>
+                    <Button x:Name="SessionDeleteButton" HorizontalAlignment="Right"
+                             Background="Transparent" BorderThickness="0" Padding="0"
+                             Width="22" Height="22" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
+                             Tag="{x:Bind Id}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
+                             ToolTipService.ToolTip="Delete session">
+                        <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource RuInkBrush}"/>
+                    </Button>
+                </Grid>
             </Grid>
         </DataTemplate>
         <Style x:Key="WorkspaceAddButtonStyle" TargetType="Button">

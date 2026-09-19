@@ -111,13 +111,30 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0"
-                      ColumnDefinitions="Auto,Auto"
+                      ColumnDefinitions="Auto,Auto,Auto"
                       ColumnSpacing="8"
                       HorizontalAlignment="Left"
                       VerticalAlignment="Center">
-                      <TextBlock Grid.Column="0"
+                      <Border Grid.Column="0"
+                              x:Name="AgentActivityWaitingPill"
+                              Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                              CornerRadius="{StaticResource AppPillCornerRadius}"
+                              BorderBrush="{StaticResource RuWarningBrush}"
+                              BorderThickness="1"
+                              Padding="8,2"
+                              VerticalAlignment="Center"
+                              AutomationProperties.AccessibilityView="Raw">
+                          <TextBlock Text="Waiting"
+                                     FontFamily="{StaticResource RuUiFontFamily}"
+                                     FontSize="11"
+                                     FontWeight="SemiBold"
+                                     Foreground="{StaticResource RuWarningBrush}"
+                                     VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock Grid.Column="1"
                                  x:Name="AgentActivityText"
                                  Text="{x:Bind DisplayText, Mode=OneWay}"
                                  FontFamily="{StaticResource RuUiFontFamily}"
@@ -126,7 +143,7 @@
                                TextWrapping="Wrap"
                                VerticalAlignment="Center"
                                Margin="0" />
-                    <StackPanel Grid.Column="1"
+                    <StackPanel Grid.Column="2"
                                 Orientation="Horizontal"
                                 Spacing="4"
                                 VerticalAlignment="Center">
@@ -175,18 +192,18 @@
                            TextWrapping="Wrap"
                            MaxWidth="560"
                            Margin="0,2,0,0" />
-                <controls:FileEditPreviewControl Grid.Row="2"
-                                                  Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                  HorizontalAlignment="Stretch"
-                                                  FileName="{x:Bind FileName, Mode=OneWay}"
-                                                 BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
-                                                 AfterText="{x:Bind EditAfterText, Mode=OneWay}"
-                                                  StartLine="{x:Bind LineStart, Mode=OneWay}"
-                                                  AddedCount="{x:Bind Added, Mode=OneWay}"
-                                                  RemovedCount="{x:Bind Removed, Mode=OneWay}"
-                                                  Margin="0,8,0,2"
-                                                 MaxWidth="760"
-                                                 AutomationProperties.Name="File edit preview" />
+                 <controls:FileEditPreviewControl Grid.Row="2"
+                                                   Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                   HorizontalAlignment="Stretch"
+                                                   FileName="{x:Bind FileName, Mode=OneWay}"
+                                                  BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
+                                                  AfterText="{x:Bind EditAfterText, Mode=OneWay}"
+                                                   StartLine="{x:Bind LineStart, Mode=OneWay}"
+                                                   AddedCount="{x:Bind Added, Mode=OneWay}"
+                                                   RemovedCount="{x:Bind Removed, Mode=OneWay}"
+                                                   Margin="0,8,0,2"
+                                                  MaxWidth="560"
+                                                  AutomationProperties.Name="File edit preview" />
                 <!--
                   State bindings for automation and contract tests. They sit in their own row
                   and take no space. Anything without a Grid.Row lands in row 0 on top of the
@@ -198,6 +215,17 @@
                     <Border Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                     <Border Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                 </StackPanel>
+                <Button x:Name="CopyActivityErrorButton"
+                        Grid.Row="4"
+                        Content="Copy error"
+                        Click="OnCopyActivityErrorClick"
+                        Tag="{x:Bind}"
+                        Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                        Margin="0,6,0,0"
+                        Padding="10,4"
+                        FontFamily="{StaticResource RuUiFontFamily}"
+                        FontSize="12"
+                        AutomationProperties.Name="Copy error details" />
             </Grid>
         </DataTemplate>
 
@@ -984,17 +1012,23 @@
                                                     CornerRadius="0"
                                                     Background="{StaticResource RuLineBrush}"
                                                     Opacity="0.9">
-                                                <Border x:Name="ContextBreakdownFill"
-                                                        CornerRadius="0">
-                                                    <Border.Background>
-                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                            <GradientStop x:Name="ContextStopMsg0" Offset="0" Color="{ThemeResource RuAccentColor}" />
-                                                            <GradientStop x:Name="ContextStopMsg1" Offset="1" Color="{ThemeResource RuAccentColor}" />
-                                                            <GradientStop x:Name="ContextStopOv0" Offset="1" Color="{ThemeResource RuAccentSoftColor}" />
-                                                            <GradientStop x:Name="ContextStopOv1" Offset="1" Color="{ThemeResource RuAccentSoftColor}" />
-                                                        </LinearGradientBrush>
-                                                    </Border.Background>
-                                                </Border>
+                                                <Grid x:Name="ContextBreakdownBar"
+                                                      ColumnDefinitions="*,*">
+                                                    <Border x:Name="ContextBreakdownFill"
+                                                            Grid.Column="0"
+                                                            CornerRadius="0"
+                                                            HorizontalAlignment="Stretch"
+                                                            VerticalAlignment="Stretch">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                <GradientStop x:Name="ContextStopMsg0" Offset="0" Color="{ThemeResource RuAccentColor}" />
+                                                                <GradientStop x:Name="ContextStopMsg1" Offset="1" Color="{ThemeResource RuAccentColor}" />
+                                                                <GradientStop x:Name="ContextStopOv0" Offset="1" Color="{ThemeResource RuVioletColor}" />
+                                                                <GradientStop x:Name="ContextStopOv1" Offset="1" Color="{ThemeResource RuVioletColor}" />
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                    </Border>
+                                                </Grid>
                                             </Border>
 
                                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
@@ -1024,7 +1058,7 @@
                                                 <Border Width="8"
                                                         Height="8"
                                                         CornerRadius="{StaticResource AppPillCornerRadius}"
-                                                        Background="{StaticResource RuAccentSoftBrush}"
+                                                        Background="{StaticResource RuVioletBrush}"
                                                         VerticalAlignment="Center" />
                                                 <TextBlock Grid.Column="1"
                                                            Text="System + tools"

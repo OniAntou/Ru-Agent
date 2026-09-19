@@ -64,6 +64,26 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
+    public void A_failed_row_hides_the_machine_code_it_already_translated()
+    {
+        // FailedText already turns the code into a sentence; repeating the raw
+        // token in the muted line only adds noise. Waiting rows keep theirs:
+        // their headline never names the reason.
+        var failed = new AgentActivityItem(Activity(
+            AgentActivityState.Failed,
+            safeCode: "model_failed"));
+
+        Assert.Equal("Model call failed", failed.DisplayText);
+        Assert.DoesNotContain("model_failed", failed.MetadataText, StringComparison.Ordinal);
+
+        var waiting = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            safeCode: "terminal_unknown_executable"));
+
+        Assert.Contains("terminal_unknown_executable", waiting.MetadataText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Item_keeps_terminal_text_bounded_to_safe_code()
     {
         var item = new AgentActivityItem(Activity(
@@ -72,10 +92,11 @@ public sealed class AgentActivityItemTests
 
         Assert.True(item.IsFailed);
 
-        // The row states the reason and the machine token stays in the metadata line, so a
-        // reader gets a sentence and a supporter gets the exact code.
+        // The row states the reason and the machine token travels with the copy
+        // action, so a reader gets a sentence and a supporter pastes the exact
+        // code from one click.
         Assert.Equal("Failed: policy denied", item.DisplayText);
-        Assert.Equal("policy_denied", item.MetadataText);
+        Assert.Equal(string.Empty, item.MetadataText);
     }
 
     [Fact]
@@ -204,7 +225,9 @@ public sealed class AgentActivityItemTests
             kind: AgentActivityKind.Compaction,
             safeCode: "commit_conflict"));
         Assert.Equal("Failed: commit conflict", compactionFailed.DisplayText);
-        Assert.Equal("commit_conflict", compactionFailed.MetadataText);
+        // The code stays out of the muted line: the headline translated it and
+        // the copy action carries it for bug reports.
+        Assert.Equal(string.Empty, compactionFailed.MetadataText);
 
         var retryStarted = new AgentActivityItem(Activity(
             AgentActivityState.Started,
@@ -277,7 +300,9 @@ public sealed class AgentActivityItemTests
             kind: AgentActivityKind.Edit,
             safeCode: "policy_denied"));
 
-        Assert.Contains("policy_denied", failed.MetadataText, StringComparison.Ordinal);
+        // The failed headline translated the code, so the muted line stays
+        // quiet; the copy action carries the code instead.
+        Assert.DoesNotContain("policy_denied", failed.MetadataText, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -152,12 +152,21 @@ public sealed class AgentContextMeterPolicyTests
     }
 
     [Fact]
+    public void Opening_a_session_repaints_the_meter_after_history_lands()
+    {
+        // Clearing the transcript repaints zero and the refills arrive inside
+        // the one-second throttle, so the open path must repaint by force once
+        // history is in place instead of staying stuck at zero.
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string open = GuiSource.MethodBody(code, "OpenSessionAsync");
+        Assert.Contains("UpdateContextUsage", open, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_flyout_paints_messages_and_overhead_as_separate_segments()
     {
-        // One perfectly flat bar in one hue, two strengths: messages solid
-        // accent, overhead soft accent. A second hue would shout; the
-        // breakdown should read quietly. The legend rows stay one per
-        // measured part.
+        // One perfectly flat bar: messages solid accent, overhead violet so the
+        // small share still reads. The legend rows stay one per measured part.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var fill = GuiSource.Require(document, "ContextBreakdownFill");
         var stops = fill.Descendants()
@@ -166,8 +175,7 @@ public sealed class AgentContextMeterPolicyTests
 
         Assert.True(stops.Count >= 4);
         Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuAccentColor"));
-        Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuAccentSoftColor"));
-        Assert.DoesNotContain(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuVioletColor"));
+        Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuVioletColor"));
 
         GuiSource.Require(document, "ContextOverheadRow");
         GuiSource.Require(document, "ContextMessagesLabel");
@@ -176,6 +184,16 @@ public sealed class AgentContextMeterPolicyTests
         string code = GuiSource.Text("Views", "ChatView.xaml.cs");
         string update = GuiSource.MethodBody(code, "UpdateContextUsage");
         Assert.Contains("OverheadTokens", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_fill_shrinks_with_the_budget_share_not_the_track()
+    {
+        // The bar must mirror the percentage against the budget: a near-empty
+        // session paints a sliver, never a full track.
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string paint = GuiSource.MethodBody(code, "PaintContextBreakdown");
+        Assert.Contains("maximumTokens", paint, StringComparison.Ordinal);
     }
 
     [Fact]

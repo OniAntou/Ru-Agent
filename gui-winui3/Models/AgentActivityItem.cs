@@ -400,8 +400,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
                 parts.Add($"{AddedDeltaText} {RemovedDeltaText}");
             }
 
-            // Bounded machine codes leave the headline for the muted line.
-            if ((State == AgentActivityState.Waiting || State == AgentActivityState.Failed)
+            // A waiting headline never names its reason, so the muted line keeps
+            // the machine code. A failed headline already translated it, so the
+            // code would only repeat noise; the copy action carries it instead.
+            if (State == AgentActivityState.Waiting
                 && !string.IsNullOrWhiteSpace(SafeCode))
             {
                 parts.Add(SafeCode);

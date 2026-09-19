@@ -52,6 +52,20 @@ namespace RuApp.Models
 
         [JsonIgnore]
         public string DisplayTime => string.IsNullOrEmpty(LastAgentActivityAt) ? UpdatedAt : LastAgentActivityAt;
+
+        /// <summary>
+        /// The sidebar's time label, formatted for display.
+        /// </summary>
+        /// <remarks>
+        /// The formatting lives here rather than in a value converter because the
+        /// session row is an <c>x:Bind</c> template inside <c>MainWindow</c>, and a
+        /// converter would make the generated bindings call
+        /// <c>SetConverterLookupRoot</c>, which requires a <c>FrameworkElement</c> —
+        /// <c>Window</c> is not one. The <c>{Binding}</c> form it replaced resolved
+        /// at runtime and silently produced nothing, so the clock never rendered.
+        /// </remarks>
+        [JsonIgnore]
+        public string DisplayTimeText => Services.SessionTimeFormatter.Format(DisplayTime, DateTimeOffset.UtcNow);
     }
 
     public class SessionListResponse

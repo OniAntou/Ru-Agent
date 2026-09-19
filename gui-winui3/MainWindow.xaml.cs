@@ -1593,25 +1593,52 @@ namespace RuApp
 
         private void SessionItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            if (sender is Grid grid)
-            {
-                var deleteBtn = grid.Children.OfType<Button>().FirstOrDefault();
-                if (deleteBtn != null)
-                {
-                    deleteBtn.Opacity = 1.0;
-                }
-            }
+            SetSessionRowDeleteVisible(sender, visible: true);
         }
 
         private void SessionItem_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            if (sender is Grid grid)
+            SetSessionRowDeleteVisible(sender, visible: false);
+        }
+
+        /// <summary>
+        /// Reveals the row's delete control in place of the clock at the right
+        /// edge, and restores the clock on leave.
+        /// </summary>
+        /// <remarks>
+        /// The clock is collapsed rather than dimmed: it is wider than the 22px
+        /// control, so leaving it visible would paint the glyph on top of the
+        /// time. Both are right-aligned in one cell, so swapping them does not
+        /// move anything else in the row.
+        ///
+        /// Hit testing is toggled with the opacity. An invisible button that
+        /// still accepts clicks would let a stray click on the timestamp delete
+        /// the session. Keyboard reach is deliberately not granted here — the
+        /// row's context menu owns the accessible delete path — so the control
+        /// is not a tab stop.
+        /// </remarks>
+        private static void SetSessionRowDeleteVisible(object sender, bool visible)
+        {
+            if (sender is not Grid grid)
             {
-                var deleteBtn = grid.Children.OfType<Button>().FirstOrDefault();
-                if (deleteBtn != null)
-                {
-                    deleteBtn.Opacity = 0.55;
-                }
+                return;
+            }
+
+            var cell = grid.Children.OfType<Grid>().FirstOrDefault();
+            if (cell is null)
+            {
+                return;
+            }
+
+            if (cell.FindName("SessionDeleteButton") is Button deleteButton)
+            {
+                deleteButton.Opacity = visible ? 1.0 : 0.0;
+                deleteButton.IsHitTestVisible = visible;
+            }
+
+            if (cell.FindName("SessionTimeText") is TextBlock clock)
+            {
+                clock.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
             }
         }
 

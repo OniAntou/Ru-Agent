@@ -690,14 +690,16 @@ namespace RuApp.Views
             return input + output + cacheRead + cacheWrite;
         }
 
-        public void UpdateContextUsage()
+        public void UpdateContextUsage(bool force = false)
         {
             if (_suppressContextUsageUpdate) return;
             // This walks the whole transcript, so running it on every streamed
             // snapshot turns chat history length into per-frame UI cost and
             // starves the activity feed. A one-second-old meter is plenty fresh.
+            // Session open refills the transcript inside this window after
+            // clearing it, so it repaints by force once history lands.
             long now = Environment.TickCount64;
-            if (now - _lastContextUsageTick < ContextUsageMinIntervalMs)
+            if (!force && now - _lastContextUsageTick < ContextUsageMinIntervalMs)
             {
                 return;
             }
@@ -746,7 +748,7 @@ namespace RuApp.Views
                 double percentage = meter.Percentage;
 
                 ContextProgressRing.Value = percentage;
-                PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens);
+                PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens, meter.MaximumTokens);
 
                 var brush = meter.Severity switch
                 {
@@ -768,7 +770,7 @@ namespace RuApp.Views
             else
             {
                 ContextProgressRing.Value = 0;
-                PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens);
+                PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens, meter.MaximumTokens);
                 ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} tokens";
                 ContextPercentLabel.Text = "Used";
                 ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
@@ -778,13 +780,14 @@ namespace RuApp.Views
         /// <summary>
         /// Paints one flat share bar and its legend: messages from the local
         /// estimate, system plus tools only when a provider report reveals the
-        /// gap. The bar is a single fill with a hard gradient stop between the
-        /// parts, so no seam ever shows. No report means no overhead row
-        /// instead of a guess.
+        /// gap. The fill spans only the used share of the budget track, with a
+        /// hard gradient stop between the parts, so no seam ever shows. No
+        /// report means no overhead row instead of a guess.
         /// </summary>
-        private void PaintContextBreakdown(int messageTokens, int? overheadTokens, int usedTokens)
+        private void PaintContextBreakdown(int messageTokens, int? overheadTokens, int usedTokens, int maximumTokens)
         {
-            if (ContextBreakdownFill is null
+            if (ContextBreakdownBar is null
+                || ContextBreakdownFill is null
                 || ContextStopMsg1 is null
                 || ContextStopOv0 is null
                 || ContextMessagesLabel is null
@@ -796,7 +799,7 @@ namespace RuApp.Views
 
             ContextMessagesLabel.Text = $"~{ModelContextSpecs.FormatTokens(messageTokens)}";
 
-            if (usedTokens <= 0)
+            if (usedTokens <= 0 || maximumTokens <= 0)
             {
                 ContextBreakdownFill.Visibility = Visibility.Collapsed;
                 ContextOverheadRow.Visibility = Visibility.Collapsed;
@@ -804,6 +807,11 @@ namespace RuApp.Views
             }
 
             ContextBreakdownFill.Visibility = Visibility.Visible;
+            ContextBreakdownBar.ColumnDefinitions[0].Width =
+                new GridLength(Math.Max(usedTokens, 0), GridUnitType.Star);
+            ContextBreakdownBar.ColumnDefinitions[1].Width = new GridLength(
+                Math.Max(maximumTokens - usedTokens, 0),
+                GridUnitType.Star);
             int overhead = overheadTokens ?? 0;
             double ratio = overhead > 0
                 ? Math.Max(0.0, Math.Min(1.0, (double)Math.Max(messageTokens, 0) / usedTokens))
@@ -1489,7 +1497,7 @@ namespace RuApp.Views
             if (grid.DataContext is not AgentActivityItem item)
                 return;
 
-            if (grid.Tag == null)
+            if (grid.Tag == null && Services.UiTiming.AnimationsEnabled)
             {
                 grid.Opacity = 0;
                 var translate = new TranslateTransform { Y = 4 };
@@ -1528,9 +1536,10 @@ namespace RuApp.Views
                 {
                     foreach (var headerChild in header.Children)
                     {
-                        // The activity row is flat: column 0 is the display
-                        // label, column 1 the metadata line. Sweep the label.
-                        if (headerChild is TextBlock tb && Grid.GetColumn(tb) == 0)
+                        // The activity row is flat: column 0 is the waiting
+                        // pill, column 1 the display label, column 2 the
+                        // metadata line. Sweep the label.
+                        if (headerChild is TextBlock tb && Grid.GetColumn(tb) == 1)
                         {
                             displayText = tb;
                             break;
@@ -1546,6 +1555,8 @@ namespace RuApp.Views
             if (displayText == null) return;
 
             ApplyActivityTextStyle(displayText, item);
+            ApplyActivityLiveSetting(grid, item);
+            ApplyEditPreviewExpanded(grid, item);
             if (item.Todos is { Count: > 0 } latestTodos)
             {
                 DispatcherQueue?.TryEnqueue(() => UpdateTodoPanel(latestTodos));
@@ -1557,13 +1568,16 @@ namespace RuApp.Views
                     args.PropertyName == nameof(AgentActivityItem.State) ||
                     args.PropertyName == nameof(AgentActivityItem.IsRunning) ||
                     args.PropertyName == nameof(AgentActivityItem.IsCompleted) ||
-                    args.PropertyName == nameof(AgentActivityItem.IsFailed))
+                    args.PropertyName == nameof(AgentActivityItem.IsFailed) ||
+                    args.PropertyName == nameof(AgentActivityItem.IsWaiting))
                 {
                     DispatcherQueue?.TryEnqueue(() =>
                     {
                         if (s is AgentActivityItem ai && ReferenceEquals(grid.DataContext, ai))
                         {
                             ApplyActivityTextStyle(displayText, ai);
+                            ApplyActivityLiveSetting(grid, ai);
+                            ApplyEditPreviewExpanded(grid, ai);
                         }
                     });
                 }
@@ -1571,6 +1585,34 @@ namespace RuApp.Views
             item.PropertyChanged += handler;
             grid.Tag = (handler, displayText, item);
         }
+
+        /// <summary>
+        /// A settled diff must not shove the transcript: the preview stays open
+        /// while the row is live and folds itself once the row completes. The
+        /// header chevron still lets the reader reopen it by hand.
+        /// </summary>
+        private static void ApplyEditPreviewExpanded(Grid grid, AgentActivityItem item)
+        {
+            foreach (var descendant in EnumerateDescendants(grid))
+            {
+                if (descendant is Controls.FileEditPreviewControl preview)
+                {
+                    preview.IsExpanded = !item.IsCompleted;
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// A waiting row must not whisper: it announces assertively while every
+        /// other row stays polite.
+        /// </summary>
+        private static void ApplyActivityLiveSetting(Grid grid, AgentActivityItem item) =>
+            AutomationProperties.SetLiveSetting(
+                grid,
+                item.IsWaiting
+                    ? Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Assertive
+                    : Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
 
         /// <summary>
         /// Draws the standing todo panel above the composer from the latest list.
@@ -1762,6 +1804,19 @@ namespace RuApp.Views
 
         private void StartTextSweep(TextBlock textBlock, AgentActivityItem item)
         {
+            // Reduced motion: a static muted tint instead of the 25fps wave.
+            if (!Services.UiTiming.AnimationsEnabled)
+            {
+                StopTextSweep(textBlock);
+                if (Application.Current?.Resources.TryGetValue("RuMutedBrush", out var muted) == true
+                    && muted is Brush mutedBrush)
+                {
+                    textBlock.Foreground = mutedBrush;
+                }
+
+                return;
+            }
+
             _activeWaveTextBlocks[textBlock] = item;
 
             if (_waveTimer == null)
@@ -3711,6 +3766,12 @@ namespace RuApp.Views
                     IsError = true
                 });
             }
+            finally
+            {
+                // The clear above repaints zero while the refills arrive inside
+                // the throttle window, so repaint by force with history in place.
+                UpdateContextUsage(force: true);
+            }
         }
 
         private void ApplyInputWidth()
@@ -3799,6 +3860,32 @@ namespace RuApp.Views
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"[ChatView] Error copying content: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Copies a failed row's sentence plus its machine code for a bug report.
+        /// The feed itself no longer shows the code; this carries it instead.
+        /// </summary>
+        private void OnCopyActivityErrorClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement element
+                && element.Tag is AgentActivityItem item
+                && !string.IsNullOrEmpty(item.DisplayText))
+            {
+                try
+                {
+                    string text = string.IsNullOrWhiteSpace(item.SafeCode)
+                        ? item.DisplayText
+                        : $"{item.DisplayText} ({item.SafeCode})";
+                    var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                    package.SetText(text);
+                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error copying activity error: {ex.Message}");
                 }
             }
         }

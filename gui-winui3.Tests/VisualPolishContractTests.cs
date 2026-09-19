@@ -225,22 +225,23 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
-    public void Wave_stays_throttled_and_always_on()
+    public void Wave_respects_the_os_animation_setting_with_a_static_fallback()
     {
         // The frame interval is a named constant, not a literal at the call site.
         Assert.True(
             UiTiming.WaveFrame >= TimeSpan.FromMilliseconds(40),
             $"WaveFrame {UiTiming.WaveFrame} must stay throttled at 40ms or slower.");
 
-        // The activity wave is a signature effect: it runs whenever rows are active
-        // and never gates on the OS animation setting.
+        // The wave yields to reduced motion: a static muted tint replaces the
+        // 25fps loop when the user disables OS animations.
         var codeBehind = GuiSource.Text("Views", "ChatView.xaml.cs");
         Assert.Contains("StartTextSweep", codeBehind, StringComparison.Ordinal);
 
         var sweepStart = codeBehind.IndexOf("private void StartTextSweep", StringComparison.Ordinal);
         var sweepEnd = codeBehind.IndexOf("private void StopTextSweep", sweepStart, StringComparison.Ordinal);
         Assert.True(sweepStart >= 0 && sweepEnd > sweepStart, "StartTextSweep body boundary was not found.");
-        Assert.DoesNotContain("AnimationsEnabled", codeBehind[sweepStart..sweepEnd], StringComparison.Ordinal);
+        Assert.Contains("AnimationsEnabled", codeBehind[sweepStart..sweepEnd], StringComparison.Ordinal);
+        Assert.Contains("RuMutedBrush", codeBehind[sweepStart..sweepEnd], StringComparison.Ordinal);
     }
 
     [Fact]

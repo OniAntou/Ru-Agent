@@ -113,6 +113,40 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
+    public void The_activity_row_has_no_status_icon()
+    {
+        // Tried and removed: the per-action glyphs did not read with the work.
+        // Neither the markup nor the code may reference the icon again.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        Assert.False(GuiSource.NamedElements(document).ContainsKey("AgentActivityIcon"));
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        Assert.DoesNotContain("ApplyActivityIcon", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("ActionGlyph", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_approval_panel_floats_above_the_composer_instead_of_pushing_it()
+    {
+        // The approval card overlays the composer: showing it must not shove
+        // the todo panel and the input upward. The wrapper sits in the root
+        // grid (declared before the input, raised with a ZIndex); the panel
+        // itself stays out of the input container's flow.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var panel = GuiSource.Require(document, "ApprovalPanel");
+        var root = GuiSource.Require(document, "RootGrid");
+        var inputContainer = GuiSource.Require(document, "InputContainer");
+
+        Assert.False(GuiSource.IsDescendantOf(panel, inputContainer));
+
+        var wrapper = Assert.IsType<System.Xml.Linq.XElement>(panel.Parent);
+        Assert.Equal(root, wrapper.Parent);
+        Assert.Equal("1", GuiSource.AttributeValue(wrapper, "Row"));
+        Assert.Equal("Bottom", GuiSource.AttributeValue(wrapper, "VerticalAlignment"));
+        Assert.Equal("20", GuiSource.AttributeValue(wrapper, "ZIndex"));
+    }
+
+    [Fact]
     public void Activity_lifecycle_flags_follow_the_wire_state()
     {
         var running = Item(AgentActivityState.Started);

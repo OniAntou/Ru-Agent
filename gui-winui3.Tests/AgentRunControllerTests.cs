@@ -578,6 +578,47 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
+    public async Task CreateAndRun_keeps_a_raw_approval_code_off_the_status_line()
+    {
+        // The approval panel already speaks for the request: pouring its machine
+        // code into the status line only prints one more raw token row.
+        const string approvalId = "apr_dddddddddddddddddddddddddddddddd";
+        var fake = new FakeClient { Run = WaitingApprovalRun() };
+        fake.Stream.Add(new AgentEventModel(
+            EventId: "e-approval",
+            RunId: RunId,
+            SessionId: "sess_1",
+            EventType: "approval.requested",
+            OccurredAt: "2026",
+            Status: "waiting_approval",
+            SafeSummary: "terminal_unknown_executable",
+            PayloadRef: null,
+            ApprovalId: approvalId,
+            Sequence: 3,
+            IsTransient: false,
+            TransientSequence: null,
+            TransientData: null));
+        var controller = new AgentRunController(fake);
+        var seenStatuses = new List<string?>();
+        controller.PropertyChanged += (_, e) =>
+        {
+            if (string.Equals(e.PropertyName, nameof(AgentRunController.StatusText), StringComparison.Ordinal))
+            {
+                seenStatuses.Add(controller.StatusText);
+            }
+        };
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-approval-code"));
+
+        Assert.True(controller.HasPendingApproval);
+        Assert.DoesNotContain(
+            seenStatuses,
+            status => status is not null
+                && status.Contains("terminal_unknown_executable", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task CreateAndRun_clears_a_pending_approval_when_the_run_reports_it_resolved()
     {
         const string approvalId = "apr_cccccccccccccccccccccccccccccccc";

@@ -737,6 +737,7 @@ namespace RuApp.Views
             int reportedTokens = AgentContextMeterPolicy.MaxReportedTokens(reportedTotals);
 
             int estimatedTokens = ModelContextSpecs.EstimateTokens(totalChars, totalImages);
+            int? overheadTokens = AgentContextMeterPolicy.OverheadTokens(estimatedTokens, reportedTokens);
             var meter = AgentContextMeterPolicy.Evaluate(maxTokens, displayLimit, estimatedTokens, reportedTokens);
             int usedTokens = meter.UsedTokens;
 
@@ -745,8 +746,7 @@ namespace RuApp.Views
                 double percentage = meter.Percentage;
 
                 ContextProgressRing.Value = percentage;
-                ContextProgressBar.Value = percentage;
-                ContextProgressBar.Visibility = Visibility.Visible;
+                PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens);
 
                 var brush = meter.Severity switch
                 {
@@ -758,7 +758,6 @@ namespace RuApp.Views
                 };
 
                 ContextProgressRing.Foreground = brush;
-                ContextProgressBar.Foreground = brush;
 
                 ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} / {meter.DisplayLimit}";
                 ContextPercentLabel.Text = $"{percentage:0.#}%";
@@ -769,10 +768,57 @@ namespace RuApp.Views
             else
             {
                 ContextProgressRing.Value = 0;
-                ContextProgressBar.Visibility = Visibility.Collapsed;
+                PaintContextBreakdown(estimatedTokens, overheadTokens, usedTokens);
                 ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(usedTokens)} tokens";
                 ContextPercentLabel.Text = "Used";
                 ContextPercentLabel.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+            }
+        }
+
+        /// <summary>
+        /// Paints one flat share bar and its legend: messages from the local
+        /// estimate, system plus tools only when a provider report reveals the
+        /// gap. The bar is a single fill with a hard gradient stop between the
+        /// parts, so no seam ever shows. No report means no overhead row
+        /// instead of a guess.
+        /// </summary>
+        private void PaintContextBreakdown(int messageTokens, int? overheadTokens, int usedTokens)
+        {
+            if (ContextBreakdownFill is null
+                || ContextStopMsg1 is null
+                || ContextStopOv0 is null
+                || ContextMessagesLabel is null
+                || ContextOverheadRow is null
+                || ContextOverheadLabel is null)
+            {
+                return;
+            }
+
+            ContextMessagesLabel.Text = $"~{ModelContextSpecs.FormatTokens(messageTokens)}";
+
+            if (usedTokens <= 0)
+            {
+                ContextBreakdownFill.Visibility = Visibility.Collapsed;
+                ContextOverheadRow.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            ContextBreakdownFill.Visibility = Visibility.Visible;
+            int overhead = overheadTokens ?? 0;
+            double ratio = overhead > 0
+                ? Math.Max(0.0, Math.Min(1.0, (double)Math.Max(messageTokens, 0) / usedTokens))
+                : 1.0;
+            ContextStopMsg1.Offset = ratio;
+            ContextStopOv0.Offset = ratio;
+
+            if (overhead > 0)
+            {
+                ContextOverheadLabel.Text = $"~{ModelContextSpecs.FormatTokens(overhead)}";
+                ContextOverheadRow.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ContextOverheadRow.Visibility = Visibility.Collapsed;
             }
         }
 

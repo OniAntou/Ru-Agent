@@ -466,6 +466,19 @@
             </StackPanel>
         </Button>
 
+        <!-- Approval overlay: declared before the input (XAML parse fails when
+          it trails the composer) and raised above it with a ZIndex, so a
+          pending decision floats over the todo panel and the input instead
+          of shoving them upward. -->
+        <Grid Grid.Row="1"
+              VerticalAlignment="Bottom"
+              HorizontalAlignment="Stretch"
+              MaxWidth="820"
+              Margin="16,0,16,24"
+              Canvas.ZIndex="20">
+            <controls:AgentApprovalPanelControl x:Name="ApprovalPanel" />
+        </Grid>
+
             <Grid x:Name="InputContainer"
               Grid.Row="1"
               RowDefinitions="Auto,Auto,Auto,Auto"
@@ -573,7 +586,7 @@
                         </Grid>
                         <ProgressBar x:Name="TodoPanelProgress"
                                      Height="4"
-                                     CornerRadius="{StaticResource AppPillCornerRadius}"
+                                     CornerRadius="0"
                                      Background="{StaticResource RuAccentSoftBrush}"
                                      BorderThickness="0">
                             <ProgressBar.Foreground>
@@ -604,14 +617,11 @@
                            Visibility="Collapsed"
                            AutomationProperties.AutomationId="AgentStatusText"
                            AutomationProperties.LiveSetting="Polite" />
-                <Button x:Name="AgentStopButton"
-                        Visibility="Collapsed"
-                        Click="OnAgentStopClick"
-                        AutomationProperties.AutomationId="AgentStopButton"
-                        AutomationProperties.Name="Stop Coding Agent" />
-
-                <controls:AgentApprovalPanelControl x:Name="ApprovalPanel"
-                                            Grid.Row="3" />
+                 <Button x:Name="AgentStopButton"
+                         Visibility="Collapsed"
+                         Click="OnAgentStopClick"
+                         AutomationProperties.AutomationId="AgentStopButton"
+                         AutomationProperties.Name="Stop Coding Agent" />
 
             </StackPanel>
 
@@ -970,14 +980,66 @@
                                                            VerticalAlignment="Center" />
                                             </Grid>
 
-                                            <ProgressBar x:Name="ContextProgressBar"
-                                                         Value="0"
-                                                         Maximum="100"
-                                                         Height="2"
-                                                         CornerRadius="1"
-                                                         Foreground="{StaticResource RuAccentBrush}"
-                                                         Background="{StaticResource RuLineBrush}"
-                                                         Opacity="0.9" />
+                                            <Border Height="4"
+                                                    CornerRadius="0"
+                                                    Background="{StaticResource RuLineBrush}"
+                                                    Opacity="0.9">
+                                                <Border x:Name="ContextBreakdownFill"
+                                                        CornerRadius="0">
+                                                    <Border.Background>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                            <GradientStop x:Name="ContextStopMsg0" Offset="0" Color="{ThemeResource RuAccentColor}" />
+                                                            <GradientStop x:Name="ContextStopMsg1" Offset="1" Color="{ThemeResource RuAccentColor}" />
+                                                            <GradientStop x:Name="ContextStopOv0" Offset="1" Color="{ThemeResource RuAccentSoftColor}" />
+                                                            <GradientStop x:Name="ContextStopOv1" Offset="1" Color="{ThemeResource RuAccentSoftColor}" />
+                                                        </LinearGradientBrush>
+                                                    </Border.Background>
+                                                </Border>
+                                            </Border>
+
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                <Border Width="8"
+                                                        Height="8"
+                                                        CornerRadius="{StaticResource AppPillCornerRadius}"
+                                                        Background="{StaticResource RuAccentBrush}"
+                                                        VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="Messages"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource RuMutedBrush}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock x:Name="ContextMessagesLabel"
+                                                           Grid.Column="2"
+                                                           Text="0"
+                                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource RuInkBrush}"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
+
+                                            <Grid x:Name="ContextOverheadRow"
+                                                  ColumnDefinitions="Auto,*,Auto"
+                                                  ColumnSpacing="8">
+                                                <Border Width="8"
+                                                        Height="8"
+                                                        CornerRadius="{StaticResource AppPillCornerRadius}"
+                                                        Background="{StaticResource RuAccentSoftBrush}"
+                                                        VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="System + tools"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource RuMutedBrush}"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock x:Name="ContextOverheadLabel"
+                                                           Grid.Column="2"
+                                                           Text="0"
+                                                           FontFamily="{StaticResource RuMonoFontFamily}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource RuInkBrush}"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
                                         </StackPanel>
                                     </Flyout>
                                 </Button.Flyout>

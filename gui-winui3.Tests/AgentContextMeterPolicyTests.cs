@@ -10,6 +10,17 @@ namespace RuApp.Tests;
 public sealed class AgentContextMeterPolicyTests
 {
     [Fact]
+    public void The_overhead_is_the_reported_gap_above_the_history_estimate()
+    {
+        // The report covers system prompt, tool definitions and history while
+        // the estimate covers history alone: the gap is the overhead, and no
+        // report means no overhead row instead of a guess.
+        Assert.Equal(40_800, AgentContextMeterPolicy.OverheadTokens(1_200, 42_000));
+        Assert.Null(AgentContextMeterPolicy.OverheadTokens(3_500, 0));
+        Assert.Null(AgentContextMeterPolicy.OverheadTokens(3_500, 3_500));
+    }
+
+    [Fact]
     public void The_provider_report_wins_over_the_character_estimate()
     {
         // The provider total already covers system prompt, tool definitions and
@@ -138,6 +149,33 @@ public sealed class AgentContextMeterPolicyTests
     public void No_reports_means_zero()
     {
         Assert.Equal(0, AgentContextMeterPolicy.MaxReportedTokens([]));
+    }
+
+    [Fact]
+    public void The_flyout_paints_messages_and_overhead_as_separate_segments()
+    {
+        // One perfectly flat bar in one hue, two strengths: messages solid
+        // accent, overhead soft accent. A second hue would shout; the
+        // breakdown should read quietly. The legend rows stay one per
+        // measured part.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var fill = GuiSource.Require(document, "ContextBreakdownFill");
+        var stops = fill.Descendants()
+            .Where(element => element.Name.LocalName == "GradientStop")
+            .ToList();
+
+        Assert.True(stops.Count >= 4);
+        Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuAccentColor"));
+        Assert.Contains(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuAccentSoftColor"));
+        Assert.DoesNotContain(stops, stop => (GuiSource.AttributeValue(stop, "Color") ?? string.Empty).Contains("RuVioletColor"));
+
+        GuiSource.Require(document, "ContextOverheadRow");
+        GuiSource.Require(document, "ContextMessagesLabel");
+        GuiSource.Require(document, "ContextOverheadLabel");
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string update = GuiSource.MethodBody(code, "UpdateContextUsage");
+        Assert.Contains("OverheadTokens", update, StringComparison.Ordinal);
     }
 
     [Fact]

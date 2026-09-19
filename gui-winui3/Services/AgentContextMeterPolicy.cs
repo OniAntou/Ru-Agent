@@ -78,6 +78,16 @@ public static class AgentContextMeterPolicy
     }
 
     /// <summary>
+    /// System prompt plus tool definitions, inferred only when the provider has
+    /// reported a real step: the report covers system, tools and history while
+    /// the estimate covers history alone, so the gap between them is the
+    /// overhead. Null while no step has run, so the view hides the legend row
+    /// instead of guessing a number.
+    /// </summary>
+    public static int? OverheadTokens(int estimatedTokens, int reportedTokens) =>
+        reportedTokens > estimatedTokens ? reportedTokens - estimatedTokens : null;
+
+    /// <summary>
     /// Largest provider-reported token total across the transcript and the active
     /// step. The provider figure covers one step, so a longer conversation is the
     /// largest of them rather than a sum; a later, smaller report must not lower the

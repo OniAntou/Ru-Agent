@@ -572,7 +572,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             }
 
             Events.Add(model);
-            if (!string.IsNullOrEmpty(model.SafeSummary))
+            if (!string.IsNullOrEmpty(model.SafeSummary)
+                && !IsApprovalRequestWithPanel(model))
             {
                 _statusText = model.SafeSummary;
             }
@@ -827,6 +828,15 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(CanCancel));
         OnPropertyChanged(nameof(CanContinue));
     }
+
+    /// <summary>
+    /// Whether the event opens the approval panel. Its machine code must not
+    /// reach the status line: the panel already speaks for the request, and the
+    /// code alone only prints one more raw token row.
+    /// </summary>
+    private static bool IsApprovalRequestWithPanel(AgentEventModel model) =>
+        string.Equals(model.EventType, "approval.requested", StringComparison.Ordinal)
+        && !string.IsNullOrWhiteSpace(model.ApprovalId);
 
     private void RunOnUi(Action action)
     {

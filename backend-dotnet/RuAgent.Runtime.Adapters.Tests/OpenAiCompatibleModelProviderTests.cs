@@ -117,6 +117,69 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_accepts_reasoning_field_as_thinking_fallback()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"reasoning\":\"Considering scope\"}}]}\n\n" +
+                "data: {\"choices\":[{\"delta\":{\"content\":\"done\",\"finish_reason\":\"stop\"}}]}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.Equal("Considering scope", deltas[0].Reasoning);
+        Assert.Null(deltas[0].Text);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_skips_structured_reasoning_without_failing()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"reasoning\":[{\"type\":\"summary\"}],\"content\":\"done\",\"finish_reason\":\"stop\"}}]}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.Null(deltas[0].Reasoning);
+        Assert.Equal("done", deltas[0].Text);
+    }
+
+    [Theory]
+    [InlineData("{\"reasoning_effort\":\"high\"}", true)]
+    [InlineData("{\"reasoning\":{\"effort\":\"high\"}}", true)]
+    [InlineData("{}", false)]
+    public async Task GenerateAsync_requests_reasoning_only_when_asked(string optionsJson, bool expected)
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        _ = await provider.GenerateAsync(
+            Request(JsonNode.Parse(optionsJson)!.AsObject()),
+            CancellationToken.None).ToListAsync();
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal(expected, body.ContainsKey("include_reasoning"));
+        if (expected)
+        {
+            Assert.True(body["include_reasoning"]!.GetValue<bool>());
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsync_preserves_provider_usage_from_terminal_stream_chunk()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

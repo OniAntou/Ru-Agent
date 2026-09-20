@@ -236,7 +236,8 @@ internal sealed class AgentModelInvocation
                 modelStepId,
                     AgentActivityState.Completed,
                     ElapsedMilliseconds(thinkingStartedAt),
-                    safeCode: "succeeded"));
+                    safeCode: "succeeded",
+                    detail: RedactDetail(modelResult.ReasoningText)));
         HarnessTelemetry.SetStepOutcome(telemetryActivity, "succeeded");
         var modelDroppedCount = checked((int)(_frames.DroppedCount - droppedBefore));
         if (modelDroppedCount > 0)
@@ -254,7 +255,8 @@ internal sealed class AgentModelInvocation
             step,
             promptReceiptPayload,
             promptComposedEvent,
-            modelDroppedCount);
+            modelDroppedCount,
+            modelResult.ReasoningText);
     }
 
     /// <summary>
@@ -401,5 +403,6 @@ internal sealed class AgentModelInvocation
         AssistantStep Step,
         HarnessPayloadIntent PromptReceiptPayload,
         HarnessEventIntent PromptComposedEvent,
-        int ModelDroppedCount);
+        int ModelDroppedCount,
+        string? ReasoningText = null);
 }

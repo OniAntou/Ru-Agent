@@ -60,6 +60,41 @@ public sealed class OpenAiResponsesModelProviderTests
         _ = await CollectAsync(provider.GenerateAsync(Request(settings), CancellationToken.None));
         var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
         Assert.Equal("high", body["reasoning"]!["effort"]!.GetValue<string>());
+        // Summaries are requested so the activity feed has something displayable.
+        Assert.Equal("auto", body["reasoning"]!["summary"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_keeps_an_explicit_reasoning_summary()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed" } }), Encoding.UTF8, "text/event-stream")
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var settings = new JsonObject { ["reasoning"] = new JsonObject { ["effort"] = "high", ["summary"] = "concise" } };
+        _ = await CollectAsync(provider.GenerateAsync(Request(settings), CancellationToken.None));
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal("concise", body["reasoning"]!["summary"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateAsync_surfaces_reasoning_summary_text_as_reasoning()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                SseEvent("response.reasoning_summary_text.delta", new JsonObject { ["type"] = "response.reasoning_summary_text.delta", ["delta"] = "Weighing options" }) +
+                SseEvent("response.output_text.delta", new JsonObject { ["type"] = "response.output_text.delta", ["delta"] = "done" }) +
+                SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed" } }),
+                Encoding.UTF8,
+                "text/event-stream")
+        });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+        Assert.Contains(deltas, d => d.Reasoning == "Weighing options");
+        Assert.Contains(deltas, d => d.Text == "done");
+        Assert.DoesNotContain(deltas, d => (d.Text ?? string.Empty).Contains("Weighing", StringComparison.Ordinal));
     }
 
     [Fact]

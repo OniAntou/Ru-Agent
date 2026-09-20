@@ -314,6 +314,35 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void ThinkingCompleted_WithDetail_EmitsNotice()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyActivity(new AgentActivityModel(
+            "act_1",
+            AgentActivityKind.Thinking,
+            AgentActivityState.Completed,
+            FileName: null,
+            LineStart: null,
+            LineEnd: null,
+            Symbol: null,
+            Count: null,
+            Added: null,
+            Removed: null,
+            DurationMs: 1200,
+            SafeCode: "succeeded",
+            ToolDisplay: null,
+            DurableSequence: null,
+            TransientSequence: null,
+            Detail: "considering folder scope",
+            Todos: null));
+
+        Assert.Contains(
+            Rows(output),
+            row => row.Contains("considering folder scope", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void BeginTurn_DoesNotEmitLegacyTurnHeader()
     {
         var (transcript, output) = Create();
@@ -340,6 +369,7 @@ public sealed class TuiTranscriptTests
     [Theory]
     [InlineData("tool.proposed")]
     [InlineData("continue.requested")]
+    [InlineData("model.reasoning_recorded")]
     public void ApplyDurable_IgnoresInternalEvents(string eventType)
     {
         var (transcript, output) = Create();

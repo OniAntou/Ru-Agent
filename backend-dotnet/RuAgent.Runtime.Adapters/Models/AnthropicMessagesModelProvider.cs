@@ -115,7 +115,22 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                                 if (text.Length == 0) throw new ModelProviderException("malformed_payload", false);
                                 yield return new ModelDelta(text, [], false, null);
                             }
-                            else if (deltaType is "thinking_delta" or "signature_delta")
+                            else if (deltaType == "thinking_delta")
+                            {
+                                if (blockType != "thinking") throw new ModelProviderException("malformed_payload", false);
+                                // Thinking is the model's deliberation: surface it as
+                                // reasoning for the activity feed, never as visible chat
+                                // text. Empty fragments carry nothing and are skipped.
+                                // Signatures stay dropped: they authenticate the block
+                                // but read as noise.
+                                var thinking = ReadString(delta["thinking"])
+                                    ?? throw new ModelProviderException("malformed_payload", false);
+                                if (thinking.Length > 0)
+                                {
+                                    yield return new ModelDelta(null, [], false, null, null, thinking);
+                                }
+                            }
+                            else if (deltaType == "signature_delta")
                             {
                                 if (blockType != "thinking") throw new ModelProviderException("malformed_payload", false);
                             }

@@ -164,6 +164,7 @@ public sealed class AgentRunCoordinator
         var promptReceiptPayload = invocation.PromptReceiptPayload;
         var promptComposedEvent = invocation.PromptComposedEvent;
         var modelDroppedCount = invocation.ModelDroppedCount;
+        var reasoningText = invocation.ReasoningText;
 
         if (step.ToolCalls.Count > 0)
         {
@@ -181,7 +182,8 @@ public sealed class AgentRunCoordinator
                         modelDroppedCount,
                         promptReceiptPayload,
                         promptComposedEvent,
-                        cancellationToken)
+                        cancellationToken,
+                        reasoningText)
                     .ConfigureAwait(false);
             }
 
@@ -193,7 +195,8 @@ public sealed class AgentRunCoordinator
                         step,
                         promptReceiptPayload,
                         promptComposedEvent,
-                        cancellationToken)
+                        cancellationToken,
+                        reasoningText)
                     .ConfigureAwait(false);
             }
 
@@ -204,7 +207,8 @@ public sealed class AgentRunCoordinator
                     modelDroppedCount,
                     promptReceiptPayload,
                     promptComposedEvent,
-                    cancellationToken)
+                    cancellationToken,
+                    reasoningText)
                 .ConfigureAwait(false);
         }
 
@@ -218,7 +222,8 @@ public sealed class AgentRunCoordinator
                     modelDroppedCount,
                     promptReceiptPayload,
                     promptComposedEvent,
-                    cancellationToken)
+                    cancellationToken,
+                    reasoningText)
                 .ConfigureAwait(false);
         }
 
@@ -229,7 +234,8 @@ public sealed class AgentRunCoordinator
                 modelDroppedCount,
                 promptReceiptPayload,
                 promptComposedEvent,
-                cancellationToken)
+                cancellationToken,
+                reasoningText)
             .ConfigureAwait(false);
     }
 

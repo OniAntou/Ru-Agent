@@ -93,8 +93,21 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                     {
                         throw new ModelProviderException("http_error", false);
                     }
+                    if (evt.Event is "response.reasoning.delta" or "response.reasoning_summary_text.delta")
+                    {
+                        // Reasoning summaries are the displayable part of the
+                        // model's deliberation: surface them for the activity
+                        // feed, never as visible chat text.
+                        var summary = ReadString(data["delta"]);
+                        if (summary is null) throw new ModelProviderException("malformed_payload", false);
+                        if (summary.Length > 0)
+                        {
+                            yield return new ModelDelta(null, [], false, null, null, summary);
+                        }
+                        continue;
+                    }
                     if (evt.Event is "response.created" or "response.in_progress" or "response.output_item.added" or "response.content_part.added" or "response.output_item.done" or "response.content_part.done"
-                        or "response.reasoning.delta" or "response.reasoning.done" or "response.queued")
+                        or "response.reasoning.done" or "response.queued")
                     {
                         continue;
                     }
@@ -153,7 +166,16 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
             ["store"] = false,
         };
         if (request.Settings["reasoning"] is JsonObject reasoning)
-            body["reasoning"] = (JsonObject)reasoning.DeepClone();
+        {
+            var outgoing = (JsonObject)reasoning.DeepClone();
+            // Summaries are what the activity feed can display: without this the
+            // API returns encrypted reasoning the client cannot show.
+            if (outgoing["summary"] is null)
+            {
+                outgoing["summary"] = "auto";
+            }
+            body["reasoning"] = outgoing;
+        }
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
     }
 

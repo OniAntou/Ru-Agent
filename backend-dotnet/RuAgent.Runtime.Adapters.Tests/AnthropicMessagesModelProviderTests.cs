@@ -187,7 +187,7 @@ public sealed class AnthropicMessagesModelProviderTests
     }
 
     [Fact]
-    public async Task GenerateAsync_ignores_thinking_delta()
+    public async Task GenerateAsync_surfaces_thinking_delta_as_reasoning()
     {
         var sse = MessageStart() + ContentBlockStart(0, "thinking") + ContentBlockDeltaThinking(0, "reasoning...") + ContentBlockStop(0) + ContentBlockStart(0, "text") + ContentBlockDeltaText(0, "answer") + ContentBlockStop(0) + MessageDelta() + MessageStop();
         // Note: second block uses same index after first closed — provider expects new blockIndex free, index 0 reused; still valid after stop
@@ -196,6 +196,9 @@ public sealed class AnthropicMessagesModelProviderTests
         var deltas = await CollectAsync(provider.GenerateAsync(Request(null, 8192), CancellationToken.None));
         Assert.Single(deltas, d => d.Text is not null);
         Assert.Equal("answer", deltas.First(d => d.Text is not null).Text);
+        // Thinking rides the reasoning channel for the activity feed, never as chat text.
+        Assert.Contains(deltas, d => d.Reasoning == "reasoning...");
+        Assert.DoesNotContain(deltas, d => (d.Text ?? string.Empty).Contains("reasoning", StringComparison.Ordinal));
     }
 
     [Fact]

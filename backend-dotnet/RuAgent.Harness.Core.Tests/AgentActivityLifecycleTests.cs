@@ -2,6 +2,7 @@ using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Tests.Fakes;
 using Xunit;
@@ -53,6 +54,40 @@ public sealed class AgentActivityLifecycleTests
         Assert.DoesNotContain(
             store.Commits.SelectMany(commit => commit.Events),
             item => item.Kind.ToString().Contains("Activity", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Thinking_completed_carries_reasoning_as_detail()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(new ModelStepResult(
+            ToolStep(),
+            SystemPromptReceipt.Empty,
+            usage: null,
+            reasoningText: "considering folder scope"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, new FakeToolGateway(), store, sink);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var thinking = Assert.Single(
+            sink.Items,
+            item => item.Activity.Kind == AgentActivityKind.Thinking
+                && item.Activity.State == AgentActivityState.Completed);
+        Assert.Equal("considering folder scope", thinking.Activity.Detail);
+
+        // The same reasoning is durable: reopening the session rebuilds the
+        // thinking row from this event and payload, not from the live feed.
+        // The model-step commit lands before the tool-execution commits, so the
+        // whole commit history is searched, not just the last one.
+        Assert.Contains(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ModelReasoningRecorded);
+        Assert.Contains(
+            store.Commits.SelectMany(commit => commit.Payloads),
+            item => item.Kind == HarnessPayloadKind.ModelReasoning);
     }
 
     [Fact]

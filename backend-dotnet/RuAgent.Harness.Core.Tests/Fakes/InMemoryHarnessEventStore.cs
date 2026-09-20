@@ -147,6 +147,7 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
         HarnessEventKind.ContextCompacted => "context.compacted",
         HarnessEventKind.ModelUsageRecorded => "model.usage_recorded",
         HarnessEventKind.RunNoteAdded => "run.note_added",
+        HarnessEventKind.ModelReasoningRecorded => "model.reasoning_recorded",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 }

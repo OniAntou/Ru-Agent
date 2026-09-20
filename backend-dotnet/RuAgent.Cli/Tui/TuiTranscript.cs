@@ -262,6 +262,10 @@ public sealed class TuiTranscript
                 {
                     _status.SetState(TuiRunState.Thinking);
                 }
+                else if (!string.IsNullOrWhiteSpace(activity.Detail))
+                {
+                    Notice(activity.Detail, TuiToken.Meta);
+                }
 
                 return;
 
@@ -421,7 +425,8 @@ public sealed class TuiTranscript
         var summary = Escape(envelope.SafeSummary);
 
         if (type is "run.state_changed" or "model.step_started" or "model.step_completed"
-            or "prompt_receipt" or "model.usage_recorded" or "tool.proposed" or "continue.requested")
+            or "prompt_receipt" or "model.usage_recorded" or "model.reasoning_recorded"
+            or "tool.proposed" or "continue.requested")
         {
             return;
         }

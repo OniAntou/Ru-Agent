@@ -16,6 +16,7 @@ public enum HarnessPayloadKind
     UserImage = 11,
     ModelUsage = 12,
     ModelContextNote = 13,
+    ModelReasoning = 14,
 }
 
 [Flags]

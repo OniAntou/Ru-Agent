@@ -47,7 +47,8 @@ internal sealed class AgentRunStepHandlers
         int droppedCount,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasoningText = null)
     {
         const string stepErrorCode = "unverified_after_tool_failure";
         var transition = AgentRunStateMachine.TryTransition(
@@ -78,6 +79,13 @@ internal sealed class AgentRunStepHandlers
                 payloadId: assistantPayloadId,
                 safeCode: stepErrorCode),
         };
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        var commitPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, assistantPayload };
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            events.Add(reasoningEvent);
+            commitPayloads.Add(reasoningPayload);
+        }
         if (droppedCount > 0)
         {
             events.Add(new HarnessEventIntent(
@@ -103,7 +111,7 @@ internal sealed class AgentRunStepHandlers
                 run,
                 next,
                 events,
-                [promptReceiptPayload, assistantPayload],
+                commitPayloads,
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -125,7 +133,8 @@ internal sealed class AgentRunStepHandlers
         int droppedCount,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasoningText = null)
     {
         const string advisedCode = "repeated_tool_call_advised";
         var assistantPayloadId = _ids.NewPayloadId();
@@ -159,6 +168,13 @@ internal sealed class AgentRunStepHandlers
                 safeCount: step.ToolCalls.Count,
                 safeCode: advisedCode),
         };
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        var commitPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, assistantPayload, notePayload };
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            events.Add(reasoningEvent);
+            commitPayloads.Add(reasoningPayload);
+        }
         if (droppedCount > 0)
         {
             events.Add(new HarnessEventIntent(
@@ -186,7 +202,7 @@ internal sealed class AgentRunStepHandlers
                 run,
                 next,
                 events,
-                [promptReceiptPayload, assistantPayload, notePayload],
+                commitPayloads,
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -205,7 +221,8 @@ internal sealed class AgentRunStepHandlers
         AssistantStep step,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasoningText = null)
     {
         const string errorCode = "repeated_tool_call";
         var transition = AgentRunStateMachine.TryTransition(
@@ -233,7 +250,7 @@ internal sealed class AgentRunStepHandlers
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);
-        var events = new HarnessEventIntent[]
+        var events = new List<HarnessEventIntent>
         {
             promptComposedEvent,
             new(
@@ -253,19 +270,26 @@ internal sealed class AgentRunStepHandlers
                     HarnessEventKind.ContinueRequested,
                     safeCode: errorCode),
         };
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        var commitPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, assistantPayload };
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            events.Insert(2, reasoningEvent);
+            commitPayloads.Add(reasoningPayload);
+        }
         var next = run.Advance(
             transition.Next,
             run.BudgetWindow,
             run.ModelStepsInWindow,
             run.ToolCallsInWindow,
-            events.Length,
+            events.Count,
             _time.UtcNow,
             failing ? errorCode : null);
         var committed = await CommitAsync(
                 run,
                 next,
                 events,
-                [promptReceiptPayload, assistantPayload],
+                commitPayloads,
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -283,7 +307,8 @@ internal sealed class AgentRunStepHandlers
         AssistantStep step,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasoningText = null)
     {
         const string errorCode = "empty_model_reply";
         var transition = AgentRunStateMachine.TryTransition(
@@ -304,7 +329,7 @@ internal sealed class AgentRunStepHandlers
             HarnessPayloadEncoding.Json,
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);
-        var events = new HarnessEventIntent[]
+        var events = new List<HarnessEventIntent>
         {
             promptComposedEvent,
             new(
@@ -319,19 +344,26 @@ internal sealed class AgentRunStepHandlers
                 HarnessEventKind.RunFailed,
                 safeCode: errorCode),
         };
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        var commitPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, assistantPayload };
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            events.Insert(2, reasoningEvent);
+            commitPayloads.Add(reasoningPayload);
+        }
         var next = run.Advance(
             transition.Next,
             run.BudgetWindow,
             run.ModelStepsInWindow,
             run.ToolCallsInWindow,
-            events.Length,
+            events.Count,
             _time.UtcNow,
             errorCode);
         var committed = await CommitAsync(
                 run,
                 next,
                 events,
-                [promptReceiptPayload, assistantPayload],
+                commitPayloads,
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -345,7 +377,8 @@ internal sealed class AgentRunStepHandlers
         int modelDroppedCount,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasoningText = null)
     {
         var reservation = AgentBudgetPolicy.ReserveToolCalls(
             run,
@@ -364,32 +397,38 @@ internal sealed class AgentRunStepHandlers
 
         // ReserveToolCalls computes counters for a one-event commit. The prompt
         // receipt is persisted beside the model completion, so advance the same
-        // counters with the complete two-event write set.
+        // counters with the complete write set below (two events, three when the
+        // step recorded reasoning).
+        var stepCompletedEvent = new HarnessEventIntent(
+            _ids.NewEventId(),
+            reservation.Granted
+                ? HarnessEventKind.ModelStepCompleted
+                : HarnessEventKind.ContinueRequested,
+            modelStepId: modelStepId,
+            payloadId: assistantPayloadId,
+            safeCount: step.ToolCalls.Count,
+            safeCode: reservation.ErrorCode);
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        var stepEvents = new List<HarnessEventIntent> { promptComposedEvent, stepCompletedEvent };
+        var stepPayloads = new List<HarnessPayloadIntent> { promptReceiptPayload, modelPayload };
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            stepEvents.Add(reasoningEvent);
+            stepPayloads.Add(reasoningPayload);
+        }
         var reservationNext = run.Advance(
             reservation.NextRun.Status,
             reservation.NextRun.BudgetWindow,
             reservation.NextRun.ModelStepsInWindow,
             reservation.NextRun.ToolCallsInWindow,
-            appendedEventCount: 2,
+            appendedEventCount: stepEvents.Count,
             updatedAt: _time.UtcNow,
             terminalErrorCode: reservation.NextRun.TerminalErrorCode);
         run = await CommitAsync(
                 run,
                 reservationNext,
-                new[]
-                {
-                    promptComposedEvent,
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        reservation.Granted
-                            ? HarnessEventKind.ModelStepCompleted
-                            : HarnessEventKind.ContinueRequested,
-                        modelStepId: modelStepId,
-                        payloadId: assistantPayloadId,
-                        safeCount: step.ToolCalls.Count,
-                        safeCode: reservation.ErrorCode),
-                },
-                new[] { promptReceiptPayload, modelPayload },
+                stepEvents,
+                stepPayloads,
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -415,7 +454,8 @@ internal sealed class AgentRunStepHandlers
         int droppedCount,
         HarnessPayloadIntent promptReceiptPayload,
         HarnessEventIntent promptComposedEvent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? reasoningText = null)
     {
         if (string.IsNullOrEmpty(step.Text))
         {
@@ -425,7 +465,8 @@ internal sealed class AgentRunStepHandlers
                     step,
                     promptReceiptPayload,
                     promptComposedEvent,
-                    cancellationToken)
+                    cancellationToken,
+                    reasoningText)
                 .ConfigureAwait(false);
         }
 
@@ -463,6 +504,11 @@ internal sealed class AgentRunStepHandlers
                 Math.Max(usageBytes.Length, 1),
                 usageBytes));
         }
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            payloads.Add(reasoningPayload);
+        }
         var events = new List<HarnessEventIntent>
         {
             promptComposedEvent,
@@ -480,6 +526,10 @@ internal sealed class AgentRunStepHandlers
                 modelStepId: modelStepId,
                 payloadId: usageId,
                 safeCode: "reported"));
+        }
+        if (reasoningEvent is not null)
+        {
+            events.Add(reasoningEvent);
         }
         if (droppedCount > 0)
         {
@@ -541,6 +591,57 @@ internal sealed class AgentRunStepHandlers
         }
 
         return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Builds the durable reasoning record for a model step. Reasoning is
+    /// observational only: it rides a client-visible payload the model context
+    /// never binds, so reopening a session can show what the model was thinking
+    /// without feeding it back into a later prompt.
+    /// </summary>
+    private (HarnessPayloadIntent? Payload, HarnessEventIntent? Event) BuildReasoningCommit(
+        ModelStepId modelStepId,
+        string? reasoningText)
+    {
+        var excerpt = ClipReasoning(reasoningText);
+        if (excerpt is null)
+        {
+            return (null, null);
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(excerpt);
+        var payloadId = _ids.NewPayloadId();
+        var payload = new HarnessPayloadIntent(
+            payloadId,
+            HarnessPayloadKind.ModelReasoning,
+            HarnessPayloadAudience.AuthenticatedClient,
+            HarnessPayloadEncoding.Utf8Text,
+            Math.Max(bytes.Length, 1),
+            bytes);
+        var evt = new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.ModelReasoningRecorded,
+            modelStepId: modelStepId,
+            payloadId: payloadId,
+            safeCode: "recorded");
+        return (payload, evt);
+    }
+
+    private static string? ClipReasoning(string? reasoningText)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningText))
+        {
+            return null;
+        }
+
+        const int maxChars = 8_000;
+        var trimmed = reasoningText.Trim();
+        if (trimmed.Length > maxChars)
+        {
+            trimmed = trimmed[^maxChars..];
+        }
+
+        return trimmed.Length == 0 ? null : trimmed;
     }
 
     private async Task<AgentRun> CommitAsync(

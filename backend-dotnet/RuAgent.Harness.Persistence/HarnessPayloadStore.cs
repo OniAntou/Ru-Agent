@@ -146,6 +146,10 @@ public sealed partial class HarnessPayloadStore
                 16 * 1024,
                 HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.ModelReasoning] = new(
+                32 * 1024,
+                HarnessPayloadAudience.AuthenticatedClient,
+                [HarnessPayloadEncoding.Utf8Text]),
         };
 
     private readonly HarnessPayloadCryptography _cryptography;

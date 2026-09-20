@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
@@ -42,6 +43,7 @@ public sealed partial class AgentV1Service
         var completedCallIds = new HashSet<string>(StringComparer.Ordinal);
         var stepStartedAt = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
         var thinking = new List<ThinkingReplayRow>();
+        var reasoning = new Dictionary<string, ReasoningReplayCall>(StringComparer.Ordinal);
 
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
@@ -89,6 +91,13 @@ public sealed partial class AgentV1Service
                         ? null
                         : (int?)Math.Max(0, (evt.OccurredAt - startedAt).TotalMilliseconds);
                     thinking.Add(new ThinkingReplayRow(finishedStep, durationMs, evt.Sequence));
+                    break;
+                case "model.reasoning_recorded"
+                    when evt.ModelStepId is { } reasoningStep
+                        && evt.PayloadId is { } reasoningPayloadId:
+                    reasoning[reasoningStep.Value] = new ReasoningReplayCall(
+                        reasoningPayloadId,
+                        evt.Sequence);
                     break;
             }
         }
@@ -164,11 +173,33 @@ public sealed partial class AgentV1Service
             rows.Add(new ReplayedActivityRow(entry.Sequence, WithEditPreview(pending, proposal)));
         }
 
+        // Reasoning is recorded beside the step completion, so join it back onto
+        // the thinking row it belongs to. Only steps with a thinking row pay for
+        // a payload read; anything else stays untouched.
+        var thinkingSteps = new HashSet<string>(
+            thinking.Select(row => row.ModelStepId.Value),
+            StringComparer.Ordinal);
+        var reasoningDetails = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in reasoning)
+        {
+            if (!thinkingSteps.Contains(entry.Key))
+            {
+                continue;
+            }
+
+            var detail = await ReadReasoningDetailAsync(runId, entry.Value.PayloadId, cancellationToken).ConfigureAwait(false);
+            if (detail is not null)
+            {
+                reasoningDetails[entry.Key] = detail;
+            }
+        }
+
         foreach (var row in thinking)
         {
+            reasoningDetails.TryGetValue(row.ModelStepId.Value, out var detail);
             rows.Add(new ReplayedActivityRow(
                 row.Sequence,
-                AgentActivityProjector.ProjectModelStep(row.ModelStepId, CoreActivityState.Completed, row.DurationMs)));
+                AgentActivityProjector.ProjectModelStep(row.ModelStepId, CoreActivityState.Completed, row.DurationMs, detail: detail)));
         }
 
         var wires = new List<JsonElement>();
@@ -316,6 +347,47 @@ public sealed partial class AgentV1Service
         return startedPreview.Detail is null ? activity : activity with { Detail = startedPreview.Detail };
     }
 
+    /// <summary>
+    /// Reads a recorded reasoning excerpt for activity replay. Anything that is
+    /// not a client-visible UTF-8 reasoning payload is skipped, never surfaced
+    /// as a failure: replay must degrade to a duration-only thinking row.
+    /// </summary>
+    private async Task<string?> ReadReasoningDetailAsync(
+        RunId runId,
+        PayloadId payloadId,
+        CancellationToken cancellationToken)
+    {
+        HarnessPayloadContent content;
+        try
+        {
+            content = await _payloadStore.ReadForClientAsync(runId, payloadId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HarnessStoreException)
+        {
+            return null;
+        }
+
+        if (content.Kind != HarnessPayloadKind.ModelReasoning
+            || !content.Audience.HasFlag(HarnessPayloadAudience.AuthenticatedClient)
+            || content.Encoding == HarnessPayloadEncoding.Opaque
+            || content.Plaintext.IsEmpty)
+        {
+            return null;
+        }
+
+        string text;
+        try
+        {
+            text = Encoding.UTF8.GetString(content.Plaintext.Span);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
     private static ProtocolActivityWire MapActivity(AgentActivity activity) =>
         new(
             activity.ActivityId,
@@ -376,6 +448,8 @@ public sealed partial class AgentV1Service
         long Sequence);
 
     private sealed record ThinkingReplayRow(ModelStepId ModelStepId, int? DurationMs, long Sequence);
+
+    private sealed record ReasoningReplayCall(PayloadId PayloadId, long Sequence);
 
     private sealed record ReplayedActivityRow(long Sequence, AgentActivity Activity);
 }

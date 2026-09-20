@@ -18,6 +18,7 @@ public enum HarnessEventKind
     ContextCompacted,
     ModelUsageRecorded,
     RunNoteAdded,
+    ModelReasoningRecorded,
 }
 
 public sealed record HarnessEventIntent

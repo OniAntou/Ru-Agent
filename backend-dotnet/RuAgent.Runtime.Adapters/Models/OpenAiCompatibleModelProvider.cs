@@ -106,7 +106,13 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                     }
 
                     var text = ReadText(delta);
-                    var reasoning = ReadOptionalString(delta["reasoning_content"]);
+                    // Gateways disagree on the field name: OpenRouter-style streams
+                    // use reasoning_content while others use reasoning. Either one
+                    // is provider thinking, never visible chat text. The fallback
+                    // stays lenient: a structured reasoning block is skipped, not
+                    // a protocol failure.
+                    var reasoning = ReadOptionalString(delta["reasoning_content"])
+                        ?? TryReadString(delta["reasoning"]);
                     var fragments = ReadToolFragments(delta);
                     var finishReason = ReadFinishReason(choice);
                     if (text is null && reasoning is null && fragments.Count == 0 && finishReason is null)
@@ -173,6 +179,15 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             ["stream"] = true,
             ["stream_options"] = new JsonObject { ["include_usage"] = true },
         };
+        // OpenRouter-style gateways strip reasoning blocks from the response
+        // unless the request asks for them. Other agents send this flag, which
+        // is why they see thinking where Ru saw a bare answer. Only sent when
+        // reasoning was actually requested through Host-approved settings, so
+        // endpoints that never advertise reasoning keep their exact body.
+        if (!body.ContainsKey("include_reasoning") && ReasoningRequested(request.Settings))
+        {
+            body["include_reasoning"] = true;
+        }
         foreach (var property in request.Settings)
         {
             if (property.Key is not ("model" or "messages" or "stream" or "stream_options" or "model_tools"))
@@ -298,6 +313,12 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
 
         throw new ModelProviderException("malformed_payload", retryable: false);
     }
+
+    private static string? TryReadString(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    private static bool ReasoningRequested(JsonObject settings) =>
+        settings.ContainsKey("reasoning_effort") || settings.ContainsKey("reasoning");
 
     private static ModelUsage? ReadUsage(JsonNode? node)
     {

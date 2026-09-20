@@ -141,6 +141,68 @@ public sealed class AgentRunActivitiesTests
     }
 
     /// <summary>
+    /// A reopened session must still show what the model was thinking: the
+    /// reasoning rides a durable payload the replay joins back onto the
+    /// thinking row, instead of living only in the transient live feed.
+    /// </summary>
+    [Fact]
+    public async Task Replayed_thinking_carries_the_recorded_reasoning()
+    {
+        var steps = new Queue<AssistantStep>();
+        steps.Enqueue(new AssistantStep(
+            null,
+            new[]
+            {
+                new ModelToolCall(
+                    null,
+                    "todo_write",
+                    "1.0.0",
+                    JsonDocument.Parse("""
+                        {"todos":[
+                          {"content":"Read the failing test","status":"completed"}]}
+                        """).RootElement),
+            },
+            AssistantFinishReason.ToolCalls,
+            0));
+        steps.Enqueue(new AssistantStep(
+            "planned",
+            Array.Empty<ModelToolCall>(),
+            AssistantFinishReason.Stop,
+            0));
+        var reasoning = new Queue<string?>();
+        reasoning.Enqueue("planning the fix");
+        reasoning.Enqueue("wrapping up");
+
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: tmp.DataPaths,
+            modelStepRunner: new ScriptedStepRunner(steps, reasoning),
+            withInProcessBroker: true);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(
+            client, session, tmp.Path, "plan this", "reason-act-key-" + Guid.NewGuid().ToString("N"));
+        await TrustAsync(client, runId);
+        await WaitForTerminalAsync(client, runId);
+
+        using var resp = await client.GetAsync($"/agent/v1/runs/{runId}/activities");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        var activities = json.GetProperty("activities").EnumerateArray().ToArray();
+
+        var thinking = activities
+            .Where(activity => activity.GetProperty("kind").GetString() == "thinking")
+            .ToArray();
+        Assert.True(thinking.Length == 2, $"expected two replayed thinking rows, saw {thinking.Length}");
+        var details = thinking
+            .Select(activity => activity.TryGetProperty("detail", out var detail) ? detail.GetString() : null)
+            .ToArray();
+        Assert.Contains("planning the fix", details);
+        Assert.Contains("wrapping up", details);
+    }
+
+    /// <summary>
     /// Approves the trust challenge a run raises for a workspace outside the project root.
     /// </summary>
     /// <remarks>
@@ -260,8 +322,13 @@ public sealed class AgentRunActivitiesTests
     private sealed class ScriptedStepRunner : IModelStepRunner
     {
         private readonly Queue<AssistantStep> _steps;
+        private readonly Queue<string?> _reasoning;
 
-        public ScriptedStepRunner(Queue<AssistantStep> steps) => _steps = steps;
+        public ScriptedStepRunner(Queue<AssistantStep> steps, Queue<string?>? reasoning = null)
+        {
+            _steps = steps;
+            _reasoning = reasoning ?? new Queue<string?>();
+        }
 
         public Task<ModelStepResult> RunStepAsync(
             ModelStepRequest request,
@@ -276,7 +343,8 @@ public sealed class AgentRunActivitiesTests
             // The coordinator validates the returned receipt against the prompt context it
             // built, so an empty receipt fails as prompt_contract_invalid.
             var receipt = SystemPromptComposer.Compose(request.PromptContext).Receipt;
-            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), receipt));
+            var reasoning = _reasoning.Count > 0 ? _reasoning.Dequeue() : null;
+            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), receipt, usage: null, reasoningText: reasoning));
         }
     }
 }

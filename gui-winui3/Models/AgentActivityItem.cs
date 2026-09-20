@@ -164,7 +164,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// </summary>
     public bool ShowPlainHeader => !HasThinkingDetail && !HasEditPreview;
 
-    public bool ShowPlainDetail => HasDetail && !IsThinking;
+    public bool ShowPlainDetail => HasDetail && !IsThinking && Kind != AgentActivityKind.Terminal;
 
     public bool ShowThinkingDetail => HasThinkingDetail && IsThinkingExpanded;
 
@@ -201,12 +201,13 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     public bool HasEditPreview => IsEditPreview;
 
     private bool _isEditPreviewExpanded;
-    private bool _editPreviewFoldingTakenOver;
 
     /// <summary>
-    /// Whether the diff is open. The row owns this because the row header is the
-    /// toggle: while the header lived inside the preview, the only way back to a
-    /// folded diff was a chevron stranded on the panel it had just closed.
+    /// Whether the diff is open. A row starts folded: a diff nobody asked to see is the
+    /// bulkiest thing the feed can carry, and the header already names the file it belongs
+    /// to, so the panel is one click away rather than always in the way. The row owns this
+    /// because the row header is the toggle: while the header lived inside the preview, the
+    /// only way back to a folded diff was a chevron stranded on the panel it had just closed.
     /// </summary>
     public bool IsEditPreviewExpanded
     {
@@ -215,9 +216,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         {
             if (SetProperty(ref _isEditPreviewExpanded, value))
             {
-                // A reader who folds or opens the diff has decided; later frames must
-                // not take it back.
-                _editPreviewFoldingTakenOver = true;
                 OnPropertyChanged(nameof(ShowEditPreview));
                 OnPropertyChanged(nameof(EditPreviewChevronGlyph));
             }
@@ -230,30 +228,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// <summary>Chevron for the edit toggle: down when open, right when closed.</summary>
     public string EditPreviewChevronGlyph => IsEditPreviewExpanded ? "\uE70D" : "\uE76C";
 
-    /// <summary>
-    /// Folds a frame's preview state in unless the reader has taken the decision over.
-    /// A live diff is open because that frame is the only one carrying it; a settled
-    /// diff is folded because it would otherwise keep shoving the transcript.
-    /// </summary>
-    private void ApplyEditPreviewFolding(AgentActivityState state)
-    {
-        if (_editPreviewFoldingTakenOver)
-        {
-            return;
-        }
-
-        bool expand = state != AgentActivityState.Completed;
-        if (expand == _isEditPreviewExpanded)
-        {
-            return;
-        }
-
-        _isEditPreviewExpanded = expand;
-        OnPropertyChanged(nameof(IsEditPreviewExpanded));
-        OnPropertyChanged(nameof(ShowEditPreview));
-        OnPropertyChanged(nameof(EditPreviewChevronGlyph));
-    }
-
     public string EditBeforeText => IsEditPreview ? SplitEditPreview().Before : string.Empty;
 
     public string EditAfterText => IsEditPreview ? SplitEditPreview().After : string.Empty;
@@ -262,11 +236,39 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     /// <summary>Feed grouping collapses redundant rows; collapsed rows keep
     /// their data for history but leave the visible feed.</summary>
+    /// <remarks>
+    /// A status row that says only "ok" is not shown at all. It is the one kind of row
+    /// whose entire job is to explain something, and "ok" explains nothing: the step
+    /// around it either produced a row of its own or is visible in its absence. The row
+    /// still exists and keeps its data; it just never earns a line in the feed.
+    /// </remarks>
     public bool IsVisibleInFeed
     {
-        get => _isVisibleInFeed;
+        get => _isVisibleInFeed && !IsSilentStatus;
         set => SetProperty(ref _isVisibleInFeed, value);
     }
+
+    /// <summary>
+    /// The command as one line, for the header that has to carry it.
+    /// </summary>
+    /// <remarks>
+    /// A command can be a whole pipeline. The row names what ran, so the first line is
+    /// enough; the output and the rest of the command live in the terminal panel.
+    /// </remarks>
+    private static string? CommandHeadline(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return null;
+        }
+
+        string line = detail.Trim().Split('\n')[0].Trim();
+        return line.Length <= 120 ? line : line[..120] + "…";
+    }
+
+    /// <summary>Whether this row's only content is the word for success.</summary>
+    private bool IsSilentStatus =>
+        Kind == AgentActivityKind.Status && SafeCode is "ok" or "succeeded";
 
     private int _collapsedDurationMs;
 
@@ -349,7 +351,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             "Write" => "Writing",
             _ => "Editing",
         },
-        AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Running {ToolDisplay} task" : "Running terminal task",
+        AgentActivityKind.Terminal => CommandHeadline(Detail) is { } running ? $"Running {running}" : "Running terminal task",
         AgentActivityKind.Compaction => Count is { } compacting
             ? (compacting == 1 ? "Compacting 1 context item" : $"Compacting {compacting} context items")
             : "Compacting context",
@@ -392,7 +394,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             "Write" => "Wrote",
             _ => "Edited",
         },
-        AgentActivityKind.Terminal => !string.IsNullOrWhiteSpace(ToolDisplay) ? $"Completed {ToolDisplay} task" : "Completed terminal task",
+        AgentActivityKind.Terminal => CommandHeadline(Detail) is { } ran ? $"Ran {ran}" : "Ran terminal task",
         AgentActivityKind.Compaction => Count is { } compacted
             ? (compacted == 1 ? "Compacted 1 context item" : $"Compacted {compacted} context items")
             : "Compacted context",
@@ -624,9 +626,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             ? rows.Select(row => new TodoItemModel(row.Content, row.Status)).ToArray()
             : null;
 
-        // After Detail: whether there is a preview to fold is decided by the detail
-        // that just landed.
-        ApplyEditPreviewFolding(activity.State);
+        OnPropertyChanged(nameof(IsVisibleInFeed));
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));

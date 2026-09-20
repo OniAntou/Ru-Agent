@@ -62,14 +62,11 @@ public static class AgentActivityProjector
 
         var toolDisplay = ToolDisplayFor(proposal);
 
-        // A terminal command is worth showing for as long as it is relevant: while it
-        // waits for an approval decision, and while it actually runs. Showing it only in
-        // the waiting state meant a command the user had already approved went dark the
-        // moment it started, which is exactly when they want to see it. The command is
-        // the same value in both states and passes the same cleaning, so this widens when
-        // it is shown, not what is exposed.
+        // A terminal command stays with its row for the row's whole life: while it waits,
+        // while it runs, and after it settles. Dropping it on completion left "Completed
+        // Terminal task" rows that named no command, so two commands in a row read as one
+        // row printed twice — the command is the only thing telling them apart.
         var detail = kind == AgentActivityKind.Terminal
-                && state is AgentActivityState.Waiting or AgentActivityState.Started
             ? ExtractTerminalCommand(proposal)
             : state == AgentActivityState.Started && kind == AgentActivityKind.Edit
                 ? ExtractEditPreview(proposal)

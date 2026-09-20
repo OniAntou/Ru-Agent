@@ -177,7 +177,7 @@ public sealed class AgentActivityItemTests
         Assert.Equal("Running terminal task", termStarted.DisplayText);
 
         var termCompleted = new AgentActivityItem(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Terminal));
-        Assert.Equal("Completed terminal task", termCompleted.DisplayText);
+        Assert.Equal("Ran terminal task", termCompleted.DisplayText);
 
         // Status / frames_dropped
         var statusDropped = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Status, safeCode: "frames_dropped"));
@@ -193,10 +193,18 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void DisplayText_Prefers_ToolDisplay_For_Started_Terminal()
+    public void DisplayText_Prefers_the_command_for_a_terminal_row()
     {
-        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Terminal, toolDisplay: "Terminal", durationMs: 2500));
-        Assert.Contains("Terminal", item.DisplayText, StringComparison.Ordinal);
+        // The row names what ran, not what kind of thing it was: "Running Terminal task"
+        // named the tool and left the reader to guess which command it belonged to.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Terminal,
+            toolDisplay: "Terminal",
+            detail: "npm run test",
+            durationMs: 2500));
+
+        Assert.Equal("Running npm run test", item.DisplayText);
     }
 
     [Theory]
@@ -370,28 +378,32 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void A_live_edit_opens_its_preview_and_a_settled_one_folds_it()
+    public void A_live_edit_starts_folded_and_only_the_reader_opens_it()
     {
-        // The diff exists only on the Started frame, so a live edit shows it. A settled
-        // one folds it: an open preview the reader did not ask for keeps pushing the
-        // reply down the transcript.
+        // A diff is the bulkiest thing the feed can carry, and the row's own header already
+        // names the file it belongs to, so it waits to be asked for instead of unfolding
+        // itself under every write the agent makes.
         var item = new AgentActivityItem(Activity(
             AgentActivityState.Started,
             kind: AgentActivityKind.Edit,
             detail: "@@ a ==> b"));
 
-        Assert.True(item.IsEditPreviewExpanded);
-        Assert.True(item.ShowEditPreview);
+        Assert.False(item.IsEditPreviewExpanded);
+        Assert.False(item.ShowEditPreview);
 
         Assert.True(item.UpdateFrom(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit)));
 
         Assert.False(item.IsEditPreviewExpanded);
         Assert.False(item.ShowEditPreview);
 
-        // Folding is not forgetting: the diff itself survives the settle, which is what
-        // lets the reader open it again.
+        // Folding is not forgetting: the diff itself survives, which is what lets the reader
+        // open it at all.
         Assert.True(item.HasEditPreview);
         Assert.Equal("a", item.EditBeforeText);
+
+        item.IsEditPreviewExpanded = true;
+        Assert.True(item.ShowEditPreview);
+        Assert.Equal("\uE70D", item.EditPreviewChevronGlyph);
     }
 
     [Fact]
@@ -436,10 +448,12 @@ public sealed class AgentActivityItemTests
         // The plain header stands down for a row whose header is a toggle: two headers
         // on one row, only one of them clickable, is the worse answer.
         Assert.False(item.ShowPlainHeader);
-        Assert.Equal("\uE70D", item.EditPreviewChevronGlyph);
 
-        item.IsEditPreviewExpanded = false;
+        // The chevron points right while the diff waits, and turns down once it is open.
         Assert.Equal("\uE76C", item.EditPreviewChevronGlyph);
+
+        item.IsEditPreviewExpanded = true;
+        Assert.Equal("\uE70D", item.EditPreviewChevronGlyph);
 
         var plain = new AgentActivityItem(Activity(
             AgentActivityState.Started,
@@ -510,13 +524,28 @@ public sealed class AgentActivityItemTests
     {
         var item = new AgentActivityItem(Activity(
             AgentActivityState.Waiting,
-            kind: AgentActivityKind.Terminal,
-            detail: "npm run test"));
+            kind: AgentActivityKind.Analyze,
+            detail: "Considering folder scope."));
 
         Assert.False(item.IsThinking);
         Assert.False(item.HasThinkingDetail);
         Assert.True(item.ShowPlainDetail);
         Assert.True(item.ShowPlainHeader);
+    }
+
+    [Fact]
+    public void A_terminal_row_carries_its_command_in_the_header_not_below_it()
+    {
+        // The command moved into the row's own words, so a muted copy underneath would say
+        // the same thing twice on one line pair.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            kind: AgentActivityKind.Terminal,
+            detail: "npm run test"));
+
+        Assert.True(item.HasDetail);
+        Assert.False(item.ShowPlainDetail);
+        Assert.Equal("npm run test", item.Detail);
     }
 
     [Fact]
@@ -631,6 +660,103 @@ public sealed class AgentActivityItemTests
             Activity(AgentActivityState.Failed, kind: AgentActivityKind.Status, safeCode: "prompt_contract_invalid")).FailedText;
 
         Assert.NotEqual(lost, refused);
+    }
+
+    [Fact]
+    public void A_status_row_that_only_says_ok_is_not_shown()
+    {
+        // A status row exists to explain something, and "ok" explains nothing: the step
+        // around it either produced a row of its own or is visible in its absence.
+        var ok = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Status,
+            safeCode: "ok"));
+
+        Assert.Equal("Status: ok", ok.DisplayText);
+        Assert.False(ok.IsVisibleInFeed);
+
+        var succeeded = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Status));
+
+        Assert.False(succeeded.IsVisibleInFeed);
+    }
+
+    [Fact]
+    public void A_status_row_that_explains_something_is_still_shown()
+    {
+        // These are the rows the kind exists for: they name a reason the reader cannot
+        // infer from the rows around them.
+        foreach (var code in new[] { "reconciliation_required", "inspection_required", "frames_dropped" })
+        {
+            var item = new AgentActivityItem(Activity(
+                AgentActivityState.Completed,
+                kind: AgentActivityKind.Status,
+                safeCode: code));
+
+            Assert.True(item.IsVisibleInFeed);
+        }
+    }
+
+    [Fact]
+    public void A_tool_row_is_not_silenced_by_its_outcome_code()
+    {
+        // An edit row says what it did, so the outcome code is not the row's content.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Edit,
+            fileName: "script.js",
+            safeCode: "ok"));
+
+        Assert.True(item.IsVisibleInFeed);
+    }
+
+    [Fact]
+    public void A_terminal_row_names_the_command_it_ran_in_both_states()
+    {
+        // "Running Terminal task" and "Completed Terminal task" told the reader nothing about
+        // which command either row was: two of them in a row read as one row printed twice.
+        var running = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Terminal,
+            toolDisplay: "Terminal",
+            detail: "git status --porcelain=v2"));
+
+        var completed = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Terminal,
+            toolDisplay: "Terminal",
+            detail: "git status --porcelain=v2"));
+
+        Assert.Equal("Running git status --porcelain=v2", running.DisplayText);
+        Assert.Equal("Ran git status --porcelain=v2", completed.DisplayText);
+
+        // The command is the header now, so it is not repeated as a muted line under it.
+        Assert.False(completed.ShowPlainDetail);
+        Assert.True(completed.IsVisibleInFeed);
+    }
+
+    [Fact]
+    public void A_command_that_spans_lines_names_its_row_by_its_first_line()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Terminal,
+            toolDisplay: "Terminal",
+            detail: "dotnet test\n(output follows)"));
+
+        Assert.Equal("Running dotnet test", item.DisplayText);
+    }
+
+    [Fact]
+    public void A_terminal_row_with_no_command_still_says_it_is_a_terminal_row()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Terminal,
+            toolDisplay: "Terminal"));
+
+        Assert.Equal("Ran terminal task", item.DisplayText);
     }
 
     private static AgentActivityModel Activity(

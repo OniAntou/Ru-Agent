@@ -2490,6 +2490,44 @@ namespace RuApp.Views
             return true;
         }
 
+        /// <summary>
+        /// Shows a row's fold chevron while the pointer is on it, or while it holds focus.
+        /// </summary>
+        /// <remarks>
+        /// The chevron says "this line folds", which a reader learns once; after that it is a
+        /// column of glyphs down the whole feed. It is collapsed rather than dimmed — a muted
+        /// glyph at low opacity is the double dimming the palette rules exist to prevent — and
+        /// it sits in a fixed-width box so the label beside it does not jump sideways the
+        /// moment the pointer arrives. Focus counts as hovering, because a keyboard reader has
+        /// no pointer to reveal it with.
+        /// </remarks>
+        private void OnActivityTogglePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, true);
+
+        private void OnActivityTogglePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, false);
+
+        private void OnActivityToggleGotFocus(object sender, RoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, true);
+
+        private void OnActivityToggleLostFocus(object sender, RoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, false);
+
+        private static void SetActivityChevronVisible(object sender, bool visible)
+        {
+            if (sender is not ToggleButton toggle || toggle.Content is not DependencyObject content)
+            {
+                return;
+            }
+
+            // One glyph per toggle header, and it is the only icon in there.
+            FontIcon? chevron = EnumerateDescendants(content).OfType<FontIcon>().FirstOrDefault();
+            if (chevron is not null)
+            {
+                chevron.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
         private void OnRemoveQueuedTurnClick(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is QueuedAgentTurn turn)

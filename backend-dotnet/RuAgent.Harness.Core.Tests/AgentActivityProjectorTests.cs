@@ -163,16 +163,18 @@ public sealed class AgentActivityProjectorTests
     }
 
     [Fact]
-    public void A_settled_terminal_drops_the_command()
+    public void A_settled_terminal_keeps_the_command()
     {
-        // Once the call is over the row reports its outcome, not the command it ran.
+        // The row has to name the command it ran for as long as a reader can scroll back to
+        // it: "Completed Terminal task" said only which kind of tool it was, so two commands
+        // in a row were indistinguishable. The outcome is what the state and the colour say.
         var proposal = Proposal(
             "bash",
             "{\"mode\":\"run\",\"executable\":\"rm\",\"arguments\":[\"-rf\",\"node_modules\"]}");
 
         var completed = AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Completed);
 
-        Assert.Null(completed.Detail);
+        Assert.Equal("rm -rf node_modules", completed.Detail);
     }
 
     [Fact]

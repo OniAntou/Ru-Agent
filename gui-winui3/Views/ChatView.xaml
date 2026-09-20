@@ -53,7 +53,7 @@
             </Setter>
         </Style>
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,10" HorizontalAlignment="Stretch">
+            <Grid Margin="0,16" HorizontalAlignment="Stretch">
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
@@ -141,7 +141,7 @@
         </DataTemplate>
 
         <DataTemplate x:Key="AgentActivityTemplate" x:DataType="models:AgentActivityItem">
-            <Grid Margin="0,6"
+            <Grid Margin="0,8"
                   HorizontalAlignment="Stretch"
                   Visibility="{x:Bind IsVisibleInFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                   Loaded="OnActivityItemLoaded"
@@ -180,13 +180,20 @@
                                     IsChecked="{x:Bind IsThinkingExpanded, Mode=TwoWay}"
                                     Style="{StaticResource RowDetailToggleStyle}"
                                     VerticalAlignment="Center"
+                                    PointerEntered="OnActivityTogglePointerEntered"
+                                    PointerExited="OnActivityTogglePointerExited"
+                                    GotFocus="OnActivityToggleGotFocus"
+                                    LostFocus="OnActivityToggleLostFocus"
                                     AutomationProperties.Name="Toggle thinking details">
                           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                              <FontIcon Glyph="{x:Bind ThinkingChevronGlyph, Mode=OneWay}"
-                                        FontFamily="Segoe MDL2 Assets"
-                                        FontSize="12"
-                                        Foreground="{StaticResource RuMutedBrush}"
-                                        VerticalAlignment="Center" />
+                              <Grid Width="14" VerticalAlignment="Center">
+                                  <FontIcon Glyph="{x:Bind ThinkingChevronGlyph, Mode=OneWay}"
+                                            FontFamily="Segoe MDL2 Assets"
+                                            FontSize="12"
+                                            Visibility="Collapsed"
+                                            Foreground="{StaticResource RuMutedBrush}"
+                                            VerticalAlignment="Center" />
+                              </Grid>
                               <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
                                          FontFamily="{StaticResource RuUiFontFamily}"
                                          FontWeight="SemiBold"
@@ -207,13 +214,20 @@
                                      IsChecked="{x:Bind IsEditPreviewExpanded, Mode=TwoWay}"
                                      Style="{StaticResource RowDetailToggleStyle}"
                                      VerticalAlignment="Center"
+                                     PointerEntered="OnActivityTogglePointerEntered"
+                                     PointerExited="OnActivityTogglePointerExited"
+                                     GotFocus="OnActivityToggleGotFocus"
+                                     LostFocus="OnActivityToggleLostFocus"
                                      AutomationProperties.Name="Toggle edit preview">
                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                               <FontIcon Glyph="{x:Bind EditPreviewChevronGlyph, Mode=OneWay}"
-                                         FontFamily="Segoe MDL2 Assets"
-                                         FontSize="12"
-                                         Foreground="{StaticResource RuMutedBrush}"
-                                         VerticalAlignment="Center" />
+                               <Grid Width="14" VerticalAlignment="Center">
+                                   <FontIcon Glyph="{x:Bind EditPreviewChevronGlyph, Mode=OneWay}"
+                                             FontFamily="Segoe MDL2 Assets"
+                                             FontSize="12"
+                                             Visibility="Collapsed"
+                                             Foreground="{StaticResource RuMutedBrush}"
+                                             VerticalAlignment="Center" />
+                               </Grid>
                                <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
                                           FontFamily="{StaticResource RuUiFontFamily}"
                                           FontWeight="SemiBold"
@@ -223,11 +237,15 @@
                            </StackPanel>
                        </ToggleButton>
                       <!--
-                        Metadata pill: a surface chip so the file line reads as one
-                        glanceable unit instead of bare text on the canvas.
+                        The subject and its line counts are two different things: the pill
+                        frames the file, and the counts stand beside it. A border around both
+                        made the numbers read as part of the frame instead of as the change.
                       -->
-                      <Border Grid.Column="1"
-                              Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                      <StackPanel Grid.Column="1"
+                                  Orientation="Horizontal"
+                                  Spacing="6"
+                                  VerticalAlignment="Center">
+                      <Border Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                               Background="{StaticResource RuSurfaceBrush}"
                               BorderBrush="{StaticResource RuLineBrush}"
                               BorderThickness="1"
@@ -251,6 +269,8 @@
                                       FontWeight="SemiBold"
                                       Foreground="{StaticResource RuInkBrush}"
                                       VerticalAlignment="Center" />
+                      </StackPanel>
+                      </Border>
                          <TextBlock Text="·"
                                     Visibility="{x:Bind HasLineDeltaAndBaseMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                     FontFamily="{StaticResource RuMonoFontFamily}"
@@ -269,10 +289,9 @@
                                     FontFamily="{StaticResource RuMonoFontFamily}"
                                     FontSize="11"
                                     FontWeight="SemiBold"
-                                     Foreground="{StaticResource RuDangerBrush}"
-                                     VerticalAlignment="Center" />
+                                    Foreground="{StaticResource RuDangerBrush}"
+                                    VerticalAlignment="Center" />
                       </StackPanel>
-                      </Border>
                 </Grid>
                 <TextBlock Grid.Row="1"
                            Text="{x:Bind Detail, Mode=OneWay}"
@@ -284,16 +303,15 @@
                            MaxWidth="560"
                            Margin="0,2,0,0" />
                 <!--
-                  Thinking deliberation as a quote block: accent bar on the left,
-                  canvas fill to set it off the chat, muted text so the reply
-                  below stays the visual focus. Closed by default.
+                  Thinking deliberation as a quote block: canvas fill to set it off the
+                  chat, muted text so the reply below stays the visual focus. Closed by
+                  default. The accent bar down its left edge is gone: the fill already
+                  separates it, and the bar read as one more line beside the words.
                 -->
                 <Border Grid.Row="1"
                         Visibility="{x:Bind ShowThinkingDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                        BorderBrush="{StaticResource RuAccentBrush}"
-                        BorderThickness="2,0,0,0"
                         Background="{StaticResource RuCanvasBrush}"
-                        CornerRadius="0,8,8,0"
+                        CornerRadius="8"
                         Padding="12,10"
                         Margin="0,6,0,0"
                         MaxWidth="560"
@@ -329,7 +347,7 @@
         </DataTemplate>
 
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,20" HorizontalAlignment="Stretch">
+            <Grid Margin="0,28" HorizontalAlignment="Stretch">
                 <Grid.ContextFlyout>
                     <MenuFlyout>
                         <MenuFlyoutItem Text="Copy Content" Click="OnCopyMessageContentClick" Tag="{x:Bind}">
@@ -356,7 +374,7 @@
                       Loaded="OnMessageColumnLoaded">
                 <StackPanel MaxWidth="820"
                             HorizontalAlignment="Left"
-                            Spacing="12">
+                            Spacing="16">
                     <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
                                   AutomationProperties.Name="Agent Activity Timeline"
                                   ItemsSource="{x:Bind Segments, Mode=OneWay}"
@@ -368,6 +386,15 @@
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    <!--
+                      Tool traffic is a timeline, not prose: a hairline down its left edge
+                      and a small indent group it, so a reply's own words are not read as
+                      one more tool row.
+                    -->
+                    <Border BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1,0,0,0"
+                            Padding="12,2,0,2"
+                            Visibility="{x:Bind ShowLegacyActivityFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
                     <ItemsControl AutomationProperties.AutomationId="AgentActivityFeed"
                                   AutomationProperties.Name="Agent Activity Feed"
                                   AutomationProperties.LiveSetting="Polite"
@@ -380,6 +407,7 @@
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    </Border>
                     <controls:MarkdownBlock x:Name="AgentReplyTextBlock"
                                             MarkdownText="{x:Bind Content, Mode=OneWay}"
                                             Visibility="{x:Bind ShowLegacyText, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"

@@ -368,6 +368,90 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
+    public void Thinking_detail_starts_collapsed_and_toggles_open()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Thinking,
+            detail: "considering folder scope"));
+
+        // Collapsed by default so the deliberation never buries its own reply.
+        Assert.True(item.IsThinking);
+        Assert.True(item.HasThinkingDetail);
+        Assert.False(item.IsThinkingExpanded);
+        Assert.False(item.ShowThinkingDetail);
+        // The plain line and the plain header stand down: the toggle owns both.
+        Assert.False(item.ShowPlainDetail);
+        Assert.False(item.ShowPlainHeader);
+        Assert.Equal("\uE76C", item.ThinkingChevronGlyph);
+
+        var changed = new List<string?>();
+        item.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+        item.IsThinkingExpanded = true;
+
+        Assert.True(item.ShowThinkingDetail);
+        Assert.Equal("\uE70D", item.ThinkingChevronGlyph);
+        Assert.Contains(nameof(AgentActivityItem.ShowThinkingDetail), changed);
+        Assert.Contains(nameof(AgentActivityItem.ThinkingChevronGlyph), changed);
+    }
+
+    [Fact]
+    public void Thinking_without_detail_has_no_toggle()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Thinking));
+
+        Assert.True(item.IsThinking);
+        Assert.False(item.HasThinkingDetail);
+        Assert.False(item.ShowThinkingDetail);
+        Assert.True(item.ShowPlainHeader);
+    }
+
+    [Fact]
+    public void Non_thinking_detail_keeps_the_plain_line()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Waiting,
+            kind: AgentActivityKind.Terminal,
+            detail: "npm run test"));
+
+        Assert.False(item.IsThinking);
+        Assert.False(item.HasThinkingDetail);
+        Assert.True(item.ShowPlainDetail);
+        Assert.True(item.ShowPlainHeader);
+    }
+
+    [Fact]
+    public void File_rows_earn_the_metadata_icon_and_search_rows_do_not()
+    {
+        var edit = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Edit,
+            fileName: "App.xaml",
+            added: 2,
+            removed: 1));
+
+        Assert.True(edit.HasFileName);
+        Assert.True(edit.ShowFileIcon);
+        Assert.True(edit.HasMetadata);
+
+        var search = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Search,
+            symbol: "LoginButton",
+            count: 3));
+
+        Assert.False(search.HasFileName);
+        Assert.False(search.ShowFileIcon);
+        Assert.True(search.HasMetadata);
+
+        var bare = new AgentActivityItem(Activity(AgentActivityState.Started));
+
+        Assert.False(bare.HasMetadata);
+    }
+
+    [Fact]
     public void Detail_Property_Tracks_Model_And_Notifies()
     {        var model = Activity(AgentActivityState.Waiting, kind: AgentActivityKind.Terminal, detail: "npm run test");
         var item = new AgentActivityItem(model);

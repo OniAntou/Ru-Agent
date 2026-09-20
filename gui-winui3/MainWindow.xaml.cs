@@ -1409,7 +1409,8 @@ namespace RuApp
         {
             if (sender is Button button)
             {
-                button.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+                // Hover fill comes from the ListViewItem container alone; the
+                // row button paints nothing so there is never a double border.
                 SetWorkspaceGroupChromeVisible(button, visible: true);
             }
         }
@@ -1418,7 +1419,6 @@ namespace RuApp
         {
             if (sender is Button button)
             {
-                button.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                 SetWorkspaceGroupChromeVisible(button, visible: false);
             }
         }

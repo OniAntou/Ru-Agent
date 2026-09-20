@@ -69,6 +69,16 @@ public sealed class AgentActivityUiSourceContractTests
         }
 
         Assert.True(Binds(template, "MetadataText"), "AgentActivityTemplate must bind MetadataText.");
+        Assert.True(Binds(template, "ShowFileIcon"), "AgentActivityTemplate must bind ShowFileIcon.");
+
+        var fileIcon = template.Descendants().FirstOrDefault(element =>
+            element.Name.LocalName == "FontIcon"
+            && GuiSource.AttributeValue(element, "Visibility")?.Contains("ShowFileIcon") == true);
+        Assert.NotNull(fileIcon);
+        Assert.Contains(
+            "FileIconGlyph",
+            GuiSource.AttributeValue(fileIcon!, "Glyph"),
+            StringComparison.Ordinal);
 
         // The live region is on the row root inside the template, where the state
         // actually changes.
@@ -83,7 +93,13 @@ public sealed class AgentActivityUiSourceContractTests
         var template = ActivityTemplate();
 
         Assert.True(Binds(template, "Detail"));
-        Assert.True(Binds(template, "HasDetail"));
+
+        // The plain header and the plain detail line are one decision: a thinking row
+        // carries neither, because its deliberation lives in the collapsible quote
+        // block instead. Binding the detail without the gate is what put a long
+        // deliberation on the row and pushed the answer off screen.
+        Assert.True(Binds(template, "ShowPlainDetail"));
+        Assert.True(Binds(template, "ShowPlainHeader"));
         Assert.True(Binds(template, "HasEditPreview"));
         Assert.True(Binds(template, "EditBeforeText"));
         Assert.True(Binds(template, "EditAfterText"));
@@ -165,14 +181,15 @@ public sealed class AgentActivityUiSourceContractTests
     public void The_edit_preview_opens_while_unsettled_and_folds_when_done()
     {
         // A long diff must not shove the transcript while settled: open on
-        // Started/Waiting/Failed, folded on Completed. Widths match the detail
-        // line so the column never jogs.
+        // Started/Waiting/Failed, folded on Completed. The panel itself stretches
+        // the full feed width, so it carries no cap to clamp a long line into.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var preview = document.Descendants().FirstOrDefault(element =>
             element.Name.LocalName == "FileEditPreviewControl");
 
         Assert.NotNull(preview);
-        Assert.Equal("560", GuiSource.AttributeValue(preview!, "MaxWidth"));
+        Assert.Null(GuiSource.AttributeValue(preview!, "MaxWidth"));
+        Assert.Equal("Stretch", GuiSource.AttributeValue(preview!, "HorizontalAlignment"));
 
         string code = GuiSource.Text("Views", "ChatView.xaml.cs");
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
@@ -183,16 +200,18 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void A_waiting_row_wears_a_warning_pill_and_announces_assertively()
+    public void A_waiting_row_announces_assertively_and_still_carries_its_state()
     {
-        // Waiting is the moment the user must not miss: a warning pill names
-        // it and the live setting turns assertive, set from code with the label.
-        var document = GuiSource.Xml("Views", "ChatView.xaml");
-        var pill = GuiSource.Require(document, "AgentActivityWaitingPill");
-
-        Assert.Equal(
-            "{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
-            GuiSource.AttributeValue(pill, "Visibility"));
+        // Waiting is the moment the user must not miss, and it is announced rather
+        // than decorated: the live setting turns assertive for a waiting row and
+        // stays polite for every other one, set from code beside the label.
+        //
+        // The warning pill this used to assert no longer exists, so the check moved
+        // to the announcement it was standing in for. What is asserted is that the
+        // state still reaches the template and that the code still raises the live
+        // setting - not which element wears the class.
+        var template = ActivityTemplate();
+        Assert.True(Binds(template, "IsWaiting"), "AgentActivityTemplate must bind IsWaiting.");
 
         string code = GuiSource.Text("Views", "ChatView.xaml.cs");
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
@@ -200,6 +219,7 @@ public sealed class AgentActivityUiSourceContractTests
 
         string live = GuiSource.MethodBody(code, "ApplyActivityLiveSetting");
         Assert.Contains("Assertive", live, StringComparison.Ordinal);
+        Assert.Contains("IsWaiting", live, StringComparison.Ordinal);
     }
 
     [Fact]

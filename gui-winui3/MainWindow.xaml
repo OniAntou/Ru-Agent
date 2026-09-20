@@ -160,10 +160,32 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- Row buttons inside the session list paint nothing themselves:
+             the ListViewItem container owns the single rounded hover fill.
+             A default Button template would add its own square PointerOver
+             fill on top of it, which reads as a double border. -->
+        <Style x:Key="WorkspaceRowButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="Root" Background="{TemplateBinding Background}">
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <DataTemplate x:Key="WorkspaceGroupTemplate" x:DataType="services:WorkspaceGroupRow">
             <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}" CommandParameter="{x:Bind IsExpanded, Mode=OneWay}" PointerEntered="WorkspaceGroupToggle_PointerEntered" PointerExited="WorkspaceGroupToggle_PointerExited"
-                    Background="Transparent" BorderThickness="0" Padding="10,6"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                    Style="{StaticResource WorkspaceRowButtonStyle}"
                     ToolTipService.ToolTip="{x:Bind Group.Path}">
                 <Button.ContextFlyout>
                     <MenuFlyout>
@@ -184,8 +206,8 @@
             </Button>
         </DataTemplate>
         <DataTemplate x:Key="WorkspaceShowMoreTemplate" x:DataType="services:WorkspaceShowMoreRow">
-            <Button Click="OnWorkspaceShowMoreClick" Tag="{x:Bind GroupKey}" Background="Transparent" BorderThickness="0" Padding="10,4"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+            <Button Click="OnWorkspaceShowMoreClick" Tag="{x:Bind GroupKey}" Style="{StaticResource WorkspaceRowButtonStyle}" Padding="10,4"
+                    HorizontalContentAlignment="Left">
                 <TextBlock Text="{x:Bind DisplayText}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12" Foreground="{StaticResource RuAccentBrush}"/>
             </Button>
         </DataTemplate>

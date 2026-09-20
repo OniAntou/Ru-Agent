@@ -12,6 +12,43 @@
     VerticalAlignment="Stretch">
 
     <UserControl.Resources>
+        <!--
+          Thinking toggle: text with none of the button chrome in any state.
+          Hover and press change nothing; the chevron flip is the only
+          affordance. Keyboard focus still draws the system rectangle.
+        -->
+        <Style x:Key="ThinkingToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <ContentPresenter x:Name="Content"
+                                          Background="{TemplateBinding Background}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Padding="{TemplateBinding Padding}"
+                                          HorizontalContentAlignment="Left"
+                                          VerticalContentAlignment="Center">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver" />
+                                    <VisualState x:Name="Pressed" />
+                                    <VisualState x:Name="Disabled" />
+                                </VisualStateGroup>
+                                <VisualStateGroup x:Name="CheckStates">
+                                    <VisualState x:Name="Checked" />
+                                    <VisualState x:Name="Unchecked" />
+                                    <VisualState x:Name="Indeterminate" />
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </ContentPresenter>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,10" HorizontalAlignment="Stretch">
                 <Grid x:Name="MessageColumn"
@@ -114,96 +151,148 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0"
-                      ColumnDefinitions="Auto,Auto,Auto"
+                      ColumnDefinitions="Auto,Auto"
                       ColumnSpacing="8"
                       HorizontalAlignment="Left"
                       VerticalAlignment="Center">
-                      <Border Grid.Column="0"
-                              x:Name="AgentActivityWaitingPill"
-                              Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                              CornerRadius="{StaticResource AppPillCornerRadius}"
-                              BorderBrush="{StaticResource RuWarningBrush}"
-                              BorderThickness="1"
-                              Padding="8,2"
-                              VerticalAlignment="Center"
-                              AutomationProperties.AccessibilityView="Raw">
-                          <TextBlock Text="Waiting"
-                                     FontFamily="{StaticResource RuUiFontFamily}"
-                                     FontSize="11"
-                                     FontWeight="SemiBold"
-                                     Foreground="{StaticResource RuWarningBrush}"
-                                     VerticalAlignment="Center" />
-                      </Border>
-                      <TextBlock Grid.Column="1"
+                      <TextBlock Grid.Column="0"
                                  x:Name="AgentActivityText"
                                  Text="{x:Bind DisplayText, Mode=OneWay}"
+                                 Visibility="{x:Bind ShowPlainHeader, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                  FontFamily="{StaticResource RuUiFontFamily}"
                                 FontWeight="SemiBold"
                                Foreground="{StaticResource RuInkBrush}"
                                TextWrapping="Wrap"
                                VerticalAlignment="Center"
                                Margin="0" />
-                    <StackPanel Grid.Column="2"
-                                Orientation="Horizontal"
-                                Spacing="4"
-                                VerticalAlignment="Center">
-                         <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
-                                    Visibility="{x:Bind HasNoLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                      <!--
+                        Thinking header is its own toggle: the chevron opens the
+                        quote block below. A plain header here would duplicate the
+                        label and leave nothing clickable.
+                      -->
+                      <ToggleButton Grid.Column="0"
+                                    x:Name="ThinkingToggle"
+                                    Visibility="{x:Bind HasThinkingDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    IsChecked="{x:Bind IsThinkingExpanded, Mode=TwoWay}"
+                                    Style="{StaticResource ThinkingToggleButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    AutomationProperties.Name="Toggle thinking details">
+                          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                              <FontIcon Glyph="{x:Bind ThinkingChevronGlyph, Mode=OneWay}"
+                                        FontFamily="Segoe MDL2 Assets"
+                                        FontSize="12"
+                                        Foreground="{StaticResource RuMutedBrush}"
+                                        VerticalAlignment="Center" />
+                              <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
+                                         FontFamily="{StaticResource RuUiFontFamily}"
+                                         FontWeight="SemiBold"
+                                         Foreground="{StaticResource RuInkBrush}"
+                                         TextWrapping="Wrap"
+                                         VerticalAlignment="Center" />
+                          </StackPanel>
+                      </ToggleButton>
+                      <!--
+                        Metadata pill: a surface chip so the file line reads as one
+                        glanceable unit instead of bare text on the canvas.
+                      -->
+                      <Border Grid.Column="1"
+                              Visibility="{x:Bind HasMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                              Background="{StaticResource RuSurfaceBrush}"
+                              BorderBrush="{StaticResource RuLineBrush}"
+                              BorderThickness="1"
+                              CornerRadius="4"
+                              Padding="8,3"
+                              VerticalAlignment="Center">
+                      <StackPanel Orientation="Horizontal"
+                                  Spacing="4"
+                                  VerticalAlignment="Center">
+                           <FontIcon x:Name="AgentActivityFileIcon"
+                                     Glyph="{x:Bind FileIconGlyph, Mode=OneWay}"
+                                     FontSize="12"
+                                     Foreground="{StaticResource RuMutedBrush}"
+                                     Visibility="{x:Bind ShowFileIcon, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     VerticalAlignment="Center"
+                                     AutomationProperties.AccessibilityView="Raw" />
+                           <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
+                                      Visibility="{x:Bind HasNoLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                      FontFamily="{StaticResource RuMonoFontFamily}"
+                                      FontSize="12.5"
+                                      FontWeight="SemiBold"
+                                      Foreground="{StaticResource RuInkBrush}"
+                                      VerticalAlignment="Center" />
+                           <TextBlock Text="{x:Bind BaseMetadataText, Mode=OneWay}"
+                                      Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                      FontFamily="{StaticResource RuMonoFontFamily}"
+                                      FontSize="12.5"
+                                      FontWeight="SemiBold"
+                                      Foreground="{StaticResource RuInkBrush}"
+                                      VerticalAlignment="Center" />
+                         <TextBlock Text="·"
+                                    Visibility="{x:Bind HasLineDeltaAndBaseMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                     FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuInkBrush}"
+                                    FontSize="11"
+                                    Foreground="{StaticResource RuMutedBrush}"
                                     VerticalAlignment="Center" />
-                         <TextBlock Text="{x:Bind BaseMetadataText, Mode=OneWay}"
+                         <TextBlock Text="{x:Bind AddedDeltaText, Mode=OneWay}"
                                     Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                     FontFamily="{StaticResource RuMonoFontFamily}"
-                                    FontSize="12"
+                                    FontSize="11"
                                     FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuInkBrush}"
+                                    Foreground="{StaticResource RuSuccessBrush}"
                                     VerticalAlignment="Center" />
-                        <TextBlock Text="·"
-                                   Visibility="{x:Bind HasLineDeltaAndBaseMetadata, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                   FontFamily="{StaticResource RuMonoFontFamily}"
-                                   FontSize="11"
-                                   Foreground="{StaticResource RuMutedBrush}"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text="{x:Bind AddedDeltaText, Mode=OneWay}"
-                                   Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                   FontFamily="{StaticResource RuMonoFontFamily}"
-                                   FontSize="11"
-                                   FontWeight="SemiBold"
-                                   Foreground="{StaticResource RuSuccessBrush}"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text="{x:Bind RemovedDeltaText, Mode=OneWay}"
-                                   Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                   FontFamily="{StaticResource RuMonoFontFamily}"
-                                   FontSize="11"
-                                   FontWeight="SemiBold"
-                                    Foreground="{StaticResource RuDangerBrush}"
-                                    VerticalAlignment="Center" />
-                    </StackPanel>
+                         <TextBlock Text="{x:Bind RemovedDeltaText, Mode=OneWay}"
+                                    Visibility="{x:Bind HasLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    FontFamily="{StaticResource RuMonoFontFamily}"
+                                    FontSize="11"
+                                    FontWeight="SemiBold"
+                                     Foreground="{StaticResource RuDangerBrush}"
+                                     VerticalAlignment="Center" />
+                      </StackPanel>
+                      </Border>
                 </Grid>
                 <TextBlock Grid.Row="1"
                            Text="{x:Bind Detail, Mode=OneWay}"
-                           Visibility="{x:Bind HasDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                           Visibility="{x:Bind ShowPlainDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            FontSize="11.5"
                            Foreground="{StaticResource RuMutedBrush}"
                            TextWrapping="Wrap"
                            MaxWidth="560"
                            Margin="0,2,0,0" />
-                 <controls:FileEditPreviewControl Grid.Row="2"
-                                                   Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                   HorizontalAlignment="Stretch"
-                                                   FileName="{x:Bind FileName, Mode=OneWay}"
-                                                  BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
-                                                  AfterText="{x:Bind EditAfterText, Mode=OneWay}"
-                                                   StartLine="{x:Bind LineStart, Mode=OneWay}"
-                                                   AddedCount="{x:Bind Added, Mode=OneWay}"
-                                                   RemovedCount="{x:Bind Removed, Mode=OneWay}"
-                                                   Margin="0,8,0,2"
-                                                  MaxWidth="560"
-                                                  AutomationProperties.Name="File edit preview" />
+                <!--
+                  Thinking deliberation as a quote block: accent bar on the left,
+                  canvas fill to set it off the chat, muted text so the reply
+                  below stays the visual focus. Closed by default.
+                -->
+                <Border Grid.Row="1"
+                        Visibility="{x:Bind ShowThinkingDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                        BorderBrush="{StaticResource RuAccentBrush}"
+                        BorderThickness="2,0,0,0"
+                        Background="{StaticResource RuCanvasBrush}"
+                        CornerRadius="0,8,8,0"
+                        Padding="12,10"
+                        Margin="0,6,0,0"
+                        MaxWidth="560"
+                        HorizontalAlignment="Left">
+                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12.5"
+                               LineHeight="20"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               TextWrapping="Wrap" />
+                </Border>
+                  <controls:FileEditPreviewControl Grid.Row="2"
+                                                    Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    FileName="{x:Bind FileName, Mode=OneWay}"
+                                                   BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
+                                                   AfterText="{x:Bind EditAfterText, Mode=OneWay}"
+                                                    StartLine="{x:Bind LineStart, Mode=OneWay}"
+                                                    AddedCount="{x:Bind Added, Mode=OneWay}"
+                                                    RemovedCount="{x:Bind Removed, Mode=OneWay}"
+                                                    Margin="0,8,0,2"
+                                                   AutomationProperties.Name="File edit preview" />
                 <!--
                   State bindings for automation and contract tests. They sit in their own row
                   and take no space. Anything without a Grid.Row lands in row 0 on top of the
@@ -253,7 +342,7 @@
                 <Grid x:Name="MessageColumn"
                       HorizontalAlignment="Center"
                       Loaded="OnMessageColumnLoaded">
-                <StackPanel MaxWidth="760"
+                <StackPanel MaxWidth="820"
                             HorizontalAlignment="Left"
                             Spacing="12">
                     <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"

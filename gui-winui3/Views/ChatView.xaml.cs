@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -141,6 +142,7 @@ namespace RuApp.Views
             AttachmentPreviewList.ItemsSource = PendingAttachments;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
+            ChatListView.ContainerContentChanging += OnChatContainerContentChanging;
             this.Loaded += (s, e) =>
             {
                 ApplyInputWidth();
@@ -3755,6 +3757,27 @@ namespace RuApp.Views
                         ScrollChatToBottom();
                     }
                 }
+
+                // Usage lives only in RAM during a turn, so an opened session
+                // has no provider report and the meter hides its system-plus-
+                // tools row. Replay the newest durable report onto the last
+                // assistant bubble; the forced repaint below picks it up.
+                var restoredUsage = await _apiService.GetLatestSessionUsageAsync(_activeSessionId, CancellationToken.None);
+                if (restoredUsage is not null
+                    && string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+                {
+                    _activeAgentUsage = restoredUsage;
+                    for (int index = Messages.Count - 1; index >= 0; index--)
+                    {
+                        var item = Messages[index];
+                        if (string.Equals(item.Role, "assistant", StringComparison.Ordinal)
+                            && item.Usage is null)
+                        {
+                            item.Usage = restoredUsage;
+                            break;
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -3816,6 +3839,37 @@ namespace RuApp.Views
                 LayoutMessageColumn(column);
             }
         }
+
+        /// <summary>
+        /// Sizes the message column before its first arrange. Loaded fires after the
+        /// row already measured itself against its content, so a fresh row flashes
+        /// narrow and then jumps wide once Loaded sets the width. Sizing here keeps
+        /// every painted frame at its final width; Loaded stays as the fallback.
+        /// </summary>
+        private void OnChatContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+        {
+            if (args.InRecycleQueue)
+            {
+                return;
+            }
+
+            if (FindMessageColumn(args.ItemContainer) is { } column)
+            {
+                LayoutMessageColumn(column);
+                return;
+            }
+
+            args.RegisterUpdateCallback((_, callbackArgs) =>
+            {
+                if (FindMessageColumn(callbackArgs.ItemContainer) is { } lateColumn)
+                {
+                    LayoutMessageColumn(lateColumn);
+                }
+            });
+        }
+
+        private static FrameworkElement? FindMessageColumn(SelectorItem? container) =>
+            (container?.ContentTemplateRoot as FrameworkElement)?.FindName("MessageColumn") as FrameworkElement;
 
         private void LayoutMessageColumn(FrameworkElement column)
         {

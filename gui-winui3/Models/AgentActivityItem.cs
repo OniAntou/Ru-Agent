@@ -67,7 +67,16 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     public string? FileName
     {
         get => _fileName;
-        private set => SetProperty(ref _fileName, value);
+        private set
+        {
+            if (SetProperty(ref _fileName, value))
+            {
+                OnPropertyChanged(nameof(HasFileName));
+                OnPropertyChanged(nameof(ShowFileIcon));
+                OnPropertyChanged(nameof(FileIconGlyph));
+                OnPropertyChanged(nameof(FileIconBrushKey));
+            }
+        }
     }
 
     public int? LineStart
@@ -141,8 +150,44 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     ///
     /// A preview is not a detail line: it renders as two panes, and both at once would
     /// print the change twice.
+    ///
+    /// Thinking rows never use the plain line: their detail lives in the collapsible
+    /// quote block below, so a long deliberation does not push the answer off screen.
     /// </summary>
     public bool HasDetail => !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
+
+    public bool IsThinking => Kind == AgentActivityKind.Thinking;
+
+    public bool HasThinkingDetail => IsThinking && HasDetail;
+
+    public bool ShowPlainHeader => !HasThinkingDetail;
+
+    public bool ShowPlainDetail => HasDetail && !IsThinking;
+
+    public bool ShowThinkingDetail => HasThinkingDetail && IsThinkingExpanded;
+
+    private bool _isThinkingExpanded;
+
+    /// <summary>
+    /// Whether the thinking quote block is open. Closed by default: thinking is
+    /// metadata about the turn, and an always-open deliberation buries the reply
+    /// it produced. Toggled from the row header; never persisted.
+    /// </summary>
+    public bool IsThinkingExpanded
+    {
+        get => _isThinkingExpanded;
+        set
+        {
+            if (SetProperty(ref _isThinkingExpanded, value))
+            {
+                OnPropertyChanged(nameof(ShowThinkingDetail));
+                OnPropertyChanged(nameof(ThinkingChevronGlyph));
+            }
+        }
+    }
+
+    /// <summary>Chevron for the thinking toggle: down when open, right when closed.</summary>
+    public string ThinkingChevronGlyph => IsThinkingExpanded ? "\uE70D" : "\uE76C";
 
     /// <summary>Two-pane edit preview marker: "@@ old ==&gt; new" with escaped newlines.</summary>
     public bool IsEditPreview =>
@@ -383,7 +428,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             return string.Join(" · ", parts);
         }
     }
-
     public string MetadataText
     {
         get
@@ -413,6 +457,31 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         }
     }
 
+    public bool HasFileName => !string.IsNullOrWhiteSpace(FileName);
+
+    /// <summary>
+    /// Whether the metadata pill has anything to show. The pill wraps the whole
+    /// cluster so an empty one never renders as a bare rounded box.
+    /// </summary>
+    public bool HasMetadata => !string.IsNullOrWhiteSpace(MetadataText);
+
+    /// <summary>
+    /// Whether the row earns the file mark in front of its metadata. Only rows
+    /// that actually name a file get one: a search query is not a file.
+    /// </summary>
+    public bool ShowFileIcon => HasFileName;
+
+    /// <summary>
+    /// The mark for this row's file, from the icon font. A row whose extension the
+    /// font has no mark for still gets the plain document glyph.
+    /// </summary>
+    public string FileIconGlyph => "\uE8A5";
+
+    /// <summary>
+    /// Resource key of the brush the mark paints with. Exposed as a key so the view
+    /// resolves it against the live theme instead of the model holding a brush.
+    /// </summary>
+    public string FileIconBrushKey => "RuMutedBrush";
     public bool HasDuration => DurationShortText != null;
 
     /// <summary>Glanceable duration chip for settled non-thinking rows.
@@ -509,6 +578,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(FailedText));
         OnPropertyChanged(nameof(MetadataText));
         OnPropertyChanged(nameof(BaseMetadataText));
+        OnPropertyChanged(nameof(HasFileName));
+        OnPropertyChanged(nameof(HasMetadata));
+        OnPropertyChanged(nameof(ShowFileIcon));
         OnPropertyChanged(nameof(HasDuration));
         OnPropertyChanged(nameof(DurationShortText));
         OnPropertyChanged(nameof(HasLineDelta));
@@ -520,6 +592,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(EffectiveDurationMs));
         OnPropertyChanged(nameof(Detail));
         OnPropertyChanged(nameof(HasDetail));
+        OnPropertyChanged(nameof(IsThinking));
+        OnPropertyChanged(nameof(HasThinkingDetail));
+        OnPropertyChanged(nameof(ShowPlainHeader));
+        OnPropertyChanged(nameof(ShowPlainDetail));
+        OnPropertyChanged(nameof(ShowThinkingDetail));
+        OnPropertyChanged(nameof(ThinkingChevronGlyph));
         OnPropertyChanged(nameof(IsEditPreview));
         OnPropertyChanged(nameof(HasEditPreview));
         OnPropertyChanged(nameof(EditBeforeText));

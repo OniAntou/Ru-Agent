@@ -165,6 +165,18 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.NotNull(typeof(RuApp.Views.ChatView).GetMethod(
             "OnMessageColumnLoaded",
             BindingFlags.Instance | BindingFlags.NonPublic));
+
+        // A fresh row must already be at final width on its first frame: Loaded
+        // fires after the row measured itself against its content, so sizing
+        // only there flashes new rows narrow before they jump wide.
+        Assert.Contains(
+            "ChatListView.ContainerContentChanging += OnChatContainerContentChanging",
+            code,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LayoutMessageColumn",
+            GuiSource.MethodBody(code, "OnChatContainerContentChanging"),
+            StringComparison.Ordinal);
         Assert.Equal("Auto", GuiSource.AttributeValue(list, "VerticalScrollBarVisibility"));
         Assert.Equal("Disabled", GuiSource.AttributeValue(list, "HorizontalScrollBarVisibility"));
 
@@ -241,7 +253,26 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("IsExpanded", GuiSource.AttributeValue(toggle, "CommandParameter"));
         Assert.Equal("WorkspaceGroupToggle_PointerEntered", GuiSource.AttributeValue(toggle, "PointerEntered"));
         Assert.Equal("WorkspaceGroupToggle_PointerExited", GuiSource.AttributeValue(toggle, "PointerExited"));
+        Assert.Equal("{StaticResource WorkspaceRowButtonStyle}", GuiSource.AttributeValue(toggle, "Style"));
         Assert.Null(GuiSource.AttributeValue(toggle, "Margin"));
+
+        // One hover frame only: the row button paints nothing itself, so the
+        // ListViewItem container owns the single rounded hover fill. A default
+        // Button template would add its own square PointerOver fill on top.
+        var rowStyle = document.Descendants()
+            .First(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "WorkspaceRowButtonStyle");
+        var rowTemplate = rowStyle.Descendants()
+            .First(element => element.Name.LocalName == "ControlTemplate");
+        Assert.DoesNotContain(
+            rowTemplate.Descendants().Where(element => element.Name.LocalName == "Setter"),
+            setter => (GuiSource.AttributeValue(setter, "Target") ?? string.Empty)
+                .Contains("Background", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            rowTemplate.Descendants().Where(element => element.Name.LocalName == "VisualState"),
+            state => string.Equals(
+                GuiSource.AttributeValue(state, "Name"),
+                "PointerOver",
+                StringComparison.Ordinal));
         Assert.DoesNotContain(
             GuiSource.NamedElements(document).Keys,
             name => string.Equals(name, "WorkspaceGroupCount", StringComparison.Ordinal));

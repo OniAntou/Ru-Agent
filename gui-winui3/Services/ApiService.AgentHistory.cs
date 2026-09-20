@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
+using RuApp.Models;
 
 namespace RuApp.Services
 {
@@ -65,6 +66,85 @@ namespace RuApp.Services
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// The newest provider usage report for a session, oldest runs first on
+        /// the wire so the walk goes newest-first and stops at the first run
+        /// that reported. Its last report covers the whole transcript, which is
+        /// what restores the meter's system-plus-tools row on open. Best-effort:
+        /// any failure returns null and the meter falls back to its estimate.
+        /// </summary>
+        public async Task<AgentModelUsage?> GetLatestSessionUsageAsync(string sessionId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var runs = await ListSessionRunIdsAsync(sessionId, cancellationToken);
+                if (runs is null || runs.Count == 0)
+                {
+                    return null;
+                }
+
+                for (int index = runs.Count - 1; index >= 0; index--)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var usage = await GetLatestRunUsageAsync(runs[index].RunId, cancellationToken);
+                    if (usage is not null)
+                    {
+                        return usage;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetLatestSessionUsageAsync", ex);
+            }
+
+            return null;
+        }
+
+        private async Task<AgentModelUsage?> GetLatestRunUsageAsync(string runId, CancellationToken cancellationToken)
+        {
+            using var response = await _httpClient.GetAsync(
+                $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/events?live=0&after_sequence=0", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var lines = body.Split('\n');
+            string? payloadRef = SessionUsageReplayPolicy.FindLatestUsagePayloadRef(lines);
+            if (string.IsNullOrWhiteSpace(payloadRef))
+            {
+                return null;
+            }
+
+            using var payloadResponse = await _httpClient.GetAsync(
+                $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/payloads/{Uri.EscapeDataString(payloadRef)}", cancellationToken);
+            if (!payloadResponse.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            using var stream = await payloadResponse.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            string content;
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("content", out var contentElement)
+                && contentElement.ValueKind == JsonValueKind.String)
+            {
+                content = contentElement.GetString() ?? string.Empty;
+            }
+            else
+            {
+                content = document.RootElement.GetRawText();
+            }
+
+            return AgentModelUsage.Parse(content);
         }
 
         private static bool IsRunTerminal(string status) =>

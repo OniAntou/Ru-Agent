@@ -195,8 +195,8 @@ temporary data/log root, three dynamically leased loopback ports, memory-only
 bearers, and one Worker, Broker, and ASP.NET Core edge child. While the port
 leases are still held, it prebuilds Broker and edge sequentially; both are then
 started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
-during a cold build. It classifies all 38 HTTP contract entries
-(17 non-Agent plus 21 additive `/agent/v1/*`), uses deterministic fixtures for
+during a cold build. It classifies all 40 HTTP contract entries
+(19 non-Agent plus 21 additive `/agent/v1/*`), uses deterministic fixtures for
 safe mutations plus additive Agent v2 tracer fixtures (idempotency,
 workspace trust via `WindowsWorkspaceIdentityResolver` final-path/volume/file
 identity, policy snapshots, SSE cursor, payload binding, file discovery/read
@@ -235,7 +235,7 @@ route ownership selector, or alternate host mode.
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-38 HTTP method/path pairs with no WebSocket route (21 `/agent/v1/*` and 17
+40 HTTP method/path pairs with no WebSocket route (21 `/agent/v1/*` and 19
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE

@@ -146,6 +146,42 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
+    public void Chat_surfaces_paint_from_theme_brushes_rather_than_literals()
+    {
+        // This was the one surface the diagnostics rule below did not cover, and it
+        // had exactly one literal: an opaque black scrim behind the attachment remove
+        // glyph, with white on top of it. A literal is a theme bug waiting to happen,
+        // because only one of the two themes was ever measured against it.
+        var offenders = new List<string>();
+        foreach (var parts in new[]
+                 {
+                     new[] { "Views", "ChatView.xaml" },
+                     new[] { "MainWindow.xaml" },
+                 })
+        {
+            string view = parts[^1];
+            foreach (var element in GuiSource.Xml(parts).Descendants())
+            {
+                foreach (var attribute in element.Attributes())
+                {
+                    if (!attribute.Name.LocalName.StartsWith("Background", StringComparison.Ordinal)
+                        && !attribute.Name.LocalName.StartsWith("Foreground", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    if (Regex.IsMatch(attribute.Value, "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$"))
+                    {
+                        offenders.Add($"{view}: <{element.Name.LocalName}> {attribute.Name.LocalName}={attribute.Value}");
+                    }
+                }
+            }
+        }
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void Every_spacing_value_comes_from_the_approved_scale()
     {
         var offScale = new List<string>();

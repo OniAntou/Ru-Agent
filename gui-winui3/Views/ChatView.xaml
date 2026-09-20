@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="using:RuApp.Models"
     xmlns:controls="using:RuApp.Controls"
+    xmlns:services="using:RuApp.Services"
     xmlns:views="using:RuApp.Views"
     mc:Ignorable="d"
     HorizontalAlignment="Stretch"
@@ -13,11 +14,13 @@
 
     <UserControl.Resources>
         <!--
-          Thinking toggle: text with none of the button chrome in any state.
-          Hover and press change nothing; the chevron flip is the only
-          affordance. Keyboard focus still draws the system rectangle.
+          Row-detail toggle: an activity row's header with none of the button
+          chrome in any state. Hover and press change nothing; the chevron flip is
+          the only affordance. Keyboard focus still draws the system rectangle.
+          It serves every row that has something to fold away — today the thinking
+          quote block and the edit diff.
         -->
-        <Style x:Key="ThinkingToggleButtonStyle" TargetType="ToggleButton">
+        <Style x:Key="RowDetailToggleStyle" TargetType="ToggleButton">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
@@ -70,7 +73,9 @@
                             </MenuFlyoutItem>
                             <MenuFlyoutItem Text="Fork Branch from Here" Click="OnForkFromMessageClick" Tag="{x:Bind}">
                                 <MenuFlyoutItem.Icon>
-                                    <FontIcon Glyph="&#xE8D8;" />
+                                    <!-- E8D8 was "DisableUpdates"; SaveCopy keeps this item
+                                         distinct from the Copy item sharing this menu. -->
+                                    <FontIcon Glyph="&#xEA35;" />
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
@@ -148,7 +153,6 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0"
                       ColumnDefinitions="Auto,Auto"
@@ -174,7 +178,7 @@
                                     x:Name="ThinkingToggle"
                                     Visibility="{x:Bind HasThinkingDetail, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                     IsChecked="{x:Bind IsThinkingExpanded, Mode=TwoWay}"
-                                    Style="{StaticResource ThinkingToggleButtonStyle}"
+                                    Style="{StaticResource RowDetailToggleStyle}"
                                     VerticalAlignment="Center"
                                     AutomationProperties.Name="Toggle thinking details">
                           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -190,7 +194,34 @@
                                          TextWrapping="Wrap"
                                          VerticalAlignment="Center" />
                           </StackPanel>
-                      </ToggleButton>
+                       </ToggleButton>
+                       <!--
+                         The edit row's header is a toggle for the same reason: a long
+                         diff below it is worth folding, and the panel no longer
+                         carries a header of its own to click, so the line the reader
+                         is already looking at is the one that opens it.
+                       -->
+                       <ToggleButton Grid.Column="0"
+                                     x:Name="EditPreviewToggle"
+                                     Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     IsChecked="{x:Bind IsEditPreviewExpanded, Mode=TwoWay}"
+                                     Style="{StaticResource RowDetailToggleStyle}"
+                                     VerticalAlignment="Center"
+                                     AutomationProperties.Name="Toggle edit preview">
+                           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                               <FontIcon Glyph="{x:Bind EditPreviewChevronGlyph, Mode=OneWay}"
+                                         FontFamily="Segoe MDL2 Assets"
+                                         FontSize="12"
+                                         Foreground="{StaticResource RuMutedBrush}"
+                                         VerticalAlignment="Center" />
+                               <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
+                                          FontFamily="{StaticResource RuUiFontFamily}"
+                                          FontWeight="SemiBold"
+                                          Foreground="{StaticResource RuInkBrush}"
+                                          TextWrapping="Wrap"
+                                          VerticalAlignment="Center" />
+                           </StackPanel>
+                       </ToggleButton>
                       <!--
                         Metadata pill: a surface chip so the file line reads as one
                         glanceable unit instead of bare text on the canvas.
@@ -206,13 +237,6 @@
                       <StackPanel Orientation="Horizontal"
                                   Spacing="4"
                                   VerticalAlignment="Center">
-                           <FontIcon x:Name="AgentActivityFileIcon"
-                                     Glyph="{x:Bind FileIconGlyph, Mode=OneWay}"
-                                     FontSize="12"
-                                     Foreground="{StaticResource RuMutedBrush}"
-                                     Visibility="{x:Bind ShowFileIcon, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                     VerticalAlignment="Center"
-                                     AutomationProperties.AccessibilityView="Raw" />
                            <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
                                       Visibility="{x:Bind HasNoLineDelta, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                       FontFamily="{StaticResource RuMonoFontFamily}"
@@ -282,15 +306,12 @@
                                TextWrapping="Wrap" />
                 </Border>
                   <controls:FileEditPreviewControl Grid.Row="2"
-                                                    Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    Visibility="{x:Bind ShowEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                                     HorizontalAlignment="Stretch"
                                                     HorizontalContentAlignment="Stretch"
-                                                    FileName="{x:Bind FileName, Mode=OneWay}"
-                                                   BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
-                                                   AfterText="{x:Bind EditAfterText, Mode=OneWay}"
+                                                    BeforeText="{x:Bind EditBeforeText, Mode=OneWay}"
+                                                    AfterText="{x:Bind EditAfterText, Mode=OneWay}"
                                                     StartLine="{x:Bind LineStart, Mode=OneWay}"
-                                                    AddedCount="{x:Bind Added, Mode=OneWay}"
-                                                    RemovedCount="{x:Bind Removed, Mode=OneWay}"
                                                     Margin="0,8,0,2"
                                                    AutomationProperties.Name="File edit preview" />
                 <!--
@@ -304,17 +325,6 @@
                     <Border Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                     <Border Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Opacity="0" Width="0" Height="0" />
                 </StackPanel>
-                <Button x:Name="CopyActivityErrorButton"
-                        Grid.Row="4"
-                        Content="Copy error"
-                        Click="OnCopyActivityErrorClick"
-                        Tag="{x:Bind}"
-                        Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                        Margin="0,6,0,0"
-                        Padding="10,4"
-                        FontFamily="{StaticResource RuUiFontFamily}"
-                        FontSize="12"
-                        AutomationProperties.Name="Copy error details" />
             </Grid>
         </DataTemplate>
 
@@ -329,7 +339,9 @@
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Fork Branch from Here" Click="OnForkFromMessageClick" Tag="{x:Bind}">
                             <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE8D8;" />
+                                <!-- E8D8 was "DisableUpdates"; SaveCopy keeps this item
+                                     distinct from the Copy item sharing this menu. -->
+                                <FontIcon Glyph="&#xEA35;" />
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
                         <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
@@ -714,8 +726,7 @@
                             </ProgressBar.Foreground>
                         </ProgressBar>
                         <controls:TodoChecklistControl x:Name="TodoPanelList"
-                                                       HorizontalAlignment="Stretch"
-                                                       AutomationProperties.Name="Agent task list" />
+                                                       HorizontalAlignment="Stretch" />
                     </StackPanel>
                     <Border Grid.Row="1"
                             Height="1"
@@ -753,10 +764,80 @@
                     AllowDrop="True"
                     DragOver="OnInputDragOver"
                     Drop="OnInputDrop">
-                <Grid RowDefinitions="Auto,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+                    <!--
+                      Queued turns: what the user typed while a run was in hand.
+                      The composer used to swallow that second thought — Enter did
+                      nothing until the turn ended. It waits here instead, in the
+                      order it was typed, and goes out when the run ends.
+                    -->
+                    <Border x:Name="QueuedTurnsPanel"
+                            Grid.Row="0"
+                            Visibility="Collapsed"
+                            Margin="0,0,0,8"
+                            AutomationProperties.Name="Queued messages">
+                        <StackPanel Spacing="6">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock x:Name="QueuedTurnsHeader"
+                                           Grid.Column="0"
+                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource RuMutedBrush}"
+                                           VerticalAlignment="Center" />
+                                <Button x:Name="QueuedTurnsSendButton"
+                                        Grid.Column="1"
+                                        Visibility="Collapsed"
+                                        Click="OnSendQueuedTurnsClick"
+                                        Style="{StaticResource RuToolbarButtonStyle}"
+                                        AutomationProperties.Name="Send queued messages">
+                                    <TextBlock Text="Send now"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource RuAccentBrush}"
+                                               VerticalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                            <ItemsControl x:Name="QueuedTurnsList">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Vertical" Spacing="4" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="services:QueuedAgentTurn">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" MinHeight="26">
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{x:Bind Label}"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource RuInkBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxLines="1"
+                                                       VerticalAlignment="Center" />
+                                            <Button Grid.Column="1"
+                                                    Width="18"
+                                                    Height="18"
+                                                    Padding="0"
+                                                    Background="Transparent"
+                                                    Foreground="{StaticResource RuMutedBrush}"
+                                                    BorderThickness="0"
+                                                    CornerRadius="{StaticResource AppPillCornerRadius}"
+                                                    Click="OnRemoveQueuedTurnClick"
+                                                    Tag="{x:Bind}"
+                                                    AutomationProperties.Name="Remove queued message">
+                                                <FontIcon Glyph="&#xE711;" FontSize="8" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Image Attachment Preview Strip -->
                     <ScrollViewer x:Name="AttachmentPreviewContainer"
-                                  Grid.Row="0"
+                                  Grid.Row="1"
                                   HorizontalScrollBarVisibility="Auto"
                                   VerticalScrollBarVisibility="Disabled"
                                   HorizontalScrollMode="Enabled"
@@ -781,9 +862,10 @@
                                              </Border>
                                             <Button HorizontalAlignment="Right" VerticalAlignment="Top"
                                                     Width="18" Height="18" Padding="0" Margin="2"
-                                                    Background="#C0000000" Foreground="White"
+                                                    Background="{StaticResource RuAccentBrush}" Foreground="{StaticResource RuOnAccentBrush}"
                                                     BorderThickness="0" CornerRadius="{StaticResource AppPillCornerRadius}"
-                                                    Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}">
+                                                    Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}"
+                                                    AutomationProperties.Name="Remove attachment">
                                                 <FontIcon Glyph="&#xE711;" FontSize="8"/>
                                             </Button>
                                         </Grid>
@@ -800,7 +882,8 @@
                                                     <Button Width="18" Height="18" Padding="0"
                                                             Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                                             BorderThickness="0" CornerRadius="{StaticResource AppPillCornerRadius}"
-                                                            Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}">
+                                                            Click="OnRemoveAttachmentClick" Tag="{x:Bind Id}"
+                                                            AutomationProperties.Name="Remove attachment">
                                                         <FontIcon Glyph="&#xE711;" FontSize="8"/>
                                                     </Button>
                                                 </StackPanel>
@@ -813,7 +896,7 @@
                     </ScrollViewer>
 
                     <TextBox x:Name="ChatInputTextBox"
-                              Grid.Row="1"
+                              Grid.Row="2"
                               AutomationProperties.AutomationId="ChatInput"
                               AutomationProperties.Name="Message input"
                               PlaceholderText="Message Ru…"
@@ -840,7 +923,7 @@
                         </TextBox.Resources>
                     </TextBox>
 
-                    <Grid Grid.Row="2"
+                    <Grid Grid.Row="3"
                           ColumnDefinitions="Auto,Auto,Auto,*,Auto"
                           Margin="0,4,0,0">
                         <Button x:Name="AttachImageButton"

@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using RuBackend.Business;
+using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Conversation;
 using RuBackend.Tests.Fakes;
@@ -561,6 +563,136 @@ public sealed class BusinessEndpointTests
         Assert.Equal("ok", (await cleared.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("status").GetString());
         Assert.False(File.Exists(data.Paths.ActivityLogFile));
+    }
+
+    /// <summary>
+    /// A conversation that leaves in one agent's format comes back as the same
+    /// conversation. That round trip is the whole promise of the interchange routes.
+    /// </summary>
+    [Fact]
+    public async Task Session_interchange_round_trips_a_conversation_through_another_agent()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var createdResponse = await client.PostAsync("/sessions/new", null);
+        var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var sessionId = created.GetProperty("session_id").GetString()!;
+        var store = factory.Services.GetRequiredService<ISessionStore>();
+        Assert.True(await store.AppendAsync(
+            sessionId,
+            [
+                new SessionMessage("user", "Bring me across"),
+                new SessionMessage("ai", "I am here"),
+            ],
+            CancellationToken.None));
+
+        var exported = await client.GetFromJsonAsync<JsonElement>(
+            $"/sessions/{sessionId}/export?harness=claude-code");
+        Assert.Equal("ok", exported.GetProperty("status").GetString());
+
+        var claudeFile = exported.GetProperty("files")[0];
+        var claudeContent = claudeFile.GetProperty("content").GetString()!;
+        Assert.EndsWith(".jsonl", claudeFile.GetProperty("name").GetString()!, StringComparison.Ordinal);
+        Assert.Contains("Bring me across", claudeContent, StringComparison.Ordinal);
+
+        // Back in as the format the file actually is, then out again as the other agent:
+        // two hops, and the words are still there at the end of them.
+        using var importedResponse = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "claude-code", content = claudeContent });
+        var imported = await importedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("ok", imported.GetProperty("status").GetString());
+        Assert.Equal(2, imported.GetProperty("session").GetProperty("messages").GetInt32());
+
+        var reExported = await client.GetFromJsonAsync<JsonElement>(
+            $"/sessions/{imported.GetProperty("session").GetProperty("id").GetString()}/export?harness=codex");
+        var reExportedContent = reExported.GetProperty("files")[0].GetProperty("content").GetString()!;
+
+        Assert.Contains("Bring me across", reExportedContent, StringComparison.Ordinal);
+        Assert.True(
+            reExportedContent.Contains("I am here", StringComparison.Ordinal),
+            $"The assistant turn was lost on the way back: {reExportedContent}");
+    }
+
+    [Fact]
+    public async Task Session_import_counts_the_entries_it_could_not_store()
+    {
+        // Ru's session log holds turns, not steps: reasoning and tool traffic belong to
+        // runs that really executed something. They are counted back to the caller rather
+        // than written in as messages no model produced.
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        const string Rollout = """
+            {"timestamp":"2026-09-07T15:14:34.810Z","ordinal":0,"type":"session_meta","payload":{"session_id":"01a07c6e-aff5-7fa3-b7f6-9e7cd8096ae4","id":"01a07c6e-aff5-7fa3-b7f6-9e7cd8096ae4","timestamp":"2026-09-07T15:13:44.040Z","cwd":"D:\\LLM","thread_source":"user"}}
+            {"timestamp":"2026-09-07T15:14:35.000Z","ordinal":1,"type":"response_item","payload":{"type":"message","id":"msg_1","role":"user","content":[{"type":"input_text","text":"Fix the widget"}]}}
+            {"timestamp":"2026-09-07T15:14:36.000Z","ordinal":2,"type":"response_item","payload":{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"Planning the edit"}],"content":null}}
+            {"timestamp":"2026-09-07T15:14:37.000Z","ordinal":3,"type":"response_item","payload":{"type":"function_call","id":"fc_1","name":"exec","arguments":"{}","call_id":"call_1"}}
+            {"timestamp":"2026-09-07T15:14:38.000Z","ordinal":4,"type":"response_item","payload":{"type":"function_call_output","id":"fco_1","call_id":"call_1","output":"Script completed"}}
+            {"timestamp":"2026-09-07T15:14:39.000Z","ordinal":5,"type":"response_item","payload":{"type":"message","id":"msg_2","role":"assistant","content":[{"type":"output_text","text":"Fixed the widget"}]}}
+            """;
+
+        using var response = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "codex", content = Rollout });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("ok", payload.GetProperty("status").GetString());
+        Assert.Equal(2, payload.GetProperty("session").GetProperty("messages").GetInt32());
+        Assert.Equal(3, payload.GetProperty("dropped_entries").GetInt32());
+    }
+
+    [Fact]
+    public async Task Session_interchange_names_the_formats_it_knows_instead_of_failing_silently()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var exported = await client.GetFromJsonAsync<JsonElement>("/sessions/anything/export?harness=cursor");
+        Assert.Equal("error", exported.GetProperty("status").GetString());
+        Assert.Contains("claude-code", exported.GetProperty("message").GetString()!, StringComparison.Ordinal);
+        Assert.Contains("codex", exported.GetProperty("message").GetString()!, StringComparison.Ordinal);
+
+        using var imported = await client.PostAsJsonAsync(
+            "/sessions/import",
+            new { harness = "codex", content = "{\"hello\":\"world\"}" });
+        var payload = await imported.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("error", payload.GetProperty("status").GetString());
+        Assert.Contains("Codex", payload.GetProperty("message").GetString()!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A partner whose store Ru cannot produce is refused before a file is written, and the
+    /// refusal names what is missing rather than calling the format unsupported.
+    /// </summary>
+    [Fact]
+    public async Task Session_export_refuses_a_format_it_cannot_write()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var exported = await client.GetFromJsonAsync<JsonElement>("/sessions/anything/export?harness=antigravity");
+
+        Assert.Equal("error", exported.GetProperty("status").GetString());
+        Assert.Contains("protobuf", exported.GetProperty("message").GetString()!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Session_export_refuses_a_session_that_does_not_exist()
+    {
+        using var data = TemporaryBusinessData.Create();
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var exported = await client.GetFromJsonAsync<JsonElement>("/sessions/missing/export?harness=codex");
+
+        Assert.Equal("error", exported.GetProperty("status").GetString());
     }
 
     private static BackendWebApplicationFactory CreateAspNetFactory(

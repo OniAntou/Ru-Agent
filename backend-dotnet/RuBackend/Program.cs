@@ -118,6 +118,7 @@ app.Use(async (context, next) =>
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
 
 BusinessEndpoints.Map(app);
+SessionInterchangeEndpoints.Map(app);
 AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
 StatusEndpoints.Map(app);

@@ -22,6 +22,27 @@ public sealed record AgentModelUsage(
         || CacheReadInputTokens is not null
         || CacheWriteInputTokens is not null;
 
+    /// <summary>
+    /// The one figure that stands for "how big was this step": the provider's own
+    /// total when it reported one, otherwise the parts added up. Cache reads and
+    /// writes count, because they were billed as part of the same request.
+    /// </summary>
+    public int ResolvedTotal
+    {
+        get
+        {
+            if (TotalTokens is { } total && total > 0)
+            {
+                return total;
+            }
+
+            return (InputTokens ?? 0)
+                + (OutputTokens ?? 0)
+                + (CacheReadInputTokens ?? 0)
+                + (CacheWriteInputTokens ?? 0);
+        }
+    }
+
     public string DisplayText
     {
         get

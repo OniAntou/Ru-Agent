@@ -64,39 +64,55 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void A_failed_row_hides_the_machine_code_it_already_translated()
+    public void A_failed_tool_row_keeps_the_wording_it_ran_with()
     {
-        // FailedText already turns the code into a sentence; repeating the raw
-        // token in the muted line only adds noise. Waiting rows keep theirs:
-        // their headline never names the reason.
-        var failed = new AgentActivityItem(Activity(
+        // The row already names the action and the file beside it; failure changes the
+        // state, and the colour carries that. Swapping the label for a failure sentence
+        // renamed the row at the exact moment the reader was tracking it, so the file
+        // that failed went unmentioned and the reason took its place.
+        var writing = new AgentActivityItem(Activity(
             AgentActivityState.Failed,
+            kind: AgentActivityKind.Edit,
+            fileName: "script.js",
+            toolDisplay: "Write",
+            safeCode: "policy_denied"));
+
+        Assert.True(writing.IsFailed);
+        Assert.Equal("Writing", writing.DisplayText);
+        Assert.Contains("script.js", writing.MetadataText, StringComparison.Ordinal);
+
+        // The reason is not on the row at all any more: not in the label, not in the
+        // muted line beside it.
+        Assert.DoesNotContain("policy_denied", writing.MetadataText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_failed_reason_row_still_states_its_reason()
+    {
+        // Status and Thinking rows name no action: they exist to report what happened,
+        // so the reason is the whole message. Losing it would leave a cancelled or
+        // unbuildable model call saying nothing.
+        var model = new AgentActivityItem(Activity(
+            AgentActivityState.Failed,
+            kind: AgentActivityKind.Status,
             safeCode: "model_failed"));
 
-        Assert.Equal("Model call failed", failed.DisplayText);
-        Assert.DoesNotContain("model_failed", failed.MetadataText, StringComparison.Ordinal);
+        Assert.Equal("Model call failed", model.DisplayText);
 
+        var cancelled = new AgentActivityItem(Activity(
+            AgentActivityState.Failed,
+            kind: AgentActivityKind.Thinking,
+            safeCode: "cancelled"));
+
+        Assert.Equal("Cancelled", cancelled.DisplayText);
+
+        // A waiting row never names its reason in the headline, so its muted line keeps
+        // the machine code it was carrying.
         var waiting = new AgentActivityItem(Activity(
             AgentActivityState.Waiting,
             safeCode: "terminal_unknown_executable"));
 
         Assert.Contains("terminal_unknown_executable", waiting.MetadataText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Item_keeps_terminal_text_bounded_to_safe_code()
-    {
-        var item = new AgentActivityItem(Activity(
-            AgentActivityState.Failed,
-            safeCode: "policy_denied"));
-
-        Assert.True(item.IsFailed);
-
-        // The row states the reason and the machine token travels with the copy
-        // action, so a reader gets a sentence and a supporter pastes the exact
-        // code from one click.
-        Assert.Equal("Failed: policy denied", item.DisplayText);
-        Assert.Equal(string.Empty, item.MetadataText);
     }
 
     [Fact]
@@ -224,9 +240,9 @@ public sealed class AgentActivityItemTests
             AgentActivityState.Failed,
             kind: AgentActivityKind.Compaction,
             safeCode: "commit_conflict"));
-        Assert.Equal("Failed: commit conflict", compactionFailed.DisplayText);
-        // The code stays out of the muted line: the headline translated it and
-        // the copy action carries it for bug reports.
+        // A failed compaction keeps its own wording too: the row said what it was doing,
+        // and the state is what changed.
+        Assert.Equal("Compacting context", compactionFailed.DisplayText);
         Assert.Equal(string.Empty, compactionFailed.MetadataText);
 
         var retryStarted = new AgentActivityItem(Activity(
@@ -354,6 +370,87 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
+    public void A_live_edit_opens_its_preview_and_a_settled_one_folds_it()
+    {
+        // The diff exists only on the Started frame, so a live edit shows it. A settled
+        // one folds it: an open preview the reader did not ask for keeps pushing the
+        // reply down the transcript.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ a ==> b"));
+
+        Assert.True(item.IsEditPreviewExpanded);
+        Assert.True(item.ShowEditPreview);
+
+        Assert.True(item.UpdateFrom(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Edit)));
+
+        Assert.False(item.IsEditPreviewExpanded);
+        Assert.False(item.ShowEditPreview);
+
+        // Folding is not forgetting: the diff itself survives the settle, which is what
+        // lets the reader open it again.
+        Assert.True(item.HasEditPreview);
+        Assert.Equal("a", item.EditBeforeText);
+    }
+
+    [Fact]
+    public void A_replayed_edit_row_starts_folded()
+    {
+        // History is not a live turn: a settled row rebuilt from durable events has
+        // nothing arriving to explain an open diff.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ a ==> b"));
+
+        Assert.True(item.HasEditPreview);
+        Assert.False(item.ShowEditPreview);
+    }
+
+    [Fact]
+    public void A_reader_who_toggles_the_preview_keeps_it()
+    {
+        var frame = Activity(AgentActivityState.Started, kind: AgentActivityKind.Edit, detail: "@@ a ==> b");
+        var item = new AgentActivityItem(frame);
+
+        item.IsEditPreviewExpanded = false;
+        item.UpdateFrom(frame);
+
+        // The reader's decision outranks later frames, or the row would reopen under
+        // the click that closed it.
+        Assert.False(item.IsEditPreviewExpanded);
+
+        item.IsEditPreviewExpanded = true;
+        Assert.True(item.ShowEditPreview);
+    }
+
+    [Fact]
+    public void The_edit_row_header_is_its_toggle()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Edit,
+            detail: "@@ a ==> b"));
+
+        // The plain header stands down for a row whose header is a toggle: two headers
+        // on one row, only one of them clickable, is the worse answer.
+        Assert.False(item.ShowPlainHeader);
+        Assert.Equal("\uE70D", item.EditPreviewChevronGlyph);
+
+        item.IsEditPreviewExpanded = false;
+        Assert.Equal("\uE76C", item.EditPreviewChevronGlyph);
+
+        var plain = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Terminal,
+            detail: "ls"));
+
+        Assert.True(plain.ShowPlainHeader);
+        Assert.False(plain.HasEditPreview);
+    }
+
+    [Fact]
     public void HasDetail_Reflects_Detail_Presence_And_Notifies()
     {
         var without = new AgentActivityItem(Activity(AgentActivityState.Started));
@@ -423,7 +520,7 @@ public sealed class AgentActivityItemTests
     }
 
     [Fact]
-    public void File_rows_earn_the_metadata_icon_and_search_rows_do_not()
+    public void The_metadata_pill_is_the_row_s_own_words()
     {
         var edit = new AgentActivityItem(Activity(
             AgentActivityState.Completed,
@@ -433,7 +530,6 @@ public sealed class AgentActivityItemTests
             removed: 1));
 
         Assert.True(edit.HasFileName);
-        Assert.True(edit.ShowFileIcon);
         Assert.True(edit.HasMetadata);
 
         var search = new AgentActivityItem(Activity(
@@ -443,7 +539,6 @@ public sealed class AgentActivityItemTests
             count: 3));
 
         Assert.False(search.HasFileName);
-        Assert.False(search.ShowFileIcon);
         Assert.True(search.HasMetadata);
 
         var bare = new AgentActivityItem(Activity(AgentActivityState.Started));
@@ -491,12 +586,14 @@ public sealed class AgentActivityItemTests
     }
 
     /// <summary>
-    /// A failed row has to say something the reader can act on.
+    /// A reason row has to say something the reader can act on.
     /// </summary>
     /// <remarks>
     /// It used to say "Failed" and nothing else, on every failure, while the row already
     /// carried the reason in its safe code. Two very different problems — a lost connection
-    /// and a prompt the runtime refused — looked identical.
+    /// and a prompt the runtime refused — looked identical. The sentence now belongs to the
+    /// rows that exist to explain (Status and Thinking); a tool row keeps the wording it
+    /// ran with, which is asserted on its own below.
     /// </remarks>
     [Theory]
     [InlineData("interrupted", "Stopped before finishing")]
@@ -505,10 +602,10 @@ public sealed class AgentActivityItemTests
     [InlineData("cancelled", "Cancelled")]
     [InlineData("transport_failure", "Lost connection to the tool")]
     [InlineData("reconciliation_required", "Stopped: the last change is unverified")]
-    public void A_failure_names_its_reason(string safeCode, string expected)
+    public void A_failure_names_its_reason_on_a_row_that_exists_to_explain(string safeCode, string expected)
     {
         var item = new AgentActivityItem(
-            Activity(AgentActivityState.Failed, safeCode: safeCode));
+            Activity(AgentActivityState.Failed, kind: AgentActivityKind.Status, safeCode: safeCode));
 
         Assert.Equal(expected, item.FailedText);
     }
@@ -519,7 +616,7 @@ public sealed class AgentActivityItemTests
         // A code this build does not know must not degrade to a blank stare. The token is
         // ugly, but it is a lead, and it is the only thing the row has.
         var item = new AgentActivityItem(
-            Activity(AgentActivityState.Failed, safeCode: "some_new_reason"));
+            Activity(AgentActivityState.Failed, kind: AgentActivityKind.Status, safeCode: "some_new_reason"));
 
         Assert.Equal("Failed: some new reason", item.FailedText);
     }
@@ -529,9 +626,9 @@ public sealed class AgentActivityItemTests
     {
         // The property that actually matters: the reader can tell two failures apart.
         var lost = new AgentActivityItem(
-            Activity(AgentActivityState.Failed, safeCode: "transport_failure")).FailedText;
+            Activity(AgentActivityState.Failed, kind: AgentActivityKind.Status, safeCode: "transport_failure")).FailedText;
         var refused = new AgentActivityItem(
-            Activity(AgentActivityState.Failed, safeCode: "prompt_contract_invalid")).FailedText;
+            Activity(AgentActivityState.Failed, kind: AgentActivityKind.Status, safeCode: "prompt_contract_invalid")).FailedText;
 
         Assert.NotEqual(lost, refused);
     }

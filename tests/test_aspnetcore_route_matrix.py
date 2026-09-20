@@ -21,6 +21,8 @@ EXPECTED_HTTP_ROUTES = {
     ("DELETE", "/sessions/{sessionId}"),
     ("POST", "/sessions/{sessionId}/fork"),
     ("POST", "/sessions/{sessionId}/rewind"),
+    ("GET", "/sessions/{sessionId}/export"),
+    ("POST", "/sessions/import"),
     ("POST", "/agent/v1/runs"),
     ("GET", "/agent/v1/runs/{runId}"),
     ("GET", "/agent/v1/runs/{runId}/events"),
@@ -51,7 +53,7 @@ EXPECTED_WEBSOCKET_ROUTES: set[tuple[str, str]] = set()
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (38, 0)
+    assert validate_route_contract(repo_root) == (40, 0)
     contract = load_route_contract(repo_root)
 
     assert {

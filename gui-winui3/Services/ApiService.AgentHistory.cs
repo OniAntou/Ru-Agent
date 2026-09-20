@@ -106,6 +106,70 @@ namespace RuApp.Services
             return null;
         }
 
+        /// <summary>
+        /// The newest runs of a session with the usage each one reported, oldest
+        /// first, so the panel can show both the per-run figures and their totals.
+        ///
+        /// Bounded on purpose: each run costs two reads — its events and the usage
+        /// payload — so the walk covers a tail of the session rather than all of it.
+        /// A run that cannot be read stays as a row with no report instead of taking
+        /// the panel down, and a transport failure returns null so the flyout can say
+        /// it could not read rather than claim there was nothing to read.
+        /// </summary>
+        public async Task<IReadOnlyList<SessionUsageRow>?> ListSessionUsageAsync(
+            string sessionId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var runs = await ListSessionRunIdsAsync(sessionId, cancellationToken);
+                if (runs is null)
+                {
+                    return null;
+                }
+
+                int firstIndex = Math.Max(0, runs.Count - SessionUsagePolicy.MaxReportedRuns);
+                var rows = new List<SessionUsageRow>(runs.Count - firstIndex);
+                for (int index = firstIndex; index < runs.Count; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var run = runs[index];
+
+                    // A live run has no durable report yet, so asking would only cost
+                    // a read to learn what is already known.
+                    AgentModelUsage? usage = null;
+                    if (run.IsTerminal)
+                    {
+                        try
+                        {
+                            usage = await GetLatestRunUsageAsync(run.RunId, cancellationToken);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogApiError("GetLatestRunUsageAsync", ex);
+                        }
+                    }
+
+                    rows.Add(new SessionUsageRow(run.RunId, run.IsTerminal, usage));
+                }
+
+                return rows;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                LogApiError("ListSessionUsageAsync", ex);
+            }
+
+            return null;
+        }
+
         private async Task<AgentModelUsage?> GetLatestRunUsageAsync(string runId, CancellationToken cancellationToken)
         {
             using var response = await _httpClient.GetAsync(

@@ -10,9 +10,9 @@ nothing to install.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#what-runs)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-3%2C515%20passing-3FB950)](#testing)
+[![Tests](https://img.shields.io/badge/tests-3%2C580%20passing-3FB950)](#testing)
 [![Tools](https://img.shields.io/badge/tools-10-8B5CF6)](#tools)
-[![Routes](https://img.shields.io/badge/routes-38%20HTTP-6E7681)](#testing)
+[![Routes](https://img.shields.io/badge/routes-40%20HTTP-6E7681)](#testing)
 
 </div>
 
@@ -51,7 +51,7 @@ RuApp.exe (WinUI 3)                 RuAgent.Cli.exe (TUI)
                           │
                           ▼
 RuBackend.exe --managed-runtime            127.0.0.1:8000
-  ASP.NET Core Minimal APIs · 38 routes · loopback bearer
+  ASP.NET Core Minimal APIs · 40 routes · loopback bearer
   sessions · history · durable harness · SQLite WAL
   owns one Windows Job Object (kill-on-close) for the whole child tree
         │                                     │
@@ -129,7 +129,7 @@ Object.
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 12 projects, 3,515 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 3,545 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
@@ -141,7 +141,7 @@ running anyway and reporting contention as a defect. That is the whole guard: a 
 reported as a failure, with no retry to blur it, because a retry would hide a genuinely
 flaky test instead of fixing it.
 
-`public-route-contract.json` is the source of truth for the **38 HTTP routes** (17
+`public-route-contract.json` is the source of truth for the **40 HTTP routes** (19
 non-Agent plus 21 under `/agent/v1/*`). A test compares the live `EndpointDataSource`
 against that file, so adding or removing a route without updating it fails CI.
 
@@ -183,11 +183,12 @@ Protocol digest, and the permission vocabulary below must stay accurate.
 │   ├── RuAgent.Harness.Core/          # State machines, prompt, tool pipeline
 │   ├── RuAgent.Harness.Persistence/   # SQLite schema v7, AES-GCM, outbox
 │   ├── RuAgent.Protocol/              # 11 tool definitions, envelopes, contracts
+│   ├── RuAgent.SessionInterchange/    # Other agents' session files, both directions
 │   ├── RuAgent.Hosting/               # Layout, Job Object, descriptor
 │   ├── RuAgent.Client/                # Shared client library
 │   ├── RuAgent.Cli/                   # Terminal UI
 │   ├── RuAgent.Connectors/            # Calendar/task/mail (not tools)
-│   └── *.Tests/                       # 11 test projects
+│   └── *.Tests/                       # 12 test projects
 ├── gui-winui3/                        # WinUI 3 desktop app
 │   ├── Views/                         # ChatView, SettingsView, Diagnostics, LogView
 │   ├── Services/                      # ApiService, controllers, presentation

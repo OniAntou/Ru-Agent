@@ -83,7 +83,37 @@
                     <MenuFlyout>
                         <MenuFlyoutItem Text="Fork New Branch" Click="OnForkSessionMenuClick" Tag="{x:Bind Id}">
                             <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE8D8;" />
+                                <!--
+                                  Segoe MDL2 Assets has no branch glyph, and the glyph used
+                                  here before (E8D8) is literally "DisableUpdates". SaveCopy
+                                  is the closest honest mark for what a fork does: keep a
+                                  copy of this conversation and continue in it.
+                                -->
+                                <FontIcon Glyph="&#xEA35;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="ExportClaudeCodeItem"
+                                        Text="Export as Claude Code"
+                                        Click="OnExportSessionMenuClick"
+                                        Tag="{x:Bind Id}">
+                            <MenuFlyoutItem.Icon>
+                                <!-- Handing the session to another agent's own directory. -->
+                                <FontIcon Glyph="&#xE74E;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="ExportCodexItem"
+                                        Text="Export as Codex"
+                                        Click="OnExportSessionMenuClick"
+                                        Tag="{x:Bind Id}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE74E;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="ImportSessionItem"
+                                        Text="Import session from another agent…"
+                                        Click="OnImportSessionMenuClick">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE8E5;" />
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
                         <MenuFlyoutSeparator />
@@ -101,25 +131,39 @@
                 <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                            TextTrimming="CharacterEllipsis" 
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <!-- The clock owns the right edge. The delete control shares its
-                     cell and stays hidden until the row is hovered, at which
-                     point the clock steps aside for it: both are right-aligned in
-                     the same place, so the row never reflows, and the two never
-                     paint on top of each other. The control is hidden by
-                     opacity rather than by collapsing it so its width still
-                     reserves the cell's edge. -->
+                <!-- The clock owns the right edge. The row's two actions share the
+                     same cell and stay hidden until the row is hovered, at which
+                     point the clock steps aside for them: everything is right-aligned
+                     in one place, so the row never reflows, and the clock never
+                     paints underneath a glyph. The controls are hidden by opacity
+                     rather than by collapsing them so their width still reserves the
+                     cell's edge. -->
                 <Grid Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock x:Name="SessionTimeText" HorizontalAlignment="Right"
                                Text="{x:Bind DisplayTimeText, Mode=OneTime}"
                                FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"
                                VerticalAlignment="Center"/>
-                    <Button x:Name="SessionDeleteButton" HorizontalAlignment="Right"
-                             Background="Transparent" BorderThickness="0" Padding="0"
-                             Width="22" Height="22" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
-                             Tag="{x:Bind Id}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
-                             ToolTipService.ToolTip="Delete session">
-                        <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource RuInkBrush}"/>
-                    </Button>
+                    <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <!-- Token report for this session, including a session that is
+                             not the one on screen. -->
+                        <Button x:Name="SessionUsageButton" HorizontalAlignment="Right"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 Width="22" Height="22" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnSessionUsageClick"
+                                 Tag="{x:Bind Id, Mode=OneTime}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
+                                 ToolTipService.ToolTip="Session usage"
+                                 AutomationProperties.Name="Session usage">
+                            <TextBlock Text="…" FontFamily="{StaticResource RuUiFontFamily}" FontSize="14"
+                                       Foreground="{StaticResource RuInkBrush}" Margin="0,-6,0,0" />
+                        </Button>
+                        <Button x:Name="SessionDeleteButton" HorizontalAlignment="Right"
+                                 Background="Transparent" BorderThickness="0" Padding="0"
+                                 Width="22" Height="22" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
+                                 Tag="{x:Bind Id}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
+                                 ToolTipService.ToolTip="Delete session"
+                                 AutomationProperties.Name="Delete session">
+                            <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource RuInkBrush}"/>
+                        </Button>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </DataTemplate>
@@ -281,6 +325,7 @@
                                 </Button>
                             </Grid>
                             <TextBox x:Name="WorkspaceSearchBox" Grid.Row="1" Margin="0,6,0,0" PlaceholderText="Search sessions"
+                                     AutomationProperties.Name="Search sessions"
                                      Visibility="Collapsed" TextChanged="OnWorkspaceSearchTextChanged" KeyDown="OnWorkspaceSearchKeyDown"/>
                             <TextBlock x:Name="WorkspaceSearchCount" Grid.Row="2" Margin="2,4,0,0" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}" Visibility="Collapsed"/>
                         </Grid>
@@ -444,6 +489,66 @@
                             Height="32"
                             CornerRadius="{StaticResource RuControlCornerRadius}"
                             AutomationProperties.Name="Close settings"
+                            ToolTipService.ToolTip="Close (Esc)">
+                        <FontIcon Glyph="&#xE711;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Session usage modal (opened from a session row's menu) -->
+        <Grid x:Name="SessionUsageOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="2"
+              Canvas.ZIndex="510"
+              Visibility="Collapsed"
+              SizeChanged="OnSessionUsageOverlaySizeChanged">
+            <Grid.ChildrenTransitions>
+                <TransitionCollection>
+                    <EntranceThemeTransition FromVerticalOffset="16" IsStaggeringEnabled="False" />
+                </TransitionCollection>
+            </Grid.ChildrenTransitions>
+
+            <!-- Dimmed Backdrop (Click outside card to close) -->
+            <Border x:Name="SessionUsageBackdrop"
+                    Background="{StaticResource RuCanvasBrush}"
+                    Opacity="0.75"
+                    PointerPressed="OnSessionUsageBackdropPointerPressed" />
+
+            <!-- Dialog Card Container (Fixed stable dimension avoids jitter/shifting) -->
+            <Border x:Name="SessionUsageCard"
+                    Width="560"
+                    Height="560"
+                    MaxWidth="720"
+                    MaxHeight="780"
+                    Margin="24,20"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderThickness="0"
+                    CornerRadius="16"
+                    Translation="0,0,16"
+                    Shadow="{StaticResource RuRaisedShadow}"
+                    PointerPressed="OnSessionUsageCardPointerPressed">
+                <Grid>
+                    <controls:SessionUsagePanel x:Name="SessionUsagePanelControl"
+                                                HorizontalAlignment="Stretch"
+                                                VerticalAlignment="Stretch" />
+
+                    <!-- Top-Right Close Button -->
+                    <Button x:Name="CloseSessionUsageButton"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="0,16,16,0"
+                            Canvas.ZIndex="10"
+                            Click="OnCloseSessionUsageClick"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="4"
+                            Width="32"
+                            Height="32"
+                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                            AutomationProperties.Name="Close session usage"
                             ToolTipService.ToolTip="Close (Esc)">
                         <FontIcon Glyph="&#xE711;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
                     </Button>

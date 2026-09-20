@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\RuAgent.Client\RuAgent.Client.csproj" />
+    <ProjectReference Include="..\RuAgent.SessionInterchange\RuAgent.SessionInterchange.csproj" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
   </ItemGroup>
   <!-- Publish Properties -->

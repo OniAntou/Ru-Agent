@@ -43,4 +43,21 @@ public static class AgentComposerPresentation
 
     /// <summary>The name a screen reader announces for the current face.</summary>
     public static string NameFor(bool isStopFace) => isStopFace ? StopName : SendName;
+
+    /// <summary>Composer hint while nothing is running: the text becomes a turn.</summary>
+    public static string MessagePlaceholder => "Message Ru…";
+
+    /// <summary>
+    /// Composer hint while a run is in hand: the text is queued instead of dropped.
+    /// The old placeholder promised nothing and the Enter key then did nothing, which
+    /// read as a broken input rather than as a rule.
+    /// </summary>
+    public static string QueuePlaceholder => "Type to queue — sent when this turn ends";
+
+    /// <summary>Inline status after a turn lands in the queue.</summary>
+    public static string QueuedStatus => "Queued — will send when this turn ends";
+
+    /// <summary>Inline status when the queue is at its limit.</summary>
+    public static string QueueFullStatus =>
+        $"Queue is full ({AgentTurnQueuePolicy.MaxTurns}). Wait for this turn or remove one.";
 }

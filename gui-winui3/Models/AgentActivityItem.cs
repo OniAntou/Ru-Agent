@@ -72,9 +72,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             if (SetProperty(ref _fileName, value))
             {
                 OnPropertyChanged(nameof(HasFileName));
-                OnPropertyChanged(nameof(ShowFileIcon));
-                OnPropertyChanged(nameof(FileIconGlyph));
-                OnPropertyChanged(nameof(FileIconBrushKey));
             }
         }
     }
@@ -160,7 +157,12 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     public bool HasThinkingDetail => IsThinking && HasDetail;
 
-    public bool ShowPlainHeader => !HasThinkingDetail;
+    /// <summary>
+    /// The header is a toggle only for rows that have something to fold away. Every
+    /// other row keeps the plain label, and a second clickable header would leave the
+    /// row looking interactive without being so.
+    /// </summary>
+    public bool ShowPlainHeader => !HasThinkingDetail && !HasEditPreview;
 
     public bool ShowPlainDetail => HasDetail && !IsThinking;
 
@@ -197,6 +199,60 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         && detail.Contains(" ==> ", StringComparison.Ordinal);
 
     public bool HasEditPreview => IsEditPreview;
+
+    private bool _isEditPreviewExpanded;
+    private bool _editPreviewFoldingTakenOver;
+
+    /// <summary>
+    /// Whether the diff is open. The row owns this because the row header is the
+    /// toggle: while the header lived inside the preview, the only way back to a
+    /// folded diff was a chevron stranded on the panel it had just closed.
+    /// </summary>
+    public bool IsEditPreviewExpanded
+    {
+        get => _isEditPreviewExpanded;
+        set
+        {
+            if (SetProperty(ref _isEditPreviewExpanded, value))
+            {
+                // A reader who folds or opens the diff has decided; later frames must
+                // not take it back.
+                _editPreviewFoldingTakenOver = true;
+                OnPropertyChanged(nameof(ShowEditPreview));
+                OnPropertyChanged(nameof(EditPreviewChevronGlyph));
+            }
+        }
+    }
+
+    /// <summary>The diff itself, drawn only while it is open.</summary>
+    public bool ShowEditPreview => HasEditPreview && IsEditPreviewExpanded;
+
+    /// <summary>Chevron for the edit toggle: down when open, right when closed.</summary>
+    public string EditPreviewChevronGlyph => IsEditPreviewExpanded ? "\uE70D" : "\uE76C";
+
+    /// <summary>
+    /// Folds a frame's preview state in unless the reader has taken the decision over.
+    /// A live diff is open because that frame is the only one carrying it; a settled
+    /// diff is folded because it would otherwise keep shoving the transcript.
+    /// </summary>
+    private void ApplyEditPreviewFolding(AgentActivityState state)
+    {
+        if (_editPreviewFoldingTakenOver)
+        {
+            return;
+        }
+
+        bool expand = state != AgentActivityState.Completed;
+        if (expand == _isEditPreviewExpanded)
+        {
+            return;
+        }
+
+        _isEditPreviewExpanded = expand;
+        OnPropertyChanged(nameof(IsEditPreviewExpanded));
+        OnPropertyChanged(nameof(ShowEditPreview));
+        OnPropertyChanged(nameof(EditPreviewChevronGlyph));
+    }
 
     public string EditBeforeText => IsEditPreview ? SplitEditPreview().Before : string.Empty;
 
@@ -371,22 +427,39 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// What a failed row says.
     /// </summary>
     /// <remarks>
-    /// A bare "Failed" leaves the reader with nothing to act on, and the row already carries
-    /// the reason in <see cref="SafeCode"/>. The code is a stable machine token, so it is
-    /// translated here rather than shown: `prompt_contract_invalid` is not a sentence.
-    /// An unrecognised code falls back to the token with its hyphens opened out, which is
-    /// still more than the word "Failed" says.
+    /// A tool row keeps the wording it had while it ran. The row was already the
+    /// subject — its label names the action and its pill names the file — and failure
+    /// changes the state, which is what the colour is for. Putting a failure sentence
+    /// in the label's place renamed the row at the exact moment the reader was
+    /// tracking it: "Writing" beside script.js became "Failed: policy denied", and the
+    /// file that failed went unmentioned.
+    ///
+    /// Status and Thinking rows are the exception. Neither names an action, and both
+    /// exist to report what happened: for them the reason *is* the report, and losing
+    /// it would leave a cancelled or unbuildable model call saying nothing at all.
     /// </remarks>
-    public string FailedText => Kind switch
+    public string FailedText => Kind is AgentActivityKind.Status or AgentActivityKind.Thinking
+        ? FailureSentence(SafeCode)
+        : StartedText;
+
+    /// <summary>
+    /// The sentence for a row that exists to explain itself, by reason.
+    ///
+    /// A bare "Failed" leaves the reader with nothing to act on. The code is a stable
+    /// machine token, so it is translated here rather than shown: `prompt_contract_invalid`
+    /// is not a sentence. An unrecognised code falls back to the token with its
+    /// underscores opened out, which is still more than the word "Failed" says.
+    /// </summary>
+    private static string FailureSentence(string? safeCode) => safeCode switch
     {
         // The run stopped part way; the call itself was never answered.
-        _ when SafeCode is "interrupted" => "Stopped before finishing",
-        _ when SafeCode is "model_failed" => "Model call failed",
-        _ when SafeCode is "prompt_contract_invalid" => "Prompt rejected by the runtime",
-        _ when SafeCode is "cancelled" => "Cancelled",
-        _ when SafeCode is "transport_failure" => "Lost connection to the tool",
-        _ when SafeCode is "reconciliation_required" => "Stopped: the last change is unverified",
-        _ when SafeCode is { Length: > 0 } code => "Failed: " + code.Replace('_', ' '),
+        "interrupted" => "Stopped before finishing",
+        "model_failed" => "Model call failed",
+        "prompt_contract_invalid" => "Prompt rejected by the runtime",
+        "cancelled" => "Cancelled",
+        "transport_failure" => "Lost connection to the tool",
+        "reconciliation_required" => "Stopped: the last change is unverified",
+        { Length: > 0 } code => "Failed: " + code.Replace('_', ' '),
         _ => "Failed",
     };
 
@@ -465,23 +538,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// </summary>
     public bool HasMetadata => !string.IsNullOrWhiteSpace(MetadataText);
 
-    /// <summary>
-    /// Whether the row earns the file mark in front of its metadata. Only rows
-    /// that actually name a file get one: a search query is not a file.
-    /// </summary>
-    public bool ShowFileIcon => HasFileName;
-
-    /// <summary>
-    /// The mark for this row's file, from the icon font. A row whose extension the
-    /// font has no mark for still gets the plain document glyph.
-    /// </summary>
-    public string FileIconGlyph => "\uE8A5";
-
-    /// <summary>
-    /// Resource key of the brush the mark paints with. Exposed as a key so the view
-    /// resolves it against the live theme instead of the model holding a brush.
-    /// </summary>
-    public string FileIconBrushKey => "RuMutedBrush";
     public bool HasDuration => DurationShortText != null;
 
     /// <summary>Glanceable duration chip for settled non-thinking rows.
@@ -567,6 +623,10 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         Todos = activity.Todos is { Count: > 0 } rows
             ? rows.Select(row => new TodoItemModel(row.Content, row.Status)).ToArray()
             : null;
+
+        // After Detail: whether there is a preview to fold is decided by the detail
+        // that just landed.
+        ApplyEditPreviewFolding(activity.State);
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
         OnPropertyChanged(nameof(IsFailed));
@@ -580,7 +640,6 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(BaseMetadataText));
         OnPropertyChanged(nameof(HasFileName));
         OnPropertyChanged(nameof(HasMetadata));
-        OnPropertyChanged(nameof(ShowFileIcon));
         OnPropertyChanged(nameof(HasDuration));
         OnPropertyChanged(nameof(DurationShortText));
         OnPropertyChanged(nameof(HasLineDelta));
@@ -600,6 +659,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(ThinkingChevronGlyph));
         OnPropertyChanged(nameof(IsEditPreview));
         OnPropertyChanged(nameof(HasEditPreview));
+        OnPropertyChanged(nameof(IsEditPreviewExpanded));
+        OnPropertyChanged(nameof(ShowEditPreview));
+        OnPropertyChanged(nameof(EditPreviewChevronGlyph));
         OnPropertyChanged(nameof(EditBeforeText));
         OnPropertyChanged(nameof(EditAfterText));
     }

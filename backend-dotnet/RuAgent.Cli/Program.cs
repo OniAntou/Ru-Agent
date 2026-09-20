@@ -82,6 +82,8 @@ public static class Program
                 SessionListCommand slist => await commands.SessionListAsync(slist, cts.Token).ConfigureAwait(false),
                 SessionForkCommand sfork => await commands.SessionForkAsync(sfork, cts.Token).ConfigureAwait(false),
                 SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
+                SessionExportCommand sexport => await commands.SessionExportAsync(sexport, cts.Token).ConfigureAwait(false),
+                SessionImportCommand simport => await commands.SessionImportAsync(simport, cts.Token).ConfigureAwait(false),
                 _ => 1
             };
         }

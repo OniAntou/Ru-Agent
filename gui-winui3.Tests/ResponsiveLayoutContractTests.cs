@@ -90,6 +90,40 @@ public sealed class ResponsiveLayoutContractTests
         Assert.True(HasMissingAttachedName(button));
     }
 
+    [Fact]
+    public void Icon_only_buttons_announce_themselves()
+    {
+        // A glyph with no words is invisible to a screen reader unless the control
+        // carries a name of its own. The narrow list above is a hand-kept set of the
+        // commands somebody remembered to check; this one has no list to fall behind,
+        // and it covers every icon-only command in the shell.
+        var offenders = new List<string>();
+        foreach (var (path, document) in LoadXamlDocuments())
+        {
+            foreach (var button in document.Descendants()
+                         .Where(element => IsCommandControl(element) && IsIconOnly(element)))
+            {
+                if (FindAttachedAttribute(button, AutomationNameAttribute) is null)
+                {
+                    string name = button.Attribute(XamlNamespace + "Name")?.Value ?? "(unnamed)";
+                    offenders.Add($"{Path.GetFileName(path)}: {name}");
+                }
+            }
+        }
+
+        Assert.Empty(offenders);
+    }
+
+    private static bool IsIconOnly(XElement element)
+    {
+        // Text in a Content attribute is announced by the control itself; text in a
+        // TextBlock descendant is announced as content. What is left is a control whose
+        // whole meaning is a glyph — and that one needs a name.
+        return FindAttachedAttribute(element, "Content") is null
+            && element.Descendants().Any(descendant => descendant.Name.LocalName == "FontIcon")
+            && !element.Descendants().Any(descendant => descendant.Name.LocalName == "TextBlock");
+    }
+
     private static bool IsCommandControl(XElement element)
     {
         return element.Name.LocalName is "Button" or "ToggleButton";

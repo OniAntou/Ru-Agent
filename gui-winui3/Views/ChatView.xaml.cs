@@ -103,6 +103,7 @@ namespace RuApp.Views
         private string? _requestedWorkspace;
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
+        private readonly AgentTurnQueue _queuedTurns = new();
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
@@ -140,6 +141,8 @@ namespace RuApp.Views
                 ApplyReplySnapshot);
             ChatListView.ItemsSource = Messages;
             AttachmentPreviewList.ItemsSource = PendingAttachments;
+            QueuedTurnsList.ItemsSource = _queuedTurns.Items;
+            _queuedTurns.Items.CollectionChanged += (_, __) => UpdateQueuedTurnsPanel();
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             ChatListView.ContainerContentChanging += OnChatContainerContentChanging;
@@ -682,16 +685,6 @@ namespace RuApp.Views
 
         private bool _suppressContextUsageUpdate;
 
-        private static int ResolveUsageTotal(AgentModelUsage usage)
-        {
-            if (usage.TotalTokens is { } total && total > 0) return total;
-            int input = usage.InputTokens ?? 0;
-            int output = usage.OutputTokens ?? 0;
-            int cacheRead = usage.CacheReadInputTokens ?? 0;
-            int cacheWrite = usage.CacheWriteInputTokens ?? 0;
-            return input + output + cacheRead + cacheWrite;
-        }
-
         public void UpdateContextUsage(bool force = false)
         {
             if (_suppressContextUsageUpdate) return;
@@ -731,11 +724,11 @@ namespace RuApp.Views
 
             var reportedTotals = Messages
                 .Where(message => message.Usage is not null)
-                .Select(message => ResolveUsageTotal(message.Usage!))
+                .Select(message => message.Usage!.ResolvedTotal)
                 .ToList();
             if (_activeAgentUsage is { } activeUsage)
             {
-                reportedTotals.Add(ResolveUsageTotal(activeUsage));
+                reportedTotals.Add(activeUsage.ResolvedTotal);
             }
 
             int reportedTokens = AgentContextMeterPolicy.MaxReportedTokens(reportedTotals);
@@ -1558,7 +1551,6 @@ namespace RuApp.Views
 
             ApplyActivityTextStyle(displayText, item);
             ApplyActivityLiveSetting(grid, item);
-            ApplyEditPreviewExpanded(grid, item);
             if (item.Todos is { Count: > 0 } latestTodos)
             {
                 DispatcherQueue?.TryEnqueue(() => UpdateTodoPanel(latestTodos));
@@ -1579,30 +1571,12 @@ namespace RuApp.Views
                         {
                             ApplyActivityTextStyle(displayText, ai);
                             ApplyActivityLiveSetting(grid, ai);
-                            ApplyEditPreviewExpanded(grid, ai);
                         }
                     });
                 }
             };
             item.PropertyChanged += handler;
             grid.Tag = (handler, displayText, item);
-        }
-
-        /// <summary>
-        /// A settled diff must not shove the transcript: the preview stays open
-        /// while the row is live and folds itself once the row completes. The
-        /// header chevron still lets the reader reopen it by hand.
-        /// </summary>
-        private static void ApplyEditPreviewExpanded(Grid grid, AgentActivityItem item)
-        {
-            foreach (var descendant in EnumerateDescendants(grid))
-            {
-                if (descendant is Controls.FileEditPreviewControl preview)
-                {
-                    preview.IsExpanded = !item.IsCompleted;
-                    return;
-                }
-            }
         }
 
         /// <summary>
@@ -2050,6 +2024,17 @@ namespace RuApp.Views
                 }
                 AutomationProperties.SetName(SendButton, AgentComposerPresentation.SendName);
             }
+
+            // The composer says which of the two things Enter will do, so a second
+            // thought is never typed into a box that silently swallows it.
+            if (ChatInputTextBox is not null)
+            {
+                ChatInputTextBox.PlaceholderText = isAgentRunning
+                    ? AgentComposerPresentation.QueuePlaceholder
+                    : AgentComposerPresentation.MessagePlaceholder;
+            }
+
+            UpdateQueuedTurnsPanel();
         }
 
         private void UpdateAgentInlineState()
@@ -2241,6 +2226,10 @@ namespace RuApp.Views
         {
             ClearAgentActivities();
             ClearTodoPanel();
+            // The queue belongs to the session that was on screen; a queue that
+            // followed the user into another conversation would send a turn into the
+            // wrong transcript.
+            _queuedTurns.Clear();
 
             var monitor = _agentMonitorCts;
             _agentMonitorCts = null;
@@ -2352,6 +2341,10 @@ namespace RuApp.Views
                         e.Handled = true;
                         if (_isSendButtonInStopMode || IsActiveAgentRunPending())
                         {
+                            // A second thought lands in the queue instead of being
+                            // dropped: the run in hand owns the turn boundary, and
+                            // Enter still means "this is what I want next".
+                            QueueCurrentComposerTurn();
                             return;
                         }
                         await SendCurrentMessageAsync();
@@ -2414,29 +2407,11 @@ namespace RuApp.Views
                 AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
                 ClearComposerDraft(_activeSessionId);
 
-
-                var textAttachments = attachments.Where(a => !a.IsImage && !string.IsNullOrWhiteSpace(a.TextContent)).ToList();
-                string effectivePrompt = text;
-                if (textAttachments.Count > 0)
-                {
-                    var sb = new System.Text.StringBuilder();
-                    foreach (var doc in textAttachments)
-                    {
-                        string lang = doc.FileExtension.TrimStart('.');
-                        sb.AppendLine($"[Attached file: {doc.FileName} ({doc.FormattedSize})]");
-                        sb.AppendLine($"```{lang}");
-                        sb.AppendLine(doc.TextContent);
-                        sb.AppendLine("```");
-                        sb.AppendLine();
-                    }
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        sb.AppendLine(text);
-                    }
-                    effectivePrompt = sb.ToString().TrimEnd();
-                }
-
-                await SendAgentTurnAsync(effectivePrompt, CancellationToken.None, attachments: attachments, displayUserText: text);
+                await SendAgentTurnAsync(
+                    BuildEffectivePrompt(text, attachments),
+                    CancellationToken.None,
+                    attachments: attachments,
+                    displayUserText: text);
             }
             catch (Exception ex)
             {
@@ -2448,6 +2423,145 @@ namespace RuApp.Views
                 _isSendingUserTurn = false;
                 UpdateAgentInlineState();
             }
+        }
+
+        /// <summary>
+        /// The prompt the Agent actually receives: the typed text with every attached
+        /// document inlined above it as labelled fenced blocks. The send path and the
+        /// queue drain share it, so a turn is inlined the same way however it left
+        /// the composer.
+        /// </summary>
+        private static string BuildEffectivePrompt(string text, IReadOnlyList<ImageAttachmentItem> attachments)
+        {
+            var textAttachments = attachments
+                .Where(attachment => !attachment.IsImage && !string.IsNullOrWhiteSpace(attachment.TextContent))
+                .ToList();
+            if (textAttachments.Count == 0)
+            {
+                return text;
+            }
+
+            var builder = new System.Text.StringBuilder();
+            foreach (var document in textAttachments)
+            {
+                string language = document.FileExtension.TrimStart('.');
+                builder.AppendLine($"[Attached file: {document.FileName} ({document.FormattedSize})]");
+                builder.AppendLine($"```{language}");
+                builder.AppendLine(document.TextContent);
+                builder.AppendLine("```");
+                builder.AppendLine();
+            }
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                builder.AppendLine(text);
+            }
+
+            return builder.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// Takes what the composer holds and puts it behind the run in hand. False
+        /// means the text stayed where it was: nothing to queue, or the queue is full.
+        /// </summary>
+        private bool QueueCurrentComposerTurn()
+        {
+            string text = ChatInputTextBox?.Text?.Trim() ?? string.Empty;
+            var attachments = PendingAttachments.ToList();
+            if (text.Length == 0 && attachments.Count == 0)
+            {
+                return false;
+            }
+
+            if (!_queuedTurns.TryEnqueue(text, text, attachments))
+            {
+                ShowAgentInlineStatus(AgentComposerPresentation.QueueFullStatus);
+                return false;
+            }
+
+            if (ChatInputTextBox is not null)
+            {
+                ChatInputTextBox.Text = string.Empty;
+            }
+            PendingAttachments.Clear();
+            AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+            ClearComposerDraft(_activeSessionId);
+            ShowAgentInlineStatus(AgentComposerPresentation.QueuedStatus);
+            return true;
+        }
+
+        private void OnRemoveQueuedTurnClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is QueuedAgentTurn turn)
+            {
+                _queuedTurns.Remove(turn);
+            }
+        }
+
+        private async void OnSendQueuedTurnsClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // A hand-driven flush answers this click, so the stop hold that was
+                // guarding the automatic drain no longer applies to what is left.
+                _queuedTurns.ReleaseHold();
+                await DrainQueuedTurnsAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                ShowAgentError(exception);
+            }
+        }
+
+        /// <summary>
+        /// Hands the first queued turn over: called when a turn reaches its end, and
+        /// by the strip's own Send now control.
+        /// </summary>
+        private async Task DrainQueuedTurnsAsync(CancellationToken cancellationToken)
+        {
+            if (_agentController is null || !_queuedTurns.TryBeginAutoDrain())
+            {
+                UpdateQueuedTurnsPanel();
+                return;
+            }
+
+            var next = _queuedTurns.TakeFirst();
+            if (next is null)
+            {
+                UpdateQueuedTurnsPanel();
+                return;
+            }
+
+            try
+            {
+                await SendAgentTurnAsync(
+                    BuildEffectivePrompt(next.Text, next.Attachments),
+                    cancellationToken,
+                    attachments: next.Attachments.ToList(),
+                    displayUserText: next.DisplayText);
+            }
+            catch (Exception exception)
+            {
+                FailActiveAgentReply(exception);
+                ShowAgentError(exception);
+            }
+        }
+
+        private void UpdateQueuedTurnsPanel()
+        {
+            if (QueuedTurnsPanel is null || QueuedTurnsHeader is null || QueuedTurnsSendButton is null)
+            {
+                return;
+            }
+
+            int count = _queuedTurns.Items.Count;
+            QueuedTurnsPanel.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            QueuedTurnsHeader.Text = count == 1 ? "1 message queued" : $"{count} messages queued";
+
+            // While a run is in hand the queue drains on its own, so offering to send
+            // it by hand would promise a turn boundary the user cannot have yet.
+            bool canSendNow = count > 0 && !_isSendButtonInStopMode && !IsActiveAgentRunPending();
+            QueuedTurnsSendButton.Visibility = canSendNow ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private async Task SendAgentTurnAsync(
@@ -2662,6 +2776,10 @@ namespace RuApp.Views
             _activeAgentRunId = null;
             _agentDeltaKeys.Clear();
             UpdateAgentInlineState();
+
+            // Queued turns waited for exactly this moment: the previous turn is over
+            // and its transcript is settled, so the next one may start.
+            await DrainQueuedTurnsAsync(cancellationToken);
         }
         public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
         {
@@ -3627,6 +3745,12 @@ namespace RuApp.Views
                     () => _agentController?.CancelAsync() ?? Task.CompletedTask,
                     "Stopping Coding Agent…");
             }
+            // Stopping is an interrupt: queued turns stay put until the user asks for
+            // them, instead of a new run starting underneath the click that meant stop.
+            if (!_queuedTurns.IsEmpty)
+            {
+                _queuedTurns.HoldAfterStop();
+            }
             AbandonActiveAgentReply();
             UpdateSendButtonMode(isAgentRunning: false);
         }
@@ -3914,32 +4038,6 @@ namespace RuApp.Views
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"[ChatView] Error copying content: {ex.Message}");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Copies a failed row's sentence plus its machine code for a bug report.
-        /// The feed itself no longer shows the code; this carries it instead.
-        /// </summary>
-        private void OnCopyActivityErrorClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement element
-                && element.Tag is AgentActivityItem item
-                && !string.IsNullOrEmpty(item.DisplayText))
-            {
-                try
-                {
-                    string text = string.IsNullOrWhiteSpace(item.SafeCode)
-                        ? item.DisplayText
-                        : $"{item.DisplayText} ({item.SafeCode})";
-                    var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-                    package.SetText(text);
-                    Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error copying activity error: {ex.Message}");
                 }
             }
         }

@@ -69,16 +69,14 @@ public sealed class AgentActivityUiSourceContractTests
         }
 
         Assert.True(Binds(template, "MetadataText"), "AgentActivityTemplate must bind MetadataText.");
-        Assert.True(Binds(template, "ShowFileIcon"), "AgentActivityTemplate must bind ShowFileIcon.");
 
-        var fileIcon = template.Descendants().FirstOrDefault(element =>
-            element.Name.LocalName == "FontIcon"
-            && GuiSource.AttributeValue(element, "Visibility")?.Contains("ShowFileIcon") == true);
-        Assert.NotNull(fileIcon);
-        Assert.Contains(
-            "FileIconGlyph",
-            GuiSource.AttributeValue(fileIcon!, "Glyph"),
-            StringComparison.Ordinal);
+        // The pill is words only. It used to open with a document glyph, which said
+        // nothing the file name beside it did not — and it was the one mark the row
+        // painted in a muted tone next to text that already reads as metadata.
+        var pillIcons = template.Descendants().Where(element => element.Name.LocalName == "FontIcon");
+        Assert.DoesNotContain(
+            pillIcons,
+            element => GuiSource.AttributeValue(element, "Glyph")?.Contains("FileIconGlyph", StringComparison.Ordinal) == true);
 
         // The live region is on the row root inside the template, where the state
         // actually changes.
@@ -142,25 +140,21 @@ public sealed class AgentActivityUiSourceContractTests
     }
 
     [Fact]
-    public void A_failed_row_offers_its_error_to_copy()
+    public void A_failed_row_carries_no_copy_affordance()
     {
-        // The row states the reason in words; one click carries the sentence
-        // plus the machine code to a bug report.
+        // The row used to offer "Copy error", which copied the headline plus the
+        // machine code. The headline is now the wording the row ran with and the code
+        // is off the row entirely, so the button had nothing of its own left to carry.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var template = document.Descendants().FirstOrDefault(element =>
             (string?)element.Attribute(GuiSource.Xaml + "Key") == "AgentActivityTemplate");
 
         Assert.NotNull(template);
-        var copy = template!.Descendants().FirstOrDefault(element =>
-            (string?)element.Attribute(GuiSource.Xaml + "Name") == "CopyActivityErrorButton");
+        Assert.DoesNotContain(
+            template!.Descendants(),
+            element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "CopyActivityErrorButton");
 
-        Assert.NotNull(copy);
-        Assert.Equal(
-            "{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
-            GuiSource.AttributeValue(copy!, "Visibility"));
-
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
-        Assert.True(GuiSource.HasMember(code, "OnCopyActivityErrorClick"));
+        Assert.False(GuiSource.HasMember(GuiSource.Text("Views", "ChatView.xaml.cs"), "OnCopyActivityErrorClick"));
     }
 
     [Fact]
@@ -181,8 +175,8 @@ public sealed class AgentActivityUiSourceContractTests
     public void The_edit_preview_opens_while_unsettled_and_folds_when_done()
     {
         // A long diff must not shove the transcript while settled: open on
-        // Started/Waiting/Failed, folded on Completed. The panel itself stretches
-        // the full feed width, so it carries no cap to clamp a long line into.
+        // Started/Waiting, folded on Completed. The panel itself stretches the full
+        // feed width, so it carries no cap to clamp a long line into.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var preview = document.Descendants().FirstOrDefault(element =>
             element.Name.LocalName == "FileEditPreviewControl");
@@ -191,12 +185,42 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.Null(GuiSource.AttributeValue(preview!, "MaxWidth"));
         Assert.Equal("Stretch", GuiSource.AttributeValue(preview!, "HorizontalAlignment"));
 
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
-        string attach = GuiSource.MethodBody(code, "AttachActivityItem");
-        Assert.Contains("ApplyEditPreviewExpanded", attach, StringComparison.Ordinal);
+        // The panel draws only while the row says so, and the row header is the
+        // toggle: the fold decision is the row's, not the view's.
+        Assert.Equal(
+            "{x:Bind ShowEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
+            GuiSource.AttributeValue(preview!, "Visibility"));
 
-        string expanded = GuiSource.MethodBody(code, "ApplyEditPreviewExpanded");
-        Assert.Contains("IsExpanded", expanded, StringComparison.Ordinal);
+        var toggle = GuiSource.Require(document, "EditPreviewToggle");
+        Assert.Equal(
+            "{x:Bind IsEditPreviewExpanded, Mode=TwoWay}",
+            GuiSource.AttributeValue(toggle, "IsChecked"));
+        Assert.Equal(
+            "{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
+            GuiSource.AttributeValue(toggle, "Visibility"));
+
+        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        Assert.False(GuiSource.HasMember(code, "ApplyEditPreviewExpanded"));
+    }
+
+    [Fact]
+    public void The_edit_panel_carries_no_header_of_its_own()
+    {
+        // The row above the panel already names the file and counts the changes; a
+        // second header inside the panel repeated them and pushed the diff down. With
+        // no header there is nothing left for the panel to be told, so the properties
+        // that fed it are gone rather than left dangling.
+        var properties = typeof(RuApp.Controls.FileEditPreviewControl)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToList();
+
+        Assert.DoesNotContain("FileName", properties);
+        Assert.DoesNotContain("AddedCount", properties);
+        Assert.DoesNotContain("RemovedCount", properties);
+        Assert.DoesNotContain("IsExpanded", properties);
+        Assert.Contains("BeforeText", properties);
+        Assert.Contains("AfterText", properties);
     }
 
     [Fact]

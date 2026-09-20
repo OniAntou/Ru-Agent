@@ -23,6 +23,8 @@ public enum CliCommandKind
     SessionList,
     SessionFork,
     SessionRewind,
+    SessionExport,
+    SessionImport,
 }
 
 public enum ApprovalScope
@@ -137,6 +139,24 @@ public sealed record SessionRewindCommand(
     string SessionId,
     int ToMessageIndex,
     bool Json) : AgentCommand(CliCommandKind.SessionRewind, Json);
+
+/// <summary>Writes one of Ru's sessions out in another agent's format.</summary>
+public sealed record SessionExportCommand(
+    string SessionId,
+    string Harness,
+    string? OutputDirectory,
+    bool Json) : AgentCommand(CliCommandKind.SessionExport, Json);
+
+/// <summary>Takes another agent's session file and makes it a Ru session.</summary>
+/// <param name="SessionId">
+/// Which session to take from a store that holds many. Only opencode needs it: its sessions
+/// live in one database rather than one file each.
+/// </param>
+public sealed record SessionImportCommand(
+    string FilePath,
+    string? Harness,
+    string? SessionId,
+    bool Json) : AgentCommand(CliCommandKind.SessionImport, Json);
 
 public sealed record AgentCliParseResult(
     bool Success,
@@ -1035,7 +1055,9 @@ public static class AgentCliParser
             "list" => ParseSessionList(args, startIndex + 1),
             "fork" => ParseSessionFork(args, startIndex + 1),
             "rewind" => ParseSessionRewind(args, startIndex + 1),
-            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|fork|rewind.")
+            "export" => ParseSessionExport(args, startIndex + 1),
+            "import" => ParseSessionImport(args, startIndex + 1),
+            _ => Fail("unknown_subcommand", $"Unknown session subcommand '{sub}'. Expected list|fork|rewind|export|import.")
         };
     }
 
@@ -1056,6 +1078,88 @@ public static class AgentCliParser
             return Fail("unknown_switch", $"Unknown switch '{token}' for session list.");
         }
         return Success(new SessionListCommand(json));
+    }
+
+    private static AgentCliParseResult ParseSessionExport(string[] args, int startIndex)
+    {
+        string? sessionId = null;
+        string? harness = null;
+        string? outputDirectory = null;
+        bool json = false;
+
+        for (var index = startIndex; index < args.Length; index++)
+        {
+            var token = args[index];
+            switch (token)
+            {
+                case "--json":
+                    json = true;
+                    continue;
+                case "--harness":
+                    if (++index >= args.Length)
+                        return Fail("missing_value", "Missing value for --harness.");
+                    harness = args[index];
+                    continue;
+                case "--out":
+                    if (++index >= args.Length)
+                        return Fail("missing_value", "Missing value for --out.");
+                    outputDirectory = args[index];
+                    continue;
+            }
+
+            if (token.StartsWith("--", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session export.");
+            if (sessionId is not null)
+                return Fail("unexpected_argument", "session export takes one <session-id>.");
+            sessionId = token;
+        }
+
+        if (sessionId is null)
+            return Fail("missing_session_id", "Missing required <session-id> for session export.");
+        if (string.IsNullOrWhiteSpace(harness))
+            return Fail("missing_harness", "Missing required --harness for session export.");
+
+        return Success(new SessionExportCommand(sessionId, harness, outputDirectory, json));
+    }
+
+    private static AgentCliParseResult ParseSessionImport(string[] args, int startIndex)
+    {
+        string? filePath = null;
+        string? harness = null;
+        string? sessionId = null;
+        bool json = false;
+
+        for (var index = startIndex; index < args.Length; index++)
+        {
+            var token = args[index];
+            switch (token)
+            {
+                case "--json":
+                    json = true;
+                    continue;
+                case "--harness":
+                    if (++index >= args.Length)
+                        return Fail("missing_value", "Missing value for --harness.");
+                    harness = args[index];
+                    continue;
+                case "--session":
+                    if (++index >= args.Length)
+                        return Fail("missing_value", "Missing value for --session.");
+                    sessionId = args[index];
+                    continue;
+            }
+
+            if (token.StartsWith("--", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for session import.");
+            if (filePath is not null)
+                return Fail("unexpected_argument", "session import takes one <file>.");
+            filePath = token;
+        }
+
+        if (filePath is null)
+            return Fail("missing_file", "Missing required <file> for session import.");
+
+        return Success(new SessionImportCommand(filePath, harness, sessionId, json));
     }
 
     private static AgentCliParseResult ParseSessionFork(string[] args, int startIndex)

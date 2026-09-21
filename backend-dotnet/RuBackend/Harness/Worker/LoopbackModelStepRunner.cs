@@ -476,6 +476,20 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             selectionFeedbackCode = error.Code;
             attempt++;
         }
+        catch (WorkerUnavailableException) when (
+            attempt + 1 < MaxModelStepAttempts
+            && !cancellationToken.IsCancellationRequested)
+        {
+            // The worker is a separate process, so a moment when it is not listening says
+            // nothing about the request. This used to escape the retry budget and end the
+            // turn as "worker_unavailable", which turned a slow or restarting worker into a
+            // failed conversation.
+            var backoffs = StepRetryBackoffsOverride.Length == MaxModelStepAttempts - 1
+                ? StepRetryBackoffsOverride
+                : ModelStepRetryBackoffs;
+            await Task.Delay(backoffs[attempt], cancellationToken).ConfigureAwait(false);
+            attempt++;
+        }
         finally
         {
             if (providerBootstrapPath is not null)

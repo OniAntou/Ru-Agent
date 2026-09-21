@@ -121,6 +121,36 @@ public sealed class ChildProcessPolicyTests : IDisposable
         Assert.True(summary.GetProperty("truncated").GetBoolean());
     }
 
+    [Fact]
+    public async Task A_drained_stream_keeps_the_end_of_what_the_child_printed()
+    {
+        // Counts alone could not answer "why did the worker die": the entry said how much was
+        // printed and threw the text away. The end is where an exit explains itself, so that
+        // is what is kept, and the same entry says a front was dropped.
+        var path = Path.Combine(_root, "tail.jsonl");
+        string loud = new string('x', ChildProcessPolicy.TailCharacterLimit) + "\nboom: worker failed to start\n";
+        await ChildProcessPolicy.DrainToSummaryAsync(new StringReader(loud), path, "dotnet-agent-worker", "stdout");
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        var summary = doc.RootElement;
+        string tail = summary.GetProperty("tail").GetString()!;
+        Assert.True(summary.GetProperty("truncated").GetBoolean());
+        Assert.EndsWith("boom: worker failed to start\n", tail, StringComparison.Ordinal);
+        Assert.True(tail.Length <= ChildProcessPolicy.TailCharacterLimit);
+    }
+
+    [Fact]
+    public async Task A_short_stream_is_kept_whole_and_in_order()
+    {
+        var path = Path.Combine(_root, "tail-short.jsonl");
+        await ChildProcessPolicy.DrainToSummaryAsync(new StringReader("worker ready\n"), path, "dotnet-agent-worker", "stdout");
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        var summary = doc.RootElement;
+        Assert.Equal("worker ready\n", summary.GetProperty("tail").GetString());
+        Assert.False(summary.GetProperty("truncated").GetBoolean());
+    }
+
     public void Dispose() { try { if (Directory.Exists(_root)) Directory.Delete(_root, true); } catch { } }
 
     private static string PowerShellArguments(string script) =>

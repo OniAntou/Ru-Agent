@@ -78,6 +78,29 @@ public static class ChildProcessPolicy
         return startInfo;
     }
 
+    /// <summary>
+    /// How much of a child's output the summary keeps, in characters.
+    /// </summary>
+    /// <remarks>
+    /// The summary used to record only how much a child printed, which made a worker that
+    /// died on startup undiagnosable after the fact: the entry said "140 lines" and the
+    /// lines themselves were gone. The end of a stream is what explains an exit, so that is
+    /// the part kept — bounded, so one chatty process cannot fill the log.
+    /// </remarks>
+    public const int TailCharacterLimit = 2000;
+
+    private static void AppendTail(StringBuilder tail, char[] buffer, int count, ref bool truncated)
+    {
+        tail.Append(buffer, 0, count);
+        if (tail.Length <= TailCharacterLimit)
+        {
+            return;
+        }
+
+        tail.Remove(0, tail.Length - TailCharacterLimit);
+        truncated = true;
+    }
+
     public static async Task DrainToSummaryAsync(
         TextReader reader,
         string path,
@@ -100,6 +123,7 @@ public static class ChildProcessPolicy
 
         var buffer = new char[4096];
         var encoder = Encoding.UTF8.GetEncoder();
+        var tail = new StringBuilder();
         long lineCount = 0;
         long byteCount = 0;
         var hasContentSinceNewline = false;
@@ -107,6 +131,7 @@ public static class ChildProcessPolicy
         int count;
         while ((count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
         {
+            AppendTail(tail, buffer, count, ref truncated);
             var encodedBytes = encoder.GetByteCount(buffer, 0, count, flush: false);
             byteCount = SaturatingAdd(byteCount, encodedBytes, maxByteCount, ref truncated);
             for (var index = 0; index < count; index++)
@@ -141,6 +166,7 @@ public static class ChildProcessPolicy
             ["line_count"] = lineCount,
             ["byte_count"] = byteCount,
             ["truncated"] = truncated,
+            ["tail"] = tail.ToString(),
         };
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await using var output = new FileStream(

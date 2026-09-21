@@ -35,26 +35,10 @@ public static class DiagnosticCodes
     public const string ToolReceiptDelivered = "tool.receipt.delivered";
     public const string ToolReceiptRejected = "tool.receipt.rejected";
 
-    // Harness stable codes
-    public const string HarnessRunCreated = "harness.run.created";
-    public const string HarnessRunStateChanged = "harness.run.state_changed";
-    public const string HarnessRunFailed = "harness.run.failed";
-    public const string HarnessModelStepStarted = "harness.model.step_started";
-    public const string HarnessModelStepCompleted = "harness.model.step_completed";
-    public const string HarnessToolProposed = "harness.tool.proposed";
-    public const string HarnessToolExecutionRequested = "harness.tool.execution_requested";
-    public const string HarnessToolExecutionCompleted = "harness.tool.execution_completed";
-    public const string HarnessApprovalRequested = "harness.approval.requested";
-    public const string HarnessContinueRequested = "harness.continue.requested";
-    public const string HarnessReconciliationRequired = "harness.reconciliation.required";
-    public const string HarnessTransientFramesDropped = "harness.transient.frames_dropped";
-    public const string HarnessTrustDecided = "harness.trust.decided";
-    public const string HarnessWorkspaceBusy = "harness.workspace.busy";
-    public const string HarnessIdempotencyConflict = "harness.idempotency.conflict";
-    public const string HarnessPresetMismatch = "harness.preset.mismatch";
-    public const string HarnessTrustStale = "harness.trust.stale";
-    public const string HarnessPhaseNotAvailable = "harness.phase.not_available";
-    public const string HarnessCursorMismatch = "harness.cursor.mismatch";
+    // Harness stable codes lived here for HarnessDiagnosticEventFactory, which was the only
+    // reader; harness events are emitted as structured log records now, so the factory and
+    // its private vocabulary went together. DiagnosticEventPolicy still sanitizes every
+    // record on the way out, so a code that is not in its patterns is still unclassified.
     public const string GenericError = "error";
     public const string Unclassified = "diagnostic_unclassified";
 }

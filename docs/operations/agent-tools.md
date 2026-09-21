@@ -12,12 +12,12 @@ Git commit workflow, and dynamic model context compaction. The MCP stdio bridge
 is tested infrastructure but is not production-composed; connector libraries are
 not advertised Agent tools.
 
-> **Current checkpoint (Agent-only generation, 2026-09-05):**
+> **Checkpoint (Agent-only generation, 2026-09-05).** Recorded at that date; the counts below are that snapshot's and the section that follows this one carries the current contract.
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. There is no device/runtime v1 boundary; Agent
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
->   `/agent/v1/*` (20 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
+>   `/agent/v1/*` (21 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
 >   This checkpoint exposes Broker-backed model tools (`read` for one file with
 >   offset/limit, `list` for one directory, `help` for the bundled docs,

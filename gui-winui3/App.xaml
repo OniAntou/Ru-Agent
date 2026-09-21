@@ -247,30 +247,20 @@
             <CornerRadius x:Key="RuControlCornerRadius">6</CornerRadius>
 
             <!-- Legacy resource names remain available to untouched views. -->
-            <SolidColorBrush x:Key="AppSurfaceBrush" Color="{ThemeResource RuCanvasColor}" />
-            <SolidColorBrush x:Key="AppSidebarBackgroundBrush" Color="{ThemeResource RuSidebarColor}" />
-            <SolidColorBrush x:Key="AppSidebarBorderBrush" Color="{ThemeResource RuLineColor}" />
             <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="{ThemeResource RuSurfaceColor}" />
             <SolidColorBrush x:Key="AppCardBackgroundHoverBrush" Color="{ThemeResource RuAccentSoftColor}" />
             <SolidColorBrush x:Key="AppCardBorderBrush" Color="{ThemeResource RuLineColor}" />
             <SolidColorBrush x:Key="AppCardBorderSubtleBrush" Color="{ThemeResource RuLineColor}" />
-            <SolidColorBrush x:Key="AppCardBorderHighlightBrush" Color="{ThemeResource RuLineColor}" />
 
-            <SolidColorBrush x:Key="AppAccentBrush" Color="{ThemeResource RuAccentColor}" />
             <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{ThemeResource RuAccentColor}" />
             <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="{ThemeResource RuAccentSoftColor}" />
-            <SolidColorBrush x:Key="AppAccentGlowBrush" Color="{ThemeResource RuAccentColor}" />
-            <SolidColorBrush x:Key="AppSecondaryAccentBrush" Color="{ThemeResource RuMutedColor}" />
-            <SolidColorBrush x:Key="AppSecondaryAccentSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
 
             <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{ThemeResource RuInkColor}" />
             <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{ThemeResource RuMutedColor}" />
             <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="{ThemeResource RuMutedColor}" />
 
             <SolidColorBrush x:Key="AppSuccessBrush" Color="{ThemeResource RuSuccessColor}" />
-            <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
             <SolidColorBrush x:Key="AppWarningBrush" Color="{ThemeResource RuWarningColor}" />
-            <SolidColorBrush x:Key="AppWarningSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
             <SolidColorBrush x:Key="AppDangerBrush" Color="{ThemeResource RuDangerColor}" />
             <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
 

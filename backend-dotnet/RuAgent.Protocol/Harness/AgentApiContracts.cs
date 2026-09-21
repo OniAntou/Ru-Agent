@@ -93,56 +93,6 @@ public sealed record SessionRunsResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<GetAgentRunResponse> Items,
     [property: JsonPropertyName("next_cursor")] string? NextCursor);
 
-public sealed record CreatePolicyRequest(
-    [property: JsonPropertyName("rule")] object? Rule);
-
-public sealed record PolicyListResponse(
-    [property: JsonPropertyName("items")] IReadOnlyList<object> Items);
-
-public sealed record SessionPresetRequest(
-    [property: JsonPropertyName("kind")] string Kind,
-    [property: JsonPropertyName("session_id")] string SessionId,
-    [property: JsonPropertyName("preset")] string Preset,
-    [property: JsonPropertyName("expected_version")] long ExpectedVersion);
-
-public sealed record SessionPresetResponse(
-    [property: JsonPropertyName("session_id")] string SessionId,
-    [property: JsonPropertyName("preset")] string Preset,
-    [property: JsonPropertyName("version")] long Version,
-    [property: JsonPropertyName("updated_at")] string UpdatedAt);
-
-public sealed record PolicyMatcherDto(
-    [property: JsonPropertyName("tool_id")] string? ToolId,
-    [property: JsonPropertyName("tool_version")] string? ToolVersion,
-    [property: JsonPropertyName("canonical_path_pattern")] string? CanonicalPathPattern,
-    [property: JsonPropertyName("resolved_executable")] string? ResolvedExecutable,
-    [property: JsonPropertyName("argv_pattern")] IReadOnlyList<string>? ArgvPattern,
-    [property: JsonPropertyName("cwd_pattern")] string? CwdPattern,
-    [property: JsonPropertyName("operation_class")] string? OperationClass,
-    [property: JsonPropertyName("network_intent")] string? NetworkIntent);
-
-public sealed record CreatePolicyRuleRequest(
-    [property: JsonPropertyName("kind")] string? Kind,
-    [property: JsonPropertyName("scope")] string Scope,
-    [property: JsonPropertyName("decision")] string Decision,
-    [property: JsonPropertyName("matcher")] PolicyMatcherDto Matcher,
-    [property: JsonPropertyName("workspace_id")] string? WorkspaceId,
-    [property: JsonPropertyName("run_id")] string? RunId);
-
-public sealed record PolicyRuleResponse(
-    [property: JsonPropertyName("rule_id")] string RuleId,
-    [property: JsonPropertyName("scope")] string Scope,
-    [property: JsonPropertyName("decision")] string Decision,
-    [property: JsonPropertyName("matcher")] PolicyMatcherDto Matcher,
-    [property: JsonPropertyName("creation_order")] long CreationOrder,
-    [property: JsonPropertyName("expires_at")] string? ExpiresAt,
-    [property: JsonPropertyName("version")] int Version);
-
-public sealed record ApprovalRequest(
-    [property: JsonPropertyName("scope")] string? Scope,
-    [property: JsonPropertyName("decision")] string? Decision,
-    [property: JsonPropertyName("command")] string? Command);
-
 public sealed record WorkspaceActivityResponse(
     [property: JsonPropertyName("items")] IReadOnlyList<WorkspaceActivityItem> Items,
     [property: JsonPropertyName("next_cursor")] string? NextCursor);

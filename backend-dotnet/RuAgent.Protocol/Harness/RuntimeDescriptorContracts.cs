@@ -25,8 +25,3 @@ public sealed record RuntimeDescriptor(
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 }
-
-public static class RuntimeDescriptorContracts
-{
-    public const int CurrentProtocolVersion = RuntimeDescriptor.CurrentProtocolVersion;
-}

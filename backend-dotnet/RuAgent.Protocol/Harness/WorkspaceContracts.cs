@@ -98,12 +98,6 @@ public sealed record WorkspaceChangeRestoreResponse(
     [property: JsonPropertyName("restored_sha256")] string RestoredSha256,
     [property: JsonPropertyName("restore_change_id")] string RestoreChangeId);
 
-public sealed record WorkspaceClaimState(
-    [property: JsonPropertyName("run_id")] string RunId,
-    [property: JsonPropertyName("path")] string Path,
-    [property: JsonPropertyName("lease_expires_at_utc")] string LeaseExpiresAtUtc,
-    [property: JsonPropertyName("state")] string State);
-
 public static class WorkspaceContracts
 {
     public const string TrustRequestIdField = "trust_request_id";

@@ -55,15 +55,6 @@ public sealed class ReconciliationInspectionGate
 }
 
 /// <summary>
-/// The explicit reconciliation transition for one run: Applied/NotApplied resolve the
-/// ambiguity directly; UnknownContinue resumes evaluation under the mutation gate.
-/// </summary>
-public static class ReconciliationState
-{
-    public static string ResolutionCode(ReconciliationCommand command) => command.ToWireToken();
-}
-
-/// <summary>
 /// Rebuilds the mutation-gate state of one run from its durable event stream. The
 /// stream is the source of truth: the gate is armed by a reconciliation resolution
 /// of <c>unknown_continue</c>, and cleared by the first durable succeeded read-only

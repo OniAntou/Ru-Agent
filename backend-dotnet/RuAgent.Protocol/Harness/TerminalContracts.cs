@@ -39,10 +39,3 @@ public static class TerminalLimits
     public const int MaxExecutableChars = 2048;
     public const int MaxWorkingDirectoryChars = 2048;
 }
-
-public sealed record TerminalWriteSetInput(
-    [property: JsonPropertyName("read_only")] bool ReadOnly,
-    [property: JsonPropertyName("write_set")] IReadOnlyList<string> Paths)
-{
-    public void Validate() => Harness.WorkspaceWriteSet.Validate(ReadOnly, Paths);
-}

@@ -72,10 +72,3 @@ public sealed record AgentToolCapability(
     string Risk,
     string Availability,
     bool ModelEnabled);
-
-public sealed record AgentStatusEvent(
-    string SessionId,
-    string RequestId,
-    string Status,
-    string SafeSummary,
-    int DurationMs);

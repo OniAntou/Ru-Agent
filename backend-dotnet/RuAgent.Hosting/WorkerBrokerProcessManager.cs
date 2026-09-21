@@ -458,8 +458,3 @@ public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
         }
     }
 }
-
-public sealed class NoopReadinessProbe : IWorkerBrokerReadinessProbe
-{
-    public Task<bool> WaitUntilReadyAsync(int agentWorkerPort, int brokerPort, CancellationToken cancellationToken) => Task.FromResult(true);
-}

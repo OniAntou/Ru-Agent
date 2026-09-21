@@ -98,9 +98,15 @@ public sealed class AgentActivityUiSourceContractTests
         // deliberation on the row and pushed the answer off screen.
         Assert.True(Binds(template, "ShowPlainDetail"));
         Assert.True(Binds(template, "ShowPlainHeader"));
-        Assert.True(Binds(template, "HasEditPreview"));
         Assert.True(Binds(template, "EditBeforeText"));
         Assert.True(Binds(template, "EditAfterText"));
+
+        // The row's other detail panel: what a terminal command printed, with the command
+        // repeated above it so the panel stands on its own. Folded by the same state as the
+        // diff, so the template has to reach both through the row.
+        Assert.True(Binds(template, "TerminalPanelText"));
+        Assert.True(Binds(template, "ShowTerminalOutput"));
+        Assert.True(Binds(template, "ShowRowDetailToggle"));
     }
 
     [Fact]
@@ -186,7 +192,8 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.Equal("Stretch", GuiSource.AttributeValue(preview!, "HorizontalAlignment"));
 
         // The panel draws only while the row says so, and the row header is the
-        // toggle: the fold decision is the row's, not the view's.
+        // toggle: the fold decision is the row's, not the view's. The header shows the
+        // fold whenever the row has a detail at all — a diff or a command's output.
         Assert.Equal(
             "{x:Bind ShowEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
             GuiSource.AttributeValue(preview!, "Visibility"));
@@ -196,7 +203,7 @@ public sealed class AgentActivityUiSourceContractTests
             "{x:Bind IsEditPreviewExpanded, Mode=TwoWay}",
             GuiSource.AttributeValue(toggle, "IsChecked"));
         Assert.Equal(
-            "{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
+            "{x:Bind ShowRowDetailToggle, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
             GuiSource.AttributeValue(toggle, "Visibility"));
 
         string code = GuiSource.Text("Views", "ChatView.xaml.cs");

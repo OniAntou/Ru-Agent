@@ -168,7 +168,14 @@
                                Foreground="{StaticResource RuInkBrush}"
                                TextWrapping="Wrap"
                                VerticalAlignment="Center"
-                               Margin="0" />
+                               Margin="20,0,0,0" />
+                      <!--
+                        The 20px is the fold chevron's place, kept even when the row has
+                        no toggle: a hidden box that still takes width (14px) plus its
+                        spacing (6px). Without it a run of terminal and thinking rows
+                        starts every other line at a different x, which reads as two
+                        columns that belong to different things.
+                      -->
                       <!--
                         Thinking header is its own toggle: the chevron opens the
                         quote block below. A plain header here would duplicate the
@@ -210,7 +217,7 @@
                        -->
                        <ToggleButton Grid.Column="0"
                                      x:Name="EditPreviewToggle"
-                                     Visibility="{x:Bind HasEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     Visibility="{x:Bind ShowRowDetailToggle, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                      IsChecked="{x:Bind IsEditPreviewExpanded, Mode=TwoWay}"
                                      Style="{StaticResource RowDetailToggleStyle}"
                                      VerticalAlignment="Center"
@@ -301,7 +308,7 @@
                            Foreground="{StaticResource RuMutedBrush}"
                            TextWrapping="Wrap"
                            MaxWidth="560"
-                           Margin="0,2,0,0" />
+                           Margin="20,2,0,0" />
                 <!--
                   Thinking deliberation as a quote block: canvas fill to set it off the
                   chat, muted text so the reply below stays the visual focus. Closed by
@@ -332,6 +339,36 @@
                                                     StartLine="{x:Bind LineStart, Mode=OneWay}"
                                                     Margin="0,8,0,2"
                                                    AutomationProperties.Name="File edit preview" />
+                  <!--
+                    A terminal row's detail is what the command printed. Same clothes as the
+                    diff panel (mono, hairline, folded until asked for) because both answer
+                    the same question: what did this row actually do. Same row as the diff
+                    since a row carries one detail or the other, never both.
+                  -->
+                  <Border Grid.Row="2"
+                          Visibility="{x:Bind ShowTerminalOutput, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                          Background="{StaticResource RuSurfaceBrush}"
+                          BorderBrush="{StaticResource RuLineBrush}"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Margin="0,8,0,2"
+                          Padding="0"
+                          HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Terminal output">
+                      <ScrollViewer MaxHeight="220"
+                                    HorizontalScrollBarVisibility="Auto"
+                                    VerticalScrollBarVisibility="Auto"
+                                    HorizontalScrollMode="Enabled"
+                                    VerticalScrollMode="Enabled"
+                                    Padding="12,8,12,8">
+                          <TextBlock Text="{x:Bind TerminalPanelText, Mode=OneWay}"
+                                     FontFamily="{StaticResource RuMonoFontFamily}"
+                                     FontSize="12"
+                                     Foreground="{StaticResource RuInkBrush}"
+                                     TextWrapping="NoWrap"
+                                     IsTextSelectionEnabled="True" />
+                      </ScrollViewer>
+                  </Border>
                 <!--
                   State bindings for automation and contract tests. They sit in their own row
                   and take no space. Anything without a Grid.Row lands in row 0 on top of the

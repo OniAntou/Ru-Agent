@@ -217,6 +217,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             if (SetProperty(ref _isEditPreviewExpanded, value))
             {
                 OnPropertyChanged(nameof(ShowEditPreview));
+                OnPropertyChanged(nameof(ShowTerminalOutput));
                 OnPropertyChanged(nameof(EditPreviewChevronGlyph));
             }
         }
@@ -224,6 +225,80 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
 
     /// <summary>The diff itself, drawn only while it is open.</summary>
     public bool ShowEditPreview => HasEditPreview && IsEditPreviewExpanded;
+
+    /// <summary>
+    /// The command's output as it arrives, bounded by the terminal panel's own policy.
+    /// </summary>
+    /// <remarks>
+    /// A terminal row is the one place the feed can show what a command actually printed.
+    /// The text comes from the same blocks the terminal panel appends to, so the two cannot
+    /// disagree, and it is filled while the command runs: a row that has settled keeps
+    /// whatever it received, which is the honest limit of a live stream.
+    /// </remarks>
+    public string TerminalOutputText => _terminalOutputText;
+
+    private string _terminalOutputText = string.Empty;
+
+    /// <summary>
+    /// What the open panel shows: the command with a shell prompt, then its output.
+    /// </summary>
+    /// <remarks>
+    /// The panel repeats the command on purpose: by the time a reader opens it the header may
+    /// have scrolled away, and a wall of output with no command above it is the thing the
+    /// panel exists to prevent. The prompt is a plain "$" rather than the real one, because
+    /// the harness runs the command through PowerShell, not through a shell the reader chose.
+    /// </remarks>
+    public string TerminalPanelText => HasTerminalOutput
+        ? $"$ {Detail}\n\n{TerminalOutputText}"
+        : string.Empty;
+
+    public bool HasTerminalOutput => _terminalOutputText.Length > 0;
+
+    public bool ShowTerminalOutput => HasTerminalOutput && IsEditPreviewExpanded;
+
+    /// <summary>
+    /// Whether the row's header folds something: a diff, an output block, or both.
+    /// </summary>
+    /// <remarks>
+    /// The fold state lives in <see cref="IsEditPreviewExpanded"/> for both panels on
+    /// purpose: a row has one detail, and a reader who opened one of them meant to read
+    /// the row, not one specific pane.
+    /// </remarks>
+    public bool ShowRowDetailToggle => HasEditPreview || HasTerminalOutput;
+
+    /// <summary>
+    /// Appends a chunk of the running command's output, bounded the way the terminal
+    /// panel bounds its blocks so a runaway command cannot grow a row without limit.
+    /// </summary>
+    public void AppendTerminalOutput(string chunk)
+    {
+        if (string.IsNullOrEmpty(chunk))
+        {
+            return;
+        }
+
+        string combined = _terminalOutputText + chunk;
+        if (combined.Length > TerminalOutputBlock.MaximumCharacters)
+        {
+            combined = combined[^TerminalOutputBlock.MaximumCharacters..];
+        }
+
+        if (string.Equals(combined, _terminalOutputText, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        bool hadOutput = _terminalOutputText.Length > 0;
+        _terminalOutputText = combined;
+        OnPropertyChanged(nameof(TerminalOutputText));
+        OnPropertyChanged(nameof(TerminalPanelText));
+        OnPropertyChanged(nameof(ShowTerminalOutput));
+        if (!hadOutput)
+        {
+            OnPropertyChanged(nameof(HasTerminalOutput));
+            OnPropertyChanged(nameof(ShowRowDetailToggle));
+        }
+    }
 
     /// <summary>Chevron for the edit toggle: down when open, right when closed.</summary>
     public string EditPreviewChevronGlyph => IsEditPreviewExpanded ? "\uE70D" : "\uE76C";
@@ -440,9 +515,17 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// exist to report what happened: for them the reason *is* the report, and losing
     /// it would leave a cancelled or unbuildable model call saying nothing at all.
     /// </remarks>
-    public string FailedText => Kind is AgentActivityKind.Status or AgentActivityKind.Thinking
-        ? FailureSentence(SafeCode)
-        : StartedText;
+    public string FailedText => Kind switch
+    {
+        AgentActivityKind.Status or AgentActivityKind.Thinking => FailureSentence(SafeCode),
+        // Terminal is the one tool row whose running wording cannot survive the process:
+        // "Running <command>" stops being true the moment the command exits, so a settled
+        // one says "Ran <command>" and lets the colour carry how it went. It also means a
+        // row the run settled without a terminal frame stops claiming to still be running,
+        // which is how two rows for one command used to appear.
+        AgentActivityKind.Terminal => CompletedText,
+        _ => StartedText,
+    };
 
     /// <summary>
     /// The sentence for a row that exists to explain itself, by reason.

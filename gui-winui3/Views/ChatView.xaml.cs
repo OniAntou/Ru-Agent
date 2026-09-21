@@ -1007,6 +1007,7 @@ namespace RuApp.Views
                 if (existing.UpdateFrom(activity))
                 {
                     TrackTerminalToolState(existing);
+                    TrackTerminalOutputRow(existing);
                 }
             }
             else
@@ -1017,6 +1018,35 @@ namespace RuApp.Views
                 InsertActivityInFeedOrder(item);
                 FreezeTextSegmentForActivity(item);
                 TrackTerminalToolState(item);
+                TrackTerminalOutputRow(item);
+            }
+        }
+
+        /// <summary>
+        /// Remembers which terminal row is the one the output stream belongs to.
+        /// </summary>
+        /// <remarks>
+        /// One command runs at a time, so the row still in the Started state is the row the
+        /// next output chunk belongs to; a row that settled stops accepting chunks and keeps
+        /// what it already captured. Matching by tool call id instead would need the feed to
+        /// know how the terminal panel names its blocks, which is the panel's business.
+        /// </remarks>
+        private AgentActivityItem? _runningTerminalItem;
+
+        private void TrackTerminalOutputRow(AgentActivityItem item)
+        {
+            if (item.Kind != RuAgent.Protocol.Harness.AgentActivityKind.Terminal)
+            {
+                return;
+            }
+
+            if (item.IsRunning)
+            {
+                _runningTerminalItem = item;
+            }
+            else if (ReferenceEquals(_runningTerminalItem, item))
+            {
+                _runningTerminalItem = null;
             }
         }
 
@@ -1450,12 +1480,21 @@ namespace RuApp.Views
             }
 
             TerminalPanelControl.AppendOutput(output.ExecutionId, output.Text);
+
+            // The feed row for the command being run reads the same stream, so the reader
+            // can see what a command printed without leaving the transcript. A row that
+            // nobody is running anymore keeps what it already received.
+            _runningTerminalItem?.AppendTerminalOutput(output.Text);
         }
 
         private void CompleteTerminalBlock(string label, bool failed) =>
             TerminalPanelControl.CompleteBlock(label, failed);
 
-        private void ClearTerminalBlocks() => TerminalPanelControl.Clear();
+        private void ClearTerminalBlocks()
+        {
+            TerminalPanelControl.Clear();
+            _runningTerminalItem = null;
+        }
 
         // ── Activity text wave animation ──────────────────────────────
         private readonly Dictionary<TextBlock, AgentActivityItem> _activeWaveTextBlocks = new();

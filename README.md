@@ -10,7 +10,7 @@ nothing to install.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#what-runs)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-3%2C589%20passing-3FB950)](#testing)
+[![Tests](https://img.shields.io/badge/tests-3%2C590%20passing-3FB950)](#testing)
 [![Tools](https://img.shields.io/badge/tools-10-8B5CF6)](#tools)
 [![Routes](https://img.shields.io/badge/routes-40%20HTTP-6E7681)](#testing)
 

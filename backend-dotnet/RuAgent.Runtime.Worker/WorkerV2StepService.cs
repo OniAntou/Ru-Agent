@@ -366,18 +366,34 @@ public sealed class WorkerV2StepService
 
         try
         {
-            // Provider-native calls may carry narration before the call. It has
-            // already streamed as deltas, and the wire contract forbids visible
-            // text next to a tool selection, so the step stays call-only.
+            // Provider-native calls may carry narration before the call. It has already
+            // streamed as deltas and it belongs to the step: dropping it here was the only
+            // reason the feed stayed silent until the run finished. Raw call markup stays
+            // out — narration is prose, never the call written out by hand.
+            var narration = text.ToString().Trim();
             return (new List<ModelToolCall>
             {
                 new(providerCallIds.Length == 1 ? providerCallIds[0] : null, toolName, toolVersion, arguments),
-            }, null);
+            }, narration.Length == 0 || IsToolCallMarkup(narration) ? null : narration);
         }
         catch (ArgumentException error)
         {
             throw new WorkerV2StepException("protocol_failure", retryable: false, error);
         }
+    }
+
+    /// <summary>
+    /// Whether step text is the tool call written out by hand rather than prose.
+    /// </summary>
+    /// <remarks>
+    /// Prompt-based selections already strip their call block before it can be seen; a native
+    /// call whose text side is markup gets the same treatment, because raw call markup must
+    /// never reach the chat whichever way the model chose to write it.
+    /// </remarks>
+    private static bool IsToolCallMarkup(string text)
+    {
+        var candidate = ModelToolSelectionParser.NormalizeCandidate(text);
+        return candidate.Length != 0 && candidate[0] is '{' or '[';
     }
 
     private static (ModelToolCall? Call, string? VisibleText) ParsePromptToolSelection(string text, JsonObject settings)

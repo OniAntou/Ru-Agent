@@ -114,7 +114,7 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
-    public async Task Step_service_keeps_narration_out_of_step_text_beside_a_native_call()
+    public async Task Step_service_keeps_narration_beside_a_native_call()
     {
         var provider = new FakeModelProvider(
             new ModelDelta("Dang tao file. ", Array.Empty<ModelToolFragment>(), false, null),
@@ -128,10 +128,32 @@ public sealed class WorkerV2StepServiceTests
             StartPayload(includeTool: true),
             CancellationToken.None);
 
-        // Narration streams live, but a tool selection step stays text-free.
-        Assert.Null(result.Text);
+        // Narration streams live and it stays with the step: a reader watching the run sees
+        // what the model said before it reached for the tool, not only the final answer.
+        Assert.Equal("Dang tao file.", result.Text);
         Assert.Equal("tool_calls", result.FinishReason);
         Assert.Equal("files.read", Assert.Single(result.ToolCalls).ToolId);
+    }
+
+    [Fact]
+    public async Task Step_service_keeps_call_markup_out_of_step_text_beside_a_native_call()
+    {
+        // The other side of the same rule: text that is the call itself is not narration, and
+        // raw call markup must never reach the chat.
+        var provider = new FakeModelProvider(
+            new ModelDelta("{\"tool_id\":\"files.read\",\"arguments\":{\"path\":\"README.md\"}}", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta(
+                null,
+                new[] { new ModelToolFragment("call-4", "files.read", "{\"path\":\"README.md\"}") },
+                true,
+                "tool_calls"));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            CancellationToken.None);
+
+        Assert.Null(result.Text);
+        Assert.Single(result.ToolCalls);
     }
 
     [Fact]

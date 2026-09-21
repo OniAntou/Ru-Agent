@@ -430,8 +430,6 @@ public sealed class PolicyContextFactory
         _ => PolicyOperationClasses.Write,
     };
 
-    private static bool IsTargetFreeTool(string toolId) => false;
-
     private static bool IsTargetFreeOp(string toolId, string op) =>
         toolId == "help"
         || toolId == "todo_write"

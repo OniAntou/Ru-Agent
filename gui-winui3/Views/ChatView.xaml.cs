@@ -879,19 +879,6 @@ namespace RuApp.Views
             _contextMeterTimer.Start();
         }
 
-        private static async void PushSafelyAsync(Task? task)
-        {
-            if (task == null) return;
-            try
-            {
-                await task;
-            }
-            catch
-            {
-                // Fire-and-forget VTS activity push should never crash the UI
-            }
-        }
-
         private void OnAgentControllerChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (DispatcherQueue.HasThreadAccess)
@@ -2211,21 +2198,6 @@ namespace RuApp.Views
                     || string.Equals(trimmed, "interrupted", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(trimmed, "Run ended.", StringComparison.OrdinalIgnoreCase));
         }
-
-        /// <summary>
-        /// Server-selected pending approval reason drives the bounded copy.
-        /// The Host is the only authority, so we never echo the raw argv, script,
-        /// working directory, or secrets. Reason codes come from the broker
-        /// (external_directory_required, terminal_delete_requires_approval,
-        /// terminal_external_mutation_requires_approval, terminal_timeout_requires_approval,
-        /// web_approval_required, terminal_unknown_executable);
-        /// unknown values stay generic.
-        /// </summary>
-        private static string RenderApprovalSummary(string? summary) =>
-            AgentApprovalSummaryPresentation.Render(summary);
-
-        private static string BoundedDisplay(string value, int maxLength) =>
-            AgentApprovalSummaryPresentation.Bounded(value, maxLength);
 
         // ── Run activity ───────────────────────────────────────
         // "Is a run in hand for this session?" is one question with one answer, asked

@@ -181,12 +181,6 @@ public sealed partial class ToolExecutionService : IToolInvoker
             _approvalTokens);
     }
 
-    private FileTools FileToolsFor(string canonicalRoot)
-    {
-        var root = Path.GetFullPath(canonicalRoot);
-        return _fileToolsByRoot.GetOrAdd(root, static (_, resolvedRoot) => new FileTools(new WorkspacePathGuard(resolvedRoot)), root);
-    }
-
     private sealed class RootToolSet
     {
         public required FileListAdapter List { get; init; }
@@ -258,38 +252,6 @@ public sealed partial class ToolExecutionService : IToolInvoker
             tools.Restore.Execute(arguments),
             ToolVerificationStates.NotRequired,
             "Workspace file restored."));
-    }
-
-    private FileTools ResolveFileTools(ToolExecutionContext context, string? pathInput)
-    {
-        var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
-        if (string.IsNullOrWhiteSpace(pathInput) || grants.Count == 0)
-        {
-            return _files;
-        }
-
-        try
-        {
-            var selected = FileToolRootSelector.SelectRoot(
-                _mutationResolver,
-                _mutationResolver.CanonicalRoot,
-                grants,
-                pathInput);
-            if (string.Equals(selected, _mutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                return _files;
-            }
-
-            return FileToolsFor(selected);
-        }
-        catch (ArgumentException)
-        {
-            return _files;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return _files;
-        }
     }
 
     private RootToolSet ResolveRestoreTools(ToolExecutionContext context, JsonObject arguments)

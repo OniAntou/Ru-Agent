@@ -129,36 +129,6 @@ public sealed partial class AgentV1Service
         _logger = logger;
     }
 
-    // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
-    public AgentV1Service(
-        IHarnessEventStore store,
-        HarnessSqliteOptions options,
-        WindowsWorkspaceIdentityResolver resolver,
-        SqliteWorkspaceStore workspaceStore,
-        WorkspaceTrustRequestStore trustStore,
-        WorkspaceTrustService trustService,
-        IIdGenerator ids,
-        ITimeProvider time,
-        HarnessPayloadStore payloadStore,
-        ISessionStore sessions,
-        AgentSessionPermissionStore permissionStore)
-        : this(store, options, resolver, workspaceStore, trustStore, trustService, ids, time, payloadStore, sessions, permissionStore, new EphemeralKeyStore())
-    {
-    }
-
-    private sealed class EphemeralKeyStore : IHarnessKeyStore
-    {
-        private readonly byte[] _key = RandomNumberGenerator.GetBytes(32);
-        public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken)
-        {
-            var copy = new byte[32];
-            Buffer.BlockCopy(_key, 0, copy, 0, 32);
-            return ValueTask.FromResult(copy);
-        }
-    }
-
-    public AgentServiceResult PhaseNotAvailable() => BoundedError(409, "phase_not_available", "Not available in this phase.");
-
     private static AgentServiceResult BoundedError(int status, string code, string message) =>
         AgentV1Shared.BoundedError(status, code, message);
 
@@ -170,12 +140,6 @@ public sealed partial class AgentV1Service
     public static string MapRunState(HarnessRunStatus status) => AgentV1Shared.MapRunState(status);
 
     private static string ComputeSha256(string value) => AgentV1Shared.ComputeSha256(value);
-
-    private static string ComputePolicySnapshotSha(AgentPermissionPreset preset, WorkspaceIdentity identity)
-    {
-        var input = $"{preset}|{identity.WorkspaceId.Value}|empty";
-        return ComputeSha256(input);
-    }
 
     private static bool IsSessionId(string value) => AgentV1Shared.IsSessionId(value);
 

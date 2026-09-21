@@ -10,7 +10,6 @@ public enum UiTheme
 
 public sealed class UiThemePreferenceStore
 {
-    private const int MaximumPreferenceBytes = 64 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly string _filePath;
 
@@ -31,7 +30,7 @@ public sealed class UiThemePreferenceStore
                 return UiTheme.Light;
             }
 
-            var bytes = ReadBoundedBytes(_filePath, MaximumPreferenceBytes);
+            var bytes = PreferenceFile.ReadOrNull(_filePath);
             if (bytes is null)
             {
                 return UiTheme.Light;
@@ -57,25 +56,6 @@ public sealed class UiThemePreferenceStore
         {
             return UiTheme.Light;
         }
-    }
-
-    private static byte[]? ReadBoundedBytes(string path, int maximumBytes)
-    {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        using var output = new MemoryStream(Math.Min(maximumBytes, 8192));
-        var buffer = new byte[Math.Min(maximumBytes, 8192)];
-        int read;
-        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            if (output.Length > maximumBytes - read)
-            {
-                return null;
-            }
-
-            output.Write(buffer, 0, read);
-        }
-
-        return output.ToArray();
     }
 
     public bool TrySave(UiTheme theme)

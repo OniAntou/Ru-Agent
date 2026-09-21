@@ -17,6 +17,14 @@ namespace RuBackend.Harness.Prompting;
 public sealed class RuPromptContextProvider : ISystemPromptContextProvider
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
+    /// <summary>
+    /// How many tool results may appear as references. One slot of
+    /// <see cref="PromptRuntimeContext.MaxRuntimeReferences"/> is reserved for the
+    /// workspace-activity reference.
+    /// </summary>
+    private const int ToolResultReferenceBudget = PromptRuntimeContext.MaxRuntimeReferences - 1;
+
     private readonly string _canonicalRoot;
     private readonly RuInstructionLoader _instructionLoader;
     private readonly ISettingsStore _settings;
@@ -175,15 +183,40 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         // listing or a file read larger than the bound used to end the turn outright instead
         // of costing the model the tail of one result. The marker says the output was cut,
         // because a silently shortened result reads as a complete one.
-        var references = modelContext.Entries
+        //
+        // The count is bound the same way the size is. The runtime context accepts at most
+        // PromptRuntimeContext.MaxRuntimeReferences in total, and a context over that bound
+        // is rejected just as hard -- so a run that had accumulated one reference per tool
+        // result eventually ended with prompt_contract_invalid rather than losing anything.
+        // Only the newest results are kept: the oldest ones describe work the model has
+        // already acted on, and the conversation turns still carry the exchange (truncated)
+        // so the model is not told a call it made never happened.
+        var toolResults = modelContext.Entries
             .Where(entry => entry.Kind == ModelContextEntryKind.ToolResult
                 && !string.IsNullOrWhiteSpace(entry.Content))
             .OrderBy(entry => entry.Sequence)
-            .Select(entry => new PromptReference(
-                "tool_result",
-                "untrusted tool result",
-                FitReferenceContent(entry.Content!)))
             .ToList();
+        // One slot is reserved for the workspace-activity reference appended below, so a
+        // run that is also watching external writers cannot overflow the bound either.
+        var newestResults = toolResults.Count <= ToolResultReferenceBudget
+            ? toolResults
+            : toolResults.GetRange(toolResults.Count - ToolResultReferenceBudget, ToolResultReferenceBudget);
+        var omittedResults = toolResults.Count - newestResults.Count;
+
+        var references = new List<PromptReference>();
+        if (omittedResults > 0)
+        {
+            references.Add(new PromptReference(
+                "tool_result_omitted",
+                "untrusted tool results omitted from the prompt",
+                $"{omittedResults} older tool result(s) are not carried here. They are still in "
+                + "the conversation history, and the newest results below are complete."));
+        }
+
+        references.AddRange(newestResults.Select(entry => new PromptReference(
+            "tool_result",
+            "untrusted tool result",
+            FitReferenceContent(entry.Content!))));
 
         if (_workspaceCoordinatorStore is not null)
         {
@@ -198,7 +231,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                     .Select(change =>
                         $"sequence={change.CommitSequence}; path={change.NormalizedPath}; before={change.BeforeSha256 ?? "missing"}; observed={change.AfterSha256 ?? "missing"}")
                     .ToArray();
-                if (external.Length > 0 && references.Count < 16)
+                if (external.Length > 0 && references.Count < PromptRuntimeContext.MaxRuntimeReferences)
                 {
                     references.Add(new PromptReference(
                         "workspace_activity",
@@ -211,6 +244,16 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 // Prompt construction remains available if the optional activity
                 // journal is unavailable; terminal/file guards remain authoritative.
             }
+        }
+
+        // The reservation above is arithmetic, not a guarantee: a third source of
+        // references added later would overflow the Core bound silently, and the run would
+        // fail with a code that names the prompt contract instead of this provider. Fail
+        // here, where the names say what actually went wrong.
+        if (references.Count > PromptRuntimeContext.MaxRuntimeReferences)
+        {
+            throw new InvalidOperationException(
+                $"prompt_references_over_core_cap:{references.Count}>{PromptRuntimeContext.MaxRuntimeReferences}");
         }
 
         return new PromptRuntimeContext(null, null, references);

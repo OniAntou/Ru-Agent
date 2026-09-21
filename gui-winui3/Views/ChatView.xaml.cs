@@ -87,6 +87,17 @@ namespace RuApp.Views
         private string? _harnessScenario;
         private string _activeSessionId = "default";
         public string CurrentSessionId => _activeSessionId;
+
+        /// <summary>
+        /// Which open attempt owns the transcript. Bumped when an attempt becomes the
+        /// active one; every await inside that attempt re-checks it and stops if a
+        /// newer attempt has taken over.
+        /// </summary>
+        private long _sessionOpenGeneration;
+
+        /// <summary>The session <see cref="_sessionOpenGeneration"/> was opened for.</summary>
+        private string _sessionOpenGenerationSessionId = string.Empty;
+
         private IReadOnlyList<TodoItemModel>? _latestTodos;
         private bool _todoPanelExpanded;
         private string _activeSessionTitle = "New Chat";
@@ -2961,7 +2972,7 @@ namespace RuApp.Views
             SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
             string sessionId = created.Id.Trim();
 
-            _activeSessionId = sessionId;
+            ActivateSession(sessionId);
             _agentPresetSessionId = null;
             _agentPresetVersion = null;
             ClearAgentActivities();
@@ -2985,7 +2996,7 @@ namespace RuApp.Views
 
             SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
             string validSessionId = created.Id.Trim();
-            _activeSessionId = validSessionId;
+            ActivateSession(validSessionId);
             SessionOpened?.Invoke(
                 this,
                 new SessionOpenedEventArgs(
@@ -3889,8 +3900,17 @@ namespace RuApp.Views
                 // cancellation races the next create request and surfaces as the
                 // misleading "workspace busy" error.
                 await StopActiveAgentAsync(force: true);
+
+                // This attempt takes ownership of the transcript from here. Both halves of
+                // the draft move key off the active session id, so the outgoing draft is
+                // filed under the outgoing session first and the switch comes after it.
                 _composerDrafts.Save(_activeSessionId, ChatInputTextBox?.Text);
                 _activeSessionId = sessionId;
+                _sessionOpenGenerationSessionId = sessionId;
+                // The generation bump is what tells a load still in flight for the previous
+                // session that it has been superseded, so it stops instead of painting its
+                // history under this session's title.
+                var generation = ++_sessionOpenGeneration;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
                 JumpToLatestForNewTurn();
@@ -3902,7 +3922,12 @@ namespace RuApp.Views
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 DetachAgentActivitiesFromMessages();
                 Messages.Clear();
-                var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
+                // Every await below is a chance for another switch to take over. Opening a
+                // session out of order used to paint its history under the newer session's
+                // title, and the backend's active session (activation is a POST) could end
+                // up on a different session than the one on screen.
+                var history = await _apiService.GetSessionMessagesAsync(sessionId);
+                if (!IsCurrentOpen(generation)) return;
                 // Durable replay: session messages persist only role/content, so a session
                 // opened fresh would show a transcript of prose with every tool row missing.
                 // Rebuild the settled rows from each terminal run's durable events. This is
@@ -3910,6 +3935,7 @@ namespace RuApp.Views
                 // without it the rows exist only as transient frames and are gone the moment
                 // the live connection ends.
                 var replayedRuns = await LoadReplayedRunActivitiesAsync(CancellationToken.None);
+                if (!IsCurrentOpen(generation)) return;
 
                 if (history != null)
                 {
@@ -3963,9 +3989,8 @@ namespace RuApp.Views
                 // has no provider report and the meter hides its system-plus-
                 // tools row. Replay the newest durable report onto the last
                 // assistant bubble; the forced repaint below picks it up.
-                var restoredUsage = await _apiService.GetLatestSessionUsageAsync(_activeSessionId, CancellationToken.None);
-                if (restoredUsage is not null
-                    && string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
+                var restoredUsage = await _apiService.GetLatestSessionUsageAsync(sessionId, CancellationToken.None);
+                if (restoredUsage is not null && IsCurrentOpen(generation))
                 {
                     _activeAgentUsage = restoredUsage;
                     for (int index = Messages.Count - 1; index >= 0; index--)
@@ -3996,6 +4021,26 @@ namespace RuApp.Views
                 // the throttle window, so repaint by force with history in place.
                 UpdateContextUsage(force: true);
             }
+        }
+
+        /// <summary>
+        /// True while the attempt that started as <paramref name="generation"/> is still the
+        /// one whose session is open. A superseded attempt must not touch the transcript.
+        /// </summary>
+        private bool IsCurrentOpen(long generation) =>
+            _sessionOpenGeneration == generation
+            && string.Equals(_activeSessionId, _sessionOpenGenerationSessionId, StringComparison.Ordinal);
+
+        /// <summary>
+        /// Makes <paramref name="sessionId"/> the active session and takes the transcript away
+        /// from any open attempt still in flight. Session-creating paths go through here so a
+        /// load that started for the previous session can always tell it has been superseded.
+        /// </summary>
+        private void ActivateSession(string sessionId)
+        {
+            _activeSessionId = sessionId;
+            _sessionOpenGenerationSessionId = sessionId;
+            _sessionOpenGeneration++;
         }
 
         private void ApplyInputWidth()

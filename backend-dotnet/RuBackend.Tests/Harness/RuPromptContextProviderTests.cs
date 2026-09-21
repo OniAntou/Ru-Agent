@@ -131,6 +131,98 @@ public sealed class RuPromptContextProviderTests
     }
 
     [Fact]
+    public async Task Keeps_the_newest_tool_results_instead_of_failing_over_the_reference_cap()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
+
+        // One reference per tool result used to be appended without a bound. Once a run had
+        // accumulated more results than the runtime context accepts, the context constructor
+        // rejected the whole prompt and the run ended with prompt_contract_invalid. A long
+        // run therefore died in the middle of its work instead of losing the oldest output.
+        const int budget = PromptRuntimeContext.MaxRuntimeReferences - 1;
+        const int results = budget + 4;
+        const int dropped = results - budget;
+        var snapshot = ToolResultSnapshot(results);
+
+        var context = await provider.BuildAsync(TestRun(), snapshot, CancellationToken.None);
+
+        // The bound is the point: the constructed context proves it held.
+        Assert.True(
+            context.RuntimeContext.References.Count <= PromptRuntimeContext.MaxRuntimeReferences,
+            $"references={context.RuntimeContext.References.Count} exceeds the Core cap");
+        var omitted = Assert.Single(
+            context.RuntimeContext.References,
+            reference => reference.Kind == "tool_result_omitted");
+        Assert.Contains($"{dropped} older tool result", omitted.Content, StringComparison.Ordinal);
+
+        // The newest results survive, the oldest are the ones dropped. Read against the
+        // constants rather than a hand-counted window, so the assertion cannot drift from
+        // the budget it is meant to check.
+        var kept = context.RuntimeContext.References
+            .Where(reference => reference.Kind == "tool_result")
+            .Select(reference => reference.Content)
+            .ToArray();
+        Assert.Equal(budget, kept.Length);
+        Assert.Equal("tool output 999", kept[^1]);
+        Assert.Equal($"tool output {dropped + 1}", kept[0]);
+        Assert.DoesNotContain($"tool output {dropped} ", string.Join("\n", kept) + " ", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Carries_every_tool_result_reference_when_the_cap_is_not_reached()
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
+
+        // Exactly at the tool-result budget: nothing is dropped, so the omission note that
+        // would cost a slot is not emitted either.
+        var snapshot = ToolResultSnapshot(PromptRuntimeContext.MaxRuntimeReferences - 1);
+
+        var context = await provider.BuildAsync(TestRun(), snapshot, CancellationToken.None);
+
+        Assert.Equal(PromptRuntimeContext.MaxRuntimeReferences - 1, context.RuntimeContext.References.Count);
+        Assert.All(context.RuntimeContext.References, reference => Assert.Equal("tool_result", reference.Kind));
+    }
+
+    private static ModelContextSnapshot ToolResultSnapshot(int count)
+    {
+        var entries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Text("user", 1, ModelContextRole.User, "read every note"),
+        };
+        for (var index = 1; index <= count; index++)
+        {
+            // The last result is numbered distinctly so the assertion can name which end of
+            // the list survived without depending on the ordering implementation.
+            var content = index == count ? "tool output 999" : $"tool output {index}";
+            entries.Add(ModelContextEntry.ToolResult(
+                $"tool-{index}",
+                index + 1,
+                ToolReceipt(index),
+                content));
+        }
+
+        return new ModelContextSnapshot(entries, Array.Empty<byte>());
+    }
+
+    private static ToolExecutionReceipt ToolReceipt(int index) => new(
+        new ExecutionId($"exec_{index:x32}"),
+        new ToolCallId($"call_{index:x32}"),
+        ToolExecutionOutcome.Succeeded,
+        "ok",
+        null,
+        sideEffectsPossible: false);
+
+    [Fact]
     public void Worker_settings_fail_closed_when_prompt_schema_digest_drifts()
     {
         var schema = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}";

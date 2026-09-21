@@ -324,6 +324,102 @@ public sealed class HarnessSqliteSchemaTests
         }
     }
 
+    /// <summary>
+    /// A migration that fails partway must leave the database exactly as it was.
+    /// </summary>
+    /// <remarks>
+    /// The upgrade batch and its version bump used to be autocommit statements, so a failure
+    /// or a kill in the middle left the old schema partly replaced while <c>user_version</c>
+    /// still said "not upgraded" -- and the version 5 to 6 rebuild is not idempotent, so the
+    /// next start could not open the database at all. The batch is one transaction now: a
+    /// deterministic failure inside it (here a row that violates the widened table's CHECK)
+    /// rolls the whole rebuild back, including the <c>DROP TABLE</c> that is the irreversible
+    /// step. A retry then starts from the same, fully intact state instead of a wreckage.
+    /// </remarks>
+    [Fact]
+    public async Task A_version_five_upgrade_that_fails_partway_leaves_the_database_untouched()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "ru-harness-schema-failed-migration",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            var options = new HarnessSqliteOptions(databasePath);
+            var initial = await HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None);
+            Assert.True(initial.IsAvailable, initial.ErrorCode);
+
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var seed = connection.CreateCommand();
+                seed.CommandText = """
+                    INSERT INTO agent_workspaces(workspace_id, canonical_root_nonce, canonical_root_ciphertext, canonical_root_tag, volume_serial_number, root_file_id, display_identity_hash, trust_request_id, trust_requested_at_utc, trust_expires_at_utc, created_at_utc, updated_at_utc)
+                    VALUES ('ws_88888888888888888888888888888888', zeroblob(12), zeroblob(1), zeroblob(16), 'VOL', 'fid', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'trust-failed', '2026-09-01T00:00:00+00:00', '2026-09-02T00:00:00+00:00', '2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00');
+                    INSERT INTO agent_session_settings(session_id, preset, version, updated_at_utc)
+                    VALUES ('rollback-sentinel', 1, 7, '2026-08-29T00:00:00.0000000+00:00');
+                    INSERT INTO agent_runs(run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, session_preset_version, policy_snapshot_version, policy_snapshot_sha256, idempotency_key_sha256, normalized_request_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code, base_context_captured_at_utc, base_context_entry_count)
+                    VALUES ('run_99999999999999999999999999999999', 'rollback-sentinel', 'ws_88888888888888888888888888888888', 7, NULL, 0, 3, 1, 0, 0, 0, 1, 1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', '2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00', NULL, NULL, NULL, 0);
+                    -- The migration must abort somewhere inside its batch. A version 5 table
+                    -- can hold a state the version 6 CHECK(state BETWEEN 0 AND 10) rejects,
+                    -- and the guard is what lets this seed exist at all; the rebuild then
+                    -- fails on its first INSERT ... SELECT, after the DROP it must undo.
+                    PRAGMA ignore_check_constraints = ON;
+                    UPDATE agent_runs SET state = 99 WHERE run_id = 'run_99999999999999999999999999999999';
+                    PRAGMA ignore_check_constraints = OFF;
+                    PRAGMA user_version = 5;
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+
+            var attempted = await HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None);
+
+            // A row the new schema cannot accept is refused rather than silently dropped.
+            Assert.False(attempted.IsAvailable);
+            await using var verify = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+            await verify.OpenAsync();
+            await using var version = verify.CreateCommand();
+            version.CommandText = "PRAGMA user_version";
+            Assert.Equal(5L, (long)(await version.ExecuteScalarAsync() ?? -1L));
+            await using var sentinel = verify.CreateCommand();
+            sentinel.CommandText =
+                "SELECT version FROM agent_session_settings WHERE session_id = 'rollback-sentinel'";
+            // The DROP TABLE was rolled back with the rest: the row is still readable through
+            // the original table, which no longer exists if the transaction leaked.
+            Assert.Equal(7L, (long)(await sentinel.ExecuteScalarAsync() ?? 0L));
+            await using var rows = verify.CreateCommand();
+            rows.CommandText = "SELECT COUNT(*) FROM agent_runs";
+            Assert.Equal(1L, (long)(await rows.ExecuteScalarAsync() ?? -1L));
+            // The decisive difference. Autocommit left the half-built replacement tables
+            // behind while user_version still said 5, so the next start re-ran the rebuild
+            // and collided with them; the rebuild is not idempotent, so that database could
+            // not be opened again. One transaction takes them with it on the way out.
+            await using var leftovers = verify.CreateCommand();
+            leftovers.CommandText =
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE '%\\_new' ESCAPE '\\'";
+            Assert.Equal(0L, (long)(await leftovers.ExecuteScalarAsync() ?? -1L));
+        }
+        finally
+        {
+            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = true,
+            }.ToString()))
+            {
+                SqliteConnection.ClearPool(pool);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public async Task Initialize_migrates_version_five_to_six_preserving_rows_and_widening_preset()
     {

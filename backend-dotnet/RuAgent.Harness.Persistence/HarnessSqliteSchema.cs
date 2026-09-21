@@ -46,70 +46,52 @@ public static class HarnessSqliteSchema
 
             if (existingVersion == 2)
             {
-                await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven;
-                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                await using var verCmd = connection.CreateCommand();
-                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 3)
             {
-                await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven;
-                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                await using var verCmd = connection.CreateCommand();
-                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 4)
             {
-                await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven;
-                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                await using var verCmd = connection.CreateCommand();
-                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 5)
             {
-                await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionFiveToSix + SchemaVersionSixToSeven;
-                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                await using var verCmd = connection.CreateCommand();
-                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 6)
             {
-                await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionSixToSeven;
-                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                await using var verCmd = connection.CreateCommand();
-                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionSixToSeven,
+                    cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 0)
             {
-                await using var command = connection.CreateCommand();
-                // A fresh database must reach the same shape a migrated one does, so
-                // every migration constant belongs in this batch. Omitting one left
-                // new installs a version behind the schema the validator expects.
-                command.CommandText = SchemaVersionThree
+                await ApplyMigrationAsync(
+                    connection,
+                    // A fresh database must reach the same shape a migrated one does, so
+                    // every migration constant belongs in this batch. Omitting one left
+                    // new installs a version behind the schema the validator expects.
+                    SchemaVersionThree
                     + SchemaVersionThreeToFour
                     + SchemaVersionFourFinalGate
                     + SchemaVersionFiveToSix
-                    + SchemaVersionSixToSeven;
-                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                await using var verCmd = connection.CreateCommand();
-                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                    + SchemaVersionSixToSeven,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             if (!await HarnessSqliteSchemaValidator.ValidateAsync(connection, cancellationToken)
@@ -137,6 +119,66 @@ public static class HarnessSqliteSchema
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version";
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+    }
+
+    /// <summary>
+    /// Applies one upgrade batch and advances <c>user_version</c> in a single transaction.
+    /// </summary>
+    /// <remarks>
+    /// The DDL and the version bump used to run as separate autocommit statements, so a
+    /// crash between them left a database that was neither the old schema nor the new one,
+    /// and the version still said "not upgraded" -- the next start re-ran the batch against
+    /// tables an earlier attempt had already rebuilt. The version 5 to 6 rebuild is not
+    /// idempotent (it drops the original and relies on the rename), so that database could
+    /// not be opened again at all. SQLite rolls back DDL, and <c>user_version</c> is part of
+    /// the transaction too, so one transaction makes an interrupted upgrade indistinguishable
+    /// from one that never started: the next start simply repeats it.
+    /// </remarks>
+    private static async Task ApplyMigrationAsync(
+        SqliteConnection connection,
+        string migrationSql,
+        CancellationToken cancellationToken)
+    {
+        // Foreign keys are disabled for the whole batch, not inside it: the pragma is a
+        // no-op inside a transaction, and it cannot be left out. The version 5 to 6 rebuild
+        // drops a table that rows cascade from, so with enforcement on, dropping the old
+        // table would delete the rows the rebuild is in the middle of copying. The setting
+        // is per connection, so closing this one restores enforcement for every later
+        // reader even if the batch rolls back.
+        await using (var disable = connection.CreateCommand())
+        {
+            disable.CommandText = "PRAGMA foreign_keys = OFF;";
+            await disable.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            await using (var migration = connection.CreateCommand())
+            {
+                migration.Transaction = transaction;
+                migration.CommandText = migrationSql;
+                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using (var version = connection.CreateCommand())
+            {
+                version.Transaction = transaction;
+                version.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+
+        await using var enable = connection.CreateCommand();
+        enable.CommandText = "PRAGMA foreign_keys = ON;";
+        await enable.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsExpectedStorageFailure(Exception exception) =>
@@ -432,11 +474,12 @@ public static class HarnessSqliteSchema
     // Version 6 widens the preset allowlist to Trusted (2). SQLite cannot ALTER
     // a CHECK, so both tables are rebuilt: same columns in the same order, data
     // copied verbatim, then the originals are dropped and renamed back. Foreign
-    // keys are off only inside this batch (autocommit statements) and every
-    // existing preset value (0, 1) satisfies the new CHECK, so no row can fail.
+    // keys are off for the whole batch, which ApplyMigrationAsync sets before it
+    // opens the transaction -- the pragma is a no-op inside one, and rows cascade
+    // from agent_runs, so the DROP below would delete the rows being copied if
+    // enforcement were on. Every existing preset value (0, 1) satisfies the new
+    // CHECK, so no row can fail.
     private const string SchemaVersionFiveToSix = """
-        PRAGMA foreign_keys=OFF;
-
         CREATE TABLE agent_session_settings_new (
             session_id TEXT PRIMARY KEY,
             preset INTEGER NOT NULL CHECK(preset IN (0, 1, 2)),
@@ -480,8 +523,6 @@ public static class HarnessSqliteSchema
         CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_runs_active_session
             ON agent_runs(session_id)
             WHERE terminal_at_utc IS NULL;
-
-        PRAGMA foreign_keys=ON;
         """;
 
     // Version 7 brings the file-recovery table under the versioned schema. It was

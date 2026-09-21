@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Runtime.Versioning;
+using Microsoft.Data.Sqlite;
 
 namespace RuAgent.Harness.Persistence.Privacy;
 
@@ -41,6 +42,17 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
             HardenDirectory(directory);
             if (!File.Exists(_keyPath))
             {
+                // A missing key file beside a database that already holds protected rows is
+                // not a fresh install, it is a lost key. Minting a new one here left every
+                // existing ciphertext undecryptable while the store still reported itself
+                // available, so the failure surfaced later as payload_authentication_failed
+                // with nothing pointing at the cause. Refuse instead: the data cannot be
+                // recovered, and silently starting over is the one outcome this must not do.
+                if (await HasProtectedRowsAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    throw new HarnessStoreException("harness_key_missing");
+                }
+
                 await CreateKeyFileAsync(directory, cancellationToken).ConfigureAwait(false);
             }
 
@@ -55,6 +67,47 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// True when the database already holds rows encrypted under this key.
+    /// </summary>
+    /// <remarks>
+    /// Read-only and tolerant of shape: a database that cannot be opened or has no payload
+    /// table yet is treated as fresh, because refusing to start on a database that holds
+    /// nothing to lose would trade one silent failure for a loud, unnecessary one.
+    /// </remarks>
+    private async Task<bool> HasProtectedRowsAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_databasePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = _databasePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false,
+            };
+            await using var connection = new SqliteConnection(builder.ToString());
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_payloads'
+                ) AND EXISTS(SELECT 1 FROM agent_payloads LIMIT 1);
+                """;
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return result is long and not 0;
+        }
+        catch (SqliteException)
+        {
+            // Not a shape this key ever protected: nothing to be responsible for.
+            return false;
         }
     }
 

@@ -152,6 +152,19 @@ public sealed record PromptReference
 
 public sealed record PromptRuntimeContext
 {
+    /// <summary>
+    /// The most references one runtime context may carry.
+    /// </summary>
+    /// <remarks>
+    /// Public for the same reason as <see cref="PromptReference.ContentMaxBytes"/>: a
+    /// caller that appends references has to fit inside it. A context over the bound is
+    /// rejected, and a rejected context fails the whole prompt -- so a long run that had
+    /// accumulated more tool results than this used to end with <c>prompt_contract_invalid</c>
+    /// instead of costing the model the oldest results. Callers that can exceed it must
+    /// keep the newest references and drop the rest.
+    /// </remarks>
+    public const int MaxRuntimeReferences = 16;
+
     public PromptRuntimeContext(
         string? mood,
         string? hardware,
@@ -166,7 +179,7 @@ public sealed record PromptRuntimeContext
             throw new ArgumentException("Prompt references cannot contain null.", nameof(references));
         }
 
-        if (copiedReferences.Length > 16)
+        if (copiedReferences.Length > MaxRuntimeReferences)
         {
             throw new ArgumentException("Prompt references exceed the Core cap.", nameof(references));
         }

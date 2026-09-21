@@ -317,6 +317,20 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Runs that already hold a workspace baseline for the drive session now in progress.
+    /// </summary>
+    /// <remarks>
+    /// Capturing a baseline reads and hashes every file in the workspace, up to the
+    /// monitor's 4096-file cap: measured on this repository that is 645 MB hashed and
+    /// 204 MB of retained content in about 22 seconds. The drive passes are re-entered
+    /// every poll tick while a run is settling, and each pass used to re-capture, so the
+    /// host re-read the workspace thousands of times per run. Only the first pass of a
+    /// drive session needs it: the FileSystemWatcher is live from that moment, and a
+    /// detected change re-registers its own path so the baseline stays current.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, byte> _capturedBaselines = new(StringComparer.Ordinal);
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly HarnessRecoveryScanner _recoveryScanner;
 
@@ -547,7 +561,14 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
             if (_workspaceChangeMonitor is not null)
             {
-                _workspaceChangeMonitor.CaptureExpectedHashes(workspaceRoot);
+                // Once per drive session: see _capturedBaselines. Recorded only after the
+                // capture actually ran, and released when this pass stops driving, so a
+                // later re-entry takes a fresh baseline rather than trusting a stale one.
+                if (_capturedBaselines.TryAdd(runIdValue, 0))
+                {
+                    _workspaceChangeMonitor.CaptureExpectedHashes(workspaceRoot);
+                }
+
                 workspaceWatcher = _workspaceChangeMonitor.StartWatchingAsync(
                     workspaceRoot,
                     change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
@@ -678,6 +699,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
             workspaceWatcher?.Dispose();
             _workspaceChangeMonitor?.ClearExpectedHashes(workspaceRoot);
+            // The baseline goes with the watcher, so the next drive session captures a new
+            // one instead of inheriting hashes nothing is watching any more.
+            _capturedBaselines.TryRemove(runIdValue, out _);
             if (membership is not null && _workspaceCoordinatorStore is not null)
             {
                 try

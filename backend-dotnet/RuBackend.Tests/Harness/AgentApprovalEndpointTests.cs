@@ -13,6 +13,11 @@ namespace RuBackend.Tests.Harness;
 /// drives the run to a parked state, so it waits on process spawning and the shared
 /// workspace; running it beside the other terminal-spawning suites starves those
 /// deadlines, so it shares the non-parallel process-heavy collection.
+///
+/// A waiting run is observed through its durable event stream, not the projected
+/// run status: the status can settle to a terminal answer while the outbox still
+/// owes the client the run's one durable row, so a status poll can call a run
+/// finished when its approval event is already committed and readable.
 /// </summary>
 [Collection(nameof(TerminalProcessHeavyCollection))]
 public sealed class AgentApprovalEndpointTests
@@ -246,10 +251,7 @@ public sealed class AgentApprovalEndpointTests
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "external directory approval");
             var runId = created.GetProperty("run_id").GetString()!;
             var workspaceId = created.GetProperty("workspace_id").GetString()!;
-            Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
-                "run never reached waiting_approval");
-            var approvalId = await ReadLatestApprovalIdAsync(client, runId);
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
@@ -299,10 +301,7 @@ public sealed class AgentApprovalEndpointTests
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "grant reuse");
             var runId = created.GetProperty("run_id").GetString()!;
-            Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
-                "run never reached waiting_approval");
-            var approvalId = await ReadLatestApprovalIdAsync(client, runId);
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
             Assert.NotNull(approvalId);
 
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
@@ -342,6 +341,10 @@ public sealed class AgentApprovalEndpointTests
         BackendWebApplicationFactory? factory = null;
         try
         {
+            // The model emits one tool call per run, and the broker only approves a
+            // call it has already proposed. Polling the durable stream therefore
+            // also proves the right leg asked: a grant from an earlier leg can
+            // never produce an approval event on the new run's stream.
             string externalArguments = JsonSerializer.Serialize(new { path = externalFile });
             var runner = new ScriptedRunner(
                 ToolCall("files.read", externalArguments),
@@ -355,10 +358,8 @@ public sealed class AgentApprovalEndpointTests
             var sessionId = await CreateSessionAsync(client);
             var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "first grant");
             var runId = created.GetProperty("run_id").GetString()!;
-            Assert.True(
-                await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
-                "first run never reached waiting_approval");
-            var approvalId = await ReadLatestApprovalIdAsync(client, runId);
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var approvalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{runId}/approvals/{approvalId}",
@@ -371,10 +372,8 @@ public sealed class AgentApprovalEndpointTests
             var otherSessionId = await CreateSessionAsync(client);
             var otherCreated = await CreateRunAndTrustAsync(client, otherSessionId, wsPath, "new session asks");
             var otherRunId = otherCreated.GetProperty("run_id").GetString()!;
-            Assert.True(
-                await WaitForStatusAsync(client, otherRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
-                "new session run did not ask again");
-            var otherApprovalId = await ReadLatestApprovalIdAsync(client, otherRunId);
+            var otherApprovalId = await WaitForApprovalIdAsync(client, otherRunId, StateDeadline);
+            Assert.NotNull(otherApprovalId);
             RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
             using var otherApprovalResponse = await client.PostAsJsonAsync(
                 $"/agent/v1/runs/{otherRunId}/approvals/{otherApprovalId}",
@@ -392,9 +391,8 @@ public sealed class AgentApprovalEndpointTests
             Assert.NotEqual(sessionId, forkedSessionId);
             var forkedCreated = await CreateRunAndTrustAsync(client, forkedSessionId, wsPath, "forked session asks");
             var forkedRunId = forkedCreated.GetProperty("run_id").GetString()!;
-            Assert.True(
-                await WaitForStatusAsync(client, forkedRunId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
-                "forked session run did not ask again");
+            var forkedApproval = await WaitForApprovalIdAsync(client, forkedRunId, StateDeadline);
+            Assert.NotNull(forkedApproval);
         }
         finally
         {
@@ -550,11 +548,7 @@ public sealed class AgentApprovalEndpointTests
         using var trustResp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/trust", trustPayload);
         trustResp.EnsureSuccessStatusCode();
 
-        Assert.True(
-            await WaitForStatusAsync(client, runId, new HashSet<string>(StringComparer.Ordinal) { "waiting_approval" }, StateDeadline),
-            "run never reached waiting_approval");
-
-        var approvalId = await ReadLatestApprovalIdAsync(client, runId);
+        var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
         Assert.NotNull(approvalId);
         return (factory, client, runId, approvalId!);
     }
@@ -598,6 +592,11 @@ public sealed class AgentApprovalEndpointTests
     private static async Task<string?> ReadLatestApprovalIdAsync(HttpClient client, string runId)
     {
         var events = await ReadEventsAsync(client, runId);
+        return LatestApprovalId(events);
+    }
+
+    private static string? LatestApprovalId(IReadOnlyList<JsonElement> events)
+    {
         string? latestApprovalId = null;
         foreach (var evt in events)
         {
@@ -610,6 +609,27 @@ public sealed class AgentApprovalEndpointTests
             }
         }
         return latestApprovalId;
+    }
+
+    private static async Task<string?> WaitForApprovalIdAsync(HttpClient client, string runId, TimeSpan timeout)
+    {
+        // The run status settles only after the outbox delivers the matching history
+        // row, while the approval event commits earlier in the same step. Polling the
+        // durable stream therefore sees the parked run while a status poll can still
+        // read the previous projection and leave the approval id unread.
+        var deadline = DateTime.UtcNow.Add(timeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            var events = await ReadEventsAsync(client, runId).ConfigureAwait(false);
+            if (LatestApprovalId(events) is { } approvalId)
+            {
+                return approvalId;
+            }
+
+            await Task.Delay(200).ConfigureAwait(false);
+        }
+
+        return null;
     }
 
     private static async Task<List<JsonElement>> ReadEventsAsync(HttpClient client, string runId, long? afterSequence = null)

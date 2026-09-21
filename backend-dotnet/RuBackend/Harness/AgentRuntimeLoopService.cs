@@ -465,7 +465,11 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 return;
             }
 
-            await DriveRunAsync(runIdValue, workspaceRoot, policySnapshot, cancellationToken).ConfigureAwait(false);
+            // The run this pass already read is handed to the drive, which would otherwise
+            // read the same row again a few lines later. The loop runs every 250 ms per
+            // registered run, so that duplicate read is the loop's steady-state database
+            // cost: two reads per tick where one is enough.
+            await DriveRunAsync(runIdValue, workspaceRoot, policySnapshot, run, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -512,7 +516,12 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private async Task<AgentRun?> LoadRunAsync(string runIdValue, CancellationToken cancellationToken) =>
         await _store.GetRunAsync(new RunId(runIdValue), cancellationToken).ConfigureAwait(false);
 
-    private async Task DriveRunAsync(string runIdValue, string workspaceRoot, PolicySnapshot? policySnapshot, CancellationToken cancellationToken)
+    private async Task DriveRunAsync(
+        string runIdValue,
+        string workspaceRoot,
+        PolicySnapshot? policySnapshot,
+        AgentRun workspaceRun,
+        CancellationToken cancellationToken)
     {
         var runId = new RunId(runIdValue);
         AgentRunCoordinator? coordinator = null;
@@ -522,11 +531,6 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         try
         {
             _summaryPublisher?.RegisterWorkspace(runId, workspaceRoot);
-            var workspaceRun = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
-            if (workspaceRun is null)
-            {
-                return;
-            }
 
             if (_workspaceCoordinatorStore is not null)
             {

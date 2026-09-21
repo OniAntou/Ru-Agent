@@ -149,6 +149,12 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     /// The marker is not decorative: without it a truncated result is indistinguishable from
     /// a complete one, and the model would draw conclusions from half a listing without
     /// knowing it was half.
+    ///
+    /// The cut point is found by bisection. Scanning one character at a time re-encoded the
+    /// whole prefix on every step, which on a 4 MiB tool result -- the documented output cap,
+    /// so an ordinary oversized read -- measured at about eight minutes of a synchronous call
+    /// on the host's own thread. The byte count of a prefix never decreases as the prefix
+    /// grows, so bisection finds the same boundary in a few dozen probes.
     /// </remarks>
     internal static string FitReferenceContent(string content)
     {
@@ -159,13 +165,25 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             return content;
         }
 
-        int length = content.Length;
-        while (length > 0 && System.Text.Encoding.UTF8.GetByteCount(content.AsSpan(0, length)) > budget)
+        // Largest length whose prefix fits the budget. Low is always known to fit (an empty
+        // prefix is zero bytes) and high is known not to, so this converges on the exact same
+        // character the scan used to stop at.
+        int low = 0;
+        int high = content.Length;
+        while (high - low > 1)
         {
-            length--;
+            int middle = low + ((high - low) / 2);
+            if (System.Text.Encoding.UTF8.GetByteCount(content.AsSpan(0, middle)) > budget)
+            {
+                high = middle;
+            }
+            else
+            {
+                low = middle;
+            }
         }
 
-        return content[..length] + Note;
+        return content[..low] + Note;
     }
 
     private async Task<PromptRuntimeContext> BuildRuntimeContextAsync(

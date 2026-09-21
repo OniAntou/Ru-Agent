@@ -69,6 +69,52 @@ public sealed class PromptReferenceFittingTests
     }
 
     [Fact]
+    public void Oversized_content_keeps_the_largest_prefix_that_fits()
+    {
+        // Bisection replaced a scan that re-encoded the whole prefix per character. Both find
+        // the boundary; this pins that the boundary is still the LAST character that fits, so
+        // a future change cannot quietly shorten the content the model receives.
+        string content = new('x', PromptReference.ContentMaxBytes * 3 + 7);
+
+        string fitted = RuPromptContextProvider.FitReferenceContent(content);
+
+        // The note is appended after the kept prefix; splitting there recovers both halves.
+        int noteStart = fitted.IndexOf('\n');
+        Assert.True(noteStart > 0, "a truncated result must carry the note after its content");
+        int kept = noteStart;
+        int fittedBytes = Encoding.UTF8.GetByteCount(fitted);
+        int noteBytes = Encoding.UTF8.GetByteCount(fitted.AsSpan(noteStart));
+        Assert.Equal(kept, fitted.AsSpan(0, noteStart).Count('x'));
+        Assert.True(
+            fittedBytes <= PromptReference.ContentMaxBytes,
+            "the fitted content must fit the bound a reference accepts");
+        // One more character would not have fit: the bisection found the boundary, not a
+        // midpoint short of it.
+        Assert.True(
+            kept + 1 + noteBytes > PromptReference.ContentMaxBytes,
+            $"the cut kept {kept} characters, but one more would still have fit");
+    }
+
+    [Fact]
+    public void Truncating_a_large_result_stays_fast()
+    {
+        // One character at a time re-encoded the whole prefix on every step: a 4 MiB tool
+        // result -- the documented output cap -- took roughly eight minutes inside a
+        // synchronous host call. The generous ceiling here only has to catch a return to
+        // that behaviour, not measure the machine.
+        string content = new('x', 4 * 1024 * 1024);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        string fitted = RuPromptContextProvider.FitReferenceContent(content);
+        stopwatch.Stop();
+
+        Assert.True(Encoding.UTF8.GetByteCount(fitted) <= PromptReference.ContentMaxBytes);
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"fitting a 4 MiB result took {stopwatch.Elapsed.TotalSeconds:F1}s");
+    }
+
+    [Fact]
     public void Multi_byte_text_is_cut_on_a_character_boundary()
     {
         // Vietnamese is three bytes a character in UTF-8, so a byte budget is well under the

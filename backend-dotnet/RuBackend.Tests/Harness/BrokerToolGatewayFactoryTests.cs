@@ -17,6 +17,7 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
 {
     private string? _previousWorkspaceRoot;
     private string? _brokerRoot;
+    private BrokerTestHostHost? _brokerHost;
     private string _workspaceRoot = string.Empty;
     private string _descriptorPath = string.Empty;
 
@@ -44,12 +45,17 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
             _descriptorPath,
             JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
         Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", _workspaceRoot);
-        await BrokerTestHostHost.StartAsync(_descriptorPath);
+        _brokerHost = await BrokerTestHostHost.StartAsync(_descriptorPath);
     }
 
     public async Task DisposeAsync()
     {
         Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", _previousWorkspaceRoot);
+        if (_brokerHost is not null)
+        {
+            await _brokerHost.DisposeAsync();
+        }
+
         if (_brokerRoot is not null)
         {
             await Task.CompletedTask;
@@ -370,6 +376,60 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => Task.FromResult(factory.Create(_workspaceRoot, snapshot, runId)));
     }
+
+    [Fact]
+    public async Task A_restarted_broker_is_reached_again_on_the_same_gateway()
+    {
+        var factory = new global::RuBackend.Harness.Broker.BrokerToolGatewayFactory(_descriptorPath);
+        var runId = new RunId("run_" + new string('0', 32));
+        var snapshot = PolicySnapshotCanonicalizer.Create(
+            1,
+            AgentPermissionPreset.Standard,
+            SnapshotWorkspace(),
+            [],
+            DateTimeOffset.UtcNow);
+        var gateway = Assert.IsType<RuBackend.Harness.Broker.BrokerToolGateway>(
+            factory.Create(_workspaceRoot, snapshot, runId));
+
+        try
+        {
+            var first = await gateway.EvaluateAsync(ReadProposal(runId), CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, first.Decision);
+
+            // The socket is dead from here on. It used to stay in the gateway's field, so
+            // EnsureReadyAsync never reconnected and every later call on this run failed with
+            // broker_connection_closed until the run ended.
+            //
+            // Stopping the Broker removes its own descriptor as part of its cleanup, which
+            // production never does while a host is attached to it, so the descriptor is put
+            // back before the restart. The gateway itself holds the url and token it read at
+            // Create time and is unaffected either way.
+            var descriptorJson = await File.ReadAllTextAsync(_descriptorPath);
+            if (_brokerHost is not null)
+            {
+                await _brokerHost.DisposeAsync();
+                _brokerHost = null;
+            }
+
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => gateway.EvaluateAsync(ReadProposal(runId), CancellationToken.None));
+
+            await File.WriteAllTextAsync(_descriptorPath, descriptorJson);
+            _brokerHost = await BrokerTestHostHost.StartAsync(_descriptorPath);
+
+            var afterRestart = await gateway.EvaluateAsync(ReadProposal(runId), CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, afterRestart.Decision);
+        }
+        finally
+        {
+            factory.CloseRun(runId.Value);
+        }
+    }
+
+    private static ToolProposal ReadProposal(RunId runId) => Proposal(runId, "read", new System.Text.Json.Nodes.JsonObject
+    {
+        ["path"] = "notes/a.txt",
+    });
 
     private static WorkspaceIdentity SnapshotWorkspace() => new(
         new WorkspaceId("ws_" + new string('1', 32)),

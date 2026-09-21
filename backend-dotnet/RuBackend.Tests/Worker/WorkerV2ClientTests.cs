@@ -403,6 +403,80 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RunStepAsync_deletes_the_provider_handoff_when_the_step_is_cancelled()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-loopback-bootstrap-cancel-");
+        JsonObject? observedStart = null;
+        var startSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await StartServer(async context =>
+            {
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = hello["id"]!.GetValue<string>(),
+                    ["type"] = "hello.ok",
+                    ["seq"] = 0,
+                    ["payload"] = new JsonObject
+                    {
+                        ["version"] = 2,
+                        ["capabilities"] = new JsonArray("agent.step"),
+                    },
+                }.ToJsonString());
+
+                observedStart = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+                // The handoff is written before the start frame is sent, so once this frame
+                // has arrived the file is on disk. The worker then never answers, which leaves
+                // cancellation as the only way out -- the path that used to leak it.
+                startSeen.TrySetResult();
+                await Task.Delay(Timeout.Infinite);
+            });
+
+            await using var runner = new LoopbackModelStepRunner(
+                new AgentWorkerClientOptions(new Uri(_url), _token))
+            {
+                CreateProviderBootstrapAsync = (_, _) => Task.FromResult(ProtectedProviderBootstrap.Write(
+                    root.FullName,
+                    new ProviderBootstrapData(
+                        "Kilo",
+                        "chat_completions",
+                        new Uri("https://step-provider.invalid/v1"),
+                        "model-b",
+                        "cancel-secret",
+                        new JsonObject()))),
+            };
+
+            var request = new ModelStepRequest(
+                new RunId("run_44444444444444444444444444444444"),
+                new ModelStepId("step_44444444444444444444444444444444"),
+                new ModelContextSnapshot(
+                    [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                    Array.Empty<byte>()),
+                AgentPermissionPreset.Standard,
+                1,
+                new string('e', 64));
+
+            using var cancellation = new CancellationTokenSource();
+            var step = runner.RunStepAsync(request, _ => ValueTask.CompletedTask, cancellation.Token);
+            await startSeen.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var path = observedStart!["payload"]!["provider_bootstrap_path"]!.GetValue<string>();
+            Assert.True(File.Exists(path), "the handoff must exist before the cancel path is exercised");
+
+            await cancellation.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => step);
+
+            Assert.False(File.Exists(path), "a cancelled step must not leave its provider handoff behind");
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunStepAsync_streams_deltas_live_but_still_fails_on_an_invalid_receipt()
     {
         // Deltas are forwarded as they arrive so the answer streams while the

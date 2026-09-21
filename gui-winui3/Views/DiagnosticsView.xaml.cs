@@ -99,6 +99,12 @@ namespace RuApp.Views
 
         public void Initialize(ApiService apiService)
         {
+            // A reconnect calls this again with a new service and a new controller. Creating
+            // them without tearing the old pair down left a live 3s timer and a polling
+            // controller behind on every reconnect, all of them pointing at the disposed
+            // service that DisposeAsync had already replaced.
+            DisposeRefreshInfrastructure();
+
             _apiService = apiService;
             Rows.ReplaceAll(new[]
             {
@@ -538,13 +544,25 @@ namespace RuApp.Views
 
         public void Dispose()
         {
+            DisposeRefreshInfrastructure();
+            _isActive = false;
+            _apiService = null;
+        }
+
+        /// <summary>
+        /// Tears down the timer and controller pair. Both <see cref="Initialize"/> and
+        /// <see cref="Dispose"/> need this, and doing it in one place is what keeps a
+        /// re-Initialize from stacking a second pair on top of the first.
+        /// </summary>
+        private void DisposeRefreshInfrastructure()
+        {
             if (_refreshTimer != null)
             {
                 _refreshTimer.Tick -= OnRefreshTimerTick;
                 _refreshTimer.Stop();
                 _refreshTimer = null;
             }
-            _isActive = false;
+
             _refreshController?.SetActive(false);
             if (_refreshController != null)
             {

@@ -153,6 +153,46 @@ public sealed class DiagnosticsViewContractTests
                     || method.Name.Contains("Write", StringComparison.OrdinalIgnoreCase)));
     }
 
+    [Fact]
+    public void Re_initializing_the_diagnostics_view_replaces_its_timer_and_controller()
+    {
+        // A reconnect calls Initialize again with a freshly built ApiService after the old
+        // one was disposed. Building a second timer and controller without tearing down the
+        // first left a live 3s poller behind on every reconnect, all of them aimed at the
+        // disposed service.
+        var body = GuiSource.MethodBody(GuiSource.Text("Views", "DiagnosticsView.xaml.cs"), "Initialize");
+
+        int teardown = body.IndexOf("DisposeRefreshInfrastructure();", StringComparison.Ordinal);
+        int newTimer = body.IndexOf("_refreshTimer = new DispatcherTimer", StringComparison.Ordinal);
+        int newController = body.IndexOf("_refreshController = new RefreshController", StringComparison.Ordinal);
+
+        Assert.True(teardown >= 0, "Initialize must tear the previous refresh pair down.");
+        Assert.True(newTimer >= 0 && newController >= 0, "Initialize must build the refresh pair.");
+        Assert.True(teardown < newTimer, "The old timer must go before a new one is created.");
+        Assert.True(teardown < newController, "The old controller must go before a new one is created.");
+    }
+
+    [Fact]
+    public void Disposing_the_diagnostics_view_uses_the_same_teardown_as_re_initializing()
+    {
+        // Two teardown paths would drift, and the one that drifts is the one that leaks.
+        var dispose = GuiSource.MethodBody(GuiSource.Text("Views", "DiagnosticsView.xaml.cs"), "Dispose");
+
+        Assert.Contains("DisposeRefreshInfrastructure();", dispose, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Re_initializing_the_log_view_takes_the_new_service_instead_of_returning_early()
+    {
+        // LogView returned as soon as a timer existed, so the reconnect's new ApiService was
+        // dropped on the floor and the view kept polling the disposed one every 3 seconds.
+        var body = GuiSource.MethodBody(GuiSource.Text("Views", "LogView.xaml.cs"), "Initialize");
+
+        Assert.DoesNotContain("if (_refreshTimer != null)\n            {\n                return;", body.Replace("\r\n", "\n"), StringComparison.Ordinal);
+        Assert.Contains("_apiService = apiService;", body, StringComparison.Ordinal);
+        Assert.Contains("_refreshTimer.Tick -= OnRefreshTimerTick;", body, StringComparison.Ordinal);
+    }
+
     private static RuApp.Views.DiagnosticRow Row(string id) =>
         new(time: "10:40:00", level: "info", component: "host.http", summary: id, detail: string.Empty);
 }

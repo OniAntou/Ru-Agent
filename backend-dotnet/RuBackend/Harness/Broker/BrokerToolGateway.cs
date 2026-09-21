@@ -189,6 +189,10 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
 
         if (!_pending.Remove(execution.ExecutionId.Value, out var pending))
         {
+            // A cancelled execution never reached PrepareAsync, so its id can still be
+            // sitting in _cancelled. Drop it here instead of leaving it for the life of
+            // the run.
+            _cancelled.Remove(execution.ExecutionId.Value);
             return FailedReceipt(execution, "decision_stale");
         }
 
@@ -325,12 +329,9 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_socket is { } socket)
-        {
-            socket.Dispose();
-            _socket = null;
-        }
-
+        InvalidateConnection();
+        _pending.Clear();
+        _cancelled.Clear();
         _wire.Dispose();
     }
 
@@ -354,9 +355,40 @@ public sealed class BrokerToolGateway : IToolGateway, IAsyncDisposable
                 payload), cancellationToken).ConfigureAwait(false);
             return await ReceiveReplyAsync(requestId, cancellationToken).ConfigureAwait(false);
         }
+        catch (Exception error) when (error is ToolTransportException or WebSocketException or IOException)
+        {
+            // A broken socket used to stay in _socket, so EnsureReadyAsync never tried again
+            // and every later call on this gateway failed with broker_connection_closed for
+            // the rest of the run. Drop it so the next call reconnects and re-opens the run
+            // lease, which the Broker treats as an idempotent publish of the same lease
+            // (RunOpen re-assigns _runLeases[run_id] after checking the snapshot hash and
+            // advertised capabilities, so the policy in force cannot change underneath).
+            InvalidateConnection();
+            throw;
+        }
         finally
         {
             _wire.Release();
+        }
+    }
+
+    private void InvalidateConnection()
+    {
+        var socket = _socket;
+        _socket = null;
+        if (socket is null)
+        {
+            return;
+        }
+
+        try
+        {
+            socket.Dispose();
+        }
+        catch (Exception)
+        {
+            // Disposal of an already-faulted socket must not replace the transport error
+            // that explains what actually happened.
         }
     }
 

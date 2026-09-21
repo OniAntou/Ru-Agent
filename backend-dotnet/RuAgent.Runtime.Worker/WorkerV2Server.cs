@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -47,9 +48,15 @@ public sealed class WorkerV2Server
     private async Task HandleConnectionAsync(WebSocket socket, CancellationToken connectionCancellation)
     {
         var sendLock = new SemaphoreSlim(1, 1);
-        var requestTasks = new Dictionary<string, Task>(StringComparer.Ordinal);
+        // Written by the connection loop and removed by the request task when it settles, so
+        // it is reached from two threads. A plain Dictionary corrupts under that (the request
+        // finally block can remove while the loop is adding), which is also why removals below
+        // go through TryRemove rather than the IDictionary view.
+        var requestTasks = new ConcurrentDictionary<string, Task>(StringComparer.Ordinal);
         var cancellations = new Dictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
-        var seenRequests = new HashSet<string>(StringComparer.Ordinal);
+        var seenRequests = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+        // Only ever touched inside the send lock (NextSequence is called from SendOrderedAsync
+        // while it holds that lock), so this one stays a plain Dictionary.
         var sequences = new Dictionary<string, long>(StringComparer.Ordinal);
 
         long NextSequence(string id)
@@ -164,7 +171,7 @@ public sealed class WorkerV2Server
                     continue;
                 }
 
-                if (!seenRequests.Add(envelope.Id))
+                if (!seenRequests.TryAdd(envelope.Id, 0))
                 {
                     await SendErrorAsync(socket, sendLock, envelope.Id, "duplicate_request", false, NextSequence, connectionCancellation).ConfigureAwait(false);
                     continue;
@@ -178,6 +185,11 @@ public sealed class WorkerV2Server
 
                 var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(connectionCancellation);
                 cancellations[envelope.Id] = cancellationSource;
+                // Register the slot before starting, so the request task can never finish and
+                // remove its own entry before the loop stores it -- a bare assignment after
+                // the start leaves a completed task in the map for the life of the connection,
+                // and the request_in_progress gate above reads that map.
+                requestTasks.TryAdd(envelope.Id, Task.CompletedTask);
                 var task = RunRequestAsync(socket, sendLock, envelope, cancellationSource, NextSequence, requestTasks, cancellations);
                 requestTasks[envelope.Id] = task;
             }
@@ -192,17 +204,20 @@ public sealed class WorkerV2Server
         }
         finally
         {
-            foreach (var cancellation in cancellations.Values)
+            // Snapshot both maps: a settling request removes its own entry, and enumerating
+            // the live dictionary while it does would throw out of this cleanup.
+            foreach (var cancellation in cancellations.Values.ToArray())
             {
                 cancellation.Cancel();
             }
 
-            if (requestTasks.Count > 0)
+            var tasks = requestTasks.Values.ToArray();
+            if (tasks.Length > 0)
             {
-                await Task.WhenAll(requestTasks.Values).ConfigureAwait(false);
+                await Task.WhenAll(tasks).ConfigureAwait(false);
             }
 
-            foreach (var cancellation in cancellations.Values)
+            foreach (var cancellation in cancellations.Values.ToArray())
             {
                 cancellation.Dispose();
             }
@@ -215,7 +230,7 @@ public sealed class WorkerV2Server
         WorkerV2Envelope envelope,
         CancellationTokenSource cancellationSource,
         Func<string, long> nextSequence,
-        IDictionary<string, Task> requestTasks,
+        ConcurrentDictionary<string, Task> requestTasks,
         IDictionary<string, CancellationTokenSource> cancellations)
     {
         try
@@ -293,7 +308,7 @@ public sealed class WorkerV2Server
         }
         finally
         {
-            requestTasks.Remove(envelope.Id);
+            requestTasks.TryRemove(envelope.Id, out _);
             cancellations.Remove(envelope.Id);
             cancellationSource.Dispose();
         }

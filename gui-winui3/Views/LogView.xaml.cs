@@ -35,10 +35,17 @@ namespace RuApp.Views
 
         public void Initialize(ApiService apiService)
         {
+            // A reconnect hands this view a new ApiService and the old one has already been
+            // disposed. Returning early kept the old instance in the field, so every 3s poll
+            // threw ObjectDisposedException into the swallowed catch below and the view sat
+            // there stale for the rest of the session. Replace the service and the timer.
             if (_refreshTimer != null)
             {
-                return;
+                _refreshTimer.Stop();
+                _refreshTimer.Tick -= OnRefreshTimerTick;
+                _refreshTimer = null;
             }
+
             _apiService = apiService;
             Rows.Clear();
             Rows.Add(new LogRow("--:--:--", "…", LogRowKind.Info, "Loading logs...", ""));

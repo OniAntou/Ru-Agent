@@ -12,6 +12,7 @@ public enum AgentActivityKind
     Retry,
     Status,
     Todo,
+    Narration,
 }
 
 public enum AgentActivityState

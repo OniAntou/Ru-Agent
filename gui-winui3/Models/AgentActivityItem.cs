@@ -164,7 +164,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// </summary>
     public bool ShowPlainHeader => !HasThinkingDetail && !HasEditPreview;
 
-    public bool ShowPlainDetail => HasDetail && !IsThinking && Kind != AgentActivityKind.Terminal;
+    public bool ShowPlainDetail => HasDetail && !IsThinking && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration);
 
     public bool ShowThinkingDetail => HasThinkingDetail && IsThinkingExpanded;
 
@@ -640,7 +640,9 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         }
     }
 
-    public string DisplayText => State switch
+    public string DisplayText => Kind == AgentActivityKind.Narration
+        ? NarrationText
+        : State switch
     {
         AgentActivityState.Started => StartedText,
         AgentActivityState.Completed => CompletedText,
@@ -648,6 +650,16 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         AgentActivityState.Failed => FailedText,
         _ => "Working…",
     };
+
+    /// <summary>
+    /// What the model said while it worked, as the row's own text.
+    /// </summary>
+    /// <remarks>
+    /// The sentence <em>is</em> the row: narration is not a label describing an action, so it
+    /// carries no verb prefix and no metadata — a reader scanning the feed reads what the
+    /// model said, the same way they read a reply.
+    /// </remarks>
+    private string NarrationText => string.IsNullOrWhiteSpace(Detail) ? "Speaking" : Detail!;
 
     /// <summary>
     /// Applies a newer frame for the same activity id. A stale <c>Started</c>

@@ -759,6 +759,22 @@ public sealed class AgentActivityItemTests
         Assert.Equal("Ran terminal task", item.DisplayText);
     }
 
+    [Fact]
+    public void A_narration_row_reads_as_the_sentence_the_model_said()
+    {
+        // Narration is speech, not a label describing an action: the row's text is the
+        // sentence itself, and the muted detail line stands down so the same words are not
+        // printed twice. It is also not a status row — it carries something to read.
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Narration,
+            detail: "I will check whether the folder exists."));
+
+        Assert.Equal("I will check whether the folder exists.", item.DisplayText);
+        Assert.False(item.ShowPlainDetail);
+        Assert.True(item.IsVisibleInFeed);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,

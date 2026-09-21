@@ -384,6 +384,16 @@ internal sealed class AgentRunStepHandlers
             run,
             step.ToolCalls.Count,
             _time.UtcNow);
+        if (!string.IsNullOrWhiteSpace(step.Text))
+        {
+            // The model said something before it reached for the tool. That sentence gets a
+            // row of its own so a reader watching the run sees it as it happens, instead of
+            // only finding out at the end what the run had been doing all along.
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectNarration(modelStepId, step.Text));
+        }
         var assistantBytes = AssistantStepJsonCodec.Serialize(step);
         var assistantPayloadId = _ids.NewPayloadId();
         var modelPayload = new HarnessPayloadIntent(

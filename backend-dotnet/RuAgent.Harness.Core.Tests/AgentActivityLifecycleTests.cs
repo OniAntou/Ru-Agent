@@ -39,6 +39,18 @@ public sealed class AgentActivityLifecycleTests
                 Assert.Equal(AgentActivityState.Completed, thinkingCompleted.Activity.State);
                 Assert.True(thinkingCompleted.Activity.DurationMs > 0);
             },
+            narration =>
+            {
+                // The model spoke before it reached for the tool: the sentence gets its own
+                // row, between the thinking it belongs to and the call it precedes.
+                Assert.Equal(AgentActivityKind.Narration, narration.Activity.Kind);
+                Assert.Equal(AgentActivityState.Completed, narration.Activity.State);
+                Assert.False(string.IsNullOrWhiteSpace(narration.Activity.Detail));
+                // The id has to survive the wire validator, which allows nothing outside a
+                // safe token: the narration row is the thinking row's id plus a suffix.
+                Assert.StartsWith("act_", narration.Activity.ActivityId, StringComparison.Ordinal);
+                Assert.EndsWith("_narration", narration.Activity.ActivityId, StringComparison.Ordinal);
+            },
             toolStarted =>
             {
                 Assert.Equal(AgentActivityKind.Analyze, toolStarted.Activity.Kind);

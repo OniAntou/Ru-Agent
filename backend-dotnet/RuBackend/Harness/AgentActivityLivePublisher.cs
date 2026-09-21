@@ -70,6 +70,7 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
         CoreActivityKind.Retry => ProtocolActivityKind.Retry,
         CoreActivityKind.Status => ProtocolActivityKind.Status,
         CoreActivityKind.Todo => ProtocolActivityKind.Todo,
+        CoreActivityKind.Narration => ProtocolActivityKind.Narration,
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

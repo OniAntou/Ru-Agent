@@ -30,6 +30,23 @@ public static class AgentActivityProjector
             ToolDisplay: null,
             Detail: ClampDetail(detail));
 
+    /// <summary>
+    /// What the model says while it works, as a row of its own.
+    /// </summary>
+    /// <remarks>
+    /// Narration is speech, not deliberation, so it does not share the thinking row it
+    /// arrives beside: the thinking block is private reasoning the reader may never open,
+    /// while this is the sentence they were meant to read. The row's own text is the
+    /// sentence, so it carries no tool metadata and no duration.
+    /// </remarks>
+    public static AgentActivity ProjectNarration(ModelStepId modelStepId, string text) =>
+        new(
+            ActivityId(modelStepId.Value) + "_narration",
+            AgentActivityKind.Narration,
+            AgentActivityState.Completed,
+            ToolDisplay: null,
+            Detail: ClampDetail(text));
+
     public static AgentActivity ProjectTool(
         ToolProposal proposal,
         AgentActivityState state,

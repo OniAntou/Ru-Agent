@@ -448,7 +448,7 @@
             </Grid.ChildrenTransitions>
 
             <!-- Dimmed Backdrop (Click outside card to close) -->
-            <Border x:Name="SettingsModalBackdrop"
+            <Border
                     Background="{StaticResource RuCanvasBrush}"
                     Opacity="0.75"
                     PointerPressed="OnSettingsBackdropPointerPressed" />

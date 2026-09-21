@@ -52,7 +52,7 @@
                       HorizontalScrollMode="Disabled"
                       VerticalScrollBarVisibility="Auto"
                       VerticalScrollMode="Auto">
-            <StackPanel x:Name="BodyPanel" Spacing="24">
+            <StackPanel Spacing="24">
                 <!-- Two headline figures. Each is a nested enclosure: the shell is the
                      well, the core is the card that holds the number. -->
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="12">

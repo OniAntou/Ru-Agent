@@ -77,7 +77,7 @@
     </UserControl.Resources>
 
     <!-- Main 2-Column Settings Modal Container -->
-    <Grid x:Name="SettingsRootGrid" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+    <Grid HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
         <Grid.ColumnDefinitions>
             <!-- Left Sidebar Navigation -->
             <ColumnDefinition Width="200" />

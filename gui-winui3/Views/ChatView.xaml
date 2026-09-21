@@ -549,7 +549,7 @@
                          Margin="24,16"
                         Visibility="Visible">
 
-                <TextBlock x:Name="WelcomeIntro"
+                <TextBlock
                            Text="Hello. Where should we start today?"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
                            FontSize="30"
@@ -1117,7 +1117,7 @@
                                 </Button.Flyout>
                             </Button>
 
-<Border x:Name="ChatReasoningDivider" Width="1" Height="14" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="2,0" VerticalAlignment="Center"/>
+<Border Width="1" Height="14" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="2,0" VerticalAlignment="Center"/>
 
                             <Button x:Name="ChatReasoningButton"
                                     AutomationProperties.AutomationId="ChatReasoningButton"
@@ -1258,10 +1258,10 @@
                                                             VerticalAlignment="Stretch">
                                                         <Border.Background>
                                                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                                <GradientStop x:Name="ContextStopMsg0" Offset="0" Color="{ThemeResource RuAccentColor}" />
+                                                                <GradientStop Offset="0" Color="{ThemeResource RuAccentColor}" />
                                                                 <GradientStop x:Name="ContextStopMsg1" Offset="1" Color="{ThemeResource RuAccentColor}" />
                                                                 <GradientStop x:Name="ContextStopOv0" Offset="1" Color="{ThemeResource RuVioletColor}" />
-                                                                <GradientStop x:Name="ContextStopOv1" Offset="1" Color="{ThemeResource RuVioletColor}" />
+                                                                <GradientStop Offset="1" Color="{ThemeResource RuVioletColor}" />
                                                             </LinearGradientBrush>
                                                         </Border.Background>
                                                     </Border>

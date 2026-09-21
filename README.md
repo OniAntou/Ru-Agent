@@ -10,8 +10,8 @@ nothing to install.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#what-runs)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-3%2C658%20passing-3FB950)](#testing)
-[![Tools](https://img.shields.io/badge/tools-10-8B5CF6)](#tools)
+[![Tests](https://img.shields.io/badge/tests-3%2C664%20passing-3FB950)](#testing)
+[![Tools](https://img.shields.io/badge/tools-11-8B5CF6)](#tools)
 [![Routes](https://img.shields.io/badge/routes-40%20HTTP-6E7681)](#testing)
 
 </div>
@@ -129,7 +129,7 @@ Object.
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 3,658 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 3,664 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
@@ -211,7 +211,7 @@ Stated plainly so nothing above reads as a stronger claim than it is:
 - **Not ahead-of-time compiled.** `PublishReadyToRun` is on for Release and off for
   Debug; Native AOT is not enabled anywhere. Assemblies ship as IL with a ReadyToRun
   native image, still JIT-compiled for paths the image does not cover.
-- **No performance gate in CI.** `ci.yml` runs the 12 test projects, the route
+- **No performance gate in CI.** `ci.yml` runs the 13 test projects, the route
   contract and the repository guards. Nothing measures or limits CPU, memory or GPU.
 - **No recorded resource baseline.** `scripts/measure_resources.ps1` exists and is
   verified, but no measurement of a published build has been captured into the repo.

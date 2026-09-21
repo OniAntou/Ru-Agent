@@ -22,7 +22,6 @@ completed plans must be removed from the checkout rather than archived here.
 - [Shared workspace coordination](operations/shared-workspace-coordination.md)
 - [Driving Ru without a provider](operations/scripted-model.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
-- [ASP.NET Core cutover validation (historical)](aspnetcore-cutover-validation.md)
 - [Dated verification records](verification/)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 

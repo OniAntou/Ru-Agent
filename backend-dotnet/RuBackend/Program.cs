@@ -79,7 +79,16 @@ var app = builder.Build();
 if (isManagedRuntime)
 {
     var lifetime = app.Lifetime;
-    bootstrap!.WorkerBrokerManager.Exited += (_, _) => lifetime.StopApplication();
+    bootstrap!.WorkerBrokerManager.Exited += (_, _) =>
+    {
+        // The worker or broker is gone, and this host owns no fallback: it stops. Say why
+        // before it does, because the alternative is an app that vanishes while the reader
+        // only sees turns failing with worker_unavailable and no explanation anywhere.
+        app.Logger.LogError(
+            "managed runtime child exited unexpectedly ({Reason}); stopping the host",
+            bootstrap.WorkerBrokerManager.LastError ?? "unknown");
+        lifetime.StopApplication();
+    };
     lifetime.ApplicationStopping.Register(() =>
     {
         try { bootstrap.DescriptorWriter.Cleanup(); } catch { }

@@ -54,6 +54,13 @@ public sealed partial class AgentV1Service
     private readonly ISettingsStore? _settingsStore;
     private readonly Func<string, bool> _isVisionModel;
 
+    /// <summary>
+    /// Optional because the service is constructed directly by tests. When present it records
+    /// the reason behind a bounded public error, which otherwise leaves nothing to diagnose
+    /// with: the caller sees only the code.
+    /// </summary>
+    private readonly ILogger<AgentV1Service>? _logger;
+
     private const int ApprovalToolIdMaxLength = 128;
     private const int ApprovalToolVersionMaxLength = 32;
     private const int ApprovalPathMaxLength = 4096;
@@ -94,7 +101,8 @@ public sealed partial class AgentV1Service
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         WorkspaceJournalProtector? workspaceJournalProtector = null,
         ISettingsStore? settingsStore = null,
-        Func<string, bool>? isVisionModel = null)
+        Func<string, bool>? isVisionModel = null,
+        ILogger<AgentV1Service>? logger = null)
     {
         _store = store;
         _options = options;
@@ -118,6 +126,7 @@ public sealed partial class AgentV1Service
         _workspaceJournalProtector = workspaceJournalProtector;
         _settingsStore = settingsStore;
         _isVisionModel = isVisionModel ?? ModelImage.IsVisionModel;
+        _logger = logger;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)

@@ -207,8 +207,9 @@ public sealed partial class AgentV1Service
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            _logger?.LogWarning(error, "workspace path could not be resolved as a workspace root");
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
 
@@ -233,8 +234,9 @@ public sealed partial class AgentV1Service
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            _logger?.LogWarning(error, "workspace trust registration failed");
             return BoundedError(400, "invalid_workspace", "workspace registration failed.");
         }
 

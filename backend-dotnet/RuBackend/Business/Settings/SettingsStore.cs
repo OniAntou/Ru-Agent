@@ -131,6 +131,7 @@ public sealed class SettingsStore : ISettingsStore
             persisted["anthropic_model"] = candidate.AnthropicModel;
             persisted["compaction_trigger_ratio"] = candidate.CompactionTriggerRatio;
             persisted["compaction_target_ratio"] = candidate.CompactionTargetRatio;
+            persisted["provider_id"] = candidate.ProviderId;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
         }
@@ -217,7 +218,8 @@ public sealed class SettingsStore : ISettingsStore
             ReadString(raw, "openai_model", string.Empty),
             ReadString(raw, "anthropic_model", string.Empty),
             compactionTriggerRatio,
-            compactionTargetRatio);
+            compactionTargetRatio,
+            ReadString(raw, "provider_id", string.Empty));
     }
 
     private async Task WriteAtomicAsync(
@@ -379,6 +381,7 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.OpenAiModel, 256, nameof(candidate.OpenAiModel));
         ValidateLength(candidate.AnthropicModel, 256, nameof(candidate.AnthropicModel));
         ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
+        ValidateLength(candidate.ProviderId, 128, nameof(candidate.ProviderId));
     }
 
     private static void ValidateLength(string value, int maximum, string parameterName)

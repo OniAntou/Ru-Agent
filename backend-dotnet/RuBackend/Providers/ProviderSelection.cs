@@ -34,6 +34,13 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     public static ProviderSelection From(SettingsSnapshot settings, string alias) =>
         Describe(NormalizeAlias(alias), settings);
 
+    /// <summary>
+    /// Generic <c>models.dev:&lt;provider-id&gt;</c> backends resolve their base URL
+    /// from the Models.dev catalog. Unknown ids fail closed: the URL is never guessed.
+    /// </summary>
+    public static ProviderSelection From(SettingsSnapshot settings, IReadOnlyList<ModelsDevProvider> modelsDevCatalog) =>
+        Describe(settings.Backend, settings, modelsDevCatalog);
+
     private static string NormalizeAlias(string alias) => alias.Trim().ToLowerInvariant() switch
     {
         "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "OpenCode Zen",
@@ -44,8 +51,26 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
         _ => throw new UnknownProviderAliasException(),
     };
 
-    private static ProviderSelection Describe(string backend, SettingsSnapshot settings)
+    private static ProviderSelection Describe(string backend, SettingsSnapshot settings, IReadOnlyList<ModelsDevProvider>? modelsDevCatalog = null)
     {
+        const string modelsDevPrefix = "models.dev:";
+        if (backend.StartsWith(modelsDevPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var id = backend[modelsDevPrefix.Length..].Trim();
+            var provider = string.IsNullOrEmpty(id)
+                ? null
+                : modelsDevCatalog?.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null
+                || !Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out var providerUri)
+                || providerUri.Scheme is not ("https" or "http"))
+            {
+                throw new ArgumentException("Unknown models.dev provider.");
+            }
+
+            var genericModel = settings.Model?.Trim() ?? string.Empty;
+            return new(backend, provider.Id, "chat_completions", providerUri, genericModel, Account: null);
+        }
+
         var (alias, protocol, url, model, account) = backend switch
         {
             "OpenCode Zen" => ("opencode", "chat_completions", "https://opencode.ai/zen/v1", settings.OpenCodeModel, "api_key"),

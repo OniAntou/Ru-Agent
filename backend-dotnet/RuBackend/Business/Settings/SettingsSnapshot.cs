@@ -15,7 +15,8 @@ public sealed record SettingsSnapshot(
     string OpenAiModel,
     string AnthropicModel,
     double CompactionTriggerRatio = SettingsSnapshot.DefaultCompactionTriggerRatio,
-    double CompactionTargetRatio = SettingsSnapshot.DefaultCompactionTargetRatio)
+    double CompactionTargetRatio = SettingsSnapshot.DefaultCompactionTargetRatio,
+    string ProviderId = "")
 {
     // Mirror of ContextBudgetPolicyOptions.DefaultNormalTriggerRatio /
     // DefaultNormalTargetRatio in Harness.Core, which is the single source for

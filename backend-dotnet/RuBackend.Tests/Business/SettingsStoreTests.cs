@@ -314,6 +314,22 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Save_round_trips_provider_id()
+    {
+        var (store, paths) = CreateStore();
+        var current = await store.ReadAsync(CancellationToken.None);
+        Assert.Equal(string.Empty, current.ProviderId);
+
+        await store.SaveAsync(current with { ProviderId = "openrouter" }, CancellationToken.None);
+
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        Assert.Equal("openrouter", persisted["provider_id"]!.GetValue<string>());
+
+        var reloaded = await store.ReadAsync(CancellationToken.None);
+        Assert.Equal("openrouter", reloaded.ProviderId);
+    }
+
+    [Fact]
     public async Task Save_round_trips_compaction_ratios()
     {
         var (store, paths) = CreateStore();

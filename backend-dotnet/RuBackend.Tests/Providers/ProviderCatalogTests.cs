@@ -19,6 +19,60 @@ public sealed class ProviderCatalogTests : IDisposable
 
     private ProviderCatalogService Service() => new(new HttpClient(_handler), _credentials, _clock);
 
+    private ProviderCatalogService ModelsDevService() =>
+        new(new HttpClient(_handler), _credentials, _clock, Path.Combine(_root, "models-dev.json"));
+
+    [Fact]
+    public async Task ModelsDev_catalog_lists_generic_provider()
+    {
+        _handler.Json = "{\"openrouter\":{\"name\":\"OpenRouter\",\"api\":\"https://openrouter.ai/api/v1\",\"models\":{}}}";
+        var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Contains(providers, p => p.Id == "openrouter");
+    }
+
+    [Fact]
+    public async Task ModelsDev_catalog_uses_cache_and_falls_back_offline()
+    {
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = ModelsDevService();
+        var first = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("openrouter", Assert.Single(first).Id);
+        Assert.Equal(1, _handler.Count);
+        var cached = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("openrouter", Assert.Single(cached).Id);
+        Assert.Equal(1, _handler.Count);
+        _clock.Advance(TimeSpan.FromHours(25));
+        _handler.Status = HttpStatusCode.ServiceUnavailable;
+        var offline = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("openrouter", Assert.Single(offline).Id);
+    }
+
+    [Fact]
+    public async Task ModelsDev_catalog_without_cache_fails_closed_to_empty()
+    {
+        _handler.Status = HttpStatusCode.ServiceUnavailable;
+        var service = ModelsDevService();
+        Assert.Empty(await service.GetModelsDevAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Generic_models_dev_backend_resolves_base_uri_from_catalog()
+    {
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter", Model = "x" };
+        var catalog = new[] { new ModelsDevProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1") };
+        var selection = ProviderSelection.From(settings, catalog);
+        Assert.Equal("chat_completions", selection.Protocol);
+        Assert.Equal(new Uri("https://openrouter.ai/api/v1"), selection.BaseUri);
+    }
+
+    [Fact]
+    public async Task Unknown_models_dev_backend_fails_closed()
+    {
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:nope" };
+        Assert.Throws<ArgumentException>(() => ProviderSelection.From(settings, []));
+    }
+
     [Fact]
     public async Task Cache_refreshes_on_expiry_and_throttles_manual_requests()
     {

@@ -348,9 +348,35 @@ public sealed class BusinessEndpointTests
         Assert.Equal(unchangedValue, persisted[unchangedField]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task PostSettings_generic_backend_stores_model_in_shared_field()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync("/settings", new
+        {
+            backend_choice = "models.dev:openrouter",
+            selected_model = "generic-model",
+        });
+        var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("success", payload!["status"]!.GetValue<string>());
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal("models.dev:openrouter", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("generic-model", persisted["model"]!.GetValue<string>());
+        Assert.Equal("opencode/free", persisted["opencode_model"]!.GetValue<string>());
+    }
+
     public static TheoryData<string> InvalidModelSelectionPayloads => new()
     {
         """{"backend_choice":"unknown-provider","selected_model":"grouped-model"}""",
+        """{"backend_choice":"models.dev:bad/id","selected_model":"grouped-model"}""",
         """{"backend_choice":"kilo","selected_model":""}""",
         """{"backend_choice":"kilo","selected_model":"   "}""",
         """{"selected_model":"kilo-model"}""",

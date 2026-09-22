@@ -250,6 +250,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         "Custom OpenAI" => "custom_model",
         BackendOpenAi => "openai_model",
         BackendAnthropic => "anthropic_model",
+        _ when ProviderSelection.IsModelsDevBackend(backend) => "model",
         _ => throw new SettingsPayloadException(),
     };
 
@@ -340,11 +341,31 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             }
         }
 
+        var modelsDevId = OptionalString(payload, "models_dev_provider_id", 64);
+        var modelsDevKey = OptionalSecret(payload, "models_dev_api_key");
+        if (modelsDevId is not null || modelsDevKey is not null)
+        {
+            var normalized = ProviderSelection.NormalizeModelsDevBackend(modelsDevId ?? string.Empty)
+                ?? throw new SettingsPayloadException();
+            if (modelsDevKey is null)
+            {
+                throw new SettingsPayloadException();
+            }
+
+            updates[normalized["models.dev:".Length..] + "_api_key"] = modelsDevKey;
+        }
+
         return updates.Select(pair => new CredentialUpdate(pair.Key, pair.Value)).ToArray();
     }
 
-    private static string NormalizeBackend(string value) =>
-        value.Trim().ToLowerInvariant() switch
+    private static string NormalizeBackend(string value)
+    {
+        if (ProviderSelection.NormalizeModelsDevBackend(value) is { } generic)
+        {
+            return generic;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
         {
             "gguf" or "llama.cpp" => BackendOpenCode,
             "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
@@ -354,6 +375,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "anthropic" or "anthropic claude" or "claude" => BackendAnthropic,
             _ => throw new SettingsPayloadException(),
         };
+    }
 
     private static string? OptionalSecret(JsonObject payload, string key)
     {

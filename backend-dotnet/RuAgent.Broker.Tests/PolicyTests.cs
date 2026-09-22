@@ -718,6 +718,22 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Plan_preset_respects_explicit_deny_rules()
+    {
+        var snapshot = PolicyEvalSnapshots.SnapshotWith(
+                PolicyEvalSnapshots.Rule("r-deny-write", "deny", PolicyEvalSnapshots.Matcher(toolId: "files.write")))
+            with { Preset = "plan" };
+        var (lease, factory) = Bind(snapshot);
+        var verdict = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry()).Evaluate(
+            lease.Snapshot,
+            FileCall(factory, "files.write", "src/a.txt"),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("deny", verdict.Decision);
+        Assert.Equal("rule_denied", verdict.ReasonCode);
+    }
+
+    [Fact]
     public void Plan_preset_denies_all_mutations_without_auto()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty("plan"));

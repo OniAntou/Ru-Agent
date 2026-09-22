@@ -160,13 +160,6 @@ public sealed class PolicySnapshotEvaluator
             return Deny("protected_path");
         }
 
-        // plan is a read-only gate: every mutation asks or denies, nothing auto-allows.
-        if (string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal)
-            && IsPlanGatedCall(context))
-        {
-            return Ask("plan_preset_requires_approval");
-        }
-
         if (boundary is { IsOutsideWorkspace: true }
             && !_directoryGrants.Contains(context.SessionId, boundary.CanonicalPath))
         {
@@ -191,10 +184,22 @@ public sealed class PolicySnapshotEvaluator
 
         if (matchedDecision is not null)
         {
+            // Explicit deny wins on every preset, including plan: the plan
+            // gate below only downgrades allows to asks, never denies.
+            if (string.Equals(matchedDecision, "deny", StringComparison.Ordinal))
+            {
+                return Deny("rule_denied", matchedRuleId);
+            }
+
+            // plan is a read-only gate: every mutation asks, nothing auto-allows.
+            if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
+            {
+                return Ask("plan_preset_requires_approval", matchedRuleId);
+            }
+
             return matchedDecision switch
             {
                 "allow" => new PolicyEvaluation("allow", "rule_matched", matchedRuleId),
-                "deny" => Deny("rule_denied", matchedRuleId),
                 _ => Ask("rule_asks", matchedRuleId),
             };
         }
@@ -230,6 +235,11 @@ public sealed class PolicySnapshotEvaluator
         // (full_access already allowed above).
         if (IsWebTool(context))
         {
+            if (IsPlanPreset(snapshot))
+            {
+                return Ask("plan_preset_requires_approval");
+            }
+
             if (string.Equals(snapshot.Preset, BrokerPolicyContracts.StandardPresetWireValue, StringComparison.Ordinal))
             {
                 return Allow("standard_web_allow");
@@ -238,8 +248,11 @@ public sealed class PolicySnapshotEvaluator
             return Ask("web_approval_required");
         }
 
-        return EffectiveFallback(context);
+        return EffectiveFallback(snapshot, context);
     }
+
+    private static bool IsPlanPreset(BoundPolicySnapshot snapshot) =>
+        string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal);
 
     /// <summary>
     /// The plan-gated surface: every mutation-class tool call (write/edit/bash/web)
@@ -254,8 +267,15 @@ public sealed class PolicySnapshotEvaluator
         || string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal)
         || IsWebTool(context);
 
-    private PolicyEvaluation EffectiveFallback(PolicyContext context)
+    private PolicyEvaluation EffectiveFallback(BoundPolicySnapshot snapshot, PolicyContext context)
     {
+        // plan is a read-only gate: gated calls ask instead of taking the
+        // standard allow paths below; reads still flow.
+        if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
+        {
+            return Ask("plan_preset_requires_approval");
+        }
+
         if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
         {
             var timeoutMs = context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs;

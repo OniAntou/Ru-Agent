@@ -2,10 +2,27 @@ namespace RuAgent.SessionInterchange;
 
 /// <summary>
 /// The wording every format adapter needs and none of them should own alone.
+/// Also the one token-count wording every surface reads, so GUI panels and the
+/// CLI status line never disagree on K vs k.
 /// </summary>
-internal static class TranscriptText
+public static class TranscriptText
 {
     private const int TitleCharacters = 100;
+
+    public static string FormatTokens(long tokens)
+    {
+        if (tokens < 1000)
+        {
+            return tokens.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (tokens >= 1_000_000)
+        {
+            return (tokens / 1_000_000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "M";
+        }
+
+        return (tokens / 1000d).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "K";
+    }
 
     /// <summary>
     /// A session's name, taken from the first thing a person asked.

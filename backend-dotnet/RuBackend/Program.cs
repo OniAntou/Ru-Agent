@@ -91,9 +91,9 @@ if (isManagedRuntime)
     };
     lifetime.ApplicationStopping.Register(() =>
     {
-        try { bootstrap.DescriptorWriter.Cleanup(); } catch { }
-        try { bootstrap.WorkerBrokerManager.Dispose(); } catch { }
-        try { bootstrap.SingleInstance.Dispose(); } catch { }
+        try { bootstrap.DescriptorWriter.Cleanup(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Descriptor cleanup failed during shutdown."); }
+        try { bootstrap.WorkerBrokerManager.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Worker/Broker dispose failed during shutdown."); }
+        try { bootstrap.SingleInstance.Dispose(); } catch (Exception ex) { app.Logger.LogWarning(ex, "Single-instance release failed during shutdown."); }
     });
 }
 

@@ -176,11 +176,7 @@ internal static class ManagedRuntimeBootstrapper
     }
 
     private static bool IsPortOccupied(int port)
-    {
-        try { using var l = new TcpListener(IPAddress.Loopback, port); l.Start(); l.Stop(); return false; }
-        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse) { return true; }
-        catch { return false; }
-    }
+        => RuAgent.Hosting.PortProbe.IsLoopbackPortOccupied(port);
 
     internal static int ReadConfiguredPort(string? raw, int fallback)
     {

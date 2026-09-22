@@ -73,11 +73,7 @@ namespace RuApp.Models
 
         public static string FormatTokens(int tokens)
         {
-            if (tokens >= 1_000_000)
-                return $"{tokens / 1_000_000.0:0.#}M";
-            if (tokens >= 1_000)
-                return $"{tokens / 1_000.0:0.#}K";
-            return tokens.ToString("N0");
+            return RuAgent.SessionInterchange.TranscriptText.FormatTokens(tokens);
         }
     }
 }

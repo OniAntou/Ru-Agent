@@ -238,10 +238,15 @@ public sealed class BrokerHost : IAsyncDisposable
 
     private static string ResolveWorkspaceRoot()
     {
-        var configured = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
-        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
+        var configured = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT")
+            ?? Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        if (!string.IsNullOrWhiteSpace(configured))
         {
-            return Path.GetFullPath(configured);
+            var full = Path.GetFullPath(configured);
+            if (Directory.Exists(full))
+            {
+                return full;
+            }
         }
 
         var current = new DirectoryInfo(Environment.CurrentDirectory);

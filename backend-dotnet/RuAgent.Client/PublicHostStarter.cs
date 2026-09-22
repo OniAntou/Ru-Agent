@@ -91,23 +91,7 @@ public sealed class PublicHostStarter : IDisposable
     }
 
     private static bool IsPortOccupied(int port)
-    {
-        try
-        {
-            using var listener = new TcpListener(IPAddress.Loopback, port);
-            listener.Start();
-            listener.Stop();
-            return false;
-        }
-        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
-        {
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+        => RuAgent.Hosting.PortProbe.IsLoopbackPortOccupied(port);
 
     private static readonly HttpClient HealthProbeClient = new()
     {
@@ -240,10 +224,7 @@ public sealed class PublicHostStarter : IDisposable
 
     private static string GenerateBearerToken()
     {
-        var bytes = new byte[32];
-        using var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
-        rng.GetBytes(bytes);
-        return Convert.ToHexString(bytes).ToLowerInvariant();
+        return RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
     }
 
     private sealed class ClientSingleInstance : IDisposable

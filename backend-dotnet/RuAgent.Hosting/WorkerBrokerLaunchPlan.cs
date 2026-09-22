@@ -113,7 +113,7 @@ public sealed class WorkerBrokerLaunchPlan
             publishedBroker,
             string.Empty,
             root,
-            CreateBrokerEnvironment(descriptorPath, resolvedLogRoot),
+            CreateBrokerEnvironment(descriptorPath, resolvedLogRoot, root),
             Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
             Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")));
 
@@ -143,12 +143,13 @@ public sealed class WorkerBrokerLaunchPlan
         }
     }
 
-    private static Dictionary<string, string> CreateBrokerEnvironment(string descriptorPath, string logRoot)
+    private static Dictionary<string, string> CreateBrokerEnvironment(string descriptorPath, string logRoot, string workspaceRoot)
     {
         var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["RU_AGENT_BROKER_DESCRIPTOR"] = descriptorPath,
             ["RU_LOG_ROOT"] = logRoot,
+            ["RU_WORKSPACE_ROOT"] = workspaceRoot,
         };
 
         // Web options are configured on the Host and forwarded to the Broker

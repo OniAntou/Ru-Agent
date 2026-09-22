@@ -153,79 +153,103 @@ namespace RuApp.Views
             ChatListView.ItemsSource = Messages;
             AttachmentPreviewList.ItemsSource = PendingAttachments;
             QueuedTurnsList.ItemsSource = _queuedTurns.Items;
-            _queuedTurns.Items.CollectionChanged += (_, __) => UpdateQueuedTurnsPanel();
-            Messages.CollectionChanged += (s, e) => UpdateViewMode();
+            _queuedTurns.Items.CollectionChanged += OnQueuedTurnsChanged;
+            Messages.CollectionChanged += OnMessagesChanged;
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             ChatListView.ContainerContentChanging += OnChatContainerContentChanging;
-            this.Loaded += (s, e) =>
-            {
-                ApplyInputWidth();
-                EnsureNewMessagesPillWired();
-            };
+            this.Loaded += OnChatViewLoaded;
             InitializeChatHoverEffects();
             UpdateViewMode();
         }
 
+        private void OnQueuedTurnsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+            => UpdateQueuedTurnsPanel();
+
+        private void OnMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+            => UpdateViewMode();
+
+        private void OnRootGridSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ApplyInputWidth();
+        }
+
+        private void OnChatViewLoaded(object sender, RoutedEventArgs e)
+        {
+            ApplyInputWidth();
+            EnsureNewMessagesPillWired();
+        }
+
         private void InitializeChatHoverEffects()
         {
-            var canvas = (Brush)Application.Current.Resources["RuCanvasBrush"];
-            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            var ink = (Brush)Application.Current.Resources["RuInkBrush"];
-            var muted = (Brush)Application.Current.Resources["RuMutedBrush"];
-
             if (AttachImageButton != null)
             {
-                AttachImageButton.PointerEntered += (s, e) =>
-                {
-                    AttachImageButton.Background = canvas;
-                    if (AttachImageIcon != null) AttachImageIcon.Foreground = ink;
-                };
-                AttachImageButton.PointerExited += (s, e) =>
-                {
-                    AttachImageButton.Background = transparent;
-                    if (AttachImageIcon != null) AttachImageIcon.Foreground = muted;
-                };
+                AttachImageButton.PointerEntered += OnAttachImagePointerEntered;
+                AttachImageButton.PointerExited += OnAttachImagePointerExited;
             }
 
             if (ContextMeterButton != null)
             {
-                DispatcherTimer? contextHoverTimer = null;
-
-                ContextMeterButton.PointerEntered += (s, e) =>
-                {
-                    ContextMeterButton.Background = canvas;
-                    contextHoverTimer?.Stop();
-                    contextHoverTimer = new DispatcherTimer
-                    {
-                        Interval = Services.UiTiming.ChatFlash
-                    };
-                    contextHoverTimer.Tick += (_, _) =>
-                    {
-                        contextHoverTimer?.Stop();
-                        if (ContextWindowFlyout != null && !ContextWindowFlyout.IsOpen && ContextMeterButton != null)
-                        {
-                            try
-                            {
-                                ContextWindowFlyout.ShowAt(ContextMeterButton, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
-                                {
-                                    ShowMode = Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway
-                                });
-                            }
-                            catch
-                            {
-                                ContextWindowFlyout.ShowAt(ContextMeterButton);
-                            }
-                        }
-                    };
-                    contextHoverTimer.Start();
-                };
-
-                ContextMeterButton.PointerExited += (s, e) =>
-                {
-                    ContextMeterButton.Background = transparent;
-                    contextHoverTimer?.Stop();
-                };
+                ContextMeterButton.PointerEntered += OnContextMeterPointerEntered;
+                ContextMeterButton.PointerExited += OnContextMeterPointerExited;
             }
+        }
+
+        private void OnAttachImagePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (AttachImageButton is null) return;
+            AttachImageButton.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+            if (AttachImageIcon != null) AttachImageIcon.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+        }
+
+        private void OnAttachImagePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (AttachImageButton is null) return;
+            AttachImageButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            if (AttachImageIcon != null) AttachImageIcon.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+        }
+
+        private DispatcherTimer? _contextHoverTimer;
+
+        private void OnContextMeterPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (ContextMeterButton is null) return;
+            var canvas = (Brush)Application.Current.Resources["RuCanvasBrush"];
+            ContextMeterButton.Background = canvas;
+            _contextHoverTimer?.Stop();
+            _contextHoverTimer?.Tick -= OnContextHoverTimerTick;
+            _contextHoverTimer = new DispatcherTimer
+            {
+                Interval = Services.UiTiming.ChatFlash
+            };
+            _contextHoverTimer.Tick += OnContextHoverTimerTick;
+            _contextHoverTimer.Start();
+        }
+
+        private void OnContextHoverTimerTick(object? sender, object e)
+        {
+            _contextHoverTimer?.Stop();
+            if (ContextWindowFlyout != null && !ContextWindowFlyout.IsOpen && ContextMeterButton != null)
+            {
+                try
+                {
+                    ContextWindowFlyout.ShowAt(ContextMeterButton, new Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowOptions
+                    {
+                        ShowMode = Microsoft.UI.Xaml.Controls.Primitives.FlyoutShowMode.TransientWithDismissOnPointerMoveAway
+                    });
+                }
+                catch
+                {
+                    ContextWindowFlyout.ShowAt(ContextMeterButton);
+                }
+            }
+        }
+
+        private void OnContextMeterPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (ContextMeterButton is null) return;
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            ContextMeterButton.Background = transparent;
+            _contextHoverTimer?.Stop();
         }
 
         private void UpdateViewMode()
@@ -243,11 +267,6 @@ namespace RuApp.Views
             {
                 MeteorShowerField.IsActive = !hasMessages;
             }
-        }
-
-        private void OnRootGridSizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            ApplyInputWidth();
         }
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
@@ -862,12 +881,7 @@ namespace RuApp.Views
             {
                 _contextMeterTimer = DispatcherQueue.CreateTimer();
                 _contextMeterTimer.Interval = Services.UiTiming.ContextMeterDebounce;
-                _contextMeterTimer.Tick += (_, _) =>
-                {
-                    _contextMeterTimer?.Stop();
-                    _contextMeterScheduled = false;
-                    UpdateContextUsage();
-                };
+                _contextMeterTimer.Tick += OnContextMeterTimerTick;
             }
 
             if (_contextMeterScheduled)
@@ -877,6 +891,13 @@ namespace RuApp.Views
 
             _contextMeterScheduled = true;
             _contextMeterTimer.Start();
+        }
+
+        private void OnContextMeterTimerTick(object? sender, object e)
+        {
+            _contextMeterTimer?.Stop();
+            _contextMeterScheduled = false;
+            UpdateContextUsage();
         }
 
         private void OnAgentControllerChanged(object? sender, PropertyChangedEventArgs e)
@@ -3280,11 +3301,12 @@ namespace RuApp.Views
                 return null;
             }
 
+            var sessionId = _activeSessionId;
             string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
                 ? StripDisplayMarkers(content)
                 : null;
-            var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
-            if (history is null || cancellationToken.IsCancellationRequested)
+            var history = await _apiService.GetSessionMessagesAsync(sessionId);
+            if (history is null || cancellationToken.IsCancellationRequested || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
             {
                 return null;
             }
@@ -3304,7 +3326,7 @@ namespace RuApp.Views
             // Durable replay: session messages persist only role/content, so a fresh
             // load would drop every tool row. Rebuild settled rows from each terminal
             // run's durable events; the live turn keeps its in-memory rows below.
-            var replayedRuns = await LoadReplayedRunActivitiesAsync(cancellationToken);
+            var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, cancellationToken);
 
             void Apply()
             {
@@ -3497,15 +3519,16 @@ namespace RuApp.Views
         /// Best-effort: any failure yields empty rows and the text-only transcript.
         /// </summary>
         private async Task<IReadOnlyList<IReadOnlyList<AgentActivityItem>>> LoadReplayedRunActivitiesAsync(
+            string sessionId,
             CancellationToken cancellationToken)
         {
             var empty = Array.AsReadOnly(Array.Empty<IReadOnlyList<AgentActivityItem>>());
-            if (_apiService is null || string.IsNullOrWhiteSpace(_activeSessionId))
+            if (_apiService is null || string.IsNullOrWhiteSpace(sessionId))
             {
                 return empty;
             }
 
-            var runs = await _apiService.ListSessionRunIdsAsync(_activeSessionId, cancellationToken);
+            var runs = await _apiService.ListSessionRunIdsAsync(sessionId, cancellationToken);
             if (runs is null || runs.Count == 0 || cancellationToken.IsCancellationRequested)
             {
                 return empty;
@@ -3906,7 +3929,7 @@ namespace RuApp.Views
                 // what makes the activity feed survive leaving the session or closing the app;
                 // without it the rows exist only as transient frames and are gone the moment
                 // the live connection ends.
-                var replayedRuns = await LoadReplayedRunActivitiesAsync(CancellationToken.None);
+                var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, CancellationToken.None);
                 if (!IsCurrentOpen(generation)) return;
 
                 if (history != null)
@@ -4193,9 +4216,19 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
-            _contextMeterTimer?.Stop();
-            _contextMeterTimer = null;
+            if (_contextMeterTimer is not null)
+            {
+                _contextMeterTimer.Tick -= OnContextMeterTimerTick;
+                _contextMeterTimer.Stop();
+                _contextMeterTimer = null;
+            }
             _contextMeterScheduled = false;
+            TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
+            _queuedTurns.Items.CollectionChanged -= OnQueuedTurnsChanged;
+            Messages.CollectionChanged -= OnMessagesChanged;
+            RootGrid.SizeChanged -= OnRootGridSizeChanged;
+            ChatListView.ContainerContentChanging -= OnChatContainerContentChanging;
+            this.Loaded -= OnChatViewLoaded;
             if (_modelSaveFailureTimer != null)
             {
                 _modelSaveFailureTimer.Stop();
@@ -4234,17 +4267,12 @@ namespace RuApp.Views
             }
             StopAllTextSweeps();
             DetachWaveTimer();
+            DetachContextHoverTimer();
             ClearAgentActivities();
             if (_activityFlushTimer != null)
             {
                 _activityFlushTimer.Tick -= OnActivityFlushTick;
                 _activityFlushTimer = null;
-            }
-            if (_modelSaveFailureTimer != null)
-            {
-                _modelSaveFailureTimer.Stop();
-                _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
-                _modelSaveFailureTimer = null;
             }
             MeteorShowerField?.Dispose();
         }
@@ -4255,6 +4283,26 @@ namespace RuApp.Views
             {
                 _waveTimer.Tick -= OnWaveTimerTick;
                 _waveTimer = null;
+            }
+        }
+
+        private void DetachContextHoverTimer()
+        {
+            if (AttachImageButton is not null)
+            {
+                AttachImageButton.PointerEntered -= OnAttachImagePointerEntered;
+                AttachImageButton.PointerExited -= OnAttachImagePointerExited;
+            }
+            if (ContextMeterButton is not null)
+            {
+                ContextMeterButton.PointerEntered -= OnContextMeterPointerEntered;
+                ContextMeterButton.PointerExited -= OnContextMeterPointerExited;
+            }
+            if (_contextHoverTimer is not null)
+            {
+                _contextHoverTimer.Tick -= OnContextHoverTimerTick;
+                _contextHoverTimer.Stop();
+                _contextHoverTimer = null;
             }
         }
         /// <summary>

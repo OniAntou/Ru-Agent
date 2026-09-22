@@ -1,7 +1,7 @@
 # Verification
 
 > **The table below is the current state; entries under it are history.** Its numbers were last checked against the code when the 40-route contract and the 13-project matrix were confirmed, and they are maintained by hand. Run the scripts for the authoritative figures -- `scripts/test_dotnet.ps1`, `check_aspnetcore_route_matrix.py`, `pytest tests`, `build.bat` -- rather than quoting this table as a live measurement.
-> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals.
+> Historical per-snapshot counts are preserved verbatim in their sections and must not be read as current totals. Sections below that still describe voice/STT, VTube Studio, screen observation, device worker v1, or the retired 13→4 tool matrix are history, not the current contract: the live numbers are the table above (40 routes, 11 tools, Worker v2 only).
 > Đợt 2026-09-13 (media teardown): repo chỉ còn coding core — `/vts/*` + `/observation/*` (11 + 8 route) gỡ cùng adapter VTS/observation, contract `VtsContracts`/`ObservationContracts` và nhánh v1 `vts.*`; `/voice/*` + `/voice/stream` + `/voice/transcribe`, `src/ru_runtime`, `OmniVoice`, adapter `Audio/*`/`Speech/*` và device worker v1 gỡ nốt (managed Worker chỉ còn `/worker/v2`; `GET /status` phục vụ trực tiếp từ host settings); GUI bỏ voice/STT/subtitle (VoiceView, subtitle overlay, nút mic); settings retire nhóm `voice_*`/`auto_*`/`subtitle_*` + `gemini_vision_api_key`; prompt `runtime_context` còn `mood`/`hardware`/`references`; project `RuAgent.Runtime.Core` và extra `[voice]`/mypy gỡ khỏi build/CI. Xem `CHANGELOG.md` mục Removed.
 | Surface | Current status |
 | --- | --- |

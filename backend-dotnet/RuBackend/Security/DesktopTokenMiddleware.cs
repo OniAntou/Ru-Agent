@@ -19,7 +19,8 @@ public sealed class DesktopTokenMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (HttpMethods.IsOptions(context.Request.Method))
+        if (HttpMethods.IsOptions(context.Request.Method)
+            && !IsSensitiveRoute(context.Request.Path))
         {
             await _next(context);
             return;
@@ -52,6 +53,15 @@ public sealed class DesktopTokenMiddleware
         }
 
         await _next(context);
+    }
+
+    private static bool IsSensitiveRoute(PathString path)
+    {
+        return path.StartsWithSegments("/settings", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/sessions", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/agent", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/host", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments("/diagnostics", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TokensMatch(string candidate, string configuredToken)

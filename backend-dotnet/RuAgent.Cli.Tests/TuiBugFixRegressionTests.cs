@@ -126,7 +126,7 @@ public sealed class TuiBugFixRegressionTests
     {
         Assert.Equal("1.5M", TuiStatusLine.FormatTokens(1_500_000));
         Assert.Equal("10M", TuiStatusLine.FormatTokens(10_000_000));
-        Assert.Equal("500k", TuiStatusLine.FormatTokens(500_000));
+        Assert.Equal("500K", TuiStatusLine.FormatTokens(500_000));
         Assert.Equal("999", TuiStatusLine.FormatTokens(999));
     }
 

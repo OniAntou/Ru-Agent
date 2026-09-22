@@ -16,6 +16,7 @@ public sealed class WorkspaceTrustService
     private readonly IHarnessKeyStore? _keyStore;
 
     private const string RootAssociatedDataPrefix = "ru-workspace-root-v1:";
+    private const int AesGcmTagBytes = 16;
 
     public WorkspaceTrustService(
         WindowsWorkspaceIdentityResolver resolver,
@@ -81,7 +82,7 @@ public sealed class WorkspaceTrustService
             }
 
             var plaintext = new byte[stored.EncryptedCanonicalRoot.Ciphertext.Length];
-            using var aes = new AesGcm(key, stored.EncryptedCanonicalRoot.AuthenticationTag.Length);
+            using var aes = new AesGcm(key, AesGcmTagBytes);
             aes.Decrypt(
                 stored.EncryptedCanonicalRoot.Nonce.Span,
                 stored.EncryptedCanonicalRoot.Ciphertext.Span,
@@ -122,7 +123,7 @@ public sealed class WorkspaceTrustService
         var plaintext = Encoding.UTF8.GetBytes(canonicalRoot);
         var nonce = RandomNumberGenerator.GetBytes(12);
         var ciphertext = new byte[plaintext.Length];
-        var tag = new byte[16];
+        var tag = new byte[AesGcmTagBytes];
         try
         {
             if (key is not { Length: 32 })

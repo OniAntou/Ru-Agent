@@ -19,7 +19,8 @@ namespace RuApp.Controls
     /// </summary>
     public sealed partial class FileEditPreviewControl : UserControl
     {
-        private static readonly FontFamily MonoFont = new FontFamily("Consolas");
+        private static FontFamily MonoFont =>
+            (FontFamily)Application.Current.Resources["RuMonoFontFamily"];
 
         private static readonly SolidColorBrush FallbackSurfaceBrush = new SolidColorBrush(Color.FromArgb(255, 32, 35, 42));
         private static readonly SolidColorBrush FallbackLineBrush = new SolidColorBrush(Color.FromArgb(255, 51, 65, 85));

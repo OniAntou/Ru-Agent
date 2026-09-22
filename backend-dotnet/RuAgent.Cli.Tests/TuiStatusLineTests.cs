@@ -73,7 +73,7 @@ public sealed class TuiStatusLineTests
         Assert.Contains("Thinking", text, StringComparison.Ordinal);
         Assert.Contains("2.1s", text, StringComparison.Ordinal);
         Assert.DoesNotContain("turn", text, StringComparison.Ordinal);
-        Assert.Contains("⇣12.4k", text, StringComparison.Ordinal);
+        Assert.Contains("⇣12.4K", text, StringComparison.Ordinal);
         Assert.Contains("4 tools", text, StringComparison.Ordinal);
     }
 
@@ -161,8 +161,8 @@ public sealed class TuiStatusLineTests
     [Theory]
     [InlineData(0, "0")]
     [InlineData(999, "999")]
-    [InlineData(12400, "12.4k")]
-    [InlineData(1000, "1k")]
+    [InlineData(12400, "12.4K")]
+    [InlineData(1000, "1K")]
     public void FormatTokens_CompactsThousands(long tokens, string expected)
     {
         Assert.Equal(expected, TuiStatusLine.FormatTokens(tokens));

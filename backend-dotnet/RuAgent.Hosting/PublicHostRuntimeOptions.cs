@@ -73,10 +73,7 @@ public sealed class PublicHostRuntimeOptions
         {
             return Path.Combine(root, "runtime_descriptor.json");
         }
-        // When logRoot is explicit but dataRoot not, fallback to logRoot sibling? Use default business root
         var businessRoot = GetDefaultBusinessRoot(projectRoot);
-        if (!string.IsNullOrWhiteSpace(dataRoot))
-            return Path.Combine(Path.GetFullPath(dataRoot), "runtime_descriptor.json");
         return Path.Combine(businessRoot, "runtime_descriptor.json");
     }
 

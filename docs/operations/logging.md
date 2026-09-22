@@ -3,7 +3,7 @@
 ## 1. Overview & Canonical Roots
 
 The Ru logging system is split into two cleanly separated subsystems:
-1. **Activity Timeline**: User-facing activity events (chat previews, emotional states, VTS actions, observation reactions) with strict 160-character previews, control marker stripping, and secret masking (`[REDACTED_KEY]`, `[REDACTED_TOKEN]`).
+1. **Activity Timeline**: User-facing activity events (chat previews, tool traffic summaries) with strict 160-character previews, control marker stripping, and secret masking (`[REDACTED_KEY]`, `[REDACTED_TOKEN]`).
 2. **Technical Diagnostics**: Bounded structured events (`DiagnosticEvent`) for operational observability, timing, error codes, and correlation IDs without raw text, messages, or stack traces.
 
 ### Log Root Resolution
@@ -11,8 +11,9 @@ The Ru logging system is split into two cleanly separated subsystems:
 - Canonical default: `%LOCALAPPDATA%\Ru\logs` on Windows (`~/.local/share/Ru/logs` on Linux/macOS).
 - Bootstrap fallback: `<logRoot>\bootstrap\` contains bounded structured
   JSONL summaries for each owned backend child stream. Each record carries
-  only the fixed role and stream, timestamp, saturated line/byte counts, and
-  a truncation flag; raw stdout/stderr lines are never persisted or exposed.
+  only the fixed role and stream, timestamp, saturated line/byte counts, a
+  trailing content tail (up to 2,000 characters, so a dying child can explain
+  why), and a truncation flag; the head of the stream is not persisted.
 
 ## 2. Retention & Bounded Rotation
 

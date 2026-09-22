@@ -25,9 +25,6 @@ namespace RuApp.Controls
     /// </summary>
     public sealed partial class SessionUsagePanel : UserControl
     {
-        private static readonly FontFamily UiFont = new FontFamily("Segoe UI Variable");
-        private static readonly FontFamily MonoFont = new FontFamily("Consolas");
-
         public SessionUsagePanel()
         {
             InitializeComponent();
@@ -167,7 +164,7 @@ namespace RuApp.Controls
             var place = new TextBlock
             {
                 Text = $"#{position}",
-                FontFamily = MonoFont,
+                FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
                 FontSize = 11,
                 Foreground = muted,
                 HorizontalAlignment = HorizontalAlignment.Right,
@@ -208,7 +205,7 @@ namespace RuApp.Controls
             var numbers = new TextBlock
             {
                 Text = detail,
-                FontFamily = MonoFont,
+                FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
                 FontSize = 11.5,
                 Foreground = row.HasUsage ? ink : muted,
                 HorizontalAlignment = HorizontalAlignment.Right,

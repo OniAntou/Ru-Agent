@@ -83,7 +83,7 @@ def _run_build_script(
     (build_root / "gui-winui3").mkdir()
     (build_root / "gui-winui3" / "RuApp.csproj").write_text("stub\n", encoding="utf-8")
     compiled_xaml = build_root / "gui-winui3/obj/x64/Release/net10.0-windows10.0.26100.0/win-x64"
-    for relative in ("App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"):
+    for relative in ("App.xbf", "MainWindow.xbf", "Views/ChatView.xbf", "Controls/TerminalPanelControl.xbf"):
         if relative == missing_xaml:
             continue
         artifact = compiled_xaml / relative

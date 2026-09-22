@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-09-07.
+Status: operating contract for the current main branch, 2026-09-13.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.

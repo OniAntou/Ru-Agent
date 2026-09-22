@@ -245,13 +245,6 @@ public static class RuntimeDescriptorValidator
         if (!DateTimeOffset.TryParse(created, out _))
             throw new ArgumentException("created_at invalid");
 
-        // Check forbidden content not hidden in values (should not contain paths etc - but base_url is allowed loopback)
-        var raw = json.ToLowerInvariant();
-        if (raw.Contains("worker_token") || raw.Contains("broker_token") || raw.Contains("executable") || raw.Contains("provider") || raw.Contains("openai_api_key"))
-        {
-            // But bearer_token itself is allowed; we already validated it. Check for extra secrets leaking in other fields is not needed.
-        }
-
         return new RuntimeDescriptor(version, baseUrl, bearer, pid, startTime, nonce, created);
     }
 }

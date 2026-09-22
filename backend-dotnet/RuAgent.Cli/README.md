@@ -5,11 +5,11 @@ Thin headless client for the Agent v2 headless coding loop (Phase 3). Delegates 
 ## Commands
 
 ```text
-agent chat [--preset standard|full_access|trusted] [--workspace PATH] [--session <id>] [--json] [--classic]
+agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--json] [--classic]
 agent session list [--json]
 agent session fork <session-id> [--index <n>] [--title <title>] [--json]
 agent session rewind <session-id> --index <n> [--json]
-agent run [--preset standard|full_access|trusted] --workspace PATH "prompt" [--session <id>] [--json]
+agent run [--preset plan|standard|full_access] --workspace PATH "prompt" [--session <id>] [--json]
 agent attach <run-id> [--json]
 agent trust <run-id> --approve|--deny
 agent approve <run-id> <approval-id>
@@ -33,7 +33,7 @@ agent policy remove <rule-id>
 - Terminal resizes are debounced (180 ms); once the window settles the whole screen is rebuilt (region reset, fresh header, transcript tail reprinted from a bounded line history) rather than patched, because the terminal has already reflowed the rows the UI addressed absolutely. Nothing is drawn while the layout is known to be stale, and a window too short for a footer leaves sticky mode instead of painting rows that do not exist. `RU_TUI_DEBUG=<path>` writes a layout trace for diagnosing this on a real terminal.
 - `session list`, `session fork`, and `session rewind` provide explicit command-line controls for managing session branch trees and time-travel rewinds.
 - `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
-- `--preset full_access` (alias `full`) shows an interactive warning and requires confirmation; it is accepted as compatibility metadata mapping to standard behavior and is not sticky across new sessions. `--preset trusted` is the opt-in friction reducer: it changes the session's stored preset via `POST /agent/v1/policies` with `kind=session_preset` and requires header `X-Interactive-Confirmed: true`; on a clean workspace it auto-allows the in-workspace terminal/external-directory/delete/unknown-executable subset (`trusted_workspace_allow`) while web, timeouts, rule asks, invariants, and protected paths stay gated. `--json` cannot be used with `full_access` or `trusted`; the preset change affects the next run only and is not sticky across new sessions.
+- `--preset plan` is read-only: every mutation asks or denies. `--preset full_access` (alias `full`) shows an interactive warning and requires confirmation; otherwise everything but hard denies runs without approval. `--preset` changes the session's stored preset via `POST /agent/v1/policies` with `kind=session_preset` and requires header `X-Interactive-Confirmed: true`; on a clean workspace `standard` auto-allows the in-workspace terminal/external-directory/delete/unknown-executable subset (`standard_clean_workspace_allow`) while timeouts, rule asks, invariants, and protected paths stay gated. `--json` cannot be used with `full_access`; the preset change affects the next run only and is not sticky across new sessions.
 - `attach` streams an existing run's durable events from `after_sequence=0` via `AgentSseClient`.
 - `trust` wraps `POST /agent/v1/runs/{runId}/trust`.
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with exactly `allow_once`, `allow_session_directory` (external folders only), or `deny`. The Host picks the right one-time token from the pending binding (session-scoped directory grant for `external_directory_required`, ephemeral token for `terminal_delete_requires_approval`, `terminal_external_mutation_requires_approval`, `terminal_timeout_requires_approval`, `web_approval_required`, or `terminal_unknown_executable`); no `--scope` flag is exposed and no reusable rule is ever created. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). `--json` cannot confirm approval.
@@ -53,11 +53,11 @@ agent policy remove <rule-id>
 The Agent Worker v2 advertisement contains six core bindings: `read`
 with `op=list|read|help`, `grep`, `glob`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
-`web_search` and `web_fetch` in both
-Standard and Trusted. Standard applies the stricter
-analyzer/rule/approval policy; Trusted keeps that policy but auto-allows the
-in-workspace terminal/external-directory/delete/unknown-executable subset on a
-clean workspace, while web, timeouts, rule asks, invariants, and protected
+`web_search` and `web_fetch` in `plan` (ask), `standard` (automatic), and
+`full_access` (automatic). `plan` is read-only; `standard` applies the stricter
+analyzer/rule/approval policy but auto-allows the in-workspace
+terminal/external-directory/delete/unknown-executable subset on a
+clean workspace, while timeouts, rule asks, invariants, and protected
 paths stay gated. Neither preset is an OS-enforced sandbox. Terminal
 calls run as the current Windows user and can execute host code or open
 sockets. Time, machine status, app discovery, and optional volume commands use
@@ -74,7 +74,7 @@ All commands ensure the Public Host is running via `PublicHostStarter.GetOrStart
 ## Rendering
 
 - **Interactive** (`SafeEventRenderer`): displays only safe envelope fields (`protocol_version`, `event_id`, `run_id`, `session_id`, `sequence`, `event_type`, `occurred_at`, `status`, `safe_summary`, `payload_ref`). Never fetches private payloads; `payload_ref` is shown opaque.
-- **JSON** (`NdjsonEventRenderer` with `--json`): versioned NDJSON `{"v":1,"type":"event",...safe fields}`. Never prompts, never auto-approves, never auto-fetches private payload, and never emits `prompt`/`command`/`argv`/`path`/`code`/`diff`/`output`/`secret`/`stdout`/`stderr`/`environment` fields. Interactive confirmations (Trusted, trust, approval, global policy) are rejected when `--json` is set. A transient frame's raw `data` is therefore withheld and reported as `data_bytes` — its bounded size, not its text — so the machine-readable trace never carries streamed assistant text or tool output.
+- **JSON** (`NdjsonEventRenderer` with `--json`): versioned NDJSON `{"v":1,"type":"event",...safe fields}`. Never prompts, never auto-approves, never auto-fetches private payload, and never emits `prompt`/`command`/`argv`/`path`/`code`/`diff`/`output`/`secret`/`stdout`/`stderr`/`environment` fields. Interactive confirmations (Full Access, trust, approval, global policy) are rejected when `--json` is set. A transient frame's raw `data` is therefore withheld and reported as `data_bytes` — its bounded size, not its text — so the machine-readable trace never carries streamed assistant text or tool output.
 - **Live terminal frames**: transient `tool.output.delta` frames render as `[transient:<seq>] <type> <preview>` with the preview bounded to 200 chars; any forbidden field (`command`/`output`/`secret`/...) is replaced with `[redacted]`. A `transient.frames_dropped` event renders an explicit `WARNING dropped-frames` notice. Final tool output is referenced only by opaque `payload_ref`; the actual head/tail bytes are fetched solely by the explicit `agent output` command.
 
 ## Cancellation

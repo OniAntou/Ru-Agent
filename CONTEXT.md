@@ -119,22 +119,25 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The session-scoped Agent preset (`standard`, opt-in `trusted`).
+The session-scoped Agent preset (`plan`, `standard`, opt-in `full_access`).
 The model-visible Worker v2 list is the runtime projection of eleven Protocol
 definitions, one purpose per tool: `read` (`offset`/`limit`), `list`
 (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write` (the session task list), `write`
 with `op=write|delete|restore`, `edit`, `bash`, and the independently enabled
 standalone `web_search`/`web_fetch` tools with `network.search`/`network.fetch`
-scopes, Google HTML primary with DuckDuckGo HTML fallback (approval-gated).
+scopes, Google HTML primary with DuckDuckGo HTML fallback (plan-ask,
+automatic on `standard`/`full_access`).
 Standard is the default: every
-run starts standard unless the stored session selection says trusted. Trusted
-is opt-in per session with interactive confirmation; on a clean workspace it
-auto-allows in-workspace terminal/external-directory/delete/unknown-executable
-prompts (`trusted_workspace_allow`), while web, timeouts, rule asks, and
-invariants still ask or deny. The legacy `full_access` wire value is accepted
-as compatibility metadata but maps to the same standard policy; there is no
-provider, model, protocol, or tool fallback.
+run starts standard unless the stored session selection says `plan` or
+`full_access`. `plan` is read-only: every mutation asks or denies, nothing
+auto-allows. `full_access` is opt-in per session with interactive
+confirmation; only hard denies (protected paths, invalid requests) still
+apply. On a clean workspace `standard` auto-allows the in-workspace
+terminal/external-directory/delete/unknown-executable subset
+(`standard_clean_workspace_allow`), while timeouts, rule asks, and
+invariants still ask or deny; there is no provider, model, protocol, or
+tool fallback.
 _Avoid_: permanent permission
 
 **Agent Persona Source**:
@@ -184,8 +187,8 @@ cleanup. `bash` with `mode=run` auto-forms (read/test/build/lint/local-Git) run 
 authorization token; external mutation, deletion, extended timeouts, every
 `bash` with `mode=shell` script, unknown executables, a git directory override
 (`-C`), a non-inert `git -c key=value` config override, and global/system git
-config writes require a one-time approval token. A clean-workspace `trusted`
-session auto-allows the in-workspace subset above; networked calls, web,
+config writes require a one-time approval token. A clean-workspace `standard`
+session auto-allows the in-workspace subset above; networked calls,
 timeouts, and protected paths stay gated. Network use is audit metadata
 plus an approval classifier, never a separate scope gate. An ambiguous outcome
 pauses with a waiting status detail and `Continue` clears the inspection gate

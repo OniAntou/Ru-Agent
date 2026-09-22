@@ -158,7 +158,8 @@ Protocol digest, and the permission vocabulary below must stay accurate.
 - **Payloads** in `agent_harness.db` are AES-GCM 256 encrypted under a DPAPI-protected
   key (`harness_key.dat`). It fails closed — lose the key and the payloads are gone.
 - **Permissions are session-scoped.** Every run starts at the `standard` preset;
-  `trusted` is opt-in per session with interactive confirmation. An outside-folder
+  read-only `plan` and opt-in `full_access` come from the stored session
+  selection (`full_access` needs interactive confirmation). An outside-folder
   approval opens a grant for that session only, terminal tokens are single-use, and
   **no grant survives a restart**.
 - **Approval** is required for outside-workspace access

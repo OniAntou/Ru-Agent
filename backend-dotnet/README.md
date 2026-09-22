@@ -97,16 +97,17 @@ and applies single-verdict analyzer/rule/approval decisions to terminal requests
 auto for recognized read/test/build/lint/local-Git `bash` with `mode=run` payloads,
 ask for deletion, external mutation, extended timeouts, every `bash`
 with `mode=shell`
-script, and unknown executables. The opt-in `trusted` preset keeps that policy
-but auto-allows the in-workspace terminal/external-directory/delete/unknown-executable
-subset on a clean workspace (`trusted_workspace_allow`); web, timeouts, rule asks,
+script, and unknown executables. On a clean workspace `standard` also auto-allows
+the in-workspace terminal/external-directory/delete/unknown-executable
+subset (`standard_clean_workspace_allow`); timeouts, rule asks,
 invariants, and protected paths stay gated. Protected paths, hard invariants, and extended
 timeout thresholds remain gated. An explicit absolute path outside the trusted
 root
 asks with `external_directory_required`; the approval UI can grant only that
 canonical directory for the current live session, and the grant covers
 read/create/edit operations only. Managed web tools ask with
-`web_approval_required` when approval-gating is enabled. Terminal calls run as
+`web_approval_required` on the `plan` preset and run automatically on
+`standard` and `full_access`. Terminal calls run as
 the current Windows user and may execute host code or open sockets;
 `network_intent` is
 audit/approval metadata, not network isolation. Time, machine status, app

@@ -55,7 +55,7 @@ public sealed class AgentRunCoordinator
             _ids,
             _time,
             contextLimit,
-            contextBudgetPolicy ?? new ContextBudgetPolicy(),
+            contextBudgetPolicy ?? CreateBudgetPolicy(),
             activitySink);
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
@@ -91,6 +91,37 @@ public sealed class AgentRunCoordinator
             _ids,
             _time,
             _lifecycle);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="ContextBudgetPolicy"/> from settings compaction ratios,
+    /// falling back to <see cref="ContextBudgetPolicyOptions"/> defaults so every
+    /// call site keeps working and an invalid pair can never break the run
+    /// (fail-closed to defaults).
+    /// </summary>
+    public static ContextBudgetPolicy CreateBudgetPolicy(
+        double triggerRatio = 0.80,
+        double targetRatio = 0.62)
+    {
+        if (double.IsNaN(triggerRatio)
+            || double.IsInfinity(triggerRatio)
+            || double.IsNaN(targetRatio)
+            || double.IsInfinity(targetRatio)
+            || !(targetRatio < triggerRatio))
+        {
+            return new ContextBudgetPolicy();
+        }
+
+        try
+        {
+            return new ContextBudgetPolicy(new ContextBudgetPolicyOptions(
+                NormalTriggerRatio: triggerRatio,
+                NormalTargetRatio: targetRatio));
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return new ContextBudgetPolicy();
+        }
     }
 
     public async Task<AgentRunStepResult> RunOneStepAsync(

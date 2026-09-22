@@ -287,7 +287,9 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             customModel,
             customUrl,
             openAiModel,
-            anthropicModel);
+            anthropicModel,
+            current.CompactionTriggerRatio,
+            current.CompactionTargetRatio);
     }
 
     private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(

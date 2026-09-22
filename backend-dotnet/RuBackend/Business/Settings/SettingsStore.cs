@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core.Context;
 
 namespace RuBackend.Business.Settings;
 
@@ -116,6 +117,8 @@ public sealed class SettingsStore : ISettingsStore
             persisted["custom_url"] = candidate.CustomUrl;
             persisted["openai_model"] = candidate.OpenAiModel;
             persisted["anthropic_model"] = candidate.AnthropicModel;
+            persisted["compaction_trigger_ratio"] = candidate.CompactionTriggerRatio;
+            persisted["compaction_target_ratio"] = candidate.CompactionTargetRatio;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
         }
@@ -187,6 +190,8 @@ public sealed class SettingsStore : ISettingsStore
             kiloModel = model;
         }
 
+        var (compactionTriggerRatio, compactionTargetRatio) = ReadCompactionRatios(raw);
+
         return new SettingsSnapshot(
             raw.DeepClone().AsObject(),
             backend,
@@ -198,7 +203,9 @@ public sealed class SettingsStore : ISettingsStore
             ReadString(raw, "custom_model", "default"),
             ReadString(raw, "custom_url", "http://localhost:8000/v1"),
             ReadString(raw, "openai_model", string.Empty),
-            ReadString(raw, "anthropic_model", string.Empty));
+            ReadString(raw, "anthropic_model", string.Empty),
+            compactionTriggerRatio,
+            compactionTargetRatio);
     }
 
     private async Task WriteAtomicAsync(
@@ -252,6 +259,46 @@ public sealed class SettingsStore : ISettingsStore
             "anthropic" or "anthropic claude" or "claude" => "Anthropic",
             _ => string.Empty,
         };
+    }
+
+    private static (double TriggerRatio, double TargetRatio) ReadCompactionRatios(JsonObject raw)
+    {
+        // Fail-closed: missing/invalid pairs fall back to defaults. Range and
+        // finiteness checks reuse ContextBudgetPolicyOptions validation so the
+        // rule lives in exactly one place; the target < trigger ordering is the
+        // settings-level addition (the policy validates each ratio alone).
+        var trigger = ReadRatio(raw, "compaction_trigger_ratio", SettingsSnapshot.DefaultCompactionTriggerRatio);
+        var target = ReadRatio(raw, "compaction_target_ratio", SettingsSnapshot.DefaultCompactionTargetRatio);
+        if (trigger is null || target is null || !(target < trigger))
+        {
+            return (SettingsSnapshot.DefaultCompactionTriggerRatio, SettingsSnapshot.DefaultCompactionTargetRatio);
+        }
+
+        return (trigger.Value, target.Value);
+    }
+
+    private static double? ReadRatio(JsonObject raw, string key, double fallback)
+    {
+        if (raw[key] is not JsonValue value)
+        {
+            return fallback;
+        }
+
+        if (!value.TryGetValue<double>(out var result))
+        {
+            return null;
+        }
+
+        try
+        {
+            _ = new ContextBudgetPolicyOptions(NormalTriggerRatio: result, NormalTargetRatio: result).Validate();
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+
+        return result;
     }
 
     private static string ReadString(JsonObject raw, string key, string fallback)

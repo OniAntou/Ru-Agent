@@ -302,6 +302,89 @@ public sealed class SettingsStoreTests
         Assert.False(File.Exists(paths.SettingsFile));
     }
 
+    [Fact]
+    public async Task Read_missing_file_uses_the_compaction_defaults()
+    {
+        var (store, _) = CreateStore();
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0.80, snapshot.CompactionTriggerRatio);
+        Assert.Equal(0.62, snapshot.CompactionTargetRatio);
+    }
+
+    [Fact]
+    public async Task Save_round_trips_compaction_ratios()
+    {
+        var (store, paths) = CreateStore();
+        var current = await store.ReadAsync(CancellationToken.None);
+
+        await store.SaveAsync(
+            current with
+            {
+                CompactionTriggerRatio = 0.75,
+                CompactionTargetRatio = 0.50,
+            },
+            CancellationToken.None);
+
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        Assert.Equal(0.75, persisted["compaction_trigger_ratio"]!.GetValue<double>());
+        Assert.Equal(0.50, persisted["compaction_target_ratio"]!.GetValue<double>());
+
+        var reloaded = await store.ReadAsync(CancellationToken.None);
+        Assert.Equal(0.75, reloaded.CompactionTriggerRatio);
+        Assert.Equal(0.50, reloaded.CompactionTargetRatio);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0.62)]
+    [InlineData(1.5, 0.62)]
+    [InlineData(0.62, 0.62)]
+    [InlineData(0.50, 0.62)]
+    [InlineData(double.NaN, 0.62)]
+    [InlineData(double.PositiveInfinity, 0.62)]
+    public async Task Read_invalid_compaction_ratios_fall_back_to_defaults(
+        double triggerRatio,
+        double targetRatio)
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        var triggerNode = double.IsNaN(triggerRatio) || double.IsInfinity(triggerRatio)
+            ? "null"
+            : triggerRatio.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var targetNode = double.IsNaN(targetRatio) || double.IsInfinity(targetRatio)
+            ? "null"
+            : targetRatio.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        await File.WriteAllTextAsync(paths.SettingsFile, $$"""
+            {
+              "compaction_trigger_ratio": {{triggerNode}},
+              "compaction_target_ratio": {{targetNode}}
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0.80, snapshot.CompactionTriggerRatio);
+        Assert.Equal(0.62, snapshot.CompactionTargetRatio);
+    }
+
+    [Fact]
+    public async Task Read_missing_compaction_ratios_fall_back_to_defaults()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "kilo"
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0.80, snapshot.CompactionTriggerRatio);
+        Assert.Equal(0.62, snapshot.CompactionTargetRatio);
+    }
+
     private static (SettingsStore Store, DataPaths Paths) CreateStore()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-settings-tests", Guid.NewGuid().ToString("N"));

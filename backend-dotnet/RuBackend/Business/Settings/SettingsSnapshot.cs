@@ -13,4 +13,10 @@ public sealed record SettingsSnapshot(
     string CustomModel,
     string CustomUrl,
     string OpenAiModel,
-    string AnthropicModel);
+    string AnthropicModel,
+    double CompactionTriggerRatio = SettingsSnapshot.DefaultCompactionTriggerRatio,
+    double CompactionTargetRatio = SettingsSnapshot.DefaultCompactionTargetRatio)
+{
+    public const double DefaultCompactionTriggerRatio = 0.80;
+    public const double DefaultCompactionTargetRatio = 0.62;
+}

@@ -148,12 +148,12 @@ public sealed class RuInstructionLoader
 
         foreach (var skill in markdownResult.Skills)
         {
-            // Lazy skills (Pi-style): only the name, description, and file path
-            // enter the prompt. The full SKILL.md body stays on disk; the model
-            // reads it with the read tool when the task matches. This keeps the
-            // per-step prompt small no matter how many skills are installed.
+            // Native skill tool (Claude/OpenCode/Pi-style): the prompt carries
+            // only name + description, and the model loads the full SKILL.md
+            // body on demand with the skill tool. This keeps the per-step
+            // prompt small no matter how many skills are installed.
             var sourceId = $"skill:{skill.Id}";
-            var descriptor = SkillDescriptor(skill.Name, skill.Description, skill.SourcePath, skill.ContentSha256);
+            var descriptor = SkillDescriptor(skill.Name, skill.Description, skill.ContentSha256);
             var descriptorBytes = StrictUtf8.GetByteCount(descriptor);
             if (blocks.Count >= SystemPromptContext.MaxInstructionBlocks
                 || combinedBytes > SystemPromptContext.MaxCombinedInstructionBytes - descriptorBytes)
@@ -205,17 +205,16 @@ public sealed class RuInstructionLoader
     }
 
     /// <summary>
-    /// The lazy skill descriptor: name, description, the SKILL.md path to read
-    /// when the task matches, and the body version the receipt pins. The full
-    /// workflow body never enters the prompt; the model pulls it on demand with
-    /// the read tool. The digest still binds the pointed-at workflow version,
-    /// so an edit to SKILL.md between runs cannot pass as reviewed content.
+    /// The skill listing: name + description only. The full SKILL.md workflow
+    /// is loaded on demand with the skill tool; the digest pins the pointed-at
+    /// body version, so an edit to SKILL.md between runs cannot pass as
+    /// reviewed content. allowed-tools stays descriptive metadata only.
     /// </summary>
-    private static string SkillDescriptor(string name, string description, string sourcePath, string bodySha256)
+    private static string SkillDescriptor(string name, string description, string bodySha256)
     {
         var title = string.IsNullOrWhiteSpace(name) ? "Markdown skill" : name.Trim();
         var about = string.IsNullOrWhiteSpace(description) ? "Workspace workflow guidance." : description.Trim();
-        return $"Skill '{title}': {about}\nIts full SKILL.md workflow is not inlined (workflow-sha256: {bodySha256.Trim()}). When the task matches this skill, read it with the read tool at path: {sourcePath.Trim()}\nDo not guess its workflow from the name alone.";
+        return $"Skill '{title}': {about}\nIts full SKILL.md workflow is not inlined (workflow-sha256: {bodySha256.Trim()}). When the task matches this skill, load it with the skill tool (name: {title}). Do not guess its workflow from the name alone.";
     }
 
     private static string SafeSkillSourceId(string sourcePath)

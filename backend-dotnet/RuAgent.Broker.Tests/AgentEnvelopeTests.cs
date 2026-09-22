@@ -82,7 +82,6 @@ public sealed class AgentEnvelopeTests
             {
                 ["status"] = "succeeded",
                 ["scopes"] = new JsonArray("workspace.write"),
-                ["skill_ids"] = new JsonArray(),
             });
 
         var parsed = AgentEnvelopeCodec.Parse(AgentEnvelopeCodec.Serialize(envelope));

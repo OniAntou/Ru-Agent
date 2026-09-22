@@ -14,8 +14,7 @@ public static class CapabilityProfileExtensions
             CapabilityProfile.Agent => new HashSet<string>(
                 [ToolScope.WorkspaceRead, ToolScope.WorkspaceWrite,
                  ToolScope.TerminalExecute, ToolScope.WebSearch, ToolScope.WebFetch,
-                 ToolScope.SystemRead,
-                 ToolScope.SkillExecute], StringComparer.Ordinal),
+                 ToolScope.SystemRead], StringComparer.Ordinal),
             _ => new HashSet<string>(
                 [ToolScope.WorkspaceRead, ToolScope.SystemRead,
                  ToolScope.WebSearch, ToolScope.WebFetch], StringComparer.Ordinal),

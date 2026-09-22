@@ -37,12 +37,10 @@ public sealed class AgentBrokerClientTests
         var grant = await client.OpenSessionAsync(
             "session-1",
             new HashSet<string>(StringComparer.Ordinal) { "workspace.write", "workspace.read" },
-            new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
             CancellationToken.None);
         Assert.Equal(new[] { "workspace.write" }, grant.Scopes);
-        Assert.Empty(grant.SkillIds);
 
         var result = await client.ExecuteToolAsync(
             new AgentToolCall(
@@ -76,7 +74,6 @@ public sealed class AgentBrokerClientTests
         _ = await client.OpenSessionAsync(
             "session-1",
             new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
             CancellationToken.None);
@@ -110,7 +107,6 @@ public sealed class AgentBrokerClientTests
         _ = await client.OpenSessionAsync(
             "session-1",
             new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
             CancellationToken.None);
@@ -191,7 +187,6 @@ public sealed class AgentBrokerClientTests
         _ = await client.OpenSessionAsync(
             "session-1",
             new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal),
             "corr-1",
             2_000,
             CancellationToken.None);
@@ -231,16 +226,6 @@ public sealed class AgentBrokerClientTests
         Assert.True(approval.Payload["approved"]!.GetValue<bool>());
         Assert.DoesNotContain("arguments", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("script", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Client_source_contains_the_bounded_skill_execution_path()
-    {
-        var source = File.ReadAllText(FindSource("AgentBrokerClient.cs"));
-
-        Assert.Contains("ListSkillsAsync", source, StringComparison.Ordinal);
-        Assert.Contains("SkillRoundTripAsync", source, StringComparison.Ordinal);
-        Assert.Contains("AgentMessageTypes.SkillStart", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -396,7 +381,6 @@ public sealed class AgentBrokerClientTests
                         {
                             ["protocol_version"] = 1,
                             ["tools"] = options.Tools.DeepClone(),
-                            ["skills"] = new JsonArray(),
                         }));
                 var request = await ReceiveAsync(socket);
                 lock (requests)
@@ -415,11 +399,10 @@ public sealed class AgentBrokerClientTests
                         {
                             ["status"] = ToolResultStatuses.Succeeded,
                             ["scopes"] = options.SessionScopes.DeepClone(),
-                            ["skill_ids"] = new JsonArray(),
                             ["safe_summary"] = "session opened",
                         }),
                     AgentMessageTypes.SessionClose => (
-                        AgentMessageTypes.SkillResult,
+                        AgentMessageTypes.ToolResult,
                         new JsonObject { ["status"] = ToolResultStatuses.Succeeded }),
                     _ => (AgentMessageTypes.ToolResult, options.ToolResult.DeepClone().AsObject()),
                 };

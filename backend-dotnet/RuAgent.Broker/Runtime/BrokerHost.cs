@@ -9,7 +9,6 @@ using OpenTelemetry.Trace;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Diagnostics;
 using RuAgent.Broker.Policy;
-using RuAgent.Broker.Skills;
 using RuAgent.Broker.Transport;
 using RuAgent.Broker.Tools;
 
@@ -41,8 +40,6 @@ public sealed class BrokerHost : IAsyncDisposable
         _tools = new ToolExecutionService(
             session,
             ResolveWorkspaceRoot(),
-            options?.BuiltinSkills,
-            options?.SkillPackageRoots,
             options?.Web,
             approvalTokens: _authTokens);
         _cleanup = new BrokerCleanup(
@@ -162,16 +159,11 @@ public sealed class BrokerHost : IAsyncDisposable
             profile => _tools.ListCapabilities(profile),
             _tools.ListCapabilities()
                 .SelectMany(capability => capability.Scopes)
-                .Append(ToolScope.SkillExecute)
                 .ToHashSet(StringComparer.Ordinal),
             (request, token) => ExecuteToolAsync(request, token),
             sessionId => _tools.RemoveSession(sessionId),
             pendingV2Store: _pendingV2,
             approvalTokenService: _authTokens,
-            skillListProvider: _tools.ListSkills,
-            skillCatalogProvider: _tools.ListAllSkills,
-            skillResolver: _tools.ResolveSkill,
-            skillExecutor: _tools.ExecuteSkillAsync,
             advertisedCapabilities: _session.AdvertisedCapabilities,
             cleanliness: _cleanliness)
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);

@@ -242,8 +242,7 @@ public sealed class TodoWriteExecutorTests
                 Session_,
                 new HashSet<string>(
                     [RuAgent.Broker.Policy.ToolScope.SystemRead],
-                    StringComparer.Ordinal),
-                new HashSet<string>());
+                    StringComparer.Ordinal));
             return new ToolExecutionService(Session, Root);
         }
 

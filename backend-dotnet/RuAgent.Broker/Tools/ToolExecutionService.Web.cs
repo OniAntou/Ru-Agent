@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
@@ -18,7 +17,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools;
 
-public sealed partial class ToolExecutionService : IToolInvoker
+public sealed partial class ToolExecutionService
 {
     private static HttpClient CreateWebHttpClient() =>
         new(WebConnectionPolicy.CreateHandler(), disposeHandler: true);
@@ -57,6 +56,32 @@ public sealed partial class ToolExecutionService : IToolInvoker
             _helpDocs.Execute(arguments, cancellationToken),
             ToolVerificationStates.NotRequired,
             "Bundled Ru documentation searched."));
+    }
+
+    private ValueTask<ToolExecutionOutcome> ExecuteSkillBodyAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        _ = context;
+        cancellationToken.ThrowIfCancellationRequested();
+        var name = arguments["name"]?.GetValue<string>()?.Trim()
+            ?? throw new ArgumentException("invalid_skill_name");
+        var body = _skillBodies.LoadBody(name);
+        if (body is null)
+        {
+            throw new UnauthorizedAccessException("skill_not_found");
+        }
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            new JsonObject
+            {
+                ["name"] = body.Name,
+                ["description"] = body.Description,
+                ["body"] = body.Body,
+                ["body_sha256"] = body.BodySha256,
+            },
+            ToolVerificationStates.NotRequired,
+            "Workspace skill loaded."));
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(

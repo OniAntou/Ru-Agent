@@ -84,9 +84,9 @@ public sealed class BrokerHostTests
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
         // help and read are system.read; list is workspace.read. All three are
-        // read-only, so the chat profile advertises them alongside grep and glob.
-        Assert.Equal(new[] { "glob", "grep", "help", "list", "read", "todo_write" }, ids);
-        Assert.Empty(hello.Payload["skills"]!.AsArray());
+        // read-only, so the chat profile advertises them alongside grep, glob and skill.
+        Assert.Equal(new[] { "glob", "grep", "help", "list", "read", "skill", "todo_write" }, ids);
+        Assert.Null(hello.Payload["skills"]);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task Session_open_rejects_skill_ids_without_opening_them()
+    public async Task Session_open_ignores_unknown_skill_ids_payload_without_failing()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -217,10 +217,11 @@ public sealed class BrokerHostTests
             cancellation.Token);
         var reply = await ReceiveAsync(socket, cancellation.Token);
 
-        Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
-        Assert.Equal("skill_not_granted", reply.Payload["error_code"]!.GetValue<string>());
-        Assert.Empty(fixture.Host.Session.SkillIds);
-        Assert.False(fixture.Host.Session.IsReady);
+        Assert.Equal(AgentMessageTypes.SessionOpened, reply.MessageType);
+        Assert.Equal(new[] { "workspace.write" }, reply.Payload["scopes"]!.AsArray()
+            .Select(item => item!.GetValue<string>()));
+        Assert.Null(reply.Payload["skill_ids"]);
+        Assert.True(fixture.Host.Session.IsReady);
     }
 
     [Fact]
@@ -256,26 +257,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.SessionOpened, reply.MessageType);
         Assert.Equal(new[] { "workspace.write" }, reply.Payload["scopes"]!.AsArray()
             .Select(item => item!.GetValue<string>()));
-        Assert.Empty(reply.Payload["skill_ids"]!.AsArray());
-
-        await SendAsync(
-            socket,
-            new AgentEnvelope(
-                1,
-                "skill-disabled",
-                AgentMessageTypes.SkillStart,
-                "session-grant",
-                "corr-grant",
-                10_000,
-                new System.Text.Json.Nodes.JsonObject
-                {
-                    ["skill_id"] = "research-note",
-                    ["input"] = new System.Text.Json.Nodes.JsonObject(),
-                }),
-            cancellation.Token);
-        var skillReply = await ReceiveAsync(socket, cancellation.Token);
-        Assert.Equal(ToolResultStatuses.Denied, skillReply.Payload["status"]!.GetValue<string>());
-        Assert.Equal("skill_not_granted", skillReply.Payload["error_code"]!.GetValue<string>());
+        Assert.Null(reply.Payload["skill_ids"]);
     }
 
     [Fact]
@@ -665,7 +647,7 @@ public sealed class BrokerHostTests
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             caps);
     }
 
@@ -704,7 +686,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             caps);
     }
 
@@ -747,7 +729,7 @@ public sealed class BrokerHostTests
         // This fixture runs without a web executor, so the advertised set is the
         // canonical surface minus the two network tools.
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "write" },
             ids);
     }
 

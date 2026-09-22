@@ -700,7 +700,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             new[]
             {
                 "read", "list", "help", "todo_write", "grep", "glob",
-                "write", "edit", "bash", "web_search", "web_fetch",
+                "write", "edit", "bash", "web_search", "web_fetch", "skill",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(

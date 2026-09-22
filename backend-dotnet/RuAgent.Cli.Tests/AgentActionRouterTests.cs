@@ -18,23 +18,21 @@ public sealed class AgentActionRouterTests
     }
 
     [Fact]
-    public void Parser_parses_bounded_skill_json_without_retaining_command_text()
+    public void Parser_parses_skill_name_without_retaining_command_text()
     {
-        var result = AgentActionRouter.Parse("/skill research.and_note {\"path\": \"src\"}");
+        var result = AgentActionRouter.Parse("/skill pdf.analyzer");
 
         Assert.True(result.Success);
-        Assert.Equal("research.and_note", result.Command!.SkillId);
-        Assert.Equal("src", result.Command.JsonInput!["path"]!.GetValue<string>());
-        Assert.DoesNotContain("research.and_note", result.SafeMessage, StringComparison.Ordinal);
+        Assert.Equal("pdf.analyzer", result.Command!.SkillId);
+        Assert.DoesNotContain("pdf.analyzer", result.SafeMessage, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData("/compact")]
     [InlineData("/compact invalid")]
     [InlineData("/help now")]
-    [InlineData("/skill bad-id {}")]
-    [InlineData("/skill demo.skill []")]
-    [InlineData("/skill demo.skill {bad}")]
+    [InlineData("/skill")]
+    [InlineData("/skill bad-id")]
     public void Parser_rejects_malformed_commands_without_an_action(string text)
     {
         var result = AgentActionRouter.Parse(text);
@@ -58,13 +56,9 @@ public sealed class AgentActionRouterTests
     }
 
     [Fact]
-    public void Parser_rejects_oversized_command_and_skill_json()
+    public void Parser_rejects_oversized_command()
     {
         var oversized = AgentActionRouter.Parse("/help " + new string('x', AgentActionRouter.MaxInputBytes));
         Assert.Equal("command_invalid", oversized.Code);
-
-        var oversizedJson = AgentActionRouter.Parse(
-            "/skill demo.skill {\"value\":\"" + new string('x', AgentActionRouter.MaxSkillJsonBytes) + "\"}");
-        Assert.Equal("command_invalid", oversizedJson.Code);
     }
 }

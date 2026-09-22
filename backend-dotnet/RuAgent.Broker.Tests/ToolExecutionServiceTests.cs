@@ -26,9 +26,7 @@ public sealed class ToolExecutionServiceTests
         var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
         session.Open(
             "session-help",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal));
         var workspace = Path.Combine(root, "empty-workspace");
         Directory.CreateDirectory(workspace);
         try
@@ -89,9 +87,7 @@ public sealed class ToolExecutionServiceTests
             "session-terminal-unrestricted",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        session.DirectoryGrants.Add(
+                StringComparer.Ordinal));        session.DirectoryGrants.Add(
             "session-terminal-unrestricted",
             RuAgent.Broker.Policy.CanonicalDirectoryIdentity.CreateExisting(outsideDirectory));
         var service = new ToolExecutionService(session, workspaceRoot);
@@ -201,9 +197,7 @@ public sealed class ToolExecutionServiceTests
             "session-terminal-network-confined",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
             var envelope = new AgentEnvelope(
@@ -280,9 +274,7 @@ public sealed class ToolExecutionServiceTests
             "session-shell-full",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
             var envelope = new AgentEnvelope(
@@ -340,9 +332,7 @@ public sealed class ToolExecutionServiceTests
             "session-shell-agent",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
             var envelope = new AgentEnvelope(
@@ -399,9 +389,7 @@ public sealed class ToolExecutionServiceTests
             "session-edit-safe",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.WorkspaceWrite],
-                StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
             File.WriteAllText(Path.Combine(workspaceRoot, "a.txt"), "hello world");
@@ -536,7 +524,7 @@ public sealed class ToolExecutionServiceTests
             descriptorPath,
             System.Text.Json.JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
         var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
-        session.Open("session-stale", new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
+        session.Open("session-stale", new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
         var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
@@ -583,9 +571,7 @@ public sealed class ToolExecutionServiceTests
             "session-terminal-recognized",
             new HashSet<string>(
                 [RuAgent.Broker.Policy.ToolScope.TerminalExecute],
-                StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+                StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
             var pending = await service.ExecuteAsync(
@@ -642,9 +628,7 @@ public sealed class ToolExecutionServiceTests
         var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
         session.Open(
             "session-terminal-max",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal),
-            new HashSet<string>(StringComparer.Ordinal));
-        var service = new ToolExecutionService(session, workspaceRoot);
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));        var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
             // The v1 contract schema caps timeout_ms at the 30-minute hard maximum, so an

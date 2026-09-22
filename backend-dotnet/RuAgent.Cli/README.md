@@ -40,7 +40,7 @@ agent policy remove <rule-id>
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
 - `command` forwards `/compact normal|aggressive`, `/help`, `/skills`, or
-  `/skill <id> <json-object>` through `AgentApiClient.DispatchCommandAsync`.
+  `/skill <name>` through `AgentApiClient.DispatchCommandAsync`.
   Slash parsing is shared with the Public Host; malformed or unknown commands
   return stable `command_invalid`/`command_unknown` codes and are never sent as
   prompts. Human output prints only bounded metadata; `--json` emits the
@@ -65,12 +65,10 @@ the terminal; notes use `write` with `op=write`. `files.apply_patch`, connectors
 model-usable. Managed startup enables standalone `web_search` (`network.search`) and
 `web_fetch` (`network.fetch`) with Google HTML primary and DuckDuckGo HTML fallback
 (`https://www.google.com/search` → `https://html.duckduckgo.com/html/`); results are bounded and marked untrusted.
-Declarative Skills appear only when explicitly granted and retain normal
-Broker policy/approval checks. Managed startup keeps skill package roots and
-skill bindings opt-in, so a caller still needs an explicit session grant before
-`/skills` or `/skill` can run.
+Workspace SKILL.md bodies are prompt guidance only: `/skills` lists name +
+description, `/skill <name>` loads one body, and the model-side `skill` tool
+loads a body on demand. None of these grant tools, scopes, paths, or approvals.
 Subagents, LSP, extensions, plugins, and MCP are not part of this CLI surface.
-
 All commands ensure the Public Host is running via `PublicHostStarter.GetOrStartAsync` before any API call and use `PublicHostSession` bearer auth.
 
 ## Rendering

@@ -89,43 +89,16 @@ public static class AgentActionRouter
 
     private static AgentCommandParseResult ParseSkill(string remainder)
     {
-        var separator = IndexOfWhitespace(remainder);
-        if (separator <= 0)
+        var skillId = remainder.Trim();
+        if (skillId.Length == 0 || skillId.Length > MaxSkillIdLength || !SkillIdPattern.IsMatch(skillId))
         {
-            return Invalid("Skill requires an id and a JSON object.");
-        }
-
-        var skillId = remainder[..separator];
-        var jsonText = remainder[(separator + 1)..].Trim();
-        if (skillId.Length > MaxSkillIdLength || !SkillIdPattern.IsMatch(skillId))
-        {
-            return Invalid("Skill id is invalid.");
-        }
-
-        if (jsonText.Length == 0 || Encoding.UTF8.GetByteCount(jsonText) > MaxSkillJsonBytes)
-        {
-            return Invalid("Skill input must be a bounded JSON object.");
-        }
-
-        JsonNode? node;
-        try
-        {
-            node = JsonNode.Parse(jsonText);
-        }
-        catch (JsonException)
-        {
-            return Invalid("Skill input is invalid JSON.");
-        }
-
-        if (node is not JsonObject input)
-        {
-            return Invalid("Skill input must be a JSON object.");
+            return Invalid("Skill requires a skill name, e.g. /skill pdf.analyzer.");
         }
 
         return new AgentCommandParseResult(
-            new AgentCommand(AgentCommandKind.Skill, SkillId: skillId, JsonInput: input.DeepClone().AsObject()),
+            new AgentCommand(AgentCommandKind.Skill, SkillId: skillId, JsonInput: new JsonObject()),
             null,
-            "Skill execution requested.");
+            "Skill body requested.");
     }
 
     private static AgentCommandParseResult NoArguments(

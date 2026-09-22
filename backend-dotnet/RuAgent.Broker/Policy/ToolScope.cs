@@ -14,7 +14,6 @@ public static class ToolScope
     public const string TerminalNetwork = "terminal.network";
     public const string WebSearch = AgentToolScopes.NetworkSearch;
     public const string WebFetch = AgentToolScopes.NetworkFetch;
-    public const string SkillExecute = "skill.execute";
     public const string CalendarWrite = "calendar.write";
     public const string TasksWrite = "tasks.write";
     public const string MailRead = "mail.read";
@@ -33,7 +32,6 @@ public static class ToolScope
             TerminalNetwork,
             WebSearch,
             WebFetch,
-            SkillExecute,
             CalendarWrite,
             TasksWrite,
             MailRead,

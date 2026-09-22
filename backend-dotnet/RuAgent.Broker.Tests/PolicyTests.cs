@@ -49,36 +49,9 @@ public sealed class PolicyTests
     }
 
     [Fact]
-    public void Agent_profile_enables_skills_but_chat_does_not()
+    public void Agent_profile_keeps_terminal_network_ungranted()
     {
-        Assert.Contains(ToolScope.SkillExecute, CapabilityProfile.Agent.Scopes());
-        Assert.DoesNotContain(ToolScope.SkillExecute, CapabilityProfile.Chat.Scopes());
         Assert.DoesNotContain(ToolScope.TerminalNetwork, CapabilityProfile.Agent.Scopes());
-    }
-
-    [Fact]
-    public void Skill_policy_requires_explicit_id_and_scope_then_tool_scope()
-    {
-        var engine = new ToolPolicyEngine();
-        var required = new HashSet<string>([ToolScope.SkillExecute, ToolScope.WorkspaceRead]);
-
-        var missingId = engine.EvaluateSkill(
-            new PolicyGrant("s", required, DateTimeOffset.UtcNow.AddMinutes(1), new HashSet<string>()),
-            "demo.skill",
-            required);
-        Assert.Equal("skill_not_granted", missingId.Code);
-
-        var missingSkillScope = engine.EvaluateSkill(
-            new PolicyGrant("s", new HashSet<string>([ToolScope.WorkspaceRead]), DateTimeOffset.UtcNow.AddMinutes(1), new HashSet<string>(["demo.skill"])),
-            "demo.skill",
-            required);
-        Assert.Equal("scope_denied", missingSkillScope.Code);
-
-        var allowed = engine.EvaluateSkill(
-            new PolicyGrant("s", required, DateTimeOffset.UtcNow.AddMinutes(1), new HashSet<string>(["demo.skill"])),
-            "demo.skill",
-            required);
-        Assert.True(allowed.Allowed);
     }
 
     [Fact]

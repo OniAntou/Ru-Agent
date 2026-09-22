@@ -22,7 +22,6 @@ public sealed class BrokerSession
     private readonly object _gate = new();
     private string? _activeSessionId;
     private IReadOnlySet<string> _activeScopes = new HashSet<string>(StringComparer.Ordinal);
-    private IReadOnlySet<string> _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
     private readonly Dictionary<string, BrokerRunLease> _runLeases = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _advertisedCapabilities =
         RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
@@ -76,8 +75,7 @@ public sealed class BrokerSession
 
     public bool Open(
         string sessionId,
-        IReadOnlySet<string>? scopes = null,
-        IReadOnlySet<string>? skillIds = null)
+        IReadOnlySet<string>? scopes = null)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -92,9 +90,6 @@ public sealed class BrokerSession
                 _activeScopes = scopes is null
                     ? new HashSet<string>(StringComparer.Ordinal)
                     : new HashSet<string>(scopes, StringComparer.Ordinal);
-                _activeSkillIds = skillIds is null
-                    ? new HashSet<string>(StringComparer.Ordinal)
-                    : new HashSet<string>(skillIds, StringComparer.Ordinal);
                 return true;
             }
 
@@ -122,17 +117,6 @@ public sealed class BrokerSession
         }
     }
 
-    public IReadOnlySet<string> SkillIds
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return new HashSet<string>(_activeSkillIds, StringComparer.Ordinal);
-            }
-        }
-    }
-
     public void Close(string sessionId)
     {
         lock (_gate)
@@ -153,7 +137,6 @@ public sealed class BrokerSession
             {
                 _activeSessionId = null;
                 _activeScopes = new HashSet<string>(StringComparer.Ordinal);
-                _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
             }
         }
     }

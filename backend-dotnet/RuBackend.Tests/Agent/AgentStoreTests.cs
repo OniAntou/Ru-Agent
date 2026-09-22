@@ -13,7 +13,6 @@ public sealed class AgentStoreTests
         store.Put(new AgentSessionGrant(
             "session-1",
             new HashSet<string>(["workspace.read"]),
-            new HashSet<string>(),
             expiresAt));
 
         Assert.True(store.TryGet("session-1", "workspace.read", out var grant));
@@ -30,7 +29,6 @@ public sealed class AgentStoreTests
         store.Put(new AgentSessionGrant(
             "session-all",
             scopes,
-            new HashSet<string>(StringComparer.Ordinal),
             DateTimeOffset.UtcNow.AddMinutes(1)));
         scopes.Clear();
 

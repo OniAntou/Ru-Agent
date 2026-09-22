@@ -206,8 +206,8 @@ public sealed partial class AgentV1Service
                         {
                             new { name = "/compact", arguments = "normal|aggressive", description = "Compact the run context." },
                             new { name = "/help", arguments = "", description = "List typed Agent commands." },
-                            new { name = "/skills", arguments = "", description = "List skills granted to this session." },
-                            new { name = "/skill", arguments = "<id> <json-object>", description = "Run one granted declarative skill." },
+                            new { name = "/skills", arguments = "", description = "List workspace skills (name + description)." },
+                            new { name = "/skill", arguments = "<name>", description = "Load one workspace skill's SKILL.md body." },
                         },
                     },
                     run.Version);
@@ -245,41 +245,26 @@ public sealed partial class AgentV1Service
         string runIdRaw,
         CancellationToken cancellationToken)
     {
-        if (_agentBrokerClient is null)
+        _ = cancellationToken;
+        var workspaceRoot = ResolveRunWorkspaceRoot(run.RunId);
+        if (workspaceRoot is null)
         {
-            return BoundedError(409, "broker_not_ready", "The Agent Broker is not ready.");
+            return BoundedError(409, "workspace_unknown", "The run has no workspace root.");
         }
 
-        IReadOnlyList<AgentSkillDescriptor> skills;
-        try
+        var loader = new RuBackend.Harness.Prompting.MarkdownSkillLoader();
+        var roots = new[]
         {
-            skills = await _agentBrokerClient
-                .ListSkillsAsync(run.SessionId.Value, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (AgentBrokerException exception)
-        {
-            return BrokerCommandError(exception.Code);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return BoundedError(502, "broker_unavailable", "The Agent Broker could not be reached.");
-        }
-
-        var items = skills
-            .OrderBy(skill => skill.SkillId, StringComparer.Ordinal)
-            .ThenBy(skill => skill.Version, StringComparer.Ordinal)
+            Path.Combine(workspaceRoot, "skills"),
+            Path.Combine(workspaceRoot, ".ru", "skills"),
+        };
+        var loaded = loader.Load(roots);
+        var items = loaded.Skills
+            .OrderBy(skill => skill.Id, StringComparer.Ordinal)
             .Select(skill => new
             {
-                skill_id = skill.SkillId,
-                version = skill.Version,
-                required_scopes = skill.RequiredScopes.Order(StringComparer.Ordinal).ToArray(),
-                required_tools = skill.RequiredTools.Order(StringComparer.Ordinal).ToArray(),
-                trust_class = skill.TrustClass,
+                name = skill.Id,
+                description = skill.Description,
             })
             .ToArray();
         return CommandSucceeded(runIdRaw, "skills", new { items }, run.Version);
@@ -291,92 +276,47 @@ public sealed partial class AgentV1Service
         AgentCommand command,
         CancellationToken cancellationToken)
     {
-        if (_agentBrokerClient is null)
+        _ = cancellationToken;
+        if (command.SkillId is null)
         {
-            return BoundedError(409, "broker_not_ready", "The Agent Broker is not ready.");
+            return BoundedError(400, "command_invalid", "Skill requires a skill name.");
         }
 
-        IReadOnlyList<AgentSkillDescriptor> skills;
-        try
+        var workspaceRoot = ResolveRunWorkspaceRoot(run.RunId);
+        if (workspaceRoot is null)
         {
-            skills = await _agentBrokerClient
-                .ListSkillsAsync(run.SessionId.Value, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (AgentBrokerException exception)
-        {
-            return BrokerCommandError(exception.Code);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return BoundedError(502, "broker_unavailable", "The Agent Broker could not be reached.");
+            return BoundedError(409, "workspace_unknown", "The run has no workspace root.");
         }
 
-        var descriptor = skills
-            .Where(skill => string.Equals(skill.SkillId, command.SkillId, StringComparison.Ordinal))
-            .OrderByDescending(skill => ParseSkillVersion(skill.Version))
-            .ThenByDescending(skill => skill.Version, StringComparer.Ordinal)
-            .FirstOrDefault();
-        if (descriptor is null || command.JsonInput is null || command.SkillId is null)
+        var loader = new RuBackend.Harness.Prompting.MarkdownSkillLoader();
+        var roots = new[]
         {
-            return BoundedError(403, "skill_not_granted", "The requested skill is not granted.");
-        }
-
-        AgentSkillExecutionResult result;
-        try
-        {
-            result = await _agentBrokerClient
-                .ExecuteSkillAsync(
-                    run.SessionId.Value,
-                    command.SkillId,
-                    descriptor.Version,
-                    command.JsonInput,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (AgentBrokerException exception)
-        {
-            return BrokerCommandError(exception.Code);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return BoundedError(502, "broker_unavailable", "The Agent Broker could not be reached.");
-        }
-
-        var data = new
-        {
-            skill_id = result.SkillId,
-            version = result.Version,
-            safe_summary = result.SafeSummary,
-            receipt_id = result.ReceiptId,
-            step_count = result.StepCount,
-            output = result.Output,
+            Path.Combine(workspaceRoot, "skills"),
+            Path.Combine(workspaceRoot, ".ru", "skills"),
         };
-        var response = new DispatchAgentCommandResponse(
+        var loaded = loader.Load(roots);
+        var skill = loaded.Skills.FirstOrDefault(item =>
+            string.Equals(item.Id, command.SkillId, StringComparison.OrdinalIgnoreCase));
+        if (skill is null)
+        {
+            return BoundedError(404, "skill_not_found", "The requested skill was not found.");
+        }
+
+        return CommandSucceeded(
             runIdRaw,
-            result.Status,
-            result.ErrorCode ?? "skill",
-            data,
+            "skill",
+            new
+            {
+                name = skill.Id,
+                description = skill.Description,
+                body = skill.Body,
+                body_sha256 = skill.ContentSha256,
+            },
             run.Version);
-
-        return result.Status switch
-        {
-            ToolResultStatuses.Succeeded => new AgentServiceResult(200, response),
-            ToolResultStatuses.ApprovalRequired => new AgentServiceResult(409, response),
-            ToolResultStatuses.Denied => new AgentServiceResult(403, response),
-            ToolResultStatuses.Cancelled => new AgentServiceResult(409, response),
-            ToolResultStatuses.TimedOut => new AgentServiceResult(504, response),
-            _ => new AgentServiceResult(502, response),
-        };
     }
+
+    private string? ResolveRunWorkspaceRoot(RunId runId) =>
+        _runtimeRoots is not null && _runtimeRoots.TryGetRoot(runId, out var root) ? root : null;
 
     private static AgentServiceResult CommandSucceeded(
         string runId,

@@ -18,7 +18,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools;
 
-public sealed partial class ToolExecutionService : IToolInvoker
+public sealed partial class ToolExecutionService
 {
     // Dispatch coordination: V2 tool.execute is gated in AgentConnection before dispatch:
     //  - tool.evaluate (allow) → authorization_token (60s) → tool.execute
@@ -49,8 +49,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
     private readonly ConcurrentDictionary<string, FileTools> _fileToolsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly TerminalAdapter _terminal;
     private readonly HelpDocsTool _helpDocs;
-    private readonly SkillRegistry _skills;
-    private readonly SkillOrchestrator _skillOrchestrator;
+    private readonly SkillBodyStore _skillBodies;
     private readonly WebOptions _webOptions;
     private readonly WebSearchAdapter? _webSearch;
     private readonly WebFetchAdapter? _webFetch;
@@ -58,8 +57,6 @@ public sealed partial class ToolExecutionService : IToolInvoker
     public ToolExecutionService(
         BrokerSession session,
         string workspaceRoot,
-        IEnumerable<SkillManifest>? builtinSkills = null,
-        IEnumerable<string>? skillPackageRoots = null,
         WebOptions? webOptions = null,
         HttpClient? webHttpClient = null,
         ApprovalTokenService? approvalTokens = null)
@@ -109,36 +106,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
         }
 
         _catalog = new ToolCatalog(BuildExecutors(), _webOptions);
-        _skills = new SkillRegistry();
-        foreach (var skill in builtinSkills ?? Array.Empty<SkillManifest>())
-        {
-            _skills.Register(skill, _catalog.Registry.Manifests);
-        }
-
-        if (skillPackageRoots is not null)
-        {
-            var loader = new SkillPackageLoader();
-            foreach (var packageRoot in skillPackageRoots)
-            {
-                if (string.IsNullOrWhiteSpace(packageRoot))
-                {
-                    continue;
-                }
-
-                var root = Path.GetFullPath(packageRoot);
-                if (!Directory.Exists(root))
-                {
-                    continue;
-                }
-
-                foreach (var directory in Directory.EnumerateDirectories(root))
-                {
-                    _skills.Register(loader.Load(directory), _catalog.Registry.Manifests);
-                }
-            }
-        }
-
-        _skillOrchestrator = new SkillOrchestrator(_catalog.Registry.Manifests, _policy, this);
+        _skillBodies = new SkillBodyStore(_workspace.Root);
     }
 
     public void RemoveSession(string sessionId)
@@ -151,6 +119,28 @@ public sealed partial class ToolExecutionService : IToolInvoker
 
     public void ClearPendingApprovals() => _approvals.Clear();
 
+    public IReadOnlyList<AgentToolCapability> ListCapabilities() =>
+        _catalog.Registry.ListCapabilities();
+
+    public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile) =>
+        _catalog.Registry.ListCapabilities(profile, EnabledWebScopes());
+
+    private IReadOnlySet<string> EnabledWebScopes()
+    {
+        var scopes = new HashSet<string>(StringComparer.Ordinal);
+        if (_webOptions.FetchEnabled)
+        {
+            scopes.Add(ToolScope.WebFetch);
+        }
+
+        if (_webOptions.SearchEnabled)
+        {
+            scopes.Add(ToolScope.WebSearch);
+        }
+
+        return scopes;
+    }
+
     private IReadOnlyDictionary<string, ToolExecutor> BuildExecutors() =>
         BuildExecutorsCore();
 
@@ -162,6 +152,7 @@ public sealed partial class ToolExecutionService : IToolInvoker
             ["list"] = ExecuteListAsync,
             ["help"] = ExecuteHelpAsync,
             ["todo_write"] = ExecuteTodoWriteAsync,
+            ["skill"] = ExecuteSkillBodyAsync,
             ["grep"] = async (context, arguments, token) => ToolExecutionOutcome.Succeeded(
                 await ResolveTools(context, TargetPathOf(arguments)).Search.ExecuteAsync(
                     TranslateGrepArguments(arguments),

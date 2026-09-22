@@ -110,9 +110,9 @@ retried inside the bounded attempt budget and the next attempt carries a short
 instead of failing the run; wire and invariant violations remain terminal.
 
 The Host reads `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
-selected run root, then discovers direct-child Markdown skill directories from
+selected run root, then discovers direct-child skill directories from
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, and
-`%LOCALAPPDATA%\Ru\skills`, in that order. A directory is a Markdown skill
+`%LOCALAPPDATA%\Ru\skills`, in that order. A directory is a skill
 only when it contains a case-insensitive `SKILL.md`. For example:
 
 ```markdown
@@ -135,15 +135,14 @@ restart without a downloader or package manager. Ancillary `references/`,
 `assets/`, and `scripts/` files are ignored by discovery and are not
 automatically read or executed. Context values remain bounded (32 KiB per
 reference and 512 KiB serialized context). Root-selected
-instructions and Markdown skills are followed only as guidance; they cannot
+instructions and skills are followed only as guidance; they cannot
 grant tools, permissions, approvals, paths, network access, or preset changes.
-The Markdown `allowed-tools` field is descriptive only. Runtime
+The `allowed-tools` field is descriptive only. Runtime
 references and tool/search results remain explicitly untrusted.
 
-Markdown skills are prompt guidance, not executable workflows. The existing
-declarative `SkillManifest` format (`skill.json` plus `instructions.md`) remains
-the only path for `/skills` and `/skill` execution and still requires an
-explicit session grant. `RuAgentBroker` remains the sole authority for path
+The `/skills` command lists workspace skill name + description and `/skill <name>`
+loads one SKILL.md body as untrusted guidance; neither executes tools or grants
+anything. `RuAgentBroker` remains the sole authority for path
 canonicalization, capability policy, approvals, and tool execution.
 
 The Worker returns only a versioned SHA-256 receipt. Core validates it against
@@ -157,8 +156,7 @@ no settings field controls their exposure.
 
 Prompt composition is not a security boundary: Broker policy, workspace trust,
 approvals, protected paths, external-directory grants, and cancellation remain
-authoritative. Declarative Skills are available only through explicit session
-grants; subagent orchestration, LSP, extension/plugin/MCP discovery, arbitrary
+authoritative. Subagent orchestration, LSP, extension/plugin/MCP discovery, arbitrary
 system overrides, Chat compatibility, UI redesign, and the OS-enforced
 filesystem/network sandbox are outside this implementation.
 
@@ -283,8 +281,9 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings advertise eleven tools, one purpose each: `read`, `list`,
-`grep`, `glob`, `help`, `todo_write`, `write` with
+The Worker v2 settings advertise twelve tools, one purpose each: `read`, `list`,
+`grep`, `glob`, `help`, `todo_write`, `skill` (loads one workspace SKILL.md
+body on demand), `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
 `web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root
@@ -333,10 +332,6 @@ explicit `untrusted` marker and never become instructions. `read` with
 the public web. `help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
-Declarative Skills are added only from validated manifests explicitly included
-in the session grant; each Skill step re-enters normal tool scope, schema,
-approval, timeout, and output limits. Executable Skill package roots are not
-auto-loaded; the separate Markdown skill roots are prompt guidance only.
 The managed Git commit workflow is shipped inside terminal execution, using a
 temporary index and refusing dirty user index state. Other Git commands remain
 ordinary terminal requests governed by Broker policy. The
@@ -353,7 +348,7 @@ advertised as Agent tools.
 
 The authenticated `POST /agent/v1/runs/{runId}/commands` route handles
 `/compact normal|aggressive`, `/help`, `/skills`, and
-`/skill <id> <json-object>`. `AgentActionRouter` is shared by Public Host and
+`/skill <name>`. `AgentActionRouter` is shared by Public Host and
 CLI, bounds input, rejects unknown or malformed slash commands with stable
 codes, and prevents command text from entering prompts, history, or the
 conversation outbox. `/compact` uses the durable context-compaction contract;
@@ -375,8 +370,7 @@ are rejected as well. Fetched text is wrapped with
 `[untrusted_web_reference]`. These gates are not an OS-enforced network
 sandbox.
 
-Declarative Skills remain the only executable workflow extension surface in
-this checkpoint; Markdown skills are untrusted prompt guidance. Subagents,
+Workspace `SKILL.md` bodies are untrusted prompt guidance. Subagents,
 LSP, extensions, plugins, and MCP are not loaded or discoverable.
 
 Selecting a preset while idle does not add a composer status row, so the empty

@@ -96,10 +96,10 @@ public sealed class RuInstructionLoaderTests
         Assert.All(result.Blocks.Skip(1), block => Assert.Equal(PromptInstructionOrigin.ExternalSkill, block.Origin));
         Assert.Contains(result.Skips, skip => skip.Reason == "duplicate");
         var alpha = result.Blocks.Single(block => block.SourceId == "skill:alpha");
-        // Lazy skills: the prompt carries the name, description, and file path —
-        // never the full workflow body.
+        // Native skill tool: the prompt carries name + description only —
+        // never the full workflow body. The model loads it with the skill tool.
         Assert.Contains("Alpha", alpha.DisplayName, StringComparison.Ordinal);
-        Assert.Contains("SKILL.md", alpha.Content, StringComparison.Ordinal);
+        Assert.Contains("skill tool", alpha.Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Workspace alpha", alpha.Content, StringComparison.Ordinal);
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("Alpha copy", StringComparison.Ordinal));
 

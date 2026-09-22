@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
-using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
@@ -18,7 +17,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools;
 
-public sealed partial class ToolExecutionService : IToolInvoker
+public sealed partial class ToolExecutionService
 {
     private static string ReadCapabilityClass(JsonObject payload)
     {

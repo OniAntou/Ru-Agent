@@ -19,6 +19,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "bash",
         "web_search",
         "web_fetch",
+        "skill",
     ];
 
     private static readonly string[] RetiredIds =
@@ -48,7 +49,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(11, definitions.Count);
+        Assert.Equal(12, definitions.Count);
         Assert.All(RetiredIds, id => Assert.Null(
             AgentToolDefinitionCatalog.Find(id, AgentToolDefinitionCatalog.CurrentVersion)));
     }
@@ -192,6 +193,16 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.DoesNotContain("absolute", help, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("bundled", help, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("never reads workspace files", help, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Skill_definition_loads_body_without_granting_capabilities()
+    {
+        var skill = AgentToolDefinitionCatalog.Find("skill", "1.0.0")!;
+        Assert.Equal(AgentToolScopes.SystemRead, skill.Scope);
+        Assert.True(skill.InputSchema["required"]!.AsArray().Any(item => item!.GetValue<string>() == "name"));
+        Assert.Contains("allowed-tools", skill.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("never grants", skill.Description, StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonObject Properties(string toolId) =>

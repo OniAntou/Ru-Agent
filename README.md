@@ -11,7 +11,7 @@ nothing to install.
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#what-runs)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-3%2C664%20passing-3FB950)](#testing)
-[![Tools](https://img.shields.io/badge/tools-11-8B5CF6)](#tools)
+[![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#tools)
 [![Routes](https://img.shields.io/badge/routes-40%20HTTP-6E7681)](#testing)
 
 </div>
@@ -59,7 +59,7 @@ RuBackend.exe --managed-runtime            127.0.0.1:8000
         ▼                  ▼
 RuAgent.Runtime.Worker            RuAgent.Broker
   127.0.0.1:8005                    dynamic loopback port
-  Worker v2: one step =             11 tools · policy · approvals
+  Worker v2: one step =             12 tools · policy · approvals
   one generate_reply                files · terminal · web
   chat_completions ·                path canonicalization · containment
   openai_responses ·                one Job Object per terminal call
@@ -72,7 +72,7 @@ is the only entry point: it reads the loopback descriptor or starts the Host.
 
 ## Tools
 
-**11 tools**, declared once in `RuAgent.Protocol` (`AgentToolDefinitionCatalog`). The
+**12 tools**, declared once in `RuAgent.Protocol` (`AgentToolDefinitionCatalog`). The
 prompt lists each tool thinly (id, version, one-line purpose); the full schema
 and digest travel through the Worker's `model_tools` and stay digest-bound in
 the prompt receipt, and the Broker **refuses to start** if a manifest disagrees
@@ -91,8 +91,9 @@ with the digest. Every schema is strict (`additionalProperties: false`).
 | `bash` | `mode=run\|shell`, … | Run an executable or script with `timeout_ms`. |
 | `web_search` | `query` (1–512), `max_results` (1–10) | Search the web; approval each time. |
 | `web_fetch` | `url` (≤2048) | Fetch one page; approval each time. |
+| `skill` | `name` | Load one workspace SKILL.md workflow on demand. |
 
-`read`, `list`, `help`, `todo_write`, `grep` and `glob` never prompt. `write`, `edit`
+`read`, `list`, `help`, `todo_write`, `grep`, `glob` and `skill` never prompt. `write`, `edit`
 and `bash` do.
 `web_search` and `web_fetch` always do.
 
@@ -182,7 +183,7 @@ Protocol digest, and the permission vocabulary below must stay accurate.
 │   ├── RuAgent.Runtime.Adapters/      # Three provider dialects
 │   ├── RuAgent.Harness.Core/          # State machines, prompt, tool pipeline
 │   ├── RuAgent.Harness.Persistence/   # SQLite schema v7, AES-GCM, outbox
-│   ├── RuAgent.Protocol/              # 11 tool definitions, envelopes, contracts
+│   ├── RuAgent.Protocol/              # 12 tool definitions, envelopes, contracts
 │   ├── RuAgent.SessionInterchange/    # Other agents' session files, both directions
 │   ├── RuAgent.Hosting/               # Layout, Job Object, descriptor
 │   ├── RuAgent.Client/                # Shared client library

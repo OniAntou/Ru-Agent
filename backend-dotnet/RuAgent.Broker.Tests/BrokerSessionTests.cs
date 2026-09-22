@@ -41,14 +41,13 @@ public sealed class BrokerSessionTests
         using var fixture = DescriptorFixture.Create();
         var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
         var scopes = new HashSet<string>(["workspace.write"], StringComparer.Ordinal);
-        var skills = new HashSet<string>(StringComparer.Ordinal);
 
-        Assert.True(session.Open("session-1", scopes, skills));
-        Assert.False(session.Open("session-2", scopes, skills));
+        Assert.True(session.Open("session-1", scopes));
+        Assert.False(session.Open("session-2", scopes));
 
         session.Close("session-1");
 
-        Assert.True(session.Open("session-2", scopes, skills));
+        Assert.True(session.Open("session-2", scopes));
     }
 
     [Fact]
@@ -96,7 +95,7 @@ public sealed class BrokerSessionTests
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
@@ -177,7 +176,7 @@ public sealed class BrokerSessionTests
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
         Assert.Equal(
-            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "todo_write", "web_fetch", "web_search", "write" },
+            new[] { "bash", "edit", "glob", "grep", "help", "list", "read", "skill", "todo_write", "web_fetch", "web_search", "write" },
             lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 

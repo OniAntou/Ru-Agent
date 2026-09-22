@@ -56,7 +56,7 @@ public sealed class RuPromptContextProviderTests
         var firstSkill = first.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
         var thirdSkill = third.InstructionBlocks.Single(block => block.SourceId == "skill:reloadable");
         Assert.NotEqual(firstSkill.ContentSha256, thirdSkill.ContentSha256);
-        Assert.Contains("SKILL.md", thirdSkill.Content, StringComparison.Ordinal);
+        Assert.Contains("skill tool", thirdSkill.Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("changed skill body", thirdSkill.Content, StringComparison.Ordinal);
         Assert.NotEqual(first.InstructionBlocks[0].ContentSha256, second.InstructionBlocks[0].ContentSha256);
         Assert.Single(first.RuntimeContext.References);
@@ -90,15 +90,15 @@ public sealed class RuPromptContextProviderTests
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web_search");
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web_fetch");
         Assert.Contains(allowed.Capabilities, capability => capability.Id == "read" && capability.Availability == "enabled");
-        Assert.Equal(11, allowed.Capabilities.Count);
-        Assert.Equal(9, denied.Capabilities.Count);
+        Assert.Equal(12, allowed.Capabilities.Count);
+        Assert.Equal(10, denied.Capabilities.Count);
     }
 
     [Theory]
-    [InlineData(false, false, 9)]
-    [InlineData(true, false, 10)]
-    [InlineData(false, true, 10)]
-    [InlineData(true, true, 11)]
+    [InlineData(false, false, 10)]
+    [InlineData(true, false, 11)]
+    [InlineData(false, true, 11)]
+    [InlineData(true, true, 12)]
     public async Task Prompt_and_worker_share_the_same_runtime_projection(bool search, bool fetch, int expectedCount)
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();

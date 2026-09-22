@@ -87,6 +87,7 @@ public sealed class ToolCatalog
         yield return Manifest("bash", ToolScope.TerminalExecute, RiskClass.Reversible, "terminal", workspace: false, requiresApproval: true);
         yield return Manifest("web_search", ToolScope.WebSearch, RiskClass.External, "web", workspace: false, requiresApproval: true);
         yield return Manifest("web_fetch", ToolScope.WebFetch, RiskClass.External, "web", workspace: false, requiresApproval: true);
+        yield return Manifest("skill", ToolScope.SystemRead, RiskClass.Read, "builtin", workspace: false);
     }
 
     private static ToolManifest Manifest(

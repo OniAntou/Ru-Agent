@@ -8,18 +8,15 @@ public sealed record AgentSessionGrant
     public AgentSessionGrant(
         string sessionId,
         IEnumerable<string> scopes,
-        IEnumerable<string> skillIds,
         DateTimeOffset expiresAt)
     {
         SessionId = sessionId;
         Scopes = scopes.ToFrozenSet(StringComparer.Ordinal);
-        SkillIds = skillIds.ToFrozenSet(StringComparer.Ordinal);
         ExpiresAt = expiresAt;
     }
 
     public string SessionId { get; }
     public IReadOnlySet<string> Scopes { get; }
-    public IReadOnlySet<string> SkillIds { get; }
     public DateTimeOffset ExpiresAt { get; }
 }
 
@@ -58,21 +55,3 @@ public sealed record AgentToolResult(
     string? EndpointRole,
     string? EndpointHash,
     bool AdapterInvoked);
-
-public sealed record AgentSkillDescriptor(
-    string SkillId,
-    string Version,
-    IReadOnlySet<string> RequiredScopes,
-    IReadOnlySet<string> RequiredTools,
-    string TrustClass);
-
-public sealed record AgentSkillExecutionResult(
-    string RequestId,
-    string SkillId,
-    string Version,
-    string Status,
-    JsonObject Output,
-    string? ErrorCode,
-    string SafeSummary,
-    string? ReceiptId,
-    int StepCount);

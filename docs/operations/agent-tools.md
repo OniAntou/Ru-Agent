@@ -52,10 +52,11 @@ not advertised Agent tools.
 >   under the policy/approval boundary; the managed Git commit workflow is fully shipped
 >   with temporary index isolation and path attribution rollback.
 >   Typed command dispatch is available through `POST /agent/v1/runs/{runId}/commands`;
->   `/compact`, `/help`, `/skills`, and `/skill <id> {json}` use the shared
->   Protocol parser and do not become model history. Declarative Skills are
->   session-granted and execute through the Broker's existing scope/approval
->   boundary.
+>   `/compact`, `/help`, `/skills`, and `/skill <name>` use the shared
+>   Protocol parser and do not become model history. `/skills` lists workspace
+>   skill name + description; `/skill <name>` loads one SKILL.md body as
+>   untrusted prompt guidance. The `skill` tool lets the model load a body
+>   on demand; neither path grants tools, scopes, paths, or approvals.
 >   Managed startup enables standalone `web_search` and `web_fetch` as
 >   approval-gated capabilities backed by Google HTML search with DuckDuckGo
 >   HTML fallback; results are bounded, sanitized, and explicitly untrusted.
@@ -81,9 +82,9 @@ not advertised Agent tools.
 
 ## Current capability matrix
 
-The immutable Protocol catalog contains 11 model-visible definitions (`read`,
+The immutable Protocol catalog contains 12 model-visible definitions (`read`,
 `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`,
-`web_search`, `web_fetch`). Each tool has one purpose: `read` takes `path` with
+`web_search`, `web_fetch`, `skill`). Each tool has one purpose: `read` takes `path` with
 optional `offset`/`limit` and reads one file; `list` takes `path` with optional
 `max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
@@ -98,7 +99,8 @@ stable sorted relative paths without content access; `grep` takes `query`
 carries `op` (`write`, `delete`, `restore`); `bash` carries `mode`
 (`run`, `shell`).
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
-default 10); `web_fetch` takes `url`. Both are standalone tools with their own
+default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
+workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own
 `network.search`/`network.fetch` scopes and always require one-time approval.
 Google HTML (`https://www.google.com/search`) is the primary search engine
 with DuckDuckGo HTML (`https://html.duckduckgo.com/html/`) as automatic
@@ -117,7 +119,7 @@ boundary.
 | `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion, unknown executables, git `-C` directory overrides, non-inert `git -c key=value` config overrides, and `git config --global`/`--system`/`--file`/`--edit` require one-time approval |
 | `web_search`, `web_fetch` | advertised when managed Web is enabled | approval-gated (`web_approval_required`), bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
-| Declarative Skills | only via explicit session grant and slash command | every step re-enters normal schema, scope, approval, timeout, and output checks |
+| `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
 ### Session folder grants and bash approval
@@ -251,9 +253,8 @@ The Public Host derives `model_tools` from canonical model exposure and runtime
 availability, while the Broker session owns executable scopes and publishes the actual
 resulting grant as `agent.session`. Managed startup enables the Host web
 configuration and the default headless model loop advertises both read-only
-Web bindings through the Broker gateway. Executable Skill package roots and
-`/skills`/`/skill` require explicit session grants; Markdown skill roots are
-prompt guidance and are not executable grants. WinUI renders a received grant;
+Web bindings through the Broker gateway. Workspace `SKILL.md` roots are
+prompt guidance and grant nothing by themselves. WinUI renders a received grant;
 it does not infer workspace, terminal, Web, connector, or skill access.
 
 The Worker emits at most one tool request at a time and at most 10 sequential
@@ -310,7 +311,19 @@ cancellation, and sorts results by ordinal path/line before applying its result
 cap. Bash children receive redirected stdin that is closed immediately;
 TTY/editor-style requests remain rejected by canonical command policy.
 
-### Markdown skill guidance
+### Skill guidance (`SKILL.md`)
+
+Workspace `SKILL.md` guidance follows the Claude/OpenCode/Pi shape: one
+directory per skill, `SKILL.md` with `name` + `description` frontmatter and a
+markdown workflow body. The prompt lists name + description only (with the
+body digest pinning the pointed-at version). The model loads the full body
+on demand with the `skill` tool (`name`), then acts with its normal tools
+under Broker policy. The user-facing `/skills` lists name + description;
+`/skill <name>` loads one body. Neither executes tools by itself.
+
+Skill bodies are untrusted guidance. `allowed-tools` is descriptive metadata
+only: it never grants a tool, scope, path, network permission, approval, or
+Broker capability.
 
 `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` are user-workspace files below
 the selected run root, not repo templates. Minimal format:
@@ -322,7 +335,7 @@ the selected run root, not repo templates. Minimal format:
 - Keep changes minimal and verified.
 ```
 
-Markdown skills are a separate prompt-guidance format. Copy a directory
+Workspace skill roots holding that same `SKILL.md` shape. Copy a directory
 containing a case-insensitive `SKILL.md` into one of the supported roots:
 `<workspace-root>/skills`, `<workspace-root>/.ru/skills`, or
 `%LOCALAPPDATA%\Ru\skills`. A minimal package can look like this:
@@ -347,32 +360,15 @@ advertise or grant tools, scopes, paths, network access, or approvals. Only
 `scripts/` files are ignored and never automatically read or executed; any
 later access still has to use an advertised tool under Broker policy.
 
-Markdown guidance is rendered as untrusted `ExternalSkill` prompt content. It
-does not become a `SkillManifest` executable workflow, does not use
-`skill.json`/`instructions.md`, and does not appear in the executable
-`/skills`/`/skill` session grant. `RuAgentBroker` remains the only authority
+Skill guidance is rendered as untrusted `ExternalSkill` prompt content. It
+uses `SKILL.md` only and never executes tools by itself.
+`RuAgentBroker` remains the only authority
 for canonical paths, capabilities, scopes, approvals, and execution.
-
-Declarative Skills are available at session-open only when their validated
-`SkillManifest` IDs are included in the session grant. `/skills` lists only
-those grants, and `/skill <id> {json}` resolves the highest granted version
-before the Broker rechecks required scopes, tool bindings, schema, step,
-output, and timeout limits. A Skill never bypasses policy or approval, and raw
-step output is not promoted to visible chat. Step `name` values are local
-aliases for readability only; execution always dispatches on the adjacent
-`tool_id`, which must be an advertised binding. A Skill that requires a
-non-advertised binding (for example `calendar.*`, which remains
-experimental/unwired per the capability table) fails closed at validation and
-never executes. `SkillEvent` and `SkillResult`
-failures keep the same bounded identity/state/error shape as successes,
-including when the session is missing, so clients can fail closed without
-parsing raw exceptions. Connectors, workspace search, and application
-launchers remain unadvertised.
 
 ## Typed command channel
 
 `POST /agent/v1/runs/{runId}/commands` accepts only the bounded commands
-`/compact normal|aggressive`, `/help`, `/skills`, and `/skill <id> <json-object>`.
+`/compact normal|aggressive`, `/help`, `/skills`, and `/skill <name>`.
 The shared `AgentActionRouter` rejects unknown or malformed slash commands with
 stable `command_unknown`/`command_invalid` codes, without creating a prompt,
 history entry, or outbox message. `/compact` reuses the durable compaction

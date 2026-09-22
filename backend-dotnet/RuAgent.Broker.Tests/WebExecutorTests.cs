@@ -18,8 +18,7 @@ public sealed class WebExecutorTests
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
             "web-session",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
-            new HashSet<string>());
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]));
         using var http = new HttpClient(new Handler());
         var service = new ToolExecutionService(
             fixture.Session,
@@ -43,7 +42,7 @@ public sealed class WebExecutorTests
     public async Task Service_denies_web_scope_before_http_adapter()
     {
         using var fixture = SessionFixture.Create();
-        fixture.Session.Open("web-session", new HashSet<string>(), new HashSet<string>());
+        fixture.Session.Open("web-session", new HashSet<string>());
         using var http = new HttpClient(new Handler());
         var service = new ToolExecutionService(
             fixture.Session,
@@ -65,8 +64,7 @@ public sealed class WebExecutorTests
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
             "web-session",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
-            new HashSet<string>());
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]));
         using var http = new HttpClient(new JsonHandler());
         var service = new ToolExecutionService(
             fixture.Session,
@@ -88,8 +86,7 @@ public sealed class WebExecutorTests
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
             "web-session",
-            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]),
-            new HashSet<string>());
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceRead, RuAgent.Broker.Policy.ToolScope.SystemRead, RuAgent.Broker.Policy.ToolScope.WebSearch, RuAgent.Broker.Policy.ToolScope.WebFetch]));
         using var http = new HttpClient(new GoogleThenDuckHandler());
         var service = new ToolExecutionService(
             fixture.Session,

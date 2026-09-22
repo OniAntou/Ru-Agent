@@ -155,7 +155,7 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("Use write with op=write to create or overwrite a file, op=delete to remove a file (recoverable once with op=restore).", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("shell scripts, external mutations, direct deletion", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("A trusted session on a clean workspace auto-allows the in-workspace subset", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("A standard session on a clean workspace auto-allows the in-workspace subset", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("pauses for inspection", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("repair hint", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);

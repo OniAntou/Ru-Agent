@@ -8,9 +8,9 @@ namespace RuAgent.Protocol.Harness;
 
 public static class BrokerPolicyContracts
 {
+    public const string PlanPresetWireValue = "plan";
     public const string StandardPresetWireValue = "standard";
     public const string FullAccessPresetWireValue = "full_access";
-    public const string TrustedPresetWireValue = "trusted";
 
     public const string AllowWireValue = "allow";
     public const string AskWireValue = "ask";
@@ -83,9 +83,9 @@ public static class BrokerPolicyContracts
 
     public static string CanonicalizePreset(string preset) => preset switch
     {
+        "plan" => PlanPresetWireValue,
         "standard" => StandardPresetWireValue,
         "full_access" => FullAccessPresetWireValue,
-        "trusted" => TrustedPresetWireValue,
         _ => throw new AgentProtocolException("invalid_preset"),
     };
 

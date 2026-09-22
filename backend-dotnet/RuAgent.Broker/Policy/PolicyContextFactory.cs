@@ -303,7 +303,7 @@ public sealed class PolicyContextFactory
     /// <c>git diff --no-index --output=leak.txt &lt;outside file&gt; &lt;in-workspace file&gt;</c>
     /// records the outside file's contents as diff lines. The analyzer classifies
     /// every <c>--output</c> form as <c>GitMutation</c> (GitCommandAnalyzer), and
-    /// GitMutation is auto-executable and lifted by a clean trusted workspace, so
+    /// GitMutation is auto-executable and lifted by a clean standard workspace, so
     /// the call runs with no approval and no prompt. The evaluator cannot catch it
     /// on its own: it checks the tool's target and working directory, and this
     /// path is neither — it is an operand buried in argv.

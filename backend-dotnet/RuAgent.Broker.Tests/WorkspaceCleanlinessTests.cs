@@ -41,7 +41,7 @@ public sealed class WorkspaceCleanlinessTests
     /// An untracked file is dirt. This is the case that matters most: a secret dropped
     /// into a workspace is normally never staged, and <c>git diff --quiet</c> plus
     /// <c>git diff --cached --quiet</c> both report a clean tree for it, which would
-    /// unlock the trusted preset's auto-allow over a workspace carrying new credentials.
+    /// unlock the standard clean-workspace auto-allow over a workspace carrying new credentials.
     /// </summary>
     [Fact]
     public void Untracked_file_makes_the_workspace_dirty()

@@ -80,37 +80,32 @@ public sealed class AgentSessionPermissionEndpointTests
     }
 
     [Fact]
-    public async Task SessionPreset_Trusted_RequiresInteractive_ThenFlowsToRuns()
+    public async Task SessionPreset_Plan_DoesNotRequireInteractive_ThenFlowsToRuns()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
         using var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
 
-        var body = new { kind = "session_preset", session_id = sessionId, preset = "trusted", expected_version = 0 };
-        using var denied = await client.PostAsJsonAsync("/agent/v1/policies", body);
-        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
-
-        using var interactive = factory.CreateAuthenticatedClient();
-        interactive.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
-        using var resp = await interactive.PostAsJsonAsync("/agent/v1/policies", body);
+        var body = new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 0 };
+        using var resp = await client.PostAsJsonAsync("/agent/v1/policies", body);
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("trusted", json.GetProperty("preset").GetString());
+        Assert.Equal("plan", json.GetProperty("preset").GetString());
         Assert.Equal(1, json.GetProperty("version").GetInt64());
 
         var runBody = new
         {
             session_id = sessionId,
             workspace_path = wsPath,
-            prompt = "trusted run",
-            preset = "trusted",
+            prompt = "plan run",
+            preset = "plan",
             idempotency_key = Guid.NewGuid().ToString("N")
         };
-        using var runResp = await interactive.PostAsJsonAsync("/agent/v1/runs", runBody);
+        using var runResp = await client.PostAsJsonAsync("/agent/v1/runs", runBody);
         Assert.Equal(HttpStatusCode.Created, runResp.StatusCode);
         var runJson = await runResp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("trusted", runJson.GetProperty("preset").GetString());
+        Assert.Equal("plan", runJson.GetProperty("preset").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear();
@@ -237,25 +232,25 @@ public sealed class AgentSessionPermissionEndpointTests
     }
 
     [Fact]
-    public async Task LegacyFullPresetInBodyCreatesStandardRun()
+    public async Task FullAccessRunKeepsStoredFullAccessPreset()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
         using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
         using var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
-        // Set to standard first
+        // Set to full_access first (requires interactive confirmation)
         using var clientInteractive = factory.CreateAuthenticatedClient();
         clientInteractive.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
-        var presetBody = new { kind = "session_preset", session_id = sessionId, preset = "standard", expected_version = 0 };
+        var presetBody = new { kind = "session_preset", session_id = sessionId, preset = "full_access", expected_version = 0 };
         using var presetResp = await clientInteractive.PostAsJsonAsync("/agent/v1/policies", presetBody);
         Assert.Equal(HttpStatusCode.OK, presetResp.StatusCode);
 
-        // Legacy full_access body maps to the same standard behavior.
+        // A full_access run on a full_access session keeps full_access behavior.
         var runBody = new
         {
             session_id = sessionId,
             workspace_path = wsPath,
-            prompt = "legacy full body",
+            prompt = "full access body",
             preset = "full_access",
             preset_selection_version = 1,
             idempotency_key = Guid.NewGuid().ToString("N")
@@ -263,7 +258,7 @@ public sealed class AgentSessionPermissionEndpointTests
         using var runResp = await client.PostAsJsonAsync("/agent/v1/runs", runBody);
         Assert.Equal(HttpStatusCode.Created, runResp.StatusCode);
         var json = await runResp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("standard", json.GetProperty("preset").GetString());
+        Assert.Equal("full_access", json.GetProperty("preset").GetString());
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear();

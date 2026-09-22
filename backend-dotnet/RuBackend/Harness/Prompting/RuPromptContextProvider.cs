@@ -91,8 +91,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             SystemPromptContext.RequiredAgentProfile,
             run.Preset switch
             {
+                AgentPermissionPreset.Plan => "plan",
                 AgentPermissionPreset.FullAccess => "full_access",
-                AgentPermissionPreset.Trusted => "trusted",
                 _ => "standard",
             },
             environment,

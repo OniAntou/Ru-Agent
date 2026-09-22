@@ -216,9 +216,9 @@ public static class PolicySnapshotCanonicalizer
 
     private static string PresetName(AgentPermissionPreset preset) => preset switch
     {
+        AgentPermissionPreset.Plan => "plan",
         AgentPermissionPreset.Standard => "standard",
         AgentPermissionPreset.FullAccess => "full_access",
-        AgentPermissionPreset.Trusted => "trusted",
         _ => throw new ArgumentOutOfRangeException(nameof(preset)),
     };
 

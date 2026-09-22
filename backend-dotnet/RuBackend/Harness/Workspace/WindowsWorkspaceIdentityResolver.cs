@@ -116,8 +116,8 @@ public sealed class WindowsWorkspaceIdentityResolver
     {
         var presetWire = preset switch
         {
+            AgentPermissionPreset.Plan => "plan",
             AgentPermissionPreset.FullAccess => "full_access",
-            AgentPermissionPreset.Trusted => "trusted",
             _ => "standard",
         };
         return CreateBrokerLeaseRequest(

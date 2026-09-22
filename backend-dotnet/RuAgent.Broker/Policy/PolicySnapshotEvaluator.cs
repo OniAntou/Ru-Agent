@@ -99,23 +99,23 @@ public sealed class PolicySnapshotEvaluator
 
         var verdict = EvaluateInner(snapshot, context, invariants, now);
         if (!string.Equals(verdict.Decision, "ask", StringComparison.Ordinal)
-            || !IsTrustedAllowableAsk(verdict.ReasonCode, context)
-            || !string.Equals(snapshot.Preset, BrokerPolicyContracts.TrustedPresetWireValue, StringComparison.Ordinal)
+            || !IsStandardAllowableAsk(verdict.ReasonCode, context)
+            || !string.Equals(snapshot.Preset, BrokerPolicyContracts.StandardPresetWireValue, StringComparison.Ordinal)
             || _cleanliness?.IsWorkspaceClean(context.CanonicalWorkspaceRoot) != true)
         {
             return verdict;
         }
 
-        return new PolicyEvaluation("allow", "trusted_workspace_allow", verdict.MatchedRuleId);
+        return new PolicyEvaluation("allow", "standard_clean_workspace_allow", verdict.MatchedRuleId);
     }
 
     /// <summary>
-    /// The Ask codes a clean trusted workspace may auto-allow. Web egress, timeouts,
+    /// The Ask codes a clean standard workspace may auto-allow. Web egress, timeouts,
     /// explicit user rules and protocol invariants always keep asking: only
     /// in-workspace terminal/delete/external-directory prompts are lifted, and
     /// networked terminal calls stay gated.
     /// </summary>
-    private static bool IsTrustedAllowableAsk(string reasonCode, PolicyContext context) =>
+    private static bool IsStandardAllowableAsk(string reasonCode, PolicyContext context) =>
         reasonCode switch
         {
             "terminal_external_mutation_requires_approval" or "terminal_unknown_executable"
@@ -160,9 +160,21 @@ public sealed class PolicySnapshotEvaluator
             return Deny("protected_path");
         }
 
+        // plan is a read-only gate: every mutation asks or denies, nothing auto-allows.
+        if (string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal)
+            && IsPlanGatedCall(context))
+        {
+            return Ask("plan_preset_requires_approval");
+        }
+
         if (boundary is { IsOutsideWorkspace: true }
             && !_directoryGrants.Contains(context.SessionId, boundary.CanonicalPath))
         {
+            if (string.Equals(snapshot.Preset, BrokerPolicyContracts.FullAccessPresetWireValue, StringComparison.Ordinal))
+            {
+                return Allow("full_access_allow");
+            }
+
             return Ask("external_directory_required");
         }
 
@@ -187,6 +199,33 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
+        // full_access allows everything except hard denies (handled above).
+        // Web approvals are handled below. No approval surfaces.
+        if (string.Equals(snapshot.Preset, BrokerPolicyContracts.FullAccessPresetWireValue, StringComparison.Ordinal))
+        {
+            if (IsWebTool(context))
+            {
+                return Allow("full_access_allow");
+            }
+
+            if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
+            {
+                var timeoutMs = context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs;
+                if (timeoutMs > TerminalLimits.HardMaxTimeoutMs)
+                {
+                    return Deny("timeout_exceeds_hard_max");
+                }
+
+                return new PolicyEvaluation(
+                    "allow",
+                    "full_access_allow",
+                    MatchedRuleId: null,
+                    AnalyzerRiskPending: true);
+            }
+
+            return Allow("full_access_allow");
+        }
+
         // Web tools always ask: network egress is never auto-allowed.
         if (IsWebTool(context))
         {
@@ -195,6 +234,19 @@ public sealed class PolicySnapshotEvaluator
 
         return EffectiveFallback(context);
     }
+
+    /// <summary>
+    /// The plan-gated surface: every mutation-class tool call (write/edit/bash/web)
+    /// needs an explicit decision. Reads never gate here.
+    /// </summary>
+    private static bool IsPlanGatedCall(PolicyContext context) =>
+        string.Equals(context.OperationClass, PolicyOperationClasses.Write, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Edit, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Delete, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Patch, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Mutation, StringComparison.Ordinal)
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal)
+        || IsWebTool(context);
 
     private PolicyEvaluation EffectiveFallback(PolicyContext context)
     {

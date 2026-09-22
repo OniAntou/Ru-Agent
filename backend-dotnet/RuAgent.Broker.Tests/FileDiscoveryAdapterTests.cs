@@ -355,7 +355,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     // ---------- policy tests ----------
 
     [Fact]
-    public void Policy_allows_trusted_workspace_discovery_and_read_in_standard()
+    public void Policy_allows_standard_workspace_discovery_and_read()
     {
         var lease = CreateLease("standard", Path.Combine(_root, "src"));
         var factory = new PolicyContextFactory(lease);
@@ -429,13 +429,13 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Compatibility_full_access_cannot_bypass_protected_paths_or_malformed_input()
+    public void Full_access_cannot_bypass_protected_paths_or_malformed_input()
     {
         var lease = CreateLease("full_access", _root);
         var factory = new PolicyContextFactory(lease);
         var evaluator = new PolicySnapshotEvaluator();
 
-        // Compatibility presets cannot override protected paths.
+        // Full-access cannot override protected paths.
         var protCtx = factory.Create("read", "1.0.0", new JsonObject { ["path"] = ".env.local" });
         var protEval = evaluator.Evaluate(lease.Snapshot, protCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
         Assert.Equal("deny", protEval.Decision);

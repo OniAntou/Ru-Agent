@@ -170,14 +170,13 @@ public sealed partial class AgentV1Service
         }
 
         var presetRaw = request.Preset?.Trim().ToLowerInvariant() ?? string.Empty;
-        // Compatibility metadata: empty means standard; legacy full_access values
-        // are accepted but mapped to the same standard behavior — Full Access no
-        // longer changes policy. Trusted flows through when the session selection
-        // says so (see below); the request string alone never elevates a run.
+        // Session-backed preset ladder: plan / standard / full_access. Empty
+        // means standard; the request string validates only and never elevates
+        // a run — the stored session selection (see below) decides the preset.
         AgentPermissionPreset preset = AgentPermissionPreset.Standard;
-        if (!string.IsNullOrEmpty(presetRaw) && presetRaw != "standard" && presetRaw != "full_access" && presetRaw != "full" && presetRaw != "trusted")
+        if (!string.IsNullOrEmpty(presetRaw) && presetRaw != "plan" && presetRaw != "standard" && presetRaw != "full_access" && presetRaw != "full")
         {
-            return BoundedError(400, "invalid_preset", "preset must be standard, full_access, or trusted.");
+            return BoundedError(400, "invalid_preset", "preset must be plan, standard, or full_access.");
         }
 
         var idempotencyKey = request.IdempotencyKey?.Trim() ?? string.Empty;
@@ -295,13 +294,12 @@ public sealed partial class AgentV1Service
             }
         }
 
-        // The stored session selection is authoritative: an interactively
-        // confirmed Trusted session produces trusted snapshots. The request
-        // string alone never elevates: without a matching stored selection the
-        // run stays standard.
-        if (existingSelection is not null && existingSelection.Preset == AgentPermissionPreset.Trusted)
+        // The stored session selection is authoritative: a run keeps the
+        // stored preset (matching the pre-Task-2 trusted behavior). The request
+        // preset string alone never elevates or restricts a run.
+        if (existingSelection is not null)
         {
-            preset = AgentPermissionPreset.Trusted;
+            preset = existingSelection.Preset;
         }
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
@@ -1014,9 +1012,9 @@ public sealed partial class AgentV1Service
         // for wire compatibility; new runs are always standard.
         Preset: run.Preset switch
         {
+            AgentPermissionPreset.Plan => "plan",
             AgentPermissionPreset.Standard => "standard",
             AgentPermissionPreset.FullAccess => "full_access",
-            AgentPermissionPreset.Trusted => "trusted",
             _ => "standard",
         },
         PolicySnapshotVersion: run.PolicySnapshotVersion,

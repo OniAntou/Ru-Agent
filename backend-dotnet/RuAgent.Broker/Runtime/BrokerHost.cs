@@ -25,7 +25,7 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly PendingApprovalStore _pendingV2 = new();
     private readonly ApprovalTokenService _authTokens = new();
     // One probe per host so its short-lived cleanliness cache survives across
-    // tool evaluations; the trusted preset's auto-allow depends on this answer.
+    // tool evaluations; the standard clean-workspace auto-allow depends on this answer.
     private readonly IWorkspaceCleanlinessProvider _cleanliness = new GitWorkspaceCleanlinessProvider();
     private bool _disposed;
 

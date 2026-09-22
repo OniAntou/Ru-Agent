@@ -16,9 +16,9 @@ public sealed class PolicySnapshotMapperTests
     [Fact]
     public void ToWire_MapsPresetNames()
     {
+        Assert.Equal("plan", MapperWire(AgentPermissionPreset.Plan).Preset);
         Assert.Equal("standard", MapperWire(AgentPermissionPreset.Standard).Preset);
         Assert.Equal("full_access", MapperWire(AgentPermissionPreset.FullAccess).Preset);
-        Assert.Equal("trusted", MapperWire(AgentPermissionPreset.Trusted).Preset);
     }
 
     [Fact]

@@ -65,9 +65,9 @@ public static class PolicySnapshotMapper
 
     private static string PresetName(AgentPermissionPreset preset) => preset switch
     {
+        AgentPermissionPreset.Plan => BrokerPolicyContracts.PlanPresetWireValue,
         AgentPermissionPreset.Standard => BrokerPolicyContracts.StandardPresetWireValue,
         AgentPermissionPreset.FullAccess => BrokerPolicyContracts.FullAccessPresetWireValue,
-        AgentPermissionPreset.Trusted => BrokerPolicyContracts.TrustedPresetWireValue,
         _ => throw new ArgumentOutOfRangeException(nameof(preset), $"Unknown preset '{preset}'."),
     };
 

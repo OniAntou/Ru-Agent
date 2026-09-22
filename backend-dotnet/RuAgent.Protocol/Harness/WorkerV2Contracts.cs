@@ -378,7 +378,7 @@ public static class WorkerV2Contracts
         }
 
         if (!TryGetString(context["preset"], 32, out var preset)
-            || (preset != "standard" && preset != "full_access" && preset != "trusted"))
+            || (preset != "plan" && preset != "standard" && preset != "full_access"))
         {
             throw new AgentProtocolException("invalid_request");
         }

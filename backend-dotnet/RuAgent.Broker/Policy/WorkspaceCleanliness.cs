@@ -5,8 +5,8 @@ namespace RuAgent.Broker.Policy;
 
 /// <summary>
 /// Answers whether a workspace has no tracked modifications. Used only to
-/// unlock the opt-in trusted preset: anything unknown (missing git, errors,
-/// timeouts) reports dirty so evaluation fails closed.
+/// unlock the opt-in standard clean-workspace relaxation: anything unknown
+/// (missing git, errors, timeouts) reports dirty so evaluation fails closed.
 /// </summary>
 public interface IWorkspaceCleanlinessProvider
 {
@@ -46,7 +46,7 @@ public sealed class GitWorkspaceCleanlinessProvider : IWorkspaceCleanlinessProvi
     /// A workspace is clean only when its porcelain status reports nothing at all.
     /// <c>diff --quiet</c> plus <c>diff --cached --quiet</c> is not sufficient: neither
     /// sees an untracked file, so a freshly created and never-committed <c>.env</c> or
-    /// credential file would have counted as clean and unlocked the trusted
+    /// credential file would have counted as clean and unlocked the standard
     /// relaxation over a workspace that is in fact carrying new secrets.
     /// </summary>
     private static bool ProbeClean(string root) =>

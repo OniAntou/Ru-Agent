@@ -42,7 +42,7 @@ public sealed class WorkerUnavailableRetryTests
         new RunId("run_" + new string('a', 32)),
         new ModelStepId("step_" + new string('b', 32)),
         new ModelContextSnapshot([], "[]"u8.ToArray()),
-        AgentPermissionPreset.Trusted,
+        AgentPermissionPreset.Standard,
         policySnapshotVersion: 1,
         policySnapshotSha256: new string('a', 64));
 }

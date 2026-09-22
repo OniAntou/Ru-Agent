@@ -234,9 +234,9 @@ public sealed record SystemPromptContext
             throw new ArgumentException("Unsupported Agent profile.", nameof(agentProfile));
         }
 
-        if (!string.Equals(preset, "standard", StringComparison.Ordinal)
-            && !string.Equals(preset, "full_access", StringComparison.Ordinal)
-            && !string.Equals(preset, "trusted", StringComparison.Ordinal))
+        if (!string.Equals(preset, "plan", StringComparison.Ordinal)
+            && !string.Equals(preset, "standard", StringComparison.Ordinal)
+            && !string.Equals(preset, "full_access", StringComparison.Ordinal))
         {
             throw new ArgumentException("Unsupported Agent preset.", nameof(preset));
         }

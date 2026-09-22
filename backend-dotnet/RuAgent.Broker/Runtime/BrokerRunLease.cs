@@ -74,7 +74,7 @@ public sealed record BrokerRunLease(
             throw new AgentProtocolException("invalid_display_hash");
         }
 
-        if (presetWire is not ("standard" or "full_access" or "trusted"))
+        if (presetWire is not ("plan" or "standard" or "full_access"))
         {
             throw new AgentProtocolException("invalid_preset");
         }

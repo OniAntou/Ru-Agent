@@ -101,7 +101,8 @@ carries `op` (`write`, `delete`, `restore`); `bash` carries `mode`
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own
-`network.search`/`network.fetch` scopes and always require one-time approval.
+`network.search`/`network.fetch` scopes: they ask for one-time approval on the
+`plan` preset and run automatically on `standard` and `full_access`.
 Google HTML (`https://www.google.com/search`) is the primary search engine
 with DuckDuckGo HTML (`https://html.duckduckgo.com/html/`) as automatic
 fallback; a consent/block page with no usable result anchors fails closed as
@@ -117,7 +118,7 @@ boundary.
 | `write` with `op=write`, `edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion, unknown executables, git `-C` directory overrides, non-inert `git -c key=value` config overrides, and `git config --global`/`--system`/`--file`/`--edit` require one-time approval |
-| `web_search`, `web_fetch` | advertised when managed Web is enabled | approval-gated (`web_approval_required`), bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
+| `web_search`, `web_fetch` | advertised when managed Web is enabled | plan-ask (`web_approval_required`), automatic on `standard`/`full_access`, bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
@@ -173,8 +174,8 @@ attribute-free `<tool_call>...</tool_call>` wrapper or an attribute-free leading
 `<tool_call>` followed by a complete JSON object through the end of the response
 for compatibility with providers that emit textual tool markup; malformed, nested,
 prefixed, or suffixed wrappers remain prose and never execute. Runs start in
-the `standard` preset unless the stored session selection says `trusted`
-(`full_access` stays accepted as compatibility metadata mapping to standard).
+the `standard` preset unless the stored session selection says `plan` or
+`full_access`).
 Each
 step allows at most 10 sequential tool selections; exhausting that budget
 forces one final wrap-up answer without tools. Approvals still gate mutating
@@ -394,10 +395,11 @@ the future OS-enforced filesystem/network sandbox.
 ## Agent activity shown in WinUI
 
 Agent is the only supported generation path. The desktop composer uses the
-known project root and exposes one bounded preset selector (`Standard` /
-`Trusted`) plus the model picker; there is no Chat mode switch and no
-workspace editor. The `Trusted` choice needs one explicit confirmation per
-session, is stored server-side with a monotonic version, and flows into runs;
+known project root and exposes one bounded preset selector (`Plan` /
+`Standard` / `Full Access`) plus the model picker; there is no Chat mode switch
+and no workspace editor. The `Full Access` choice needs one explicit
+confirmation per session, is stored server-side with a monotonic version, and
+flows into runs;
 a version conflict surfaces as `preset_mismatch` / `preset_version_conflict`.
 The sidebar
 keeps only primary conversation surfaces; Log, Diagnostics, Policy, and
@@ -408,11 +410,11 @@ or private payload content.
 
 ## Agent permission UX
 
-Every Agent run is session-scoped. The chat composer offers `Standard`
-(default) and opt-in `Trusted`; the Broker remains the only authority and the
-stored session selection decides what a run may do. Host and the UI only
-display the server-selected pending approval kind with one bounded
-message per reason code:
+Every Agent run is session-scoped. The chat composer offers `Plan`
+(read-only), `Standard` (default), and opt-in `Full Access`; the Broker
+remains the only authority and the stored session selection decides what a run
+may do. Host and the UI only display the server-selected pending approval kind
+with one bounded message per reason code:
 
 - `external_directory_required` — Ru cần dùng thư mục ngoài project
   trong đoạn chat này, cho đến khi ứng dụng đóng. The approval opens a
@@ -433,21 +435,21 @@ message per reason code:
   token, never a reusable rule.
 - `web_approval_required` — Ru cần phê duyệt trước khi gọi web bên ngoài.
   The approval returns an ephemeral one-time token, never a reusable rule.
-  Web tools always ask; explicit rules can still deny them first, and managed
-  startup keeps approval-gating on.
+  Web tools ask on the `plan` preset and run automatically on `standard` and
+  `full_access`; explicit rules can still deny them first, and managed
+  startup keeps the bounded web executor on.
 
 Recognized local Git mutations, read-only/test/build/lint run commands are
 auto-allowed (shell scripts always ask); network-affecting external mutations, direct terminal
 deletion, extended timeouts, and unrecognized executables require a single-use approval
-even inside the project root or an approved folder. A `trusted` session on a
+even inside the project root or an approved folder. A `standard` session on a
 clean workspace (no tracked git modifications, 60s cache, fail-closed on
 missing git/errors/timeouts) auto-allows the in-workspace subset above with
-reason `trusted_workspace_allow`; networked terminal calls, web, timeouts,
+reason `standard_clean_workspace_allow`; networked terminal calls, timeouts,
 explicit rule asks, invariants, and protected paths stay gated. The CLI exposes the same model with
 `agent approve <run-id> <approval-id>` and `agent deny`; `agent run` /
-`agent chat` accept `--preset standard|full_access|trusted` (`full_access`
-maps to standard behavior, `trusted` needs interactive confirmation and cannot
-combine with `--json`).
+`agent chat` accept `--preset plan|standard|full_access` (`full_access`
+needs interactive confirmation and cannot combine with `--json`).
 
 The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only

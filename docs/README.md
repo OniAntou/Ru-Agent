@@ -40,10 +40,11 @@ completed plans must be removed from the checkout rather than archived here.
 
 Git history is the recovery source for removed dated plans and specifications.
 
-Agent permissions are session-scoped (`standard` default, opt-in `trusted`
-with interactive confirmation; clean-workspace `trusted` auto-allows the
-in-workspace terminal/external-directory/delete/unknown-executable subset as
-`trusted_workspace_allow`). The current approval reasons are
+Agent permissions are session-scoped (`standard` default, read-only `plan`,
+opt-in `full_access` with interactive confirmation; a clean-workspace
+`standard` session auto-allows the in-workspace
+terminal/external-directory/delete/unknown-executable subset as
+`standard_clean_workspace_allow`). The current approval reasons are
 `external_directory_required`, `terminal_delete_requires_approval`,
 `terminal_external_mutation_requires_approval`,
 `terminal_timeout_requires_approval`, `web_approval_required`, and

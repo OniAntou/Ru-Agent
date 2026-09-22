@@ -208,7 +208,7 @@ via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush`
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
 native TextBox caret/focus behavior and exposes one bounded preset selector
-(`Standard` / `Trusted`); there is no Chat mode switch or workspace editor
+(`Plan` / `Standard` / `Full Access`); there is no Chat mode switch or workspace editor
 in the composer.
 The UI uses the known project root as the initial Agent workspace and does not
 expose a workspace editor, while the authenticated API still validates the
@@ -288,18 +288,19 @@ body on demand), `write` with
 `web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
 `web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root
 or a folder granted to the same live session and applies analyzer decisions to
-terminal requests. A `trusted` session on a clean workspace auto-allows the
+terminal requests. A `standard` session on a clean workspace auto-allows the
 in-workspace terminal/external-directory/delete/unknown-executable subset
-(`trusted_workspace_allow`); web, timeouts, rule asks, invariants, and
+(`standard_clean_workspace_allow`); timeouts, rule asks, invariants, and
 protected paths stay gated. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
 not an OS-enforced filesystem/network sandbox. File tools may
 request an explicit absolute path outside the project; the user can grant that
 canonical directory to all tools in the current live session. The grant is not
 shared with a new or forked session and disappears on restart. Terminal
 deletion, external mutation (network egress, package installs, push/fetch),
-extended timeouts beyond the standard window, shell scripts, web calls when
-approval-gated, and unknown executable launch require approval (unless lifted
-by the clean-workspace `trusted` subset above).
+extended timeouts beyond the standard window, shell scripts, and unknown
+executable launch require approval (unless lifted by the clean-workspace
+`standard` subset above). Web calls ask for approval only on the `plan`
+preset and run automatically on `standard` and `full_access`.
 The model selection channel is active for every Agent run: one budget window
 allows up to 128 model steps and 256 model-initiated tool calls through the
 Agent Broker pipeline (`AgentBudgetPolicy.ModelStepLimit`/`ToolCallLimit`).
@@ -353,6 +354,10 @@ CLI, bounds input, rejects unknown or malformed slash commands with stable
 codes, and prevents command text from entering prompts, history, or the
 conversation outbox. `/compact` uses the durable context-compaction contract;
 the other commands return bounded static or session-scoped data.
+Auto-compaction is tuned by two settings (`compaction_trigger_ratio`
+default `0.80`, `compaction_target_ratio` default `0.62`); values must
+satisfy `0 < target < trigger < 1` and anything else fails closed to the
+defaults.
 
 ### Web access
 
@@ -361,7 +366,9 @@ primary `https://www.google.com/search` and DuckDuckGo HTML automatic fallback
 `https://html.duckduckgo.com/html/`. It
 maps standalone `web_search` to `network.search` and standalone
 `web_fetch` to `network.fetch`;
-the normal Harness policy remains authoritative for each read-only call.
+the normal Harness policy remains authoritative for each read-only call:
+web asks for approval only on the `plan` preset and runs automatically on
+`standard` and `full_access`.
 Redirects are disabled or validated at every hop, private/reserved targets are
 rejected, and response bytes, content types, UTF-8, sanitizer output, and
 citation count are capped. Web payloads are data only and cannot grant tools,

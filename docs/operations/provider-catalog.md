@@ -65,6 +65,16 @@ falling back, so its group disappears from the Chat model picker — and a run
 already pinned by `AgentProviderSnapshotFactory` keeps its snapshot until it
 reaches a terminal state.
 
+## Models.dev provider list
+
+The Host fetches `https://models.dev/api.json` (75+ providers) with a
+15-second timeout and an 8 MiB response limit, cached locally for 24 hours
+(`models-dev.json` under the data root). Offline reads keep the stale cache,
+and no cache fails closed to an empty list. A `models.dev:<provider-id>`
+backend resolves its base URL from that list over `chat_completions`;
+unknown ids fail closed and the URL is never guessed. The five configured
+backends stay as aliases.
+
 ## TUI provider and model pickers
 
 The TUI has no catalog endpoint and cannot store a key, so it lists the models

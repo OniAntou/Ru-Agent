@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Context;
+using RuBackend.Providers;
 
 namespace RuBackend.Business.Settings;
 
@@ -263,6 +264,11 @@ public sealed class SettingsStore : ISettingsStore
 
     private static string NormalizeBackend(string value)
     {
+        if (ProviderSelection.NormalizeModelsDevBackend(value) is { } generic)
+        {
+            return generic;
+        }
+
         return value.Trim().ToLowerInvariant() switch
         {
             "gguf" or "llama.cpp" => BackendOpenCode,

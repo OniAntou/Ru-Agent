@@ -314,6 +314,18 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Read_keeps_models_dev_backend()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """{"backend":"Models.Dev:OpenRouter"}""");
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("models.dev:openrouter", snapshot.Backend);
+    }
+
+    [Fact]
     public async Task Save_round_trips_provider_id()
     {
         var (store, paths) = CreateStore();

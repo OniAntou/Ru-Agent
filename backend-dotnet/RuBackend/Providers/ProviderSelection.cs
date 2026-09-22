@@ -27,7 +27,41 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     /// OpenAI stays exempt because a keyless local endpoint is a supported
     /// configuration.
     /// </summary>
-    public bool RequiresCredential => Alias is "opencode" or "kilo" or "openai" or "anthropic";
+    public bool RequiresCredential => Alias is "opencode" or "kilo" or "openai" or "anthropic" || IsModelsDev;
+
+    public bool IsModelsDev => IsModelsDevBackend(Backend);
+
+    public static bool IsModelsDevBackend(string? backend) =>
+        NormalizeModelsDevBackend(backend) is not null;
+
+    /// <summary>
+    /// Canonical <c>models.dev:&lt;provider-id&gt;</c> form, or null when the value
+    /// is not a generic backend. The id is restricted to a bounded slug so it can
+    /// safely derive credential account names.
+    /// </summary>
+    public static string? NormalizeModelsDevBackend(string? value)
+    {
+        const string prefix = "models.dev:";
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var id = trimmed[prefix.Length..].Trim().ToLowerInvariant();
+        if (id.Length == 0 || id.Length > 64
+            || id.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
+        {
+            return null;
+        }
+
+        return prefix + id;
+    }
 
     public static ProviderSelection From(SettingsSnapshot settings) => Describe(settings.Backend, settings);
 
@@ -48,18 +82,17 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
         "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
         "openai" or "openai api" => "OpenAI",
         "anthropic" or "anthropic claude" or "claude" => "Anthropic",
+        _ when NormalizeModelsDevBackend(alias) is { } generic => generic,
         _ => throw new UnknownProviderAliasException(),
     };
 
     private static ProviderSelection Describe(string backend, SettingsSnapshot settings, IReadOnlyList<ModelsDevProvider>? modelsDevCatalog = null)
     {
-        const string modelsDevPrefix = "models.dev:";
-        if (backend.StartsWith(modelsDevPrefix, StringComparison.OrdinalIgnoreCase))
+        if (NormalizeModelsDevBackend(backend) is { } generic)
         {
-            var id = backend[modelsDevPrefix.Length..].Trim();
-            var provider = string.IsNullOrEmpty(id)
-                ? null
-                : modelsDevCatalog?.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
+            const string prefix = "models.dev:";
+            var id = generic[prefix.Length..];
+            var provider = modelsDevCatalog?.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
             if (provider is null
                 || !Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out var providerUri)
                 || providerUri.Scheme is not ("https" or "http"))
@@ -68,7 +101,7 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
             }
 
             var genericModel = settings.Model?.Trim() ?? string.Empty;
-            return new(backend, provider.Id, "chat_completions", providerUri, genericModel, Account: null);
+            return new(generic, provider.Id, "chat_completions", providerUri, genericModel, provider.Id.ToLowerInvariant() + "_api_key");
         }
 
         var (alias, protocol, url, model, account) = backend switch

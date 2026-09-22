@@ -27,9 +27,9 @@ public sealed class AgentProviderSnapshotFactory(
                     if (await isTerminal(id, ct).ConfigureAwait(false)) _runs.Remove(id);
                 if (_runs.Count >= 64) throw new ProviderCatalogException("provider_snapshot_capacity");
                 var current = await settings.ReadAsync(ct).ConfigureAwait(false);
-                var selected = ProviderSelection.From(current);
+                var selected = await catalog.ResolveSelectionAsync(current, ct).ConfigureAwait(false);
                 var models = await catalog.GetAsync(current, false, ct).ConfigureAwait(false);
-                var options = ProviderReasoningPreferences.Resolve(models, selected.Model, ProviderReasoningPreferences.Read(current));
+                var options = ProviderReasoningPreferences.Resolve(models, selected.Model, ProviderReasoningPreferences.Read(current, selected));
                 var key = selected.Account is null ? "" : await credentials.GetAsync("Ru", selected.Account, ct).ConfigureAwait(false) ?? "";
                 if (selected.Alias is "openai" or "anthropic" && string.IsNullOrWhiteSpace(key))
                     throw new ProviderCatalogException("catalog_unauthorized");

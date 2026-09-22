@@ -57,6 +57,33 @@ public sealed class ProviderCatalogTests : IDisposable
     }
 
     [Fact]
+    public async Task ModelsDev_concurrent_calls_share_one_fetch()
+    {
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = ModelsDevService();
+        _handler.Hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = Enumerable.Range(0, 8).Select(_ => service.GetModelsDevAsync(CancellationToken.None)).ToArray();
+        await _handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        _handler.Hold.SetResult();
+        await Task.WhenAll(calls);
+        Assert.Equal(1, _handler.Count);
+        Assert.All(calls, call => Assert.Equal("openrouter", Assert.Single(call.Result).Id));
+    }
+
+    [Fact]
+    public async Task ModelsDev_corrupt_cache_falls_back_to_fetch()
+    {
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        Directory.CreateDirectory(_root);
+        await File.WriteAllTextAsync(cacheFile, "not-json{{{");
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = new ProviderCatalogService(new HttpClient(_handler), _credentials, _clock, cacheFile);
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("openrouter", Assert.Single(providers).Id);
+        Assert.Equal(1, _handler.Count);
+    }
+
+    [Fact]
     public async Task Generic_models_dev_backend_resolves_base_uri_from_catalog()
     {
         var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter", Model = "x" };
@@ -71,6 +98,57 @@ public sealed class ProviderCatalogTests : IDisposable
     {
         var settings = (await SettingsAsync()) with { Backend = "models.dev:nope" };
         Assert.Throws<ArgumentException>(() => ProviderSelection.From(settings, []));
+    }
+
+    [Fact]
+    public async Task Generic_models_dev_backend_uses_its_own_credential_account()
+    {
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter" };
+        var catalog = new[] { new ModelsDevProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1") };
+        var selection = ProviderSelection.From(settings, catalog);
+        Assert.Equal("openrouter_api_key", selection.Account);
+        Assert.True(selection.RequiresCredential);
+        Assert.True(selection.IsModelsDev);
+    }
+
+    [Fact]
+    public async Task Generic_backend_resolves_catalog_end_to_end()
+    {
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = ModelsDevService();
+        await service.GetModelsDevAsync(CancellationToken.None);
+        _handler.Json = "{\"data\":[{\"id\":\"m1\"}]}";
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter" };
+        var snapshot = await service.GetAsync(settings, false, default);
+        Assert.Equal("ok", snapshot.Status);
+        Assert.Equal(["m1"], snapshot.Models);
+        Assert.Contains("openrouter_api_key", _credentials.Accounts);
+    }
+
+    [Fact]
+    public async Task Generic_alias_resolves_catalog_end_to_end()
+    {
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = ModelsDevService();
+        await service.GetModelsDevAsync(CancellationToken.None);
+        _handler.Json = "{\"data\":[{\"id\":\"m1\"}]}";
+        var settings = await SettingsAsync();
+        var snapshot = await service.GetAsync("Models.Dev:OpenRouter", settings, false, default);
+        Assert.Equal("ok", snapshot.Status);
+        Assert.Equal(["m1"], snapshot.Models);
+    }
+
+    [Fact]
+    public async Task Generic_backend_without_key_fails_closed()
+    {
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = ModelsDevService();
+        await service.GetModelsDevAsync(CancellationToken.None);
+        _credentials.Key = "";
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter" };
+        var snapshot = await service.GetAsync(settings, false, default);
+        Assert.Equal("error", snapshot.Status);
+        Assert.Empty(snapshot.Models);
     }
 
     [Fact]

@@ -8,10 +8,19 @@ public static class ProviderReasoningPreferences
     private const string Field = "reasoning_preferences";
     public const string InvalidChoice = "invalid_saved_choice";
 
-    public static string Read(SettingsSnapshot settings)
+    public static string Read(SettingsSnapshot settings, ProviderSelection? selection = null)
     {
         if (string.IsNullOrWhiteSpace(settings.Backend)) return "default";
-        var selection = ProviderSelection.From(settings);
+        try
+        {
+            selection ??= ProviderSelection.From(settings);
+        }
+        catch (Exception error) when (error is ArgumentException or UnknownProviderAliasException)
+        {
+            // Unresolvable backend (generic without a fetched catalog): no
+            // preference key can be built, so there is nothing to read.
+            return "default";
+        }
         if (settings.Raw.TryGetPropertyValue(Field, out var preferencesNode))
         {
             if (preferencesNode is not JsonObject saved) return InvalidChoice;

@@ -19,6 +19,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     private static readonly TimeSpan ModelsDevCacheTtl = TimeSpan.FromHours(24);
     private readonly string _modelsDevCacheFile = modelsDevCacheFile
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ru", "models-dev.json");
+    private readonly SemaphoreSlim _modelsDevGate = new(1, 1);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _credentialRevisions = new(StringComparer.Ordinal);
@@ -34,17 +35,63 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         public string? Error { get; set; }
     }
 
-    public Task<ProviderCatalogSnapshot> GetAsync(SettingsSnapshot settings, bool refresh, CancellationToken ct) =>
-        GetAsyncCore(ProviderSelection.From(settings), settings, refresh, ct);
+    public async Task<ProviderCatalogSnapshot> GetAsync(SettingsSnapshot settings, bool refresh, CancellationToken ct)
+    {
+        var selection = await ResolveSelectionAsync(settings, ct).ConfigureAwait(false);
+        return await GetAsyncCore(selection, settings, refresh, ct).ConfigureAwait(false);
+    }
 
-    public Task<ProviderCatalogSnapshot> GetAsync(string alias, SettingsSnapshot settings, bool refresh, CancellationToken ct) =>
-        GetAsyncCore(ProviderSelection.From(settings, alias), settings, refresh, ct);
+    public async Task<ProviderCatalogSnapshot> GetAsync(string alias, SettingsSnapshot settings, bool refresh, CancellationToken ct)
+    {
+        if (ProviderSelection.NormalizeModelsDevBackend(alias) is { } generic)
+        {
+            var genericSelection = await ResolveGenericAsync(settings, generic, ct).ConfigureAwait(false);
+            return await GetAsyncCore(genericSelection, settings, refresh, ct).ConfigureAwait(false);
+        }
+
+        return await GetAsyncCore(ProviderSelection.From(settings, alias), settings, refresh, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the effective selection for the stored backend, fetching the
+    /// Models.dev list first when a generic backend is configured.
+    /// </summary>
+    public async Task<ProviderSelection> ResolveSelectionAsync(SettingsSnapshot settings, CancellationToken ct)
+    {
+        if (ProviderSelection.NormalizeModelsDevBackend(settings.Backend) is { } generic)
+        {
+            return await ResolveGenericAsync(settings, generic, ct).ConfigureAwait(false);
+        }
+
+        return ProviderSelection.From(settings);
+    }
+
+    private async Task<ProviderSelection> ResolveGenericAsync(SettingsSnapshot settings, string genericBackend, CancellationToken ct)
+    {
+        var catalog = await GetModelsDevAsync(ct).ConfigureAwait(false);
+        return ProviderSelection.From(settings with { Backend = genericBackend }, catalog);
+    }
 
     /// <summary>
     /// Models.dev provider list (75+ providers). Fresh cache under 24h wins;
     /// offline falls back to the stale cache; no cache fails closed to empty.
     /// </summary>
     public async Task<IReadOnlyList<ModelsDevProvider>> GetModelsDevAsync(CancellationToken ct)
+    {
+        // Single-flight: concurrent callers share one fetch instead of
+        // hammering models.dev once each.
+        await _modelsDevGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await GetModelsDevCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _modelsDevGate.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<ModelsDevProvider>> GetModelsDevCoreAsync(CancellationToken ct)
     {
         var hasCache = TryReadModelsDevCache(out var cachedProviders, out var cacheFresh);
         if (hasCache && cacheFresh)
@@ -385,7 +432,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         var now = clock.GetUtcNow();
         var supportedIds = entry.Models.Where(m => m.Supported).Select(m => m.Id).ToArray();
         return new(entry.Error is null && entry.Success.HasValue ? "ok" : "error",
-            selection.Alias, entry.Identity, selection.Model, ProviderReasoningPreferences.Read(settings),
+            selection.Alias, entry.Identity, selection.Model, ProviderReasoningPreferences.Read(settings, selection),
             supportedIds, entry.Models,
             entry.Success.HasValue && (entry.Error is not null || now - entry.Success.Value >= TimeSpan.FromMinutes(5)),
             entry.Error ?? (entry.Success.HasValue ? null : "catalog_unavailable"), entry.Success)

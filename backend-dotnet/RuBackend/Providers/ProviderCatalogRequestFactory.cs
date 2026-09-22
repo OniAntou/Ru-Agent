@@ -19,6 +19,8 @@ public static class ProviderCatalogRequestFactory
         }
         else if (selection.Alias == "custom" && credential.Length != 0)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
+        else if (selection.IsModelsDev && credential.Length != 0)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         return request;
     }
 

@@ -2010,7 +2010,7 @@ namespace RuApp.Views
                 AgentComposerPresentation.AgentModeName);
             if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex < 0 && AgentPresetBox.Items.Count > 0)
             {
-                AgentPresetBox.SelectedIndex = 0;
+                AgentPresetBox.SelectedIndex = 1;
             }
         }
 
@@ -2021,7 +2021,12 @@ namespace RuApp.Views
             _agentPreset = preset;
             if (AgentPresetBox is not null)
             {
-                AgentPresetBox.SelectedIndex = preset == AgentPermissionPreset.Trusted ? 1 : 0;
+                AgentPresetBox.SelectedIndex = preset switch
+                {
+                    AgentPermissionPreset.Plan => 0,
+                    AgentPermissionPreset.FullAccess => 2,
+                    _ => 1,
+                };
             }
             UpdateAgentInlineState();
         }
@@ -2040,9 +2045,17 @@ namespace RuApp.Views
         private AgentPermissionPreset SelectedAgentPreset()
         {
             if (AgentPresetBox?.SelectedItem is ComboBoxItem item
-                && string.Equals(item.Tag as string, "trusted", StringComparison.Ordinal))
+                && item.Tag is string tag)
             {
-                return AgentPermissionPreset.Trusted;
+                if (string.Equals(tag, "plan", StringComparison.Ordinal))
+                {
+                    return AgentPermissionPreset.Plan;
+                }
+
+                if (string.Equals(tag, "full_access", StringComparison.Ordinal))
+                {
+                    return AgentPermissionPreset.FullAccess;
+                }
             }
 
             return AgentPermissionPreset.Standard;
@@ -2287,9 +2300,9 @@ namespace RuApp.Views
             AbandonActiveAgentReply();
 
             UpdateAgentComposerVisuals();
-            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 0)
+            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 1)
             {
-                AgentPresetBox.SelectedIndex = 0;
+                AgentPresetBox.SelectedIndex = 1;
             }
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             ApprovalPanel.Hide();
@@ -2680,11 +2693,11 @@ namespace RuApp.Views
             try
             {
                 AgentPermissionPreset preset = SelectedAgentPreset();
-                if (preset == AgentPermissionPreset.Trusted && !await ConfirmTrustedAsync())
+                if (preset == AgentPermissionPreset.FullAccess && !await ConfirmFullAccessAsync())
                 {
                     if (AgentPresetBox is not null)
                     {
-                        AgentPresetBox.SelectedIndex = 0;
+                        AgentPresetBox.SelectedIndex = 1;
                     }
                     _agentPreset = AgentPermissionPreset.Standard;
                     UpdateAgentInlineState();
@@ -2693,10 +2706,15 @@ namespace RuApp.Views
 
                 _agentPreset = preset;
                 long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
-                // The trusted choice is stored server-side per session: the run
+                // The preset choice is stored server-side per session: the run
                 // request carries the same wire value so the stored selection and
                 // the run agree, but the stored selection stays authoritative.
-                string wirePreset = preset == AgentPermissionPreset.Trusted ? "trusted" : "standard";
+                string wirePreset = preset switch
+                {
+                    AgentPermissionPreset.Plan => "plan",
+                    AgentPermissionPreset.FullAccess => "full_access",
+                    _ => "standard",
+                };
                 var imagePayloads = attachments?
                     .Where(a => a.IsImage && (!a.IsImage || !string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
                     .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
@@ -3021,7 +3039,12 @@ namespace RuApp.Views
                 return knownVersion;
             }
 
-            string wirePreset = preset == AgentPermissionPreset.Trusted ? "trusted" : "standard";
+            string wirePreset = preset switch
+            {
+                AgentPermissionPreset.Plan => "plan",
+                AgentPermissionPreset.FullAccess => "full_access",
+                _ => "standard",
+            };
             AgentApiException? lastConflict = null;
             for (long expectedVersion = 0; expectedVersion <= 3; expectedVersion++)
             {
@@ -3051,7 +3074,7 @@ namespace RuApp.Views
             throw new InvalidOperationException("Could not update the Agent permission preset.");
         }
 
-        private async Task<bool> ConfirmTrustedAsync()
+        private async Task<bool> ConfirmFullAccessAsync()
         {
             if (XamlRoot is null)
             {
@@ -3060,9 +3083,9 @@ namespace RuApp.Views
 
             var dialog = new ContentDialog
             {
-                Title = "Trust this session?",
-                Content = "Trusted runs with fewer approval prompts on a clean workspace. Risky actions outside the workspace still require approval, and workspace trust is still required.",
-                PrimaryButtonText = "Trust",
+                Title = "Allow Full Access for this session?",
+                Content = "Full Access runs without approval prompts except for hard denies (protected paths and invalid requests). Only use it in a workspace you trust.",
+                PrimaryButtonText = "Allow",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot,

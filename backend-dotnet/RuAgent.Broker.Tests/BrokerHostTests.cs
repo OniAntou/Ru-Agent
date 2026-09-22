@@ -1408,8 +1408,8 @@ public sealed class BrokerHostTests
                 }),
             cts.Token);
         var webReply = await ReceiveAsync(socket, cts.Token);
-        Assert.Equal("ask", webReply.Payload["decision"]!.GetValue<string>());
-        Assert.Equal("web_approval_required", webReply.Payload["reason_code"]!.GetValue<string>());
+        Assert.Equal("allow", webReply.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("standard_web_allow", webReply.Payload["reason_code"]!.GetValue<string>());
     }
 
     [Fact]

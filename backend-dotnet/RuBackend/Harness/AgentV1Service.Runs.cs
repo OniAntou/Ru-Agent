@@ -295,8 +295,8 @@ public sealed partial class AgentV1Service
         }
 
         // The stored session selection is authoritative: a run keeps the
-        // stored preset (matching the pre-Task-2 trusted behavior). The request
-        // preset string alone never elevates or restricts a run.
+        // stored preset. The request preset string alone never elevates
+        // or restricts a run.
         if (existingSelection is not null)
         {
             preset = existingSelection.Preset;

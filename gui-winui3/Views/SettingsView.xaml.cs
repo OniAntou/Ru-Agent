@@ -48,7 +48,12 @@ namespace RuApp.Views
 
         public void SetCurrentPreset(AgentPermissionPreset preset)
         {
-            _presetChoice = preset == AgentPermissionPreset.Trusted ? "trusted" : "standard";
+            _presetChoice = preset switch
+            {
+                AgentPermissionPreset.Plan => "plan",
+                AgentPermissionPreset.FullAccess => "full_access",
+                _ => "standard",
+            };
             RefreshPresetUI();
         }
 
@@ -110,8 +115,9 @@ namespace RuApp.Views
             };
             _presetOptions = new[]
             {
+                new DropdownOption(PresetPlanOption, PresetPlanText, PresetPlanCheck, "plan"),
                 new DropdownOption(PresetStandardOption, PresetStandardText, PresetStandardCheck, "standard"),
-                new DropdownOption(PresetTrustedOption, PresetTrustedText, PresetTrustedCheck, "trusted"),
+                new DropdownOption(PresetFullAccessOption, PresetFullAccessText, PresetFullAccessCheck, "full_access"),
             };
             _providerOptions = new[]
             {
@@ -558,10 +564,27 @@ namespace RuApp.Views
         {
             if (_loading) return;
             if (sender is not Button button || button.Tag is not string tag) return;
-            _presetChoice = string.Equals(tag, "trusted", StringComparison.OrdinalIgnoreCase) ? "trusted" : "standard";
+            if (string.Equals(tag, "plan", StringComparison.OrdinalIgnoreCase))
+            {
+                _presetChoice = "plan";
+            }
+            else if (string.Equals(tag, "full_access", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(tag, "full", StringComparison.OrdinalIgnoreCase))
+            {
+                _presetChoice = "full_access";
+            }
+            else
+            {
+                _presetChoice = "standard";
+            }
             RefreshPresetUI();
             (PresetButton.Flyout as Flyout)?.Hide();
-            var preset = _presetChoice == "trusted" ? AgentPermissionPreset.Trusted : AgentPermissionPreset.Standard;
+            var preset = _presetChoice switch
+            {
+                "plan" => AgentPermissionPreset.Plan,
+                "full_access" => AgentPermissionPreset.FullAccess,
+                _ => AgentPermissionPreset.Standard,
+            };
             PresetChanged?.Invoke(preset);
         }
 

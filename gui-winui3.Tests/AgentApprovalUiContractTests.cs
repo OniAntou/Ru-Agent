@@ -148,7 +148,7 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
-    public void The_composer_preset_offers_standard_and_trusted_only()
+    public void The_composer_preset_offers_the_ladder_only()
     {
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var named = GuiSource.NamedElements(document);
@@ -160,9 +160,10 @@ public sealed class AgentApprovalUiContractTests
             .Where(tag => tag is not null)
             .ToList();
 
+        Assert.Contains("plan", tags);
         Assert.Contains("standard", tags);
-        Assert.Contains("trusted", tags);
-        Assert.DoesNotContain("full_access", tags);
+        Assert.Contains("full_access", tags);
+        Assert.DoesNotContain("trusted", tags);
     }
 
     [Fact]

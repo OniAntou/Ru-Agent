@@ -240,9 +240,9 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Web_tools_always_ask()
+    public void Web_tools_ask_on_plan_preset()
     {
-        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty("plan"));
         var arguments = new JsonObject { ["query"] = "ru" };
 
         var gated = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry());
@@ -252,7 +252,19 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
         Assert.Equal("ask", asked.Decision);
-        Assert.Equal("web_approval_required", asked.ReasonCode);
+        Assert.Equal("plan_preset_requires_approval", asked.ReasonCode);
+    }
+
+    [Fact]
+    public void Standard_preset_allows_web_without_approval()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var verdict = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry()).Evaluate(
+            lease.Snapshot,
+            factory.Create("web_search", "1.0.0", new JsonObject { ["query"] = "ru" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("allow", verdict.Decision);
     }
 
     [Fact]
@@ -652,7 +664,7 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Standard_clean_workspace_never_allows_web_or_timeout_or_protected()
+    public void Standard_clean_workspace_allows_web_but_keeps_timeout_and_protected_gated()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
         var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysClean.Instance);
@@ -660,8 +672,8 @@ public sealed class PolicyEvaluationTests
         var web = evaluator.Evaluate(
             lease.Snapshot, factory.Create("web_search", "1.0.0", new JsonObject { ["query"] = "ru" }),
             PolicyRequestInvariants.Valid, Now);
-        Assert.Equal("ask", web.Decision);
-        Assert.Equal("web_approval_required", web.ReasonCode);
+        Assert.Equal("allow", web.Decision);
+        Assert.Equal("standard_web_allow", web.ReasonCode);
 
         var slow = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "status", 1_000_000), PolicyRequestInvariants.Valid, Now);
         Assert.Equal("ask", slow.Decision);

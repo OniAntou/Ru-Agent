@@ -110,7 +110,7 @@ public sealed class PolicySnapshotEvaluator
     }
 
     /// <summary>
-    /// The Ask codes a clean standard workspace may auto-allow. Web egress, timeouts,
+    /// The Ask codes a clean standard workspace may auto-allow. Timeouts,
     /// explicit user rules and protocol invariants always keep asking: only
     /// in-workspace terminal/delete/external-directory prompts are lifted, and
     /// networked terminal calls stay gated.
@@ -226,9 +226,15 @@ public sealed class PolicySnapshotEvaluator
             return Allow("full_access_allow");
         }
 
-        // Web tools always ask: network egress is never auto-allowed.
+        // Web tools ask on plan only: standard browses without approval
+        // (full_access already allowed above).
         if (IsWebTool(context))
         {
+            if (string.Equals(snapshot.Preset, BrokerPolicyContracts.StandardPresetWireValue, StringComparison.Ordinal))
+            {
+                return Allow("standard_web_allow");
+            }
+
             return Ask("web_approval_required");
         }
 

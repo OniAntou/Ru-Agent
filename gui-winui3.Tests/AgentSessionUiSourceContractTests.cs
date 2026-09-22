@@ -422,12 +422,12 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void The_composer_offers_standard_and_trusted_but_never_the_legacy_value()
+    public void The_composer_offers_the_full_ladder_and_never_the_retired_value()
     {
-        // FullAccess still exists on the enum as legacy wire compatibility, but the
-        // composer must not offer it as a choice.
+        // The composer offers the whole ladder: plan, standard, full_access.
+        Assert.Contains(AgentPermissionPreset.Plan, Enum.GetValues<AgentPermissionPreset>());
         Assert.Contains(AgentPermissionPreset.Standard, Enum.GetValues<AgentPermissionPreset>());
-        Assert.Contains(AgentPermissionPreset.Trusted, Enum.GetValues<AgentPermissionPreset>());
+        Assert.Contains(AgentPermissionPreset.FullAccess, Enum.GetValues<AgentPermissionPreset>());
 
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var presetBox = GuiSource.Require(document, "AgentPresetBox");
@@ -437,9 +437,10 @@ public sealed class AgentSessionUiSourceContractTests
             .Where(tag => tag is not null)
             .ToList();
 
+        Assert.Contains("plan", tags);
         Assert.Contains("standard", tags);
-        Assert.Contains("trusted", tags);
-        Assert.DoesNotContain("full_access", tags);
+        Assert.Contains("full_access", tags);
+        Assert.DoesNotContain("trusted", tags);
     }
 
     [Fact]

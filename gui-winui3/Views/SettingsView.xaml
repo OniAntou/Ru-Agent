@@ -271,7 +271,7 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Standard asks before mutations; Trusted auto-allows workspace actions" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Text="Plan is read-only; Standard asks before mutations; Full Access skips approvals" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Button x:Name="PresetButton"
                                         Grid.Column="1"
@@ -298,6 +298,29 @@
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
                                             <StackPanel Width="260" Spacing="2">
+                                                <Button x:Name="PresetPlanOption"
+                                                        Tag="plan"
+                                                        Click="OnPresetOptionClick"
+                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
+                                                        AutomationProperties.Name="Plan preset">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock x:Name="PresetPlanText"
+                                                                   Text="Plan"
+                                                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource RuInkBrush}"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <FontIcon x:Name="PresetPlanCheck"
+                                                                  Grid.Column="1"
+                                                                  Glyph="&#xE73E;"
+                                                                  FontSize="11"
+                                                                  FontWeight="Bold"
+                                                                  Foreground="{StaticResource RuAccentBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
                                                 <Button x:Name="PresetStandardOption"
                                                         Tag="standard"
                                                         Click="OnPresetOptionClick"
@@ -321,20 +344,20 @@
                                                                   Margin="8,0,0,0" />
                                                     </Grid>
                                                 </Button>
-                                                <Button x:Name="PresetTrustedOption"
-                                                        Tag="trusted"
+                                                <Button x:Name="PresetFullAccessOption"
+                                                        Tag="full_access"
                                                         Click="OnPresetOptionClick"
                                                         Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Trusted preset">
+                                                        AutomationProperties.Name="Full Access preset">
                                                     <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="PresetTrustedText"
-                                                                   Text="Trusted"
+                                                        <TextBlock x:Name="PresetFullAccessText"
+                                                                   Text="Full Access"
                                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                                    FontSize="12.5"
                                                                    Foreground="{StaticResource RuInkBrush}"
                                                                    VerticalAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="PresetTrustedCheck"
+                                                        <FontIcon x:Name="PresetFullAccessCheck"
                                                                   Grid.Column="1"
                                                                   Glyph="&#xE73E;"
                                                                   FontSize="11"

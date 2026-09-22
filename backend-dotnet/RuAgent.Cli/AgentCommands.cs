@@ -111,15 +111,9 @@ public sealed class AgentCommands
         var preset = cmd.Preset;
         long? presetVersion = null;
 
-        if (preset == "full_access" || preset == "full")
+        if (preset != "plan" && preset != "standard" && preset != "full_access")
         {
-            // Compatibility: legacy full_access flag maps to standard behavior.
-            preset = "standard";
-        }
-
-        if (preset != "standard" && preset != "trusted")
-        {
-            await _err.WriteLineAsync("invalid_preset: preset must be standard, full_access, or trusted").ConfigureAwait(false);
+            await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
             return 1;
         }
 

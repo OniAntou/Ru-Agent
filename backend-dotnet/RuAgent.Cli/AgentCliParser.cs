@@ -448,8 +448,8 @@ public static class AgentCliParser
                     return Fail("invalid_preset", "Preset too long.");
                 if (val == "full")
                     val = "full_access";
-                if (val != "standard" && val != "full_access" && val != "trusted")
-                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'standard', 'full_access', or 'trusted'.");
+                if (val != "plan" && val != "standard" && val != "full_access")
+                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'plan', 'standard', or 'full_access'.");
                 preset = val;
                 presetSeen = true;
                 i++;
@@ -502,8 +502,6 @@ public static class AgentCliParser
 
         if (preset == "full_access" && json)
             return Fail("interactive_required", "--json cannot be used with --preset full_access; interactive confirmation required.");
-        if (preset == "trusted" && json)
-            return Fail("interactive_required", "--json cannot be used with --preset trusted; interactive confirmation required.");
 
         return Success(new RunCommand(workspace, prompt, sessionId, preset, json));
     }
@@ -993,8 +991,8 @@ public static class AgentCliParser
                     return Fail("invalid_preset", "Preset too long.");
                 if (val == "full")
                     val = "full_access";
-                if (val != "standard" && val != "full_access" && val != "trusted")
-                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'standard', 'full_access', or 'trusted'.");
+                if (val != "plan" && val != "standard" && val != "full_access")
+                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'plan', 'standard', or 'full_access'.");
                 preset = val;
                 presetSeen = true;
                 i++;

@@ -25,8 +25,8 @@ hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Public Contract**:
-The stable authenticated surface of 40 HTTP method/path pairs with no WebSocket
-route (19 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 41 HTTP method/path pairs with no WebSocket
+route (20 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is

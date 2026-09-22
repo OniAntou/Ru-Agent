@@ -12,7 +12,7 @@ nothing to install.
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-3%2C664%20passing-3FB950)](#testing)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#tools)
-[![Routes](https://img.shields.io/badge/routes-40%20HTTP-6E7681)](#testing)
+[![Routes](https://img.shields.io/badge/routes-41%20HTTP-6E7681)](#testing)
 
 </div>
 
@@ -51,7 +51,7 @@ RuApp.exe (WinUI 3)                 RuAgent.Cli.exe (TUI)
                           │
                           ▼
 RuBackend.exe --managed-runtime            127.0.0.1:8000
-  ASP.NET Core Minimal APIs · 40 routes · loopback bearer
+  ASP.NET Core Minimal APIs · 41 routes · loopback bearer
   sessions · history · durable harness · SQLite WAL
   owns one Windows Job Object (kill-on-close) for the whole child tree
         │                                     │
@@ -142,7 +142,7 @@ running anyway and reporting contention as a defect. That is the whole guard: a 
 reported as a failure, with no retry to blur it, because a retry would hide a genuinely
 flaky test instead of fixing it.
 
-`public-route-contract.json` is the source of truth for the **40 HTTP routes** (19
+`public-route-contract.json` is the source of truth for the **41 HTTP routes** (20
 non-Agent plus 21 under `/agent/v1/*`). A test compares the live `EndpointDataSource`
 against that file, so adding or removing a route without updating it fails CI.
 

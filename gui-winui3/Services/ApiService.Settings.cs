@@ -80,6 +80,23 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<bool> SaveModelsDevKeyAsync(string providerId, string apiKey)
+        {
+            try
+            {
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings",
+                    new { models_dev_provider_id = providerId, models_dev_api_key = apiKey });
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveModelsDevKeyAsync", ex);
+                return false;
+            }
+        }
+
         public async Task<bool> RemoveProviderAsync(string backendChoice)
         {
             try

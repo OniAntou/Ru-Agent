@@ -362,7 +362,9 @@ namespace RuApp.Views
                 CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
                     ? "Saved (leave blank to keep unchanged)"
                     : "sk-...";
-
+                ModelsDevApiKeyBox.Password = string.Empty;
+                ModelsDevKeyStatus.Text = string.Empty;
+                await RefreshModelsDevProvidersAsync();
 
                 {
                 }
@@ -371,6 +373,57 @@ namespace RuApp.Views
                 _providerCatalogController?.SetBackend(_providerChoice);
             }
             _loading = false;
+        }
+
+        /// <summary>
+        /// Lists Models.dev providers for the key row. Best-effort: an empty
+        /// list keeps the row usable for a manually typed provider id.
+        /// </summary>
+        private async Task RefreshModelsDevProvidersAsync()
+        {
+            if (_apiService is null) return;
+            try
+            {
+                var providers = await _apiService.GetModelsDevAsync();
+                var selected = ModelsDevProviderBox.SelectedItem as string;
+                ModelsDevProviderBox.ItemsSource = providers.Select(entry => entry.Id).ToArray();
+                if (selected is not null && providers.Any(entry => entry.Id == selected))
+                {
+                    ModelsDevProviderBox.SelectedItem = selected;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
+            }
+        }
+
+        private async void OnSaveModelsDevKeyClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService is null) return;
+            var providerId = (ModelsDevProviderBox.SelectedItem as string)?.Trim().ToLowerInvariant();
+            var apiKey = ModelsDevApiKeyBox.Password;
+            if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(apiKey))
+            {
+                ModelsDevKeyStatus.Text = "Chọn provider và dán key trước khi lưu.";
+                return;
+            }
+
+            ModelsDevSaveButton.IsEnabled = false;
+            try
+            {
+                bool ok = await _apiService.SaveModelsDevKeyAsync(providerId, apiKey);
+                ModelsDevKeyStatus.Text = ok ? $"Đã lưu key cho {providerId}." : "Lưu thất bại, thử lại.";
+                if (ok)
+                {
+                    ModelsDevApiKeyBox.Password = string.Empty;
+                    await LoadSettingsAsync();
+                }
+            }
+            finally
+            {
+                ModelsDevSaveButton.IsEnabled = true;
+            }
         }
 
         private void UpdateVisibilityForBackend(string choice)

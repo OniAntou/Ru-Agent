@@ -386,6 +386,7 @@ namespace RuApp.Views
                 _selectedModel = currentModel;
                 _selectedBackend = backend;
                 _groupedCatalogs?.SetSelection(backend, currentModel);
+                await RefreshModelsDevGroupsAsync();
                 ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, currentModel);
                 if (_providerCatalogController != null)
                 {
@@ -413,7 +414,27 @@ namespace RuApp.Views
         private async Task RefreshGroupedCatalogsAsync(bool force)
         {
             if (_groupedCatalogs == null) return;
+            await RefreshModelsDevGroupsAsync();
             await _groupedCatalogs.RefreshAsync(force);
+        }
+
+        /// <summary>
+        /// Pulls the Models.dev provider list so the picker grows a group per
+        /// generic provider. Best-effort: an empty list keeps the fixed five.
+        /// </summary>
+        private async Task RefreshModelsDevGroupsAsync()
+        {
+            if (_apiService == null || _groupedCatalogs == null) return;
+            try
+            {
+                var providers = await _apiService.GetModelsDevAsync();
+                await _groupedCatalogs.SetModelsDevProvidersAsync(
+                    providers.Select(entry => new ModelsDevEntry(entry.Id, entry.Name)).ToArray());
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error loading Models.dev providers: {ex.Message}");
+            }
         }
 
         private void OnModelPickerSearchTextChanged(object? sender, string searchText)
@@ -460,7 +481,8 @@ namespace RuApp.Views
                 state.Catalogs.Values,
                 state.SelectedBackend,
                 state.SelectedModel,
-                state.SearchText));
+                state.SearchText,
+                _groupedCatalogs?.CurrentDefinitions));
             UpdateContextUsage();
             UpdateReasoningEffortUi();
         }

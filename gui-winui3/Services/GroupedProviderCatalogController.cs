@@ -19,7 +19,11 @@ public sealed record GroupedProviderCatalogState
 public sealed class GroupedProviderCatalogController : IAsyncDisposable
 {
     private readonly object _gate = new();
+    private readonly ProviderCatalogService _service;
+    private readonly IProviderCatalogClock? _clock;
     private readonly Dictionary<string, ProviderCatalogController> _children = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _modelsDevAliases = new(StringComparer.Ordinal);
+    private IReadOnlyList<ProviderGroupDefinition> _definitions = ProviderGroupDefinitions.All;
     private GroupedProviderCatalogState _state = GroupedProviderCatalogState.Empty;
     private Task<bool>? _flight;
     private bool _pollingActive;
@@ -29,13 +33,68 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
         ProviderCatalogService service,
         IProviderCatalogClock? clock = null)
     {
-        if (service is null) throw new ArgumentNullException(nameof(service));
+        _service = service ?? throw new ArgumentNullException(nameof(service));
+        _clock = clock;
         foreach (var definition in ProviderGroupDefinitions.All)
         {
             var child = new ProviderCatalogController(service, clock: clock);
             child.SetBackend(definition.Alias);
             child.StateChanged += OnChildStateChanged;
             _children[definition.Alias] = child;
+        }
+    }
+
+    public IReadOnlyList<ProviderGroupDefinition> CurrentDefinitions
+    {
+        get { lock (_gate) return _definitions; }
+    }
+
+    /// <summary>
+    /// Replaces the dynamic Models.dev children: providers that disappear lose
+    /// their child (and its state), new ones get a child. The fixed five stay.
+    /// </summary>
+    public async Task SetModelsDevProvidersAsync(IReadOnlyList<ModelsDevEntry> entries)
+    {
+        List<ProviderCatalogController> removed = [];
+        lock (_gate)
+        {
+            if (_disposed) return;
+            var definitions = ProviderGroupDefinitions.WithModelsDev(entries);
+            var wanted = definitions.Select(definition => definition.Alias).ToHashSet(StringComparer.Ordinal);
+            foreach (var alias in _children.Keys.Where(alias => !wanted.Contains(alias)).ToArray())
+            {
+                if (_children.Remove(alias, out var child))
+                {
+                    removed.Add(child);
+                }
+            }
+
+            foreach (var definition in definitions)
+            {
+                if (!_children.ContainsKey(definition.Alias))
+                {
+                    var child = new ProviderCatalogController(_service, clock: _clock);
+                    child.SetBackend(definition.Alias);
+                    child.StateChanged += OnChildStateChanged;
+                    _children[definition.Alias] = child;
+                }
+            }
+
+            _modelsDevAliases.Clear();
+            foreach (var definition in definitions)
+            {
+                if (!ProviderGroupDefinitions.ByAlias.ContainsKey(definition.Alias))
+                {
+                    _modelsDevAliases.Add(definition.Alias);
+                }
+            }
+
+            _definitions = definitions;
+        }
+
+        foreach (var child in removed)
+        {
+            await child.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -179,7 +238,7 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
             // grouped generation cannot resurrect stale data.
             var current = child.State;
             if (string.IsNullOrEmpty(current.Backend) ||
-                !ProviderGroupDefinitions.ByAlias.ContainsKey(current.Backend))
+                (!ProviderGroupDefinitions.ByAlias.ContainsKey(current.Backend) && !_modelsDevAliases.Contains(current.Backend)))
             {
                 return;
             }

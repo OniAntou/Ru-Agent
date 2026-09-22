@@ -62,14 +62,17 @@ public sealed record ProviderModelPickerProjection(
         IEnumerable<ProviderCatalogState>? groups,
         string selectedBackend,
         string selectedModel,
-        string searchText)
+        string searchText,
+        IReadOnlyList<ProviderGroupDefinition>? definitions = null)
     {
+        var list = definitions ?? ProviderGroupDefinitions.All;
+        var known = list.Select(definition => definition.Alias).ToHashSet(StringComparer.Ordinal);
         var states = new Dictionary<string, ProviderCatalogState>(StringComparer.Ordinal);
         if (groups is not null)
         {
             foreach (var state in groups)
             {
-                if (state is not null && ProviderGroupDefinitions.ByAlias.ContainsKey(state.Backend))
+                if (state is not null && known.Contains(state.Backend))
                 {
                     states[state.Backend] = state;
                 }
@@ -77,7 +80,7 @@ public sealed record ProviderModelPickerProjection(
         }
 
         var visible = new List<ProviderModelPickerGroup>();
-        foreach (var definition in ProviderGroupDefinitions.All)
+        foreach (var definition in list)
         {
             if (states.TryGetValue(definition.Alias, out var state) &&
                 BuildGroup(definition, state, selectedBackend, selectedModel, searchText) is { } group)

@@ -48,6 +48,40 @@ public sealed class GroupedProviderCatalogControllerTests
     }
 
     [Fact]
+    public async Task SetModelsDevProviders_adds_dynamic_children_and_publishes_their_state()
+    {
+        var controlled = new ControlledCatalogs();
+        controlled.EnsureSource("models.dev:openrouter");
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
+        await controller.SetModelsDevProvidersAsync([new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        Assert.Contains(
+            controller.CurrentDefinitions,
+            definition => definition.Alias == "models.dev:openrouter");
+
+        var refresh = controller.RefreshAsync(force: true);
+        controlled.Complete("models.dev:openrouter", Snapshot("models.dev:openrouter", "m1"));
+        controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
+        Assert.True(await refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(controller.State.Catalogs.ContainsKey("models.dev:openrouter"));
+    }
+
+    [Fact]
+    public async Task SetModelsDevProviders_removes_retired_dynamic_children()
+    {
+        var controlled = new ControlledCatalogs();
+        controlled.EnsureSource("models.dev:openrouter");
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
+        await controller.SetModelsDevProvidersAsync([new ModelsDevEntry("openrouter", "OpenRouter")]);
+        await controller.SetModelsDevProvidersAsync([]);
+
+        Assert.DoesNotContain(
+            controller.CurrentDefinitions,
+            definition => definition.Alias == "models.dev:openrouter");
+        Assert.DoesNotContain("models.dev:openrouter", controlled.StartedAliases());
+    }
+
+    [Fact]
     public async Task Publishes_each_successful_provider_independently()
     {
         var controlled = new ControlledCatalogs();
@@ -243,6 +277,11 @@ public sealed class GroupedProviderCatalogControllerTests
         public IReadOnlyCollection<string> StartedAliases()
         {
             lock (_gate) return _started.ToArray();
+        }
+
+        public void EnsureSource(string alias)
+        {
+            lock (_gate) _sources.TryAdd(alias, CreateSource());
         }
 
         public void Complete(string alias, ProviderCatalogSnapshot snapshot)

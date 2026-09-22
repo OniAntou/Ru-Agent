@@ -223,6 +223,24 @@ public sealed class ProviderSettingsUpdateDto
 
 }
 
+public sealed class ModelsDevEntryDto
+{
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("base_url")]
+    public string BaseUrl { get; init; } = string.Empty;
+}
+
+public sealed class ModelsDevListDto
+{
+    [JsonPropertyName("providers")]
+    public List<ModelsDevEntryDto> Providers { get; init; } = [];
+}
+
 public sealed class ReasoningSettingsUpdateDto
 {
     [JsonPropertyName("reasoning_effort")]

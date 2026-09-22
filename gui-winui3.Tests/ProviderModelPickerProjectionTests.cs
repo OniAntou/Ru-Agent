@@ -41,6 +41,26 @@ public sealed class ProviderModelPickerProjectionTests
     }
 
     [Fact]
+    public void Dynamic_models_dev_definitions_render_after_the_fixed_groups()
+    {
+        var generic = State("models.dev:openrouter", catalog: [CatalogModel("m1")]);
+        var openCode = State("opencode", catalog: [CatalogModel("opencode/free")]);
+        var definitions = ProviderGroupDefinitions.WithModelsDev([new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        var projection = ProviderModelPickerProjection.Create(
+            groups: [generic, openCode],
+            selectedBackend: "models.dev:openrouter",
+            selectedModel: "m1",
+            searchText: string.Empty,
+            definitions: definitions);
+
+        Assert.Collection(
+            projection.Groups,
+            group => Assert.Equal("opencode", group.Provider.Alias),
+            group => Assert.Equal("models.dev:openrouter", group.Provider.Alias));
+    }
+
+    [Fact]
     public void Groups_render_in_stable_definition_order_regardless_of_arrival_order()
     {
         var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier")]);

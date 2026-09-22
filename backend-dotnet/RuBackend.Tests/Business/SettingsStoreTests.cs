@@ -339,10 +339,17 @@ public sealed class SettingsStoreTests
     [Theory]
     [InlineData(0.0, 0.62)]
     [InlineData(1.5, 0.62)]
+    [InlineData(1.0, 0.62)]
     [InlineData(0.62, 0.62)]
     [InlineData(0.50, 0.62)]
     [InlineData(double.NaN, 0.62)]
     [InlineData(double.PositiveInfinity, 0.62)]
+    [InlineData(0.80, 0.0)]
+    [InlineData(0.80, 1.5)]
+    [InlineData(0.80, 1.0)]
+    [InlineData(0.80, 0.80)]
+    [InlineData(0.80, double.NaN)]
+    [InlineData(0.80, double.PositiveInfinity)]
     public async Task Read_invalid_compaction_ratios_fall_back_to_defaults(
         double triggerRatio,
         double targetRatio)
@@ -383,6 +390,73 @@ public sealed class SettingsStoreTests
 
         Assert.Equal(0.80, snapshot.CompactionTriggerRatio);
         Assert.Equal(0.62, snapshot.CompactionTargetRatio);
+    }
+
+    [Fact]
+    public async Task Read_trigger_at_exactly_one_falls_back_to_defaults()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "compaction_trigger_ratio": 1.0,
+              "compaction_target_ratio": 0.50
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0.80, snapshot.CompactionTriggerRatio);
+        Assert.Equal(0.62, snapshot.CompactionTargetRatio);
+    }
+
+    [Fact]
+    public async Task Read_trigger_just_below_one_is_accepted()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "compaction_trigger_ratio": 0.99,
+              "compaction_target_ratio": 0.50
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(0.99, snapshot.CompactionTriggerRatio);
+        Assert.Equal(0.50, snapshot.CompactionTargetRatio);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0.50)]
+    [InlineData(1.0, 0.50)]
+    [InlineData(1.5, 0.50)]
+    [InlineData(0.50, 0.62)]
+    [InlineData(0.80, 0.0)]
+    [InlineData(0.80, 1.5)]
+    public async Task Save_invalid_compaction_ratios_persist_defaults(
+        double triggerRatio,
+        double targetRatio)
+    {
+        var (store, paths) = CreateStore();
+        var current = await store.ReadAsync(CancellationToken.None);
+
+        await store.SaveAsync(
+            current with
+            {
+                CompactionTriggerRatio = triggerRatio,
+                CompactionTargetRatio = targetRatio,
+            },
+            CancellationToken.None);
+
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        Assert.Equal(0.80, persisted["compaction_trigger_ratio"]!.GetValue<double>());
+        Assert.Equal(0.62, persisted["compaction_target_ratio"]!.GetValue<double>());
+
+        var reloaded = await store.ReadAsync(CancellationToken.None);
+        Assert.Equal(0.80, reloaded.CompactionTriggerRatio);
+        Assert.Equal(0.62, reloaded.CompactionTargetRatio);
     }
 
     private static (SettingsStore Store, DataPaths Paths) CreateStore()

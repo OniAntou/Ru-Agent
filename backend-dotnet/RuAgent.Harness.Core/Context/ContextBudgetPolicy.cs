@@ -9,10 +9,30 @@ public enum ContextCompactionStrategy
 public sealed record ContextBudgetPolicyOptions(
     long OutputReserveTokens = 256,
     long SafetyMarginTokens = 64,
-    double NormalTriggerRatio = 0.80,
-    double NormalTargetRatio = 0.62,
+    double NormalTriggerRatio = ContextBudgetPolicyOptions.DefaultNormalTriggerRatio,
+    double NormalTargetRatio = ContextBudgetPolicyOptions.DefaultNormalTargetRatio,
     double AggressiveTargetRatio = 0.48)
 {
+    /// <summary>
+    /// Single source for the compaction trigger default. Backend settings
+    /// consts mirror this value (see SettingsSnapshot).
+    /// </summary>
+    public const double DefaultNormalTriggerRatio = 0.80;
+
+    /// <summary>
+    /// Single source for the compaction target default (see above).
+    /// </summary>
+    public const double DefaultNormalTargetRatio = 0.62;
+
+    /// <summary>
+    /// Finite, positive ratios within the policy range. Note this allows
+    /// exactly 1.0: the compaction settings layer additionally requires
+    /// trigger &lt; 1 (0 &lt; target &lt; trigger &lt; 1) and fails closed to
+    /// defaults, so 1.0 never reaches a policy from settings.
+    /// </summary>
+    public static bool IsValidRatio(double value) =>
+        !double.IsNaN(value) && !double.IsInfinity(value) && value > 0 && value <= 1;
+
     public ContextBudgetPolicyOptions Validate()
     {
         if (OutputReserveTokens < 0)
@@ -33,7 +53,7 @@ public sealed record ContextBudgetPolicyOptions(
 
     private static void ValidateRatio(double value, string parameterName)
     {
-        if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0 || value > 1)
+        if (!IsValidRatio(value))
         {
             throw new ArgumentOutOfRangeException(parameterName);
         }

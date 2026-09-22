@@ -97,17 +97,16 @@ public sealed class AgentRunCoordinator
     /// Builds a <see cref="ContextBudgetPolicy"/> from settings compaction ratios,
     /// falling back to <see cref="ContextBudgetPolicyOptions"/> defaults so every
     /// call site keeps working and an invalid pair can never break the run
-    /// (fail-closed to defaults).
+    /// (fail-closed to defaults). Spec: 0 &lt; target &lt; trigger &lt; 1.
     /// </summary>
     public static ContextBudgetPolicy CreateBudgetPolicy(
-        double triggerRatio = 0.80,
-        double targetRatio = 0.62)
+        double triggerRatio = ContextBudgetPolicyOptions.DefaultNormalTriggerRatio,
+        double targetRatio = ContextBudgetPolicyOptions.DefaultNormalTargetRatio)
     {
-        if (double.IsNaN(triggerRatio)
-            || double.IsInfinity(triggerRatio)
-            || double.IsNaN(targetRatio)
-            || double.IsInfinity(targetRatio)
-            || !(targetRatio < triggerRatio))
+        if (!ContextBudgetPolicyOptions.IsValidRatio(triggerRatio)
+            || !ContextBudgetPolicyOptions.IsValidRatio(targetRatio)
+            || !(targetRatio < triggerRatio)
+            || triggerRatio >= 1)
         {
             return new ContextBudgetPolicy();
         }

@@ -89,6 +89,18 @@ public sealed class SettingsStore : ISettingsStore
         ArgumentNullException.ThrowIfNull(candidate);
         Validate(candidate);
 
+        // Fail-closed: an invalid pair can never be persisted. Normalize here
+        // so the file always holds a usable pair even when the caller saved a
+        // snapshot it built (or edited) without going through Read.
+        var (triggerRatio, targetRatio) = NormalizeCompactionRatios(
+            candidate.CompactionTriggerRatio,
+            candidate.CompactionTargetRatio);
+        candidate = candidate with
+        {
+            CompactionTriggerRatio = triggerRatio,
+            CompactionTargetRatio = targetRatio,
+        };
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -264,17 +276,38 @@ public sealed class SettingsStore : ISettingsStore
     private static (double TriggerRatio, double TargetRatio) ReadCompactionRatios(JsonObject raw)
     {
         // Fail-closed: missing/invalid pairs fall back to defaults. Range and
-        // finiteness checks reuse ContextBudgetPolicyOptions validation so the
-        // rule lives in exactly one place; the target < trigger ordering is the
-        // settings-level addition (the policy validates each ratio alone).
+        // finiteness checks reuse ContextBudgetPolicyOptions.IsValidRatio so the
+        // rule lives in exactly one place; the 0 < target < trigger < 1
+        // ordering is the settings-level addition (the policy validates each
+        // ratio alone and allows exactly 1.0, which settings rejects).
         var trigger = ReadRatio(raw, "compaction_trigger_ratio", SettingsSnapshot.DefaultCompactionTriggerRatio);
         var target = ReadRatio(raw, "compaction_target_ratio", SettingsSnapshot.DefaultCompactionTargetRatio);
-        if (trigger is null || target is null || !(target < trigger))
+        if (trigger is null || target is null)
         {
             return (SettingsSnapshot.DefaultCompactionTriggerRatio, SettingsSnapshot.DefaultCompactionTargetRatio);
         }
 
-        return (trigger.Value, target.Value);
+        return NormalizeCompactionRatios(trigger.Value, target.Value);
+    }
+
+    /// <summary>
+    /// Enforces the compaction spec (0 &lt; target &lt; trigger &lt; 1),
+    /// fail-closed to defaults. Shared by the read path and <see cref="SaveAsync"/>
+    /// so an invalid pair can never be returned or persisted.
+    /// </summary>
+    private static (double TriggerRatio, double TargetRatio) NormalizeCompactionRatios(
+        double triggerRatio,
+        double targetRatio)
+    {
+        if (!ContextBudgetPolicyOptions.IsValidRatio(triggerRatio)
+            || !ContextBudgetPolicyOptions.IsValidRatio(targetRatio)
+            || !(targetRatio < triggerRatio)
+            || triggerRatio >= 1)
+        {
+            return (SettingsSnapshot.DefaultCompactionTriggerRatio, SettingsSnapshot.DefaultCompactionTargetRatio);
+        }
+
+        return (triggerRatio, targetRatio);
     }
 
     private static double? ReadRatio(JsonObject raw, string key, double fallback)
@@ -289,11 +322,7 @@ public sealed class SettingsStore : ISettingsStore
             return null;
         }
 
-        try
-        {
-            _ = new ContextBudgetPolicyOptions(NormalTriggerRatio: result, NormalTargetRatio: result).Validate();
-        }
-        catch (ArgumentOutOfRangeException)
+        if (!ContextBudgetPolicyOptions.IsValidRatio(result))
         {
             return null;
         }

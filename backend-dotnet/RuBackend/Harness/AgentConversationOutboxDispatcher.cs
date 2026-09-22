@@ -61,7 +61,8 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
             throw new InvalidOperationException("runtime_root_unknown");
         }
 
-        var coordinator = _factory.Create(workspaceRoot, policySnapshot, runId);
+        var coordinator = await _factory.CreateAsync(workspaceRoot, policySnapshot, runId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
         _ = await coordinator.AcknowledgeHistoryAsync(
                 runId,
                 historyWaitKind,
@@ -80,7 +81,8 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
             throw new InvalidOperationException("runtime_root_unknown");
         }
 
-        var coordinator = _factory.Create(workspaceRoot, policySnapshot, runId);
+        var coordinator = await _factory.CreateAsync(workspaceRoot, policySnapshot, runId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
         _ = await coordinator.FailAsync(runId, errorCode, cancellationToken)
             .ConfigureAwait(false);
     }

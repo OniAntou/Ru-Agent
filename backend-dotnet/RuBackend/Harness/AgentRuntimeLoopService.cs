@@ -146,7 +146,19 @@ public interface IAgentRuntimeCoordinatorFactory
         string workspaceRoot,
         PolicySnapshot? policySnapshot = null,
         RunId? runId = null,
-        string? agentSessionId = null);
+        string? agentSessionId = null,
+        ContextBudgetPolicy? contextBudgetPolicy = null);
+
+    /// <summary>
+    /// Creates a coordinator with the compaction budget policy resolved from
+    /// the current settings snapshot (fail-closed to policy defaults).
+    /// </summary>
+    Task<AgentRunCoordinator> CreateAsync(
+        string workspaceRoot,
+        PolicySnapshot? policySnapshot = null,
+        RunId? runId = null,
+        string? agentSessionId = null,
+        CancellationToken cancellationToken = default);
 
     void DropRetainedApproval(RunId runId);
 }
@@ -218,7 +230,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         string workspaceRoot,
         PolicySnapshot? policySnapshot = null,
         RunId? runId = null,
-        string? agentSessionId = null)
+        string? agentSessionId = null,
+        ContextBudgetPolicy? contextBudgetPolicy = null)
     {
         var availability = new AgentToolRuntimeAvailability(
             _webExecutor?.IsSearchEnabled == true,
@@ -263,7 +276,45 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _replyPolicy,
             _replyEffects,
             promptContextProvider,
+            contextBudgetPolicy,
             retainedStash: _retainedStash);
+    }
+
+    public async Task<AgentRunCoordinator> CreateAsync(
+        string workspaceRoot,
+        PolicySnapshot? policySnapshot = null,
+        RunId? runId = null,
+        string? agentSessionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var policy = await ResolveBudgetPolicyAsync(_settings, cancellationToken).ConfigureAwait(false);
+        return Create(workspaceRoot, policySnapshot, runId, agentSessionId, policy);
+    }
+
+    /// <summary>
+    /// Reads the compaction ratios from settings into a budget policy.
+    /// Fail-closed: any read failure or invalid pair yields policy defaults,
+    /// so a bad settings file can never break a run.
+    /// </summary>
+    internal static async Task<ContextBudgetPolicy> ResolveBudgetPolicyAsync(
+        ISettingsStore settings,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = await settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+            return AgentRunCoordinator.CreateBudgetPolicy(
+                snapshot.CompactionTriggerRatio,
+                snapshot.CompactionTargetRatio);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return AgentRunCoordinator.CreateBudgetPolicy();
+        }
     }
 
     private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
@@ -569,7 +620,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                     workspaceRoot,
                     change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
             }
-            coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot, runId, workspaceRun.SessionId.Value);
+            coordinator = await _coordinatorFactory.CreateAsync(workspaceRoot, policySnapshot, runId, workspaceRun.SessionId.Value, cancellationToken).ConfigureAwait(false);
             _roots.RegisterCoordinator(runId, coordinator);
 
             if (policySnapshot is null)

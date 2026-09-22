@@ -9,6 +9,7 @@ public static class StatusEndpoints
     {
         app.MapGet("/status", StatusAsync);
         app.MapGet("/models", ModelsAsync);
+        app.MapGet("/models-dev", ModelsDevAsync);
         app.MapPost("/host/shutdown", ShutdownAsync);
     }
 
@@ -47,6 +48,21 @@ public static class StatusEndpoints
         {
             return Results.Json(new { status = "error", error_code = "catalog_configuration_error", models = Array.Empty<string>() });
         }
+    }
+
+    private static async Task<IResult> ModelsDevAsync(ProviderCatalogService catalog, CancellationToken cancellationToken)
+    {
+        var providers = await catalog.GetModelsDevAsync(cancellationToken);
+        return Results.Json(new
+        {
+            status = "ok",
+            providers = providers.Select(provider => new
+            {
+                id = provider.Id,
+                name = provider.Name,
+                base_url = provider.BaseUrl,
+            }).ToArray(),
+        });
     }
 
     private static IResult ShutdownAsync(IHostApplicationLifetime lifetime)

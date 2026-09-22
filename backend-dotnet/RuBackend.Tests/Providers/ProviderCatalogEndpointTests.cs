@@ -87,6 +87,32 @@ public sealed class ProviderCatalogEndpointTests
         Assert.Equal("provider_not_active", body["error_code"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task ModelsDev_lists_providers_from_the_cached_list()
+    {
+        using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => new ModelsDevHandler())));
+        using var client = configured.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/models-dev"))!;
+
+        Assert.Equal("ok", body["status"]!.GetValue<string>());
+        Assert.Equal("openrouter", body["providers"]![0]!["id"]!.GetValue<string>());
+        Assert.Equal("https://openrouter.ai", body["providers"]![0]!["base_url"]!.GetValue<string>());
+    }
+
+    private sealed class ModelsDevHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("https://models.dev/api.json", request.RequestUri?.AbsoluteUri);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent("""{"openrouter":{"name":"OpenRouter","api":"https://openrouter.ai/api/v1"}}""") });
+        }
+    }
+
     private sealed class CatalogHandler : HttpMessageHandler
     {
         public int Count;

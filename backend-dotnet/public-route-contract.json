@@ -7,6 +7,7 @@
   {"method":"GET","path":"/activity-log","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetActivityLogAsync"]},
   {"method":"DELETE","path":"/activity-log","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.ClearActivityLogAsync"]},
   {"method":"GET","path":"/models","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetModelsAsync"]},
+  {"method":"GET","path":"/models-dev","transport":"http","source":"backend-dotnet/RuBackend/Runtime/StatusEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetModelsDevAsync"]},
   {"method":"GET","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.GetSettingsAsync"]},
   {"method":"POST","path":"/settings","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.SaveSettingsAsync"]},
   {"method":"POST","path":"/settings/provider/remove","transport":"http","source":"backend-dotnet/RuBackend/Business/BusinessEndpoints.cs","classification":"aspnet-direct","winui_callers":["ApiService.RemoveProviderAsync"]},

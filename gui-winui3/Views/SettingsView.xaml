@@ -419,18 +419,78 @@
                                     </Grid>
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
-                                            <StackPanel Width="280" Spacing="2">
-                                                <TextBox x:Name="ProviderSearchBox"
-                                                         PlaceholderText="Search providers..."
-                                                         Height="36"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                         TextChanged="OnProviderSearchChanged" />
+                                            <StackPanel Width="280" Spacing="0">
+                                                <Border Background="{StaticResource RuCanvasBrush}"
+                                                        BorderBrush="{StaticResource RuLineBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        Padding="10,6"
+                                                        Margin="0,0,0,6">
+                                                    <Grid ColumnDefinitions="Auto,*">
+                                                        <FontIcon Glyph="&#xE721;"
+                                                                  FontSize="12"
+                                                                  Foreground="{StaticResource RuMutedBrush}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="0,0,8,0" />
+                                                        <TextBox x:Name="ProviderSearchBox"
+                                                                 Grid.Column="1"
+                                                                 AutomationProperties.Name="Search providers"
+                                                                 PlaceholderText="Search providers…"
+                                                                 TextChanged="OnProviderSearchChanged"
+                                                                 FontFamily="{StaticResource RuUiFontFamily}"
+                                                                 FontSize="12.5"
+                                                                 MinHeight="0"
+                                                                 Padding="0"
+                                                                 Margin="0"
+                                                                 VerticalAlignment="Center"
+                                                                 VerticalContentAlignment="Center"
+                                                                 Background="Transparent"
+                                                                 BorderThickness="0"
+                                                                 IsSpellCheckEnabled="False"
+                                                                 Foreground="{StaticResource RuInkBrush}">
+                                                            <TextBox.Resources>
+                                                                <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
+                                                                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+                                                                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                                                                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
+                                                                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                                                                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                                                                <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
+                                                                <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
+                                                                <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
+                                                                <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
+                                                                <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+                                                                <Thickness x:Key="TextControlThemePadding">0</Thickness>
+                                                            </TextBox.Resources>
+                                                        </TextBox>
+                                                    </Grid>
+                                                </Border>
+                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="0,0,0,4" />
+                                                <ScrollViewer MaxHeight="300"
+                                                              VerticalScrollBarVisibility="Auto"
+                                                              HorizontalScrollBarVisibility="Disabled"
+                                                              HorizontalScrollMode="Disabled"
+                                                              Padding="0,0,6,4">
+                                                    <ScrollViewer.Resources>
+                                                        <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
+                                                        <SolidColorBrush x:Key="ScrollBarForeground" Color="Transparent" />
+                                                        <SolidColorBrush x:Key="ScrollBarThumbFill" Color="{ThemeResource RuLineColor}" />
+                                                        <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{ThemeResource RuMutedColor}" />
+                                                        <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{ThemeResource RuAccentColor}" />
+                                                        <SolidColorBrush x:Key="ScrollBarThumbFillDisabled" Color="Transparent" />
+                                                        <SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent" />
+                                                        <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent" />
+                                                        <SolidColorBrush x:Key="ScrollBarTrackFillDisabled" Color="Transparent" />
+                                                        <x:Double x:Key="ScrollBarSize">5</x:Double>
+                                                    </ScrollViewer.Resources>
+                                                    <StackPanel Spacing="2">
                                                 <TextBlock x:Name="FixedProvidersHeader"
-                                                           Text="Built-in providers"
+                                                           Text="BUILT-IN"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="11"
+                                                           FontWeight="SemiBold"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="4,8,0,2" />
+                                                           Margin="4,4,0,4" />
                                                 <Button x:Name="ProviderOpenaiOption"
                                                         Tag="openai"
                                                         Click="OnProviderOptionClick"
@@ -502,11 +562,12 @@
                                                 </Button>
                                                 <!-- Models.dev providers are appended here at runtime -->
                                                 <TextBlock x:Name="ModelsDevOptionsHeader"
-                                                           Text="Models.dev providers"
+                                                           Text="MODELS.DEV"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="11"
+                                                           FontWeight="SemiBold"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="4,8,0,2"
+                                                           Margin="4,8,0,4"
                                                            Visibility="Collapsed" />
                                                 <Border x:Name="ModelsDevOptionsDivider"
                                                         Height="1"
@@ -521,6 +582,8 @@
                                                            Foreground="{StaticResource RuMutedBrush}"
                                                            Margin="4,8,0,2"
                                                            Visibility="Collapsed" />
+                                                    </StackPanel>
+                                                </ScrollViewer>
                                             </StackPanel>
                                         </Flyout>
                                     </Button.Flyout>

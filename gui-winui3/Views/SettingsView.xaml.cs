@@ -140,10 +140,9 @@ namespace RuApp.Views
                 new DropdownOption(ProviderAnthropicOption, ProviderAnthropicText, ProviderAnthropicCheck, "anthropic"),
                 new DropdownOption(ProviderCustomOption, ProviderCustomText, ProviderCustomCheck, "custom"),
             };
-            foreach (var options in new[] { _themeOptions, _presetOptions, _providerOptions })
-            {
-                AttachDropdownHover(options);
-            }
+            // Row hover is owned by RuDropdownItemButtonStyle (VisualStates), so
+            // every row — including runtime-built Models.dev rows — reacts
+            // alike with no per-row handlers.
             RefreshThemeUI();
             RefreshPresetUI();
             RefreshProviderUI();
@@ -271,28 +270,6 @@ namespace RuApp.Views
                 ShowProviderTestResult(ProviderConnectionTestPresentation.Project(state));
             }
         }
-
-        private static void AttachDropdownHover(IReadOnlyList<DropdownOption> options)
-        {            foreach (var option in options)
-            {
-                // Selected-aware hover mirrors the prompt ModelPicker rows.
-                option.Button.PointerEntered += (_, _) => option.Button.Background = IsOptionSelected(options, option)
-                    ? (Brush)Application.Current.Resources["RuLineBrush"]
-                    : (Brush)Application.Current.Resources["RuCanvasBrush"];
-                option.Button.PointerExited += (_, _) => option.Button.Background = IsOptionSelected(options, option)
-                    ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
-                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                option.Button.PointerCanceled += (_, _) => option.Button.Background = IsOptionSelected(options, option)
-                    ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
-                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                option.Button.PointerCaptureLost += (_, _) => option.Button.Background = IsOptionSelected(options, option)
-                    ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
-                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            }
-        }
-
-        private static bool IsOptionSelected(IReadOnlyList<DropdownOption> options, DropdownOption option) =>
-            option.Check.Visibility == Visibility.Visible;
 
         public SettingsView()
         {

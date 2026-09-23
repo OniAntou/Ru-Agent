@@ -2,6 +2,19 @@ using System.Threading;
 
 namespace RuAgent.Hosting;
 
+/// <summary>
+/// Non-blocking named-mutex single-instance guard.
+/// </summary>
+/// <remarks>
+/// The old form used <c>new Mutex(initiallyOwned: true, name, out _)</c>, whose
+/// constructor *blocks* until it owns a mutex another process already holds: a
+/// second host hung in startup instead of reporting "already running", and an
+/// owner that crashed left an abandoned mutex that threw out of the next
+/// constructor uncaught. Acquisition is now an explicit zero-wait attempt, an
+/// abandoned mutex is adopted (its previous owner is gone by definition), and a
+/// name the account cannot create (Global\ without SeCreateGlobalPrivilege)
+/// surfaces as a normal "not acquired" so callers can fall back to Local\.
+/// </remarks>
 public sealed class PublicHostSingleInstance : IDisposable
 {
     private Mutex? _mutex;
@@ -16,19 +29,41 @@ public sealed class PublicHostSingleInstance : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         Name = name;
-        bool createdNew;
-        var mutex = new Mutex(initiallyOwned: true, name: name, out createdNew);
-        if (createdNew)
+        Mutex? mutex = null;
+        try
         {
-            _mutex = mutex;
-            _hasHandle = true;
+            mutex = new Mutex(initiallyOwned: false, name: name, out _);
+            bool owned;
+            try
+            {
+                owned = mutex.WaitOne(TimeSpan.Zero, exitContext: false);
+            }
+            catch (AbandonedMutexException)
+            {
+                // The previous owner died without releasing. .NET hands us
+                // ownership on the abandoned wait, so adopt it.
+                owned = true;
+            }
+
+            if (owned)
+            {
+                _mutex = mutex;
+                _hasHandle = true;
+            }
+            else
+            {
+                mutex.Dispose();
+            }
         }
-        else
+        catch (UnauthorizedAccessException)
         {
-            // Mutex already exists - we do not own it
-            try { mutex.Dispose(); } catch { }
-            _mutex = null;
-            _hasHandle = false;
+            // A name this account cannot create (or a held mutex this account
+            // cannot open) is indistinguishable from "someone else owns it":
+            // report not-acquired so the caller can pick another namespace.
+            if (mutex is not null)
+            {
+                try { mutex.Dispose(); } catch (Exception) { }
+            }
         }
     }
 
@@ -52,7 +87,7 @@ public sealed class PublicHostSingleInstance : IDisposable
         _disposed = true;
         if (_hasHandle)
         {
-            try { _mutex?.ReleaseMutex(); } catch { }
+            try { _mutex?.ReleaseMutex(); } catch (Exception) { }
             _hasHandle = false;
         }
         _mutex?.Dispose();

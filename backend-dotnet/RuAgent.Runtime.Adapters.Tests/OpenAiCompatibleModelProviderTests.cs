@@ -203,6 +203,34 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_keeps_the_usage_tail_sent_after_the_finish_reason_chunk()
+    {
+        // include_usage places the usage report in a `choices: []` chunk that
+        // arrives after finish_reason. Ending the stream on finish_reason used
+        // to drop it, so every chat_completions run reported zero usage.
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n" +
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":21,\"completion_tokens\":7,\"total_tokens\":28}}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.Single(deltas, delta => delta.Completed);
+        var tail = deltas[^1];
+        Assert.False(tail.Completed);
+        Assert.NotNull(tail.Usage);
+        Assert.Equal(21, tail.Usage!.InputTokens);
+        Assert.Equal(7, tail.Usage.OutputTokens);
+    }
+
+    [Fact]
     public async Task GenerateAsync_treats_null_prompt_tokens_details_as_absent()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

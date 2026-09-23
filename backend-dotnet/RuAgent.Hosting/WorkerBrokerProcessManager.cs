@@ -136,27 +136,57 @@ public sealed class WorkerBrokerProcessManager : IDisposable
         WorkerBrokerLaunchPlan? plan = null;
         try
         {
-            plan = WorkerBrokerLaunchPlan.Create(
-                projectRoot,
-                startup);
-
-            job = _jobFactory.Create();
-            foreach (var spec in plan.Children)
+            // A freshly probed dynamic Broker port can be taken by another
+            // process in the window between the probe releasing its listener
+            // and the child binding the port. That collision kills the child
+            // quickly, so a readiness failure *with a dead child* retries with
+            // a newly probed port -- bounded, and only while the Broker port
+            // was not explicitly configured (a fixed port cannot be re-probed).
+            var maxAttempts = startup.BrokerPort is null ? 3 : 1;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                // Created suspended: the child runs no code until Resume, so every
-                // descendant it goes on to create is already inside this job. Handing a
-                // running child to Assign instead left a window in which it could spawn
-                // one that belonged to no job this application closes, and that
-                // descendant then outlived the run.
-                var child = _processFactory.Start(spec);
-                startedChildren.Add(child);
-                job.Assign(child);
-                child.Resume();
+                plan = WorkerBrokerLaunchPlan.Create(projectRoot, startup);
+                job = _jobFactory.Create();
+                foreach (var spec in plan.Children)
+                {
+                    // Created suspended: the child runs no code until Resume, so every
+                    // descendant it goes on to create is already inside this job. Handing a
+                    // running child to Assign instead left a window in which it could spawn
+                    // one that belonged to no job this application closes, and that
+                    // descendant then outlived the run.
+                    var child = _processFactory.Start(spec);
+                    startedChildren.Add(child);
+                    job.Assign(child);
+                    child.Resume();
+                }
+
+                if (await _readinessProbe.WaitUntilReadyAsync(plan.AgentWorkerPort, plan.BrokerPort, cancellationToken).ConfigureAwait(false))
+                {
+                    break;
+                }
+
+                var deadChild = startedChildren.Any(child => !IsAlive(child));
+                if (attempt == maxAttempts || !deadChild)
+                {
+                    // Children still alive but never listening is not a port
+                    // collision, and a configured port has nothing to re-probe:
+                    // surface the failure exactly as before.
+                    throw new InvalidOperationException("Worker/Broker did not become ready.");
+                }
+
+                LastError = "Worker/Broker lost a port race during startup; retrying with a freshly probed port.";
+                Cleanup(startedChildren, job, plan);
+                startedChildren.Clear();
+                job = null;
+                plan = null;
+                await Task.Delay(200, cancellationToken).ConfigureAwait(false);
             }
 
-            var ready = await _readinessProbe.WaitUntilReadyAsync(plan.AgentWorkerPort, plan.BrokerPort, cancellationToken).ConfigureAwait(false);
-            if (!ready)
+            // Every loop exit that reaches here broke out of a successful attempt.
+            if (plan is null || job is null)
+            {
                 throw new InvalidOperationException("Worker/Broker did not become ready.");
+            }
 
             lock (_gate)
             {

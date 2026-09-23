@@ -33,8 +33,25 @@ public static class HarnessSqliteSchema
                 .ConfigureAwait(false);
             await using (var walCmd = connection.CreateCommand())
             {
-                walCmd.CommandText = "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;";
-                await walCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                // On synchronized or shared storage (OneDrive-backed folders,
+                // SMB shares) this pragma silently falls back to another journal
+                // mode. The whole multi-process design -- busy_timeout, shared
+                // readers, the durability reasoning behind the migration
+                // transactions -- assumes wal, so report the store unavailable
+                // rather than start on a wrong assumption.
+                walCmd.CommandText = "PRAGMA journal_mode = WAL;";
+                var mode = await walCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (mode is not string journal
+                    || !string.Equals(journal, "wal", StringComparison.OrdinalIgnoreCase))
+                {
+                    return HarnessStoreHealth.Unavailable("harness_journal_not_wal");
+                }
+            }
+
+            await using (var foreignKeysCmd = connection.CreateCommand())
+            {
+                foreignKeysCmd.CommandText = "PRAGMA foreign_keys = ON;";
+                await foreignKeysCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
@@ -143,42 +160,61 @@ public static class HarnessSqliteSchema
         // no-op inside a transaction, and it cannot be left out. The version 5 to 6 rebuild
         // drops a table that rows cascade from, so with enforcement on, dropping the old
         // table would delete the rows the rebuild is in the middle of copying. The setting
-        // is per connection, so closing this one restores enforcement for every later
-        // reader even if the batch rolls back.
+        // is per connection and the connection is pooled, so the finally below always
+        // re-enables it -- including on the rollback path, where a skipped re-enable
+        // would hand a pragma-OFF connection to the next borrower.
         await using (var disable = connection.CreateCommand())
         {
             disable.CommandText = "PRAGMA foreign_keys = OFF;";
             await disable.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using var transaction = connection.BeginTransaction(deferred: false);
         try
         {
-            await using (var migration = connection.CreateCommand())
+            await using var transaction = connection.BeginTransaction(deferred: false);
+            try
             {
-                migration.Transaction = transaction;
-                migration.CommandText = migrationSql;
-                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
+                await using (var migration = connection.CreateCommand())
+                {
+                    migration.Transaction = transaction;
+                    migration.CommandText = migrationSql;
+                    await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
 
-            await using (var version = connection.CreateCommand())
+                await using (var version = connection.CreateCommand())
+                {
+                    version.Transaction = transaction;
+                    version.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                    await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                transaction.Commit();
+            }
+            catch
             {
-                version.Transaction = transaction;
-                version.CommandText = $"PRAGMA user_version = {CurrentVersion};";
-                await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                transaction.Rollback();
+                throw;
             }
-
-            transaction.Commit();
         }
-        catch
+        finally
         {
-            transaction.Rollback();
-            throw;
+            // Re-enable even when the batch threw: this connection goes back to
+            // a pool (HarnessSqliteOptions sets Pooling = true), and a per-
+            // connection pragma left OFF would be silently inherited by the next
+            // borrower -- the comment below only holds for a *closed*
+            // connection, not a pooled one.
+            await using var enable = connection.CreateCommand();
+            enable.CommandText = "PRAGMA foreign_keys = ON;";
+            try
+            {
+                await enable.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (SqliteException)
+            {
+                // The connection itself is broken (disk, share); pooling drops
+                // it, so no poisoned state can be handed to the next borrower.
+            }
         }
-
-        await using var enable = connection.CreateCommand();
-        enable.CommandText = "PRAGMA foreign_keys = ON;";
-        await enable.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsExpectedStorageFailure(Exception exception) =>

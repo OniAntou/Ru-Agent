@@ -53,7 +53,11 @@ public sealed class WorkerV2Server
         // finally block can remove while the loop is adding), which is also why removals below
         // go through TryRemove rather than the IDictionary view.
         var requestTasks = new ConcurrentDictionary<string, Task>(StringComparer.Ordinal);
-        var cancellations = new Dictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
+        // Same two-thread shape as requestTasks: the connection loop adds and
+        // cancels while the settling request task removes. A plain Dictionary
+        // corrupts under that, so this one is concurrent too, and the cancel
+        // path below tolerates losing the race against the task's Dispose.
+        var cancellations = new ConcurrentDictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
         var seenRequests = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
         // Only ever touched inside the send lock (NextSequence is called from SendOrderedAsync
         // while it holds that lock), so this one stays a plain Dictionary.
@@ -159,7 +163,16 @@ public sealed class WorkerV2Server
                     }
                     else
                     {
-                        cancellation.Cancel();
+                        try
+                        {
+                            cancellation.Cancel();
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // The request settled between the lookup and the
+                            // cancel and disposed its source; cancelling a
+                            // finished request is a no-op, not an error.
+                        }
                     }
 
                     continue;
@@ -205,10 +218,13 @@ public sealed class WorkerV2Server
         finally
         {
             // Snapshot both maps: a settling request removes its own entry, and enumerating
-            // the live dictionary while it does would throw out of this cleanup.
+            // the live dictionary while it does would throw out of this cleanup. Cancel and
+            // Dispose here can still meet a request task that finished concurrently, so the
+            // disposed case is swallowed -- cancelling an already-settled request is a no-op.
             foreach (var cancellation in cancellations.Values.ToArray())
             {
-                cancellation.Cancel();
+                try { cancellation.Cancel(); }
+                catch (ObjectDisposedException) { }
             }
 
             var tasks = requestTasks.Values.ToArray();
@@ -219,7 +235,8 @@ public sealed class WorkerV2Server
 
             foreach (var cancellation in cancellations.Values.ToArray())
             {
-                cancellation.Dispose();
+                try { cancellation.Dispose(); }
+                catch (ObjectDisposedException) { }
             }
         }
     }
@@ -231,7 +248,7 @@ public sealed class WorkerV2Server
         CancellationTokenSource cancellationSource,
         Func<string, long> nextSequence,
         ConcurrentDictionary<string, Task> requestTasks,
-        IDictionary<string, CancellationTokenSource> cancellations)
+        ConcurrentDictionary<string, CancellationTokenSource> cancellations)
     {
         try
         {
@@ -309,8 +326,10 @@ public sealed class WorkerV2Server
         finally
         {
             requestTasks.TryRemove(envelope.Id, out _);
-            cancellations.Remove(envelope.Id);
-            cancellationSource.Dispose();
+            if (cancellations.TryRemove(envelope.Id, out var owned))
+            {
+                owned.Dispose();
+            }
         }
     }
 

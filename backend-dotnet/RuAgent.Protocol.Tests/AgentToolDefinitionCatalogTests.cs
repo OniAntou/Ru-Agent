@@ -205,6 +205,43 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.Contains("never grants", skill.Description, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Schema_digest_ignores_property_order()
+    {
+        // The Broker refuses to start when a manifest's parsed schema digests
+        // differently from the Protocol-built one. Key order is not part of a
+        // schema's meaning, so reordering keys must not change the digest --
+        // otherwise an equivalent manifest written with different key order
+        // breaks startup for a reason nobody can see in review.
+        var built = AgentToolDefinitionCatalog.Find("read", "1.0.0")!.InputSchema;
+        var reordered = new JsonObject
+        {
+            ["required"] = new JsonArray("path"),
+            ["properties"] = new JsonObject
+            {
+                ["limit"] = new JsonObject { ["maximum"] = 262144, ["minimum"] = 1, ["type"] = "integer" },
+                ["offset"] = new JsonObject { ["type"] = "integer", ["minimum"] = 0 },
+                ["path"] = new JsonObject { ["type"] = "string" },
+            },
+            ["additionalProperties"] = false,
+            ["type"] = "object",
+        };
+
+        Assert.Equal(
+            AgentToolDefinitionCatalog.ComputeSchemaDigest(reordered),
+            AgentToolDefinitionCatalog.ComputeSchemaDigest(built));
+    }
+
+    [Fact]
+    public void Schema_digest_still_separates_different_schemas()
+    {
+        var read = AgentToolDefinitionCatalog.Find("read", "1.0.0")!.InputSchema;
+        var list = AgentToolDefinitionCatalog.Find("list", "1.0.0")!.InputSchema;
+        Assert.NotEqual(
+            AgentToolDefinitionCatalog.ComputeSchemaDigest(read),
+            AgentToolDefinitionCatalog.ComputeSchemaDigest(list));
+    }
+
     private static JsonObject Properties(string toolId) =>
         AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!
             .InputSchema["properties"]!

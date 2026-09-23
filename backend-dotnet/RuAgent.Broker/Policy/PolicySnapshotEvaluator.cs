@@ -112,8 +112,10 @@ public sealed class PolicySnapshotEvaluator
     /// <summary>
     /// The Ask codes a clean standard workspace may auto-allow. Timeouts,
     /// explicit user rules and protocol invariants always keep asking: only
-    /// in-workspace terminal/delete/external-directory prompts are lifted, and
-    /// networked terminal calls stay gated.
+    /// in-workspace terminal/delete prompts, outside-workspace read-only
+    /// probes, and clean-workspace unknown executables are lifted. Anything
+    /// that mutates outside the workspace still asks no matter how clean the
+    /// repo is, and networked terminal calls stay gated.
     /// </summary>
     private static bool IsStandardAllowableAsk(string reasonCode, PolicyContext context) =>
         reasonCode switch
@@ -123,9 +125,20 @@ public sealed class PolicySnapshotEvaluator
                     && !context.NetworkDeclared,
             "terminal_delete_requires_approval"
                 => context.Target is { IsInsideWorkspace: true },
-            "external_directory_required" => true,
+            "external_directory_required" => IsReadOnlyProbe(context),
             _ => false,
         };
+
+    /// <summary>
+    /// Read-only probes over an outside-workspace directory: seeing bytes is
+    /// not consent to change them, so the clean-workspace lift stops here.
+    /// </summary>
+    private static bool IsReadOnlyProbe(PolicyContext context) =>
+        context.OperationClass is PolicyOperationClasses.Read
+            or PolicyOperationClasses.List
+            or PolicyOperationClasses.Glob
+            or PolicyOperationClasses.Search
+            or PolicyOperationClasses.Discovery;
 
     private PolicyEvaluation EvaluateInner(
         BoundPolicySnapshot snapshot,

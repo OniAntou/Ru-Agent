@@ -184,14 +184,14 @@ public sealed partial class ToolExecutionService
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
         }
-        catch (Exception error)
+        catch (Exception)
         {
             return Result(
                 request,
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 "tool_failed",
-                $"Tool failed ({error.GetType().Name}).",
+                "Tool failed. See the broker diagnostic log for the adapter error.",
                 started,
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
@@ -287,14 +287,14 @@ public sealed partial class ToolExecutionService
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
         }
-        catch (Exception error)
+        catch (Exception)
         {
             return Result(
                 request,
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 "tool_failed",
-                $"Approved action failed ({error.GetType().Name}).",
+                "Approved action failed. See the broker diagnostic log for the adapter error.",
                 started,
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
@@ -495,12 +495,12 @@ public sealed partial class ToolExecutionService
                 "Tool response data was rejected.",
                 VerificationFailure(binding));
         }
-        catch (Exception error)
+        catch (Exception)
         {
             outcome = ToolExecutionOutcome.Failed(
-                "adapter_error",
-                $"Tool adapter failed ({error.GetType().Name}).",
-                VerificationFailure(binding));
+            "adapter_error",
+            "Tool adapter failed. The broker diagnostic log carries the adapter error.",
+            VerificationFailure(binding));
         }
 
         outcome = outcome with

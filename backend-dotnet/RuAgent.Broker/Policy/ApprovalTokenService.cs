@@ -35,6 +35,7 @@ public sealed class ApprovalTokenService
 
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+        DropExpired();
         _tokens[hash] = new ApprovalBinding(
             requestId,
             sessionId,
@@ -73,6 +74,25 @@ public sealed class ApprovalTokenService
     }
 
     public void Clear() => _tokens.Clear();
+
+    /// <summary>
+    /// Forgets tokens whose lifetime elapsed without being consumed. Without
+    /// this, every issued-but-unused token kept its binding (request id,
+    /// session id, argument and intent hashes) in the dictionary until
+    /// <see cref="Clear"/> or process exit.
+    /// </summary>
+    private void DropExpired()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var pair in _tokens)
+        {
+            if (pair.Value.ExpiresAt <= now)
+            {
+                _tokens.TryRemove(
+                    new KeyValuePair<string, ApprovalBinding>(pair.Key, pair.Value));
+            }
+        }
+    }
 
     private static bool SameIdentity(ApprovalBinding left, ApprovalBinding right)
     {

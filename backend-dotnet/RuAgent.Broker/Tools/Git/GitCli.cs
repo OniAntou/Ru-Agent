@@ -52,7 +52,15 @@ public sealed class StreamingGitCli : IGitCli
             throw new ArgumentException("at least one git argument is required", nameof(arguments));
         }
 
-        var argv = new List<string>(arguments.Count + 1) { "--no-optional-locks" };
+        // Fixed defenses for every read the Broker itself performs: no optional
+        // index locks, and never a repo-supplied fsmonitor program (same rule as
+        // GitWorkspaceCleanlinessProvider).
+        var argv = new List<string>(arguments.Count + 3)
+        {
+            "--no-optional-locks",
+            "-c",
+            "core.fsmonitor=false",
+        };
         foreach (var argument in arguments)
         {
             argv.Add(argument);

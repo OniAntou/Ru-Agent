@@ -684,7 +684,7 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Standard_clean_workspace_allows_external_directory_inside_grant_roots()
+    public void Standard_clean_workspace_allows_external_reads_but_still_asks_external_mutations()
     {
         var external = Path.Combine(Path.GetTempPath(), "ru-policy-standard-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(external);
@@ -692,13 +692,21 @@ public sealed class PolicyEvaluationTests
         {
             var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
             var evaluator = new PolicySnapshotEvaluator(new SessionDirectoryGrantRegistry(), cleanliness: AlwaysClean.Instance);
-            var verdict = evaluator.Evaluate(
+            var read = evaluator.Evaluate(
+                lease.Snapshot,
+                FileCall(factory, "files.read", Path.Combine(external, "note.txt")),
+                PolicyRequestInvariants.Valid,
+                Now);
+            Assert.Equal("allow", read.Decision);
+            Assert.Equal("standard_clean_workspace_allow", read.ReasonCode);
+
+            var deleted = evaluator.Evaluate(
                 lease.Snapshot,
                 FileCall(factory, "files.delete", Path.Combine(external, "note.txt")),
                 PolicyRequestInvariants.Valid,
                 Now);
-            Assert.Equal("allow", verdict.Decision);
-            Assert.Equal("standard_clean_workspace_allow", verdict.ReasonCode);
+            Assert.Equal("ask", deleted.Decision);
+            Assert.Equal("external_directory_required", deleted.ReasonCode);
         }
         finally
         {

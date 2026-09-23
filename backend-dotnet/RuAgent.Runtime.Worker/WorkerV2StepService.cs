@@ -134,9 +134,24 @@ public sealed class WorkerV2StepService
             catch (ArgumentException ex) { throw new WorkerV2StepException("provider_bootstrap_invalid", false, ex); }
             try
             {
+                // A completed delta ends the *content* of the step, not the
+                // stream: include_usage sends its tail chunk after finish_reason,
+                // so the enumeration keeps draining until the provider closes,
+                // and only usage information still reaches the step.
+                var stepCompleted = false;
                 await foreach (var delta in provider.GenerateAsync(request, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    if (stepCompleted)
+                    {
+                        if (delta.Usage is not null)
+                        {
+                            usage = delta.Usage;
+                        }
+
+                        continue;
+                    }
+
                     if (delta.Text is not null)
                     {
                         text.Append(delta.Text);
@@ -149,7 +164,11 @@ public sealed class WorkerV2StepService
                     }
 
                     toolFragments.AddRange(delta.ToolFragments);
-                    if (toolFragments.Count > 16)
+                    // Long argument streams arrive as one fragment per SSE chunk;
+                    // the per-chunk shape limit lives in the adapter. This cap only
+                    // bounds memory, and the byte cap on reassembled arguments
+                    // (model_tool_call_invalid) is what bounds the call itself.
+                    if (toolFragments.Count > 2048)
                     {
                         throw new WorkerV2StepException("protocol_failure", retryable: false);
                     }
@@ -175,7 +194,7 @@ public sealed class WorkerV2StepService
 
                     if (delta.Completed)
                     {
-                        break;
+                        stepCompleted = true;
                     }
                 }
             }

@@ -87,7 +87,46 @@ public sealed class PublicHostStarter : IDisposable
             // If foreign occupies after we started, we would have valid descriptor soon; keep polling.
         }
 
+        // We started this host and it never became ready. Leaving it alive would
+        // wedge every later start: the stale descriptor plus the occupied port
+        // read as public_host_port_conflict forever, and the only cure is a
+        // manual kill. Reap exactly the tree we spawned -- never a host another
+        // client owns (for them _startedProcess is null and this is a no-op).
+        if (isStarterOwner)
+        {
+            StopOwnedHost();
+        }
+
         throw new AgentApiException("public_host_start_timeout", "Public host did not become ready.");
+    }
+
+    private void StopOwnedHost()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_startedProcess is null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_startedProcess.HasExited)
+                {
+                    _startedProcess.Kill(entireProcessTree: true);
+                    _startedProcess.WaitForExit(5000);
+                }
+            }
+            catch (Exception)
+            {
+                // Best-effort reap: the process may have exited concurrently or
+                // be owned by a hardened parent. The handle is released below
+                // either way.
+            }
+
+            _startedProcess.Dispose();
+            _startedProcess = null;
+        }
     }
 
     private static bool IsPortOccupied(int port)
@@ -235,18 +274,41 @@ public sealed class PublicHostStarter : IDisposable
         public bool IsAcquired => _hasHandle && !_disposed;
         public ClientSingleInstance(string name)
         {
-            bool createdNew;
-            var mutex = new System.Threading.Mutex(true, name, out createdNew);
-            if (createdNew)
+            // Zero-wait acquisition: the old initiallyOwned constructor
+            // blocked while another client's starter held the mutex, hanging
+            // the caller instead of letting it fall through to polling. An
+            // abandoned mutex (starter crashed) is adopted; a name we cannot
+            // open reads as not-acquired.
+            System.Threading.Mutex? mutex = null;
+            try
             {
-                _mutex = mutex;
-                _hasHandle = true;
+                mutex = new System.Threading.Mutex(initiallyOwned: false, name: name, out _);
+                bool owned;
+                try
+                {
+                    owned = mutex.WaitOne(TimeSpan.Zero, exitContext: false);
+                }
+                catch (AbandonedMutexException)
+                {
+                    owned = true;
+                }
+
+                if (owned)
+                {
+                    _mutex = mutex;
+                    _hasHandle = true;
+                }
+                else
+                {
+                    mutex.Dispose();
+                }
             }
-            else
+            catch (UnauthorizedAccessException)
             {
-                try { mutex.Dispose(); } catch { }
-                _mutex = null;
-                _hasHandle = false;
+                if (mutex is not null)
+                {
+                    try { mutex.Dispose(); } catch (Exception) { }
+                }
             }
         }
         public void Dispose()
@@ -255,6 +317,7 @@ public sealed class PublicHostStarter : IDisposable
             _disposed = true;
             if (_hasHandle) try { _mutex?.ReleaseMutex(); } catch { }
             _mutex?.Dispose();
+            _mutex = null;
         }
     }
 }

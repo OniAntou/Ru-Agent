@@ -14,6 +14,14 @@ public enum AgentOutboxDispatchOutcome
     RetryScheduled,
     RunFailed,
     TransitionRecovered,
+
+    /// <summary>
+    /// The claim token no longer owns the intent: the lease expired and another
+    /// claim took over. Delivery is idempotent per intent id
+    /// (<c>AppendIfAbsentAsync</c>), so the new owner either sees the message
+    /// already present or appends it once; transitions belong to the new owner.
+    /// </summary>
+    LeaseLost,
 }
 
 public readonly record struct AgentOutboxDispatchResult(
@@ -194,6 +202,14 @@ public sealed class AgentConversationOutboxDispatcher
                         now,
                         cancellationToken)
                     .ConfigureAwait(false);
+                if (retry.Outcome == OutboxMutationOutcome.Conflict)
+                {
+                    return new AgentOutboxDispatchResult(
+                        AgentOutboxDispatchOutcome.LeaseLost,
+                        claim.IntentId,
+                        claim.AttemptCount);
+                }
+
                 EnsureMutation(retry, OutboxMutationOutcome.RetryScheduled);
                 return new AgentOutboxDispatchResult(
                     AgentOutboxDispatchOutcome.RetryScheduled,
@@ -256,6 +272,18 @@ public sealed class AgentConversationOutboxDispatcher
                 now,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (acknowledged.Outcome == OutboxMutationOutcome.Conflict)
+        {
+            // Fencing: the lease expired and a newer claim owns this intent.
+            // The message is already in the session (idempotent append), and
+            // history transitions are the new owner's job -- throwing here
+            // would only spam the dispatch loop with a recoverable condition.
+            return new AgentOutboxDispatchResult(
+                AgentOutboxDispatchOutcome.LeaseLost,
+                claim.IntentId,
+                claim.AttemptCount);
+        }
+
         EnsureMutation(
             acknowledged,
             OutboxMutationOutcome.Acknowledged,
@@ -284,6 +312,14 @@ public sealed class AgentConversationOutboxDispatcher
                 failedAt,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (failed.Outcome == OutboxMutationOutcome.Conflict)
+        {
+            return new AgentOutboxDispatchResult(
+                AgentOutboxDispatchOutcome.LeaseLost,
+                claim.IntentId,
+                claim.AttemptCount);
+        }
+
         EnsureMutation(failed, OutboxMutationOutcome.Failed);
         await _transitions.FailAsync(claim.RunId, errorCode, cancellationToken)
             .ConfigureAwait(false);

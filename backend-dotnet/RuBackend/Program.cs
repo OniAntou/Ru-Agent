@@ -70,8 +70,34 @@ builder.Services
     .AddRuHarnessStores()
     .AddRuAgentRuntime(isDeterministicHarness, isManagedRuntime)
     .AddRuActivityAndDiagnostics();
-builder.WebHost.UseUrls(
-    builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000");
+// The Public Contract is a loopback-only surface guarded by a bearer token that
+// desktop clients read from local files. A misconfigured or edited BindUrl must
+// not silently widen it to every interface on the machine.
+var bindUrl = builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000";
+if (!IsLoopbackBindUrl(bindUrl))
+{
+    Console.Error.WriteLine(
+        $"RuBackend:BindUrl must bind to a loopback address; refusing to start on '{bindUrl}'.");
+    Environment.Exit(4);
+}
+
+builder.WebHost.UseUrls(bindUrl);
+
+static bool IsLoopbackBindUrl(string value)
+{
+    if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+    {
+        return false;
+    }
+
+    if (string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    return IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address);
+}
 
 var app = builder.Build();
 

@@ -152,6 +152,7 @@ public sealed class PendingApprovalStore
             expiresAt,
             terminalApprovalToken,
             false);
+        DropExpiredApprovals();
         _pending[approvalId] = pending;
         return approvalId;
     }
@@ -206,6 +207,32 @@ public sealed class PendingApprovalStore
         }
     }
 
+    /// <summary>
+    /// Forgets approvals whose 30-minute window elapsed without a response.
+    /// Expiry was only ever checked at consumption, so an abandoned approval
+    /// kept its pending arguments (potentially whole file bodies) and its
+    /// terminal token binding in memory for the life of the session.
+    /// </summary>
+    private void DropExpiredApprovals()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var pair in _pending)
+        {
+            if (pair.Value.ExpiresAt <= now)
+            {
+                _pending.TryRemove(new KeyValuePair<string, PendingApproval>(pair.Key, pair.Value));
+            }
+        }
+
+        foreach (var pair in _v2)
+        {
+            if (pair.Value.ExpiresAt <= now)
+            {
+                _v2.TryRemove(new KeyValuePair<string, V2PendingApproval>(pair.Key, pair.Value));
+            }
+        }
+    }
+
     // ── V2 approval ordering (tool.execute requires one-time approval bound to snapshot + intent hash) ──
 
     private readonly ConcurrentDictionary<string, V2PendingApproval> _v2 = new(StringComparer.Ordinal);
@@ -221,6 +248,7 @@ public sealed class PendingApprovalStore
         var approvalId = $"apr_{Guid.NewGuid():N}";
         if (approvalId.Length > 128) approvalId = approvalId[..128];
         var pending = new V2PendingApproval(approvalId, binding, expiresAt);
+        DropExpiredApprovals();
         _v2[approvalId] = pending;
         return approvalId;
     }

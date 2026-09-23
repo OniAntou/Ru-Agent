@@ -1,6 +1,7 @@
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
+using System.Text;
 using System.Runtime.Versioning;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Persistence.Privacy;
@@ -39,7 +40,7 @@ public sealed class WindowsDpapiKeyStoreTests
             Assert.DoesNotContain(Convert.ToHexString(first), Convert.ToHexString(protectedFile));
             Assert.Equal(
                 first,
-                ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser));
+                ProtectedData.Unprotect(protectedBytes, WindowsDpapiKeyStore.DpapiEntropy, DataProtectionScope.CurrentUser));
             AssertNoBroadWriter(keyPath);
             AssertNoBroadWriter(databasePath);
         }
@@ -113,6 +114,98 @@ public sealed class WindowsDpapiKeyStoreTests
 
             Assert.Equal(32, key.Length);
             Assert.True(File.Exists(keyPath));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task A_database_locked_by_another_host_refuses_key_minting()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "ru-dpapi-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var keyPath = Path.Combine(root, "agent_harness.key");
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            await using (var setup = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await setup.OpenAsync();
+                await using var command = setup.CreateCommand();
+                command.CommandText = "CREATE TABLE agent_payloads (payload_id TEXT PRIMARY KEY);";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // A racing host holding an open EXCLUSIVE transaction must read as
+            // "cannot tell", never as "nothing to lose": minting over a database
+            // we cannot inspect is the exact fail-open that lost every payload.
+            await using var holder = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+            await holder.OpenAsync();
+            await using (var lockCommand = holder.CreateCommand())
+            {
+                // The transaction stays open for the rest of the scope, which
+                // holds the exclusive lock (rollback journal) against readers.
+                lockCommand.CommandText = "BEGIN EXCLUSIVE;";
+                await lockCommand.ExecuteNonQueryAsync();
+            }
+
+            var store = new WindowsDpapiKeyStore(keyPath, databasePath);
+            var error = await Assert.ThrowsAsync<HarnessStoreException>(
+                async () => await store.GetOrCreateKeyAsync(CancellationToken.None));
+            Assert.Equal("harness_key_probe_unavailable", error.Code);
+            Assert.False(File.Exists(keyPath), "a locked store must not write a replacement key");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task A_legacy_key_file_is_read_and_migrated_to_the_purpose_entropy()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "ru-dpapi-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var keyPath = Path.Combine(root, "agent_harness.key");
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            // Write the file in the pre-entropy format exactly as older builds did.
+            var legacyKey = RandomNumberGenerator.GetBytes(32);
+            var legacyProtected = ProtectedData.Protect(legacyKey, null, DataProtectionScope.CurrentUser);
+            var legacyFile = new byte[WindowsDpapiKeyStore.FileHeaderLength + legacyProtected.Length];
+            Encoding.ASCII.GetBytes("RUHK1").CopyTo(legacyFile, 0);
+            legacyProtected.CopyTo(legacyFile, WindowsDpapiKeyStore.FileHeaderLength);
+            await File.WriteAllBytesAsync(keyPath, legacyFile);
+
+            var store = new WindowsDpapiKeyStore(keyPath, databasePath);
+            var loaded = (await store.GetOrCreateKeyAsync(CancellationToken.None)).ToArray();
+
+            Assert.Equal(legacyKey, loaded);
+
+            // The rewrite must have replaced the legacy protection: unprotecting
+            // with the purpose entropy succeeds, the null-entropy read fails.
+            var current = await File.ReadAllBytesAsync(keyPath);
+            var protectedBytes = current[WindowsDpapiKeyStore.FileHeaderLength..];
+            Assert.Equal(
+                legacyKey,
+                ProtectedData.Unprotect(protectedBytes, WindowsDpapiKeyStore.DpapiEntropy, DataProtectionScope.CurrentUser));
+            Assert.Throws<CryptographicException>(
+                () => ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser));
         }
         finally
         {

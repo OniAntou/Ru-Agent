@@ -1,22 +1,70 @@
 namespace RuAgent.Broker.Tools.Paths;
 
+/// <summary>
+/// The hard deny list: paths no preset, grant, or approval may open. Rules are
+/// anchored to real credential storage locations and content-bearing file
+/// names, not to loose substrings -- a substring match over the whole path
+/// both denied legitimate work (any file whose directory name happened to
+/// contain the word "credential") and missed the directories that actually
+/// hold secrets (.ssh, DPAPI, cloud CLIs).
+/// </summary>
 public static class ProtectedPathCatalog
 {
     public const string Version = "1";
 
-    public static bool IsProtected(string canonicalPath)
+    /// <summary>Environment variables the anchored rules resolve against.</summary>
+    public delegate string? EnvironmentAccessor(string name);
+
+    // Credential stores reachable by the terminal on this machine: the SSH key
+    // ring, DPAPI master keys and credential blobs, cloud CLI homes, and
+    // kube/docker configs. The comparison is anchored to the resolved base
+    // directory, so a workspace file named "credentials" stays editable while
+    // the real stores never open.
+    private static readonly (string EnvName, string Tail)[] SensitiveDirectories =
+    [
+        ("USERPROFILE", ".ssh"),
+        ("APPDATA", @"Microsoft\Credentials"),
+        ("APPDATA", @"Microsoft\Protect"),
+        ("LOCALAPPDATA", @"Microsoft\Credentials"),
+        ("LOCALAPPDATA", @"Microsoft\Vault"),
+        ("USERPROFILE", ".aws"),
+        ("USERPROFILE", ".azure"),
+        ("USERPROFILE", ".gnupg"),
+        ("USERPROFILE", ".kube"),
+        ("USERPROFILE", ".docker"),
+    ];
+
+    private static readonly string[] ProtectedFileNames =
+    [
+        ".netrc",
+        ".git-credentials",
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        "runtime_descriptor.json",
+        "broker.json",
+    ];
+
+    public static bool IsProtected(string canonicalPath) =>
+        IsProtected(canonicalPath, Environment.GetEnvironmentVariable);
+
+    public static bool IsProtected(string canonicalPath, EnvironmentAccessor environment)
     {
         if (string.IsNullOrWhiteSpace(canonicalPath))
         {
             return false;
         }
 
-        var normalized = Path.GetFullPath(canonicalPath);
+        var normalized = Path.GetFullPath(canonicalPath.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar));
 
-        // Check .git segment: any segment equals ".git" (case-sensitive, but also case-insensitive fallback)
         var segments = normalized.Split(
-            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries);
+
+        // .git/** at any depth, and .env* files at any depth.
         foreach (var segment in segments)
         {
             if (string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
@@ -24,48 +72,68 @@ public static class ProtectedPathCatalog
                 return true;
             }
 
-            // .env* files: segment starts with .env
             if (segment.StartsWith(".env", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
         }
 
-        // Also check file name explicitly for .env* in case path ends with file
-        var fileName = Path.GetFileName(normalized);
-        if (!string.IsNullOrEmpty(fileName) && fileName.StartsWith(".env", StringComparison.OrdinalIgnoreCase))
+        var fileName = segments.Length > 0 ? segments[^1] : string.Empty;
+
+        // Agent harness key/descriptor/database artifacts, wherever they live.
+        if (fileName.StartsWith("agent_harness", StringComparison.OrdinalIgnoreCase)
+            || fileName.StartsWith("harness_key", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        // Agent Harness database/key/descriptor/rule locations
-        // These are protected regardless of workspace location.
-        // Use case-insensitive file name checks.
-        var lower = normalized.ToLowerInvariant();
-        if (lower.EndsWith("agent_harness.db", StringComparison.Ordinal) ||
-            lower.EndsWith("harness_key.dat", StringComparison.Ordinal) ||
-            lower.EndsWith("runtime_descriptor.json", StringComparison.Ordinal) ||
-            lower.EndsWith("broker.json", StringComparison.Ordinal) ||
-            lower.Contains("agent_harness", StringComparison.Ordinal) ||
-            lower.Contains("harness_key", StringComparison.Ordinal))
+        foreach (var protectedName in ProtectedFileNames)
         {
-            return true;
+            if (string.Equals(fileName, protectedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
         }
 
-        // Descriptor and key may also appear as "agent_" rule files; treat any file containing "runtime_descriptor" or "broker.json" already covered.
-
-        // Ru credential locations: Windows Credential Manager is not a file, but we treat
-        // common credential-related file patterns as protected.
-        // This includes any path that contains "credentials" or is under a business data folder with secrets.
-        if (lower.Contains("credentials", StringComparison.Ordinal) ||
-            lower.Contains("credential", StringComparison.Ordinal))
+        // Credential stores reachable by the terminal on this machine: the
+        // SSH key ring, DPAPI master keys and credential blobs, cloud CLI
+        // homes, and kube/docker configs. The comparison is anchored to the
+        // resolved base directory, so a workspace file named "credentials"
+        // stays editable while the real stores never open.
+        foreach (var (envName, tail) in SensitiveDirectories)
         {
-            return true;
-        }
+            var baseValue = environment(envName);
+            if (string.IsNullOrWhiteSpace(baseValue))
+            {
+                continue;
+            }
 
-        // Additional: protect any file that looks like a key/descriptor in BusinessDataRoot
-        // We already cover specific file names; this is defense in depth.
+            var sensitiveRoot = CombineSafe(baseValue, tail);
+            if (sensitiveRoot is not null && IsAtOrBelow(normalized, sensitiveRoot))
+            {
+                return true;
+            }
+        }
 
         return false;
     }
+
+    private static string? CombineSafe(string basePath, string tail)
+    {
+        try
+        {
+            return Path.GetFullPath(Path.Combine(basePath, tail));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsAtOrBelow(string candidate, string root) =>
+        string.Equals(candidate, root, StringComparison.OrdinalIgnoreCase)
+        || candidate.StartsWith(
+            root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
 }

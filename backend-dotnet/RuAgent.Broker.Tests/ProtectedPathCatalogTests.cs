@@ -65,4 +65,51 @@ public sealed class ProtectedPathCatalogTests
             Directory.Delete(root, true);
         }
     }
+
+    [Theory]
+    [InlineData(@"D:\project\src\credentials.json")]
+    [InlineData(@"D:\project\CredentialStore.cs")]
+    [InlineData(@"D:\work\credential-rotation-notes.md")]
+    public void Files_merely_named_like_credentials_stay_editable(string path)
+    {
+        // The old rule blocked every path *containing* the substring
+        // "credential", which stopped legitimate work and never covered the
+        // stores that actually hold secrets.
+        Assert.False(ProtectedPathCatalog.IsProtected(path, _ => null));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\u\.ssh\config")]
+    [InlineData(@"C:\Users\u\.ssh\keys\work")]
+    [InlineData(@"C:\Users\u\AppData\Roaming\Microsoft\Protect\S-1-5\AAB")]
+    [InlineData(@"C:\Users\u\AppData\Local\Microsoft\Credentials\cvid\c")]
+    [InlineData(@"C:\Users\u\.aws\credentials")]
+    [InlineData(@"C:\Users\u\.kube\config")]
+    public void Anchored_credential_stores_are_protected(string path)
+    {
+        var env = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["USERPROFILE"] = @"C:\Users\u",
+            ["APPDATA"] = @"C:\Users\u\AppData\Roaming",
+            ["LOCALAPPDATA"] = @"C:\Users\u\AppData\Local",
+        };
+        Assert.True(ProtectedPathCatalog.IsProtected(path, name =>
+            env.TryGetValue(name, out var value) ? value : null));
+    }
+
+    [Theory]
+    [InlineData(@"D:\notes\.netrc")]
+    [InlineData(@"D:\srv\.git-credentials")]
+    [InlineData(@"C:\deploy\id_ed25519")]
+    public void Credential_bearing_file_names_are_protected_anywhere(string path)
+    {
+        Assert.True(ProtectedPathCatalog.IsProtected(path, _ => null));
+    }
+
+    [Fact]
+    public void Public_surface_without_environment_still_covers_name_rules()
+    {
+        Assert.True(ProtectedPathCatalog.IsProtected(@"D:\srv\.git-credentials"));
+        Assert.False(ProtectedPathCatalog.IsProtected(@"D:\project\src\credentials.json"));
+    }
 }

@@ -83,6 +83,17 @@ public static class ProtectedProviderBootstrap
     private const int MaxProtectedBytes = 64 * 1024;
     private const string FilePrefix = "provider-bootstrap-";
 
+    /// <summary>
+    /// Purpose-bound DPAPI additional entropy. DPAPI CurrentUser already scopes
+    /// to the user on this machine; the entropy keeps the bootstrap file useless
+    /// to every other consumer of that user token that does not share this exact
+    /// purpose string. Bootstrap files are one-shot (written before a child
+    /// starts, deleted right after the read), so the legacy fallback below only
+    /// needs to cover files left behind by an upgrade, not steady state.
+    /// </summary>
+    public static readonly byte[] DpapiEntropy =
+        System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("Ru.Provider.Bootstrap.v2\n"));
+
     public static string Write(string sessionRoot, ProviderBootstrapData data)
     {
         EnsureWindowsDpapi();
@@ -105,14 +116,28 @@ public static class ProtectedProviderBootstrap
             throw new ArgumentException("Provider bootstrap exceeds its byte cap.", nameof(data));
         }
 
-        var protectedBytes = ProtectedData.Protect(json, optionalEntropy: null, DataProtectionScope.CurrentUser);
-        using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        var protectedBytes = ProtectedData.Protect(json, DpapiEntropy, DataProtectionScope.CurrentUser);
+        CryptographicOperations.ZeroMemory(json);
+        // The owner-only DACL is applied *at creation*: hardening after the
+        // write leaves a window where the credential file carries the folder's
+        // inherited ACEs, which is exactly what OwnerOnlyFile documents as
+        // unacceptable. FileSystemAclExtensions.Create applies the security
+        // descriptor to the create call itself, so no plaintext or bare-ACL
+        // state ever exists on disk.
+        var fileInfo = new FileInfo(path);
+        using (var stream = fileInfo.Create(
+                   FileMode.CreateNew,
+                   FileSystemRights.Write | FileSystemRights.Read | FileSystemRights.Delete,
+                   FileShare.None,
+                   4096,
+                   FileOptions.WriteThrough,
+                   BuildOwnerOnlyFileSecurity()))
         {
             stream.Write(protectedBytes);
             stream.Flush(flushToDisk: true);
         }
 
-        ApplyOwnerOnlyAcl(path);
+        CryptographicOperations.ZeroMemory(protectedBytes);
         return path;
     }
 
@@ -124,7 +149,18 @@ public static class ProtectedProviderBootstrap
         try
         {
             var protectedBytes = ReadBoundedBytes(fullPath, MaxProtectedBytes);
-            var json = ProtectedData.Unprotect(protectedBytes, optionalEntropy: null, DataProtectionScope.CurrentUser);
+            byte[] json;
+            try
+            {
+                json = ProtectedData.Unprotect(protectedBytes, DpapiEntropy, DataProtectionScope.CurrentUser);
+            }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                // A bootstrap file written before the purpose entropy existed.
+                // This file is deleted below either way, so the fallback never
+                // needs to persist anything.
+                json = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
+            }
             if (json.Length > MaxSerializedBytes)
             {
                 throw new InvalidDataException("Provider bootstrap exceeds its byte cap.");
@@ -228,13 +264,8 @@ public static class ProtectedProviderBootstrap
     private static bool IsReparsePoint(string path) =>
         (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
-    private static void ApplyOwnerOnlyAcl(string path)
+    private static FileSecurity BuildOwnerOnlyFileSecurity()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var owner = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("Current Windows identity is unavailable.");
         var security = new FileSecurity();
@@ -243,7 +274,7 @@ public static class ProtectedProviderBootstrap
             owner,
             FileSystemRights.Read | FileSystemRights.Write | FileSystemRights.Delete,
             AccessControlType.Allow));
-        new FileInfo(path).SetAccessControl(security);
+        return security;
     }
 
     private static void EnsureWindowsDpapi()

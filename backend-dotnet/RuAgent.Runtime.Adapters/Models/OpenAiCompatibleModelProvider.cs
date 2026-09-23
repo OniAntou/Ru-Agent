@@ -64,13 +64,22 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             using (stream)
             {
                 var sawData = false;
+                // chat_completions with include_usage sends the usage report in a
+                // final `choices: []` chunk that arrives *after* the finish_reason
+                // chunk. Ending the enumeration on finish_reason dropped that tail
+                // for every run; instead, completion is remembered and only the
+                // usage tail is still consumed afterwards.
+                var completionSeen = false;
                 await foreach (var serverEvent in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
                     sawData = true;
                     var payload = serverEvent.Data.Trim();
                     if (payload == "[DONE]")
                     {
-                        yield return new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "stop");
+                        if (!completionSeen)
+                        {
+                            yield return new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "stop");
+                        }
                         yield break;
                     }
 
@@ -120,12 +129,28 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                         continue;
                     }
 
+                    if (completionSeen)
+                    {
+                        // Only the usage tail may follow the finish_reason chunk;
+                        // anything else from this provider is not forwarded.
+                        if (usage is not null)
+                        {
+                            yield return new ModelDelta(
+                                null,
+                                Array.Empty<ModelToolFragment>(),
+                                false,
+                                null,
+                                usage);
+                        }
+                        continue;
+                    }
+
                     var completed = finishReason is not null;
-                    yield return new ModelDelta(text, fragments, completed, finishReason, usage, reasoning);
                     if (completed)
                     {
-                        yield break;
+                        completionSeen = true;
                     }
+                    yield return new ModelDelta(text, fragments, completed, finishReason, usage, reasoning);
                 }
 
                 if (!sawData)

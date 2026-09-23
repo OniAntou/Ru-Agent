@@ -49,9 +49,16 @@ public sealed class GitWorkspaceCleanlinessProvider : IWorkspaceCleanlinessProvi
     /// credential file would have counted as clean and unlocked the standard
     /// relaxation over a workspace that is in fact carrying new secrets.
     /// </summary>
+    /// <remarks>
+    /// <c>core.fsmonitor=false</c> matters: the probe runs automatically on every
+    /// policy ask, so a cloned repository whose <c>.git/config</c> points fsmonitor
+    /// at a program must not get that program executed with the Broker's rights
+    /// just because somebody opened the folder. Same reasoning as the command
+    /// analyzers: configuration that can select a program never runs unattended.
+    /// </remarks>
     private static bool ProbeClean(string root) =>
-        RunGit(root, ["rev-parse", "--is-inside-work-tree"]) == 0
-        && RunGit(root, ["status", "--porcelain"], observeEmptyOutput: true) == 0;
+        RunGit(root, ["-c", "core.fsmonitor=false", "rev-parse", "--is-inside-work-tree"]) == 0
+        && RunGit(root, ["-c", "core.fsmonitor=false", "status", "--porcelain"], observeEmptyOutput: true) == 0;
 
     private static int RunGit(string workingDirectory, string[] arguments, bool observeEmptyOutput = false)
     {

@@ -11,6 +11,19 @@ namespace RuAgent.Harness.Persistence.Privacy;
 public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
 {
     private static readonly byte[] FileHeader = Encoding.ASCII.GetBytes("RUHK1");
+
+    /// <summary>
+    /// DPAPI additional entropy, bound to this purpose rather than null. DPAPI
+    /// CurrentUser already scopes to the user on this machine; the entropy keeps
+    /// the key file useless to every other consumer of that user token that does
+    /// not share this exact purpose string. It is deliberately NOT bound to the
+    /// database path: <c>RU_DATA_ROOT</c> legitimately moves between test runs
+    /// and setups, and a path-bound entropy would silently brick every payload
+    /// on such a move -- the exact failure class this store refuses to create.
+    /// </summary>
+    public static readonly byte[] DpapiEntropy =
+        SHA256.HashData(Encoding.UTF8.GetBytes("Ru.Harness.Payloads.v2\n"));
+
     private readonly string _keyPath;
     private readonly string _databasePath;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -74,9 +87,12 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
     /// True when the database already holds rows encrypted under this key.
     /// </summary>
     /// <remarks>
-    /// Read-only and tolerant of shape: a database that cannot be opened or has no payload
-    /// table yet is treated as fresh, because refusing to start on a database that holds
-    /// nothing to lose would trade one silent failure for a loud, unnecessary one.
+    /// "Cannot tell" is never "nothing to lose": a database locked by a racing
+    /// host is exactly the shape that used to mint a replacement key over live
+    /// protected rows, so an unopenable or unreadable database now fails the
+    /// store closed instead of reporting it fresh. Only a database that opens
+    /// cleanly and genuinely has no payload rows yet (or no payload table)
+    /// counts as fresh.
     /// </remarks>
     private async Task<bool> HasProtectedRowsAsync(CancellationToken cancellationToken)
     {
@@ -85,28 +101,57 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
             return false;
         }
 
+        var builder = new SqliteConnectionStringBuilder
+        {
+            DataSource = _databasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+            // A locked database must surface as BUSY quickly: the probe is a
+            // bounded existence check, not a readiness wait. The one-second
+            // timeout keeps the fail-closed path responsive for the host that
+            // retries after the racing owner lets go.
+            DefaultTimeout = 1,
+        };
+        await using var connection = new SqliteConnection(builder.ToString());
         try
         {
-            var builder = new SqliteConnectionStringBuilder
-            {
-                DataSource = _databasePath,
-                Mode = SqliteOpenMode.ReadOnly,
-                Pooling = false,
-            };
-            await using var connection = new SqliteConnection(builder.ToString());
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
+            await using var tableCommand = connection.CreateCommand();
+            tableCommand.CommandText = """
                 SELECT EXISTS(
                     SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_payloads'
-                ) AND EXISTS(SELECT 1 FROM agent_payloads LIMIT 1);
+                );
                 """;
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            var hasTable = await tableCommand.ExecuteScalarAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (hasTable is 0L)
+            {
+                return false;
+            }
+
+            if (hasTable is not 1L)
+            {
+                throw new HarnessStoreException("harness_key_probe_unavailable");
+            }
+
+            await using var rowCommand = connection.CreateCommand();
+            rowCommand.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_payloads LIMIT 1);";
+            var result = await rowCommand.ExecuteScalarAsync(cancellationToken)
+                .ConfigureAwait(false);
             return result is long and not 0;
+        }
+        catch (SqliteException error) when (error.SqliteErrorCode is 5 or 6)
+        {
+            // SQLITE_BUSY / SQLITE_LOCKED: another host owns this database right
+            // now, which is exactly the race that used to mint a replacement key
+            // over live protected rows. Fail closed and let the caller retry.
+            throw new HarnessStoreException("harness_key_probe_unavailable", error);
         }
         catch (SqliteException)
         {
-            // Not a shape this key ever protected: nothing to be responsible for.
+            // Unreadable for any other reason (not a database, malformed): no
+            // protected payload could be read from that file either, so it stays
+            // the documented "nothing to lose" case.
             return false;
         }
     }
@@ -119,7 +164,7 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
         var temporary = Path.Combine(directory, $".{Path.GetFileName(_keyPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
-            var protectedKey = ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser);
+            var protectedKey = ProtectedData.Protect(key, DpapiEntropy, DataProtectionScope.CurrentUser);
             var fileBytes = new byte[FileHeader.Length + protectedKey.Length];
             FileHeader.CopyTo(fileBytes, 0);
             protectedKey.CopyTo(fileBytes, FileHeader.Length);
@@ -165,23 +210,80 @@ public sealed class WindowsDpapiKeyStore : IHarnessKeyStore
             throw new HarnessStoreException("harness_key_invalid");
         }
 
+        // Current format first; a key file written before the purpose entropy
+        // existed still unprotects with null entropy. The legacy read migrates
+        // the file in place so the fallback never has to fire again.
         try
         {
-            var key = ProtectedData.Unprotect(
-                fileBytes.AsSpan(FileHeader.Length).ToArray(),
-                null,
-                DataProtectionScope.CurrentUser);
-            if (key.Length != 32)
-            {
-                CryptographicOperations.ZeroMemory(key);
-                throw new HarnessStoreException("harness_key_invalid");
-            }
+            return UnprotectAndValidate(fileBytes.AsSpan(FileHeader.Length).ToArray(), DpapiEntropy);
+        }
+        catch (CryptographicException)
+        {
+        }
 
-            return key;
+        byte[] legacyKey;
+        try
+        {
+            legacyKey = UnprotectAndValidate(fileBytes.AsSpan(FileHeader.Length).ToArray(), null);
         }
         catch (CryptographicException exception)
         {
             throw new HarnessStoreException("harness_key_unprotect_failed", exception);
+        }
+
+        try
+        {
+            await RewriteKeyFileAsync(legacyKey, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The legacy key still works; the migration can happen on a later
+            // run when the file is not being read concurrently.
+        }
+
+        return legacyKey;
+    }
+
+    private static byte[] UnprotectAndValidate(byte[] protectedKey, byte[]? entropy)
+    {
+        var key = ProtectedData.Unprotect(protectedKey, entropy, DataProtectionScope.CurrentUser);
+        if (key.Length != 32)
+        {
+            CryptographicOperations.ZeroMemory(key);
+            throw new HarnessStoreException("harness_key_invalid");
+        }
+
+        return key;
+    }
+
+    /// <summary>
+    /// Re-protects an existing key under the purpose entropy and replaces the
+    /// key file atomically. Callers treat failure as non-fatal: the legacy
+    /// protection remains readable until a later migration.
+    /// </summary>
+    private async Task RewriteKeyFileAsync(byte[] key, CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(_keyPath)
+            ?? throw new HarnessStoreException("harness_key_path_invalid");
+        Directory.CreateDirectory(directory);
+        var temporary = Path.Combine(directory, $".{Path.GetFileName(_keyPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            var protectedKey = ProtectedData.Protect(key, DpapiEntropy, DataProtectionScope.CurrentUser);
+            var fileBytes = new byte[FileHeader.Length + protectedKey.Length];
+            FileHeader.CopyTo(fileBytes, 0);
+            protectedKey.CopyTo(fileBytes, FileHeader.Length);
+            await File.WriteAllBytesAsync(temporary, fileBytes, cancellationToken)
+                .ConfigureAwait(false);
+            HardenFile(temporary);
+            File.Move(temporary, _keyPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+            {
+                File.Delete(temporary);
+            }
         }
     }
 

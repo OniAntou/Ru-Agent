@@ -51,7 +51,7 @@ public sealed class HarnessOutboxTests
     public async Task Expired_claim_is_reclaimed_with_a_new_token()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
-        await SeedUserOutboxAsync(fixture);
+        var intentId = await SeedUserOutboxAsync(fixture);
         var store = new HarnessOutboxStore(
             fixture.Options,
             leaseDuration: TimeSpan.FromSeconds(5));
@@ -64,6 +64,31 @@ public sealed class HarnessOutboxTests
         Assert.NotNull(second);
         Assert.NotEqual(first!.ClaimToken, second!.ClaimToken);
         Assert.Equal(2, second.AttemptCount);
+
+        // Fencing: the old owner cannot complete or fail an intent it lost, and
+        // it cannot poison the new owner's delivery either. The consumer-side
+        // append is idempotent per intent id, so the worst case of a stale
+        // owner delivering again is an AlreadyPresent append, never a duplicate.
+        var staleAck = await store.AcknowledgeAsync(
+            intentId,
+            first.ClaimToken,
+            now.AddSeconds(6),
+            CancellationToken.None);
+        var staleFail = await store.FailAsync(
+            intentId,
+            first.ClaimToken,
+            "session_store_transient",
+            now.AddSeconds(6),
+            CancellationToken.None);
+        var freshAck = await store.AcknowledgeAsync(
+            intentId,
+            second.ClaimToken,
+            now.AddSeconds(7),
+            CancellationToken.None);
+
+        Assert.Equal(OutboxMutationOutcome.Conflict, staleAck.Outcome);
+        Assert.Equal(OutboxMutationOutcome.Conflict, staleFail.Outcome);
+        Assert.Equal(OutboxMutationOutcome.Acknowledged, freshAck.Outcome);
     }
 
     [Fact]

@@ -61,8 +61,45 @@ public static class AgentToolDefinitionCatalog
     public static string ComputeSchemaDigest(JsonObject schema)
     {
         ArgumentNullException.ThrowIfNull(schema);
-        var canonical = schema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
+        // Property order is not part of a JSON Schema's meaning, but a digest
+        // over ToJsonString makes it part of the *bytes*. The Broker compares a
+        // manifest schema parsed from JSON wire text against the Protocol-built
+        // schema, and refuses to start when the digests differ -- so a
+        // semantically identical manifest written with different key order
+        // would break startup. Hash a recursively key-sorted canonical form
+        // instead (the same reasoning as the policy snapshot canonicalizer).
+        var canonical = Canonicalize(schema).ToJsonString(
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private static JsonNode Canonicalize(JsonNode node)
+    {
+        if (node is JsonObject obj)
+        {
+            var sorted = new JsonObject();
+            foreach (var pair in obj.OrderBy(item => item.Key, StringComparer.Ordinal))
+            {
+                sorted[pair.Key] = pair.Value is null ? null : Canonicalize(pair.Value);
+            }
+
+            return sorted;
+        }
+
+        if (node is JsonArray array)
+        {
+            var result = new JsonArray();
+            foreach (var item in array)
+            {
+                result.Add(item is null ? null : Canonicalize(item));
+            }
+
+            return result;
+        }
+
+        // Primitives are re-parsed rather than re-parented: JsonNode allows one
+        // parent, and the digest input may be any live document.
+        return JsonNode.Parse(node.ToJsonString())!;
     }
 
     private static IReadOnlyList<AgentToolDefinition> BuildDefinitions()

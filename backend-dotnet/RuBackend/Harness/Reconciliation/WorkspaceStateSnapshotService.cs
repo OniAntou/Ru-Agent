@@ -121,7 +121,13 @@ public sealed class WorkspaceStateSnapshotService
                 StandardErrorEncoding = StrictUtf8,
             };
             startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            // Same hardening as the Broker's git paths: this runs against a
+            // user-supplied workspace automatically, so configuration that can
+            // select a program (core.fsmonitor) is pinned off before any
+            // subcommand, and optional index locks stay off.
             startInfo.ArgumentList.Add("--no-optional-locks");
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add("core.fsmonitor=false");
             foreach (var argument in arguments)
             {
                 startInfo.ArgumentList.Add(argument);

@@ -70,9 +70,32 @@ public partial class App : Application
         RuAppComposition composition = RuAppComposition.FromArguments(
             ResolveLaunchArguments(args.Arguments));
         const string mutexName = "RuApp_WinUI3_SingleInstance";
-        _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
-        if (!createdNew)
+        // Zero-wait acquisition: the old initiallyOwned constructor *blocks*
+        // until it owns a mutex another process holds, so a second launch hung
+        // silently instead of bringing the running window forward. An
+        // abandoned mutex (previous instance crashed) is adopted.
+        bool ownsSingleInstance;
+        try
         {
+            _singleInstanceMutex = new Mutex(initiallyOwned: false, name: mutexName, out _);
+            try
+            {
+                ownsSingleInstance = _singleInstanceMutex.WaitOne(TimeSpan.Zero, exitContext: false);
+            }
+            catch (AbandonedMutexException)
+            {
+                ownsSingleInstance = true;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ownsSingleInstance = false;
+        }
+
+        if (!ownsSingleInstance)
+        {
+            _singleInstanceMutex?.Dispose();
+            _singleInstanceMutex = null;
             if (!composition.IsHarness)
             {
                 ActivateExistingInstance();

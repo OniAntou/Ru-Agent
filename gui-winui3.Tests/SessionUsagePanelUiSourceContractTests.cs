@@ -32,7 +32,7 @@ public sealed class SessionUsagePanelUiSourceContractTests
     [Fact]
     public void Both_row_actions_appear_and_disappear_together()
     {
-        string code = GuiSource.Text("MainWindow.xaml.cs");
+        string code = GuiSource.ViewText("MainWindow");
         string reveal = GuiSource.MethodBody(code, "SetSessionRowActionsVisible");
 
         Assert.Contains("SessionDeleteButton", reveal, StringComparison.Ordinal);
@@ -43,7 +43,7 @@ public sealed class SessionUsagePanelUiSourceContractTests
     [Fact]
     public void Opening_the_menu_centres_a_panel_over_the_shell_and_reads_that_session()
     {
-        string code = GuiSource.Text("MainWindow.xaml.cs");
+        string code = GuiSource.ViewText("MainWindow");
         string open = GuiSource.MethodBody(code, "OnSessionUsageClick");
 
         // The session comes off the button that was clicked, never off "the session
@@ -60,7 +60,7 @@ public sealed class SessionUsagePanelUiSourceContractTests
     public void The_centred_panel_can_be_closed_three_ways()
     {
         var document = GuiSource.Xml("MainWindow.xaml");
-        string code = GuiSource.Text("MainWindow.xaml.cs");
+        string code = GuiSource.ViewText("MainWindow");
 
         // Backdrop, close button, and Escape: the ways out of every other modal in
         // the shell, so this one does not invent its own.

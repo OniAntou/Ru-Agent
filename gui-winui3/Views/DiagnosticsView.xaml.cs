@@ -566,8 +566,17 @@ namespace RuApp.Views
             _refreshController?.SetActive(false);
             if (_refreshController != null)
             {
-                _ = _refreshController.DisposeAsync().AsTask();
+                var controller = _refreshController;
                 _refreshController = null;
+                // Fire-and-forget with ConfigureAwait(false) inside: blocking
+                // here froze the UI thread whenever the in-flight refresh
+                // arrived after this call began.
+                _ = controller.DisposeAsync().AsTask().ContinueWith(
+                    static faulted => System.Diagnostics.Debug.WriteLine(
+                        $"[DiagnosticsView] Refresh dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
             }
         }
     }

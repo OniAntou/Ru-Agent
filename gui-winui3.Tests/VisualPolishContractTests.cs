@@ -270,7 +270,7 @@ public sealed class VisualPolishContractTests
 
         // The wave yields to reduced motion: a static muted tint replaces the
         // 25fps loop when the user disables OS animations.
-        var codeBehind = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var codeBehind = GuiSource.ViewText("ChatView");
         Assert.Contains("StartTextSweep", codeBehind, StringComparison.Ordinal);
 
         var sweepStart = codeBehind.IndexOf("private void StartTextSweep", StringComparison.Ordinal);
@@ -302,7 +302,7 @@ public sealed class VisualPolishContractTests
         Assert.InRange(UiTiming.ActivityWavePeriodSeconds, 0.05, 5.0);
         Assert.InRange(UiTiming.ActivityFlushBatch, TimeSpan.FromMilliseconds(16), TimeSpan.FromMilliseconds(250));
 
-        var codeBehind = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var codeBehind = GuiSource.ViewText("ChatView");
         Assert.Contains("ActivityWavePeriodSeconds", codeBehind, StringComparison.Ordinal);
 
         // The feed renders every frame as it arrives. A completion used to wait out a

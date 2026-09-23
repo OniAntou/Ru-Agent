@@ -34,7 +34,7 @@ public sealed class AgentSessionRecoveryTests
     [Fact]
     public void ChatView_retries_a_stale_session_only_through_the_recovery_helper()
     {
-        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SendAgentTurnAsync");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendAgentTurnAsync");
 
         // The view asks the helper whether this failure is a stale session; it carries no
         // list of codes of its own, which is what would drift from the API.
@@ -53,7 +53,7 @@ public sealed class AgentSessionRecoveryTests
     public void Recovery_replaces_the_session_before_replaying_the_turn()
     {
         // Replaying against the session that just failed would fail the same way.
-        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SendAgentTurnAsync");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendAgentTurnAsync");
 
         int recover = body.IndexOf("await RecoverAgentSessionAsync(", StringComparison.Ordinal);
         int replay = body.IndexOf("await SendAgentTurnAsync(", StringComparison.Ordinal);
@@ -66,7 +66,7 @@ public sealed class AgentSessionRecoveryTests
     [Fact]
     public void ChatView_waits_for_the_previous_agent_run_to_cancel_before_switching_session()
     {
-        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "OpenSessionAsync");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
 
         int stop = body.IndexOf("await StopActiveAgentAsync(force: true);", StringComparison.Ordinal);
         int switchSession = body.IndexOf("_activeSessionId = sessionId;", StringComparison.Ordinal);
@@ -86,7 +86,7 @@ public sealed class AgentSessionRecoveryTests
         // Both halves key off the active session id, so saving after the switch would
         // file the outgoing text under the incoming conversation, and restoring before
         // it would look up the wrong id.
-        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "OpenSessionAsync");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
 
         int save = body.IndexOf("Save(_activeSessionId", StringComparison.Ordinal);
         int switchSession = body.IndexOf("_activeSessionId = sessionId;", StringComparison.Ordinal);

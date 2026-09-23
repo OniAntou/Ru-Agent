@@ -107,7 +107,7 @@ public sealed class AgentSessionUiSourceContractTests
         // carry no literal glyph or announced name of their own. ChatView cannot be
         // constructed here — it needs the XAML runtime — so the invariant is read off
         // the method that does the assigning.
-        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var code = GuiSource.ViewText("ChatView");
         var literals = GuiSource.StringLiterals(GuiSource.MethodBody(code, "UpdateSendButtonMode"));
 
         Assert.DoesNotContain(
@@ -157,7 +157,7 @@ public sealed class AgentSessionUiSourceContractTests
 
         // The runtime sizes realized columns on load and on every resize, so a
         // pooled container never keeps a stale width.
-        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var code = GuiSource.ViewText("ChatView");
         Assert.Contains(
             "LayoutRealizedMessageColumns",
             GuiSource.MethodBody(code, "ApplyInputWidth"),
@@ -347,7 +347,7 @@ public sealed class AgentSessionUiSourceContractTests
     [Fact]
     public void Sidebar_render_wires_projection_and_new_chat_cascade()
     {
-        var code = GuiSource.Text("MainWindow.xaml.cs");
+        var code = GuiSource.ViewText("MainWindow");
         Assert.Contains(
             "WorkspaceSessionProjection.Project",
             GuiSource.MethodBody(code, "RenderWorkspaceSidebar"),
@@ -397,7 +397,7 @@ public sealed class AgentSessionUiSourceContractTests
             "SetRequestedWorkspace",
             BindingFlags.Instance | BindingFlags.Public));
 
-        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var code = GuiSource.ViewText("ChatView");
         var body = GuiSource.MethodBody(code, "SendAgentTurnAsync");
         Assert.Contains("_requestedWorkspace", body, StringComparison.Ordinal);
         Assert.Contains("App root workspace is not configured", body, StringComparison.Ordinal);
@@ -416,7 +416,7 @@ public sealed class AgentSessionUiSourceContractTests
 
         // Same deal for the secondary New Chat CTA: the template owns hover,
         // so the sidebar hover setup must not touch it either.
-        var shellCode = GuiSource.Text("MainWindow.xaml.cs");
+        var shellCode = GuiSource.ViewText("MainWindow");
         var sidebarHover = GuiSource.MethodBody(shellCode, "InitializeSidebarHoverEffects");
         Assert.DoesNotContain("NavNewChat", sidebarHover, StringComparison.Ordinal);
     }

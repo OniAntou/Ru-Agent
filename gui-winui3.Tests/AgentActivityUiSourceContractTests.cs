@@ -140,7 +140,7 @@ public sealed class AgentActivityUiSourceContractTests
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         Assert.False(GuiSource.NamedElements(document).ContainsKey("AgentActivityIcon"));
 
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         Assert.DoesNotContain("ApplyActivityIcon", code, StringComparison.Ordinal);
         Assert.DoesNotContain("ActionGlyph", code, StringComparison.Ordinal);
     }
@@ -160,7 +160,7 @@ public sealed class AgentActivityUiSourceContractTests
             template!.Descendants(),
             element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "CopyActivityErrorButton");
 
-        Assert.False(GuiSource.HasMember(GuiSource.Text("Views", "ChatView.xaml.cs"), "OnCopyActivityErrorClick"));
+        Assert.False(GuiSource.HasMember(GuiSource.ViewText("ChatView"), "OnCopyActivityErrorClick"));
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class AgentActivityUiSourceContractTests
     {
         // Sweep and entrance stay off when the user disables animations: the
         // running row falls back to a static tint.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
         Assert.Contains("AnimationsEnabled", attach, StringComparison.Ordinal);
@@ -206,7 +206,7 @@ public sealed class AgentActivityUiSourceContractTests
             "{x:Bind ShowRowDetailToggle, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}",
             GuiSource.AttributeValue(toggle, "Visibility"));
 
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         Assert.False(GuiSource.HasMember(code, "ApplyEditPreviewExpanded"));
     }
 
@@ -244,7 +244,7 @@ public sealed class AgentActivityUiSourceContractTests
         var template = ActivityTemplate();
         Assert.True(Binds(template, "IsWaiting"), "AgentActivityTemplate must bind IsWaiting.");
 
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string attach = GuiSource.MethodBody(code, "AttachActivityItem");
         Assert.Contains("ApplyActivityLiveSetting", attach, StringComparison.Ordinal);
 

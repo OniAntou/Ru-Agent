@@ -63,7 +63,7 @@ public sealed class TranscriptSizeUiSourceContractTests
     [Fact]
     public void The_code_applies_both_sizes_from_the_shared_instance()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.True(GuiSource.HasMember(code, "ApplyTranscriptTypography"));
         string body = GuiSource.MethodBody(code, "ApplyTranscriptTypography");
@@ -76,7 +76,7 @@ public sealed class TranscriptSizeUiSourceContractTests
     [Fact]
     public void A_realised_row_applies_the_size_when_its_template_loads()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string body = GuiSource.MethodBody(code, "OnMessageColumnLoaded");
 
         // Without this the size would only apply to rows created after a change.

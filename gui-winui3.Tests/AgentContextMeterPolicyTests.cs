@@ -157,7 +157,7 @@ public sealed class AgentContextMeterPolicyTests
         // Clearing the transcript repaints zero and the refills arrive inside
         // the one-second throttle, so the open path must repaint by force once
         // history is in place instead of staying stuck at zero.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string open = GuiSource.MethodBody(code, "OpenSessionAsync");
         Assert.Contains("UpdateContextUsage", open, StringComparison.Ordinal);
     }
@@ -181,7 +181,7 @@ public sealed class AgentContextMeterPolicyTests
         GuiSource.Require(document, "ContextMessagesLabel");
         GuiSource.Require(document, "ContextOverheadLabel");
 
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateContextUsage");
         Assert.Contains("OverheadTokens", update, StringComparison.Ordinal);
     }
@@ -191,7 +191,7 @@ public sealed class AgentContextMeterPolicyTests
     {
         // The bar must mirror the percentage against the budget: a near-empty
         // session paints a sliver, never a full track.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string paint = GuiSource.MethodBody(code, "PaintContextBreakdown");
         Assert.Contains("maximumTokens", paint, StringComparison.Ordinal);
     }

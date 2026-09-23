@@ -71,7 +71,7 @@ public sealed class ChatFollowContractTests
         // It is reachable: every click handler the markup names is defined in the
         // code-behind. Searching the file for one handler name would pass on a stale
         // definition the markup no longer points at.
-        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var code = GuiSource.ViewText("ChatView");
         var handlers = GuiSource.ClickHandlers(document);
         Assert.NotEmpty(handlers);
         Assert.All(handlers, handler => Assert.True(
@@ -86,7 +86,7 @@ public sealed class ChatFollowContractTests
         // one session's half-typed message into another. The rule lives in
         // ComposerDraftStore and is asserted there; this checks the view reaches it
         // rather than keeping a map of its own.
-        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var code = GuiSource.ViewText("ChatView");
 
         var restore = GuiSource.MethodBody(code, "RestoreComposerDraft");
         Assert.Contains("_composerDrafts", restore, StringComparison.Ordinal);

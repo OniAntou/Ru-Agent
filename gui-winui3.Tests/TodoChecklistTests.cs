@@ -19,7 +19,7 @@ public sealed class TodoChecklistTests
     {
         // The panel owns visibility now, not a template binding: empty hides it,
         // a fresh list shows it.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("Visibility.Collapsed", update, StringComparison.Ordinal);
@@ -118,7 +118,7 @@ public sealed class TodoChecklistTests
     public void The_collapsed_panel_keeps_only_its_header_line()
     {
         // Collapsed means exactly one header line: the rows hide until expanded.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("TodoPanelList.Visibility", update, StringComparison.Ordinal);
@@ -145,7 +145,7 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_header_shows_a_count_pill_and_a_progress_hairline()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("TodoPanelCount", update, StringComparison.Ordinal);
@@ -173,7 +173,7 @@ public sealed class TodoChecklistTests
     {
         // A finished plan has nothing to watch: the panel hides itself and
         // gives the composer its standalone border back.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("ClearTodoPanel", update, StringComparison.Ordinal);
@@ -203,7 +203,7 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_finished_count_turns_success_and_the_progress_announces_itself()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("AppSuccessBrush", update, StringComparison.Ordinal);
@@ -215,7 +215,7 @@ public sealed class TodoChecklistTests
     [Fact]
     public void Showing_or_hiding_the_panel_rejoins_the_input_border()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.Contains("FuseInputBorder", update, StringComparison.Ordinal);
@@ -234,7 +234,7 @@ public sealed class TodoChecklistTests
 
         Assert.Equal("1", GuiSource.AttributeValue(panel, "Row"));
 
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string update = GuiSource.MethodBody(code, "UpdateTodoPanel");
         Assert.DoesNotContain("SetRow", update, StringComparison.Ordinal);
     }
@@ -242,7 +242,7 @@ public sealed class TodoChecklistTests
     [Fact]
     public void The_panel_is_updated_from_the_activity_that_carries_todos()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.True(GuiSource.HasMember(code, "UpdateTodoPanel"));
 
@@ -253,7 +253,7 @@ public sealed class TodoChecklistTests
     [Fact]
     public void Switching_session_clears_the_panel()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.True(GuiSource.HasMember(code, "ClearTodoPanel"));
 

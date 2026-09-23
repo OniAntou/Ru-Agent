@@ -281,7 +281,7 @@ public sealed class ChatMessageAttachmentTests
         // The send path caps the count from the policy constant and announces the cap
         // from the same place. A literal in either would make the constant decorative:
         // changing MaxImageCount would not change the limit, or the number the user reads.
-        var send = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SendCurrentMessageAsync");
+        var send = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendCurrentMessageAsync");
 
         Assert.Contains("ChatAttachmentPolicy.MaxImageCount", send, StringComparison.Ordinal);
         Assert.Contains("ChatAttachmentPolicy.TooManyImagesStatus", send, StringComparison.Ordinal);
@@ -289,7 +289,7 @@ public sealed class ChatMessageAttachmentTests
 
         // The attachment path resizes through the shared resizer rather than sending the
         // original bytes.
-        var attach = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "AddFileAttachmentAsync");
+        var attach = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "AddFileAttachmentAsync");
         Assert.Contains("ImageAttachmentResizer.ResizeIfNeededAsync", attach, StringComparison.Ordinal);
     }
 
@@ -352,15 +352,7 @@ public sealed class ChatMessageAttachmentTests
             Assert.Contains("Click=\"OnImageAttachmentClick\"", xaml, StringComparison.Ordinal);
         }
 
-        string csPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml.cs");
-        if (!File.Exists(csPath))
-        {
-            csPath = Path.Combine("Views", "ChatView.xaml.cs");
-        }
-        if (File.Exists(csPath))
-        {
-            string cs = File.ReadAllText(csPath);
-            Assert.Contains("OnImageAttachmentClick", cs, StringComparison.Ordinal);
-        }
+        string cs = GuiSource.ViewText("ChatView");
+        Assert.Contains("OnImageAttachmentClick", cs, StringComparison.Ordinal);
     }
 }

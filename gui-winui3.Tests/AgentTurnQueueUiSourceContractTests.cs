@@ -23,7 +23,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     [Fact]
     public void Enter_queues_while_a_run_is_in_hand()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.Contains(
             "QueueCurrentComposerTurn",
@@ -34,7 +34,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     [Fact]
     public void A_turn_ends_into_the_queue()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.Contains(
             "DrainQueuedTurnsAsync",
@@ -45,7 +45,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     [Fact]
     public void Stopping_the_run_holds_the_queue_instead_of_starting_it()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.Contains(
             "HoldAfterStop",
@@ -56,7 +56,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     [Fact]
     public void Switching_session_drops_the_queue()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         Assert.Contains(
             "_queuedTurns.Clear",
@@ -68,7 +68,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     public void Every_handler_the_queue_markup_wires_exists_in_the_code_behind()
     {
         var document = GuiSource.Xml("Views", "ChatView.xaml");
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         foreach (var handler in new[] { "OnRemoveQueuedTurnClick", "OnSendQueuedTurnsClick" })
         {
@@ -80,7 +80,7 @@ public sealed class AgentTurnQueueUiSourceContractTests
     [Fact]
     public void The_composer_says_which_of_the_two_things_enter_will_do()
     {
-        string update = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "UpdateSendButtonMode");
+        string update = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "UpdateSendButtonMode");
 
         Assert.Contains("AgentComposerPresentation.QueuePlaceholder", update, StringComparison.Ordinal);
         Assert.Contains("AgentComposerPresentation.MessagePlaceholder", update, StringComparison.Ordinal);

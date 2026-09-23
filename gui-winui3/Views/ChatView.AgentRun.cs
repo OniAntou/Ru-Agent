@@ -1,0 +1,1235 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Data;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Dispatching;
+using Windows.Foundation;
+using RuAgent.Client;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol.Harness;
+using RuApp.Controls;
+using RuApp.Models;
+using RuApp.Services;
+using Windows.Storage.Streams;
+using System.IO;
+
+namespace RuApp.Views
+{
+    public sealed partial class ChatView
+    {
+        private void ShowAgentInlineStatus(string status)
+        {
+            AgentStatusText.Text = status;
+            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(status)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        // The markup binds its initial send face to these, so the XAML and the runtime
+        // assignment below read the same vocabulary instead of holding two copies.
+        public string SendFaceGlyph => AgentComposerPresentation.SendGlyph;
+
+        public string SendFaceName => AgentComposerPresentation.SendName;
+
+        private void UpdateAgentComposerVisuals()
+        {
+            if (AgentModeLabel is null)
+            {
+                return;
+            }
+
+            AgentModeLabel.Text = AgentComposerPresentation.AgentModeLabelText;
+            AgentModeIcon.Glyph = AgentComposerPresentation.AgentModeGlyph;
+            AgentModeButton.Visibility = Visibility.Collapsed;
+            AutomationProperties.SetName(
+                AgentModeButton,
+                AgentComposerPresentation.AgentModeName);
+            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex < 0 && AgentPresetBox.Items.Count > 0)
+            {
+                AgentPresetBox.SelectedIndex = 1;
+            }
+        }
+
+        public AgentPermissionPreset CurrentAgentPreset => _agentPreset;
+
+        public void SetAgentPreset(AgentPermissionPreset preset)
+        {
+            _agentPreset = preset;
+            if (AgentPresetBox is not null)
+            {
+                AgentPresetBox.SelectedIndex = preset switch
+                {
+                    AgentPermissionPreset.Plan => 0,
+                    AgentPermissionPreset.FullAccess => 2,
+                    _ => 1,
+                };
+            }
+            UpdateAgentInlineState();
+        }
+
+        private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isSendingUserTurn)
+            {
+                return;
+            }
+
+            _agentPreset = SelectedAgentPreset();
+            UpdateAgentInlineState();
+        }
+
+        private AgentPermissionPreset SelectedAgentPreset()
+        {
+            if (AgentPresetBox?.SelectedItem is ComboBoxItem item
+                && item.Tag is string tag)
+            {
+                if (string.Equals(tag, "plan", StringComparison.Ordinal))
+                {
+                    return AgentPermissionPreset.Plan;
+                }
+
+                if (string.Equals(tag, "full_access", StringComparison.Ordinal))
+                {
+                    return AgentPermissionPreset.FullAccess;
+                }
+            }
+
+            return AgentPermissionPreset.Standard;
+        }
+
+        private bool _isSendButtonInStopMode;
+
+        private void UpdateSendButtonMode(bool isAgentRunning)
+        {
+            if (SendButton is null) return;
+
+            _isSendButtonInStopMode = isAgentRunning;
+
+            if (isAgentRunning)
+            {
+                if (SendButtonIcon is not null)
+                {
+                    SendButtonIcon.Glyph = AgentComposerPresentation.StopGlyph;
+                    SendButtonIcon.Margin = new Thickness(0);
+                    if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccentStop) && onAccentStop is Brush onAccentStopBrush)
+                    {
+                        SendButtonIcon.Foreground = onAccentStopBrush;
+                    }
+                }
+                AutomationProperties.SetName(SendButton, AgentComposerPresentation.StopName);
+            }
+            else
+            {
+                if (SendButtonIcon is not null)
+                {
+                    SendButtonIcon.Glyph = AgentComposerPresentation.SendGlyph;
+                    SendButtonIcon.Margin = new Thickness(-1, 1, 0, 0);
+                    if (Application.Current.Resources.TryGetValue("RuOnAccentBrush", out var onAccentBrush) && onAccentBrush is Brush onAccent)
+                    {
+                        SendButtonIcon.Foreground = onAccent;
+                    }
+                }
+                AutomationProperties.SetName(SendButton, AgentComposerPresentation.SendName);
+            }
+
+            // The composer says which of the two things Enter will do, so a second
+            // thought is never typed into a box that silently swallows it.
+            if (ChatInputTextBox is not null)
+            {
+                ChatInputTextBox.PlaceholderText = isAgentRunning
+                    ? AgentComposerPresentation.QueuePlaceholder
+                    : AgentComposerPresentation.MessagePlaceholder;
+            }
+
+            UpdateQueuedTurnsPanel();
+        }
+
+        private void UpdateAgentInlineState()
+        {
+            bool agentBusy = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy;
+            if (_agentBusySeen && !agentBusy)
+            {
+                SettleAgentActivitiesAfterRun();
+            }
+
+            _agentBusySeen = agentBusy;
+
+            // The rules live in AgentInlinePanelPolicy; this method only projects the
+            // controller and assigns the result to controls.
+            var controller = _agentController;
+            var hasController = controller is not null;
+            bool runBelongsToAnotherSession = controller?.CurrentRun is { } currentRun
+                && !string.Equals(currentRun.SessionId, _activeSessionId, StringComparison.Ordinal);
+            bool keepTerminalFailureVisible = hasController
+                && AgentFailurePresentation.ShouldKeepVisible(
+                    controller!.CurrentRun?.Status,
+                    ResolveFailureReason(controller));
+            bool isRunningForStatus = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).ShowsStopAffordance;
+            string statusText = hasController
+                ? AgentFailurePresentation.InlineFailureStatus(
+                    controller!.CurrentRun?.Status,
+                    ResolveFailureReason(controller),
+                    isRunningForStatus,
+                    HasRenderedAgentReply())
+                : string.Empty;
+
+            var state = AgentInlinePanelPolicy.Evaluate(new AgentInlinePanelInput(
+                HasController: hasController,
+                RunBelongsToAnotherSession: runBelongsToAnotherSession,
+                IsBusy: controller?.IsBusy == true,
+                CanCancel: controller?.CanCancel == true,
+                HasPendingApproval: controller?.HasPendingApproval == true,
+                NeedsWorkspaceTrust: controller?.NeedsWorkspaceTrust == true,
+                CanContinue: controller?.CanContinue == true,
+                KeepTerminalFailureVisible: keepTerminalFailureVisible,
+                RunPending: IsActiveAgentRunPending(),
+                StatusText: statusText,
+                InteractionPending: _agentActionPending));
+
+            UpdateSendButtonMode(isAgentRunning: state.IsRunning);
+
+            if (state.ClearActivityVisibility)
+            {
+            }
+
+            if (state.AutoApproveWorkspaceTrust && controller is not null)
+            {
+                // Workspace trust is auto-granted: a project-root chat starts silently.
+                _ = controller.TrustAsync(approve: true);
+            }
+
+            AgentInlinePanel.Visibility = state.ShowInlinePanel ? Visibility.Visible : Visibility.Collapsed;
+
+            AgentStatusText.Text = state.ShowInlinePanel ? state.StatusText : string.Empty;
+            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(AgentStatusText.Text)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            AgentStopButton.Visibility = state.ShowStop ? Visibility.Visible : Visibility.Collapsed;
+
+            if (state.ShowApproval && controller is not null)
+            {
+                string summary = AgentApprovalSummaryPresentation.Render(
+                    controller.PendingApprovalSummary);
+                string? terminalCommand = AgentApprovalPresentation.ResolveTerminalCommand(
+                    controller.PendingApprovalCommand,
+                    AgentActivities);
+
+                ApprovalPanel.Show(
+                    summary,
+                    terminalCommand,
+                    AgentApprovalPresentation.CanAllowSessionDirectory(controller.PendingApprovalSummary));
+
+                // Approval arrives via SSE while the user may be scrolled up; bring
+                // the Approve/Deny prompt into view and put the keyboard on it.
+                ScrollChatToBottom();
+                ApprovalPanel.FocusDecision();
+            }
+            else
+            {
+                ApprovalPanel.Hide();
+            }
+
+            ApprovalPanel.SetDecisionEnabled(!state.SuppressInteraction);
+            if (AgentStopButton is not null)
+            {
+                AgentStopButton.IsEnabled = !state.SuppressInteraction;
+            }
+        }
+
+        private static string ResolveFailureReason(AgentRunController controller)
+        {
+            // The SSE final_snapshot only carries the bare run status ("failed"),
+            // which tells the user nothing. Prefer the durable terminal error
+            // code (repeated_tool_call, provider_rate_limited, ...) whenever the
+            // stream text is just a bare status word.
+            string streamText = controller.StatusText ?? string.Empty;
+            string? terminalCode = string.Equals(controller.CurrentRun?.Status, "failed", StringComparison.Ordinal)
+                ? controller.CurrentRun?.TerminalErrorCode
+                : null;
+            if (!string.IsNullOrWhiteSpace(terminalCode) && IsBareRunStatusWord(streamText))
+            {
+                return terminalCode!;
+            }
+
+            return streamText;
+        }
+
+        private static bool IsBareRunStatusWord(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return true;
+            }
+
+            return text.Trim() is string trimmed
+                && (string.Equals(trimmed, "failed", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "completed", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "cancelled", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "interrupted", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(trimmed, "Run ended.", StringComparison.OrdinalIgnoreCase));
+        }
+
+        // ── Run activity ───────────────────────────────────────
+        // "Is a run in hand for this session?" is one question with one answer, asked
+        // by the send guard, the delta gate, the tool-output gate, the inline panel,
+        // and the composer mode. It lives in AgentRunActivityPolicy; the view only
+        // projects its own state and the controller's into it.
+        private AgentRunActivityInput SnapshotRunActivity()
+        {
+            string? runSessionId = _agentController?.CurrentRun?.SessionId;
+            return new AgentRunActivityInput(
+                IsSendingTurn: _isSendingUserTurn,
+                HasRun: _agentController?.CurrentRun is not null,
+                RunSessionId: runSessionId,
+                ActiveSessionId: _activeSessionId,
+                CanCancel: _agentController?.CanCancel == true,
+                HasPendingApproval: _agentController?.HasPendingApproval == true,
+                NeedsWorkspaceTrust: _agentController?.NeedsWorkspaceTrust == true,
+                IsBusy: _agentController?.IsBusy == true);
+        }
+
+        /// <summary>
+        /// True while this session has a run in hand, including the send window. The
+        /// synchronous send guard lives here: entry points (Enter key, Send click) use
+        /// this, so a second Enter during the create-run await cannot produce a
+        /// duplicate user bubble and a duplicate run.
+        /// </summary>
+        private bool IsActiveAgentRunPending() =>
+            AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsGuarded;
+
+        /// <summary>
+        /// Whether a live stream frame belongs in this chat: the controller is busy on
+        /// this session, or the view is between tapping Send and the run existing. Every
+        /// live-stream gate asks this one question.
+        /// </summary>
+        private bool HasRunInHand() =>
+            AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()) is { IsSessionBusy: true }
+                or { Reason: AgentRunActivityReason.Sending };
+
+        /// <summary>
+        /// The controller's own view of the run, without the send guard.
+        /// SendAgentTurnAsync must use this: it already holds the guard, so asking the
+        /// guarded question there would block its own caller.
+        /// </summary>
+        private bool IsControllerRunPending() =>
+            AgentRunActivityPolicy.IsControllerRunPending(SnapshotRunActivity());
+
+        private void ResetAgentState()
+        {
+            ClearAgentActivities();
+            ClearTodoPanel();
+            // The queue belongs to the session that was on screen; a queue that
+            // followed the user into another conversation would send a turn into the
+            // wrong transcript.
+            _queuedTurns.Clear();
+
+            var monitor = _agentMonitorCts;
+            _agentMonitorCts = null;
+            monitor?.Cancel();
+            monitor?.Dispose();
+            _agentActionPending = false;
+            _isSendingUserTurn = false;
+            _activeAgentUsage = null;
+            _agentPreset = AgentPermissionPreset.Standard;
+            _agentPresetSessionId = null;
+            _agentPresetVersion = null;
+            AbandonActiveAgentReply();
+
+            UpdateAgentComposerVisuals();
+            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 1)
+            {
+                AgentPresetBox.SelectedIndex = 1;
+            }
+            AgentInlinePanel.Visibility = Visibility.Collapsed;
+            ApprovalPanel.Hide();
+            AgentStopButton.Visibility = Visibility.Collapsed;
+            AgentStatusText.Text = string.Empty;
+            AgentStatusText.Visibility = Visibility.Collapsed;
+            UpdateSendButtonMode(isAgentRunning: false);
+        }
+
+
+        private static string StripDisplayMarkers(string content) => ChatDisplayMarkers.Strip(content);
+
+        private async void OnSuggestionClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button)
+            {
+                return;
+            }
+
+            var promptText = button.Tag as string;
+            if (string.IsNullOrWhiteSpace(promptText))
+            {
+                return;
+            }
+
+            ChatInputTextBox.Text = promptText;
+            await SendCurrentMessageAsync();
+        }
+
+        private async void OnSendClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_isSendButtonInStopMode || IsActiveAgentRunPending())
+                {
+                    await StopActiveAgentAsync();
+                    return;
+                }
+
+                await SendCurrentMessageAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in OnSendClick: {ex.Message}");
+            }
+        }
+
+
+
+        private void OnRemoveAttachmentClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string id)
+            {
+                var item = PendingAttachments.FirstOrDefault(a => a.Id == id);
+                if (item != null)
+                {
+                    PendingAttachments.Remove(item);
+                }
+                if (PendingAttachments.Count == 0)
+                {
+                    AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+                }
+            }
+        }
+        private async void OnChatInputPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            try
+            {
+                if (e.Key == Windows.System.VirtualKey.V)
+                {
+                    var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                        .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                    if (ctrlDown)
+                    {
+                        var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+                        if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap)
+                            || package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+                        {
+                            e.Handled = true;
+                            await TryPasteImageFromClipboardAsync();
+                            return;
+                        }
+                    }
+                }
+
+                if (e.Key == Windows.System.VirtualKey.Enter)
+                {
+                    var shiftDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
+                        .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                    if (!shiftDown)
+                    {
+                        e.Handled = true;
+                        if (_isSendButtonInStopMode || IsActiveAgentRunPending())
+                        {
+                            // A second thought lands in the queue instead of being
+                            // dropped: the run in hand owns the turn boundary, and
+                            // Enter still means "this is what I want next".
+                            QueueCurrentComposerTurn();
+                            return;
+                        }
+                        await SendCurrentMessageAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in OnChatInputPreviewKeyDown: {ex.Message}");
+            }
+        }
+
+        private void OnInputDragOver(object sender, DragEventArgs e)
+        {
+            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+                e.DragUIOverride.Caption = "Drop to attach files / images";
+                e.DragUIOverride.IsContentVisible = true;
+            }
+        }
+
+        private async Task SendCurrentMessageAsync()
+        {
+            if (_isSendingUserTurn)
+            {
+                return;
+            }
+
+            try
+            {
+                string text = ChatInputTextBox.Text.Trim();
+                var attachments = PendingAttachments.ToList();
+
+                if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
+
+                if (IsContinueResumeCommand(text, attachments) && _agentController?.CanContinue == true)
+                {
+                    // Typed "Continue" resumes a resumable run instead of
+                    // starting a new turn; the failure message points here.
+                    ChatInputTextBox.Text = string.Empty;
+                    await RunAgentActionAsync(
+                        () => _agentController?.ContinueAsync() ?? Task.CompletedTask,
+                        "Resuming Coding Agent…");
+                    return;
+                }
+
+                _isSendingUserTurn = true;
+                UpdateSendButtonMode(isAgentRunning: true);
+
+                int imageCount = attachments.Count(static attachment => attachment.IsImage);
+                if (imageCount > ChatAttachmentPolicy.MaxImageCount)
+                {
+                    ShowAgentInlineStatus(ChatAttachmentPolicy.TooManyImagesStatus);
+                    return;
+                }
+
+                ChatInputTextBox.Text = string.Empty;
+                PendingAttachments.Clear();
+                AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+                ClearComposerDraft(_activeSessionId);
+
+                await SendAgentTurnAsync(
+                    BuildEffectivePrompt(text, attachments),
+                    CancellationToken.None,
+                    attachments: attachments,
+                    displayUserText: text);
+            }
+            catch (Exception ex)
+            {
+                FailActiveAgentReply(ex);
+                ShowAgentError(ex);
+            }
+            finally
+            {
+                _isSendingUserTurn = false;
+                UpdateAgentInlineState();
+            }
+        }
+
+        /// <summary>
+        /// The prompt the Agent actually receives: the typed text with every attached
+        /// document inlined above it as labelled fenced blocks. The send path and the
+        /// queue drain share it, so a turn is inlined the same way however it left
+        /// the composer.
+        /// </summary>
+        private static string BuildEffectivePrompt(string text, IReadOnlyList<ImageAttachmentItem> attachments)
+        {
+            var textAttachments = attachments
+                .Where(attachment => !attachment.IsImage && !string.IsNullOrWhiteSpace(attachment.TextContent))
+                .ToList();
+            if (textAttachments.Count == 0)
+            {
+                return text;
+            }
+
+            var builder = new System.Text.StringBuilder();
+            foreach (var document in textAttachments)
+            {
+                string language = document.FileExtension.TrimStart('.');
+                builder.AppendLine($"[Attached file: {document.FileName} ({document.FormattedSize})]");
+                builder.AppendLine($"```{language}");
+                builder.AppendLine(document.TextContent);
+                builder.AppendLine("```");
+                builder.AppendLine();
+            }
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                builder.AppendLine(text);
+            }
+
+            return builder.ToString().TrimEnd();
+        }
+
+        /// <summary>
+        /// Takes what the composer holds and puts it behind the run in hand. False
+        /// means the text stayed where it was: nothing to queue, or the queue is full.
+        /// </summary>
+        private bool QueueCurrentComposerTurn()
+        {
+            string text = ChatInputTextBox?.Text?.Trim() ?? string.Empty;
+            var attachments = PendingAttachments.ToList();
+            if (text.Length == 0 && attachments.Count == 0)
+            {
+                return false;
+            }
+
+            if (!_queuedTurns.TryEnqueue(text, text, attachments))
+            {
+                ShowAgentInlineStatus(AgentComposerPresentation.QueueFullStatus);
+                return false;
+            }
+
+            if (ChatInputTextBox is not null)
+            {
+                ChatInputTextBox.Text = string.Empty;
+            }
+            PendingAttachments.Clear();
+            AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+            ClearComposerDraft(_activeSessionId);
+            ShowAgentInlineStatus(AgentComposerPresentation.QueuedStatus);
+            return true;
+        }
+
+        /// <summary>
+        /// Shows a row's fold chevron while the pointer is on it, or while it holds focus.
+        /// </summary>
+        /// <remarks>
+        /// The chevron says "this line folds", which a reader learns once; after that it is a
+        /// column of glyphs down the whole feed. It is collapsed rather than dimmed — a muted
+        /// glyph at low opacity is the double dimming the palette rules exist to prevent — and
+        /// it sits in a fixed-width box so the label beside it does not jump sideways the
+        /// moment the pointer arrives. Focus counts as hovering, because a keyboard reader has
+        /// no pointer to reveal it with.
+        /// </remarks>
+        private void OnActivityTogglePointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, true);
+
+        private void OnActivityTogglePointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, false);
+
+        private void OnActivityToggleGotFocus(object sender, RoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, true);
+
+        private void OnActivityToggleLostFocus(object sender, RoutedEventArgs e) =>
+            SetActivityChevronVisible(sender, false);
+
+        private static void SetActivityChevronVisible(object sender, bool visible)
+        {
+            if (sender is not ToggleButton toggle || toggle.Content is not DependencyObject content)
+            {
+                return;
+            }
+
+            // One glyph per toggle header, and it is the only icon in there.
+            FontIcon? chevron = EnumerateDescendants(content).OfType<FontIcon>().FirstOrDefault();
+            if (chevron is not null)
+            {
+                chevron.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private void OnRemoveQueuedTurnClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is QueuedAgentTurn turn)
+            {
+                _queuedTurns.Remove(turn);
+            }
+        }
+
+        private async void OnSendQueuedTurnsClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // A hand-driven flush answers this click, so the stop hold that was
+                // guarding the automatic drain no longer applies to what is left.
+                _queuedTurns.ReleaseHold();
+                await DrainQueuedTurnsAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                ShowAgentError(exception);
+            }
+        }
+
+        /// <summary>
+        /// Hands the first queued turn over: called when a turn reaches its end, and
+        /// by the strip's own Send now control.
+        /// </summary>
+        private async Task DrainQueuedTurnsAsync(CancellationToken cancellationToken)
+        {
+            if (_agentController is null || !_queuedTurns.TryBeginAutoDrain())
+            {
+                UpdateQueuedTurnsPanel();
+                return;
+            }
+
+            var next = _queuedTurns.TakeFirst();
+            if (next is null)
+            {
+                UpdateQueuedTurnsPanel();
+                return;
+            }
+
+            try
+            {
+                await SendAgentTurnAsync(
+                    BuildEffectivePrompt(next.Text, next.Attachments),
+                    cancellationToken,
+                    attachments: next.Attachments.ToList(),
+                    displayUserText: next.DisplayText);
+            }
+            catch (Exception exception)
+            {
+                FailActiveAgentReply(exception);
+                ShowAgentError(exception);
+            }
+        }
+
+        private void UpdateQueuedTurnsPanel()
+        {
+            if (QueuedTurnsPanel is null || QueuedTurnsHeader is null || QueuedTurnsSendButton is null)
+            {
+                return;
+            }
+
+            int count = _queuedTurns.Items.Count;
+            QueuedTurnsPanel.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            QueuedTurnsHeader.Text = count == 1 ? "1 message queued" : $"{count} messages queued";
+
+            // While a run is in hand the queue drains on its own, so offering to send
+            // it by hand would promise a turn boundary the user cannot have yet.
+            bool canSendNow = count > 0 && !_isSendButtonInStopMode && !IsActiveAgentRunPending();
+            QueuedTurnsSendButton.Visibility = canSendNow ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private async Task SendAgentTurnAsync(
+            string text,
+            CancellationToken cancellationToken,
+            bool allowSessionRecovery = true,
+            List<ImageAttachmentItem>? attachments = null,
+            string? displayUserText = null,
+            bool addUserMessage = true)
+        {
+            if (allowSessionRecovery)
+            {
+                _agentSessionRecovery.Reset();
+            }
+
+            if (_agentController is null)
+            {
+                throw new InvalidOperationException("Agent controller is unavailable.");
+            }
+
+            if (IsControllerRunPending())
+            {
+                ShowAgentInlineStatus("Coding Agent is already running. Please complete or stop the current turn first.");
+                return;
+            }
+
+
+            await EnsureAgentSessionAsync(cancellationToken);
+            string workspace = AgentWorkspaceSelection.Resolve(_requestedWorkspace, _defaultAgentWorkspace)
+                ?? _defaultAgentWorkspace
+                ?? throw new InvalidOperationException("App root workspace is not configured.");
+
+            _agentWorkspace = workspace;
+
+            try
+            {
+                AgentPermissionPreset preset = SelectedAgentPreset();
+                if (preset == AgentPermissionPreset.FullAccess && !await ConfirmFullAccessAsync())
+                {
+                    if (AgentPresetBox is not null)
+                    {
+                        AgentPresetBox.SelectedIndex = 1;
+                    }
+                    _agentPreset = AgentPermissionPreset.Standard;
+                    UpdateAgentInlineState();
+                    return;
+                }
+
+                _agentPreset = preset;
+                long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
+                // The preset choice is stored server-side per session: the run
+                // request carries the same wire value so the stored selection and
+                // the run agree, but the stored selection stays authoritative.
+                string wirePreset = preset switch
+                {
+                    AgentPermissionPreset.Plan => "plan",
+                    AgentPermissionPreset.FullAccess => "full_access",
+                    _ => "standard",
+                };
+                var imagePayloads = attachments?
+                    .Where(a => a.IsImage && (!a.IsImage || !string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
+                    .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
+                    .ToList();
+
+                var request = new CreateAgentRunRequest(
+                    _activeSessionId,
+                    workspace,
+                    text,
+                    wirePreset,
+                    presetVersion,
+                    Guid.NewGuid().ToString("N"),
+                    imagePayloads);
+
+                _activeWorkspaceId = null;
+
+                StartNewAgentActivityRun();
+                BeginAgentReply(text, attachments, displayUserText, addUserMessage);
+                JumpToLatestForNewTurn();
+                ScrollChatToBottom();
+                ShowAgentInlineStatus("Preparing action…");
+                AgentStopButton.Visibility = Visibility.Collapsed;
+                UpdateSendButtonMode(isAgentRunning: true);
+                UpdateAgentInlineState();
+                await _agentController.CreateAndRunAsync(request, cancellationToken);
+                _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
+            }
+            catch (AgentApiException error) when (
+                allowSessionRecovery
+                && AgentSessionRecovery.IsRecoverable(error)
+                && _agentSessionRecovery.TryBegin(_activeSessionId))
+            {
+                // Preserve the completion gate while replacing the stale
+                // session and retrying this same logical turn once.
+                AbandonActiveAgentReply(removeUserMessage: true);
+                await RecoverAgentSessionAsync(cancellationToken);
+                await SendAgentTurnAsync(
+                    text,
+                    cancellationToken,
+                    allowSessionRecovery: false,
+                    attachments: attachments,
+                    displayUserText: displayUserText);
+                return;
+            }
+
+            if (IsTerminalStatus(_agentController.CurrentRun?.Status))
+            {
+                await CompleteActiveAgentTurnAsync(cancellationToken);
+            }
+            else
+            {
+                StartAgentMonitor();
+            }
+            UpdateAgentInlineState();
+        }
+
+        private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
+        {
+            _activeAgentRunId = null;
+            _activeAgentReplyReceived = false;
+            _activeAgentReplyCompleted = false;
+            _activeAgentUsage = null;
+            _terminalFailureCardContent = null;
+            _agentDeltaKeys.Clear();
+            _replyRenderScheduler.Invalidate();
+            lock (_accumulatorLock)
+            {
+                _replyAccumulator.Begin(_activeSessionId, _activeSessionId);
+            }
+
+            if (addUserMessage)
+            {
+                Messages.Add(new ChatMessageItem
+                {
+                    Role = "user",
+                    Content = !string.IsNullOrEmpty(displayUserText) ? displayUserText : text,
+                    SessionId = _activeSessionId,
+                    Attachments = attachments != null && attachments.Count > 0
+                        ? new ObservableCollection<ImageAttachmentItem>(attachments)
+                        : new ObservableCollection<ImageAttachmentItem>()
+                });
+            }
+
+            _activeAgentAssistantMessage = new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = string.Empty,
+                IsStreaming = true,
+                SessionId = _activeSessionId,
+            };
+            _activeAgentAssistantMessage.AgentActivities = AgentActivities;
+            _segmentFrozenLength = 0;
+            Messages.Add(_activeAgentAssistantMessage);
+        }
+
+        private async Task CompleteActiveAgentTurnAsync(CancellationToken cancellationToken)
+        {
+            if (_activeAgentReplyCompleted)
+            {
+                return;
+            }
+
+            _activeAgentReplyCompleted = true;
+            // Flush any pending coalesced render before completing
+            AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
+            if (pending != null && _activeAgentAssistantMessage != null)
+            {
+                if (!Messages.Contains(_activeAgentAssistantMessage))
+                {
+                    Messages.Add(_activeAgentAssistantMessage);
+                }
+                _activeAgentAssistantMessage.Content = pending.Text;
+                _activeAgentAssistantMessage.IsStreaming = false;
+                UpdateLiveTailText(_activeAgentAssistantMessage);
+                ScrollChatToBottom();
+            }
+            else if (_activeAgentAssistantMessage != null)
+            {
+                _activeAgentAssistantMessage.IsStreaming = false;
+            }
+            ChatMessageItem? placeholder = _activeAgentAssistantMessage;
+
+            string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
+            string fallbackText = latestAssistant
+                ?? StripDisplayMarkers(placeholder?.Content ?? string.Empty);
+            if (latestAssistant is null
+                && !_activeAgentReplyReceived
+                && placeholder is not null
+                && string.IsNullOrWhiteSpace(placeholder.Content)
+                && Messages.Contains(placeholder))
+            {
+                Messages.Remove(placeholder);
+            }
+
+            // The failure card is UI-only copy and the reload above rebuilds the
+            // transcript from session history, so a terminal failure without a
+            // rendered reply would otherwise leave no trace. Re-append the
+            // actionable card (or the copy cached from the live summary).
+            if (TerminalFailureCardPolicy.ShouldAppend(
+                    _agentController?.CurrentRun?.Status,
+                    HasRenderedAgentReply(),
+                    Messages.Any(message => message.Role == "assistant" && message.IsError)))
+            {
+                Messages.Add(new ChatMessageItem
+                {
+                    Role = "assistant",
+                    Content = _terminalFailureCardContent
+                        ?? TerminalFailureCardPolicy.Compose(
+                            _agentController is null ? null : ResolveFailureReason(_agentController),
+                            _agentController?.CanContinue == true),
+                    IsError = true,
+                });
+                ScrollChatToBottom();
+            }
+
+            _terminalFailureCardContent = null;
+            _activeAgentAssistantMessage = null;
+            _activeAgentRunId = null;
+            _agentDeltaKeys.Clear();
+            UpdateAgentInlineState();
+
+            // Queued turns waited for exactly this moment: the previous turn is over
+            // and its transcript is settled, so the next one may start.
+            await DrainQueuedTurnsAsync(cancellationToken);
+        }
+        public static bool IsContinueResumeCommand(string text, IReadOnlyCollection<ImageAttachmentItem> attachments)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            ArgumentNullException.ThrowIfNull(attachments);
+            return attachments.Count == 0
+                && string.Equals(text.Trim(), "Continue", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes) =>
+            Services.ChatAttachmentPolicy.ReadBoundedBytesAsync(stream, maximumBytes);
+
+        private static bool IsImageFile(string name) => Services.ChatAttachmentPolicy.IsImageFile(name);
+
+        private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
+
+        private void FailActiveAgentReply(Exception exception)
+        {
+            AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
+            if (pending is not null && _activeAgentAssistantMessage is not null)
+            {
+                _activeAgentAssistantMessage.Content = pending.Text;
+                UpdateLiveTailText(_activeAgentAssistantMessage);
+            }
+
+            bool hasReply = HasRenderedAgentReply();
+            _replyRenderScheduler.Invalidate();
+            if (_activeAgentAssistantMessage is not null)
+            {
+                if (!Messages.Contains(_activeAgentAssistantMessage))
+                {
+                    Messages.Add(_activeAgentAssistantMessage);
+                }
+                if (!hasReply)
+                {
+                    _activeAgentAssistantMessage.Content = "Coding Agent could not complete this turn. Please try again later.";
+                    UpdateLiveTailText(_activeAgentAssistantMessage);
+                }
+                _activeAgentAssistantMessage.IsStreaming = false;
+                _activeAgentAssistantMessage.IsError = !hasReply;
+                SyncSegmentErrorState(_activeAgentAssistantMessage);
+            }
+
+            _activeAgentAssistantMessage = null;
+            _activeAgentRunId = null;
+            _agentDeltaKeys.Clear();
+        }
+
+        private void AbandonActiveAgentReply(bool removeUserMessage = false)
+        {
+            _replyRenderScheduler.Invalidate();
+
+            if (removeUserMessage && Messages.Count > 0)
+            {
+                var last = Messages[^1];
+                if (string.Equals(last.Role, "user", StringComparison.Ordinal))
+                {
+                    Messages.RemoveAt(Messages.Count - 1);
+                }
+            }
+
+            if (_activeAgentAssistantMessage is not null)
+            {
+                var abandonedMessage = _activeAgentAssistantMessage;
+                abandonedMessage.IsStreaming = false;
+                if (string.IsNullOrWhiteSpace(abandonedMessage.Content)
+                    && Messages.Contains(abandonedMessage))
+                {
+                    Messages.Remove(abandonedMessage);
+                }
+            }
+
+            _activeAgentAssistantMessage = null;
+            _activeAgentRunId = null;
+            _activeAgentReplyReceived = false;
+            _activeAgentReplyCompleted = false;
+            _agentDeltaKeys.Clear();
+        }
+
+        private async Task<SessionInfo> CreateValidatedAgentSessionAsync(CancellationToken cancellationToken)
+        {
+            if (_apiService is null)
+            {
+                throw new InvalidOperationException("Backend session is unavailable.");
+            }
+
+            SessionInfo? created = await _apiService.CreateSessionAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            string? sessionId = created?.Id?.Trim();
+            if (created is null || !AgentSessionSelection.IsValid(sessionId))
+            {
+                throw new AgentApiException(
+                    "session_create_failed",
+                    "Could not create a session for Coding Agent.");
+            }
+
+            return created;
+        }
+
+        private async Task RecoverAgentSessionAsync(CancellationToken cancellationToken)
+        {
+            SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
+            string sessionId = created.Id.Trim();
+
+            ActivateSession(sessionId);
+            _agentPresetSessionId = null;
+            _agentPresetVersion = null;
+            ClearAgentActivities();
+
+            DetachAgentActivitiesFromMessages();
+            Messages.Clear();
+            UpdateViewMode();
+            SessionOpened?.Invoke(
+                this,
+                new SessionOpenedEventArgs(
+                    sessionId,
+                    created.Title ?? "New Conversation"));
+        }
+
+        private async Task EnsureAgentSessionAsync(CancellationToken cancellationToken)
+        {
+            if (AgentSessionSelection.IsValid(_activeSessionId))
+            {
+                return;
+            }
+
+            SessionInfo created = await CreateValidatedAgentSessionAsync(cancellationToken);
+            string validSessionId = created.Id.Trim();
+            ActivateSession(validSessionId);
+            SessionOpened?.Invoke(
+                this,
+                new SessionOpenedEventArgs(
+                    validSessionId,
+                    created.Title ?? "New Conversation"));
+        }
+
+        private async Task<long> EnsureAgentPresetAsync(
+            AgentPermissionPreset preset,
+            CancellationToken cancellationToken)
+        {
+            if (_agentController is null)
+            {
+                throw new InvalidOperationException("Agent controller is unavailable.");
+            }
+
+            if (preset == AgentPermissionPreset.Standard
+                && string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
+                && _agentPreset == AgentPermissionPreset.Standard
+                && _agentPresetVersion is long knownStandardVersion)
+            {
+                return knownStandardVersion;
+            }
+
+            if (string.Equals(_agentPresetSessionId, _activeSessionId, StringComparison.Ordinal)
+                && _agentPreset == preset
+                && _agentPresetVersion is long knownVersion)
+            {
+                return knownVersion;
+            }
+
+            string wirePreset = preset switch
+            {
+                AgentPermissionPreset.Plan => "plan",
+                AgentPermissionPreset.FullAccess => "full_access",
+                _ => "standard",
+            };
+            AgentApiException? lastConflict = null;
+            for (long expectedVersion = 0; expectedVersion <= 3; expectedVersion++)
+            {
+                try
+                {
+                    long version = await _agentController.SetSessionPresetAsync(
+                        _activeSessionId,
+                        wirePreset,
+                        expectedVersion,
+                        interactive: true,
+                        cancellationToken);
+                    _agentPresetSessionId = _activeSessionId;
+                    _agentPresetVersion = version;
+                    return version;
+                }
+                catch (AgentApiException ex) when (ex.ErrorCode == "preset_version_conflict")
+                {
+                    lastConflict = ex;
+                }
+            }
+
+            if (lastConflict is not null)
+            {
+                throw lastConflict;
+            }
+
+            throw new InvalidOperationException("Could not update the Agent permission preset.");
+        }
+
+        private async Task<bool> ConfirmFullAccessAsync()
+        {
+            if (XamlRoot is null)
+            {
+                return false;
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = "Allow Full Access for this session?",
+                Content = "Full Access runs without approval prompts except for hard denies (protected paths and invalid requests). Only use it in a workspace you trust.",
+                PrimaryButtonText = "Allow",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+
+        private bool IsProjectRootWorkspace(string? workspace)
+        {
+            if (string.IsNullOrWhiteSpace(workspace))
+            {
+                return true;
+            }
+
+            string normalizedWorkspace = workspace.Trim().TrimEnd('\\', '/');
+
+            if (!string.IsNullOrWhiteSpace(_defaultAgentWorkspace))
+            {
+                string normDefault = _defaultAgentWorkspace.Trim().TrimEnd('\\', '/');
+                if (string.Equals(normalizedWorkspace, normDefault, StringComparison.OrdinalIgnoreCase)
+                    || normalizedWorkspace.StartsWith(normDefault + "\\", StringComparison.OrdinalIgnoreCase)
+                    || normalizedWorkspace.StartsWith(normDefault + "/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            string currentDir = Environment.CurrentDirectory.Trim().TrimEnd('\\', '/');
+            if (string.Equals(normalizedWorkspace, currentDir, StringComparison.OrdinalIgnoreCase)
+                || normalizedWorkspace.StartsWith(currentDir + "\\", StringComparison.OrdinalIgnoreCase)
+                || normalizedWorkspace.StartsWith(currentDir + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+
+        private static bool IsTerminalStatus(string? status) => status is
+            "completed" or "failed" or "cancelled" or "interrupted";
+
+        private void ShowAgentError(Exception exception)
+        {
+            if (HasRenderedAgentReply())
+            {
+                return;
+            }
+
+            string status = exception switch
+            {
+                AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message),
+                _ => $"Coding Agent could not start: {exception.Message}"
+            };
+
+            // A send that failed because no provider is configured is the first
+            // failure a new user meets. Saying which provider is missing a key, and
+            // offering the screen that fixes it, turns a dead end into one click.
+            if (ProviderSetupGuidance.IsMissingKey(_currentSettings, _selectedBackend))
+            {
+                status = ProviderSetupGuidance.MissingKeyMessage(_currentSettings, _selectedBackend);
+                ShowAgentInlineStatus(status);
+                ShowProviderSetupCard(status);
+                AgentStopButton.Visibility = Visibility.Collapsed;
+                ApprovalPanel.Hide();
+                return;
+            }
+
+            ShowAgentInlineStatus(status);
+            AgentStopButton.Visibility = Visibility.Collapsed;
+            ApprovalPanel.Hide();
+        }
+
+        /// <summary>
+        /// Puts the provider-setup message in the transcript with a button that
+        /// opens the screen where a key is added.
+        /// </summary>
+        private void ShowProviderSetupCard(string content)
+        {
+            _terminalFailureCardContent = content;
+            Messages.Add(new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = content,
+                IsError = true,
+                ActionLabel = AgentFailurePresentation.OpenProviderSettingsLabel,
+                ActionKind = AgentFailurePresentation.OpenProviderSettingsAction,
+            });
+            ScrollChatToBottom();
+        }
+
+        /// <summary>
+        /// Raised when an error message offers to open provider settings. The window
+        /// owns the settings surface, so it performs the navigation.
+        /// </summary>
+        public event EventHandler? ProviderSettingsRequested;
+    }
+}

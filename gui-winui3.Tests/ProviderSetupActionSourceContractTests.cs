@@ -73,14 +73,14 @@ public sealed class ProviderSetupActionSourceContractTests
         Assert.False(string.IsNullOrWhiteSpace(handler));
 
         // A Click that names a missing member compiles but does nothing when pressed.
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         Assert.True(GuiSource.HasMember(code, handler), $"Click=\"{handler}\" has no member in the code-behind.");
     }
 
     [Fact]
     public void The_handler_dispatches_on_the_shared_action_identifier()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string body = GuiSource.MethodBody(code, "OnMessageActionClick");
 
         // The label is copy and may be reworded; the action identifier is the
@@ -95,14 +95,14 @@ public sealed class ProviderSetupActionSourceContractTests
     [Fact]
     public void Raising_the_request_reaches_the_window()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string body = GuiSource.MethodBody(code, "OnMessageActionClick");
 
         Assert.Contains("ProviderSettingsRequested", body, StringComparison.Ordinal);
 
         // The window is the only place that owns the settings surface, so the
         // transcript asks it rather than opening settings itself.
-        string window = GuiSource.Text("MainWindow.xaml.cs");
+        string window = GuiSource.ViewText("MainWindow");
         Assert.Contains("ProviderSettingsRequested +=", window, StringComparison.Ordinal);
         Assert.True(GuiSource.HasMember(window, "OnProviderSettingsRequested"));
     }
@@ -110,7 +110,7 @@ public sealed class ProviderSetupActionSourceContractTests
     [Fact]
     public void The_window_opens_settings_on_the_provider_section()
     {
-        string window = GuiSource.Text("MainWindow.xaml.cs");
+        string window = GuiSource.ViewText("MainWindow");
         string body = GuiSource.MethodBody(window, "OnProviderSettingsRequested");
 
         // Opening settings is not enough: the user lands on whichever tab was last
@@ -137,7 +137,7 @@ public sealed class ProviderSetupActionSourceContractTests
     [Fact]
     public void A_missing_key_failure_offers_the_action()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
 
         // The detection and the offer have to be in the same branch: showing the
         // message without the button, or the button without the message, both leave
@@ -152,7 +152,7 @@ public sealed class ProviderSetupActionSourceContractTests
     [Fact]
     public void The_card_carries_the_shared_action_rather_than_its_own()
     {
-        string code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        string code = GuiSource.ViewText("ChatView");
         string body = GuiSource.MethodBody(code, "ShowProviderSetupCard");
 
         Assert.Contains("ActionKind", body, StringComparison.Ordinal);

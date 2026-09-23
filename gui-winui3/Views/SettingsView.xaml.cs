@@ -313,6 +313,7 @@ namespace RuApp.Views
             AnthropicApiKeyBox.PasswordChanged += AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
+            CloudflareAccountIdBox.TextChanged += AutoSaveTextHandler;
         }
 
         private async void OnAutoSaveTimerTick(object? sender, object e)
@@ -692,7 +693,18 @@ namespace RuApp.Views
             {
                 ModelsDevApiKeyRow.Visibility = isModelsDev ? Visibility.Visible : Visibility.Collapsed;
             }
+
+            if (CloudflareAccountIdBox is not null)
+            {
+                CloudflareAccountIdBox.Visibility = IsCloudflareChoice(choice) ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
+
+        private bool IsCloudflareChoice(string choice) =>
+            string.Equals(
+                ProviderSetupGuidance.NormalizeProviderChoice(choice),
+                "models.dev:cloudflare-workers-ai",
+                StringComparison.OrdinalIgnoreCase);
 
         private void OnProviderOptionClick(object sender, RoutedEventArgs e)
         {
@@ -743,6 +755,7 @@ namespace RuApp.Views
                     AnthropicApiKey = AnthropicApiKeyBox.Password,
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
+                    CloudflareAccountId = CloudflareAccountIdBox.Text?.Trim() ?? string.Empty,
                 };
 
                 bool ok = await _apiService.SaveProviderSettingsAsync(dto);
@@ -824,7 +837,15 @@ namespace RuApp.Views
             {
                 if (_ownsProviderCatalogController)
                 {
-                    _ = _providerCatalogController.DisposeAsync().AsTask();
+                    // Same reasoning as ChatView.Dispose: async disposal must
+                    // not block the UI thread's Dispose.
+                    var controller = _providerCatalogController;
+                    _ = controller.DisposeAsync().AsTask().ContinueWith(
+                        static faulted => System.Diagnostics.Debug.WriteLine(
+                            $"[SettingsView] Catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted,
+                        TaskScheduler.Default);
                 }
                 _providerCatalogController = null;
                 _ownsProviderCatalogController = false;
@@ -838,6 +859,7 @@ namespace RuApp.Views
             AnthropicApiKeyBox.PasswordChanged -= AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
+            CloudflareAccountIdBox.TextChanged -= AutoSaveTextHandler;
             if (_providerCatalogController is not null)
             {
                 _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;

@@ -40,7 +40,7 @@ public sealed class ChatViewNoEmojiContractTests
     public void ChatViewCodeBehindDeclaresNoEmojiInStringLiterals()
     {
         var offenders = new List<string>();
-        foreach (var literal in EmojiPolicy.StringLiterals(GuiSource.Text("Views", "ChatView.xaml.cs")))
+        foreach (var literal in EmojiPolicy.StringLiterals(GuiSource.ViewText("ChatView")))
         {
             foreach (var rune in EmojiPolicy.FindIn(literal))
             {

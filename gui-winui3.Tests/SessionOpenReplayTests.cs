@@ -18,7 +18,7 @@ namespace RuApp.Tests;
 public sealed class SessionOpenReplayTests
 {
     private static string OpenSessionBody() =>
-        GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "OpenSessionAsync");
+        GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "OpenSessionAsync");
 
     [Fact]
     public void Opening_a_session_rebuilds_activities_from_durable_events()

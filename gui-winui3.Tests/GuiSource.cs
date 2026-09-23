@@ -43,6 +43,45 @@ internal static class GuiSource
 
     public static string Text(params string[] parts) => File.ReadAllText(Path(parts));
 
+    /// <summary>
+    /// Concatenated C# source of every partial-class file of a view
+    /// (<c>ChatView.xaml.cs</c> plus its <c>ChatView.*.cs</c> partials,
+    /// <c>MainWindow.xaml.cs</c> plus its partials). A source contract pins
+    /// where a decision lives in the *class*; which file of the partial class
+    /// holds it is an implementation detail that must not change the test.
+    /// </summary>
+    public static string ViewText(string viewName)
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            string root = System.IO.Path.Combine(directory.FullName, "gui-winui3");
+            if (!Directory.Exists(root))
+            {
+                continue;
+            }
+
+            var sources = Directory.EnumerateFiles(root, viewName + "*.cs", SearchOption.AllDirectories)
+                .Where(file => !file.Contains(
+                    $"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}",
+                    StringComparison.Ordinal)
+                    && !file.Contains(
+                        $"{System.IO.Path.DirectorySeparatorChar}bin{System.IO.Path.DirectorySeparatorChar}",
+                        StringComparison.Ordinal))
+                .OrderBy(file => file, StringComparer.Ordinal)
+                .ToList();
+            if (sources.Count == 0)
+            {
+                throw new FileNotFoundException($"No source file for view '{viewName}'.");
+            }
+
+            return string.Join("\n", sources.Select(File.ReadAllText));
+        }
+
+        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
+    }
+
     public static XDocument Xml(params string[] parts) => XDocument.Load(Path(parts));
 
     /// <summary>Every element carrying an <c>x:Name</c>, keyed by that name.</summary>

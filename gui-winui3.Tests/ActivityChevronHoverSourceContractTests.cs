@@ -50,7 +50,7 @@ public sealed class ActivityChevronHoverSourceContractTests
     [Fact]
     public void The_handler_collapses_and_reveals_the_chevron_rather_than_dimming_it()
     {
-        var body = GuiSource.MethodBody(GuiSource.Text("Views", "ChatView.xaml.cs"), "SetActivityChevronVisible");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SetActivityChevronVisible");
 
         Assert.Contains("Visibility", body, StringComparison.Ordinal);
         Assert.Contains("FontIcon", body, StringComparison.Ordinal);

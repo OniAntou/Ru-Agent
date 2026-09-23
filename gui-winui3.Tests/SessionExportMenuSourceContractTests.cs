@@ -24,7 +24,7 @@ public sealed class SessionExportMenuSourceContractTests
     [Fact]
     public void The_handler_reads_the_format_off_the_item_that_was_clicked()
     {
-        var body = GuiSource.MethodBody(GuiSource.Text("MainWindow.xaml.cs"), "OnExportSessionMenuClick");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnExportSessionMenuClick");
 
         Assert.Contains("ExportCodexItem", body, StringComparison.Ordinal);
         Assert.Contains("\"codex\"", body, StringComparison.Ordinal);
@@ -46,7 +46,7 @@ public sealed class SessionExportMenuSourceContractTests
         var item = GuiSource.Require(document, "ImportSessionItem");
         Assert.Equal("OnImportSessionMenuClick", GuiSource.AttributeValue(item, "Click"));
 
-        var body = GuiSource.MethodBody(GuiSource.Text("MainWindow.xaml.cs"), "OnImportSessionMenuClick");
+        var body = GuiSource.MethodBody(GuiSource.ViewText("MainWindow"), "OnImportSessionMenuClick");
         Assert.Contains("HarnessFromFileName", body, StringComparison.Ordinal);
         Assert.Contains("ImportSessionAsync", body, StringComparison.Ordinal);
 

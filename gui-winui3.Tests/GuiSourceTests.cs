@@ -94,7 +94,7 @@ public sealed class GuiSourceTests
     {
         // A sanity check on the shipped file: the members the contract tests extract
         // must be extractable, so a failure there is about the view and not the helper.
-        var code = GuiSource.Text("Views", "ChatView.xaml.cs");
+        var code = GuiSource.ViewText("ChatView");
 
         Assert.Contains("_composerDrafts", GuiSource.MethodBody(code, "RestoreComposerDraft"), StringComparison.Ordinal);
         Assert.Contains("_composerDrafts.Clear", GuiSource.MethodBody(code, "ClearComposerDraft"), StringComparison.Ordinal);

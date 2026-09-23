@@ -358,9 +358,9 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Lists Models.dev providers for the key row and appends them to the
-        /// Active Provider dropdown. Best-effort: an empty list keeps the key
-        /// row usable for a manually typed provider id.
+        /// Appends Models.dev providers to the Active Provider dropdown.
+        /// The key row saves for the active provider, so it needs no
+        /// provider picker of its own.
         /// </summary>
         private async Task RefreshModelsDevProvidersAsync()
         {
@@ -368,13 +368,6 @@ namespace RuApp.Views
             try
             {
                 var providers = await _apiService.GetModelsDevAsync();
-                var selected = ModelsDevProviderBox.SelectedItem as string;
-                ModelsDevProviderBox.ItemsSource = providers.Select(entry => entry.Id).ToArray();
-                if (selected is not null && providers.Any(entry => entry.Id == selected))
-                {
-                    ModelsDevProviderBox.SelectedItem = selected;
-                }
-
                 RebuildModelsDevOptions(providers);
             }
             catch (Exception ex)
@@ -385,7 +378,7 @@ namespace RuApp.Views
 
         /// <summary>
         /// Appends one dropdown row per Models.dev provider after the fixed
-        /// five, reusing the same option shape so selection, check mark, and
+        /// three, reusing the same option shape so selection, check mark, and
         /// trigger label behave identically.
         /// </summary>
         private void RebuildModelsDevOptions(IReadOnlyList<ModelsDevEntryDto> providers)
@@ -457,7 +450,6 @@ namespace RuApp.Views
                 }
             }
 
-            SyncModelsDevKeyBox();
             ApplyProviderFilter(ProviderSearchBox?.Text);
         }
 
@@ -517,32 +509,16 @@ namespace RuApp.Views
             RefreshProviderUI();
         }
 
-        /// <summary>
-        /// Points the key row's provider box at the active Models.dev choice,
-        /// so saving a key needs no second selection step.
-        /// </summary>
-        private void SyncModelsDevKeyBox()
-        {
-            if (ModelsDevProviderBox is null) return;
-            if (ProviderSetupGuidance.IsModelsDevChoice(_providerChoice))
-            {
-                var id = _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
-                if (_modelsDevNames.ContainsKey(id))
-                {
-                    ModelsDevProviderBox.SelectedItem = id;
-                    return;
-                }
-            }
-        }
-
         private async void OnSaveModelsDevKeyClick(object sender, RoutedEventArgs e)
         {
             if (_apiService is null) return;
-            var providerId = (ModelsDevProviderBox.SelectedItem as string)?.Trim().ToLowerInvariant();
+            var providerId = ProviderSetupGuidance.IsModelsDevChoice(_providerChoice)
+                ? _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..].Trim().ToLowerInvariant()
+                : string.Empty;
             var apiKey = ModelsDevApiKeyBox.Password;
             if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(apiKey))
             {
-                ModelsDevKeyStatus.Text = "Chọn provider và dán key trước khi lưu.";
+                ModelsDevKeyStatus.Text = "Dán key trước khi lưu.";
                 return;
             }
 
@@ -573,11 +549,6 @@ namespace RuApp.Views
             if (ModelsDevApiKeyRow is not null)
             {
                 ModelsDevApiKeyRow.Visibility = isModelsDev ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            if (isModelsDev)
-            {
-                SyncModelsDevKeyBox();
             }
         }
 

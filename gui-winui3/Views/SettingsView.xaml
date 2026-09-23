@@ -720,7 +720,7 @@
                                 <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                         <TextBlock x:Name="ModelsDevApiKeyLabel" Text="Models.dev API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="Pick a provider, paste its key, save" Style="{StaticResource SettingDescStyle}" />
+                                        <TextBlock Text="Paste the key for the active provider, save" Style="{StaticResource SettingDescStyle}" />
                                         <TextBlock x:Name="ModelsDevKeyStatus"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="12"
@@ -728,16 +728,10 @@
                                                    VerticalAlignment="Center" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                        <ComboBox x:Name="ModelsDevProviderBox"
-                                                  AutomationProperties.LabeledBy="{Binding ElementName=ModelsDevApiKeyLabel}"
-                                                  PlaceholderText="Provider"
-                                                  Width="150"
-                                                  Height="36"
-                                                  CornerRadius="{StaticResource RuControlCornerRadius}" />
                                         <PasswordBox x:Name="ModelsDevApiKeyBox"
                                                      AutomationProperties.LabeledBy="{Binding ElementName=ModelsDevApiKeyLabel}"
                                                      PlaceholderText="sk-&#x2026;"
-                                                     Width="180"
+                                                     Width="260"
                                                      Height="36"
                                                      CornerRadius="{StaticResource RuControlCornerRadius}" />
                                         <Button x:Name="ModelsDevSaveButton"

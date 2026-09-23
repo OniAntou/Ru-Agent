@@ -74,7 +74,10 @@ and no cache fails closed to an empty list. A `models.dev:<provider-id>`
 backend resolves its base URL from that list over `chat_completions`;
 unknown ids fail closed and the URL is never guessed. Stored `opencode`/`kilo`
 choices migrate to `models.dev:opencode`/`models.dev:kilo`; their old keys and
-model fields are retired and must be re-entered.
+model fields are retired and must be re-entered. `GET
+/settings/models-dev-keys` lists the ids with a stored `<id>_api_key` so the
+Settings provider dropdown can mark signed-in rows and pin them above the
+groups; it probes each catalog id once per Settings load.
 
 ## TUI provider and model pickers
 

@@ -10,6 +10,7 @@ using RuBackend.Business.Settings;
 using RuBackend.Conversation;
 using RuBackend.Harness;
 using RuBackend.Harness.Workspace;
+using RuBackend.Providers;
 
 namespace RuBackend.Business;
 
@@ -22,6 +23,7 @@ public static class BusinessEndpoints
         app.MapGet("/settings", GetSettingsAsync);
         app.MapPost("/settings", SaveSettingsAsync);
         app.MapPost("/settings/provider/remove", RemoveProviderAsync);
+        app.MapGet("/settings/models-dev-keys", GetModelsDevKeysAsync);
         app.MapGet("/sessions", ListSessionsAsync);
         app.MapPost("/sessions/new", CreateSessionAsync);
         app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
@@ -98,6 +100,49 @@ public static class BusinessEndpoints
                 status = "error",
                 message = "Runtime settings could not be applied.",
             });
+        }
+    }
+
+    /// <summary>
+    /// Models.dev provider ids with a stored key (`&lt;id&gt;_api_key`). The
+    /// credential store has no enumeration, so each catalog id is probed; the
+    /// catalog itself is cached for 24h, keeping this a single cheap call the
+    /// GUI makes when Settings loads rather than per keystroke.
+    /// </summary>
+    private static async Task<IResult> GetModelsDevKeysAsync(
+        ProviderCatalogService catalog,
+        ICredentialStore credentials,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var providers = await catalog.GetModelsDevAsync(cancellationToken).ConfigureAwait(false);
+            var withKeys = new List<string>();
+            foreach (var provider in providers)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var account = provider.Id.ToLowerInvariant() + "_api_key";
+                if (await HasCredentialAsync(credentials, account, cancellationToken).ConfigureAwait(false))
+                {
+                    withKeys.Add(provider.Id.ToLowerInvariant());
+                }
+            }
+
+            return Results.Json(new
+            {
+                status = "ok",
+                provider_ids = withKeys.ToArray(),
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            LogFailure(loggers, "models-dev keys read", error);
+            return Unavailable("Settings are temporarily unavailable.");
         }
     }
 

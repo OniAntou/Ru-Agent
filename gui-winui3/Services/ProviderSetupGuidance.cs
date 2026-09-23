@@ -175,6 +175,64 @@ internal static class ProviderSetupGuidance
     }
 
     /// <summary>
+    /// Signed-in dropdown rows, A-Z by display name: the fixed providers
+    /// with a key plus the Models.dev entries with a stored key. The caller
+    /// supplies the fixed rows' display names so this stays pure and the
+    /// XAML remains the single home of the label text.
+    /// </summary>
+    internal static IReadOnlyList<(string Value, string Name)> OrderSignedInOptions(
+        IEnumerable<(string Value, string Name, bool HasKey)> fixedProviders,
+        IEnumerable<(string Id, string Name)> modelsDevEntries,
+        IEnumerable<string>? modelsDevKeyIds)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (modelsDevKeyIds is not null)
+        {
+            foreach (var id in modelsDevKeyIds)
+            {
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    keys.Add(id.Trim());
+                }
+            }
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var signedIn = new List<(string Value, string Name)>();
+        if (fixedProviders is not null)
+        {
+            foreach (var (value, name, hasKey) in fixedProviders)
+            {
+                if (hasKey && !string.IsNullOrWhiteSpace(value) && seen.Add(value.Trim()))
+                {
+                    signedIn.Add((value.Trim(), string.IsNullOrWhiteSpace(name) ? value.Trim() : name.Trim()));
+                }
+            }
+        }
+
+        if (modelsDevEntries is not null)
+        {
+            foreach (var (rawId, rawName) in modelsDevEntries)
+            {
+                string id = (rawId ?? string.Empty).Trim().ToLowerInvariant();
+                if (id.Length == 0 || !keys.Contains(id) || !seen.Add(ModelsDevPrefix + id))
+                {
+                    continue;
+                }
+
+                string name = string.IsNullOrWhiteSpace(rawName) ? id : rawName.Trim();
+                signedIn.Add((ModelsDevPrefix + id, name));
+            }
+        }
+
+        signedIn.Sort((left, right) =>
+            string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) is { } order && order != 0
+                ? order
+                : string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase));
+        return signedIn;
+    }
+
+    /// <summary>
     /// Whether a dropdown row survives the search filter: empty filter keeps
     /// everything, otherwise the name or id must contain it (case-insensitive).
     /// </summary>

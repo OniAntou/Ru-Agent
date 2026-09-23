@@ -283,4 +283,46 @@ public sealed class ProviderSetupGuidanceTests
         Assert.True(ProviderSetupGuidance.MatchesProviderFilter("OpenAI (Official API)", "openai", "official"));
         Assert.False(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "anthropic"));
     }
+
+    [Fact]
+    public void SignedIn_options_merge_fixed_and_models_dev_keys_sorted_by_name()
+    {
+        var ordered = ProviderSetupGuidance.OrderSignedInOptions(
+            [
+                ("openai", "OpenAI (Official API)", true),
+                ("anthropic", "Anthropic Claude (Official API)", false),
+                ("custom", "Custom OpenAI Server", true),
+            ],
+            [
+                ("openrouter", "OpenRouter"),
+                ("zai", "Z.AI"),
+            ],
+            ["zai", "OPENROUTER"]);
+
+        Assert.Equal(
+            ["custom", "openai", "models.dev:openrouter", "models.dev:zai"],
+            ordered.Select(entry => entry.Value).ToArray());
+    }
+
+    [Fact]
+    public void SignedIn_options_ignore_key_ids_missing_from_the_catalog()
+    {
+        var ordered = ProviderSetupGuidance.OrderSignedInOptions(
+            [("openai", "OpenAI (Official API)", false)],
+            [("openrouter", "OpenRouter")],
+            ["ghost"]);
+
+        Assert.Empty(ordered);
+    }
+
+    [Fact]
+    public void SignedIn_options_tolerate_null_inputs()
+    {
+        var ordered = ProviderSetupGuidance.OrderSignedInOptions(
+            [("openai", "OpenAI (Official API)", true)],
+            [("openrouter", "OpenRouter")],
+            null);
+
+        Assert.Equal(["openai"], ordered.Select(entry => entry.Value).ToArray());
+    }
 }

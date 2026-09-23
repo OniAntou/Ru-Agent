@@ -103,6 +103,29 @@ public sealed class ProviderCatalogEndpointTests
         Assert.Equal("https://openrouter.ai", body["providers"]![0]!["base_url"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task ModelsDevKeys_lists_only_ids_with_a_stored_key()
+    {
+        using var factory = new BackendWebApplicationFactory(credentialStore: new SingleCredential("openrouter_api_key", "router-secret"));
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => new TwoProviderModelsDevHandler())));
+        using var client = configured.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/settings/models-dev-keys"))!;
+
+        Assert.Equal("ok", body["status"]!.GetValue<string>());
+        var ids = body["provider_ids"]!.AsArray().Select(node => node!.GetValue<string>()).ToArray();
+        Assert.Equal(["openrouter"], ids);
+    }
+
+    private sealed class TwoProviderModelsDevHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent("""{"openrouter":{"name":"OpenRouter","api":"https://openrouter.ai/api/v1"},"zai":{"name":"Z.AI","api":"https://api.z.ai/api/coding/paas/v4"}}""") });
+    }
+
     private sealed class ModelsDevHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

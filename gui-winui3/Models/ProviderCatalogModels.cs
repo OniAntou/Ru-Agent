@@ -235,6 +235,12 @@ public sealed class ModelsDevListDto
     public List<ModelsDevEntryDto> Providers { get; init; } = [];
 }
 
+public sealed class ModelsDevKeysDto
+{
+    [JsonPropertyName("provider_ids")]
+    public List<string> ProviderIds { get; init; } = [];
+}
+
 public sealed class ReasoningSettingsUpdateDto
 {
     [JsonPropertyName("reasoning_effort")]

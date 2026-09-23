@@ -94,6 +94,24 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<IReadOnlyList<string>> GetModelsDevKeysAsync(CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var body = await _httpClient.GetFromJsonAsync<ModelsDevKeysDto>($"{_baseUrl}/settings/models-dev-keys", cancellationToken);
+                return body?.ProviderIds ?? [];
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetModelsDevKeysAsync", ex);
+                return [];
+            }
+        }
+
         public async Task<(bool BackendAlive, bool WorkerOk, string? WorkerError)> CheckHealthDetailedAsync(CancellationToken cancellationToken = default)
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

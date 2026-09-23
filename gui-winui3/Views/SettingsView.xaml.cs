@@ -35,7 +35,7 @@ namespace RuApp.Views
         /// </summary>
         private double _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
 
-        private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value);
+        private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
         private IReadOnlyList<DropdownOption>? _providerOptions;
@@ -46,6 +46,16 @@ namespace RuApp.Views
         /// </summary>
         private readonly List<DropdownOption> _modelsDevOptions = new();
         private readonly Dictionary<string, string> _modelsDevNames = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Signed-in duplicates pinned above the groups, plus the choice
+        /// values with a stored key and the last settings/keys snapshots
+        /// they were built from.
+        /// </summary>
+        private readonly List<DropdownOption> _signedInOptions = new();
+        private readonly HashSet<string> _signedInValues = new(StringComparer.OrdinalIgnoreCase);
+        private AppSettingsDto? _lastSettings;
+        private IReadOnlyList<string> _modelsDevKeyIds = [];
 
         public void SetCurrentTheme(UiTheme theme)
         {
@@ -86,9 +96,10 @@ namespace RuApp.Views
         {
             if (_providerOptions == null || ProviderButtonLabel == null) return;
             RefreshDropdownUI(
-                _providerOptions.Concat(_modelsDevOptions).ToArray(),
+                _providerOptions.Concat(_modelsDevOptions).Concat(_signedInOptions).ToArray(),
                 _providerChoice,
                 ProviderButtonLabel);
+            RefreshSignedInDots();
             if (ProviderSetupGuidance.IsModelsDevChoice(_providerChoice))
             {
                 // Before the runtime rows load there is nothing to match, so
@@ -136,9 +147,9 @@ namespace RuApp.Views
             };
             _providerOptions = new[]
             {
-                new DropdownOption(ProviderOpenaiOption, ProviderOpenaiText, ProviderOpenaiCheck, "openai"),
-                new DropdownOption(ProviderAnthropicOption, ProviderAnthropicText, ProviderAnthropicCheck, "anthropic"),
-                new DropdownOption(ProviderCustomOption, ProviderCustomText, ProviderCustomCheck, "custom"),
+                new DropdownOption(ProviderOpenaiOption, ProviderOpenaiText, ProviderOpenaiCheck, "openai", ProviderOpenaiDot),
+                new DropdownOption(ProviderAnthropicOption, ProviderAnthropicText, ProviderAnthropicCheck, "anthropic", ProviderAnthropicDot),
+                new DropdownOption(ProviderCustomOption, ProviderCustomText, ProviderCustomCheck, "custom", ProviderCustomDot),
             };
             // Row hover is owned by RuDropdownItemButtonStyle (VisualStates), so
             // every row — including runtime-built Models.dev rows — reacts
@@ -327,6 +338,7 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 settings ??= new AppSettingsDto();
+                _lastSettings = settings;
 
                 OpenAiApiKeyBox.Password = string.Empty;
                 OpenAiApiKeyBox.PlaceholderText = settings.HasOpenAiKey
@@ -369,11 +381,87 @@ namespace RuApp.Views
             {
                 var providers = await _apiService.GetModelsDevAsync();
                 RebuildModelsDevOptions(providers);
+                _modelsDevKeyIds = await _apiService.GetModelsDevKeysAsync();
+                RebuildSignedInOptions(providers);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Builds one dropdown row: status dot, name label, check mark.
+        /// Shared by the Models.dev group and the signed-in duplicates so
+        /// both instances of a provider look and behave identically.
+        /// </summary>
+        private DropdownOption BuildProviderRowButton(string value, string name, bool showDot)
+        {
+            var uiFont = Application.Current.Resources["RuUiFontFamily"];
+            var ink = Application.Current.Resources["RuInkBrush"];
+            var accent = Application.Current.Resources["RuAccentBrush"];
+            var success = Application.Current.Resources["RuSuccessBrush"];
+            var itemStyle = (Style)Application.Current.Resources["RuDropdownItemButtonStyle"];
+
+            var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 8, 0),
+                Visibility = showDot ? Visibility.Visible : Visibility.Collapsed,
+            };
+            if (success is Microsoft.UI.Xaml.Media.Brush successBrush)
+            {
+                dot.Fill = successBrush;
+            }
+
+            var label = new TextBlock
+            {
+                Text = name,
+                FontFamily = uiFont as Microsoft.UI.Xaml.Media.FontFamily,
+                FontSize = 12.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+            if (ink is Microsoft.UI.Xaml.Media.Brush inkBrush)
+            {
+                label.Foreground = inkBrush;
+            }
+
+            var check = new FontIcon
+            {
+                Glyph = "\uE73E",
+                FontSize = 11,
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                Visibility = Visibility.Collapsed,
+            };
+            if (accent is Microsoft.UI.Xaml.Media.Brush accentBrush)
+            {
+                check.Foreground = accentBrush;
+            }
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.Children.Add(dot);
+            grid.Children.Add(label);
+            grid.Children.Add(check);
+            Grid.SetColumn(label, 1);
+            Grid.SetColumn(check, 2);
+
+            var button = new Button
+            {
+                Tag = value,
+                Style = itemStyle,
+                Content = grid,
+            };
+            AutomationProperties.SetName(button, $"{name} provider");
+            button.Click += OnProviderOptionClick;
+            return new DropdownOption(button, label, check, value, dot);
         }
 
         /// <summary>
@@ -390,63 +478,17 @@ namespace RuApp.Views
                 ModelsDevOptionsPanel.Children.Clear();
             }
 
-            if (ModelsDevOptionsPanel is not null && providers.Count > 0
-                && Application.Current.Resources["RuDropdownItemButtonStyle"] is Style itemStyle)
+            if (ModelsDevOptionsPanel is not null && providers.Count > 0)
             {
-                var uiFont = Application.Current.Resources["RuUiFontFamily"];
-                var ink = Application.Current.Resources["RuInkBrush"];
-                var accent = Application.Current.Resources["RuAccentBrush"];
                 var ordered = ProviderSetupGuidance.OrderModelsDevOptions(
                     providers.Select(entry => (entry.Id, entry.Name)));
                 foreach (var (id, name) in ordered)
                 {
                     _modelsDevNames[id] = name;
-
-                    var label = new TextBlock
-                    {
-                        Text = name,
-                        FontFamily = uiFont as Microsoft.UI.Xaml.Media.FontFamily,
-                        FontSize = 12.5,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                    };
-                    if (ink is Microsoft.UI.Xaml.Media.Brush inkBrush)
-                    {
-                        label.Foreground = inkBrush;
-                    }
-
-                    var check = new FontIcon
-                    {
-                        Glyph = "\uE73E",
-                        FontSize = 11,
-                        FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 0, 0),
-                        Visibility = Visibility.Collapsed,
-                    };
-                    if (accent is Microsoft.UI.Xaml.Media.Brush accentBrush)
-                    {
-                        check.Foreground = accentBrush;
-                    }
-
-                    var grid = new Grid();
-                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                    grid.Children.Add(label);
-                    grid.Children.Add(check);
-                    Grid.SetColumn(check, 1);
-
                     var value = ProviderSetupGuidance.ModelsDevPrefix + id;
-                    var button = new Button
-                    {
-                        Tag = value,
-                        Style = itemStyle,
-                        Content = grid,
-                    };
-                    AutomationProperties.SetName(button, $"{name} provider");
-                    button.Click += OnProviderOptionClick;
-                    ModelsDevOptionsPanel.Children.Add(button);
-                    _modelsDevOptions.Add(new DropdownOption(button, label, check, value));
+                    var option = BuildProviderRowButton(value, name, showDot: false);
+                    ModelsDevOptionsPanel.Children.Add(option.Button);
+                    _modelsDevOptions.Add(option);
                 }
             }
 
@@ -454,8 +496,63 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Filters both provider groups by the search text and hides a group
-        /// header when none of its rows match.
+        /// Pins one duplicate row per signed-in provider above the groups.
+        /// Dots everywhere reflect the same key set, refreshed here.
+        /// </summary>
+        private void RebuildSignedInOptions(IReadOnlyList<ModelsDevEntryDto> providers)
+        {
+            _signedInOptions.Clear();
+            _signedInValues.Clear();
+            if (SignedInOptionsPanel is not null)
+            {
+                SignedInOptionsPanel.Children.Clear();
+            }
+
+            if (SignedInOptionsPanel is not null)
+            {
+                var fixedRows = new (string Value, string Name, bool HasKey)[]
+                {
+                    ("openai", ProviderOpenaiText?.Text ?? "OpenAI", _lastSettings?.HasOpenAiKey == true),
+                    ("anthropic", ProviderAnthropicText?.Text ?? "Anthropic", _lastSettings?.HasAnthropicKey == true),
+                    ("custom", ProviderCustomText?.Text ?? "Custom", _lastSettings?.HasCustomKey == true),
+                };
+                var ordered = ProviderSetupGuidance.OrderSignedInOptions(
+                    fixedRows,
+                    providers.Select(entry => (entry.Id, entry.Name)),
+                    _modelsDevKeyIds);
+                foreach (var (value, name) in ordered)
+                {
+                    _signedInValues.Add(value);
+                    var option = BuildProviderRowButton(value, name, showDot: true);
+                    SignedInOptionsPanel.Children.Add(option.Button);
+                    _signedInOptions.Add(option);
+                }
+            }
+
+            RefreshSignedInDots();
+            ApplyProviderFilter(ProviderSearchBox?.Text);
+        }
+
+        /// <summary>
+        /// Lights the key dot on every row whose provider has a stored key.
+        /// </summary>
+        private void RefreshSignedInDots()
+        {
+            if (_providerOptions is null) return;
+            foreach (var option in _providerOptions.Concat(_modelsDevOptions).Concat(_signedInOptions))
+            {
+                if (option.KeyDot is not null)
+                {
+                    option.KeyDot.Visibility = _signedInValues.Contains(option.Value)
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Filters all three provider groups by the search text and hides a
+        /// group header when none of its rows match.
         /// </summary>
         private void OnProviderSearchChanged(object sender, TextChangedEventArgs e)
         {
@@ -484,6 +581,28 @@ namespace RuApp.Views
                 anyDev |= show;
             }
 
+            bool anySignedIn = false;
+            foreach (var option in _signedInOptions)
+            {
+                var id = ProviderSetupGuidance.IsModelsDevChoice(option.Value)
+                    ? option.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]
+                    : option.Value;
+                bool show = ProviderSetupGuidance.MatchesProviderFilter(option.Label.Text, id, filter);
+                option.Button.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                anySignedIn |= show;
+            }
+
+            var signedInVisibility = _signedInOptions.Count > 0 && anySignedIn ? Visibility.Visible : Visibility.Collapsed;
+            if (SignedInOptionsHeader is not null)
+            {
+                SignedInOptionsHeader.Visibility = signedInVisibility;
+            }
+
+            if (SignedInOptionsDivider is not null)
+            {
+                SignedInOptionsDivider.Visibility = signedInVisibility;
+            }
+
             if (FixedProvidersHeader is not null)
             {
                 FixedProvidersHeader.Visibility = anyFixed ? Visibility.Visible : Visibility.Collapsed;
@@ -503,7 +622,7 @@ namespace RuApp.Views
             if (ProviderNoMatchText is not null)
             {
                 ProviderNoMatchText.Visibility =
-                    (!anyFixed && !anyDev) ? Visibility.Visible : Visibility.Collapsed;
+                    (!anyFixed && !anyDev && !anySignedIn) ? Visibility.Visible : Visibility.Collapsed;
             }
 
             RefreshProviderUI();

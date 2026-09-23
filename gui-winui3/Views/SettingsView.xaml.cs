@@ -40,6 +40,13 @@ namespace RuApp.Views
         private IReadOnlyList<DropdownOption>? _presetOptions;
         private IReadOnlyList<DropdownOption>? _providerOptions;
 
+        /// <summary>
+        /// Models.dev rows appended to the provider dropdown at runtime, plus
+        /// their display names by lowercase id.
+        /// </summary>
+        private readonly List<DropdownOption> _modelsDevOptions = new();
+        private readonly Dictionary<string, string> _modelsDevNames = new(StringComparer.Ordinal);
+
         public void SetCurrentTheme(UiTheme theme)
         {
             _themeChoice = theme == UiTheme.Light ? "light" : "dark";
@@ -59,9 +66,7 @@ namespace RuApp.Views
 
         public void SetCurrentProvider(string backendChoice)
         {
-            _providerChoice = ProviderSetupGuidance.IsKnown(backendChoice)
-                ? backendChoice!
-                : "opencode";
+            _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(backendChoice);
             RefreshProviderUI();
         }
 
@@ -80,7 +85,17 @@ namespace RuApp.Views
         private void RefreshProviderUI()
         {
             if (_providerOptions == null || ProviderButtonLabel == null) return;
-            RefreshDropdownUI(_providerOptions, _providerChoice, ProviderButtonLabel);
+            RefreshDropdownUI(
+                _providerOptions.Concat(_modelsDevOptions).ToArray(),
+                _providerChoice,
+                ProviderButtonLabel);
+            if (ProviderSetupGuidance.IsModelsDevChoice(_providerChoice))
+            {
+                // Before the runtime rows load there is nothing to match, so
+                // name the trigger from the fetched list (or the raw id).
+                var id = _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
+                ProviderButtonLabel.Text = _modelsDevNames.TryGetValue(id, out var name) ? name : id;
+            }
         }
 
         private static void RefreshDropdownUI(
@@ -339,7 +354,6 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 settings ??= new AppSettingsDto();
-                SetCurrentProvider(settings.BackendChoice ?? "opencode");
 
                 OpenCodeApiKeyBox.Password = string.Empty;
                 OpenCodeApiKeyBox.PlaceholderText = settings.HasOpenCodeKey
@@ -364,7 +378,10 @@ namespace RuApp.Views
                     : "sk-...";
                 ModelsDevApiKeyBox.Password = string.Empty;
                 ModelsDevKeyStatus.Text = string.Empty;
+                // Providers first: the current choice can only be named once
+                // the runtime rows exist.
                 await RefreshModelsDevProvidersAsync();
+                SetCurrentProvider(settings.BackendChoice ?? "opencode");
 
                 {
                 }
@@ -376,8 +393,9 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Lists Models.dev providers for the key row. Best-effort: an empty
-        /// list keeps the row usable for a manually typed provider id.
+        /// Lists Models.dev providers for the key row and appends them to the
+        /// Active Provider dropdown. Best-effort: an empty list keeps the key
+        /// row usable for a manually typed provider id.
         /// </summary>
         private async Task RefreshModelsDevProvidersAsync()
         {
@@ -391,10 +409,119 @@ namespace RuApp.Views
                 {
                     ModelsDevProviderBox.SelectedItem = selected;
                 }
+
+                RebuildModelsDevOptions(providers);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Appends one dropdown row per Models.dev provider after the fixed
+        /// five, reusing the same option shape so selection, check mark, and
+        /// trigger label behave identically.
+        /// </summary>
+        private void RebuildModelsDevOptions(IReadOnlyList<ModelsDevEntryDto> providers)
+        {
+            _modelsDevOptions.Clear();
+            _modelsDevNames.Clear();
+            if (ModelsDevOptionsPanel is not null)
+            {
+                ModelsDevOptionsPanel.Children.Clear();
+            }
+
+            if (ModelsDevOptionsPanel is not null && providers.Count > 0
+                && Application.Current.Resources["RuDropdownItemButtonStyle"] is Style itemStyle)
+            {
+                var uiFont = Application.Current.Resources["RuUiFontFamily"];
+                var ink = Application.Current.Resources["RuInkBrush"];
+                var accent = Application.Current.Resources["RuAccentBrush"];
+                foreach (var entry in providers)
+                {
+                    var id = (entry.Id ?? string.Empty).Trim().ToLowerInvariant();
+                    if (id.Length == 0 || _modelsDevNames.ContainsKey(id))
+                    {
+                        continue;
+                    }
+
+                    var name = string.IsNullOrWhiteSpace(entry.Name) ? id : entry.Name.Trim();
+                    _modelsDevNames[id] = name;
+
+                    var label = new TextBlock
+                    {
+                        Text = name,
+                        FontFamily = uiFont as Microsoft.UI.Xaml.Media.FontFamily,
+                        FontSize = 12.5,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    };
+                    if (ink is Microsoft.UI.Xaml.Media.Brush inkBrush)
+                    {
+                        label.Foreground = inkBrush;
+                    }
+
+                    var check = new FontIcon
+                    {
+                        Glyph = "\uE73E",
+                        FontSize = 11,
+                        FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(8, 0, 0, 0),
+                        Visibility = Visibility.Collapsed,
+                    };
+                    if (accent is Microsoft.UI.Xaml.Media.Brush accentBrush)
+                    {
+                        check.Foreground = accentBrush;
+                    }
+
+                    var grid = new Grid();
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    grid.Children.Add(label);
+                    grid.Children.Add(check);
+                    Grid.SetColumn(check, 1);
+
+                    var value = ProviderSetupGuidance.ModelsDevPrefix + id;
+                    var button = new Button
+                    {
+                        Tag = value,
+                        Style = itemStyle,
+                        Content = grid,
+                    };
+                    AutomationProperties.SetName(button, $"{name} provider");
+                    button.Click += OnProviderOptionClick;
+                    ModelsDevOptionsPanel.Children.Add(button);
+                    _modelsDevOptions.Add(new DropdownOption(button, label, check, value));
+                }
+            }
+
+            if (ModelsDevOptionsDivider is not null)
+            {
+                ModelsDevOptionsDivider.Visibility =
+                    _modelsDevOptions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            SyncModelsDevKeyBox();
+            RefreshProviderUI();
+        }
+
+        /// <summary>
+        /// Points the key row's provider box at the active Models.dev choice,
+        /// so saving a key needs no second selection step.
+        /// </summary>
+        private void SyncModelsDevKeyBox()
+        {
+            if (ModelsDevProviderBox is null) return;
+            if (ProviderSetupGuidance.IsModelsDevChoice(_providerChoice))
+            {
+                var id = _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
+                if (_modelsDevNames.ContainsKey(id))
+                {
+                    ModelsDevProviderBox.SelectedItem = id;
+                    return;
+                }
             }
         }
 
@@ -428,26 +555,35 @@ namespace RuApp.Views
 
         private void UpdateVisibilityForBackend(string choice)
         {
-            OpenCodeApiRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
-            KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
-            OpenAiApiRow.Visibility = (choice == "openai") ? Visibility.Visible : Visibility.Collapsed;
-            AnthropicApiRow.Visibility = (choice == "anthropic") ? Visibility.Visible : Visibility.Collapsed;
-            CustomEndpointRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
-            CustomApiKeyRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
+            bool isModelsDev = ProviderSetupGuidance.IsModelsDevChoice(choice);
+            OpenCodeApiRow.Visibility = (!isModelsDev && choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
+            KiloApiRow.Visibility = (!isModelsDev && choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
+            OpenAiApiRow.Visibility = (!isModelsDev && choice == "openai") ? Visibility.Visible : Visibility.Collapsed;
+            AnthropicApiRow.Visibility = (!isModelsDev && choice == "anthropic") ? Visibility.Visible : Visibility.Collapsed;
+            CustomEndpointRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
+            CustomApiKeyRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
+            if (ModelsDevApiKeyRow is not null)
+            {
+                ModelsDevApiKeyRow.Visibility = isModelsDev ? Visibility.Visible : Visibility.Collapsed;
+            }
 
+            if (isModelsDev)
+            {
+                SyncModelsDevKeyBox();
+            }
         }
 
         private void OnProviderOptionClick(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
             if (sender is not Button button || button.Tag is not string choice) return;
-            if (!ProviderSetupGuidance.IsKnown(choice)) return;
-            _providerChoice = choice;
+            if (!ProviderSetupGuidance.IsSelectableProvider(choice)) return;
+            _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(choice);
             RefreshProviderUI();
             (ProviderButton.Flyout as Flyout)?.Hide();
 
-            UpdateVisibilityForBackend(choice);
-            _providerCatalogController?.SetBackend(choice);
+            UpdateVisibilityForBackend(_providerChoice);
+            _providerCatalogController?.SetBackend(_providerChoice);
             _ = _providerCatalogController?.RefreshAsync(force: true);
             ScheduleAutoSave();
         }

@@ -234,4 +234,30 @@ public sealed class ProviderSetupGuidanceTests
         Assert.NotNull(ProviderSetupGuidance.Find(null));
         Assert.False(ProviderSetupGuidance.IsKnown(null));
     }
+
+    [Fact]
+    public void ModelsDev_choices_are_selectable_without_joining_the_fixed_table()
+    {
+        // The generic providers arrive over the network, so the fixed table can
+        // never list them. The dropdown accepts them through the union check.
+        Assert.True(ProviderSetupGuidance.IsModelsDevChoice("models.dev:openrouter"));
+        Assert.True(ProviderSetupGuidance.IsModelsDevChoice("Models.Dev:OpenRouter"));
+        Assert.False(ProviderSetupGuidance.IsModelsDevChoice("models.dev:"));
+        Assert.False(ProviderSetupGuidance.IsModelsDevChoice("opencode"));
+        Assert.False(ProviderSetupGuidance.IsModelsDevChoice(null));
+
+        Assert.True(ProviderSetupGuidance.IsSelectableProvider("opencode"));
+        Assert.True(ProviderSetupGuidance.IsSelectableProvider("models.dev:openrouter"));
+        Assert.False(ProviderSetupGuidance.IsSelectableProvider("not-a-provider"));
+        Assert.False(ProviderSetupGuidance.IsSelectableProvider(null));
+    }
+
+    [Fact]
+    public void NormalizeProviderChoice_lowercases_models_dev_ids()
+    {
+        Assert.Equal("models.dev:openrouter", ProviderSetupGuidance.NormalizeProviderChoice("Models.Dev:OpenRouter"));
+        Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice("opencode"));
+        Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice("not-a-provider"));
+        Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice(null));
+    }
 }

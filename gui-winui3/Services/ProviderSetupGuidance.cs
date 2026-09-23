@@ -21,6 +21,9 @@ internal static class ProviderSetupGuidance
     /// <summary>The provider the app uses when the user has never chosen one.</summary>
     internal const string DefaultBackendChoice = "opencode";
 
+    /// <summary>Prefix for a Models.dev generic provider choice, e.g. "models.dev:openrouter".</summary>
+    internal const string ModelsDevPrefix = "models.dev:";
+
     internal sealed record ProviderInfo(
         string Alias,
         string DisplayName,
@@ -107,6 +110,45 @@ internal static class ProviderSetupGuidance
     /// </remarks>
     internal static bool IsKnown(string? backendChoice) =>
         !string.IsNullOrWhiteSpace(backendChoice) && Find(backendChoice) is not null;
+
+    /// <summary>
+    /// Whether the choice names a Models.dev generic provider ("models.dev:id").
+    /// </summary>
+    internal static bool IsModelsDevChoice(string? backendChoice)
+    {
+        if (string.IsNullOrWhiteSpace(backendChoice))
+        {
+            return false;
+        }
+
+        string trimmed = backendChoice.Trim();
+        return trimmed.StartsWith(ModelsDevPrefix, StringComparison.OrdinalIgnoreCase)
+            && trimmed.Length > ModelsDevPrefix.Length;
+    }
+
+    /// <summary>
+    /// Whether the dropdown may select this choice: a fixed provider or a
+    /// Models.dev generic provider. The fixed table cannot list the generic
+    /// ones (they come from the network), so this is the union callers check.
+    /// </summary>
+    internal static bool IsSelectableProvider(string? backendChoice) =>
+        IsKnown(backendChoice) || IsModelsDevChoice(backendChoice);
+
+    /// <summary>
+    /// Normalises a selectable choice for storage: the fixed alias as-is, a
+    /// Models.dev id lowercased to match the backend's normalisation.
+    /// Anything else falls back to the default.
+    /// </summary>
+    internal static string NormalizeProviderChoice(string? backendChoice)
+    {
+        if (IsModelsDevChoice(backendChoice))
+        {
+            string id = backendChoice!.Trim()[ModelsDevPrefix.Length..].Trim().ToLowerInvariant();
+            return id.Length == 0 ? DefaultBackendChoice : ModelsDevPrefix + id;
+        }
+
+        return IsKnown(backendChoice) ? Normalize(backendChoice) : DefaultBackendChoice;
+    }
 
     /// <summary>
     /// The display name for an alias, falling back to the raw alias so an

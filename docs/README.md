@@ -24,6 +24,8 @@ completed plans must be removed from the checkout rather than archived here.
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
 - [Dated verification records](verification/)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
+- [Contributing](../CONTRIBUTING.md)
+- [Agent guidance](../AGENTS.md)
 
 ## Decisions
 

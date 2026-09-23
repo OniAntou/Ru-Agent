@@ -212,6 +212,13 @@ Protocol digest, and the permission vocabulary below must stay accurate.
 
 </details>
 
+## Contributing
+
+Ru is open to contributors. [CONTRIBUTING.md](CONTRIBUTING.md) covers the
+environment, the test matrices, and the architecture invariants that keep a
+local agent trustworthy. [AGENTS.md](AGENTS.md) gives AI coding agents the
+same rules in a form they can follow.
+
 ## Not done yet
 
 Stated plainly so nothing above reads as a stronger claim than it is:

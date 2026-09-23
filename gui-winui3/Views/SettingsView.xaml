@@ -419,7 +419,18 @@
                                     </Grid>
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
-                                            <StackPanel Width="260" Spacing="2">
+                                            <StackPanel Width="280" Spacing="2">
+                                                <TextBox x:Name="ProviderSearchBox"
+                                                         PlaceholderText="Search providers..."
+                                                         Height="36"
+                                                         CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                         TextChanged="OnProviderSearchChanged" />
+                                                <TextBlock x:Name="FixedProvidersHeader"
+                                                           Text="Built-in providers"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource RuMutedBrush}"
+                                                           Margin="4,8,0,2" />
                                                 <Button x:Name="ProviderOpencodeOption"
                                                         Tag="opencode"
                                                         Click="OnProviderOptionClick"
@@ -536,12 +547,26 @@
                                                     </Grid>
                                                 </Button>
                                                 <!-- Models.dev providers are appended here at runtime -->
+                                                <TextBlock x:Name="ModelsDevOptionsHeader"
+                                                           Text="Models.dev providers"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource RuMutedBrush}"
+                                                           Margin="4,8,0,2"
+                                                           Visibility="Collapsed" />
                                                 <Border x:Name="ModelsDevOptionsDivider"
                                                         Height="1"
                                                         Background="{StaticResource RuLineBrush}"
                                                         Opacity="0.6"
                                                         Visibility="Collapsed" />
                                                 <StackPanel x:Name="ModelsDevOptionsPanel" Spacing="2" />
+                                                <TextBlock x:Name="ProviderNoMatchText"
+                                                           Text="No provider matches."
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource RuMutedBrush}"
+                                                           Margin="4,8,0,2"
+                                                           Visibility="Collapsed" />
                                             </StackPanel>
                                         </Flyout>
                                     </Button.Flyout>

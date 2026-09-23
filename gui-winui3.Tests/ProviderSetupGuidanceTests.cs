@@ -260,4 +260,31 @@ public sealed class ProviderSetupGuidanceTests
         Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice("not-a-provider"));
         Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice(null));
     }
+
+    [Fact]
+    public void ModelsDev_options_sort_alphabetically_and_drop_duplicates()
+    {
+        var ordered = ProviderSetupGuidance.OrderModelsDevOptions(
+        [
+            ("tokengo", "TokenGo"),
+            ("ambient", "Ambient"),
+            ("blank", "  "),
+            ("tokengo", "TokenGo Again"),
+            ("", "Nameless"),
+        ]);
+
+        Assert.Equal(["ambient", "blank", "tokengo"], ordered.Select(entry => entry.Id).ToArray());
+        Assert.Equal(["Ambient", "blank", "TokenGo"], ordered.Select(entry => entry.Name).ToArray());
+    }
+
+    [Fact]
+    public void Provider_filter_matches_name_or_id_case_insensitively()
+    {
+        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("OpenRouter", "openrouter", null));
+        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("OpenRouter", "openrouter", "  "));
+        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "qiniu"));
+        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "QINIU-AI"));
+        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("Kilo Gateway (Cloud API)", "kilo", "gateway"));
+        Assert.False(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "anthropic"));
+    }
 }

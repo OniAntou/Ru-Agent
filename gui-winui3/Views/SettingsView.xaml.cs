@@ -438,15 +438,10 @@ namespace RuApp.Views
                 var uiFont = Application.Current.Resources["RuUiFontFamily"];
                 var ink = Application.Current.Resources["RuInkBrush"];
                 var accent = Application.Current.Resources["RuAccentBrush"];
-                foreach (var entry in providers)
+                var ordered = ProviderSetupGuidance.OrderModelsDevOptions(
+                    providers.Select(entry => (entry.Id, entry.Name)));
+                foreach (var (id, name) in ordered)
                 {
-                    var id = (entry.Id ?? string.Empty).Trim().ToLowerInvariant();
-                    if (id.Length == 0 || _modelsDevNames.ContainsKey(id))
-                    {
-                        continue;
-                    }
-
-                    var name = string.IsNullOrWhiteSpace(entry.Name) ? id : entry.Name.Trim();
                     _modelsDevNames[id] = name;
 
                     var label = new TextBlock
@@ -497,13 +492,63 @@ namespace RuApp.Views
                 }
             }
 
-            if (ModelsDevOptionsDivider is not null)
+            SyncModelsDevKeyBox();
+            ApplyProviderFilter(ProviderSearchBox?.Text);
+        }
+
+        /// <summary>
+        /// Filters both provider groups by the search text and hides a group
+        /// header when none of its rows match.
+        /// </summary>
+        private void OnProviderSearchChanged(object sender, TextChangedEventArgs e)
+        {
+            ApplyProviderFilter((sender as TextBox)?.Text);
+        }
+
+        private void ApplyProviderFilter(string? filter)
+        {
+            bool anyFixed = false;
+            if (_providerOptions is not null)
             {
-                ModelsDevOptionsDivider.Visibility =
-                    _modelsDevOptions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                foreach (var option in _providerOptions)
+                {
+                    bool show = ProviderSetupGuidance.MatchesProviderFilter(option.Label.Text, option.Value, filter);
+                    option.Button.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                    anyFixed |= show;
+                }
             }
 
-            SyncModelsDevKeyBox();
+            bool anyDev = false;
+            foreach (var option in _modelsDevOptions)
+            {
+                var id = option.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..];
+                bool show = ProviderSetupGuidance.MatchesProviderFilter(option.Label.Text, id, filter);
+                option.Button.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                anyDev |= show;
+            }
+
+            if (FixedProvidersHeader is not null)
+            {
+                FixedProvidersHeader.Visibility = anyFixed ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            var devVisibility = _modelsDevOptions.Count > 0 && anyDev ? Visibility.Visible : Visibility.Collapsed;
+            if (ModelsDevOptionsHeader is not null)
+            {
+                ModelsDevOptionsHeader.Visibility = devVisibility;
+            }
+
+            if (ModelsDevOptionsDivider is not null)
+            {
+                ModelsDevOptionsDivider.Visibility = devVisibility;
+            }
+
+            if (ProviderNoMatchText is not null)
+            {
+                ProviderNoMatchText.Visibility =
+                    (!anyFixed && !anyDev) ? Visibility.Visible : Visibility.Collapsed;
+            }
+
             RefreshProviderUI();
         }
 
@@ -579,6 +624,11 @@ namespace RuApp.Views
             if (sender is not Button button || button.Tag is not string choice) return;
             if (!ProviderSetupGuidance.IsSelectableProvider(choice)) return;
             _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(choice);
+            if (ProviderSearchBox is not null)
+            {
+                ProviderSearchBox.Text = string.Empty;
+            }
+
             RefreshProviderUI();
             (ProviderButton.Flyout as Flyout)?.Hide();
 

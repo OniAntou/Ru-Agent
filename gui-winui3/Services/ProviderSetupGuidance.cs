@@ -151,6 +151,56 @@ internal static class ProviderSetupGuidance
     }
 
     /// <summary>
+    /// Sorts Models.dev dropdown rows by display name (A-Z, case-insensitive),
+    /// falling back to the id when the name is blank. Duplicates collapse to
+    /// the first occurrence so one provider never takes two rows.
+    /// </summary>
+    internal static IReadOnlyList<(string Id, string Name)> OrderModelsDevOptions(
+        IEnumerable<(string Id, string Name)> entries)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var cleaned = new List<(string Id, string Name)>();
+        if (entries is null)
+        {
+            return cleaned;
+        }
+
+        foreach (var (rawId, rawName) in entries)
+        {
+            string id = (rawId ?? string.Empty).Trim().ToLowerInvariant();
+            if (id.Length == 0 || !seen.Add(id))
+            {
+                continue;
+            }
+
+            string name = string.IsNullOrWhiteSpace(rawName) ? id : rawName.Trim();
+            cleaned.Add((id, name));
+        }
+
+        cleaned.Sort((left, right) =>
+            string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) is { } order && order != 0
+                ? order
+                : string.Compare(left.Id, right.Id, StringComparison.Ordinal));
+        return cleaned;
+    }
+
+    /// <summary>
+    /// Whether a dropdown row survives the search filter: empty filter keeps
+    /// everything, otherwise the name or id must contain it (case-insensitive).
+    /// </summary>
+    internal static bool MatchesProviderFilter(string? name, string? id, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+        {
+            return true;
+        }
+
+        string needle = filter.Trim();
+        return (name ?? string.Empty).Contains(needle, StringComparison.OrdinalIgnoreCase)
+            || (id ?? string.Empty).Contains(needle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// The display name for an alias, falling back to the raw alias so an
     /// unrecognised provider is still named rather than shown as blank.
     /// </summary>

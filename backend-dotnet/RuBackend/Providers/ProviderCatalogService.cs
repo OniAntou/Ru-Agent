@@ -174,7 +174,15 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 && Uri.TryCreate(url, UriKind.Absolute, out var uri)
                 && uri.Scheme is "https" or "http")
             {
-                result.Add(new ModelsDevProvider(property.Name, property.Name, uri.GetLeftPart(UriPartial.Authority)));
+                var name = property.Name;
+                if (property.Value.TryGetProperty("name", out var rawName)
+                    && rawName.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(rawName.GetString()))
+                {
+                    name = rawName.GetString()!.Trim();
+                }
+
+                result.Add(new ModelsDevProvider(property.Name, name, uri.GetLeftPart(UriPartial.Authority)));
             }
         }
 

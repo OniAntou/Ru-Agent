@@ -31,7 +31,17 @@ public sealed class ProviderCatalogTests : IDisposable
         _handler.Json = "{\"openrouter\":{\"name\":\"OpenRouter\",\"api\":\"https://openrouter.ai/api/v1\",\"models\":{}}}";
         var service = ModelsDevService();
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Contains(providers, p => p.Id == "openrouter");
+        var openrouter = Assert.Single(providers, p => p.Id == "openrouter");
+        Assert.Equal("OpenRouter", openrouter.Name);
+    }
+
+    [Fact]
+    public async Task ModelsDev_provider_without_name_falls_back_to_id()
+    {
+        _handler.Json = "{\"zeta\":{\"api\":\"https://zeta.example/v1\"},\"alpha\":{\"api\":\"https://alpha.example/v1\"}}";
+        var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("zeta", Assert.Single(providers, p => p.Id == "zeta").Name);
     }
 
     [Fact]

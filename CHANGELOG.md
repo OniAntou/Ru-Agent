@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **fix(backend)**: **Mọi provider Models.dev có API prefix đều chết.** Parse `api` cắt lấy mỗi authority rồi gắn `/models` + `/chat/completions` đằng sau — Kilo thật ở `api.kilo.ai/api/gateway`, OpenCode Zen ở `opencode.ai/zen/v1`, SiliconFlow ở `.../v1` nên toàn 404; OpenRouter còn tệ hơn: trả về HTML trang web (200) thay vì API. Nay giữ full `api` URL (trim `/` cuối, từ chối userinfo/query/fragment). Verify live: kilo/opencode/openrouter `/models` 200 với JSON thật, siliconflow 401 đúng nghĩa endpoint tồn tại.
 - **fix(gui)**: Dropdown provider trong Settings đồng bộ chrome với chat ModelPicker: search bọc input-well + icon kính lúp, hover/pressed do style nắm (mọi row runtime cũng phản hồi), list cuộn `MaxHeight=300` + scrollbar mảnh, header `BUILT-IN`/`MODELS.DEV` semibold. Bỏ `AttachDropdownHover` gắn tay từng nút.
 - **fix(gui)**: Gộp hàng key Models.dev vào Active Provider — bỏ ComboBox chọn provider thừa, nút Lưu dùng thẳng provider đang active.
 - **feat(providers,gui)**: Dropdown provider có section `SIGNED IN` trên cùng + chấm xanh cho provider đã có key. Backend thêm `GET /settings/models-dev-keys` liệt kê id Models.dev đã lưu key; GUI sort A-Z, filter cả 3 sections, tự refresh sau Lưu/Đăng xuất.

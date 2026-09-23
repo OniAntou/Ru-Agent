@@ -172,7 +172,10 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 && api.ValueKind == JsonValueKind.String
                 && api.GetString() is string url
                 && Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                && uri.Scheme is "https" or "http")
+                && uri.Scheme is "https" or "http"
+                && uri.UserInfo.Length == 0
+                && uri.Query.Length == 0
+                && uri.Fragment.Length == 0)
             {
                 var name = property.Name;
                 if (property.Value.TryGetProperty("name", out var rawName)
@@ -182,7 +185,10 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                     name = rawName.GetString()!.Trim();
                 }
 
-                result.Add(new ModelsDevProvider(property.Name, name, uri.GetLeftPart(UriPartial.Authority)));
+                // Keep the full api URL including its path prefix
+                // (…/api/v1, …/zen/v1): catalog and chat URLs are appended
+                // to it, so authority-only would 404 most providers.
+                result.Add(new ModelsDevProvider(property.Name, name, uri.AbsoluteUri.TrimEnd('/')));
             }
         }
 

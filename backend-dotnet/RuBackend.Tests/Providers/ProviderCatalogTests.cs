@@ -33,6 +33,28 @@ public sealed class ProviderCatalogTests : IDisposable
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
         var openrouter = Assert.Single(providers, p => p.Id == "openrouter");
         Assert.Equal("OpenRouter", openrouter.Name);
+        Assert.Equal("https://openrouter.ai/api/v1", openrouter.BaseUrl);
+    }
+
+    [Fact]
+    public async Task ModelsDev_base_url_keeps_the_api_path_prefix()
+    {
+        // Catalog and chat URLs are appended to BaseUrl: authority-only
+        // 404s every provider whose API lives under a path (…/api/v1,
+        // …/zen/v1), e.g. Kilo and OpenCode Zen.
+        _handler.Json = "{\"kilo\":{\"name\":\"Kilo\",\"api\":\"https://api.kilo.ai/api/gateway/\"}}";
+        var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("https://api.kilo.ai/api/gateway", Assert.Single(providers).BaseUrl);
+    }
+
+    [Fact]
+    public async Task ModelsDev_api_with_userinfo_or_query_is_rejected()
+    {
+        _handler.Json = "{\"evil\":{\"api\":\"https://user@example.com/v1?x=1\"},\"good\":{\"api\":\"https://good.example/v1\"}}";
+        var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("good", Assert.Single(providers).Id);
     }
 
     [Fact]

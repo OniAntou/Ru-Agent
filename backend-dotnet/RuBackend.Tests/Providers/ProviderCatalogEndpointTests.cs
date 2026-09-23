@@ -100,7 +100,7 @@ public sealed class ProviderCatalogEndpointTests
 
         Assert.Equal("ok", body["status"]!.GetValue<string>());
         Assert.Equal("openrouter", body["providers"]![0]!["id"]!.GetValue<string>());
-        Assert.Equal("https://openrouter.ai", body["providers"]![0]!["base_url"]!.GetValue<string>());
+        Assert.Equal("https://openrouter.ai/api/v1", body["providers"]![0]!["base_url"]!.GetValue<string>());
     }
 
     [Fact]

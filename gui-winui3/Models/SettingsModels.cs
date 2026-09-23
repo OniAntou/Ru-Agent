@@ -36,6 +36,9 @@ namespace RuApp.Models
 
         [JsonPropertyName("anthropic_model")]
         public string AnthropicModel { get; set; } = string.Empty;
+
+        [JsonPropertyName("cloudflare_account_id")]
+        public string CloudflareAccountId { get; set; } = string.Empty;
     }
 
     /// <summary>

@@ -6,13 +6,13 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class ApprovalPromptTests
 {
-    private static ApprovalPrompt Create(bool offerDirectory = true) =>
+    private static ApprovalPrompt Create(bool offerDirectory = false) =>
         ApprovalPrompt.For("external_directory_required", offerDirectory);
 
     [Fact]
     public void For_OffersTheThreeWayChoiceWithDenySelected()
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
 
         Assert.Equal(3, prompt.Choices.Count);
         Assert.Equal(ApprovalPrompt.AllowOnce, prompt.Choices[0].Decision);
@@ -33,7 +33,7 @@ public sealed class ApprovalPromptTests
     [Fact]
     public void Move_WalksAndWrapsTheChoices()
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
         Assert.Equal(ApprovalPrompt.Deny, prompt.Current.Decision);
 
         prompt.Move(-1);
@@ -52,7 +52,7 @@ public sealed class ApprovalPromptTests
     [InlineData('3', ApprovalPrompt.AllowDirectory)]
     public void TrySelectDigit_PicksTheMatchingChoice(char digit, string expected)
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
 
         Assert.True(prompt.TrySelectDigit(digit));
         Assert.Equal(expected, prompt.Current.Decision);
@@ -74,7 +74,7 @@ public sealed class ApprovalPromptTests
     [Fact]
     public async Task Resolve_CompletesTheDecisionOnce()
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
 
         prompt.Resolve(ApprovalPrompt.AllowOnce);
 
@@ -90,7 +90,7 @@ public sealed class ApprovalPromptTests
     [InlineData(120)]
     public void Render_ProducesAWideFrameOnEveryWidth(int width)
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
 
         var lines = prompt.Render(width);
 
@@ -101,7 +101,7 @@ public sealed class ApprovalPromptTests
     [Fact]
     public void Render_ListsEveryChoiceUnderTheApprovalTitle()
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
 
         var text = string.Join("\n", prompt.Render(80).Select(TuiText.Strip));
 
@@ -114,7 +114,7 @@ public sealed class ApprovalPromptTests
     [Fact]
     public void Render_MarksTheSelectedChoice()
     {
-        var prompt = Create();
+        var prompt = Create(offerDirectory: true);
 
         var rows = prompt.Render(80).Select(TuiText.Strip).ToList();
         var denyRow = rows.First(l => l.Contains("2 · deny", StringComparison.Ordinal));
@@ -130,6 +130,15 @@ public sealed class ApprovalPromptTests
         var prompt = new ApprovalPrompt(new string('x', 200), [new("1 · once", "d", ApprovalPrompt.AllowOnce)]);
 
         Assert.All(prompt.Render(60), line => Assert.Equal(60, TuiText.VisibleWidth(line)));
+    }
+
+    [Fact]
+    public void For_OnlyExternalDirectoryAsksOfferTheFolderChoice()
+    {
+        Assert.Equal(2, ApprovalPrompt.For("terminal_delete_requires_approval", offerDirectory: true).Choices.Count);
+        Assert.Equal(2, ApprovalPrompt.For("web_approval_required", offerDirectory: true).Choices.Count);
+        Assert.Equal(2, ApprovalPrompt.For("approval_required").Choices.Count);
+        Assert.Equal(3, ApprovalPrompt.For("external_directory_required", offerDirectory: true).Choices.Count);
     }
 
     [Fact]
@@ -196,7 +205,7 @@ public sealed class TypeAheadSessionTests
         var session = Create();
         var withoutApproval = session.FooterHeight(80);
 
-        session.Approval = ApprovalPrompt.For("external_directory_required");
+        session.Approval = ApprovalPrompt.For("external_directory_required", offerDirectory: true);
 
         Assert.Equal(withoutApproval + session.Approval.Render(80).Count, session.FooterHeight(80));
     }
@@ -322,7 +331,7 @@ public sealed class TypeAheadKeyRoutingTests
     public void ApprovalOwnsTheKeyboardUntilItIsAnswered()
     {
         var session = new TypeAheadSession(new PendingPromptSlot());
-        var prompt = ApprovalPrompt.For("external_directory_required");
+        var prompt = ApprovalPrompt.For("external_directory_required", offerDirectory: true);
         session.Approval = prompt;
 
         InteractiveLineReader.HandleTypeAheadKey(session, Typed('x'));
@@ -339,12 +348,12 @@ public sealed class TypeAheadKeyRoutingTests
     public async Task ApprovalConfirmAndEscapeResolveTheDecision()
     {
         var session = new TypeAheadSession(new PendingPromptSlot());
-        var confirm = ApprovalPrompt.For("external_directory_required");
+        var confirm = ApprovalPrompt.For("external_directory_required", offerDirectory: true);
         session.Approval = confirm;
         InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Enter, '\r'));
         Assert.Equal(ApprovalPrompt.Deny, await confirm.Decision.Task);
 
-        var escape = ApprovalPrompt.For("external_directory_required");
+        var escape = ApprovalPrompt.For("external_directory_required", offerDirectory: true);
         session.Approval = escape;
         InteractiveLineReader.HandleTypeAheadKey(session, Key(ConsoleKey.Escape));
         Assert.Equal(ApprovalPrompt.Deny, await escape.Decision.Task);

@@ -107,7 +107,9 @@ public static class BusinessEndpoints
     /// Models.dev provider ids with a stored key (`&lt;id&gt;_api_key`). The
     /// credential store has no enumeration, so each catalog id is probed; the
     /// catalog itself is cached for 24h, keeping this a single cheap call the
-    /// GUI makes when Settings loads rather than per keystroke.
+    /// GUI makes when Settings loads rather than per keystroke. The known-key
+    /// list is bounded so a poisoned catalog cannot turn this into an
+    /// unbounded vault-probe fan-out.
     /// </summary>
     private static async Task<IResult> GetModelsDevKeysAsync(
         ProviderCatalogService catalog,
@@ -119,13 +121,20 @@ public static class BusinessEndpoints
         {
             var providers = await catalog.GetModelsDevAsync(cancellationToken).ConfigureAwait(false);
             var withKeys = new List<string>();
-            foreach (var provider in providers)
+            foreach (var provider in providers.Take(5000))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var account = provider.Id.ToLowerInvariant() + "_api_key";
+                var id = provider.Id.Trim().ToLowerInvariant();
+                if (id.Length == 0 || id.Length > 64
+                    || id.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
+                {
+                    continue;
+                }
+
+                var account = id + "_api_key";
                 if (await HasCredentialAsync(credentials, account, cancellationToken).ConfigureAwait(false))
                 {
-                    withKeys.Add(provider.Id.ToLowerInvariant());
+                    withKeys.Add(id);
                 }
             }
 
@@ -563,6 +572,7 @@ public static class BusinessEndpoints
         result["model"] = value.Model;
         result["custom_model"] = value.CustomModel;
         result["custom_url"] = value.CustomUrl;
+        result["cloudflare_account_id"] = value.CloudflareAccountId;
         result["openai_model"] = value.OpenAiModel;
         result["anthropic_model"] = value.AnthropicModel;
         result.Remove("checkpoint_path");

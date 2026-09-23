@@ -8,7 +8,7 @@ using RuBackend.Business.Settings;
 namespace RuBackend.Providers;
 
 /// <summary>One Models.dev provider entry: generic chat_completions base URL.</summary>
-public sealed record ModelsDevProvider(string Id, string Name, string BaseUrl);
+public sealed record ModelsDevProvider(string Id, string Name, string BaseUrl, IReadOnlyList<string> Models);
 
 /// <summary>Bounded Host-owned catalog cache. No provider/key/protocol fallback.</summary>
 public sealed class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
@@ -19,8 +19,11 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     private static readonly TimeSpan ModelsDevCacheTtl = TimeSpan.FromHours(24);
 
     // The live catalog holds 200+ providers. A smaller payload means a truncated
-    // or proxied response: usable in-memory, but never worth caching over good data.
-    private const int MinimumModelsDevProviders = 2;
+    // or proxied response: served in-memory for this call only, and only cached
+    // when it still carries a credible provider count. A two-entry response can
+    // always be produced by a proxy that whitelists exactly what the caller asks
+    // for, so it must never overwrite 24h of good data.
+    private const int MinimumModelsDevProviders = 50;
     private readonly string _modelsDevCacheFile = modelsDevCacheFile
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ru", "models-dev.json");
     private readonly SemaphoreSlim _modelsDevGate = new(1, 1);
@@ -137,6 +140,9 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 throw new ProviderCatalogException("catalog_suspicious");
             }
 
+            // A cached list is trusted on read, so a suspicious fetch must not
+            // overwrite it: serve the small payload in-memory and keep the good
+            // cache (or fail closed to the fresh payload when there is none).
             WriteModelsDevCacheBestEffort(body);
             return fetched;
         }
@@ -147,6 +153,16 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         catch (Exception error) when (error is ProviderCatalogException or HttpRequestException
             or OperationCanceledException or DecoderFallbackException or IOException or JsonException)
         {
+            // A suspiciously small catalog is served in-memory only: keep the
+            // stale cache when one exists instead of letting the small payload
+            // overwrite 24h of good data on the next successful-shaped fetch.
+            if (error is ProviderCatalogException suspicious
+                && string.Equals(suspicious.Code, "catalog_suspicious", StringComparison.Ordinal)
+                && hasCache)
+            {
+                return cachedProviders;
+            }
+
             if (hasCache)
             {
                 return cachedProviders;
@@ -172,7 +188,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 && api.ValueKind == JsonValueKind.String
                 && api.GetString() is string url
                 && Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                && uri.Scheme is "https" or "http"
+                && string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
                 && uri.UserInfo.Length == 0
                 && uri.Query.Length == 0
                 && uri.Fragment.Length == 0)
@@ -188,11 +204,38 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 // Keep the full api URL including its path prefix
                 // (…/api/v1, …/zen/v1): catalog and chat URLs are appended
                 // to it, so authority-only would 404 most providers.
-                result.Add(new ModelsDevProvider(property.Name, name, uri.AbsoluteUri.TrimEnd('/')));
+                // The models map is kept for override providers whose own
+                // list endpoint is not OpenAI-shaped (Cloudflare answers 405).
+                result.Add(new ModelsDevProvider(property.Name, name, uri.AbsoluteUri.TrimEnd('/'), ReadModelIds(property.Value)));
             }
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Model ids from a Models.dev provider entry. Bounded and validated like
+    /// fetched catalog ids: overlong or control-char ids are dropped, never
+    /// throw, so one bad entry cannot poison the whole list.
+    /// </summary>
+    private static IReadOnlyList<string> ReadModelIds(JsonElement entry)
+    {
+        var ids = new List<string>();
+        if (entry.ValueKind == JsonValueKind.Object
+            && entry.TryGetProperty("models", out var models)
+            && models.ValueKind == JsonValueKind.Object)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var model in models.EnumerateObject())
+            {
+                var id = model.Name?.Trim() ?? string.Empty;
+                if (id.Length is 0 or > 256 || id.Any(char.IsControl)) continue;
+                if (seen.Add(id)) ids.Add(id);
+                if (ids.Count >= 5000) break;
+            }
+        }
+
+        return ids;
     }
 
     private bool TryReadModelsDevCache(out IReadOnlyList<ModelsDevProvider> providers, out bool fresh)
@@ -370,6 +413,11 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             DateTimeOffset? retryAfter = null;
             try
             {
+                if (await TryServeOverrideCatalogAsync(entry, scope, selection, attempt, ct).ConfigureAwait(false))
+                {
+                    return;
+                }
+
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(15));
                 using var request = ProviderCatalogRequestFactory.Create(selection, credential);
@@ -449,6 +497,51 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             }
         }
         finally { entry.RefreshGate.Release(); }
+    }
+
+    /// <summary>
+    /// Serves an override provider's catalog from the Models.dev model list
+    /// instead of a <c>GET {base}/models</c> fetch. Returns false for generic
+    /// providers so the normal HTTP path runs. Unknown ids throw
+    /// <c>catalog_unavailable</c>: the entry is never filled with guesses.
+    /// </summary>
+    private async Task<bool> TryServeOverrideCatalogAsync(
+        Entry entry,
+        string scope,
+        ProviderSelection selection,
+        DateTimeOffset attempt,
+        CancellationToken ct)
+    {
+        const string prefix = "models.dev:";
+        if (!selection.IsModelsDev
+            || selection.Backend.Length <= prefix.Length
+            || !ProviderOverrides.UsesModelsDevCatalog(selection.Backend[prefix.Length..]))
+        {
+            return false;
+        }
+
+        var id = selection.Backend[prefix.Length..];
+        var catalog = await GetModelsDevAsync(ct).ConfigureAwait(false);
+        var provider = catalog.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ProviderCatalogException("catalog_unavailable");
+        var models = provider.Models
+            .Select(modelId => new CatalogModel(modelId, true, "chat_completions", new CatalogReasoning("unknown", [])))
+            .ToArray();
+        ct.ThrowIfCancellationRequested();
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (IsCurrentEntry(scope, entry) && entry.Attempt == attempt)
+            {
+                entry.Models = models;
+                entry.Success = clock.GetUtcNow();
+                entry.Error = null;
+                entry.RetryAfter = DateTimeOffset.MinValue;
+            }
+        }
+        finally { _gate.Release(); }
+
+        return true;
     }
 
     private async Task RestoreAttemptAsync(

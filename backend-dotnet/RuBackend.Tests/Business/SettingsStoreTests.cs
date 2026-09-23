@@ -286,6 +286,11 @@ public sealed class SettingsStoreTests
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
         Assert.Equal("models.dev:opencode", persisted["backend"]!.GetValue<string>());
         Assert.Null(persisted["model"]);
+
+        // The in-memory candidate clears the dead filename too: a re-read must
+        // not resurrect the .gguf value.
+        var reread = await store.ReadAsync(CancellationToken.None);
+        Assert.Equal(string.Empty, reread.Model);
     }
 
     [Fact]

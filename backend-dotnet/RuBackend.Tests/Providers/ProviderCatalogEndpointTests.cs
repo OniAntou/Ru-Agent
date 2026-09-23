@@ -121,9 +121,17 @@ public sealed class ProviderCatalogEndpointTests
 
     private sealed class TwoProviderModelsDevHandler : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StringContent("""{"openrouter":{"name":"OpenRouter","api":"https://openrouter.ai/api/v1"},"zai":{"name":"Z.AI","api":"https://api.z.ai/api/coding/paas/v4"}}""") });
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var entries = Enumerable.Range(0, 60)
+                .Select(i => i == 0
+                    ? "\"openrouter\":{\"name\":\"OpenRouter\",\"api\":\"https://openrouter.ai/api/v1\"}"
+                    : i == 1
+                        ? "\"zai\":{\"name\":\"Z.AI\",\"api\":\"https://api.z.ai/api/coding/paas/v4\"}"
+                        : $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent("{" + string.Join(",", entries) + "}") });
+        }
     }
 
     private sealed class ModelsDevHandler : HttpMessageHandler
@@ -131,8 +139,12 @@ public sealed class ProviderCatalogEndpointTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Assert.Equal("https://models.dev/api.json", request.RequestUri?.AbsoluteUri);
+            var entries = Enumerable.Range(0, 60)
+                .Select(i => i == 0
+                    ? "\"openrouter\":{\"name\":\"OpenRouter\",\"api\":\"https://openrouter.ai/api/v1\"}"
+                    : $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new StringContent("""{"openrouter":{"name":"OpenRouter","api":"https://openrouter.ai/api/v1"}}""") });
+            { Content = new StringContent("{" + string.Join(",", entries) + "}") });
         }
     }
 

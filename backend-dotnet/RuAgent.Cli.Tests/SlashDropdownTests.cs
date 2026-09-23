@@ -3,8 +3,9 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-public sealed class SlashDropdownTests
+public sealed class SlashDropdownTests : IDisposable
 {
+    private readonly IDisposable _levelPin;
     private static readonly DropdownItem[] Items =
     [
         new("/model", "Switch or show the active model", "/model [name]"),
@@ -14,8 +15,10 @@ public sealed class SlashDropdownTests
 
     public SlashDropdownTests()
     {
-        TuiPalette.Level = TuiColorLevel.None;
+        _levelPin = TuiPalette.PinLevel(TuiColorLevel.None);
     }
+
+    public void Dispose() => _levelPin.Dispose();
 
     [Theory]
     [InlineData(30)]
@@ -35,16 +38,11 @@ public sealed class SlashDropdownTests
     [Fact]
     public void Dropdown_selected_row_uses_brand_label()
     {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             var rows = SlashDropdown.Compose(60, "select", new[] { new DropdownItem("/help", "help") }, 0, 5, null);
             Assert.Contains(TuiPalette.Code(TuiToken.Brand), rows[1]);
             Assert.All(rows, row => Assert.Equal(60, TuiText.VisibleWidth(row)));
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
         }
     }
 

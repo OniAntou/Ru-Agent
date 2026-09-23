@@ -115,8 +115,7 @@ public sealed class InteractiveLineReaderTests
     [Fact]
     public void BuildTop_And_BuildBottom_Support_Slash_Mode_Styling()
     {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             var normalTop = InteractiveLineReader.BuildTop(40, isSlash: false);
             var slashTop = InteractiveLineReader.BuildTop(40, isSlash: true);
@@ -127,10 +126,6 @@ public sealed class InteractiveLineReaderTests
             Assert.Contains(TuiPalette.Code(TuiToken.Brand), slashBottom, StringComparison.Ordinal);
             _ = normalTop;
             _ = normalBottom;
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
         }
     }
 

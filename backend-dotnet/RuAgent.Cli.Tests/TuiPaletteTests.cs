@@ -8,8 +8,7 @@ public sealed class TuiPaletteTests
     [Fact]
     public void TrueColor_EmitsAuroraRgbCodes()
     {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             Assert.Equal("\u001b[38;2;56;189;248m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[38;2;129;140;248m", TuiPalette.Code(TuiToken.Brand2));
@@ -18,17 +17,12 @@ public sealed class TuiPaletteTests
             Assert.Equal("\u001b[38;2;251;191;36m", TuiPalette.Code(TuiToken.Warn));
             Assert.Equal("\u001b[38;2;248;113;113m", TuiPalette.Code(TuiToken.Err));
         }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
     }
 
     [Fact]
     public void Palette256_EmitsIndexedCodes()
     {
-        TuiPalette.Level = TuiColorLevel.Palette256;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.Palette256))
         {
             Assert.Equal("\u001b[38;5;39m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[38;5;105m", TuiPalette.Code(TuiToken.Brand2));
@@ -37,17 +31,12 @@ public sealed class TuiPaletteTests
             Assert.Equal("\u001b[38;5;221m", TuiPalette.Code(TuiToken.Warn));
             Assert.Equal("\u001b[38;5;210m", TuiPalette.Code(TuiToken.Err));
         }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
     }
 
     [Fact]
     public void Basic16_EmitsBrightColourCodes()
     {
-        TuiPalette.Level = TuiColorLevel.Basic16;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.Basic16))
         {
             Assert.Equal("\u001b[94m", TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("\u001b[96m", TuiPalette.Code(TuiToken.Brand2));
@@ -57,55 +46,36 @@ public sealed class TuiPaletteTests
             Assert.Equal("\u001b[93m", TuiPalette.Code(TuiToken.Warn));
             Assert.Equal("\u001b[91m", TuiPalette.Code(TuiToken.Err));
         }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
     }
 
     [Fact]
     public void None_EmitsNoEscapeAtAll()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
         {
             Assert.Equal(string.Empty, TuiPalette.Code(TuiToken.Brand));
             Assert.Equal("hello", TuiPalette.Paint("hello", TuiToken.Brand));
             Assert.Equal("hello", TuiPalette.BoldPaint("hello"));
             Assert.Equal("hello", TuiPalette.DimPaint("hello"));
         }
-        finally
-        {
-            TuiPalette.ResetLevel();
-        }
     }
 
     [Fact]
     public void Ink_NeverEmitsForeground()
     {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             Assert.Equal(string.Empty, TuiPalette.Code(TuiToken.Ink));
             Assert.Equal("prose", TuiPalette.Paint("prose", TuiToken.Ink));
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
         }
     }
 
     [Fact]
     public void Paint_WrapsAndResets()
     {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             Assert.Equal("\u001b[38;2;56;189;248m◆\u001b[0m", TuiPalette.Paint("◆", TuiToken.Brand));
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
         }
     }
 
@@ -114,14 +84,9 @@ public sealed class TuiPaletteTests
     {
         foreach (var level in new[] { TuiColorLevel.TrueColor, TuiColorLevel.Palette256, TuiColorLevel.Basic16 })
         {
-            TuiPalette.Level = level;
-            try
+            using (TuiPalette.PinLevel(level))
             {
                 Assert.NotEqual(TuiPalette.Code(TuiToken.Line), TuiPalette.Code(TuiToken.Meta));
-            }
-            finally
-            {
-                TuiPalette.ResetLevel();
             }
         }
     }
@@ -129,14 +94,23 @@ public sealed class TuiPaletteTests
     [Fact]
     public void Level_SetterOverridesDetection()
     {
-        TuiPalette.Level = TuiColorLevel.Basic16;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.Basic16))
         {
             Assert.Equal(TuiColorLevel.Basic16, TuiPalette.Level);
         }
-        finally
+    }
+
+    [Fact]
+    public void PinLevel_RestoresThePreviousValue()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
-            TuiPalette.ResetLevel();
+            Assert.Equal(TuiColorLevel.TrueColor, TuiPalette.Level);
+            using (TuiPalette.PinLevel(TuiColorLevel.None))
+            {
+                Assert.Equal(TuiColorLevel.None, TuiPalette.Level);
+            }
+            Assert.Equal(TuiColorLevel.TrueColor, TuiPalette.Level);
         }
     }
 

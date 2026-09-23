@@ -3,12 +3,16 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-public sealed class TuiHeaderTests
+public sealed class TuiHeaderTests : IDisposable
 {
+    private readonly IDisposable _levelPin;
+
     public TuiHeaderTests()
     {
-        TuiPalette.Level = TuiColorLevel.None;
+        _levelPin = TuiPalette.PinLevel(TuiColorLevel.None);
     }
+
+    public void Dispose() => _levelPin.Dispose();
 
     [Theory]
     [InlineData(40)]

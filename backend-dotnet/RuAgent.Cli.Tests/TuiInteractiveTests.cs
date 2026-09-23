@@ -14,8 +14,7 @@ public sealed class TuiInteractiveTests
     [Fact]
     public void CliOutput_UsesTheAuroraPalette_WhenColourIsOn()
     {
-        TuiPalette.Level = TuiColorLevel.Palette256;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.Palette256))
         {
             var ok = TuiPalette.Ok("hello");
             Assert.Contains($"{TuiPalette.Code(TuiToken.Ok)}hello{TuiPalette.Reset}", ok, StringComparison.Ordinal);
@@ -25,86 +24,87 @@ public sealed class TuiInteractiveTests
             Assert.Contains(TuiPalette.Code(TuiToken.Brand), TuiPalette.Accent("/help"), StringComparison.Ordinal);
             Assert.Contains(TuiPalette.Code(TuiToken.Meta), TuiPalette.Quiet("meta"), StringComparison.Ordinal);
         }
-        finally
-        {
-            TuiPalette.Level = TuiColorLevel.None;
-        }
     }
 
     [Fact]
     public void CliOutput_IsPlain_WhenColourIsOff()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-
-        Assert.Equal("hello", TuiPalette.Ok("hello"));
-        Assert.Equal("hello", TuiPalette.BoldPaint("hello"));
-        Assert.Equal("hello", TuiPalette.DimPaint("hello"));
-        Assert.Equal("+ added line", TuiPalette.Ok("+ added line"));
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            Assert.Equal("hello", TuiPalette.Ok("hello"));
+            Assert.Equal("hello", TuiPalette.BoldPaint("hello"));
+            Assert.Equal("hello", TuiPalette.DimPaint("hello"));
+            Assert.Equal("+ added line", TuiPalette.Ok("+ added line"));
+        }
     }
 
     [Fact]
     public void TuiEventRenderer_RendersOneSettledToolLine()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
 
-        var request = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_1",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 1,
-            EventType: "tool.execution_requested",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "running",
-            SafeSummary: "read_only");
-        TuiEventRenderer.RenderEnvelope(request, sw);
+            var request = new HarnessSafeEventEnvelope(
+                ProtocolVersion: 1,
+                EventId: "evt_1",
+                RunId: "run_1",
+                SessionId: "sess_1",
+                Sequence: 1,
+                EventType: "tool.execution_requested",
+                OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+                Status: "running",
+                SafeSummary: "read_only");
+            TuiEventRenderer.RenderEnvelope(request, sw);
 
-        var completion = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_2",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 2,
-            EventType: "tool.execution_completed",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "succeeded",
-            SafeSummary: "ok");
-        TuiEventRenderer.RenderEnvelope(completion, sw);
+            var completion = new HarnessSafeEventEnvelope(
+                ProtocolVersion: 1,
+                EventId: "evt_2",
+                RunId: "run_1",
+                SessionId: "sess_1",
+                Sequence: 2,
+                EventType: "tool.execution_completed",
+                OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+                Status: "succeeded",
+                SafeSummary: "ok");
+            TuiEventRenderer.RenderEnvelope(completion, sw);
 
-        var output = sw.ToString();
-        Assert.Contains("✓", output, StringComparison.Ordinal);
-        Assert.Contains("tool", output, StringComparison.Ordinal);
-        // The request line must never be echoed again by the completion.
-        Assert.Single(output.Split('\n'), line => line.Contains('✓'));
+            var output = sw.ToString();
+            Assert.Contains("✓", output, StringComparison.Ordinal);
+            Assert.Contains("tool", output, StringComparison.Ordinal);
+            // The request line must never be echoed again by the completion.
+            Assert.Single(output.Split('\n'), line => line.Contains('✓'));
+        }
     }
 
     [Fact]
     public void TuiEventRenderer_RendersFailedTurnWithRemedy()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
-        renderer.BeginTurn();
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
+            renderer.BeginTurn();
 
-        var failEnv = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_6",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 6,
-            EventType: "run.failed",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "failed",
-            SafeSummary: "provider_rate_limited");
-        renderer.RenderEnvelope(failEnv);
-        renderer.EndTurn();
+            var failEnv = new HarnessSafeEventEnvelope(
+                ProtocolVersion: 1,
+                EventId: "evt_6",
+                RunId: "run_1",
+                SessionId: "sess_1",
+                Sequence: 6,
+                EventType: "run.failed",
+                OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+                Status: "failed",
+                SafeSummary: "provider_rate_limited");
+            renderer.RenderEnvelope(failEnv);
+            renderer.EndTurn();
 
-        var output = sw.ToString();
-        Assert.Contains("✗", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("turn ", output, StringComparison.Ordinal);
-        Assert.Contains("provider_rate_limited", output, StringComparison.Ordinal);
-        Assert.Contains("/model", output, StringComparison.Ordinal);
+            var output = sw.ToString();
+            Assert.Contains("✗", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("turn ", output, StringComparison.Ordinal);
+            Assert.Contains("provider_rate_limited", output, StringComparison.Ordinal);
+            Assert.Contains("/model", output, StringComparison.Ordinal);
+        }
     }
 
     private static SseFrame DeltaFrame(string text, long seq = 1) => new(
@@ -125,145 +125,159 @@ public sealed class TuiInteractiveTests
     [Fact]
     public void TuiSessionRenderer_StylesToolCallBlock_WithGutter()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
 
-        renderer.RenderFrame(DeltaFrame("<tool_call>\n", 1));
-        renderer.RenderFrame(DeltaFrame("<tool_id>\n", 2));
-        renderer.RenderFrame(DeltaFrame("{\"tool_id\": \"read\"}\n", 3));
-        renderer.RenderFrame(DeltaFrame("</tool_call>\n", 4));
+            renderer.RenderFrame(DeltaFrame("<tool_call>\n", 1));
+            renderer.RenderFrame(DeltaFrame("<tool_id>\n", 2));
+            renderer.RenderFrame(DeltaFrame("{\"tool_id\": \"read\"}\n", 3));
+            renderer.RenderFrame(DeltaFrame("</tool_call>\n", 4));
 
-        var output = sw.ToString();
-        Assert.DoesNotContain("✦", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
-        Assert.Contains("│", output, StringComparison.Ordinal);
-        Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+            var output = sw.ToString();
+            Assert.DoesNotContain("✦", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
+            Assert.Contains("│", output, StringComparison.Ordinal);
+            Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
     public void TuiSessionRenderer_StylesInlineMarker_GluedToChatText()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
 
-        renderer.RenderFrame(DeltaFrame("Dạ, để em kiểm tra nhé!<tool_call>\n", 1));
-        renderer.RenderFrame(DeltaFrame("<tool_id>\n<args>\n<op>list</op>\n</args>\n", 2));
-        renderer.RenderFrame(DeltaFrame("</tool_call>\n", 3));
+            renderer.RenderFrame(DeltaFrame("Dạ, để em kiểm tra nhé!<tool_call>\n", 1));
+            renderer.RenderFrame(DeltaFrame("<tool_id>\n<args>\n<op>list</op>\n</args>\n", 2));
+            renderer.RenderFrame(DeltaFrame("</tool_call>\n", 3));
 
-        var output = sw.ToString();
-        Assert.Contains("Dạ, để em kiểm tra nhé!", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
-        Assert.Contains("│", output, StringComparison.Ordinal);
-        Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+            var output = sw.ToString();
+            Assert.Contains("Dạ, để em kiểm tra nhé!", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("<tool_call", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("</tool_call>", output, StringComparison.Ordinal);
+            Assert.Contains("│", output, StringComparison.Ordinal);
+            Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
     public void TuiSessionRenderer_StylesSplitMarker_AcrossChunks()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
 
-        renderer.RenderFrame(DeltaFrame("<tool_c", 1));
-        renderer.RenderFrame(DeltaFrame("all>\n<tool_id>\n", 2));
-        renderer.RenderFrame(DeltaFrame("</tool_call>\n", 3));
+            renderer.RenderFrame(DeltaFrame("<tool_c", 1));
+            renderer.RenderFrame(DeltaFrame("all>\n<tool_id>\n", 2));
+            renderer.RenderFrame(DeltaFrame("</tool_call>\n", 3));
 
-        var output = sw.ToString();
-        Assert.DoesNotContain("<tool_c", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("all>", output, StringComparison.Ordinal);
-        Assert.Contains("│", output, StringComparison.Ordinal);
-        Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+            var output = sw.ToString();
+            Assert.DoesNotContain("<tool_c", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("all>", output, StringComparison.Ordinal);
+            Assert.Contains("│", output, StringComparison.Ordinal);
+            Assert.Contains("<tool_id>", output, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
     public void TuiSessionRenderer_StreamsNormalText_Verbatim()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
 
-        renderer.RenderFrame(DeltaFrame("Hello, ", 1));
-        renderer.RenderFrame(DeltaFrame("world!\n", 2));
+            renderer.RenderFrame(DeltaFrame("Hello, ", 1));
+            renderer.RenderFrame(DeltaFrame("world!\n", 2));
 
-        var output = sw.ToString();
-        Assert.Contains("Hello, world!", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("│", output, StringComparison.Ordinal);
+            var output = sw.ToString();
+            Assert.Contains("Hello, world!", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("│", output, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
     public void TuiSessionRenderer_FlushesRemainder_OnDurableEnvelope()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
 
-        renderer.RenderFrame(DeltaFrame("tail-no-newline", 1));
-        var env = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_9",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 9,
-            EventType: "reconciliation.required",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "running",
-            SafeSummary: "recovery_ambiguous");
-        renderer.RenderEnvelope(env);
+            renderer.RenderFrame(DeltaFrame("tail-no-newline", 1));
+            var env = new HarnessSafeEventEnvelope(
+                ProtocolVersion: 1,
+                EventId: "evt_9",
+                RunId: "run_1",
+                SessionId: "sess_1",
+                Sequence: 9,
+                EventType: "reconciliation.required",
+                OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+                Status: "running",
+                SafeSummary: "recovery_ambiguous");
+            renderer.RenderEnvelope(env);
 
-        var output = sw.ToString();
-        Assert.Contains("tail-no-newline", output, StringComparison.Ordinal);
-        Assert.Contains("recovery_ambiguous", output, StringComparison.Ordinal);
-        Assert.True(
-            output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("recovery_ambiguous", StringComparison.Ordinal),
-            "buffered tail must print before the envelope output");
+            var output = sw.ToString();
+            Assert.Contains("tail-no-newline", output, StringComparison.Ordinal);
+            Assert.Contains("recovery_ambiguous", output, StringComparison.Ordinal);
+            Assert.True(
+                output.IndexOf("tail-no-newline", StringComparison.Ordinal) < output.IndexOf("recovery_ambiguous", StringComparison.Ordinal),
+                "buffered tail must print before the envelope output");
+        }
     }
 
     [Fact]
     public void TuiSessionRenderer_RendersCompactionAndRetryActivities()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
-        renderer.BeginTurn();
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
+            renderer.BeginTurn();
 
-        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
-        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md"));
+            renderer.RenderFrame(ActivityFrame(AgentActivityKind.Compaction, AgentActivityState.Completed, count: 12, durationMs: 1400));
+            renderer.RenderFrame(ActivityFrame(AgentActivityKind.Retry, AgentActivityState.Started, fileName: "README.md"));
 
-        var output = sw.ToString();
-        Assert.Contains("context compacted", output, StringComparison.Ordinal);
-        Assert.Contains("12 items", output, StringComparison.Ordinal);
-        Assert.Contains("1.4s", output, StringComparison.Ordinal);
-        Assert.Contains("retrying README.md", output, StringComparison.Ordinal);
+            var output = sw.ToString();
+            Assert.Contains("context compacted", output, StringComparison.Ordinal);
+            Assert.Contains("12 items", output, StringComparison.Ordinal);
+            Assert.Contains("1.4s", output, StringComparison.Ordinal);
+            Assert.Contains("retrying README.md", output, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
     public void TuiSessionRenderer_ToolActivityDrivesTheLiveRowNotTheTranscript()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var renderer = new TuiSessionRenderer(sw);
-        renderer.BeginTurn();
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var renderer = new TuiSessionRenderer(sw);
+            renderer.BeginTurn();
 
-        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Started, fileName: "app.cs"));
-        renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Completed, fileName: "app.cs", durationMs: 120));
-        renderer.RenderEnvelope(new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_7",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 7,
-            EventType: "tool.execution_completed",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "succeeded",
-            SafeSummary: "read_only"));
+            renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Started, fileName: "app.cs"));
+            renderer.RenderFrame(ActivityFrame(AgentActivityKind.Analyze, AgentActivityState.Completed, fileName: "app.cs", durationMs: 120));
+            renderer.RenderEnvelope(new HarnessSafeEventEnvelope(
+                ProtocolVersion: 1,
+                EventId: "evt_7",
+                RunId: "run_1",
+                SessionId: "sess_1",
+                Sequence: 7,
+                EventType: "tool.execution_completed",
+                OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+                Status: "succeeded",
+                SafeSummary: "read_only"));
 
-        var toolRow = Assert.Single(sw.ToString().Split('\n'), row => row.Contains('✓'));
-        Assert.Contains("app.cs", toolRow, StringComparison.Ordinal);
-        Assert.Contains("120ms", toolRow, StringComparison.Ordinal);
+            var toolRow = Assert.Single(sw.ToString().Split('\n'), row => row.Contains('✓'));
+            Assert.Contains("app.cs", toolRow, StringComparison.Ordinal);
+            Assert.Contains("120ms", toolRow, StringComparison.Ordinal);
+        }
     }
 
     private static SseFrame ActivityFrame(
@@ -296,21 +310,23 @@ public sealed class TuiInteractiveTests
     [Fact]
     public void TuiEventRenderer_FiltersInternalUsageRecordedEvents()
     {
-        TuiPalette.Level = TuiColorLevel.None;
-        using var sw = new StringWriter();
-        var env = new HarnessSafeEventEnvelope(
-            ProtocolVersion: 1,
-            EventId: "evt_7",
-            RunId: "run_1",
-            SessionId: "sess_1",
-            Sequence: 6,
-            EventType: "model.usage_recorded",
-            OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
-            Status: "reported",
-            SafeSummary: "reported");
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            using var sw = new StringWriter();
+            var env = new HarnessSafeEventEnvelope(
+                ProtocolVersion: 1,
+                EventId: "evt_7",
+                RunId: "run_1",
+                SessionId: "sess_1",
+                Sequence: 6,
+                EventType: "model.usage_recorded",
+                OccurredAt: DateTimeOffset.UtcNow.ToString("O"),
+                Status: "reported",
+                SafeSummary: "reported");
 
-        TuiEventRenderer.RenderEnvelope(env, sw);
-        Assert.Equal(string.Empty, sw.ToString());
+            TuiEventRenderer.RenderEnvelope(env, sw);
+            Assert.Equal(string.Empty, sw.ToString());
+        }
     }
 
     private static SseFrame ActivityFrame(string innerJson, long seq = 1) => new(

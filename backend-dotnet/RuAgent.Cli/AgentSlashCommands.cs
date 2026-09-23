@@ -91,6 +91,7 @@ public sealed class AgentSlashCommands
     [
         ("OpenAI", "openai", "openai_model", "has_openai_api_key"),
         ("Anthropic", "anthropic", "anthropic_model", "has_anthropic_api_key"),
+        ("Custom OpenAI", "custom", "custom_model", "has_custom_api_key"),
     ];
 
     private static string ModelFieldFor(string? backend) =>
@@ -188,11 +189,15 @@ public sealed class AgentSlashCommands
     {
         try
         {
-            var targetBackend = arg.Trim().ToLowerInvariant() switch
+            var trimmed = arg.Trim();
+            var targetBackend = trimmed.ToLowerInvariant() switch
             {
-                "openai" => "OpenAI",
-                "anthropic" => "Anthropic",
-                _ => arg.Trim(),
+                "openai" or "openai api" => "OpenAI",
+                "anthropic" or "anthropic claude" or "claude" => "Anthropic",
+                "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
+                _ when trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
+                    => "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant(),
+                _ => trimmed,
             };
 
             var saveBody = new JsonObject { ["backend"] = targetBackend };

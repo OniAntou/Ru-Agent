@@ -184,7 +184,7 @@ public sealed class TuiSurfacesPickerTests
 
         Assert.Equal("anthropic", items[0].Value);
         Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
-        Assert.Equal(2, items.Count);
+        Assert.Equal(6, items.Count);
     }
 
     [Fact]
@@ -218,6 +218,18 @@ public sealed class TuiSurfacesPickerTests
         var items = TuiSurfaces.ModelChoices("OpenAI", [("OpenAI", null), ("Custom OpenAI", "")]);
 
         Assert.Empty(items);
+    }
+
+    [Fact]
+    public void BackendChoices_ListsCustomAndModelsDevBackends()
+    {
+        var items = TuiSurfaces.BackendChoices("Custom OpenAI");
+
+        Assert.Equal("custom", items[0].Value);
+        Assert.Contains(items, i => i.Value == "models.dev:opencode");
+        Assert.Contains(items, i => i.Value == "models.dev:kilo");
+        Assert.Contains(items, i => i.Value == "models.dev:cloudflare-workers-ai");
+        Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
     }
 
     [Fact]

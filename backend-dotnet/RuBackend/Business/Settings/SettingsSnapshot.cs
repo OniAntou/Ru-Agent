@@ -12,7 +12,8 @@ public sealed record SettingsSnapshot(
     string AnthropicModel,
     double CompactionTriggerRatio = SettingsSnapshot.DefaultCompactionTriggerRatio,
     double CompactionTargetRatio = SettingsSnapshot.DefaultCompactionTargetRatio,
-    string ProviderId = "")
+    string ProviderId = "",
+    string CloudflareAccountId = "")
 {
     // Mirror of ContextBudgetPolicyOptions.DefaultNormalTriggerRatio /
     // DefaultNormalTargetRatio in Harness.Core, which is the single source for

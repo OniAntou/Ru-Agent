@@ -264,6 +264,8 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             ?? current.OpenAiModel;
         var anthropicModel = OptionalString(payload, "anthropic_model", 256)
             ?? current.AnthropicModel;
+        var cloudflareAccountId = OptionalString(payload, "cloudflare_account_id", 64)
+            ?? current.CloudflareAccountId;
 
         return new SettingsSnapshot(
             current.Raw.DeepClone().AsObject(),
@@ -274,7 +276,10 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             openAiModel,
             anthropicModel,
             current.CompactionTriggerRatio,
-            current.CompactionTargetRatio);
+            current.CompactionTargetRatio)
+        {
+            CloudflareAccountId = cloudflareAccountId,
+        };
     }
 
     private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(JsonObject payload)

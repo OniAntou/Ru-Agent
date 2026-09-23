@@ -67,7 +67,7 @@ not advertised Agent tools.
 >   check and durably appended to the encrypted change journal. Terminal
 >   `read_only` and `write_set` fields are additive protocol metadata; full
 >   terminal write-set enforcement remains gated.
-> - Public Contract is now **41 HTTP with no WebSocket route** (20 non-Agent + 21 `/agent/v1/*`).
+> - Public Contract is now **42 HTTP with no WebSocket route** (21 non-Agent + 21 `/agent/v1/*`).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`

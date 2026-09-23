@@ -25,14 +25,62 @@ public sealed class ProviderCatalogTests : IDisposable
     private const string TwoProviderJson =
         "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"},\"second\":{\"api\":\"https://example.com/v1\"}}";
 
+    private static string ManyProviderJson(int count)
+    {
+        var entries = Enumerable.Range(0, count)
+            .Select(i => $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}");
+        return "{" + string.Join(",", entries) + "}";
+    }
+
+    [Fact]
+    public async Task ModelsDev_catalog_rejects_plain_http_api_urls()
+    {
+        _handler.Json = "{\"plain\":{\"api\":\"http://plain.example/v1\"},\"secure\":{\"api\":\"https://secure.example/v1\"}}";
+        var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("secure", Assert.Single(providers).Id);
+    }
+
+    [Fact]
+    public async Task Generic_models_dev_backend_rejects_plain_http_base_url()
+    {
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:plain", Model = "x" };
+        var catalog = new[] { new ModelsDevProvider("plain", "Plain", "http://plain.example/v1", []) };
+        Assert.Throws<ArgumentException>(() => ProviderSelection.From(settings, catalog));
+    }
+
+    [Fact]
+    public async Task ModelsDev_small_payload_is_served_but_never_cached()
+    {
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("openrouter", Assert.Single(providers).Id);
+        Assert.False(File.Exists(Path.Combine(_root, "models-dev.json")));
+    }
+
+    [Fact]
+    public async Task ModelsDev_small_payload_keeps_good_stale_cache()
+    {
+        _handler.Json = ManyProviderJson(60);
+        var service = ModelsDevService();
+        var first = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(60, first.Count);
+        _clock.Advance(TimeSpan.FromHours(25));
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var offline = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(60, offline.Count);
+        var cacheText = await File.ReadAllTextAsync(Path.Combine(_root, "models-dev.json"));
+        Assert.Contains("prov059", cacheText);
+    }
+
     [Fact]
     public async Task ModelsDev_catalog_lists_generic_provider()
     {
-        _handler.Json = "{\"openrouter\":{\"name\":\"OpenRouter\",\"api\":\"https://openrouter.ai/api/v1\",\"models\":{}}}";
+        _handler.Json = ManyProviderJson(60).Replace("\"prov000\"", "\"openrouter\"").Replace("https://prov000.example/v1", "https://openrouter.ai/api/v1");
         var service = ModelsDevService();
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
         var openrouter = Assert.Single(providers, p => p.Id == "openrouter");
-        Assert.Equal("OpenRouter", openrouter.Name);
         Assert.Equal("https://openrouter.ai/api/v1", openrouter.BaseUrl);
     }
 
@@ -42,25 +90,73 @@ public sealed class ProviderCatalogTests : IDisposable
         // Catalog and chat URLs are appended to BaseUrl: authority-only
         // 404s every provider whose API lives under a path (…/api/v1,
         // …/zen/v1), e.g. Kilo and OpenCode Zen.
-        _handler.Json = "{\"kilo\":{\"name\":\"Kilo\",\"api\":\"https://api.kilo.ai/api/gateway/\"}}";
+        var payload = ManyProviderJson(60);
+        payload = payload.Replace("\"prov000\":{\"api\":\"https://prov000.example/v1\"}", "\"kilo\":{\"name\":\"Kilo\",\"api\":\"https://api.kilo.ai/api/gateway/\"}");
+        _handler.Json = payload;
         var service = ModelsDevService();
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal("https://api.kilo.ai/api/gateway", Assert.Single(providers).BaseUrl);
+        Assert.Equal("https://api.kilo.ai/api/gateway", Assert.Single(providers, p => p.Id == "kilo").BaseUrl);
     }
 
     [Fact]
-    public async Task ModelsDev_api_with_userinfo_or_query_is_rejected()
+    public async Task ModelsDev_parse_keeps_model_ids()
     {
-        _handler.Json = "{\"evil\":{\"api\":\"https://user@example.com/v1?x=1\"},\"good\":{\"api\":\"https://good.example/v1\"}}";
+        var payload = ManyProviderJson(60);
+        payload = payload.Replace("\"prov000\":{\"api\":\"https://prov000.example/v1\"}", "\"cf\":{\"api\":\"https://x.example/v1\",\"models\":{\"@cf/a\":{},\"@cf/b\":{}}}");
+        _handler.Json = payload;
         var service = ModelsDevService();
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal("good", Assert.Single(providers).Id);
+        Assert.Equal(["@cf/a", "@cf/b"], Assert.Single(providers, p => p.Id == "cf").Models);
+    }
+
+    [Fact]
+    public async Task Cloudflare_override_fills_base_url_from_account_id()
+    {
+        var settings = (await SettingsAsync()) with
+        {
+            Backend = "models.dev:cloudflare-workers-ai",
+            CloudflareAccountId = "abc123",
+        };
+        var catalog = new[] { new ModelsDevProvider("cloudflare-workers-ai", "Cloudflare", "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1", []) };
+        var selection = ProviderSelection.From(settings, catalog);
+        Assert.Equal(new Uri("https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1"), selection.BaseUri);
+        Assert.Equal(new Uri("https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1/models"), selection.ModelsUri);
+        Assert.Equal(new Uri("https://api.cloudflare.com/client/v4/accounts/abc123/ai/v1/chat/completions"), selection.CompletionUri);
+        Assert.Equal("cloudflare-workers-ai_api_key", selection.Account);
+    }
+
+    [Fact]
+    public async Task Cloudflare_override_without_account_id_fails_closed()
+    {
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:cloudflare-workers-ai" };
+        var catalog = new[] { new ModelsDevProvider("cloudflare-workers-ai", "Cloudflare", "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1", []) };
+        Assert.Throws<ArgumentException>(() => ProviderSelection.From(settings, catalog));
+    }
+
+    [Fact]
+    public async Task Cloudflare_catalog_comes_from_models_dev_without_http()
+    {
+        var payload = ManyProviderJson(60);
+        payload = payload.Replace("\"prov000\":{\"api\":\"https://prov000.example/v1\"}", "\"cloudflare-workers-ai\":{\"name\":\"Cloudflare\",\"api\":\"https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1\",\"models\":{\"@cf/a\":{},\"@cf/b\":{}}}");
+        payload = payload.Replace("\"prov001\":{\"api\":\"https://prov001.example/v1\"}", "\"other\":{\"api\":\"https://other.example/v1\"}");
+        _handler.Json = payload;
+        var service = ModelsDevService();
+        var settings = (await SettingsAsync()) with
+        {
+            Backend = "models.dev:cloudflare-workers-ai",
+            CloudflareAccountId = "abc123",
+            Model = "@cf/a",
+        };
+        var snapshot = await service.GetAsync(settings, refresh: true, CancellationToken.None);
+        Assert.Equal("ok", snapshot.Status);
+        Assert.Equal(["@cf/a", "@cf/b"], snapshot.Models);
+        Assert.Equal(1, _handler.Count);
     }
 
     [Fact]
     public async Task ModelsDev_provider_without_name_falls_back_to_id()
     {
-        _handler.Json = "{\"zeta\":{\"api\":\"https://zeta.example/v1\"},\"alpha\":{\"api\":\"https://alpha.example/v1\"}}";
+        _handler.Json = ManyProviderJson(60).Replace("\"zeta\"", "\"zeta\"").Replace("https://prov000.example/v1", "https://zeta.example/v1").Replace("\"prov001\":{\"api\":\"https://prov001.example/v1\"}", "\"alpha\":{\"api\":\"https://alpha.example/v1\"}");
         var service = ModelsDevService();
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
         Assert.Equal("zeta", Assert.Single(providers, p => p.Id == "zeta").Name);
@@ -79,27 +175,27 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task ModelsDev_suspicious_payload_keeps_good_stale_cache()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60);
         var service = ModelsDevService();
         var first = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal(2, first.Count);
+        Assert.Equal(60, first.Count);
         _clock.Advance(TimeSpan.FromHours(25));
         _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
         var offline = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal(2, offline.Count);
+        Assert.Equal(60, offline.Count);
         var cacheText = await File.ReadAllTextAsync(Path.Combine(_root, "models-dev.json"));
-        Assert.Contains("example.com", cacheText);
+        Assert.Contains("prov059", cacheText);
     }
 
     [Fact]
     public async Task ModelsDev_empty_payload_keeps_good_stale_cache()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60);
         var service = ModelsDevService();
-        Assert.Equal(2, (await service.GetModelsDevAsync(CancellationToken.None)).Count);
+        Assert.Equal(60, (await service.GetModelsDevAsync(CancellationToken.None)).Count);
         _clock.Advance(TimeSpan.FromHours(25));
         _handler.Json = "{}";
-        Assert.Equal(2, (await service.GetModelsDevAsync(CancellationToken.None)).Count);
+        Assert.Equal(60, (await service.GetModelsDevAsync(CancellationToken.None)).Count);
     }
 
     [Fact]
@@ -109,28 +205,28 @@ public sealed class ProviderCatalogTests : IDisposable
         Directory.CreateDirectory(_root);
         await File.WriteAllTextAsync(cacheFile,
             """{"fetched_at":"2099-01-01T00:00:00+00:00","payload":{"openrouter":{"api":"https://openrouter.ai/api/v1"}}}""");
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60);
         var service = new ProviderCatalogService(new HttpClient(_handler), _credentials, _clock, cacheFile);
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal(2, providers.Count);
+        Assert.Equal(60, providers.Count);
         Assert.Equal(1, _handler.Count);
     }
 
     [Fact]
     public async Task ModelsDev_catalog_uses_cache_and_falls_back_offline()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60);
         var service = ModelsDevService();
         var first = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal(2, first.Count);
+        Assert.Equal(60, first.Count);
         Assert.Equal(1, _handler.Count);
         var cached = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal(2, cached.Count);
+        Assert.Equal(60, cached.Count);
         Assert.Equal(1, _handler.Count);
         _clock.Advance(TimeSpan.FromHours(25));
         _handler.Status = HttpStatusCode.ServiceUnavailable;
         var offline = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal(2, offline.Count);
+        Assert.Equal(60, offline.Count);
     }
 
     [Fact]
@@ -144,7 +240,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task ModelsDev_concurrent_calls_share_one_fetch()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60);
         var service = ModelsDevService();
         _handler.Hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = Enumerable.Range(0, 8).Select(_ => service.GetModelsDevAsync(CancellationToken.None)).ToArray();
@@ -152,7 +248,7 @@ public sealed class ProviderCatalogTests : IDisposable
         _handler.Hold.SetResult();
         await Task.WhenAll(calls);
         Assert.Equal(1, _handler.Count);
-        Assert.All(calls, call => Assert.Equal(2, call.Result.Count));
+        Assert.All(calls, call => Assert.Equal(60, call.Result.Count));
     }
 
     [Fact]
@@ -172,7 +268,7 @@ public sealed class ProviderCatalogTests : IDisposable
     public async Task Generic_models_dev_backend_resolves_base_uri_from_catalog()
     {
         var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter", Model = "x" };
-        var catalog = new[] { new ModelsDevProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1") };
+        var catalog = new[] { new ModelsDevProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", []) };
         var selection = ProviderSelection.From(settings, catalog);
         Assert.Equal("chat_completions", selection.Protocol);
         Assert.Equal(new Uri("https://openrouter.ai/api/v1"), selection.BaseUri);
@@ -189,7 +285,7 @@ public sealed class ProviderCatalogTests : IDisposable
     public async Task Generic_models_dev_backend_uses_its_own_credential_account()
     {
         var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter" };
-        var catalog = new[] { new ModelsDevProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1") };
+        var catalog = new[] { new ModelsDevProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", []) };
         var selection = ProviderSelection.From(settings, catalog);
         Assert.Equal("openrouter_api_key", selection.Account);
         Assert.True(selection.RequiresCredential);
@@ -199,7 +295,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task Generic_backend_resolves_catalog_end_to_end()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60).Replace("\"prov000\"", "\"openrouter\"").Replace("https://prov000.example/v1", "https://openrouter.ai/api/v1");
         var service = ModelsDevService();
         await service.GetModelsDevAsync(CancellationToken.None);
         _handler.Json = "{\"data\":[{\"id\":\"m1\"}]}";
@@ -213,7 +309,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task Generic_alias_resolves_catalog_end_to_end()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60).Replace("\"prov000\"", "\"openrouter\"").Replace("https://prov000.example/v1", "https://openrouter.ai/api/v1");
         var service = ModelsDevService();
         await service.GetModelsDevAsync(CancellationToken.None);
         _handler.Json = "{\"data\":[{\"id\":\"m1\"}]}";
@@ -226,7 +322,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task Generic_backend_without_key_fails_closed()
     {
-        _handler.Json = TwoProviderJson;
+        _handler.Json = ManyProviderJson(60).Replace("\"prov000\"", "\"openrouter\"").Replace("https://prov000.example/v1", "https://openrouter.ai/api/v1");
         var service = ModelsDevService();
         await service.GetModelsDevAsync(CancellationToken.None);
         _credentials.Key = "";

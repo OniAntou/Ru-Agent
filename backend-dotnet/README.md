@@ -1,8 +1,8 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 41 HTTP routes
-(20 non-Agent routes plus 21 additive
+when started as `RuBackend.exe --managed-runtime` and owns all 42 HTTP routes
+(21 non-Agent routes plus 21 additive
 `/agent/v1/*`). Text turns use the current Worker v2-backed Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility
@@ -77,7 +77,7 @@ directly; they validate the descriptor and `GET /status` bearer, and poll for a
 valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
 `v1`; the setting remains accepted by compatibility Harness construction but is
 not a product mode switch and cannot re-enable Chat. Agent v2 (`/worker/v2`
-one-step, `/agent/v1/*` 20 routes, SSE reconnect with durable `id:<sequence>`
+one-step, `/agent/v1/*` 21 routes, SSE reconnect with durable `id:<sequence>`
 and `Last-Event-ID`/`after_sequence` cursors, durable Core + SQLite
 `agent_harness.db` + AES-GCM payloads, workspace trust, session permissions,
 and encrypted policy snapshots) is the current path. Worker v2 performs

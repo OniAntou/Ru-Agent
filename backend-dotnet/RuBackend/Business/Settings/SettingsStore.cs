@@ -118,7 +118,13 @@ public sealed class SettingsStore : ISettingsStore
         persisted["model"] = candidate.Model;
         if (candidate.Model.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))
         {
+            // A retired local-file model cannot run on the hosted path: leave
+            // the field absent so the next read falls back to the migrated
+            // provider field (opencode_model/kilo_model) instead of keeping a
+            // dead filename, and clear the in-memory copy so callers that keep
+            // using the candidate do not keep the dead value either.
             persisted.Remove("model");
+            candidate = candidate with { Model = string.Empty };
         }
         persisted.Remove("opencode_model");
         persisted.Remove("kilo_model");
@@ -132,6 +138,7 @@ public sealed class SettingsStore : ISettingsStore
             persisted["compaction_trigger_ratio"] = candidate.CompactionTriggerRatio;
             persisted["compaction_target_ratio"] = candidate.CompactionTargetRatio;
             persisted["provider_id"] = candidate.ProviderId;
+            persisted["cloudflare_account_id"] = candidate.CloudflareAccountId;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
         }
@@ -216,7 +223,8 @@ public sealed class SettingsStore : ISettingsStore
             ReadString(raw, "anthropic_model", string.Empty),
             compactionTriggerRatio,
             compactionTargetRatio,
-            ReadString(raw, "provider_id", string.Empty));
+            ReadString(raw, "provider_id", string.Empty),
+            ReadString(raw, "cloudflare_account_id", string.Empty));
     }
 
     private async Task WriteAtomicAsync(
@@ -374,6 +382,7 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.OpenAiModel, 256, nameof(candidate.OpenAiModel));
         ValidateLength(candidate.AnthropicModel, 256, nameof(candidate.AnthropicModel));
         ValidateLength(candidate.ProviderId, 128, nameof(candidate.ProviderId));
+        ValidateLength(candidate.CloudflareAccountId, 64, nameof(candidate.CloudflareAccountId));
     }
 
     private static void ValidateLength(string value, int maximum, string parameterName)

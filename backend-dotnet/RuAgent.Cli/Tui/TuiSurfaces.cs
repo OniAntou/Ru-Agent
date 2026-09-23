@@ -112,6 +112,10 @@ public static class TuiSurfaces
     [
         ("openai", "openai", "OpenAI"),
         ("anthropic", "anthropic", "Anthropic"),
+        ("custom", "custom", "Custom OpenAI"),
+        ("models.dev:opencode", "models.dev:opencode", "Models.dev: OpenCode Zen"),
+        ("models.dev:kilo", "models.dev:kilo", "Models.dev: Kilo Gateway"),
+        ("models.dev:cloudflare-workers-ai", "models.dev:cloudflare-workers-ai", "Models.dev: Cloudflare Workers AI"),
     ];
 
     /// <summary>The backend picker rows, with the current backend marked and a
@@ -187,12 +191,27 @@ public static class TuiSurfaces
         return items;
     }
 
-    private static string NormalizeBackend(string? backend) => backend?.Trim().ToLowerInvariant() switch
+    private static string NormalizeBackend(string? backend)
     {
-        "openai" => "openai",
-        "anthropic" => "anthropic",
-        _ => string.Empty,
-    };
+        if (string.IsNullOrWhiteSpace(backend))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = backend.Trim();
+        if (trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase))
+        {
+            return "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant();
+        }
+
+        return trimmed.ToLowerInvariant() switch
+        {
+            "openai" or "openai api" => "openai",
+            "anthropic" or "anthropic claude" or "claude" => "anthropic",
+            "custom" or "custom openai" or "custom openai api" => "custom",
+            _ => string.Empty,
+        };
+    }
 
     private static string Shorten(string value, int maximum) =>
         value.Length <= maximum ? value : value[..(maximum - 1)] + "…";

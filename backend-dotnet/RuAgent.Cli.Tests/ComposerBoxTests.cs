@@ -3,12 +3,16 @@ using Xunit;
 
 namespace RuAgent.Cli.Tests;
 
-public sealed class ComposerBoxTests
+public sealed class ComposerBoxTests : IDisposable
 {
+    private readonly IDisposable _levelPin;
+
     public ComposerBoxTests()
     {
-        TuiPalette.Level = TuiColorLevel.None;
+        _levelPin = TuiPalette.PinLevel(TuiColorLevel.None);
     }
+
+    public void Dispose() => _levelPin.Dispose();
 
     [Theory]
     [InlineData(20)]
@@ -113,15 +117,10 @@ public sealed class ComposerBoxTests
     [Fact]
     public void Compose_PaintsTheBorderWithTheStateTokenWhenColourIsOn()
     {
-        TuiPalette.Level = TuiColorLevel.TrueColor;
-        try
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
         {
             var lines = ComposerBox.Compose(40, ComposerState.Approval, "❯ ", "", "", "", "", "approval needed");
             Assert.Contains("\u001b[38;2;251;191;36m", lines[0], StringComparison.Ordinal);
-        }
-        finally
-        {
-            TuiPalette.ResetLevel();
         }
     }
 

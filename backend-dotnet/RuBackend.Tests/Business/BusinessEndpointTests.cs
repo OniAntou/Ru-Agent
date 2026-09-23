@@ -214,6 +214,34 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task PostSettings_persists_cloudflare_account_id_as_plain_text()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var credentials = new FakeCredentialStore();
+        using var factory = CreateAspNetFactory(
+            data.Paths,
+            credentials: credentials);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings",
+            new
+            {
+                backend_choice = "models.dev:cloudflare-workers-ai",
+                cloudflare_account_id = "abc123",
+            });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("success", payload.GetProperty("status").GetString());
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal("abc123", persisted["cloudflare_account_id"]!.GetValue<string>());
+
+        var settings = JsonNode.Parse(await client.GetStringAsync("/settings"))!;
+        Assert.Equal("abc123", settings["cloudflare_account_id"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task PostSettings_custom_backend_stores_key_as_credential_and_never_in_file()
     {
         using var data = TemporaryBusinessData.Create();

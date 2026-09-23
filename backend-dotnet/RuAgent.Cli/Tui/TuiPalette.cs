@@ -42,6 +42,30 @@ public static class TuiPalette
 
     public static void ResetLevel() => _override = null;
 
+    /// <summary>
+    /// Pins the level for the duration of a scope and restores the previous
+    /// value on dispose, so parallel tests cannot leak a pinned depth into
+    /// each other through the shared static.
+    /// </summary>
+    public static IDisposable PinLevel(TuiColorLevel level)
+    {
+        var previous = _override;
+        _override = level;
+        return new LevelScope(previous);
+    }
+
+    private sealed class LevelScope(TuiColorLevel? previous) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _override = previous;
+        }
+    }
+
     public static TuiColorLevel Detect() => DetectFrom(
         Environment.GetEnvironmentVariable("RU_TUI_COLOR"),
         Environment.GetEnvironmentVariable("NO_COLOR"),

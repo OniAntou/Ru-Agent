@@ -79,6 +79,15 @@ model fields are retired and must be re-entered. `GET
 Settings provider dropdown can mark signed-in rows and pin them above the
 groups; it probes each catalog id once per Settings load.
 
+Cloudflare Workers AI (`models.dev:cloudflare-workers-ai`) is the single
+override the generic path cannot serve: its catalog `api` is a template
+containing `${CLOUDFLARE_ACCOUNT_ID}`, and `GET {base}/models` answers 405.
+The backend fills `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1`
+from the plain-text `cloudflare_account_id` setting — a missing or malformed
+id fails closed as `catalog_configuration_error`, never a guessed URL — and
+serves its catalog from the Models.dev model list without HTTP. No new route,
+alias, or credential account: the key stays `cloudflare-workers-ai_api_key`.
+
 ## TUI provider and model pickers
 
 The TUI has no catalog endpoint and cannot store a key, so it lists the models

@@ -157,6 +157,10 @@ public sealed record ProviderReasoningOption(string Value, string Label, bool Is
 
 public static class ProviderReasoningOptions
 {
+    private static bool IsReasoningCapable(string? state) =>
+        string.Equals(state?.Trim(), ProviderReasoningCapabilities.Levels, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(state?.Trim(), ProviderReasoningCapabilities.Toggle, StringComparison.OrdinalIgnoreCase);
+
     public static IReadOnlyList<ProviderReasoningOption> For(ProviderCatalogState state) =>
         For(state, selectedModelOverride: null);
 
@@ -177,8 +181,7 @@ public static class ProviderReasoningOptions
             : state.SelectedModel;
         var model = state.Catalog.FirstOrDefault(item =>
             string.Equals(item.Id, lookup, StringComparison.OrdinalIgnoreCase));
-        if (model is null || !model.Supported || model.Reasoning.State is not
-            (ProviderReasoningCapabilities.Levels or ProviderReasoningCapabilities.Toggle))
+        if (model is null || !model.Supported || !IsReasoningCapable(model.Reasoning.State))
         {
             return options;
         }
@@ -214,6 +217,9 @@ public sealed class ProviderSettingsUpdateDto
 
     [JsonPropertyName("custom_api_key")]
     public string CustomApiKey { get; init; } = string.Empty;
+
+    [JsonPropertyName("cloudflare_account_id")]
+    public string CloudflareAccountId { get; init; } = string.Empty;
 
 }
 

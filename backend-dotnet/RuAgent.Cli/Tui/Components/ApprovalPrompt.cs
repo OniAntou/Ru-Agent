@@ -53,12 +53,19 @@ public sealed class ApprovalPrompt
     public TaskCompletionSource<string> Decision { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
-    /// The three-way prompt used by the interactive surface. Directory grants are only offered
-    /// because the host decides whether the pending binding supports them; a rejection there
-    /// surfaces as an ordinary approval error instead of a silent escalation.
+    /// The two-way prompt used by the interactive surface. A directory grant is
+    /// only offered for external-directory asks: the server fails any other
+    /// allow_session_directory with invalid_approval_command, so offering it
+    /// elsewhere turns a silent escalation into an ordinary approval error.
+    /// Callers pass the wire SafeCode (the ask reason); anything else denies
+    /// the folder choice.
     /// </summary>
-    public static ApprovalPrompt For(string safeSummary, bool offerDirectory = true)
+    public static ApprovalPrompt For(string safeSummary, bool offerDirectory = false)
     {
+        var directoryAllowed = string.Equals(
+            safeSummary?.Trim(),
+            "external_directory_required",
+            StringComparison.Ordinal);
         // Labels stay within SlashDropdown.LabelColumn so they are never clipped.
         var choices = new List<ApprovalChoice>
         {
@@ -66,7 +73,7 @@ public sealed class ApprovalPrompt
             new("2 · deny", "abort this tool call", Deny),
         };
 
-        if (offerDirectory)
+        if (offerDirectory && directoryAllowed)
         {
             choices.Add(new("3 · folder", "allow this folder for the session", AllowDirectory));
         }

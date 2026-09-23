@@ -1,6 +1,5 @@
 <Application
     x:Class="RuApp.App"
-    RequestedTheme="Light"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:converters="using:RuApp.Converters">
@@ -224,7 +223,7 @@
             <converters:SessionTimeConverter x:Key="SessionTimeConverter" />
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
-            <SolidColorBrush x:Key="RuSidebarBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
             <SolidColorBrush x:Key="RuSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
             <SolidColorBrush x:Key="RuInkBrush" Color="{ThemeResource RuInkColor}" />
             <SolidColorBrush x:Key="RuMutedBrush" Color="{ThemeResource RuMutedColor}" />

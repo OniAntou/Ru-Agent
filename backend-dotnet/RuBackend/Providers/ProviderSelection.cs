@@ -95,9 +95,23 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
             var provider = modelsDevCatalog?.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
             if (provider is null
                 || !Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out var providerUri)
-                || providerUri.Scheme is not ("https" or "http"))
+                || !string.Equals(providerUri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ArgumentException("Unknown models.dev provider.");
+            }
+
+            // Override providers do not use the catalog's templated URL:
+            // the account id comes from settings, and a missing one fails
+            // closed here rather than producing a guessed base URL.
+            if (ProviderOverrides.IsOverridden(id))
+            {
+                var filled = ProviderOverrides.CloudflareBaseUrl(settings.CloudflareAccountId);
+                if (!Uri.TryCreate(filled, UriKind.Absolute, out var overrideUri))
+                {
+                    throw new ArgumentException("Invalid Cloudflare base URL.");
+                }
+
+                providerUri = overrideUri;
             }
 
             var genericModel = settings.Model?.Trim() ?? string.Empty;

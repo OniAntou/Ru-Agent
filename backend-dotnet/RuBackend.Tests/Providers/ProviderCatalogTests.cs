@@ -218,7 +218,7 @@ public sealed class ProviderCatalogTests : IDisposable
     public async Task Cache_refreshes_on_expiry_and_throttles_manual_requests()
     {
         var service = Service();
-        var settings = await SettingsAsync();
+        var settings = (await SettingsAsync()) with { Backend = "Custom OpenAI" };
         Assert.Equal(new[] { "model-a" }, (await service.GetAsync(settings, false, default)).Models);
         _handler.Json = "{\"data\":[{\"id\":\"model-b\"}]}";
         await service.GetAsync(settings, true, default);
@@ -315,7 +315,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [InlineData("{\"data\":null}")]
     [InlineData("{\"data\":[{\"id\":12}]}")]
     public void Malformed_catalog_is_not_an_empty_success(string json) =>
-        Assert.Equal("catalog_malformed", Assert.Throws<ProviderCatalogException>(() => ProviderCatalogParser.Parse("OpenCode Zen", json)).Code);
+        Assert.Equal("catalog_malformed", Assert.Throws<ProviderCatalogException>(() => ProviderCatalogParser.Parse("Custom OpenAI", json)).Code);
 
     [Fact]
     public async Task Cancelled_refresh_does_not_poison_the_next_request_throttle()
@@ -335,40 +335,26 @@ public sealed class ProviderCatalogTests : IDisposable
     }
 
     [Fact]
-    public void Kilo_variants_are_allowlisted_and_never_copy_arbitrary_request_fields()
+    public void Bare_ids_remain_unknown_but_runnable()
     {
-        var models = ProviderCatalogParser.Parse("Kilo Gateway", """
-          {"data":[{"id":"a","opencode":{"variants":{
-            "high":{"reasoning":{"enabled":true,"effort":"high"},"model":"evil"},
-            "max":{"reasoning":{"effort":"max","unexpected":"evil"}}
-          }}}]}
-          """);
-        var model = Assert.Single(models);
-        Assert.Equal(new[] { "high" }, model.Reasoning.Options);
-        Assert.Equal("{\"reasoning\":{\"enabled\":true,\"effort\":\"high\"}}", model.WireOptions["high"].ToJsonString());
-    }
-
-    [Fact]
-    public void Bare_ids_remain_unknown_and_other_protocols_are_not_runnable()
-    {
-        var models = ProviderCatalogParser.Parse("OpenCode Zen", """
+        var models = ProviderCatalogParser.Parse("Custom OpenAI", """
           {"data":[{"id":"deepseek-v4-flash-free"},{"id":"gpt-5.4"},{"id":"claude-opus-4.6"}]}
           """);
         Assert.Equal("unknown", models[0].Reasoning.State);
         Assert.Empty(models[0].Reasoning.Options);
-        Assert.False(models[1].Supported);
-        Assert.False(models[2].Supported);
+        Assert.True(models[1].Supported);
+        Assert.True(models[2].Supported);
     }
 
     [Fact]
     public async Task Preferences_are_per_model_and_default_omits_options()
     {
-        var settings = (await SettingsAsync()) with { OpenCodeModel = "a" };
+        var settings = (await SettingsAsync()) with { OpenAiModel = "a" };
         var saved = ProviderReasoningPreferences.Save(settings, "high");
         Assert.Equal("high", ProviderReasoningPreferences.Read(saved));
-        Assert.Equal("default", ProviderReasoningPreferences.Read(saved with { OpenCodeModel = "b" }));
+        Assert.Equal("default", ProviderReasoningPreferences.Read(saved with { OpenAiModel = "b" }));
         var entry = new CatalogModel("a", true, "chat_completions", new("unknown", []));
-        var snapshot = new ProviderCatalogSnapshot("ok", "opencode", "id", "a", "default", ["a"], [entry], false, null, _clock.GetUtcNow());
+        var snapshot = new ProviderCatalogSnapshot("ok", "openai", "id", "a", "default", ["a"], [entry], false, null, _clock.GetUtcNow());
         Assert.Empty(ProviderReasoningPreferences.Resolve(snapshot, "a", "default"));
         Assert.Throws<ProviderCatalogException>(() => ProviderReasoningPreferences.Resolve(snapshot, "a", "high"));
     }
@@ -379,7 +365,6 @@ public sealed class ProviderCatalogTests : IDisposable
         var settings = (await SettingsAsync()) with
         {
             Model = string.Empty,
-            OpenCodeModel = string.Empty,
         };
 
         var selection = ProviderSelection.From(settings);
@@ -388,9 +373,9 @@ public sealed class ProviderCatalogTests : IDisposable
     }
 
     [Theory]
-    [InlineData("OpenCode Zen", "api_key")]
-    [InlineData("Kilo Gateway", "kilo_gateway_api_key")]
     [InlineData("Custom OpenAI", "custom_api_key")]
+    [InlineData("OpenAI", "openai_api_key")]
+    [InlineData("Anthropic", "anthropic_api_key")]
     public async Task Provider_selection_uses_only_its_canonical_credential_account(
         string backend, string? expectedAccount)
     {
@@ -406,7 +391,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [InlineData("\"high\\u0000\"")]
     public async Task Malformed_saved_reasoning_is_invalid_instead_of_becoming_default(string malformed)
     {
-        var settings = (await SettingsAsync()) with { OpenCodeModel = "a" };
+        var settings = (await SettingsAsync()) with { OpenAiModel = "a" };
         var key = ProviderSelection.From(settings).PreferenceKey;
         settings.Raw["reasoning_preferences"] = new JsonObject { [key] = JsonNode.Parse(malformed) };
 
@@ -417,7 +402,7 @@ public sealed class ProviderCatalogTests : IDisposable
         {
             WireOptions = new Dictionary<string, JsonObject> { ["high"] = new() { ["reasoning_effort"] = "high" } },
         };
-        var snapshot = new ProviderCatalogSnapshot("ok", "opencode", "id", "a", choice, ["a"], [entry], false, null, _clock.GetUtcNow());
+        var snapshot = new ProviderCatalogSnapshot("ok", "openai", "id", "a", choice, ["a"], [entry], false, null, _clock.GetUtcNow());
         Assert.Throws<ProviderCatalogException>(() => ProviderReasoningPreferences.Resolve(snapshot, "a", choice));
     }
 

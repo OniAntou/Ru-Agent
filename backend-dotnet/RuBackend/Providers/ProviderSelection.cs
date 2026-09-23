@@ -27,7 +27,7 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     /// OpenAI stays exempt because a keyless local endpoint is a supported
     /// configuration.
     /// </summary>
-    public bool RequiresCredential => Alias is "opencode" or "kilo" or "openai" or "anthropic" || IsModelsDev;
+    public bool RequiresCredential => Alias is "openai" or "anthropic" || IsModelsDev;
 
     public bool IsModelsDev => IsModelsDevBackend(Backend);
 
@@ -77,8 +77,8 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
 
     private static string NormalizeAlias(string alias) => alias.Trim().ToLowerInvariant() switch
     {
-        "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "OpenCode Zen",
-        "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "Kilo Gateway",
+        "opencode" or "opencode zen" or "opencode zen api" or "opencode api" or "gguf" or "llama.cpp" => "models.dev:opencode",
+        "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "models.dev:kilo",
         "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
         "openai" or "openai api" => "OpenAI",
         "anthropic" or "anthropic claude" or "claude" => "Anthropic",
@@ -106,8 +106,6 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
 
         var (alias, protocol, url, model, account) = backend switch
         {
-            "OpenCode Zen" => ("opencode", "chat_completions", "https://opencode.ai/zen/v1", settings.OpenCodeModel, "api_key"),
-            "Kilo Gateway" => ("kilo", "chat_completions", "https://api.kilo.ai/api/gateway", settings.KiloModel, "kilo_gateway_api_key"),
             "Custom OpenAI" => ("custom", "chat_completions", settings.CustomUrl, settings.CustomModel, "custom_api_key"),
             "OpenAI" => ("openai", "openai_responses", "https://api.openai.com/v1", settings.OpenAiModel, "openai_api_key"),
             "Anthropic" => ("anthropic", "anthropic_messages", "https://api.anthropic.com/v1", settings.AnthropicModel, "anthropic_api_key"),

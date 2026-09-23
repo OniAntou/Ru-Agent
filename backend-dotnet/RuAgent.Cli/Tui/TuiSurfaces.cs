@@ -110,8 +110,6 @@ public static class TuiSurfaces
     /// <summary>Backends the CLI can switch between, in the order the docs list them.</summary>
     private static readonly (string Value, string Label, string Detail)[] Backends =
     [
-        ("kilo", "kilo", "Kilo Gateway"),
-        ("opencode", "opencode", "OpenCode Zen"),
         ("openai", "openai", "OpenAI"),
         ("anthropic", "anthropic", "Anthropic"),
     ];
@@ -191,8 +189,6 @@ public static class TuiSurfaces
 
     private static string NormalizeBackend(string? backend) => backend?.Trim().ToLowerInvariant() switch
     {
-        "kilo" or "kilo gateway" => "kilo",
-        "opencode" or "opencode zen" => "opencode",
         "openai" => "openai",
         "anthropic" => "anthropic",
         _ => string.Empty,

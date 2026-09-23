@@ -59,12 +59,8 @@ public sealed class CoordinatorBudgetPolicyWiringTests
 
     private static SettingsSnapshot Snapshot(double trigger, double target) => new(
         new JsonObject(),
-        "OpenCode Zen",
+        "OpenAI",
         string.Empty,
-        string.Empty,
-        string.Empty,
-        "Default",
-        false,
         "default",
         "http://localhost:8000/v1",
         string.Empty,

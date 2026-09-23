@@ -31,10 +31,7 @@ public static class ProviderReasoningPreferences
                 return InvalidChoice;
             }
         }
-        // Legacy controls were scoped to their provider, not other accounts/models.
-        if (settings.Backend == "OpenCode Zen" && !string.IsNullOrWhiteSpace(settings.ApiVariant)
-            && !settings.ApiVariant.Equals("Default", StringComparison.OrdinalIgnoreCase)) return settings.ApiVariant;
-        if (settings.Backend == "Kilo Gateway" && settings.KiloReasoningEnabled) return "enabled";
+        // No stored preference: every provider starts at default effort.
         return "default";
     }
 
@@ -47,24 +44,6 @@ public static class ProviderReasoningPreferences
         choices[ProviderSelection.From(settings).PreferenceKey] = effort;
         raw[Field] = choices.DeepClone();
         return settings with { Raw = raw };
-    }
-
-    public static SettingsSnapshot CaptureLegacy(SettingsSnapshot settings)
-    {
-        var result = settings;
-        if (!string.IsNullOrWhiteSpace(settings.ApiVariant) && !settings.ApiVariant.Equals("Default", StringComparison.OrdinalIgnoreCase))
-        {
-            var legacy = result with { Backend = "OpenCode Zen" };
-            if ((result.Raw[Field] as JsonObject)?[ProviderSelection.From(legacy).PreferenceKey] is null)
-                result = result with { Raw = Save(legacy, settings.ApiVariant).Raw };
-        }
-        if (settings.KiloReasoningEnabled)
-        {
-            var legacy = result with { Backend = "Kilo Gateway" };
-            if ((result.Raw[Field] as JsonObject)?[ProviderSelection.From(legacy).PreferenceKey] is null)
-                result = result with { Raw = Save(legacy, "enabled").Raw };
-        }
-        return result with { ApiVariant = "Default", KiloReasoningEnabled = false };
     }
 
     public static JsonObject Resolve(ProviderCatalogSnapshot snapshot, string model, string effort)

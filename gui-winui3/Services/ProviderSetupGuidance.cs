@@ -19,7 +19,7 @@ namespace RuApp.Services;
 internal static class ProviderSetupGuidance
 {
     /// <summary>The provider the app uses when the user has never chosen one.</summary>
-    internal const string DefaultBackendChoice = "opencode";
+    internal const string DefaultBackendChoice = "openai";
 
     /// <summary>Prefix for a Models.dev generic provider choice, e.g. "models.dev:openrouter".</summary>
     internal const string ModelsDevPrefix = "models.dev:";
@@ -44,16 +44,6 @@ internal static class ProviderSetupGuidance
     /// </remarks>
     internal static readonly IReadOnlyList<ProviderInfo> All =
     [
-        new(
-            "opencode",
-            "OpenCode Zen",
-            settings => settings.HasOpenCodeKey,
-            "Create a key in the OpenCode Zen dashboard."),
-        new(
-            "kilo",
-            "Kilo Gateway",
-            settings => settings.HasKiloKey,
-            "Create a key in the Kilo dashboard."),
         new(
             "openai",
             "OpenAI",

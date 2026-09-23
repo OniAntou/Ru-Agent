@@ -10,8 +10,8 @@ reasoning effort.
 
 The Host serves `GET /models` for every configured provider, active or not;
 unknown aliases fail closed as `provider_not_active`. A cloud provider that
-requires a credential (OpenCode Zen, Kilo Gateway, OpenAI, Anthropic) fails as
-`catalog_unauthorized` with an empty catalog once it is signed out — the request
+requires a credential (OpenAI, Anthropic, or any `models.dev:<provider-id>`)
+fails as `catalog_unauthorized` with an empty catalog once it is signed out — the request
 is not sent anonymously, so no picker offers a model that cannot run. The keyless
 Custom OpenAI endpoint keeps serving its catalog.
 
@@ -35,8 +35,8 @@ catalog and an available, supported selected model.
 ## Grouped Chat model picker
 
 The Chat selector shows every provider group from a fixed presentation list
-(OpenCode Zen, Kilo Gateway, OpenAI, Anthropic, Custom
-OpenAI) in that stable order, but only when the group has at least one
+(OpenAI, Anthropic, Custom
+OpenAI) in that stable order, plus one group per Models.dev provider, but only when the group has at least one
 selectable conversational/Agent model. Each catalog is refreshed independently, so one failed or
 slow provider never hides another provider's group. A failed group without
 retained data is hidden; same-identity stale data is kept and labeled
@@ -72,8 +72,9 @@ The Host fetches `https://models.dev/api.json` (75+ providers) with a
 (`models-dev.json` under the data root). Offline reads keep the stale cache,
 and no cache fails closed to an empty list. A `models.dev:<provider-id>`
 backend resolves its base URL from that list over `chat_completions`;
-unknown ids fail closed and the URL is never guessed. The five configured
-backends stay as aliases.
+unknown ids fail closed and the URL is never guessed. Stored `opencode`/`kilo`
+choices migrate to `models.dev:opencode`/`models.dev:kilo`; their old keys and
+model fields are retired and must be re-entered.
 
 ## TUI provider and model pickers
 
@@ -98,8 +99,6 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   adaptive, 128000), `claude-sonnet-4-6` (`low`/`medium`/`high`/`max`, 64000),
   `claude-haiku-4-5-20251001` (Provider default only, 64000) as
   `thinking: {type:adaptive, display:omitted}` + `output_config: {effort}`.
-- Kilo: recognized `opencode.variants` advertise model-specific reasoning
-  request overlays. Only validated reasoning fields are forwarded.
 - An explicit `reasoning_efforts` enum plus a declared `reasoning_effort`
   supported parameter enables that Chat Completions mapping.
 - Bare model IDs and generic reasoning flags do not verify adjustable levels.

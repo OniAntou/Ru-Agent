@@ -38,16 +38,17 @@ public sealed class SettingsDtoTests
     }
 
     [Fact]
-    public void KiloReasoningEnabledUsesTheBackendWireName()
+    public void RetiredProviderFieldsAreNoLongerPartOfTheSavePayload()
     {
-        string payload = JsonSerializer.Serialize(new AppSettingsDto
-        {
-            KiloReasoningEnabled = true,
-        });
+        string payload = JsonSerializer.Serialize(new AppSettingsDto());
 
         using JsonDocument document = JsonDocument.Parse(payload);
 
-        Assert.True(document.RootElement.GetProperty("kilo_reasoning_enabled").GetBoolean());
+        Assert.False(document.RootElement.TryGetProperty("opencode_api_key", out _));
+        Assert.False(document.RootElement.TryGetProperty("kilo_api_key", out _));
+        Assert.False(document.RootElement.TryGetProperty("opencode_model", out _));
+        Assert.False(document.RootElement.TryGetProperty("kilo_model", out _));
+        Assert.False(document.RootElement.TryGetProperty("kilo_reasoning_enabled", out _));
     }
 
     [Fact]

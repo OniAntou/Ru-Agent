@@ -42,7 +42,7 @@ public sealed class GroupedProviderCatalogControllerTests
             () => controlled.StartedAliases().ToHashSet(StringComparer.Ordinal)
                 .SetEquals(ProviderGroupDefinitions.All.Select(definition => definition.Alias)),
             "every provider refresh to start");
-        // No completion has been awaited yet; all seven fetches are already in flight.
+        // No completion has been awaited yet; all fetches are already in flight.
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
     }
@@ -89,16 +89,16 @@ public sealed class GroupedProviderCatalogControllerTests
         var kiloApplied = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         controller.StateChanged += (_, state) =>
         {
-            if (state.Catalogs.TryGetValue("kilo", out var kilo) && kilo.IsSuccess)
+            if (state.Catalogs.TryGetValue("openai", out var kilo) && kilo.IsSuccess)
             {
                 kiloApplied.TrySetResult(true);
             }
         };
 
         var refresh = controller.RefreshAsync(force: true);
-        controlled.Complete("kilo", Snapshot("kilo", "kilo-auto/frontier"));
+        controlled.Complete("openai", Snapshot("openai", "gpt-4o"));
         Assert.True(await kiloApplied.Task.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.False(controller.State.Catalogs.TryGetValue("opencode", out var openCode) && openCode.IsSuccess);
+        Assert.False(controller.State.Catalogs.TryGetValue("anthropic", out var openCode) && openCode.IsSuccess);
 
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
@@ -118,17 +118,17 @@ public sealed class GroupedProviderCatalogControllerTests
         controlled.ReArmAll();
         clock.Advance(TimeSpan.FromSeconds(31));
         var second = controller.RefreshAsync(force: true);
-        controlled.Complete("kilo", SameIdentityFailure("kilo"));
-        controlled.Complete("opencode", DifferentIdentityFailure("opencode"));
-        controlled.CompleteAll(alias => alias is "kilo" or "opencode"
+        controlled.Complete("openai", SameIdentityFailure("openai"));
+        controlled.Complete("anthropic", DifferentIdentityFailure("anthropic"));
+        controlled.CompleteAll(alias => alias is "openai" or "anthropic"
             ? null
             : DifferentIdentityFailure(alias));
         Assert.True(await second);
 
-        var kilo = controller.State.Catalogs["kilo"];
+        var kilo = controller.State.Catalogs["openai"];
         Assert.True(kilo.Stale);
         Assert.True(kilo.Models.Count > 0);
-        var openCode = controller.State.Catalogs["opencode"];
+        var openCode = controller.State.Catalogs["anthropic"];
         Assert.False(openCode.IsSuccess);
         Assert.Empty(openCode.Models);
         Assert.False(openCode.Stale);
@@ -155,14 +155,14 @@ public sealed class GroupedProviderCatalogControllerTests
         var controlled = new ControlledCatalogs();
         await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
 
-        controller.SetSelection("kilo", "kilo-auto/frontier");
+        controller.SetSelection("openai", "gpt-4o");
         controller.SetSearchText("frontier");
         var refresh = controller.RefreshAsync(force: true);
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
 
-        Assert.Equal("kilo", controller.State.SelectedBackend);
-        Assert.Equal("kilo-auto/frontier", controller.State.SelectedModel);
+        Assert.Equal("openai", controller.State.SelectedBackend);
+        Assert.Equal("gpt-4o", controller.State.SelectedModel);
         Assert.Equal("frontier", controller.State.SearchText);
     }
 
@@ -191,8 +191,8 @@ public sealed class GroupedProviderCatalogControllerTests
         var second = controller.RefreshAsync(force: true);
         controlled.CompleteAll(alias => Snapshot(alias, "fresh-model"));
         Assert.True(await second);
-        Assert.Equal("fresh-model", controller.State.Catalogs["kilo"].Models.Single());
-        Assert.Equal(5, successfulEvents);
+        Assert.Equal("fresh-model", controller.State.Catalogs["openai"].Models.Single());
+        Assert.Equal(3, successfulEvents);
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public sealed class GroupedProviderCatalogControllerTests
 
         controller.SetPollingActive(true);
         var refresh = controller.RefreshIfDueAsync();
-        await WaitForAsync(() => controlled.StartedAliases().Count == 5, "all children to poll");
+        await WaitForAsync(() => controlled.StartedAliases().Count == 3, "all children to poll");
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
 
@@ -216,7 +216,7 @@ public sealed class GroupedProviderCatalogControllerTests
         controller.SetPollingActive(false);
         clock.Advance(TimeSpan.FromMinutes(6));
         Assert.False(await controller.RefreshIfDueAsync());
-        Assert.True(controlled.StartedAliases().Count == 5);
+        Assert.True(controlled.StartedAliases().Count == 3);
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public sealed class GroupedProviderCatalogControllerTests
         Assert.Equal(eventsAtDispose, events);
         Assert.False(await refresh);
 
-        controller.SetSelection("kilo", "model");
+        controller.SetSelection("openai", "model");
         Assert.Equal(eventsAtDispose, events);
     }
 

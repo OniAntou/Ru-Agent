@@ -241,15 +241,11 @@ public sealed class RuPromptContextProviderTests
 
     private static SettingsSnapshot Settings() => new(
         new JsonObject(),
-        "OpenCode Zen",
+        "OpenAI",
         "test-model",
-        "test-model",
-        "test-model",
-        "Default",
-        KiloReasoningEnabled: false,
         CustomModel: "default",
         CustomUrl: "http://localhost:8000/v1",
-        OpenAiModel: string.Empty,
+        OpenAiModel: "test-model",
         AnthropicModel: string.Empty);
 
     private static AgentRun TestRun() => new(

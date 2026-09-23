@@ -5,28 +5,7 @@ namespace RuApp.Models
     public class AppSettingsDto
     {
         [JsonPropertyName("backend_choice")]
-        public string BackendChoice { get; set; } = "opencode";
-
-        [JsonPropertyName("opencode_api_key")]
-        public string OpenCodeApiKey { get; set; } = string.Empty;
-
-        [JsonPropertyName("has_opencode_key")]
-        public bool HasOpenCodeKey { get; set; } = false;
-
-        [JsonPropertyName("opencode_model")]
-        public string OpenCodeModel { get; set; } = string.Empty;
-
-        [JsonPropertyName("api_variant")]
-        public string ApiVariant { get; set; } = "Default";
-
-        [JsonPropertyName("kilo_api_key")]
-        public string KiloApiKey { get; set; } = string.Empty;
-
-        [JsonPropertyName("has_kilo_key")]
-        public bool HasKiloKey { get; set; } = false;
-
-        [JsonPropertyName("kilo_model")]
-        public string KiloModel { get; set; } = string.Empty;
+        public string BackendChoice { get; set; } = "openai";
 
         [JsonPropertyName("custom_model")]
         public string CustomModel { get; set; } = string.Empty;
@@ -57,9 +36,6 @@ namespace RuApp.Models
 
         [JsonPropertyName("anthropic_model")]
         public string AnthropicModel { get; set; } = string.Empty;
-
-        [JsonPropertyName("kilo_reasoning_enabled")]
-        public bool KiloReasoningEnabled { get; set; } = false;
     }
 
     /// <summary>
@@ -71,8 +47,6 @@ namespace RuApp.Models
     {
         internal static string GetSelectedModel(AppSettingsDto settings, string? backend) => backend switch
         {
-            "opencode" => settings.OpenCodeModel ?? string.Empty,
-            "kilo" => settings.KiloModel ?? string.Empty,
             "openai" => settings.OpenAiModel ?? string.Empty,
             "anthropic" => settings.AnthropicModel ?? string.Empty,
             "custom" => settings.CustomModel ?? string.Empty,

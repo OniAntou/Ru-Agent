@@ -16,8 +16,6 @@ public sealed class ProviderSetupGuidanceTests
     private static AppSettingsDto WithOpenAiKey() => new() { HasOpenAiKey = true };
 
     [Theory]
-    [InlineData("opencode", "OpenCode Zen")]
-    [InlineData("kilo", "Kilo Gateway")]
     [InlineData("openai", "OpenAI")]
     [InlineData("anthropic", "Anthropic")]
     [InlineData("custom", "Custom endpoint")]
@@ -36,8 +34,8 @@ public sealed class ProviderSetupGuidanceTests
     [Fact]
     public void An_absent_alias_falls_back_to_the_default_provider()
     {
-        Assert.Equal("OpenCode Zen", ProviderSetupGuidance.DisplayName(null));
-        Assert.Equal("OpenCode Zen", ProviderSetupGuidance.DisplayName("   "));
+        Assert.Equal("OpenAI", ProviderSetupGuidance.DisplayName(null));
+        Assert.Equal("OpenAI", ProviderSetupGuidance.DisplayName("   "));
     }
 
     [Fact]
@@ -67,8 +65,6 @@ public sealed class ProviderSetupGuidanceTests
     {
         Assert.True(ProviderSetupGuidance.IsMissingKey(Empty(), "openai"));
         Assert.True(ProviderSetupGuidance.IsMissingKey(Empty(), "anthropic"));
-        Assert.True(ProviderSetupGuidance.IsMissingKey(Empty(), "kilo"));
-        Assert.True(ProviderSetupGuidance.IsMissingKey(Empty(), "opencode"));
     }
 
     [Fact]
@@ -129,9 +125,9 @@ public sealed class ProviderSetupGuidanceTests
     [Fact]
     public void Every_hosted_provider_requires_a_key()
     {
-        // The counterpart to the custom rule: these four cannot answer anything
+        // The counterpart to the custom rule: these two cannot answer anything
         // without a credential, so the warning has to stay for them.
-        foreach (var alias in new[] { "opencode", "kilo", "openai", "anthropic" })
+        foreach (var alias in new[] { "openai", "anthropic" })
         {
             var provider = ProviderSetupGuidance.Find(alias);
 
@@ -243,10 +239,10 @@ public sealed class ProviderSetupGuidanceTests
         Assert.True(ProviderSetupGuidance.IsModelsDevChoice("models.dev:openrouter"));
         Assert.True(ProviderSetupGuidance.IsModelsDevChoice("Models.Dev:OpenRouter"));
         Assert.False(ProviderSetupGuidance.IsModelsDevChoice("models.dev:"));
-        Assert.False(ProviderSetupGuidance.IsModelsDevChoice("opencode"));
+        Assert.False(ProviderSetupGuidance.IsModelsDevChoice("openai"));
         Assert.False(ProviderSetupGuidance.IsModelsDevChoice(null));
 
-        Assert.True(ProviderSetupGuidance.IsSelectableProvider("opencode"));
+        Assert.True(ProviderSetupGuidance.IsSelectableProvider("openai"));
         Assert.True(ProviderSetupGuidance.IsSelectableProvider("models.dev:openrouter"));
         Assert.False(ProviderSetupGuidance.IsSelectableProvider("not-a-provider"));
         Assert.False(ProviderSetupGuidance.IsSelectableProvider(null));
@@ -256,9 +252,9 @@ public sealed class ProviderSetupGuidanceTests
     public void NormalizeProviderChoice_lowercases_models_dev_ids()
     {
         Assert.Equal("models.dev:openrouter", ProviderSetupGuidance.NormalizeProviderChoice("Models.Dev:OpenRouter"));
-        Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice("opencode"));
-        Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice("not-a-provider"));
-        Assert.Equal("opencode", ProviderSetupGuidance.NormalizeProviderChoice(null));
+        Assert.Equal("openai", ProviderSetupGuidance.NormalizeProviderChoice("openai"));
+        Assert.Equal("openai", ProviderSetupGuidance.NormalizeProviderChoice("not-a-provider"));
+        Assert.Equal("openai", ProviderSetupGuidance.NormalizeProviderChoice(null));
     }
 
     [Fact]
@@ -284,7 +280,7 @@ public sealed class ProviderSetupGuidanceTests
         Assert.True(ProviderSetupGuidance.MatchesProviderFilter("OpenRouter", "openrouter", "  "));
         Assert.True(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "qiniu"));
         Assert.True(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "QINIU-AI"));
-        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("Kilo Gateway (Cloud API)", "kilo", "gateway"));
+        Assert.True(ProviderSetupGuidance.MatchesProviderFilter("OpenAI (Official API)", "openai", "official"));
         Assert.False(ProviderSetupGuidance.MatchesProviderFilter("Qiniu", "qiniu-ai", "anthropic"));
     }
 }

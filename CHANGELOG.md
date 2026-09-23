@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING(providers)**: Xoá 2 built-in OpenCode Zen và Kilo Gateway — Models.dev đã có cả hai (`opencode`, `kilo`, trùng base URL). Settings cũ tự migrate: `opencode`/`kilo`/`gguf` → `models.dev:opencode`/`models.dev:kilo`, model cũ chuyển vào field `model` chung; key cũ (accounts `api_key`/`kilo_gateway_api_key`) không còn dùng, phải nhập lại key mới (accounts `opencode_api_key`/`kilo_api_key`). Xoá 4 field khỏi `SettingsSnapshot` (`OpenCodeModel`, `KiloModel`, `ApiVariant`, `KiloReasoningEnabled`), key rows + dropdown options GUI, CLI `/backend` rows; default backend mới là OpenAI. Giữ nguyên OpenAI/Anthropic (Models.dev không có `api` cho 2 ông này) và Custom.
+
 ### Fixed
 
 - **fix(agent)**: **Cắt một tool result lớn làm đông cứng host gần tám phút.** `FitReferenceContent` tìm điểm cắt bằng cách giảm từng ký tự và **encode lại toàn bộ prefix sau mỗi bước** — O(n²) trên đúng kích thước mà sản phẩm cho phép: đo thực tế 64 KiB mất 45 ms, 512 KiB mất 3.3 giây, và **4 MiB (trần output của tool) mất 497 giây** trong một lời gọi đồng bộ trên thread của host. Nay tìm điểm cắt bằng bisection: số byte của một prefix không giảm khi prefix dài ra, nên bisection ra đúng cùng một ranh giới sau vài chục lần đo thay vì hàng triệu lần. Đã đối chiếu **byte-for-byte với bản cũ trên 211 trường hợp** (ASCII quanh và vượt ranh giới, tiếng Việt 3 byte, emoji 4 byte/surrogate pair, 200 chuỗi ngẫu nhiên trộn độ rộng ký tự): 0 khác biệt. Kèm 2 test: một test khoá "giữ đúng prefix dài nhất còn vừa" (một ký tự nữa là vượt), một test chặn trần thời gian cho 4 MiB.

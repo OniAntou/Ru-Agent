@@ -32,7 +32,7 @@ public sealed class AgentSlashCommandSurfaceTests
     private static AgentSlashCommands Create(
         StringWriter output,
         Func<HttpRequestMessage, HttpResponseMessage>? respond = null,
-        string settingsJson = "{\"status\":\"ok\",\"backend\":\"Kilo Gateway\",\"kilo_model\":\"kilocode/gpt-5-codex\",\"has_kilo_key\":true,\"opencode_model\":\"opencode/free\",\"anthropic_model\":\"claude-sonnet-4-5\"}")
+        string settingsJson = "{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\",\"has_openai_api_key\":true,\"anthropic_model\":\"claude-sonnet-4-5\"}")
     {
         var client = new SettingsApiClient(
             Session(),
@@ -72,7 +72,7 @@ public sealed class AgentSlashCommandSurfaceTests
         var text = output.ToString();
         Assert.Contains("╭─ status", text, StringComparison.Ordinal);
         Assert.Contains("12400", text, StringComparison.Ordinal);
-        Assert.Contains("gpt-5-codex", text, StringComparison.Ordinal);
+        Assert.Contains("gpt-4o", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class AgentSlashCommandSurfaceTests
 
         var text = output.ToString();
         Assert.Contains("╭─ model", text, StringComparison.Ordinal);
-        Assert.Contains("kilocode/gpt-5-codex", text, StringComparison.Ordinal);
+        Assert.Contains("gpt-4o", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -115,30 +115,30 @@ public sealed class AgentSlashCommandSurfaceTests
                 return Json("{\"status\":\"ok\"}");
             }
 
-            return Json("{\"status\":\"ok\",\"backend\":\"Kilo Gateway\",\"kilo_model\":\"kilocode/gpt-5-codex\",\"opencode_model\":\"opencode/free\"}");
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\",\"anthropic_model\":\"claude-sonnet-4-5\"}");
         });
 
         ChoiceList? offered = null;
         commands.Picker = (list, _) =>
         {
             offered = list;
-            return Task.FromResult<string?>("opencode/free");
+            return Task.FromResult<string?>("claude-sonnet-4-5");
         };
 
         Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
         Assert.NotNull(offered);
         Assert.Equal(2, offered!.Items.Count);
-        Assert.Equal("opencode/free", offered.Items[1].Value);
-        Assert.Contains("Switched active model to: opencode/free", output.ToString(), StringComparison.Ordinal);
-        Assert.Contains("kilo_model", posted.Single(), StringComparison.Ordinal);
+        Assert.Equal("claude-sonnet-4-5", offered.Items[1].Value);
+        Assert.Contains("Switched active model to: claude-sonnet-4-5", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("openai_model", posted.Single(), StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Model_WithASingleCandidate_SkipsThePicker()
     {
         var output = new StringWriter();
-        var commands = Create(output, _ => Json("{\"status\":\"ok\",\"backend\":\"Kilo Gateway\",\"kilo_model\":\"gpt-5-codex\"}"));
+        var commands = Create(output, _ => Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\"}"));
         var pickerCalls = 0;
         commands.Picker = (_, _) =>
         {
@@ -149,7 +149,7 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
         Assert.Equal(0, pickerCalls);
-        Assert.Contains("gpt-5-codex", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("gpt-4o", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,14 +165,14 @@ public sealed class AgentSlashCommandSurfaceTests
                 return Json("{\"status\":\"ok\"}");
             }
 
-            return Json("{\"status\":\"ok\",\"backend\":\"Kilo Gateway\",\"kilo_model\":\"kilocode/gpt-5-codex\"}");
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\"}");
         });
         commands.Picker = (list, _) => Task.FromResult<string?>(list.Items[1].Value);
 
         Assert.True(await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
-        Assert.Contains("OpenCode Zen", posted.Single(), StringComparison.Ordinal);
-        Assert.Contains("Switched backend to: OpenCode Zen", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Anthropic", posted.Single(), StringComparison.Ordinal);
+        Assert.Contains("Switched backend to: Anthropic", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -185,10 +185,12 @@ public sealed class AgentSlashCommandSurfaceTests
 
         var text = output.ToString();
         Assert.Contains("╭─ backend", text, StringComparison.Ordinal);
-        foreach (var name in new[] { "Kilo Gateway", "OpenCode Zen", "OpenAI", "Anthropic" })
+        foreach (var name in new[] { "OpenAI", "Anthropic" })
         {
             Assert.Contains(name, text, StringComparison.Ordinal);
         }
+        Assert.DoesNotContain("Kilo Gateway", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenCode Zen", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -196,15 +198,15 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var commands = Create(output, _ => Json(
-            "{\"status\":\"ok\",\"backend\":\"OpenCode Zen\",\"opencode_model\":\"opencode/free\"," +
-            "\"has_opencode_key\":false,\"has_kilo_key\":true,\"has_openai_api_key\":false}"));
+            "{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\"," +
+            "\"has_openai_api_key\":false,\"has_anthropic_api_key\":true}"));
 
         Assert.True(await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
 
         var text = output.ToString();
         Assert.Contains("no key", text, StringComparison.Ordinal);
-        Assert.Contains("OpenCode Zen", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("Kilo Gateway · no key", text, StringComparison.Ordinal);
+        Assert.Contains("OpenAI", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Anthropic · no key", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -242,7 +244,7 @@ public sealed class AgentSlashCommandSurfaceTests
                 return Json("{\"status\":\"ok\"}");
             }
 
-            return Json("{\"status\":\"ok\",\"backend\":\"Kilo Gateway\",\"kilo_model\":\"old\"}");
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"old\"}");
         });
 
         await commands.TryHandleAsync("/model", "new-model", "sess_1", "standard", "D:\\LLM", CancellationToken.None);

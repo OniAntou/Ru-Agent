@@ -19,13 +19,9 @@ public interface ISettingsTransitionService
 public sealed class SettingsTransitionService : ISettingsTransitionService
 {
     private const string ServiceName = "Ru";
-    private const string OpenCodeAccount = "api_key";
-    private const string KiloAccount = "kilo_gateway_api_key";
     private const string CustomAccount = "custom_api_key";
     private const string OpenAiAccount = "openai_api_key";
     private const string AnthropicAccount = "anthropic_api_key";
-    private const string BackendOpenCode = "OpenCode Zen";
-    private const string BackendKilo = "Kilo Gateway";
     private const string BackendOpenAi = "OpenAI";
     private const string BackendAnthropic = "Anthropic";
 
@@ -58,8 +54,8 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             try
             {
                 payload = ExpandModelSelection(payload);
-                candidate = BuildCandidate(ProviderReasoningPreferences.CaptureLegacy(previous), payload);
-                updates = BuildCredentialUpdates(candidate.Backend, payload);
+                candidate = BuildCandidate(previous, payload);
+                updates = BuildCredentialUpdates(payload);
                 if (payload.ContainsKey("reasoning_effort"))
                 {
                     if (_catalog is null || updates.Count != 0) throw new SettingsPayloadException();
@@ -245,8 +241,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
 
     private static string ModelFieldForBackend(string backend) => backend switch
     {
-        BackendOpenCode => "opencode_model",
-        BackendKilo => "kilo_model",
         "Custom OpenAI" => "custom_model",
         BackendOpenAi => "openai_model",
         BackendAnthropic => "anthropic_model",
@@ -262,10 +256,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             ?? OptionalString(payload, "backend", 64);
         var backend = backendValue is null ? current.Backend : NormalizeBackend(backendValue);
         var model = OptionalString(payload, "model", 256) ?? current.Model;
-        var openCodeModel = OptionalString(payload, "opencode_model", 256)
-            ?? current.OpenCodeModel;
-        var kiloModel = OptionalString(payload, "kilo_model", 256)
-            ?? current.KiloModel;
         var customModel = OptionalString(payload, "custom_model", 256)
             ?? current.CustomModel;
         var customUrl = OptionalString(payload, "custom_url", 1024)
@@ -274,17 +264,11 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             ?? current.OpenAiModel;
         var anthropicModel = OptionalString(payload, "anthropic_model", 256)
             ?? current.AnthropicModel;
-        var apiVariant = OptionalString(payload, "api_variant", 64) ?? current.ApiVariant;
 
         return new SettingsSnapshot(
             current.Raw.DeepClone().AsObject(),
             backend,
             model,
-            openCodeModel,
-            kiloModel,
-            apiVariant,
-            OptionalBoolean(payload, "kilo_reasoning_enabled")
-                ?? current.KiloReasoningEnabled,
             customModel,
             customUrl,
             openAiModel,
@@ -293,27 +277,12 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             current.CompactionTargetRatio);
     }
 
-    private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(
-        string backend,
-        JsonObject payload)
+    private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(JsonObject payload)
     {
         var updates = new Dictionary<string, string>(StringComparer.Ordinal);
-        var openCode = OptionalSecret(payload, "opencode_api_key");
-        var kilo = OptionalSecret(payload, "kilo_api_key");
         var custom = OptionalSecret(payload, "custom_api_key");
         var openAi = OptionalSecret(payload, "openai_api_key");
         var anthropic = OptionalSecret(payload, "anthropic_api_key");
-        var legacy = OptionalSecret(payload, "api_key");
-        if (openCode is not null)
-        {
-            updates[OpenCodeAccount] = openCode;
-        }
-
-        if (kilo is not null)
-        {
-            updates[KiloAccount] = kilo;
-        }
-
         if (custom is not null)
         {
             updates[CustomAccount] = custom;
@@ -327,18 +296,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         if (anthropic is not null)
         {
             updates[AnthropicAccount] = anthropic;
-        }
-
-        if (legacy is not null)
-        {
-            if (backend == BackendOpenCode && openCode is null)
-            {
-                updates[OpenCodeAccount] = legacy;
-            }
-            else if (backend == BackendKilo && kilo is null)
-            {
-                updates[KiloAccount] = legacy;
-            }
         }
 
         var modelsDevId = OptionalString(payload, "models_dev_provider_id", 64);
@@ -367,9 +324,9 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
 
         return value.Trim().ToLowerInvariant() switch
         {
-            "gguf" or "llama.cpp" => BackendOpenCode,
-            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
-            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => BackendKilo,
+            "gguf" or "llama.cpp" => "models.dev:opencode",
+            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "models.dev:opencode",
+            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "models.dev:kilo",
             "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
             "openai" or "openai api" => BackendOpenAi,
             "anthropic" or "anthropic claude" or "claude" => BackendAnthropic,
@@ -398,21 +355,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         }
 
         return result;
-    }
-
-    private static bool? OptionalBoolean(JsonObject payload, string key)
-    {
-        if (!payload.TryGetPropertyValue(key, out var node) || node is null)
-        {
-            return null;
-        }
-
-        if (node is JsonValue value && value.TryGetValue<bool>(out var result))
-        {
-            return result;
-        }
-
-        throw new SettingsPayloadException();
     }
 
     private sealed record CredentialUpdate(string Account, string Secret);

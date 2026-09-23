@@ -44,11 +44,11 @@ public sealed class ProviderModelPickerProjectionTests
     public void Dynamic_models_dev_definitions_render_after_the_fixed_groups()
     {
         var generic = State("models.dev:openrouter", catalog: [CatalogModel("m1")]);
-        var openCode = State("opencode", catalog: [CatalogModel("opencode/free")]);
+        var anthropic = State("anthropic", catalog: [CatalogModel("claude-4-sonnet")]);
         var definitions = ProviderGroupDefinitions.WithModelsDev([new ModelsDevEntry("openrouter", "OpenRouter")]);
 
         var projection = ProviderModelPickerProjection.Create(
-            groups: [generic, openCode],
+            groups: [generic, anthropic],
             selectedBackend: "models.dev:openrouter",
             selectedModel: "m1",
             searchText: string.Empty,
@@ -56,41 +56,41 @@ public sealed class ProviderModelPickerProjectionTests
 
         Assert.Collection(
             projection.Groups,
-            group => Assert.Equal("opencode", group.Provider.Alias),
+            group => Assert.Equal("anthropic", group.Provider.Alias),
             group => Assert.Equal("models.dev:openrouter", group.Provider.Alias));
     }
 
     [Fact]
     public void Groups_render_in_stable_definition_order_regardless_of_arrival_order()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier")]);
-        var openCode = State("opencode", catalog: [CatalogModel("opencode/free")]);
+        var openai = State("openai", catalog: [CatalogModel("gpt-4o")]);
+        var custom = State("custom", catalog: [CatalogModel("local-model")]);
         var anthropic = State("anthropic", catalog: [CatalogModel("claude-4-sonnet")]);
 
         var projection = ProviderModelPickerProjection.Create(
-            groups: [anthropic, kilo, openCode],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
+            groups: [anthropic, openai, custom],
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
             searchText: string.Empty);
 
         Assert.Collection(
             projection.Groups,
-            group => Assert.Equal("opencode", group.Provider.Alias),
-            group => Assert.Equal("kilo", group.Provider.Alias),
-            group => Assert.Equal("anthropic", group.Provider.Alias));
+            group => Assert.Equal("openai", group.Provider.Alias),
+            group => Assert.Equal("anthropic", group.Provider.Alias),
+            group => Assert.Equal("custom", group.Provider.Alias));
     }
 
     [Fact]
     public void Empty_failed_and_unconfigured_groups_without_data_are_hidden()
     {
-        var openCode = State("opencode");
-        var kilo = State("kilo", status: "error", errorCode: "catalog_unavailable");
-        var emptyOpenAi = State("openai", status: "error", errorCode: "catalog_unauthorized");
+        var custom = State("custom");
+        var openai = State("openai", status: "error", errorCode: "catalog_unavailable");
+        var emptyAnthropic = State("anthropic", status: "error", errorCode: "catalog_unauthorized");
 
         var projection = ProviderModelPickerProjection.Create(
-            groups: [openCode, kilo, emptyOpenAi],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
+            groups: [custom, openai, emptyAnthropic],
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
             searchText: string.Empty);
 
         Assert.Empty(projection.Groups);
@@ -101,16 +101,16 @@ public sealed class ProviderModelPickerProjectionTests
     public void Same_identity_stale_groups_with_usable_models_are_retained_and_marked_stale()
     {
         var kilo = State(
-            "kilo",
+            "openai",
             status: "error",
             stale: true,
             errorCode: "catalog_unavailable",
-            catalog: [CatalogModel("kilo-auto/frontier")]);
+            catalog: [CatalogModel("gpt-4o")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
             searchText: string.Empty);
 
         var group = Assert.Single(projection.Groups);
@@ -126,81 +126,81 @@ public sealed class ProviderModelPickerProjectionTests
     [Fact]
     public void Provider_name_search_retains_all_models_in_that_group()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier"), CatalogModel("kilo-mini")]);
-        var openCode = State("opencode", catalog: [CatalogModel("opencode/free"), CatalogModel("opencode/pro")]);
-        var emptyOpenAi = State("openai");
+        var openai = State("openai", catalog: [CatalogModel("gpt-4o"), CatalogModel("gpt-4o-mini")]);
+        var anthropic = State("anthropic", catalog: [CatalogModel("claude-4-sonnet"), CatalogModel("claude-4-opus")]);
+        var emptyCustom = State("custom");
 
         var projection = ProviderModelPickerProjection.Create(
-            groups: [kilo, openCode, emptyOpenAi],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
-            searchText: "OpenCode");
+            groups: [openai, anthropic, emptyCustom],
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
+            searchText: "Anthropic");
 
         var group = Assert.Single(projection.Groups);
-        Assert.Equal("OpenCode", group.Provider.DisplayName);
-        Assert.Equal(openCode.Models.Count, group.Rows.Count);
+        Assert.Equal("Anthropic", group.Provider.DisplayName);
+        Assert.Equal(anthropic.Models.Count, group.Rows.Count);
     }
 
     [Fact]
     public void Model_id_search_filters_rows_and_hides_empty_result_groups()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier"), CatalogModel("kilo-mini")]);
-        var openCode = State("opencode", catalog: [CatalogModel("opencode/free")]);
+        var kilo = State("openai", catalog: [CatalogModel("gpt-4o"), CatalogModel("gpt-4o-mini")]);
+        var openCode = State("anthropic", catalog: [CatalogModel("claude-4-sonnet")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [openCode, kilo],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
-            searchText: "frontier");
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o-mini",
+            searchText: "mini");
 
         var group = Assert.Single(projection.Groups);
-        Assert.Equal("kilo", group.Provider.Alias);
+        Assert.Equal("openai", group.Provider.Alias);
         var row = Assert.Single(group.Rows);
-        Assert.Equal("kilo-auto/frontier", row.ModelId);
+        Assert.Equal("gpt-4o-mini", row.ModelId);
     }
 
     [Fact]
     public void Search_is_case_insensitive_and_does_not_mutate_source_state()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier")]);
-        var openCode = State("opencode", catalog: [CatalogModel("opencode/free")]);
+        var kilo = State("openai", catalog: [CatalogModel("gpt-4o")]);
+        var openCode = State("anthropic", catalog: [CatalogModel("claude-4-sonnet")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo, openCode],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
-            searchText: "OPENCODE");
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
+            searchText: "ANTHROPIC");
 
         var group = Assert.Single(projection.Groups);
-        Assert.Equal("opencode", group.Provider.Alias);
-        Assert.Equal("kilo-auto/frontier", kilo.Models.Single());
+        Assert.Equal("anthropic", group.Provider.Alias);
+        Assert.Equal("gpt-4o", kilo.Models.Single());
         Assert.Equal(string.Empty, kilo.SearchText);
     }
 
     [Fact]
     public void Active_provider_model_row_is_selected()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier"), CatalogModel("kilo-mini")]);
+        var kilo = State("openai", catalog: [CatalogModel("gpt-4o"), CatalogModel("gpt-4o-mini")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-mini",
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o-mini",
             searchText: string.Empty);
 
         var group = Assert.Single(projection.Groups);
         var selected = Assert.Single(group.Rows, row => row.IsSelected);
-        Assert.Equal("kilo-mini", selected.ModelId);
+        Assert.Equal("gpt-4o-mini", selected.ModelId);
     }
 
     [Fact]
     public void Missing_selected_model_is_inserted_once_disabled_and_annotated_unavailable()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier"), CatalogModel("kilo-mini")]);
+        var kilo = State("openai", catalog: [CatalogModel("gpt-4o"), CatalogModel("gpt-4o-mini")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
+            selectedBackend: "openai",
             selectedModel: "retired-model",
             searchText: string.Empty);
 
@@ -216,15 +216,15 @@ public sealed class ProviderModelPickerProjectionTests
     public void Selected_model_is_not_fabricated_without_a_successful_non_empty_catalog()
     {
         var kilo = State(
-            "kilo",
+            "openai",
             status: "error",
             stale: true,
             errorCode: "catalog_unavailable",
-            catalog: [CatalogModel("kilo-auto/frontier")]);
+            catalog: [CatalogModel("gpt-4o")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
+            selectedBackend: "openai",
             selectedModel: "retired-model",
             searchText: string.Empty);
 
@@ -236,33 +236,33 @@ public sealed class ProviderModelPickerProjectionTests
     [Fact]
     public void Unsupported_rows_never_become_selectable()
     {
-        var kilo = State("kilo", catalog: [
-            CatalogModel("kilo-auto/frontier"),
+        var kilo = State("openai", catalog: [
+            CatalogModel("gpt-4o"),
             CatalogModel("embedding-x", supported: false),
             CatalogModel("rerank-x", protocol: "rerank"),
         ]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
             searchText: string.Empty);
 
         var group = Assert.Single(projection.Groups);
         var row = Assert.Single(group.Rows);
-        Assert.Equal("kilo-auto/frontier", row.ModelId);
+        Assert.Equal("gpt-4o", row.ModelId);
         Assert.True(row.IsEnabled);
     }
 
     [Fact]
     public void Unsupported_only_group_is_hidden()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("embedding-x", supported: false)]);
+        var kilo = State("openai", catalog: [CatalogModel("embedding-x", supported: false)]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
             searchText: string.Empty);
 
         Assert.Empty(projection.Groups);
@@ -272,12 +272,12 @@ public sealed class ProviderModelPickerProjectionTests
     [Fact]
     public void Search_that_matches_nothing_produces_the_empty_state_text()
     {
-        var kilo = State("kilo", catalog: [CatalogModel("kilo-auto/frontier")]);
+        var kilo = State("openai", catalog: [CatalogModel("gpt-4o")]);
 
         var projection = ProviderModelPickerProjection.Create(
             groups: [kilo],
-            selectedBackend: "kilo",
-            selectedModel: "kilo-auto/frontier",
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
             searchText: "zzz");
 
         Assert.Empty(projection.Groups);
@@ -288,22 +288,22 @@ public sealed class ProviderModelPickerProjectionTests
     public void Row_automation_text_reflects_selected_unavailable_and_stale_states()
     {
         var selected = new ProviderModelPickerRow(
-            "kilo", "Kilo", "kilo-auto/frontier", string.Empty, true, true, false, string.Empty);
+            "openai", "OpenAI", "gpt-4o", string.Empty, true, true, false, string.Empty);
         var unavailable = new ProviderModelPickerRow(
-            "kilo", "Kilo", "retired-model", string.Empty, true, false, false,
+            "openai", "OpenAI", "retired-model", string.Empty, true, false, false,
             ProviderModelPickerProjection.UnavailableAnnotation);
         var stale = new ProviderModelPickerRow(
-            "kilo", "Kilo", "kilo-mini", string.Empty, false, true, true,
+            "openai", "OpenAI", "gpt-4o-mini", string.Empty, false, true, true,
             ProviderModelPickerProjection.StaleAnnotation);
 
         Assert.Equal(
-            "Kilo, kilo-auto/frontier, selected",
+            "OpenAI, gpt-4o, selected",
             ProviderModelPickerProjection.RowAutomationText(selected));
         Assert.Equal(
-            "Kilo, retired-model, unavailable",
+            "OpenAI, retired-model, unavailable",
             ProviderModelPickerProjection.RowAutomationText(unavailable));
         Assert.Equal(
-            "Kilo, kilo-mini, stale",
+            "OpenAI, gpt-4o-mini, stale",
             ProviderModelPickerProjection.RowAutomationText(stale));
     }
 
@@ -311,25 +311,25 @@ public sealed class ProviderModelPickerProjectionTests
     public void Trigger_display_shows_model_or_placeholder()
     {
         Assert.Equal(
-            "kilo-auto/frontier",
-            ProviderModelPickerProjection.TriggerDisplay("kilo", "kilo-auto/frontier"));
+            "gpt-4o",
+            ProviderModelPickerProjection.TriggerDisplay("openai", "gpt-4o"));
         Assert.Equal(
-            "opencode/free",
-            ProviderModelPickerProjection.TriggerDisplay("opencode", "opencode/free"));
-        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("kilo", string.Empty));
+            "claude-4-sonnet",
+            ProviderModelPickerProjection.TriggerDisplay("anthropic", "claude-4-sonnet"));
+        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("openai", string.Empty));
         Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay(string.Empty, string.Empty));
-        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("kilo", "   "));
+        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("openai", "   "));
     }
 
     [Fact]
     public void Provider_group_definitions_are_presentation_only()
     {
-        Assert.Equal(5, ProviderGroupDefinitions.All.Count);
+        Assert.Equal(3, ProviderGroupDefinitions.All.Count);
         Assert.Equal(
-            new[] { 0, 1, 2, 3, 4 },
+            new[] { 0, 1, 2 },
             ProviderGroupDefinitions.All.Select(definition => definition.Order));
-        Assert.Equal("kilo", ProviderGroupDefinitions.ByAlias["kilo"].Alias);
-        Assert.Equal("Kilo Gateway", ProviderGroupDefinitions.ByBackend["Kilo Gateway"].Backend);
+        Assert.Equal("openai", ProviderGroupDefinitions.ByAlias["openai"].Alias);
+        Assert.Equal("OpenAI", ProviderGroupDefinitions.ByBackend["OpenAI"].Backend);
         Assert.All(ProviderGroupDefinitions.All, definition =>
         {
             Assert.DoesNotContain("://", definition.Backend, StringComparison.Ordinal);

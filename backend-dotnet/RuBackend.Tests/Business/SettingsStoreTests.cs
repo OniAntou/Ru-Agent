@@ -14,9 +14,8 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("OpenCode Zen", snapshot.Backend);
+        Assert.Equal("OpenAI", snapshot.Backend);
         Assert.Equal(string.Empty, snapshot.Model);
-        Assert.Equal("Default", snapshot.ApiVariant);
     }
 
     [Fact]
@@ -43,8 +42,8 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("Kilo Gateway", snapshot.Backend);
-        Assert.Equal("fixture-cloud-model", snapshot.KiloModel);
+        Assert.Equal("models.dev:kilo", snapshot.Backend);
+        Assert.Equal("fixture-cloud-model", snapshot.Model);
         Assert.Null(snapshot.Raw["max_tokens"]);
         Assert.Null(snapshot.Raw["max_new_tokens"]);
         Assert.Null(snapshot.Raw["temperature"]);
@@ -58,6 +57,25 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Read_retired_builtin_model_carries_into_the_generic_field()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "opencode",
+              "model": "",
+              "opencode_model": "legacy-model"
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("models.dev:opencode", snapshot.Backend);
+        Assert.Equal("legacy-model", snapshot.Model);
+    }
+
+    [Fact]
     public async Task Read_malformed_json_falls_back_to_defaults()
     {
         var (store, paths) = CreateStore();
@@ -66,12 +84,12 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("OpenCode Zen", snapshot.Backend);
+        Assert.Equal("OpenAI", snapshot.Backend);
         Assert.Empty(snapshot.Raw);
     }
 
     [Fact]
-    public async Task Read_unknown_backend_stays_unselected_instead_of_falling_back_to_opencode()
+    public async Task Read_unknown_backend_stays_unselected_instead_of_falling_back_to_a_default()
     {
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
@@ -227,8 +245,7 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("OpenCode Zen", snapshot.Backend);
-        Assert.Equal(string.Empty, snapshot.OpenCodeModel);
+        Assert.Equal("models.dev:opencode", snapshot.Backend);
         Assert.Equal("LFM2.5-2.6B-Q4_K_M.gguf", snapshot.Model);
     }
 
@@ -246,8 +263,7 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("OpenCode Zen", snapshot.Backend);
-        Assert.Equal(string.Empty, snapshot.OpenCodeModel);
+        Assert.Equal("models.dev:opencode", snapshot.Backend);
     }
 
     [Fact]
@@ -264,11 +280,11 @@ public sealed class SettingsStoreTests
         var current = await store.ReadAsync(CancellationToken.None);
 
         await store.SaveAsync(
-            current with { Backend = "OpenCode Zen" },
+            current with { Backend = "models.dev:opencode" },
             CancellationToken.None);
 
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
-        Assert.Equal("OpenCode Zen", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("models.dev:opencode", persisted["backend"]!.GetValue<string>());
         Assert.Null(persisted["model"]);
     }
 

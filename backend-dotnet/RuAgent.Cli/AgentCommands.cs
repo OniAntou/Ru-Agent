@@ -913,7 +913,7 @@ public sealed class AgentCommands
             }
         }
 
-        string backendName = "Kilo Gateway";
+        string backendName = "OpenAI";
         string activeModel = string.Empty;
         string reasoningEffort = string.Empty;
         try
@@ -936,8 +936,6 @@ public sealed class AgentCommands
                 : backendName;
             activeModel = backendName switch
             {
-                "Kilo Gateway" => settings.TryGetProperty("kilo_model", out var km) ? km.GetString() ?? "" : "",
-                "OpenCode Zen" => settings.TryGetProperty("opencode_model", out var om) ? om.GetString() ?? "" : "",
                 "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
                 "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
                 _ => settings.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
@@ -1303,8 +1301,6 @@ public sealed class AgentCommands
                     : backendName;
                 var curModel = bName switch
                 {
-                    "Kilo Gateway" => s.TryGetProperty("kilo_model", out var km) ? km.GetString() ?? "" : "",
-                    "OpenCode Zen" => s.TryGetProperty("opencode_model", out var om) ? om.GetString() ?? "" : "",
                     "OpenAI" => s.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
                     "Anthropic" => s.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
                     _ => s.TryGetProperty("model", out var mProp) ? mProp.GetString() ?? "" : "",

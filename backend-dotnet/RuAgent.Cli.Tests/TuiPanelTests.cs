@@ -180,11 +180,11 @@ public sealed class TuiSurfacesPickerTests
     [Fact]
     public void BackendChoices_PutsTheCurrentBackendFirst()
     {
-        var items = TuiSurfaces.BackendChoices("OpenCode Zen");
+        var items = TuiSurfaces.BackendChoices("Anthropic");
 
-        Assert.Equal("opencode", items[0].Value);
+        Assert.Equal("anthropic", items[0].Value);
         Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
-        Assert.Equal(4, items.Count);
+        Assert.Equal(2, items.Count);
     }
 
     [Fact]
@@ -192,22 +192,22 @@ public sealed class TuiSurfacesPickerTests
     {
         var items = TuiSurfaces.BackendChoices("nonsense");
 
-        Assert.Equal("kilo", items[0].Value);
+        Assert.Equal("openai", items[0].Value);
         Assert.DoesNotContain(items, i => i.Detail.Contains("current", StringComparison.Ordinal));
     }
 
     [Fact]
     public void ModelChoices_SkipsEmptyAndDuplicateModels()
     {
-        var items = TuiSurfaces.ModelChoices("Kilo Gateway", [
-            ("Kilo Gateway", "kilocode/gpt-5-codex"),
-            ("OpenCode Zen", "  "),
-            ("Custom OpenAI", "kilocode/gpt-5-codex"),
+        var items = TuiSurfaces.ModelChoices("OpenAI", [
+            ("OpenAI", "gpt-4o"),
+            ("Anthropic", "  "),
+            ("Custom OpenAI", "gpt-4o"),
             ("Anthropic", "claude-sonnet-4-5"),
         ]);
 
         Assert.Equal(2, items.Count);
-        Assert.Equal("kilocode/gpt-5-codex", items[0].Value);
+        Assert.Equal("gpt-4o", items[0].Value);
         Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
         Assert.Equal("claude-sonnet-4-5", items[1].Value);
     }
@@ -215,7 +215,7 @@ public sealed class TuiSurfacesPickerTests
     [Fact]
     public void ModelChoices_WithNothingConfigured_IsEmpty()
     {
-        var items = TuiSurfaces.ModelChoices("Kilo Gateway", [("Kilo Gateway", null), ("Custom OpenAI", "")]);
+        var items = TuiSurfaces.ModelChoices("OpenAI", [("OpenAI", null), ("Custom OpenAI", "")]);
 
         Assert.Empty(items);
     }
@@ -223,26 +223,25 @@ public sealed class TuiSurfacesPickerTests
     [Fact]
     public void BackendChoices_MarksProvidersWithoutACredential()
     {
-        var items = TuiSurfaces.BackendChoices("OpenCode Zen", new Dictionary<string, bool>
+        var items = TuiSurfaces.BackendChoices("OpenAI", new Dictionary<string, bool>
         {
-            ["opencode"] = false,
-            ["kilo"] = true,
+            ["openai"] = false,
+            ["anthropic"] = true,
         });
 
-        var openCode = Assert.Single(items, i => i.Value == "opencode");
-        Assert.Contains("current", openCode.Detail, StringComparison.Ordinal);
-        Assert.Contains("no key", openCode.Detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "kilo").Detail, StringComparison.Ordinal);
-        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "openai").Detail, StringComparison.Ordinal);
+        var openAi = Assert.Single(items, i => i.Value == "openai");
+        Assert.Contains("current", openAi.Detail, StringComparison.Ordinal);
+        Assert.Contains("no key", openAi.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "anthropic").Detail, StringComparison.Ordinal);
     }
 
     [Fact]
     public void ModelChoices_MarksModelsOfProvidersWithoutACredential()
     {
-        var items = TuiSurfaces.ModelChoices("Kilo Gateway", [
-            ("Kilo Gateway", "kilocode/gpt-5-codex"),
+        var items = TuiSurfaces.ModelChoices("OpenAI", [
+            ("OpenAI", "gpt-4o"),
             ("Anthropic", "claude-sonnet-4-5"),
-        ], new Dictionary<string, bool> { ["kilo"] = true, ["anthropic"] = false });
+        ], new Dictionary<string, bool> { ["openai"] = true, ["anthropic"] = false });
 
         Assert.Equal(2, items.Count);
         Assert.DoesNotContain("no key", items[0].Detail, StringComparison.Ordinal);

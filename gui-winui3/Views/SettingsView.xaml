@@ -403,7 +403,7 @@
                                         AutomationProperties.Name="Active provider">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock x:Name="ProviderButtonLabel"
-                                                   Text="OpenCode Zen (Cloud API)"
+                                                   Text="OpenAI (Official API)"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="13"
                                                    FontWeight="Medium"
@@ -431,52 +431,6 @@
                                                            FontSize="11"
                                                            Foreground="{StaticResource RuMutedBrush}"
                                                            Margin="4,8,0,2" />
-                                                <Button x:Name="ProviderOpencodeOption"
-                                                        Tag="opencode"
-                                                        Click="OnProviderOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="OpenCode Zen provider">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ProviderOpencodeText"
-                                                                   Text="OpenCode Zen (Cloud API)"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ProviderOpencodeCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="ProviderKiloOption"
-                                                        Tag="kilo"
-                                                        Click="OnProviderOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Kilo Gateway provider">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock x:Name="ProviderKiloText"
-                                                                   Text="Kilo Gateway (Cloud API)"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ProviderKiloCheck"
-                                                                  Grid.Column="1"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
                                                 <Button x:Name="ProviderOpenaiOption"
                                                         Tag="openai"
                                                         Click="OnProviderOptionClick"
@@ -598,60 +552,6 @@
                                         AutomationProperties.Name="Test provider connection"
                                         Click="OnProviderTestClick" />
                             </Grid>
-
-                            <!-- OpenCode API Key Row -->
-                            <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock x:Name="OpenCodeApiKeyLabel" Text="OpenCode API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                        <PasswordBox x:Name="OpenCodeApiKeyBox"
-                                                     AutomationProperties.LabeledBy="{Binding ElementName=OpenCodeApiKeyLabel}"
-                                                     PlaceholderText="sk-opencode-&#x2026;"
-                                                     Width="260"
-                                                     Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                        <Button x:Name="OpenCodeSignOutButton"
-                                                Content="Đăng xuất"
-                                                Tag="opencode"
-                                                Click="OnRemoveProviderClick"
-                                                Height="36"
-                                                MinWidth="96"
-                                                AutomationProperties.AutomationId="SignOutProviderOpenCode"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-
-                            <!-- Kilo API Key Row -->
-                            <StackPanel x:Name="KiloApiRow" Spacing="16" Visibility="Collapsed">
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock x:Name="KiloApiKeyLabel" Text="Kilo API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="Connection key for Kilo Gateway" Style="{StaticResource SettingDescStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                        <PasswordBox x:Name="KiloApiKeyBox"
-                                                     AutomationProperties.LabeledBy="{Binding ElementName=KiloApiKeyLabel}"
-                                                     PlaceholderText="sk-kilo-&#x2026;"
-                                                     Width="260"
-                                                     Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                        <Button x:Name="KiloSignOutButton"
-                                                Content="Đăng xuất"
-                                                Tag="kilo"
-                                                Click="OnRemoveProviderClick"
-                                                Height="36"
-                                                MinWidth="96"
-                                                AutomationProperties.AutomationId="SignOutProviderKilo"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
 
                             <!-- OpenAI API Key Row -->
                             <StackPanel x:Name="OpenAiApiRow" Spacing="16" Visibility="Collapsed">

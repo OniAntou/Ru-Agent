@@ -108,9 +108,9 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         {
             candidate = settings.Backend switch
             {
-                "OpenCode Zen" => settings.OpenCodeModel,
-                "Kilo Gateway" => settings.KiloModel,
                 "Custom OpenAI" => settings.CustomModel,
+                "OpenAI" => settings.OpenAiModel,
+                "Anthropic" => settings.AnthropicModel,
                 _ => "configured-model",
             };
         }

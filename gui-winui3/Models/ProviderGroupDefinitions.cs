@@ -12,11 +12,9 @@ public static class ProviderGroupDefinitions
 {
     public static IReadOnlyList<ProviderGroupDefinition> All { get; } =
     [
-        new("OpenCode Zen", "opencode", "OpenCode", 0),
-        new("Kilo Gateway", "kilo", "Kilo", 1),
-        new("OpenAI", "openai", "OpenAI", 2),
-        new("Anthropic", "anthropic", "Anthropic", 3),
-        new("Custom OpenAI", "custom", "Custom", 4),
+        new("OpenAI", "openai", "OpenAI", 0),
+        new("Anthropic", "anthropic", "Anthropic", 1),
+        new("Custom OpenAI", "custom", "Custom", 2),
     ];
 
     public static IReadOnlyDictionary<string, ProviderGroupDefinition> ByAlias { get; } =
@@ -26,7 +24,7 @@ public static class ProviderGroupDefinitions
         All.ToDictionary(definition => definition.Backend, StringComparer.Ordinal);
 
     /// <summary>
-    /// The fixed five plus one group per Models.dev provider, in stable order.
+    /// The fixed three plus one group per Models.dev provider, in stable order.
     /// Unknown entries are skipped; the fixed set never moves.
     /// </summary>
     public static IReadOnlyList<ProviderGroupDefinition> WithModelsDev(IEnumerable<ModelsDevEntry>? entries)

@@ -14,8 +14,8 @@ public sealed class ProviderCatalogTests
     {
         var settings = new AppSettingsDto();
 
-        Assert.Empty(settings.OpenCodeModel);
-        Assert.Empty(settings.KiloModel);
+        Assert.Empty(settings.OpenAiModel);
+        Assert.Empty(settings.AnthropicModel);
         Assert.Empty(settings.CustomModel);
     }
 
@@ -375,7 +375,7 @@ public sealed class ProviderCatalogTests
         var notifications = 0;
         api.SettingsSaved += (_, _) => notifications++;
 
-        Assert.False(await api.SaveProviderModelSelectionAsync("kilo", "kilo-model"));
+        Assert.False(await api.SaveProviderModelSelectionAsync("openai", "openai-model"));
         Assert.Equal(0, notifications);
     }
 
@@ -389,16 +389,14 @@ public sealed class ProviderCatalogTests
         var notifications = 0;
         api.SettingsSaved += (_, _) => notifications++;
 
-        Assert.True(await api.SaveProviderModelSelectionAsync("kilo", "kilo-model"));
+        Assert.True(await api.SaveProviderModelSelectionAsync("openai", "openai-model"));
         using (var document = JsonDocument.Parse(handler.LastBody))
         {
             Assert.Equal(2, document.RootElement.EnumerateObject().Count());
         }
 
-        Assert.Contains("\"backend_choice\":\"kilo\"", handler.LastBody, StringComparison.Ordinal);
-        Assert.Contains("\"selected_model\":\"kilo-model\"", handler.LastBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("opencode_model", handler.LastBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("kilo_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.Contains("\"backend_choice\":\"openai\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.Contains("\"selected_model\":\"openai-model\"", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("custom_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("openai_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("anthropic_model", handler.LastBody, StringComparison.Ordinal);
@@ -415,12 +413,12 @@ public sealed class ProviderCatalogTests
         var notifications = 0;
         api.SettingsSaved += (_, _) => notifications++;
 
-        Assert.True(await api.RemoveProviderAsync("opencode"));
+        Assert.True(await api.RemoveProviderAsync("openai"));
         using (var document = JsonDocument.Parse(handler.LastBody))
         {
             var property = Assert.Single(document.RootElement.EnumerateObject());
             Assert.Equal("backend_choice", property.Name);
-            Assert.Equal("opencode", property.Value.GetString());
+            Assert.Equal("openai", property.Value.GetString());
         }
 
         Assert.Equal(1, notifications);
@@ -436,7 +434,7 @@ public sealed class ProviderCatalogTests
         var notifications = 0;
         api.SettingsSaved += (_, _) => notifications++;
 
-        Assert.False(await api.RemoveProviderAsync("opencode"));
+        Assert.False(await api.RemoveProviderAsync("openai"));
         Assert.Equal(0, notifications);
     }
 
@@ -453,8 +451,6 @@ public sealed class ProviderCatalogTests
         var settingsXaml = File.ReadAllText(settingsXamlPath);
         foreach (var buttonName in new[]
                  {
-                     "OpenCodeSignOutButton",
-                     "KiloSignOutButton",
                      "OpenAiSignOutButton",
                      "AnthropicSignOutButton",
                      "CustomSignOutButton",

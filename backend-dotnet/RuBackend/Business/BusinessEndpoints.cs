@@ -41,14 +41,6 @@ public static class BusinessEndpoints
         try
         {
             var snapshot = await settings.ReadAsync(cancellationToken).ConfigureAwait(false);
-            var hasOpenCode = await HasCredentialAsync(
-                credentials,
-                "api_key",
-                cancellationToken).ConfigureAwait(false);
-            var hasKilo = await HasCredentialAsync(
-                credentials,
-                "kilo_gateway_api_key",
-                cancellationToken).ConfigureAwait(false);
             var hasCustom = await HasCredentialAsync(
                 credentials,
                 "custom_api_key",
@@ -63,8 +55,6 @@ public static class BusinessEndpoints
                 cancellationToken).ConfigureAwait(false);
             return Results.Json(ToSettingsResponse(
                 snapshot,
-                hasOpenCode,
-                hasKilo,
                 hasCustom,
                 hasOpenAi,
                 hasAnthropic));
@@ -499,8 +489,6 @@ public static class BusinessEndpoints
 
     private static JsonObject ToSettingsResponse(
         SettingsSnapshot value,
-        bool hasOpenCode,
-        bool hasKilo,
         bool hasCustom,
         bool hasOpenAi,
         bool hasAnthropic)
@@ -528,23 +516,14 @@ public static class BusinessEndpoints
         result["backend"] = value.Backend;
         result["backend_choice"] = BackendAlias(value.Backend);
         result["model"] = value.Model;
-        result["opencode_model"] = value.OpenCodeModel;
-        result["kilo_model"] = value.KiloModel;
         result["custom_model"] = value.CustomModel;
         result["custom_url"] = value.CustomUrl;
         result["openai_model"] = value.OpenAiModel;
         result["anthropic_model"] = value.AnthropicModel;
-        result["api_variant"] = value.ApiVariant;
-        result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
         result.Remove("checkpoint_path");
-        result["opencode_api_key"] = string.Empty;
-        result["kilo_api_key"] = string.Empty;
-        result["gemini_vision_api_key"] = string.Empty;
         result["custom_api_key"] = string.Empty;
         result["openai_api_key"] = string.Empty;
         result["anthropic_api_key"] = string.Empty;
-        result["has_opencode_key"] = hasOpenCode;
-        result["has_kilo_key"] = hasKilo;
         result["has_custom_api_key"] = hasCustom;
         result["has_openai_api_key"] = hasOpenAi;
         result["has_anthropic_api_key"] = hasAnthropic;
@@ -575,12 +554,11 @@ public static class BusinessEndpoints
 
     private static string BackendAlias(string backend) => backend switch
     {
-        "OpenCode Zen" => "opencode",
-        "Kilo Gateway" => "kilo",
         "Custom OpenAI" => "custom",
         "OpenAI" => "openai",
         "Anthropic" => "anthropic",
         "llama.cpp" => "gguf",
+        _ when RuBackend.Providers.ProviderSelection.IsModelsDevBackend(backend) => backend,
         _ => string.Empty,
     };
 

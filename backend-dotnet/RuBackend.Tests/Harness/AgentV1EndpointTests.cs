@@ -365,7 +365,7 @@ public sealed class AgentV1EndpointTests
     public async Task Create_run_rejects_vision_unsupported_model()
     {
         using var tmp = TempWorkspace.Create();
-        var snapshot = CreateSettingsSnapshot("OpenCode Zen", "deepseek-chat");
+        var snapshot = CreateSettingsSnapshot("OpenAI", "deepseek-chat");
         using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths, settingsStore: new StubSettingsStore(snapshot));
         using var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
@@ -468,10 +468,6 @@ public sealed class AgentV1EndpointTests
         new JsonObject(),
         backend,
         model,
-        OpenCodeModel: backend == "OpenCode Zen" ? model : string.Empty,
-        KiloModel: backend == "Kilo Gateway" ? model : string.Empty,
-        ApiVariant: "Default",
-        KiloReasoningEnabled: false,
         CustomModel: string.Empty,
         CustomUrl: "http://localhost:8000/v1",
         OpenAiModel: backend == "OpenAI" ? model : string.Empty,

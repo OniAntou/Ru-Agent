@@ -48,21 +48,8 @@ public static class ProviderCatalogParser
                 }
                 var protocol = Text(item["protocol"]) ?? "chat_completions";
                 if (protocol.Length is 0 or > 64 || protocol.Any(char.IsControl)) throw new JsonException();
-                if (backend == "OpenCode Zen" && id.StartsWith("gpt-", StringComparison.Ordinal)) protocol = "responses";
-                if (backend == "OpenCode Zen" && id.StartsWith("claude-", StringComparison.Ordinal)) protocol = "messages";
                 var supported = protocol == "chat_completions";
                 var options = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
-                if (backend == "Kilo Gateway" && item["opencode"] is JsonObject opencode
-                    && opencode["variants"] is JsonObject variants)
-                {
-                    foreach (var pair in variants.Take(16))
-                    {
-                        if ((!Efforts.Contains(pair.Key) && pair.Key is not ("enabled" or "disabled")) || pair.Value is not JsonObject variant
-                            || variant["reasoning"] is not JsonObject reasoning
-                            || !TryReasoning(reasoning, out var safe)) continue;
-                        options[pair.Key] = new JsonObject { ["reasoning"] = safe };
-                    }
-                }
                 if (item["supported_parameters"] is JsonArray parameters
                     && parameters.Any(p => Text(p) == "reasoning_effort")
                     && item["reasoning_efforts"] is JsonArray levels)

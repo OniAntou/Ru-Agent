@@ -15,8 +15,7 @@ public interface ISettingsStore
 public sealed class SettingsStore : ISettingsStore
 {
     private const long MaximumSettingsFileBytes = 1 * 1024 * 1024;
-    private const string BackendOpenCode = "OpenCode Zen";
-    private const string BackendKilo = "Kilo Gateway";
+    private const string DefaultBackend = "OpenAI";
     private const string BackendCustom = "Custom OpenAI";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -115,18 +114,18 @@ public sealed class SettingsStore : ISettingsStore
                 persisted.Remove(field);
             }
 
-            persisted["backend"] = candidate.Backend;
-            persisted["model"] = candidate.Model;
-            if (candidate.Model.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))
-            {
-                persisted.Remove("model");
-            }
-            persisted["opencode_model"] = candidate.OpenCodeModel;
-            persisted["kilo_model"] = candidate.KiloModel;
-            persisted["api_variant"] = candidate.ApiVariant;
-            persisted["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled;
-            persisted.Remove("checkpoint_path");
-            persisted["custom_model"] = candidate.CustomModel;
+        persisted["backend"] = candidate.Backend;
+        persisted["model"] = candidate.Model;
+        if (candidate.Model.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))
+        {
+            persisted.Remove("model");
+        }
+        persisted.Remove("opencode_model");
+        persisted.Remove("kilo_model");
+        persisted.Remove("api_variant");
+        persisted.Remove("kilo_reasoning_enabled");
+        persisted.Remove("checkpoint_path");
+        persisted["custom_model"] = candidate.CustomModel;
             persisted["custom_url"] = candidate.CustomUrl;
             persisted["openai_model"] = candidate.OpenAiModel;
             persisted["anthropic_model"] = candidate.AnthropicModel;
@@ -184,24 +183,25 @@ public sealed class SettingsStore : ISettingsStore
         }
 
         var rawBackend = ReadString(raw, "backend", string.Empty);
-        var migratedFromGguf = rawBackend.Trim().ToLowerInvariant() is "gguf" or "llama.cpp";
         var backend = raw.ContainsKey("backend")
             ? NormalizeBackend(rawBackend)
-            : BackendOpenCode;
+            : DefaultBackend;
         var model = ReadString(raw, "model", string.Empty);
         if (string.IsNullOrWhiteSpace(model))
         {
             model = ReadString(raw, "api_model", string.Empty);
         }
-        var openCodeModel = ReadString(raw, "opencode_model", string.Empty);
-        var kiloModel = ReadString(raw, "kilo_model", string.Empty);
-        if (backend == BackendOpenCode && string.IsNullOrWhiteSpace(openCodeModel) && !migratedFromGguf)
+
+        if (string.IsNullOrWhiteSpace(model))
         {
-            openCodeModel = model;
-        }
-        else if (backend == BackendKilo && string.IsNullOrWhiteSpace(kiloModel))
-        {
-            kiloModel = model;
+            // Retired built-ins kept their model in a provider field. Carry it
+            // into the generic field so the migrated backend still has a model.
+            model = backend switch
+            {
+                "models.dev:opencode" => ReadString(raw, "opencode_model", string.Empty),
+                "models.dev:kilo" => ReadString(raw, "kilo_model", string.Empty),
+                _ => string.Empty,
+            };
         }
 
         var (compactionTriggerRatio, compactionTargetRatio) = ReadCompactionRatios(raw);
@@ -210,10 +210,6 @@ public sealed class SettingsStore : ISettingsStore
             raw.DeepClone().AsObject(),
             backend,
             model,
-            openCodeModel,
-            kiloModel,
-            ReadString(raw, "api_variant", "Default"),
-            ReadBoolean(raw, "kilo_reasoning_enabled", false),
             ReadString(raw, "custom_model", "default"),
             ReadString(raw, "custom_url", "http://localhost:8000/v1"),
             ReadString(raw, "openai_model", string.Empty),
@@ -271,9 +267,9 @@ public sealed class SettingsStore : ISettingsStore
 
         return value.Trim().ToLowerInvariant() switch
         {
-            "gguf" or "llama.cpp" => BackendOpenCode,
-            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
-            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => BackendKilo,
+            "gguf" or "llama.cpp" => "models.dev:opencode",
+            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "models.dev:opencode",
+            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "models.dev:kilo",
             "custom" or "custom openai" or "custom openai api" => BackendCustom,
             "openai" or "openai api" => "OpenAI",
             "anthropic" or "anthropic claude" or "claude" => "Anthropic",
@@ -345,13 +341,6 @@ public sealed class SettingsStore : ISettingsStore
             : fallback;
     }
 
-    private static bool ReadBoolean(JsonObject raw, string key, bool fallback)
-    {
-        return raw[key] is JsonValue value && value.TryGetValue<bool>(out var result)
-            ? result
-            : fallback;
-    }
-
     private static async Task<byte[]> ReadBoundedBytesAsync(
         string path,
         long maximumBytes,
@@ -380,13 +369,10 @@ public sealed class SettingsStore : ISettingsStore
     {
         ValidateLength(candidate.Backend, 64, nameof(candidate.Backend));
         ValidateLength(candidate.Model, 256, nameof(candidate.Model));
-        ValidateLength(candidate.OpenCodeModel, 256, nameof(candidate.OpenCodeModel));
-        ValidateLength(candidate.KiloModel, 256, nameof(candidate.KiloModel));
         ValidateLength(candidate.CustomModel, 256, nameof(candidate.CustomModel));
         ValidateLength(candidate.CustomUrl, 1024, nameof(candidate.CustomUrl));
         ValidateLength(candidate.OpenAiModel, 256, nameof(candidate.OpenAiModel));
         ValidateLength(candidate.AnthropicModel, 256, nameof(candidate.AnthropicModel));
-        ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
         ValidateLength(candidate.ProviderId, 128, nameof(candidate.ProviderId));
     }
 

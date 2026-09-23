@@ -7,16 +7,12 @@ public sealed class ProviderModelMappingTests
 {
     private static AppSettingsDto Settings() => new()
     {
-        OpenCodeModel = "opencode-model",
-        KiloModel = "kilo-model",
         OpenAiModel = "openai-model",
         AnthropicModel = "anthropic-model",
         CustomModel = "custom-model",
     };
 
     [Theory]
-    [InlineData("opencode", "opencode-model")]
-    [InlineData("kilo", "kilo-model")]
     [InlineData("openai", "openai-model")]
     [InlineData("anthropic", "anthropic-model")]
     [InlineData("custom", "custom-model")]
@@ -37,6 +33,6 @@ public sealed class ProviderModelMappingTests
     [Fact]
     public void GetSelectedModel_ReturnsEmpty_WhenModelMissing()
     {
-        Assert.Equal(string.Empty, ProviderModelSelection.GetSelectedModel(new AppSettingsDto(), "opencode"));
+        Assert.Equal(string.Empty, ProviderModelSelection.GetSelectedModel(new AppSettingsDto(), "openai"));
     }
 }

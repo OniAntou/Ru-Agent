@@ -7,13 +7,15 @@ history. Where automated and live evidence differ, the narrower claim wins.
 
 ## Conversation and generation
 
-The cloud-first desktop default is OpenCode Zen. Hosted OpenCode Zen and Kilo
-Gateway providers are the supported cloud adapters; OpenAI-compatible custom
+The cloud-first desktop default is OpenAI. Hosted OpenAI and Anthropic
+providers are the supported cloud adapters, alongside any `models.dev:<provider-id>`
+generic provider; OpenAI-compatible custom
 adapters remain available for explicitly configured external services. Ru no
 longer ships or starts an in-process conversational model. Switching providers
 must preserve bounded context, cancellation, streamed visible-text
 normalization, and public error mapping by ASP.NET Core. Stale `llama.cpp` or
-GGUF settings migrate to the cloud default and cannot select a removed runtime.
+GGUF settings migrate to `models.dev:opencode` and retired `opencode`/`kilo`
+choices migrate to their `models.dev:` equivalents (keys must be re-entered).
 Cloud generation requests omit provider-specific `Temperature`, `Top-K`, and
 `Max New Tokens` controls; legacy stored values are ignored and stripped rather
 than forwarded to a provider.

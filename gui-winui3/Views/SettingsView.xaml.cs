@@ -27,7 +27,7 @@ namespace RuApp.Views
 
         private string _themeChoice = "dark";
         private string _presetChoice = "standard";
-        private string _providerChoice = "opencode";
+        private string _providerChoice = "openai";
 
         /// <summary>
         /// The stored conversation text size, read once at construction so the picker
@@ -136,8 +136,6 @@ namespace RuApp.Views
             };
             _providerOptions = new[]
             {
-                new DropdownOption(ProviderOpencodeOption, ProviderOpencodeText, ProviderOpencodeCheck, "opencode"),
-                new DropdownOption(ProviderKiloOption, ProviderKiloText, ProviderKiloCheck, "kilo"),
                 new DropdownOption(ProviderOpenaiOption, ProviderOpenaiText, ProviderOpenaiCheck, "openai"),
                 new DropdownOption(ProviderAnthropicOption, ProviderAnthropicText, ProviderAnthropicCheck, "anthropic"),
                 new DropdownOption(ProviderCustomOption, ProviderCustomText, ProviderCustomCheck, "custom"),
@@ -323,8 +321,6 @@ namespace RuApp.Views
             };
             _autoSaveTimer.Tick += OnAutoSaveTimerTick;
 
-            OpenCodeApiKeyBox.PasswordChanged += AutoSaveHandler;
-            KiloApiKeyBox.PasswordChanged += AutoSaveHandler;
             OpenAiApiKeyBox.PasswordChanged += AutoSaveHandler;
             AnthropicApiKeyBox.PasswordChanged += AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
@@ -355,14 +351,6 @@ namespace RuApp.Views
                 var settings = await _apiService.GetSettingsAsync();
                 settings ??= new AppSettingsDto();
 
-                OpenCodeApiKeyBox.Password = string.Empty;
-                OpenCodeApiKeyBox.PlaceholderText = settings.HasOpenCodeKey
-                    ? "Saved (leave blank to keep unchanged)"
-                    : "sk-opencode-...";
-                KiloApiKeyBox.Password = string.Empty;
-                KiloApiKeyBox.PlaceholderText = settings.HasKiloKey
-                    ? "Saved (leave blank to keep unchanged)"
-                    : "sk-kilo-...";
                 OpenAiApiKeyBox.Password = string.Empty;
                 OpenAiApiKeyBox.PlaceholderText = settings.HasOpenAiKey
                     ? "Saved (leave blank to keep unchanged)"
@@ -381,7 +369,7 @@ namespace RuApp.Views
                 // Providers first: the current choice can only be named once
                 // the runtime rows exist.
                 await RefreshModelsDevProvidersAsync();
-                SetCurrentProvider(settings.BackendChoice ?? "opencode");
+                SetCurrentProvider(settings.BackendChoice ?? "openai");
 
                 {
                 }
@@ -601,8 +589,6 @@ namespace RuApp.Views
         private void UpdateVisibilityForBackend(string choice)
         {
             bool isModelsDev = ProviderSetupGuidance.IsModelsDevChoice(choice);
-            OpenCodeApiRow.Visibility = (!isModelsDev && choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
-            KiloApiRow.Visibility = (!isModelsDev && choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
             OpenAiApiRow.Visibility = (!isModelsDev && choice == "openai") ? Visibility.Visible : Visibility.Collapsed;
             AnthropicApiRow.Visibility = (!isModelsDev && choice == "anthropic") ? Visibility.Visible : Visibility.Collapsed;
             CustomEndpointRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
@@ -663,8 +649,6 @@ namespace RuApp.Views
                 var dto = new ProviderSettingsUpdateDto
                 {
                     BackendChoice = backend,
-                    OpenCodeApiKey = OpenCodeApiKeyBox.Password,
-                    KiloApiKey = KiloApiKeyBox.Password,
                     OpenAiApiKey = OpenAiApiKeyBox.Password,
                     AnthropicApiKey = AnthropicApiKeyBox.Password,
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
@@ -731,12 +715,6 @@ namespace RuApp.Views
         {
             switch (alias)
             {
-                case "opencode":
-                    OpenCodeApiKeyBox.Password = string.Empty;
-                    break;
-                case "kilo":
-                    KiloApiKeyBox.Password = string.Empty;
-                    break;
                 case "openai":
                     OpenAiApiKeyBox.Password = string.Empty;
                     break;
@@ -766,8 +744,6 @@ namespace RuApp.Views
 
         private void DisposeEventHandlers()
         {
-            OpenCodeApiKeyBox.PasswordChanged -= AutoSaveHandler;
-            KiloApiKeyBox.PasswordChanged -= AutoSaveHandler;
             OpenAiApiKeyBox.PasswordChanged -= AutoSaveHandler;
             AnthropicApiKeyBox.PasswordChanged -= AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;

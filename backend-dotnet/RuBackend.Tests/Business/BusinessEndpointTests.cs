@@ -23,9 +23,9 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"max_tokens\":128,\"allow_web_search\":false}");
+            "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\",\"max_tokens\":128,\"allow_web_search\":false}");
         var credentials = new FakeCredentialStore();
-        credentials.Seed("Ru", "api_key", "private-opencode-key");
+        credentials.Seed("Ru", "openai_api_key", "private-openai-key");
         using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -35,17 +35,17 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("ok", payload.GetProperty("status").GetString());
-        Assert.Equal("OpenCode Zen", payload.GetProperty("backend").GetString());
-        Assert.Equal("opencode", payload.GetProperty("backend_choice").GetString());
+        Assert.Equal("OpenAI", payload.GetProperty("backend").GetString());
+        Assert.Equal("openai", payload.GetProperty("backend_choice").GetString());
         Assert.DoesNotContain("max_tokens", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("max_new_tokens", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("temperature", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("top_k", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("allow_web_search", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("allow_online_search", raw, StringComparison.Ordinal);
-        Assert.True(payload.GetProperty("has_opencode_key").GetBoolean());
-        Assert.Equal(string.Empty, payload.GetProperty("opencode_api_key").GetString());
-        Assert.DoesNotContain("private-opencode-key", raw, StringComparison.Ordinal);
+        Assert.True(payload.GetProperty("has_openai_api_key").GetBoolean());
+        Assert.Equal(string.Empty, payload.GetProperty("openai_api_key").GetString());
+        Assert.DoesNotContain("private-openai-key", raw, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -54,16 +54,16 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+            "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\"}");
         var credentials = new FakeCredentialStore();
-        credentials.Seed("Ru", "api_key", "private-opencode-key");
         credentials.Seed("Ru", "openai_api_key", "private-openai-key");
+        credentials.Seed("Ru", "custom_api_key", "private-custom-key");
         using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
             "/settings/provider/remove",
-            new { backend_choice = "opencode" });
+            new { backend_choice = "openai" });
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -72,10 +72,10 @@ public sealed class BusinessEndpointTests
         using var settings = await client.GetAsync("/settings");
         var raw = await settings.Content.ReadAsStringAsync();
         var body = JsonNode.Parse(raw)!;
-        Assert.False(body["has_opencode_key"]!.GetValue<bool>());
-        Assert.True(body["has_openai_api_key"]!.GetValue<bool>());
-        Assert.DoesNotContain("private-opencode-key", raw, StringComparison.Ordinal);
+        Assert.False(body["has_openai_api_key"]!.GetValue<bool>());
+        Assert.True(body["has_custom_api_key"]!.GetValue<bool>());
         Assert.DoesNotContain("private-openai-key", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-custom-key", raw, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -84,9 +84,9 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+            "{\"backend\":\"openai\",\"openai_model\":\"gpt-4o\"}");
         var credentials = new FakeCredentialStore();
-        credentials.Seed("Ru", "api_key", "private-opencode-key");
+        credentials.Seed("Ru", "openai_api_key", "private-openai-key");
         using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -102,7 +102,7 @@ public sealed class BusinessEndpointTests
         {
             using var removed = await client.PostAsJsonAsync(
                 "/settings/provider/remove",
-                new { backend_choice = "opencode" });
+                new { backend_choice = "openai" });
             Assert.Equal(
                 "success",
                 (await removed.Content.ReadFromJsonAsync<JsonElement>())
@@ -140,9 +140,9 @@ public sealed class BusinessEndpointTests
             "/settings",
             new
             {
-                backend_choice = "opencode",
-                opencode_model = "opencode/free",
-                opencode_api_key = "new-private-key",
+                backend_choice = "openai",
+                openai_model = "gpt-4o",
+                openai_api_key = "new-private-key",
                 max_new_tokens = 192,
                 allow_online_search = false,
             });
@@ -152,9 +152,9 @@ public sealed class BusinessEndpointTests
         Assert.Equal("success", payload.GetProperty("status").GetString());
         Assert.Equal(
             "new-private-key",
-            await credentials.GetAsync("Ru", "api_key", CancellationToken.None));
+            await credentials.GetAsync("Ru", "openai_api_key", CancellationToken.None));
         var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
-        Assert.Contains("opencode/free", persisted, StringComparison.Ordinal);
+        Assert.Contains("gpt-4o", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("new-private-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("api_key", persisted, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("max_tokens", persisted, StringComparison.Ordinal);
@@ -166,7 +166,7 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
-    public async Task PostSettings_with_gguf_payload_migrates_to_opencode()
+    public async Task PostSettings_with_gguf_payload_migrates_to_models_dev()
     {
         using var data = TemporaryBusinessData.Create();
         using var factory = CreateAspNetFactory(data.Paths);
@@ -182,7 +182,7 @@ public sealed class BusinessEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
-        Assert.Equal("OpenCode Zen", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("models.dev:opencode", persisted["backend"]!.GetValue<string>());
     }
 
     [Fact]
@@ -294,28 +294,26 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
+            "{\"backend\":\"openai\",\"openai_model\":\"old-openai\",\"anthropic_model\":\"old-anthropic\"}");
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync("/settings", new
         {
-            backend_choice = "kilo",
-            selected_model = "kilo-model",
+            backend_choice = "openai",
+            selected_model = "gpt-4o",
         });
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("success", payload!["status"]!.GetValue<string>());
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
-        Assert.Equal("Kilo Gateway", persisted["backend"]!.GetValue<string>());
-        Assert.Equal("kilo-model", persisted["kilo_model"]!.GetValue<string>());
-        Assert.Equal("opencode/free", persisted["opencode_model"]!.GetValue<string>());
+        Assert.Equal("OpenAI", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("gpt-4o", persisted["openai_model"]!.GetValue<string>());
+        Assert.Equal("old-anthropic", persisted["anthropic_model"]!.GetValue<string>());
     }
 
     [Theory]
-    [InlineData("opencode", "OpenCode Zen", "opencode_model")]
-    [InlineData("kilo", "Kilo Gateway", "kilo_model")]
     [InlineData("openai", "OpenAI", "openai_model")]
     [InlineData("anthropic", "Anthropic", "anthropic_model")]
     [InlineData("custom", "Custom OpenAI", "custom_model")]
@@ -327,7 +325,7 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
+            "{\"backend\":\"openai\",\"openai_model\":\"old-openai\",\"anthropic_model\":\"old-anthropic\"}");
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -343,9 +341,10 @@ public sealed class BusinessEndpointTests
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
         Assert.Equal(expectedBackend, persisted["backend"]!.GetValue<string>());
         Assert.Equal("grouped-model", persisted[expectedModelField]!.GetValue<string>());
-        var unchangedField = expectedModelField == "opencode_model" ? "kilo_model" : "opencode_model";
-        var unchangedValue = expectedModelField == "opencode_model" ? "old-kilo" : "opencode/free";
-        Assert.Equal(unchangedValue, persisted[unchangedField]!.GetValue<string>());
+        if (expectedModelField != "openai_model")
+        {
+            Assert.Equal("old-openai", persisted["openai_model"]!.GetValue<string>());
+        }
     }
 
     [Fact]
@@ -354,7 +353,7 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+            "{\"backend\":\"openai\",\"openai_model\":\"openai/old\"}");
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -370,23 +369,22 @@ public sealed class BusinessEndpointTests
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
         Assert.Equal("models.dev:openrouter", persisted["backend"]!.GetValue<string>());
         Assert.Equal("generic-model", persisted["model"]!.GetValue<string>());
-        Assert.Equal("opencode/free", persisted["opencode_model"]!.GetValue<string>());
+        Assert.Equal("openai/old", persisted["openai_model"]!.GetValue<string>());
     }
 
     public static TheoryData<string> InvalidModelSelectionPayloads => new()
     {
         """{"backend_choice":"unknown-provider","selected_model":"grouped-model"}""",
         """{"backend_choice":"models.dev:bad/id","selected_model":"grouped-model"}""",
-        """{"backend_choice":"kilo","selected_model":""}""",
-        """{"backend_choice":"kilo","selected_model":"   "}""",
-        """{"selected_model":"kilo-model"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","voice_speed":1.5}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","kilo_model":"other-model"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","model":"legacy-model"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","kilo_api_key":"private-key"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","opencode_api_key":"private-key"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","unknown_provider_url":"http://127.0.0.1:9999/v1"}""",
-        """{"backend_choice":"kilo","selected_model":"grouped-model","reasoning_effort":"high","reasoning_model":"grouped-model","reasoning_identity":"kilo"}""",
+        """{"backend_choice":"openai","selected_model":""}""",
+        """{"backend_choice":"openai","selected_model":"   "}""",
+        """{"selected_model":"openai-model"}""",
+        """{"backend_choice":"openai","selected_model":"grouped-model","voice_speed":1.5}""",
+        """{"backend_choice":"openai","selected_model":"grouped-model","openai_model":"other-model"}""",
+        """{"backend_choice":"openai","selected_model":"grouped-model","model":"legacy-model"}""",
+        """{"backend_choice":"openai","selected_model":"grouped-model","openai_api_key":"private-key"}""",
+        """{"backend_choice":"openai","selected_model":"grouped-model","unknown_provider_url":"http://127.0.0.1:9999/v1"}""",
+        """{"backend_choice":"openai","selected_model":"grouped-model","reasoning_effort":"high","reasoning_model":"grouped-model","reasoning_identity":"openai"}""",
     };
 
     [Theory]
@@ -415,12 +413,12 @@ public sealed class BusinessEndpointTests
         using var data = TemporaryBusinessData.Create();
         await File.WriteAllTextAsync(
             data.Paths.SettingsFile,
-            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+            "{\"backend\":\"openai\",\"openai_model\":\"openai/old\"}");
         var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
         using var factory = CreateAspNetFactory(data.Paths);
         using var client = factory.CreateAuthenticatedClient();
 
-        var json = "{\"backend_choice\":\"kilo\",\"selected_model\":\"" + new string('a', 257) + "\"}";
+        var json = "{\"backend_choice\":\"openai\",\"selected_model\":\"" + new string('a', 257) + "\"}";
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/settings", content);
         var payload = await response.Content.ReadFromJsonAsync<JsonObject>();

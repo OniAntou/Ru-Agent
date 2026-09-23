@@ -39,10 +39,10 @@ Startup is cancellation-scoped, with checks after asynchronous stages before
 creating subsequent UI services or timers. Host shutdown remains Host-owned.
 
 Per-run provider snapshot creation reads exactly one canonical credential account:
-OpenCode Zen uses `api_key`, Kilo uses `kilo_gateway_api_key`, Custom OpenAI
-uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic uses
-`anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
-and `https://api.anthropic.com/v1`. Missing keys stay missing; aliases and other
+Custom OpenAI uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic
+uses `anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
+and `https://api.anthropic.com/v1`. A `models.dev:<provider-id>` backend reads
+`<provider-id>_api_key` and resolves its base URL from the Models.dev catalog. Missing keys stay missing; aliases and other
 providers' keys are never tried. The Worker startup handoff is neutral and reads no credential; provider data
 enters only through validated per-step DPAPI handoffs that pin protocol
 (`chat_completions`, `openai_responses`, `anthropic_messages`), reasoning

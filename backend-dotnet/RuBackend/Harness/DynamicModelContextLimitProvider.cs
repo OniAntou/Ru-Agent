@@ -60,8 +60,6 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         var backend = (snapshot.Backend ?? string.Empty).Trim().ToLowerInvariant();
         var active = backend switch
         {
-            "opencode zen" or "opencode" or "opencode zen api" or "opencode api" => snapshot.OpenCodeModel,
-            "kilo gateway" or "kilo" or "kilo gateway api" or "kilo api" => snapshot.KiloModel,
             "custom openai" or "custom" or "custom openai api" => snapshot.CustomModel,
             "openai" or "openai api" => snapshot.OpenAiModel,
             "anthropic" or "anthropic claude" or "claude" => snapshot.AnthropicModel,
@@ -78,8 +76,6 @@ public sealed class DynamicModelContextLimitProvider : IModelContextLimitProvide
         // legacy Model cannot shadow a provider switch.
         return FirstNonEmpty(
             snapshot.Model,
-            snapshot.OpenCodeModel,
-            snapshot.KiloModel,
             snapshot.OpenAiModel,
             snapshot.AnthropicModel,
             snapshot.CustomModel);

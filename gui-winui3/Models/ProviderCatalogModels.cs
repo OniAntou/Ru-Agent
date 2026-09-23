@@ -200,13 +200,7 @@ public static class ProviderReasoningOptions
 public sealed class ProviderSettingsUpdateDto
 {
     [JsonPropertyName("backend_choice")]
-    public string BackendChoice { get; init; } = "opencode";
-
-    [JsonPropertyName("opencode_api_key")]
-    public string OpenCodeApiKey { get; init; } = string.Empty;
-
-    [JsonPropertyName("kilo_api_key")]
-    public string KiloApiKey { get; init; } = string.Empty;
+    public string BackendChoice { get; init; } = "openai";
 
     [JsonPropertyName("openai_api_key")]
     public string OpenAiApiKey { get; init; } = string.Empty;

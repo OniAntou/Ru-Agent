@@ -89,8 +89,6 @@ public sealed class AgentSlashCommands
 
     private static readonly (string Backend, string Alias, string Field, string HasKeyField)[] KnownBackends =
     [
-        ("Kilo Gateway", "kilo", "kilo_model", "has_kilo_key"),
-        ("OpenCode Zen", "opencode", "opencode_model", "has_opencode_key"),
         ("OpenAI", "openai", "openai_model", "has_openai_api_key"),
         ("Anthropic", "anthropic", "anthropic_model", "has_anthropic_api_key"),
     ];
@@ -192,8 +190,6 @@ public sealed class AgentSlashCommands
         {
             var targetBackend = arg.Trim().ToLowerInvariant() switch
             {
-                "kilo" => "Kilo Gateway",
-                "opencode" => "OpenCode Zen",
                 "openai" => "OpenAI",
                 "anthropic" => "Anthropic",
                 _ => arg.Trim(),

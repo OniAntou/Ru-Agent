@@ -12,7 +12,7 @@ nothing to install.
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Tests](https://img.shields.io/badge/tests-3%2C664%20passing-3FB950)](#testing)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#tools)
-[![Routes](https://img.shields.io/badge/routes-41%20HTTP-6E7681)](#testing)
+[![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#testing)
 
 </div>
 
@@ -51,7 +51,7 @@ RuApp.exe (WinUI 3)                 RuAgent.Cli.exe (TUI)
                           │
                           ▼
 RuBackend.exe --managed-runtime            127.0.0.1:8000
-  ASP.NET Core Minimal APIs · 41 routes · loopback bearer
+  ASP.NET Core Minimal APIs · 42 routes · loopback bearer
   sessions · history · durable harness · SQLite WAL
   owns one Windows Job Object (kill-on-close) for the whole child tree
         │                                     │
@@ -94,8 +94,9 @@ with the digest. Every schema is strict (`additionalProperties: false`).
 | `skill` | `name` | Load one workspace SKILL.md workflow on demand. |
 
 `read`, `list`, `help`, `todo_write`, `grep`, `glob` and `skill` never prompt. `write`, `edit`
-and `bash` do.
-`web_search` and `web_fetch` always do.
+and `bash` do whenever policy calls for it.
+`web_search` and `web_fetch` ask on `plan` only — `standard` and `full_access`
+browse without approval.
 
 Every call is bounded — `read` caps at 256 KiB, `grep` at 64 results and 1 MiB per
 file, `bash` output is head/tail truncated, and terminal calls die with their own Job
@@ -130,7 +131,7 @@ Object.
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 3,664 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 3,730 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 
@@ -142,7 +143,7 @@ running anyway and reporting contention as a defect. That is the whole guard: a 
 reported as a failure, with no retry to blur it, because a retry would hide a genuinely
 flaky test instead of fixing it.
 
-`public-route-contract.json` is the source of truth for the **41 HTTP routes** (20
+`public-route-contract.json` is the source of truth for the **42 HTTP routes** (21
 non-Agent plus 21 under `/agent/v1/*`). A test compares the live `EndpointDataSource`
 against that file, so adding or removing a route without updating it fails CI.
 
@@ -162,11 +163,16 @@ Protocol digest, and the permission vocabulary below must stay accurate.
   selection (`full_access` needs interactive confirmation). An outside-folder
   approval opens a grant for that session only, terminal tokens are single-use, and
   **no grant survives a restart**.
-- **Approval** is required for outside-workspace access
+- **Approval** is required for outside-workspace mutation
   (`external_directory_required`), deletion (`terminal_delete_requires_approval`),
-  unknown executables (`terminal_unknown_executable`), outside-workspace mutation
-  (`terminal_external_mutation_requires_approval`), extended timeouts
-  (`terminal_timeout_requires_approval`) and web access (`web_approval_required`).
+  unknown executables (`terminal_unknown_executable`), outside-workspace terminal
+  mutation (`terminal_external_mutation_requires_approval`), extended timeouts
+  (`terminal_timeout_requires_approval`) and web access on `plan`
+  (`web_approval_required`). On a clean-workspace `standard` session the safe
+  subset is auto-allowed (`standard_clean_workspace_allow`): in-workspace
+  commands, in-workspace deletion, read-only probes of outside directories, and
+  unknown executables with no network intent — outside-workspace mutation
+  still asks.
 - **Workspace trust** binds to volume serial and root file identity, not to a marker
   file inside the repository.
 

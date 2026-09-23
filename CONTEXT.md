@@ -25,8 +25,8 @@ hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Public Contract**:
-The stable authenticated surface of 41 HTTP method/path pairs with no WebSocket
-route (20 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 42 HTTP method/path pairs with no WebSocket
+route (21 non-Agent plus 21 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is
@@ -120,11 +120,13 @@ _Avoid_: global allowlist
 
 **Capability Profile**:
 The session-scoped Agent preset (`plan`, `standard`, opt-in `full_access`).
-The model-visible Worker v2 list is the runtime projection of eleven Protocol
+The model-visible Worker v2 list is the runtime projection of twelve Protocol
 definitions, one purpose per tool: `read` (`offset`/`limit`), `list`
 (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write` (the session task list), `write`
-with `op=write|delete|restore`, `edit`, `bash`, and the independently enabled
+with `op=write|delete|restore`, `edit`, `bash`, the on-demand `skill` loader
+(prompt carries only name and description; the body is pulled with `read`),
+and the independently enabled
 standalone `web_search`/`web_fetch` tools with `network.search`/`network.fetch`
 scopes, Google HTML primary with DuckDuckGo HTML fallback (plan-ask,
 automatic on `standard`/`full_access`).
@@ -134,8 +136,9 @@ run starts standard unless the stored session selection says `plan` or
 auto-allows. `full_access` is opt-in per session with interactive
 confirmation; only hard denies (protected paths, invalid requests) still
 apply. On a clean workspace `standard` auto-allows the in-workspace
-terminal/external-directory/delete/unknown-executable subset
-(`standard_clean_workspace_allow`), while timeouts, rule asks, and
+terminal/delete/unknown-executable subset plus read-only probes outside the
+workspace (`standard_clean_workspace_allow`), while mutations outside the
+workspace, timeouts, rule asks, and
 invariants still ask or deny; there is no provider, model, protocol, or
 tool fallback.
 _Avoid_: permanent permission

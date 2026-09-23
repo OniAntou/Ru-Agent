@@ -499,7 +499,7 @@
                                                         Opacity="0.6"
                                                         Visibility="Collapsed" />
                                                 <TextBlock x:Name="FixedProvidersHeader"
-                                                           Text="BUILT-IN"
+                                                           Text="PROVIDERS"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="11"
                                                            FontWeight="SemiBold"
@@ -598,20 +598,6 @@
                                                                   Margin="8,0,0,0" />
                                                     </Grid>
                                                 </Button>
-                                                <!-- Models.dev providers are appended here at runtime -->
-                                                <TextBlock x:Name="ModelsDevOptionsHeader"
-                                                           Text="MODELS.DEV"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="4,8,0,4"
-                                                           Visibility="Collapsed" />
-                                                <Border x:Name="ModelsDevOptionsDivider"
-                                                        Height="1"
-                                                        Background="{StaticResource RuLineBrush}"
-                                                        Opacity="0.6"
-                                                        Visibility="Collapsed" />
                                                 <StackPanel x:Name="ModelsDevOptionsPanel" Spacing="2" />
                                                 <TextBlock x:Name="ProviderNoMatchText"
                                                            Text="No provider matches."

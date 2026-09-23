@@ -465,19 +465,21 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// Appends one dropdown row per Models.dev provider after the fixed
-        /// three, reusing the same option shape so selection, check mark, and
-        /// trigger label behave identically.
+        /// Appends one dropdown row per Models.dev provider, then merges the
+        /// three fixed rows into the same panel so the whole list sorts A-Z.
         /// </summary>
         private void RebuildModelsDevOptions(IReadOnlyList<ModelsDevEntryDto> providers)
         {
-            _modelsDevOptions.Clear();
             _modelsDevNames.Clear();
             if (ModelsDevOptionsPanel is not null)
             {
-                ModelsDevOptionsPanel.Children.Clear();
+                foreach (var old in _modelsDevOptions)
+                {
+                    ModelsDevOptionsPanel.Children.Remove(old.Button);
+                }
             }
 
+            _modelsDevOptions.Clear();
             if (ModelsDevOptionsPanel is not null && providers.Count > 0)
             {
                 var ordered = ProviderSetupGuidance.OrderModelsDevOptions(
@@ -492,7 +494,39 @@ namespace RuApp.Views
                 }
             }
 
+            MergeAndSortProviderRows();
             ApplyProviderFilter(ProviderSearchBox?.Text);
+        }
+
+        /// <summary>
+        /// Pulls the fixed rows into the shared panel and sorts every row
+        /// A-Z by display name, so built-in and Models.dev providers read as
+        /// one list. Runs on every rebuild; moving an already-moved button
+        /// is a no-op and the sort keeps the order stable.
+        /// </summary>
+        private void MergeAndSortProviderRows()
+        {
+            if (ModelsDevOptionsPanel is null || _providerOptions is null) return;
+            var panel = ModelsDevOptionsPanel;
+            foreach (var option in _providerOptions)
+            {
+                if (option.Button.Parent is Panel oldParent && !ReferenceEquals(oldParent, panel))
+                {
+                    oldParent.Children.Remove(option.Button);
+                    panel.Children.Add(option.Button);
+                }
+            }
+
+            var sorted = _providerOptions.Concat(_modelsDevOptions)
+                .OrderBy(option => option.Label.Text, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(option => option.Value, StringComparer.OrdinalIgnoreCase)
+                .Select(option => option.Button)
+                .ToList();
+            panel.Children.Clear();
+            foreach (var button in sorted)
+            {
+                panel.Children.Add(button);
+            }
         }
 
         /// <summary>
@@ -605,18 +639,7 @@ namespace RuApp.Views
 
             if (FixedProvidersHeader is not null)
             {
-                FixedProvidersHeader.Visibility = anyFixed ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            var devVisibility = _modelsDevOptions.Count > 0 && anyDev ? Visibility.Visible : Visibility.Collapsed;
-            if (ModelsDevOptionsHeader is not null)
-            {
-                ModelsDevOptionsHeader.Visibility = devVisibility;
-            }
-
-            if (ModelsDevOptionsDivider is not null)
-            {
-                ModelsDevOptionsDivider.Visibility = devVisibility;
+                FixedProvidersHeader.Visibility = (anyFixed || anyDev) ? Visibility.Visible : Visibility.Collapsed;
             }
 
             if (ProviderNoMatchText is not null)

@@ -17,6 +17,10 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     private const int MaximumModelsDevBytes = 8 * 1024 * 1024;
     private const string ModelsDevUrl = "https://models.dev/api.json";
     private static readonly TimeSpan ModelsDevCacheTtl = TimeSpan.FromHours(24);
+
+    // The live catalog holds 200+ providers. A smaller payload means a truncated
+    // or proxied response: usable in-memory, but never worth caching over good data.
+    private const int MinimumModelsDevProviders = 2;
     private readonly string _modelsDevCacheFile = modelsDevCacheFile
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ru", "models-dev.json");
     private readonly SemaphoreSlim _modelsDevGate = new(1, 1);
@@ -99,6 +103,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             return cachedProviders;
         }
 
+        IReadOnlyList<ModelsDevProvider>? fetched = null;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -126,9 +131,14 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
 
             var body = new UTF8Encoding(false, true).GetString(memory.ToArray());
             ct.ThrowIfCancellationRequested();
-            var providers = ParseModelsDevProviders(body);
+            fetched = ParseModelsDevProviders(body);
+            if (fetched.Count < MinimumModelsDevProviders)
+            {
+                throw new ProviderCatalogException("catalog_suspicious");
+            }
+
             WriteModelsDevCacheBestEffort(body);
-            return providers;
+            return fetched;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -137,7 +147,12 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         catch (Exception error) when (error is ProviderCatalogException or HttpRequestException
             or OperationCanceledException or DecoderFallbackException or IOException or JsonException)
         {
-            return hasCache ? cachedProviders : [];
+            if (hasCache)
+            {
+                return cachedProviders;
+            }
+
+            return fetched ?? [];
         }
     }
 
@@ -204,12 +219,30 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             }
 
             providers = ParseModelsDevProviders(payload.GetRawText());
+            if (providers.Count < MinimumModelsDevProviders)
+            {
+                DeleteModelsDevCacheBestEffort();
+                providers = [];
+                return false;
+            }
+
             fresh = clock.GetUtcNow() - fetched < ModelsDevCacheTtl;
             return true;
         }
         catch (JsonException)
         {
             return false;
+        }
+    }
+
+    private void DeleteModelsDevCacheBestEffort()
+    {
+        try
+        {
+            File.Delete(_modelsDevCacheFile);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
+        {
         }
     }
 

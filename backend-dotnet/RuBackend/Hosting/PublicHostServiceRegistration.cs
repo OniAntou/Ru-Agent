@@ -111,7 +111,9 @@ internal static class PublicHostServiceRegistration
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddSingleton(services => new ProviderCatalogService(
             services.GetRequiredService<IHttpClientFactory>().CreateClient("ProviderCatalog"),
-            services.GetRequiredService<ICredentialStore>(), services.GetRequiredService<TimeProvider>()));
+            services.GetRequiredService<ICredentialStore>(),
+            services.GetRequiredService<TimeProvider>(),
+            Path.Combine(services.GetRequiredService<DataPaths>().BusinessDataRoot, "models-dev.json")));
         services.AddSingleton<ISettingsTransitionService, SettingsTransitionService>();
         services.AddSingleton<ISessionStore, SessionStore>();
         return services;

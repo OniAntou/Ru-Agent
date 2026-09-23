@@ -22,6 +22,9 @@ public sealed class ProviderCatalogTests : IDisposable
     private ProviderCatalogService ModelsDevService() =>
         new(new HttpClient(_handler), _credentials, _clock, Path.Combine(_root, "models-dev.json"));
 
+    private const string TwoProviderJson =
+        "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"},\"second\":{\"api\":\"https://example.com/v1\"}}";
+
     [Fact]
     public async Task ModelsDev_catalog_lists_generic_provider()
     {
@@ -32,20 +35,70 @@ public sealed class ProviderCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task ModelsDev_catalog_uses_cache_and_falls_back_offline()
+    public async Task ModelsDev_suspicious_payload_is_served_but_never_cached()
     {
         _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
         var service = ModelsDevService();
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal("openrouter", Assert.Single(providers).Id);
+        Assert.False(File.Exists(Path.Combine(_root, "models-dev.json")));
+    }
+
+    [Fact]
+    public async Task ModelsDev_suspicious_payload_keeps_good_stale_cache()
+    {
+        _handler.Json = TwoProviderJson;
+        var service = ModelsDevService();
         var first = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal("openrouter", Assert.Single(first).Id);
+        Assert.Equal(2, first.Count);
+        _clock.Advance(TimeSpan.FromHours(25));
+        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        var offline = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(2, offline.Count);
+        var cacheText = await File.ReadAllTextAsync(Path.Combine(_root, "models-dev.json"));
+        Assert.Contains("example.com", cacheText);
+    }
+
+    [Fact]
+    public async Task ModelsDev_empty_payload_keeps_good_stale_cache()
+    {
+        _handler.Json = TwoProviderJson;
+        var service = ModelsDevService();
+        Assert.Equal(2, (await service.GetModelsDevAsync(CancellationToken.None)).Count);
+        _clock.Advance(TimeSpan.FromHours(25));
+        _handler.Json = "{}";
+        Assert.Equal(2, (await service.GetModelsDevAsync(CancellationToken.None)).Count);
+    }
+
+    [Fact]
+    public async Task ModelsDev_suspicious_cached_list_triggers_refetch()
+    {
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        Directory.CreateDirectory(_root);
+        await File.WriteAllTextAsync(cacheFile,
+            """{"fetched_at":"2099-01-01T00:00:00+00:00","payload":{"openrouter":{"api":"https://openrouter.ai/api/v1"}}}""");
+        _handler.Json = TwoProviderJson;
+        var service = new ProviderCatalogService(new HttpClient(_handler), _credentials, _clock, cacheFile);
+        var providers = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(2, providers.Count);
+        Assert.Equal(1, _handler.Count);
+    }
+
+    [Fact]
+    public async Task ModelsDev_catalog_uses_cache_and_falls_back_offline()
+    {
+        _handler.Json = TwoProviderJson;
+        var service = ModelsDevService();
+        var first = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(2, first.Count);
         Assert.Equal(1, _handler.Count);
         var cached = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal("openrouter", Assert.Single(cached).Id);
+        Assert.Equal(2, cached.Count);
         Assert.Equal(1, _handler.Count);
         _clock.Advance(TimeSpan.FromHours(25));
         _handler.Status = HttpStatusCode.ServiceUnavailable;
         var offline = await service.GetModelsDevAsync(CancellationToken.None);
-        Assert.Equal("openrouter", Assert.Single(offline).Id);
+        Assert.Equal(2, offline.Count);
     }
 
     [Fact]
@@ -59,7 +112,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task ModelsDev_concurrent_calls_share_one_fetch()
     {
-        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        _handler.Json = TwoProviderJson;
         var service = ModelsDevService();
         _handler.Hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = Enumerable.Range(0, 8).Select(_ => service.GetModelsDevAsync(CancellationToken.None)).ToArray();
@@ -67,7 +120,7 @@ public sealed class ProviderCatalogTests : IDisposable
         _handler.Hold.SetResult();
         await Task.WhenAll(calls);
         Assert.Equal(1, _handler.Count);
-        Assert.All(calls, call => Assert.Equal("openrouter", Assert.Single(call.Result).Id));
+        Assert.All(calls, call => Assert.Equal(2, call.Result.Count));
     }
 
     [Fact]
@@ -114,7 +167,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task Generic_backend_resolves_catalog_end_to_end()
     {
-        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        _handler.Json = TwoProviderJson;
         var service = ModelsDevService();
         await service.GetModelsDevAsync(CancellationToken.None);
         _handler.Json = "{\"data\":[{\"id\":\"m1\"}]}";
@@ -128,7 +181,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task Generic_alias_resolves_catalog_end_to_end()
     {
-        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        _handler.Json = TwoProviderJson;
         var service = ModelsDevService();
         await service.GetModelsDevAsync(CancellationToken.None);
         _handler.Json = "{\"data\":[{\"id\":\"m1\"}]}";
@@ -141,7 +194,7 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task Generic_backend_without_key_fails_closed()
     {
-        _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";
+        _handler.Json = TwoProviderJson;
         var service = ModelsDevService();
         await service.GetModelsDevAsync(CancellationToken.None);
         _credentials.Key = "";

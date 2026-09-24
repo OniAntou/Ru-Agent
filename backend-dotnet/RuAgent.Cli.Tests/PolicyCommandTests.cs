@@ -22,6 +22,47 @@ public sealed class PolicyCommandTests
     }
 
     [Fact]
+    public async Task RunFullAccessPresetSendsInteractiveConfirmationHeader()
+    {
+        var sessionId = new string('8', 32);
+        var runId = "run_" + new string('9', 32);
+        var policySeen = false;
+        var handler = CreateFakeClient(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                Assert.True(req.Headers.Contains("X-Interactive-Confirmed"));
+                Assert.Contains("true", req.Headers.GetValues("X-Interactive-Confirmed"));
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                Assert.Equal("full_access", document.RootElement.GetProperty("preset").GetString());
+                Assert.Equal(0, document.RootElement.GetProperty("expected_version").GetInt64());
+                policySeen = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = sessionId, preset = "full_access", version = 1 }), Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
+            {
+                var body = JsonSerializer.Serialize(new { run_id = runId, session_id = sessionId, workspace_id = "ws_test", status = "running", preset = "full_access", created_at = DateTimeOffset.UtcNow.ToString("O"), updated_at = DateTimeOffset.UtcNow.ToString("O") });
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                var sse = $"id: 1\ndata: {{\"protocol_version\":1,\"event_id\":\"evt_test\",\"run_id\":\"{runId}\",\"session_id\":\"{sessionId}\",\"sequence\":1,\"event_type\":\"run.completed\",\"occurred_at\":\"2026-09-24T00:00:00Z\",\"status\":\"succeeded\",\"safe_summary\":\"done\"}}\n\n";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        });
+
+        var commands = new AgentCommands(CreateSession(), handler, new StringWriter(), new StringWriter());
+        var exit = await commands.RunAsync(
+            new RunCommand(Path.GetTempPath().TrimEnd('\\', '/'), "full access", sessionId, "full_access", true, ConfirmFullAccess: true),
+            CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.True(policySeen);
+    }
+
+    [Fact]
     public void PolicyJsonCodec_RejectsUnknownVersion()
     {
         var json = "{\"version\":99,\"rules\":[]}";

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using RuAgent.Harness.Core;
 using RuApp.Services;
@@ -456,4 +457,205 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("expectedVersion", parameters);
         Assert.Contains("interactive", parameters);
     }
+
+    [Fact]
+    public void Workspace_trust_policy_has_no_obsolete_auto_approval_copy()
+    {
+        var policy = GuiSource.Text("Services", "AgentInlinePanelPolicy.cs");
+
+        Assert.DoesNotContain("AutoApproveWorkspaceTrust", policy, StringComparison.Ordinal);
+        Assert.DoesNotContain("auto-granted", policy, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("silently", policy, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Workspace_trust_ownership_gate_precedes_the_guarded_dialog()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
+        int currentRun = RequiredSourceIndex(dialog, "controller?.CurrentRun");
+        int controllerGate = RequiredSourceIndex(dialog, "controller is null");
+        int runGate = RequiredSourceIndex(dialog, "run is null");
+        int sessionGate = RequiredSourceIndex(dialog, "run.SessionId, _activeSessionId");
+        int requestGate = RequiredSourceIndex(dialog, "controller.NeedsWorkspaceTrust");
+        int guard = RequiredSourceIndex(dialog, "_workspaceTrustDialogRunId = run.RunId");
+        int dialogConstruction = RequiredSourceIndex(dialog, "new ContentDialog");
+        int show = RequiredSourceIndex(dialog, "await dialog.ShowAsync()");
+
+        Assert.True(currentRun < controllerGate, "The current run must be read before controller validity.");
+        Assert.True(controllerGate < runGate, "Controller validity must precede run validity.");
+        Assert.True(runGate < sessionGate, "Run validity must precede the session gate.");
+        Assert.True(sessionGate < requestGate, "The session gate must precede the request gate.");
+        Assert.True(requestGate < guard, "The valid-request gate must precede the guard.");
+        Assert.True(guard < dialogConstruction, "The guard must be established before dialog construction.");
+        Assert.True(dialogConstruction < show, "Dialog construction must precede ShowAsync.");
+    }
+
+    [Fact]
+    public void Workspace_trust_dialog_counts_all_calls_and_requires_each_to_be_awaited()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
+        int show = RequiredSourceIndex(dialog, "await dialog.ShowAsync()");
+        var invocations = ReadTrustInvocations(dialog);
+
+        Assert.Equal(2, invocations.Count);
+        Assert.Equal(1, invocations.Count(invocation => invocation.Decision == "true"));
+        Assert.Equal(1, invocations.Count(invocation => invocation.Decision == "false"));
+        Assert.All(invocations, invocation =>
+        {
+            Assert.True(invocation.IsAwaited, "Every TrustAsync invocation must be awaited.");
+            Assert.False(invocation.IsAssigned, "An awaited TrustAsync invocation must not be assigned/discarded.");
+            Assert.True(invocation.Index > show, "Trust decisions must wait for the dialog result.");
+        });
+    }
+
+    [Fact]
+    public void Workspace_trust_guard_is_cleared_in_the_actual_finally_block_and_on_reset()
+    {
+        var code = GuiSource.ViewText("ChatView");
+        var dialog = GuiSource.MethodBody(code, "ShowWorkspaceTrustDialogAsync");
+        string finallyBody = ReadFinallyBody(dialog);
+        int inFlightCleanup = finallyBody.IndexOf(
+            "_workspaceTrustDialogRunId = null",
+            StringComparison.Ordinal);
+        var reset = GuiSource.MethodBody(code, "ResetAgentState");
+        int resetCleanup = RequiredSourceIndex(reset, "_workspaceTrustDialogRunId = null");
+        var changedRunReset = GuiSource.MethodBody(code, "ResetWorkspaceTrustDialogIfRunChanged");
+        int changedRunCheck = RequiredSourceIndex(changedRunReset, "run.SessionId");
+        int changedRunCleanup = RequiredSourceIndex(changedRunReset, "_workspaceTrustDialogRunId = null");
+
+        Assert.True(inFlightCleanup >= 0, "The actual finally block must clear the in-flight guard.");
+        Assert.True(resetCleanup >= 0, "Session reset must clear the trust dialog guard.");
+        Assert.True(changedRunCheck < changedRunCleanup, "Run/session ownership changes must be checked before reset cleanup.");
+    }
+
+    [Fact]
+    public void Workspace_trust_errors_are_projected_after_the_inline_state_refresh()
+    {
+        var dialog = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ShowWorkspaceTrustDialogAsync");
+        int stateRefresh = dialog.LastIndexOf("UpdateAgentInlineState()", StringComparison.Ordinal);
+        int errorProjection = dialog.LastIndexOf("ShowAgentError(failure)", StringComparison.Ordinal);
+
+        Assert.True(stateRefresh >= 0, "The dialog must refresh inline state while cleaning up.");
+        Assert.True(errorProjection > stateRefresh, "The error status must be written after the refresh.");
+    }
+
+    private static int RequiredSourceIndex(string source, string fragment)
+    {
+        int index = source.IndexOf(fragment, StringComparison.Ordinal);
+        Assert.True(index >= 0, $"The guarded handler is missing: {fragment}");
+        return index;
+    }
+
+    private static IReadOnlyList<TrustInvocation> ReadTrustInvocations(string source)
+    {
+        var invocations = new List<TrustInvocation>();
+        int searchFrom = 0;
+        while (true)
+        {
+            int invocation = source.IndexOf(".TrustAsync(", searchFrom, StringComparison.Ordinal);
+            if (invocation < 0)
+            {
+                return invocations;
+            }
+
+            int openParenthesis = invocation + ".TrustAsync".Length;
+            int closeParenthesis = FindMatchingDelimiter(source, openParenthesis, '(', ')');
+            string arguments = source[(openParenthesis + 1)..closeParenthesis];
+            Match decision = Regex.Match(arguments, @"\bapprove\s*:\s*(?<decision>true|false)\b");
+            int receiverStart = FindReceiverStart(source, invocation);
+            string beforeReceiver = source[..receiverStart];
+            bool isAwaited = Regex.IsMatch(beforeReceiver, @"\bawait\s+$");
+            bool isAssigned = Regex.IsMatch(
+                beforeReceiver,
+                @"(?:_|[A-Za-z_][A-Za-z0-9_]*)\s*=\s*$");
+
+            invocations.Add(new TrustInvocation(
+                decision.Success ? decision.Groups["decision"].Value : string.Empty,
+                isAwaited,
+                isAssigned,
+                invocation));
+            searchFrom = closeParenthesis + 1;
+        }
+    }
+
+    private static int FindReceiverStart(string source, int invocation)
+    {
+        int start = invocation;
+        while (start > 0)
+        {
+            char previous = source[start - 1];
+            if (!char.IsLetterOrDigit(previous) && previous != '_' && previous != '.')
+            {
+                break;
+            }
+
+            start--;
+        }
+
+        return start;
+    }
+
+    private static int FindMatchingDelimiter(string source, int openIndex, char opening, char closing)
+    {
+        int depth = 0;
+        bool inString = false;
+        char quote = '\0';
+        bool escaped = false;
+        for (int index = openIndex; index < source.Length; index++)
+        {
+            char current = source[index];
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                }
+                else if (current == '\\')
+                {
+                    escaped = true;
+                }
+                else if (current == quote)
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (current is '"' or '\'')
+            {
+                inString = true;
+                quote = current;
+                continue;
+            }
+
+            if (current == opening)
+            {
+                depth++;
+            }
+            else if (current == closing && --depth == 0)
+            {
+                return index;
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException($"Unclosed {opening} delimiter in source contract.");
+    }
+
+    private static string ReadFinallyBody(string source)
+    {
+        Match finallyBlock = Regex.Match(source, @"\bfinally\s*\{");
+        Assert.True(finallyBlock.Success, "The guarded handler must have a finally block.");
+        int openBrace = finallyBlock.Index + finallyBlock.Length - 1;
+        int closeBrace = FindMatchingDelimiter(source, openBrace, '{', '}');
+        return source[(openBrace + 1)..closeBrace];
+    }
+
+    private sealed record TrustInvocation(
+        string Decision,
+        bool IsAwaited,
+        bool IsAssigned,
+        int Index);
 }

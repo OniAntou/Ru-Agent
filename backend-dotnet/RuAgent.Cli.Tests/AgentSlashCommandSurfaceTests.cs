@@ -185,12 +185,18 @@ public sealed class AgentSlashCommandSurfaceTests
 
         var text = output.ToString();
         Assert.Contains("╭─ backend", text, StringComparison.Ordinal);
-        foreach (var name in new[] { "OpenAI", "Anthropic" })
+        foreach (var name in new[]
+        {
+            "OpenAI",
+            "Anthropic",
+            "Custom OpenAI",
+            "Models.dev: OpenCode Zen",
+            "Models.dev: Kilo Gateway",
+            "Models.dev: Cloudflare Workers AI",
+        })
         {
             Assert.Contains(name, text, StringComparison.Ordinal);
         }
-        Assert.DoesNotContain("Kilo Gateway", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("OpenCode Zen", text, StringComparison.Ordinal);
     }
 
     [Fact]

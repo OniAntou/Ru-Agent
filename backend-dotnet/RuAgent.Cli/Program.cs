@@ -123,8 +123,10 @@ public static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("Usage:");
-        Console.Error.WriteLine("  agent run [--preset standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--json]");
-        Console.Error.WriteLine("  agent chat [--preset standard|full_access] [--workspace PATH] [--session <id>] [--json] [--classic]");
+        Console.Error.WriteLine("  agent run [--preset plan|standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--json] [--trust-workspace] [--confirm-full-access]");
+        Console.Error.WriteLine("  agent chat [--preset plan|standard|full_access] [--workspace PATH] [--session <id>] [--json] [--classic] [--trust-workspace] [--confirm-full-access]");
+        Console.Error.WriteLine("  --confirm-full-access: terminal runs as the current Windows user and may access data outside the workspace.");
+        Console.Error.WriteLine("  --trust-workspace: explicitly approve the returned workspace identity; failed rollback stops before streaming.");
         Console.Error.WriteLine("  agent session list [--json]");
         Console.Error.WriteLine("  agent session fork <session-id> [--index <n>] [--title <title>] [--json]");
         Console.Error.WriteLine("  agent session rewind <session-id> --index <n> [--json]");

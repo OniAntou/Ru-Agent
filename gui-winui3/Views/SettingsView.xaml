@@ -285,7 +285,7 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Plan is read-only; Standard asks before mutations; Full Access skips approvals" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Text="Plan: read + Web auto; terminal and mutation deny. Standard: in-workspace bounded local mutation auto; external/escape ask. Full Access: external structured files and arbitrary terminal auto; structured protected paths deny" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Button x:Name="PresetButton"
                                         Grid.Column="1"
@@ -433,53 +433,46 @@
                                     </Grid>
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
-                                            <StackPanel Width="280" Spacing="0">
-                                                <Border Background="{StaticResource RuCanvasBrush}"
-                                                        BorderBrush="{StaticResource RuLineBrush}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="6"
-                                                        Padding="10,6"
-                                                        Margin="0,0,0,6">
-                                                    <Grid ColumnDefinitions="Auto,*">
-                                                        <FontIcon Glyph="&#xE721;"
-                                                                  FontSize="12"
-                                                                  Foreground="{StaticResource RuMutedBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="0,0,8,0" />
-                                                        <TextBox x:Name="ProviderSearchBox"
-                                                                 Grid.Column="1"
-                                                                 AutomationProperties.Name="Search providers"
-                                                                 PlaceholderText="Search providers…"
-                                                                 TextChanged="OnProviderSearchChanged"
-                                                                 FontFamily="{StaticResource RuUiFontFamily}"
-                                                                 FontSize="12.5"
-                                                                 MinHeight="0"
-                                                                 Padding="0"
-                                                                 Margin="0"
-                                                                 VerticalAlignment="Center"
-                                                                 VerticalContentAlignment="Center"
-                                                                 Background="Transparent"
-                                                                 BorderThickness="0"
-                                                                 IsSpellCheckEnabled="False"
-                                                                 Foreground="{StaticResource RuInkBrush}">
-                                                            <TextBox.Resources>
-                                                                <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
-                                                                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
-                                                                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
-                                                                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
-                                                                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
-                                                                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
-                                                                <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
-                                                                <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
-                                                                <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
-                                                                <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
-                                                                <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
-                                                                <Thickness x:Key="TextControlThemePadding">0</Thickness>
-                                                            </TextBox.Resources>
-                                                        </TextBox>
-                                                    </Grid>
-                                                </Border>
-                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="0,0,0,4" />
+                                            <StackPanel Spacing="0">
+                                                <Grid ColumnDefinitions="Auto,*" Margin="6,4,6,0">
+                                                    <FontIcon Glyph="&#xE721;"
+                                                              FontSize="12"
+                                                              Foreground="{StaticResource RuMutedBrush}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,8,0" />
+                                                    <TextBox x:Name="ProviderSearchBox"
+                                                             Grid.Column="1"
+                                                             AutomationProperties.Name="Search providers"
+                                                             PlaceholderText="Search providers…"
+                                                             TextChanged="OnProviderSearchChanged"
+                                                             FontFamily="{StaticResource RuUiFontFamily}"
+                                                             FontSize="12.5"
+                                                             MinHeight="0"
+                                                             Padding="0"
+                                                             Margin="0"
+                                                             VerticalAlignment="Center"
+                                                             VerticalContentAlignment="Center"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             IsSpellCheckEnabled="False"
+                                                             Foreground="{StaticResource RuInkBrush}">
+                                                        <TextBox.Resources>
+                                                            <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
+                                                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
+                                                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
+                                                            <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
+                                                            <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+                                                            <Thickness x:Key="TextControlThemePadding">0</Thickness>
+                                                        </TextBox.Resources>
+                                                    </TextBox>
+                                                </Grid>
+                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="8,6,8,2" />
                                                 <ScrollViewer MaxHeight="300"
                                                               VerticalScrollBarVisibility="Auto"
                                                               HorizontalScrollBarVisibility="Disabled"
@@ -501,24 +494,17 @@
                                                 <TextBlock x:Name="SignedInOptionsHeader"
                                                            Text="SIGNED IN"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="11"
-                                                           FontWeight="SemiBold"
+                                                           FontSize="10.5"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="4,4,0,4"
+                                                           Margin="6,2,0,2"
                                                            Visibility="Collapsed" />
                                                 <StackPanel x:Name="SignedInOptionsPanel" Spacing="2" />
-                                                <Border x:Name="SignedInOptionsDivider"
-                                                        Height="1"
-                                                        Background="{StaticResource RuLineBrush}"
-                                                        Opacity="0.6"
-                                                        Visibility="Collapsed" />
                                                 <TextBlock x:Name="FixedProvidersHeader"
                                                            Text="PROVIDERS"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="11"
-                                                           FontWeight="SemiBold"
+                                                           FontSize="10.5"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="4,4,0,4" />
+                                                           Margin="6,2,0,2" />
                                                 <Button x:Name="ProviderOpenaiOption"
                                                         Tag="openai"
                                                         Click="OnProviderOptionClick"
@@ -526,11 +512,11 @@
                                                         AutomationProperties.Name="OpenAI provider">
                                                     <Grid ColumnDefinitions="Auto,*,Auto">
                                                         <Ellipse x:Name="ProviderOpenaiDot"
-                                                                 Width="8"
-                                                                 Height="8"
+                                                                 Width="6"
+                                                                 Height="6"
                                                                  Fill="{StaticResource RuSuccessBrush}"
                                                                  VerticalAlignment="Center"
-                                                                 Margin="4,0,8,0"
+                                                                 Margin="0,0,8,0"
                                                                  Visibility="Collapsed" />
                                                         <TextBlock x:Name="ProviderOpenaiText"
                                                                    Grid.Column="1"
@@ -543,8 +529,7 @@
                                                         <FontIcon x:Name="ProviderOpenaiCheck"
                                                                   Grid.Column="2"
                                                                   Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
+                                                                  FontSize="12"
                                                                   Foreground="{StaticResource RuAccentBrush}"
                                                                   VerticalAlignment="Center"
                                                                   Margin="8,0,0,0" />
@@ -557,11 +542,11 @@
                                                         AutomationProperties.Name="Anthropic provider">
                                                     <Grid ColumnDefinitions="Auto,*,Auto">
                                                         <Ellipse x:Name="ProviderAnthropicDot"
-                                                                 Width="8"
-                                                                 Height="8"
+                                                                 Width="6"
+                                                                 Height="6"
                                                                  Fill="{StaticResource RuSuccessBrush}"
                                                                  VerticalAlignment="Center"
-                                                                 Margin="4,0,8,0"
+                                                                 Margin="0,0,8,0"
                                                                  Visibility="Collapsed" />
                                                         <TextBlock x:Name="ProviderAnthropicText"
                                                                    Grid.Column="1"
@@ -574,8 +559,7 @@
                                                         <FontIcon x:Name="ProviderAnthropicCheck"
                                                                   Grid.Column="2"
                                                                   Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
+                                                                  FontSize="12"
                                                                   Foreground="{StaticResource RuAccentBrush}"
                                                                   VerticalAlignment="Center"
                                                                   Margin="8,0,0,0" />
@@ -588,11 +572,11 @@
                                                         AutomationProperties.Name="Custom server provider">
                                                     <Grid ColumnDefinitions="Auto,*,Auto">
                                                         <Ellipse x:Name="ProviderCustomDot"
-                                                                 Width="8"
-                                                                 Height="8"
+                                                                 Width="6"
+                                                                 Height="6"
                                                                  Fill="{StaticResource RuSuccessBrush}"
                                                                  VerticalAlignment="Center"
-                                                                 Margin="4,0,8,0"
+                                                                 Margin="0,0,8,0"
                                                                  Visibility="Collapsed" />
                                                         <TextBlock x:Name="ProviderCustomText"
                                                                    Grid.Column="1"
@@ -605,8 +589,7 @@
                                                         <FontIcon x:Name="ProviderCustomCheck"
                                                                   Grid.Column="2"
                                                                   Glyph="&#xE73E;"
-                                                                  FontSize="11"
-                                                                  FontWeight="Bold"
+                                                                  FontSize="12"
                                                                   Foreground="{StaticResource RuAccentBrush}"
                                                                   VerticalAlignment="Center"
                                                                   Margin="8,0,0,0" />
@@ -618,7 +601,7 @@
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="12"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="4,8,0,2"
+                                                           Margin="6,6,0,2"
                                                            Visibility="Collapsed" />
                                                     </StackPanel>
                                                 </ScrollViewer>

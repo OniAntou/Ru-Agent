@@ -41,7 +41,9 @@ public sealed record RunCommand(
     string Prompt,
     string? SessionId,
     string Preset,
-    bool Json) : AgentCommand(CliCommandKind.Run, Json);
+    bool Json,
+    bool TrustWorkspace = false,
+    bool ConfirmFullAccess = false) : AgentCommand(CliCommandKind.Run, Json);
 
 public sealed record AttachCommand(
     string RunId,
@@ -124,7 +126,9 @@ public sealed record ChatCommand(
     string? SessionId,
     string Preset,
     bool Json,
-    bool Classic = false) : AgentCommand(CliCommandKind.Chat, Json);
+    bool Classic = false,
+    bool TrustWorkspace = false,
+    bool ConfirmFullAccess = false) : AgentCommand(CliCommandKind.Chat, Json);
 
 public sealed record SessionListCommand(
     bool Json) : AgentCommand(CliCommandKind.SessionList, Json);
@@ -412,6 +416,10 @@ public static class AgentCliParser
         bool sessionSeen = false;
         bool json = false;
         bool jsonSeen = false;
+        bool trustWorkspace = false;
+        bool trustWorkspaceSeen = false;
+        bool confirmFullAccess = false;
+        bool confirmFullAccessSeen = false;
         string? prompt = null;
 
         for (int i = 2; i < args.Length; i++)
@@ -481,6 +489,22 @@ public static class AgentCliParser
                 jsonSeen = true;
                 continue;
             }
+            if (token == "--trust-workspace")
+            {
+                if (trustWorkspaceSeen)
+                    return Fail("duplicate_switch", "Duplicate --trust-workspace.");
+                trustWorkspace = true;
+                trustWorkspaceSeen = true;
+                continue;
+            }
+            if (token == "--confirm-full-access")
+            {
+                if (confirmFullAccessSeen)
+                    return Fail("duplicate_switch", "Duplicate --confirm-full-access.");
+                confirmFullAccess = true;
+                confirmFullAccessSeen = true;
+                continue;
+            }
             if (token.StartsWith("-", StringComparison.Ordinal))
             {
                 return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent run'.");
@@ -500,10 +524,10 @@ public static class AgentCliParser
         if (prompt is null)
             return Fail("missing_prompt", "Missing required prompt argument for 'agent run'.");
 
-        if (preset == "full_access" && json)
-            return Fail("interactive_required", "--json cannot be used with --preset full_access; interactive confirmation required.");
+        if (preset == "full_access" && !confirmFullAccess)
+            return Fail("full_access_confirmation_required", "--confirm-full-access is required with --preset full_access.");
 
-        return Success(new RunCommand(workspace, prompt, sessionId, preset, json));
+        return Success(new RunCommand(workspace, prompt, sessionId, preset, json, trustWorkspace, confirmFullAccess));
     }
 
     private static AgentCliParseResult ParseAttach(string[] args)
@@ -954,6 +978,10 @@ public static class AgentCliParser
         bool sessionSeen = false;
         bool json = false;
         bool jsonSeen = false;
+        bool trustWorkspace = false;
+        bool trustWorkspaceSeen = false;
+        bool confirmFullAccess = false;
+        bool confirmFullAccessSeen = false;
         bool classic = false;
         bool classicSeen = false;
 
@@ -1024,6 +1052,22 @@ public static class AgentCliParser
                 jsonSeen = true;
                 continue;
             }
+            if (token == "--trust-workspace")
+            {
+                if (trustWorkspaceSeen)
+                    return Fail("duplicate_switch", "Duplicate --trust-workspace.");
+                trustWorkspace = true;
+                trustWorkspaceSeen = true;
+                continue;
+            }
+            if (token == "--confirm-full-access")
+            {
+                if (confirmFullAccessSeen)
+                    return Fail("duplicate_switch", "Duplicate --confirm-full-access.");
+                confirmFullAccess = true;
+                confirmFullAccessSeen = true;
+                continue;
+            }
             if (token == "--classic")
             {
                 if (classicSeen)
@@ -1039,7 +1083,10 @@ public static class AgentCliParser
             return Fail("too_many_arguments", $"Unexpected argument '{token}' for chat.");
         }
 
-        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json, classic));
+        if (preset == "full_access" && !confirmFullAccess)
+            return Fail("full_access_confirmation_required", "--confirm-full-access is required with --preset full_access.");
+
+        return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json, classic, trustWorkspace, confirmFullAccess));
     }
 
     private static AgentCliParseResult ParseSession(string[] args, int startIndex)

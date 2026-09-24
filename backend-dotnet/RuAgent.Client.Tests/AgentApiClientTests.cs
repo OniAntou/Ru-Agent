@@ -63,6 +63,105 @@ public sealed class AgentApiClientTests
     }
 
     [Fact]
+    public async Task CreateRun_rejects_wrong_session_before_returning_response()
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        {
+            run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            session_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            workspace_id = "ws_test",
+            status = "running",
+            preset = "standard",
+            created_at = DateTimeOffset.UtcNow.ToString("O"),
+            updated_at = DateTimeOffset.UtcNow.ToString("O")
+        }))));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateRun_rejects_wrong_preset_before_returning_response()
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        {
+            run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            workspace_id = "ws_test",
+            status = "running",
+            preset = "plan",
+            created_at = DateTimeOffset.UtcNow.ToString("O"),
+            updated_at = DateTimeOffset.UtcNow.ToString("O")
+        }))));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("unknown")]
+    [InlineData("failed")]
+    [InlineData("cancelled")]
+    [InlineData("interrupted")]
+    public async Task CreateRun_rejects_missing_or_unsafe_status_before_returning_response(string status)
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        {
+            run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            workspace_id = "ws_test",
+            status,
+            preset = "standard",
+            created_at = DateTimeOffset.UtcNow.ToString("O"),
+            updated_at = DateTimeOffset.UtcNow.ToString("O")
+        }))));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateRun_rejects_missing_workspace_id_before_returning_response()
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        {
+            run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            status = "running",
+            preset = "standard",
+            created_at = DateTimeOffset.UtcNow.ToString("O"),
+            updated_at = DateTimeOffset.UtcNow.ToString("O")
+        }))));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateRun_rejects_waiting_trust_without_known_challenge_ids()
+    {
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        {
+            run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            workspace_id = "ws_test",
+            status = "waiting_workspace_trust",
+            preset = "standard",
+            created_at = DateTimeOffset.UtcNow.ToString("O"),
+            updated_at = DateTimeOffset.UtcNow.ToString("O")
+        }))));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(Request("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "standard")));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+    }
+
+    [Fact]
     public async Task CancelRejectsWrongBearer()
     {
         var s = Session();
@@ -220,6 +319,108 @@ public sealed class AgentApiClientTests
 
         Assert.Equal(expectedCommand, sentCommand);
     }
+
+    [Fact]
+    public async Task SetSessionPreset_sends_client_snapshot_token_before_mutation()
+    {
+        var session = Session();
+        var token = "sps_" + new string('a', 32);
+        var handler = new FakeHandler(request =>
+        {
+            using var document = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            Assert.Equal("session_preset", document.RootElement.GetProperty("kind").GetString());
+            Assert.Equal(token, document.RootElement.GetProperty("snapshot_token").GetString());
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"version\":1,\"snapshot_token\":\"" + token + "\"}", Encoding.UTF8, "application/json"),
+            };
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        var response = await client.SetSessionPresetAsync(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "standard",
+            0,
+            false,
+            CancellationToken.None,
+            token);
+
+        Assert.Equal(1, response.GetProperty("version").GetInt64());
+    }
+
+    [Fact]
+    public async Task RestoreSessionPreset_uses_existing_policy_endpoint_and_token()
+    {
+        var session = Session();
+        var token = "sps_" + new string('b', 32);
+        var handler = new FakeHandler(request =>
+        {
+            Assert.EndsWith("/agent/v1/policies", request.RequestUri!.ToString(), StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            Assert.Equal("session_preset_restore", document.RootElement.GetProperty("kind").GetString());
+            Assert.Equal(token, document.RootElement.GetProperty("snapshot_token").GetString());
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json"),
+            };
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        var response = await client.RestoreSessionPresetAsync(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            token);
+
+        Assert.True(response.GetProperty("restored").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("duplicate")]
+    [InlineData("invalid_preset")]
+    [InlineData("version_mismatch")]
+    [InlineData("malformed")]
+    [InlineData("missing")]
+    [InlineData("invalid_json")]
+    public async Task RestoreSessionPreset_rejects_invalid_shape(string mode)
+    {
+        var session = Session();
+        var token = "sps_" + new string('c', 32);
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(RestoreBody(mode), Encoding.UTF8, "application/json")
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            client.RestoreSessionPresetAsync("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", token));
+
+        Assert.Equal("invalid_response", error.ErrorCode);
+    }
+
+    private static string RestoreBody(string mode)
+    {
+        const string session = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var valid = $"{{\"status\":\"ok\",\"session_id\":\"{session}\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}}";
+        return mode switch
+        {
+            "unknown" => valid[..^1] + ",\"extra\":true}",
+            "duplicate" => valid[..^1] + ",\"status\":\"ok\"}",
+            "invalid_preset" => $"{{\"status\":\"ok\",\"session_id\":\"{session}\",\"preset\":\"invalid\",\"version\":999,\"restored\":true,\"replayed\":false}}",
+            "version_mismatch" => $"{{\"status\":\"ok\",\"session_id\":\"{session}\",\"preset\":\"standard\",\"version\":0,\"restored\":true,\"replayed\":false}}",
+            "malformed" => JsonSerializer.Serialize(new { status = "ok", session_id = session, preset = 1, version = "1", restored = true, replayed = false }),
+            "invalid_json" => "{",
+            _ => valid.Replace(",\"replayed\":false", string.Empty, StringComparison.Ordinal),
+        };
+    }
+
+    private static CreateAgentRunRequest Request(string sessionId, string preset) =>
+        new(sessionId, "D:\\LLM", "hello", preset, 1, "idem-key-123");
+
+    private static HttpResponseMessage Response(object payload) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
 
     private sealed class FakeHandler : HttpMessageHandler
     {

@@ -406,10 +406,10 @@ namespace RuApp.Views
 
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
             {
-                Width = 8,
-                Height = 8,
+                Width = 6,
+                Height = 6,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 8, 0),
+                Margin = new Thickness(0, 0, 8, 0),
                 Visibility = showDot ? Visibility.Visible : Visibility.Collapsed,
             };
             if (success is Microsoft.UI.Xaml.Media.Brush successBrush)
@@ -433,8 +433,7 @@ namespace RuApp.Views
             var check = new FontIcon
             {
                 Glyph = "\uE73E",
-                FontSize = 11,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
                 Visibility = Visibility.Collapsed,
@@ -631,11 +630,6 @@ namespace RuApp.Views
             if (SignedInOptionsHeader is not null)
             {
                 SignedInOptionsHeader.Visibility = signedInVisibility;
-            }
-
-            if (SignedInOptionsDivider is not null)
-            {
-                SignedInOptionsDivider.Visibility = signedInVisibility;
             }
 
             if (FixedProvidersHeader is not null)

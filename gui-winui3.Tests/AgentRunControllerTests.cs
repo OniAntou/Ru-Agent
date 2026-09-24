@@ -45,6 +45,7 @@ public sealed class AgentRunControllerTests
         public bool CancelCalled;
         public bool ContinueCalled;
         public bool TrustCalled;
+        public List<(string RunId, TrustAgentRunRequest Request)> TrustRequests { get; } = new();
         public bool PresetCalled;
         public bool ApproveCalled;
         public bool DenyCalled;
@@ -81,6 +82,7 @@ public sealed class AgentRunControllerTests
         public Task TrustAsync(string runId, TrustAgentRunRequest request, CancellationToken ct = default)
         {
             TrustCalled = true;
+            TrustRequests.Add((runId, request));
             return Task.CompletedTask;
         }
 
@@ -428,6 +430,61 @@ public sealed class AgentRunControllerTests
         await controller.ContinueAsync();
 
         Assert.True(fake.ContinueCalled);
+    }
+
+    [Fact]
+    public async Task TrustAsync_approve_sends_the_pending_request_once()
+    {
+        var fake = new FakeClient { Run = MakeWorkspaceTrustRun() };
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-trust-approve"));
+        await controller.TrustAsync(approve: true);
+
+        var call = Assert.Single(fake.TrustRequests);
+        Assert.Equal(RunId, call.RunId);
+        Assert.Equal("trust_12345678901234567890123456789012", call.Request.TrustRequestId);
+        Assert.Equal(new string('a', 64), call.Request.DisplayIdentityHash);
+        Assert.Equal("approve", call.Request.Decision);
+    }
+
+    [Fact]
+    public async Task TrustAsync_deny_sends_the_pending_request_once()
+    {
+        var fake = new FakeClient { Run = MakeWorkspaceTrustRun() };
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-trust-deny"));
+        await controller.TrustAsync(approve: false);
+
+        var call = Assert.Single(fake.TrustRequests);
+        Assert.Equal(RunId, call.RunId);
+        Assert.Equal("deny", call.Request.Decision);
+    }
+
+    [Fact]
+    public async Task TrustAsync_rejects_a_run_without_a_complete_request()
+    {
+        var fake = new FakeClient
+        {
+            Run = AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
+                RunId,
+                "sess_1",
+                "ws_1",
+                "waiting_workspace_trust",
+                "standard",
+                "2026",
+                "2026")),
+        };
+        var controller = new AgentRunController(fake);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "idem-trust-invalid"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.TrustAsync(approve: true));
+        Assert.Empty(fake.TrustRequests);
     }
 
     [Fact]
@@ -786,6 +843,18 @@ public sealed class AgentRunControllerTests
 
         Assert.True(controller.CanContinue);
     }
+
+    private static AgentRunModel MakeWorkspaceTrustRun() =>
+        AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(
+            RunId,
+            "sess_1",
+            "ws_1",
+            "waiting_workspace_trust",
+            "standard",
+            "2026",
+            "2026",
+            TrustRequestId: "trust_12345678901234567890123456789012",
+            DisplayIdentityHash: new string('a', 64)));
 
     private static AgentRunModel WaitingApprovalRun() =>
         AgentRunModel.FromCreateResponse(new CreateAgentRunResponse(

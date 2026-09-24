@@ -39,31 +39,73 @@ public sealed class AgentCliParserTests
     [Fact]
     public void ParseRun_AcceptsPresetFull_AsFullAccess()
     {
-        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full", "prompt" };
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full", "--confirm-full-access", "prompt" };
         var res = AgentCliParser.Parse(args);
         Assert.True(res.Success);
         var cmd = Assert.IsType<RunCommand>(res.Command);
         Assert.Equal("full_access", cmd.Preset);
+        Assert.True(cmd.ConfirmFullAccess);
         Assert.False(cmd.Json);
     }
 
     [Fact]
     public void ParseRun_AcceptsPresetFullAccess_AsFullAccess()
     {
-        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "prompt" };
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "--confirm-full-access", "prompt" };
         var res = AgentCliParser.Parse(args);
         Assert.True(res.Success);
         var cmd = Assert.IsType<RunCommand>(res.Command);
         Assert.Equal("full_access", cmd.Preset);
+        Assert.True(cmd.ConfirmFullAccess);
     }
 
     [Fact]
-    public void ParseRun_RejectsFullWithJson_InteractiveRequired()
+    public void ParseRun_RejectsFullAccessWithoutConfirmation()
     {
-        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "--json", "prompt" };
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "prompt" };
         var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
-        Assert.Equal("interactive_required", res.ErrorCode);
+        Assert.Equal("full_access_confirmation_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseRun_AcceptsExplicitFullAccessWithJson()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "--confirm-full-access", "--json", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<RunCommand>(res.Command);
+        Assert.Equal("full_access", cmd.Preset);
+        Assert.True(cmd.ConfirmFullAccess);
+        Assert.True(cmd.Json);
+    }
+
+    [Fact]
+    public void ParseRun_AcceptsTrustWorkspaceOnce()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<RunCommand>(res.Command);
+        Assert.True(cmd.TrustWorkspace);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsDuplicateTrustWorkspace()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--trust-workspace", "--trust-workspace", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsDuplicateConfirmFullAccess()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--confirm-full-access", "--confirm-full-access", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
     }
 
     [Fact]
@@ -145,6 +187,41 @@ public sealed class AgentCliParserTests
         var sid = new string('d', 32);
         var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--session", sid, "--session", sid, "prompt" };
         var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseChat_AcceptsTrustAndFullAccessFlags()
+    {
+        var res = AgentCliParser.Parse(new[] { "agent", "chat", "--preset", "full_access", "--confirm-full-access", "--trust-workspace", "--json" });
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<ChatCommand>(res.Command);
+        Assert.True(cmd.TrustWorkspace);
+        Assert.True(cmd.ConfirmFullAccess);
+        Assert.True(cmd.Json);
+    }
+
+    [Fact]
+    public void ParseChat_RejectsFullAccessWithoutConfirmation()
+    {
+        var res = AgentCliParser.Parse(new[] { "chat", "--preset", "full_access" });
+        Assert.False(res.Success);
+        Assert.Equal("full_access_confirmation_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseChat_RejectsDuplicateTrustWorkspace()
+    {
+        var res = AgentCliParser.Parse(new[] { "chat", "--trust-workspace", "--trust-workspace" });
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseChat_RejectsDuplicateConfirmFullAccess()
+    {
+        var res = AgentCliParser.Parse(new[] { "chat", "--confirm-full-access", "--confirm-full-access" });
         Assert.False(res.Success);
         Assert.Equal("duplicate_switch", res.ErrorCode);
     }
@@ -570,13 +647,12 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void NoSwitchCombination_BypassesInteractiveRequired()
+    public void FullAccessJsonRequiresExplicitConfirmation()
     {
-        // Even with multiple switches, json still requires interactive for sensitive
         var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "--session", new string('a', 32), "--json", "prompt" };
         var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
-        Assert.Equal("interactive_required", res.ErrorCode);
+        Assert.Equal("full_access_confirmation_required", res.ErrorCode);
 
         var args2 = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--json" };
         var res2 = AgentCliParser.Parse(args2);

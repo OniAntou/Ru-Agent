@@ -646,7 +646,9 @@ namespace RuApp.Views
             {
                 FixedProvidersHeader.Visibility = (anyFixed || anyDev) ? Visibility.Visible : Visibility.Collapsed;
                 int totalProviders = (_providerOptions?.Count ?? 0) + _modelsDevOptions.Count;
-                FixedProvidersHeader.Text = $"PROVIDERS ({totalProviders})";
+                FixedProvidersHeader.Text = _modelsDevLoadFailed && _modelsDevOptions.Count == 0
+                    ? $"PROVIDERS ({totalProviders}) — Models.dev list unavailable"
+                    : $"PROVIDERS ({totalProviders})";
             }
 
             if (ProviderNoMatchText is not null)

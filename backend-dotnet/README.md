@@ -91,31 +91,33 @@ bounded `truncated`),
 `recovery_too_large` beyond 1 MiB,
 `recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
-Google HTML with DuckDuckGo fallback. The `standard`
-profile automatically allows ordinary trusted-workspace file reads/creates/edits
-and applies single-verdict analyzer/rule/approval decisions to terminal requests:
-auto for recognized read/test/build/lint/local-Git `bash` with `mode=run` payloads,
-ask for deletion, external mutation, extended timeouts, every `bash`
-with `mode=shell`
-script, and unknown executables. On a clean workspace `standard` also auto-allows
-the in-workspace terminal/external-directory/delete/unknown-executable
-subset (`standard_clean_workspace_allow`); timeouts, rule asks,
-invariants, and protected paths stay gated. Protected paths, hard invariants, and extended
-timeout thresholds remain gated. An explicit absolute path outside the trusted
-root
-asks with `external_directory_required`; the approval UI can grant only that
-canonical directory for the current live session, and the grant covers
-read/create/edit operations only. Managed web tools ask with
-`web_approval_required` on the `plan` preset and run automatically on
-`standard` and `full_access`. Terminal calls run as
-the current Windows user and may execute host code or open sockets;
-`network_intent` is
-audit/approval metadata, not network isolation. Time, machine status, app
-discovery, and optional volume commands use the terminal; notes use
-`write` with `op=write`. `files.apply_patch` is not advertised or model-usable. The
-managed Git commit workflow is fully shipped with temporary index isolation,
-path rollback attribution, and refusal on dirty user state; other Git commands
-remain ordinary terminal requests governed by Broker policy.
+Google HTML with DuckDuckGo fallback. Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` allows
+workspace read and Web while denying terminal and mutation. `standard`
+auto-allows bounded-local in-workspace mutation and asks for external/escape or
+risky terminal intent. `full_access` auto-allows external structured files and
+arbitrary terminal while structured protected paths and hard-invalid requests
+remain denied. Repository cleanliness and prompt text never change this matrix.
+
+Workspace trust is explicit once per canonical `WorkspaceIdentity`, independent
+of the session-scoped preset. The Host requires a challenge-bound decision; a
+moved or recreated identity is untrusted again. The GUI presents a guarded
+confirmation and CLI `run`/`chat` use `--trust-workspace`. Full Access requires
+the GUI gate or CLI `--confirm-full-access`.
+
+Standard external structured access can create a session-scoped canonical
+folder grant for read/list/glob/grep/write/edit; terminal intent never consumes
+that grant. Full Access uses an ephemeral per-call external structured root and
+does not persist a reusable folder grant. Canonical/symlink/junction/hard-link
+checks and structured protected-path denial remain active.
+
+Full-access terminal runs as the current Windows user, can read or change data
+outside the workspace, and can open sockets. It is not an OS-enforced
+filesystem/network sandbox. Hard timeout, output cap, cancellation, redaction,
+and process-tree cleanup still apply. Web is automatic in all canonical
+profiles; `web_approval_required` remains available only to an explicit ask
+rule. `files.apply_patch` is not advertised or model-usable. The managed Git
+workflow retains temporary-index isolation, path rollback attribution, and
+refusal on dirty user index state.
 
 The retired Python deterministic Harness is not used for route verification,
 so managed route tests run directly against the published C# composition. The

@@ -8,23 +8,50 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 
-CURRENT_DOCS = [
+CURRENT_OPERATIONS_DOCS = sorted((ROOT / "docs/operations").glob("*.md"))
+CURRENT_CONTRACT_DOCS = [
+    ROOT / "README.md",
+    ROOT / "CONTEXT.md",
+    ROOT / "docs/README.md",
+    ROOT / "docs/architecture.md",
+    ROOT / "docs/operations/agent-tools.md",
+    ROOT / "docs/operations/runtime-behavior.md",
+    ROOT / "docs/operations/shared-workspace-coordination.md",
+    ROOT / "docs/operations/verification.md",
+    ROOT / "backend-dotnet/README.md",
+    ROOT / "backend-dotnet/RuAgent.Cli/README.md",
+    ROOT / "docs/adr/0011-model-autonomy-and-workspace-trust-boundary.md",
+]
+CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_OPERATIONS_DOCS]))
+CURRENT_REASON_DOCS = [
     ROOT / "README.md",
     ROOT / "docs/README.md",
     ROOT / "docs/architecture.md",
     ROOT / "docs/operations/agent-tools.md",
     ROOT / "backend-dotnet/RuAgent.Cli/README.md",
-]
-
-CURRENT_DOCS_WITH_ADRS = [
-    *CURRENT_DOCS,
     ROOT / "docs/adr/0007-mode-capability-profiles.md",
     ROOT / "docs/adr/0009-broker-execution-authority.md",
 ]
+CURRENT_SECTION_BOUNDARIES = {
+    ROOT / "docs/operations/agent-tools.md": ("## Current capability matrix", None),
+    ROOT / "docs/operations/verification.md": (None, "\n> **Job Object:"),
+}
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _current_text(path: Path) -> str:
+    text = _read(path)
+    start, end = CURRENT_SECTION_BOUNDARIES.get(path, (None, None))
+    if start is not None:
+        assert start in text, f"{path.relative_to(ROOT)} missing current-section marker {start!r}"
+        text = text.split(start, 1)[1]
+    if end is not None:
+        assert end in text, f"{path.relative_to(ROOT)} missing history boundary {end!r}"
+        text = text.split(end, 1)[0]
+    return text
 
 
 def test_current_documentation_local_links_resolve() -> None:
@@ -70,36 +97,142 @@ def test_completed_implementation_archives_are_not_kept_in_the_checkout() -> Non
 
 
 def test_current_docs_describe_session_scoped_agent_permissions() -> None:
-    """Current docs must mention the new permission vocabulary.
-
-    Plan Task 8 asserts the current-state docs cover session-scoped
-    permissions, the six reason-specific approval codes, and do not claim
-    external grants are durable or that Full Access allows every well-formed
-    call. Marking the previous preset model superseded without rewriting
-    completed implementation archives are not part of the current contract.
-    """
     missing: list[str] = []
-    for path in CURRENT_DOCS_WITH_ADRS:
+    for path in CURRENT_REASON_DOCS:
         text = _read(path)
-        if "session-scoped" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'session-scoped'")
-        if "external_directory_required" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'external_directory_required'")
-        if "terminal_delete_requires_approval" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'terminal_delete_requires_approval'")
-        if "terminal_unknown_executable" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'terminal_unknown_executable'")
-        if "terminal_external_mutation_requires_approval" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'terminal_external_mutation_requires_approval'")
-        if "terminal_timeout_requires_approval" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'terminal_timeout_requires_approval'")
-        if "web_approval_required" not in text:
-            missing.append(f"{path.relative_to(ROOT)} missing 'web_approval_required'")
+        for phrase in (
+            "session-scoped",
+            "external_directory_required",
+            "terminal_delete_requires_approval",
+            "terminal_unknown_executable",
+            "terminal_external_mutation_requires_approval",
+            "terminal_timeout_requires_approval",
+            "web_approval_required",
+        ):
+            if phrase not in text:
+                missing.append(f"{path.relative_to(ROOT)} missing {phrase!r}")
     assert missing == [], missing
 
 
+def test_current_contract_uses_canonical_matrix_trust_and_terminal_warning() -> None:
+    matrix_vocabulary = {
+        "plan": (
+            r"\bplan\b",
+            r"\bworkspace reads?\b",
+            r"\bweb\b",
+            r"\bauto\w*\b",
+            r"\bterminal\b",
+            r"\bmutation\b",
+            r"\bden(?:y|ied|ies)\b",
+        ),
+        "standard": (
+            r"\bstandard\b",
+            r"\bbounded[- ]local\b",
+            r"\bin[- ]workspace mutation\b",
+            r"\bauto\w*\b",
+            r"\bexternal\b",
+            r"\bask(?:s|ed)?\b",
+        ),
+        "full_access": (
+            r"\bfull_access\b",
+            r"\bexternal structured files?\b",
+            r"\barbitrary terminal\b",
+            r"\bauto\w*\b",
+            r"\bstructured protected paths?\b",
+            r"\bden(?:y|ied|ies)\b",
+        ),
+    }
+    common = (
+        "session-scoped",
+        "workspace trust",
+        "canonical",
+        "identity",
+        "explicit",
+        "--trust-workspace",
+        "--confirm-full-access",
+        "current windows user",
+        "outside the workspace",
+        "sandbox",
+        "timeout",
+        "output",
+        "cancellation",
+        "process-tree",
+    )
+    missing: list[str] = []
+    aggregate: list[str] = []
+    for path in CURRENT_CONTRACT_DOCS:
+        text = " ".join(_current_text(path).lower().split())
+        aggregate.append(text)
+        for preset, patterns in matrix_vocabulary.items():
+            for pattern in patterns:
+                if re.search(pattern, text) is None:
+                    missing.append(f"{path.relative_to(ROOT)} missing {preset} pattern {pattern!r}")
+        for term in common:
+            if term not in text:
+                missing.append(f"{path.relative_to(ROOT)} missing {term!r}")
+    combined = "\n".join(aggregate)
+    assert re.search(r"\b(?:gui|winui)\b[^.\n]{0,160}\b(?:confirm|trust)\b", combined) is not None
+    assert missing == [], missing
+
+
+def test_current_worker_docs_describe_twelve_separate_tools_and_typed_results() -> None:
+    tool_ids = (
+        "read",
+        "list",
+        "help",
+        "todo_write",
+        "grep",
+        "glob",
+        "write",
+        "edit",
+        "bash",
+        "web_search",
+        "web_fetch",
+        "skill",
+    )
+    for path in (
+        ROOT / "docs/architecture.md",
+        ROOT / "docs/operations/runtime-behavior.md",
+    ):
+        text = _current_text(path).lower()
+        assert "twelve" in text, path
+        assert "separate" in text, path
+        assert "assistantstep" in text, path
+        assert "receipt" in text, path
+        assert "validat" in text, path
+        for tool_id in tool_ids:
+            assert f"`{tool_id}`" in text, f"{path.relative_to(ROOT)} missing {tool_id}"
+
+
+def test_current_sections_do_not_claim_stale_worker_or_permission_models() -> None:
+    banned = (
+        "six worker v2 bindings",
+        "six core bindings",
+        "the worker returns only a versioned sha-256 receipt",
+        "read with `op=list|read|help`",
+        "read (`list`/`read`/`help`)",
+        "standard_clean_workspace_allow",
+        "clean-workspace `standard` session auto-allows",
+        "clean workspace auto-allows",
+        "web tools ask on the `plan` preset",
+        "web calls ask for approval only on the `plan` preset",
+        "web asks for approval only on the `plan` preset",
+        "plan-ask",
+        "`plan` (ask)",
+        "workspace trust and approval are challenge-bound to canonical identity and current lease",
+        "workspace trust is challenge-bound to canonical identity and current lease",
+    )
+    stale: list[str] = []
+    for path in CURRENT_DOCS:
+        text = _current_text(path).lower()
+        collapsed = " ".join(text.split())
+        for phrase in banned:
+            if phrase in collapsed:
+                stale.append(f"{path.relative_to(ROOT)} contains {phrase!r}")
+    assert stale == [], stale
+
+
 def test_current_docs_do_not_claim_durable_external_grants_or_full_access_authority() -> None:
-    """Current docs must not describe the old permission model as live."""
     banned = (
         "durable run/project rule",
         "durable run or project rule",
@@ -108,7 +241,7 @@ def test_current_docs_do_not_claim_durable_external_grants_or_full_access_author
         "--scope run|project",
     )
     for path in CURRENT_DOCS:
-        text = _read(path).lower()
+        text = _current_text(path).lower()
         for phrase in banned:
             assert phrase.lower() not in text, f"{path.relative_to(ROOT)} still contains '{phrase}'"
 

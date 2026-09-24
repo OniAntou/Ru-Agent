@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-09-13.
+Status: operating contract for the current main branch, updated 2026-09-24.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -80,36 +80,30 @@ protocols fail closed before HTTP. Managed startup is unconditional.
 
 ### Agent system-prompt composition
 
-Every accepted Agent model step—typed text, coding, tool
-selection, and continuation—rebuilds a fresh prompt context before the Worker
-request. The private Generation Kernel emits exactly one `system` message from
-these ordered layers: a neutral Ru Agent runtime contract, Agent execution contract,
-environment, root-selected Ru instruction files, profile/preset, validated
-host capabilities, and bounded runtime context. The model then receives the
-ordered user/assistant/tool turns; clock, mood, and
-references are not appended as separate system messages.
+Every accepted Agent model step—typed text, coding, native tool selection, and
+continuation—rebuilds a fresh prompt context before the Worker request. The
+private Generation Kernel emits exactly one `system` message with composer
+`2.0.0` from seven ordered blocks: neutral Ru Agent runtime contract, Agent
+execution contract, environment, profile plus canonical effective policy,
+root-selected instruction blocks, validated host capabilities, and bounded
+runtime context. The model then receives ordered typed user/assistant/tool
+messages; clock, mood, and references are not appended as separate system
+messages.
 
-Host capabilities are the runtime projection of the 11 Protocol-owned tool
-definitions: model tools (`read`, `list`, `help`, `todo_write`, `grep`, `glob`,
-`write`, `edit`, `bash`, `web_search`, `web_fetch`). Each capability includes its ID/version, description, canonical
-scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
-calls it through the provider's native function-calling interface when the
-dialect supports it (`chat_completions`; the adapter sends `tools` derived from
-the Host/Worker selection contract and maps `delta.tool_calls` back to Host tool
-calls). Other dialects keep the text contract: exactly one JSON object of the
-form `{"tool_id":"read","tool_version":"1.0.0","arguments":{"op":"read","path":"README.md"}}`.
-Either way the model makes no success claim until the durable result arrives and
-ordinary answers remain ordinary text. Tool exchanges stay in that dialogue:
-each selection is followed by its bounded, explicitly untrusted tool output, and
-the newest user-side block becomes the next prompt, so a resumed step never
-re-runs work that already succeeded. Oversized outputs are clamped to the prompt budget
-while the untrusted runtime references retain the full-fidelity result. The
-Worker rejects unknown, duplicate, or digest-mismatched contracts before
-provider execution. When the model's own reply cannot be assembled into a call
-(incomplete arguments, more than one call, or an unadvertised tool) the step is
-retried inside the bounded attempt budget and the next attempt carries a short
-`[harness]` note naming the rejection, so the model repairs its own selection
-instead of failing the run; wire and invariant violations remain terminal.
+Host capabilities are the runtime projection of twelve Protocol-owned tool
+definitions: `read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`,
+`edit`, `bash`, `web_search`, `web_fetch`, and `skill`. On provider-native
+paths, one generation may return optional narration and one or more ordered
+calls. The Host persists the assistant batch and matching durable tool results;
+it does not flatten native calls into prose. Compatibility text selection emits
+exactly one JSON object. The model makes no success claim before durable
+results. If a batch asks, no call executes; after approval the runtime
+re-evaluates the retained durable proposals without a new model proposal.
+Read-only calls may overlap up to eight at a time while mutation/terminal
+barriers and receipt order remain intact. Oversized outputs are clamped while
+untrusted references retain the bounded high-fidelity context. Unknown,
+duplicate, malformed, or digest-mismatched contracts fail before provider
+execution; wire and invariant violations remain terminal.
 
 The Host reads `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
 selected run root, then discovers direct-child skill directories from
@@ -147,14 +141,16 @@ loads one SKILL.md body as untrusted guidance; neither executes tools or grants
 anything. `RuAgentBroker` remains the sole authority for path
 canonicalization, capability policy, approvals, and tool execution.
 
-The Worker returns only a versioned SHA-256 receipt. Core validates it against
-the exact context before committing model completion or dispatching tools, then
-stores the receipt as an `InternalOnly` payload. Public Agent SSE suppresses
-`model.prompt_composed` and its payload while advancing the durable cursor.
-Invalid context or receipt metadata fails closed with `prompt_contract_invalid`;
-there is no static-prompt fallback or reduced-context retry. Managed runtime
-wiring enables the standalone `web_search`/`web_fetch` tools by default;
-no settings field controls their exposure.
+The Worker returns a typed `AssistantStep(text, tool_calls, finish_reason)`
+together with a schema-validated, versioned prompt receipt. Core validates the
+receipt against the exact context before committing model completion or
+dispatching tools, then stores the receipt as an `InternalOnly` payload. Public
+Agent SSE suppresses `model.prompt_composed` and its payload while advancing the
+durable cursor. Invalid context or receipt metadata fails closed with
+`prompt_contract_invalid`; there is no static-prompt fallback or
+reduced-context retry. Managed runtime wiring enables the standalone
+`web_search`/`web_fetch` tools by default; no settings field controls their
+exposure.
 
 Prompt composition is not a security boundary: Broker policy, workspace trust,
 approvals, protected paths, external-directory grants, and cancellation remain
@@ -214,9 +210,12 @@ native TextBox caret/focus behavior and exposes one bounded preset selector
 in the composer.
 The UI uses the known project root as the initial Agent workspace and does not
 expose a workspace editor, while the authenticated API still validates the
-canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE path.
-Workspace trust, approval, Stop, Continue, and bounded
-Agent status remain inline above the input. While a run is active, the transcript
+canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE
+path. Workspace trust is explicit once per canonical identity: the GUI shows a
+guarded confirmation, while CLI `run`/`chat` use `--trust-workspace`. A moved or
+recreated identity requires trust again. Full Access requires the GUI gate or
+CLI `--confirm-full-access`. Workspace trust, approval, Stop, Continue, and
+bounded Agent status remain inline above the input. While a run is active, the transcript
 may also show a separate transient activity feed above the assistant content,
 driven by typed `agent.activity` SSE frames. It renders only safe state,
 basename/line-range, symbol/count,
@@ -284,33 +283,32 @@ successfully, the UI creates one fresh session.
 ## Action execution kernel v1
 
 The Worker v2 settings advertise twelve tools, one purpose each: `read`, `list`,
-`grep`, `glob`, `help`, `todo_write`, `skill` (loads one workspace SKILL.md
-body on demand), `write` with
+`grep`, `glob`, `help`, `todo_write`, `skill`, `write` with
 `op=write|delete|restore`, `edit`, `bash` with `mode=run|shell`, plus standalone
-`web_search` (`query` 1–512 chars, optional `max_results` 1–10, default 10) and
-`web_fetch` (`url`). Broker policy automatically allows file tools in the trusted root
-or a folder granted to the same live session and applies analyzer decisions to
-terminal requests. A `standard` session on a clean workspace auto-allows the
-in-workspace terminal/external-directory/delete/unknown-executable subset
-(`standard_clean_workspace_allow`); timeouts, rule asks, invariants, and
-protected paths stay gated. Protected paths and hard invariants remain gated. Terminal execution runs as the current Windows user and is intentionally
-not an OS-enforced filesystem/network sandbox. File tools may
-request an explicit absolute path outside the project; the user can grant that
-canonical directory to all tools in the current live session. The grant is not
-shared with a new or forked session and disappears on restart. Terminal
-deletion, external mutation (network egress, package installs, push/fetch),
-extended timeouts beyond the standard window, shell scripts, and unknown
-executable launch require approval (unless lifted by the clean-workspace
-`standard` subset above). Web calls ask for approval only on the `plan`
-preset and run automatically on `standard` and `full_access`.
+`web_search` and `web_fetch`. The canonical matrix is: `plan` allows workspace
+read and Web but denies terminal and mutation; `standard` auto-allows
+bounded-local in-workspace mutation and asks for external/escape/risky intent;
+`full_access` auto-allows external structured files and arbitrary terminal while
+structured protected paths and hard-invalid requests remain denied.
+Repository cleanliness never changes the decision.
+
+Standard structured-file access outside the trusted root may create a
+session-scoped canonical folder grant; it is not shared with a new/forked
+session, lost on restart, and never authorizes terminal. Full Access uses an
+ephemeral structured root per external call. Full-access terminal runs as the
+current Windows user, can read or change data outside the workspace, and can
+use the network; it is not an OS-enforced filesystem/network sandbox. Hard
+timeout, output cap, cancellation, redaction, and process-tree cleanup remain.
+Web is automatic in all canonical presets; `web_approval_required` remains only
+as an explicit-rule compatibility reason.
 The model selection channel is active for every Agent run: one budget window
 allows up to 128 model steps and 256 model-initiated tool calls through the
-Agent Broker pipeline (`AgentBudgetPolicy.ModelStepLimit`/`ToolCallLimit`).
-Exhausting a window moves the run to `WaitingUser`; only an explicit Continue
-opens a fresh window. Selection
-JSON is never streamed into
-the visible transcript, history, mood state, or diagnostics; a malformed
-selection ends the turn with fixed copy and one bounded diagnostic.
+Broker pipeline. Native batches may contain multiple calls; the scheduler caps
+read-only concurrency at eight and keeps mutations/terminal sequential. Receipts
+retain model order. Exhausting a window moves the run to `WaitingUser`; only an
+explicit Continue opens a fresh window. Native calls, text-selected JSON,
+arguments, and outputs never enter the visible transcript as execution markup,
+mood state, or public diagnostics.
 External-folder requests and terminal deletion or unknown-executable requests
 use bounded approval cards. The Public Host opens
 one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
@@ -325,14 +323,14 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 reviewed examples, or public payload metadata.
 
-The six Worker v2 bindings above are the model surface, with standalone
-`web_search`/`web_fetch` tools managed by startup. Managed
-startup constructs an enabled WebOptions instance with Google HTML primary
-`https://www.google.com/search` and automatic DuckDuckGo HTML fallback
-`https://html.duckduckgo.com/html/`; their bounded responses carry an
-explicit `untrusted` marker and never become instructions. `read` with
-`grep` searches the workspace, while `web_search` searches
-the public web. `help`
+The twelve Worker v2 tools above are the model surface. `read`, `list`, `grep`,
+`glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
+their own schemas, alongside `todo_write`, `skill`, `web_search`, and
+`web_fetch`. Managed startup constructs an enabled WebOptions instance with
+Google HTML primary `https://www.google.com/search` and automatic DuckDuckGo
+HTML fallback `https://html.duckduckgo.com/html/`; their bounded responses
+carry an explicit `untrusted` marker and never become instructions. `grep`
+searches the workspace, `web_search` searches the public web, and `help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
 The managed Git commit workflow is shipped inside terminal execution, using a
@@ -368,9 +366,9 @@ primary `https://www.google.com/search` and DuckDuckGo HTML automatic fallback
 `https://html.duckduckgo.com/html/`. It
 maps standalone `web_search` to `network.search` and standalone
 `web_fetch` to `network.fetch`;
-the normal Harness policy remains authoritative for each read-only call:
-web asks for approval only on the `plan` preset and runs automatically on
-`standard` and `full_access`.
+the canonical Broker policy remains authoritative for each read-only call:
+`plan`, `standard`, and `full_access` all allow Web. An explicit ordered ask
+rule may still return `web_approval_required`.
 Redirects are disabled or validated at every hop, private/reserved targets are
 rejected, and response bytes, content types, UTF-8, sanitizer output, and
 citation count are capped. Web payloads are data only and cannot grant tools,

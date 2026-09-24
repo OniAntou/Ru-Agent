@@ -6,29 +6,6 @@ namespace RuAgent.Broker.Tools.Paths;
 /// <summary>
 /// Detects files that are reachable under more than one name on the volume.
 /// </summary>
-/// <remarks>
-/// The workspace boundary is enforced by canonicalizing a path and testing
-/// whether its final target sits inside the root. An NTFS hard link defeats that
-/// test completely: <c>mklink /H &lt;workspace&gt;\leak.txt &lt;outside&gt;\secret</c>
-/// needs no privilege, and the resulting name is an ordinary in-workspace file.
-/// There is no reparse point, so <c>FileSystemInfo.LinkTarget</c> is null and the
-/// attributes carry no <c>ReparsePoint</c> flag, and
-/// <c>GetFinalPathNameByHandle</c> — which resolves one name for the file object —
-/// reports the workspace path. The resolver therefore classifies it as
-/// <c>InsideWorkspace</c> and reading it returns the outside file's bytes.
-///
-/// A link count above one is the only signal available: the handle API reports
-/// how many names point at the file, never where the other names are. The guard
-/// consequently cannot tell an in-workspace link from one that escapes, and it
-/// refuses both rather than guessing. That is the fail-closed choice, and it
-/// costs no legitimate capability — the file's own content is still readable
-/// through its original name.
-///
-/// Only the read path consults this. Broker mutations go through
-/// <c>AtomicFileReplacement</c>, which writes a temporary file and moves it over
-/// the target, swapping the directory entry instead of writing through the link;
-/// a hard link there cannot redirect the write outside the workspace.
-/// </remarks>
 public static class HardLinkGuard
 {
     private const uint QueryOnlyDesiredAccess = 0x00000000;
@@ -40,14 +17,9 @@ public static class HardLinkGuard
     /// True when the file at <paramref name="path"/> has more than one name on
     /// its volume.
     /// </summary>
-    /// <remarks>
-    /// An unreadable or absent target reports false: this guard only answers the
-    /// link question, and the caller's own open reports the real failure with its
-    /// own error code.
-    /// </remarks>
     public static bool HasMultipleLinks(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !OperatingSystem.IsWindows())
+        if (string.IsNullOrWhiteSpace(path) || !OperatingSystem.IsWindows() || !File.Exists(path))
         {
             return false;
         }
@@ -64,16 +36,67 @@ public static class HardLinkGuard
                 IntPtr.Zero);
             if (handle.IsInvalid)
             {
-                return false;
+                return true;
             }
 
-            return GetFileInformationByHandle(handle, out var information)
-                && information.NumberOfLinks > 1;
+            return !GetFileInformationByHandle(handle, out var information)
+                || information.NumberOfLinks > 1;
         }
         catch (Exception)
         {
-            // Best effort: an unreadable target is the caller's error to report.
-            return false;
+            return true;
+        }
+    }
+
+    internal static void RequireSingleLink(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!OperatingSystem.IsWindows() || !File.Exists(path))
+        {
+            return;
+        }
+
+        if (HasMultipleLinks(path))
+        {
+            throw new UnauthorizedAccessException("hard_link_not_allowed");
+        }
+    }
+
+    internal static FileStream OpenRead(
+        string path,
+        FileMode mode,
+        FileAccess access,
+        FileShare share,
+        int bufferSize,
+        FileOptions options)
+    {
+        RequireSingleLink(path);
+        var stream = new FileStream(path, mode, access, share, bufferSize, options);
+        try
+        {
+            RequireSingleLink(stream.SafeFileHandle);
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    internal static void RequireSingleLink(SafeFileHandle handle)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        if (handle.IsInvalid
+            || !GetFileInformationByHandle(handle, out var information)
+            || information.NumberOfLinks > 1)
+        {
+            throw new UnauthorizedAccessException("hard_link_not_allowed");
         }
     }
 

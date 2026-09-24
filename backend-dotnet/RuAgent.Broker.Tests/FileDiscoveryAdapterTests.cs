@@ -74,6 +74,33 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Search_skips_hard_linked_file_without_exposing_content()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "ru-search-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, "hard-link-search-marker");
+        var link = Path.Combine(_root, "leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "hard-link-search-marker" });
+            var paths = result["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
+            Assert.DoesNotContain("leak.txt", paths);
+            Assert.Equal(0, result["count"]!.GetValue<int>());
+        }
+        finally
+        {
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Search_async_is_cancellable_and_keeps_ordinal_result_order()
     {
         File.WriteAllText(Path.Combine(_root, "src", "z.txt"), "needle\n");

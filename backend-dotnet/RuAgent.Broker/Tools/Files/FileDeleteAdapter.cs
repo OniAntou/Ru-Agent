@@ -209,7 +209,7 @@ public sealed class FileDeleteAdapter
 
     private static byte[] ReadBoundedBytes(string canonicalPath, int maxRecoveryBytes)
     {
-        using var stream = new FileStream(
+        using var stream = HardLinkGuard.OpenRead(
             canonicalPath,
             FileMode.Open,
             FileAccess.Read,

@@ -46,7 +46,6 @@ public sealed partial class ToolExecutionService
     private readonly CanonicalPathResolver _mutationResolver;
     private readonly RootToolSet _defaultTools;
     private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, FileTools> _fileToolsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly TerminalAdapter _terminal;
     private readonly HelpDocsTool _helpDocs;
     private readonly SkillBodyStore _skillBodies;
@@ -108,6 +107,8 @@ public sealed partial class ToolExecutionService
         _catalog = new ToolCatalog(BuildExecutors(), _webOptions);
         _skillBodies = new SkillBodyStore(_workspace.Root);
     }
+
+    internal int CachedRootToolSetCount => _toolSetsByRoot.Count;
 
     public void RemoveSession(string sessionId)
     {

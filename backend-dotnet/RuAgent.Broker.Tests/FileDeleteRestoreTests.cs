@@ -139,6 +139,42 @@ public sealed class FileDeleteRestoreTests : IDisposable
     }
 
     [Fact]
+    public void Delete_rejects_hard_link_before_recovery_capture()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "ru-delete-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        const string content = "hard-link-delete-marker";
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, content);
+        var link = Full("leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var arguments = new JsonObject
+            {
+                ["path"] = "leak.txt",
+                ["expected_sha256"] = HashString(content),
+            };
+            var prepareError = Assert.Throws<UnauthorizedAccessException>(() => _delete.Prepare(arguments));
+            Assert.Equal("hard_link_not_allowed", prepareError.Message);
+            var executeError = Assert.Throws<UnauthorizedAccessException>(() => _delete.Execute(arguments));
+            Assert.Equal("hard_link_not_allowed", executeError.Message);
+            Assert.Equal(content, File.ReadAllText(target));
+            Assert.True(File.Exists(link));
+        }
+        finally
+        {
+            try { File.Delete(link); } catch { }
+            try { Directory.Delete(outside, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void Delete_returns_opaque_recovery_id_receipt_and_no_recovery_bytes_in_safe_output()
     {
         File.WriteAllText(Full("del.txt"), "to be deleted");
@@ -206,6 +242,36 @@ public sealed class FileDeleteRestoreTests : IDisposable
         File.Delete(canonical);
         var prep = _restore.Prepare(new JsonObject { ["recovery_id"] = recoveryId });
         Assert.NotNull(prep);
+    }
+
+    [Fact]
+    public void Restore_rejects_hard_link_target_before_recovery_operation()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "ru-restore-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        const string content = "hard-link-restore-marker";
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, content);
+        var link = Full("leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(content);
+            var recoveryId = FileRestoreAdapter.RegisterForTest(link, bytes, Hash(bytes));
+            var error = Assert.Throws<UnauthorizedAccessException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveryId }));
+            Assert.Equal("hard_link_not_allowed", error.Message);
+            Assert.Equal(content, File.ReadAllText(target));
+        }
+        finally
+        {
+            try { File.Delete(link); } catch { }
+            try { Directory.Delete(outside, recursive: true); } catch { }
+        }
     }
 
     [Fact]

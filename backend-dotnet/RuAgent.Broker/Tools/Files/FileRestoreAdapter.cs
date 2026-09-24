@@ -132,6 +132,7 @@ public sealed class FileRestoreAdapter
             throw new UnauthorizedAccessException("workspace_changed");
         }
 
+        HardLinkGuard.RequireSingleLink(resolved.CanonicalPath);
         var safe = new JsonObject
         {
             ["recovery_id"] = recoveryId,
@@ -345,6 +346,8 @@ public sealed class FileRestoreAdapter
                 throw new UnauthorizedAccessException("workspace_changed");
             }
 
+            HardLinkGuard.RequireSingleLink(resolved.CanonicalPath);
+
             // Original target must still be missing; never clobber a concurrent
             // user write or directory created after preparation.
             if (File.Exists(resolved.CanonicalPath) || Directory.Exists(resolved.CanonicalPath))
@@ -439,7 +442,7 @@ public sealed class FileRestoreAdapter
 
     private static byte[] ReadBoundedBytes(string canonicalPath, int maxRecoveryBytes)
     {
-        using var stream = new FileStream(canonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
+        using var stream = HardLinkGuard.OpenRead(canonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
         using var output = new MemoryStream(Math.Min(maxRecoveryBytes, 81920));
         var buffer = new byte[Math.Min(maxRecoveryBytes, 81920)];
         while (true)

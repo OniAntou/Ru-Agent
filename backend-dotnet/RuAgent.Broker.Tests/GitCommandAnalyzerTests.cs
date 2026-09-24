@@ -21,7 +21,7 @@ public sealed class GitCommandAnalyzerTests
 
         Assert.Equal(TerminalOperationClass.ReadOnly, analysis.OperationClass);
         Assert.Equal("none", analysis.NetworkIntent);
-        Assert.Equal("1", analysis.AnalyzerVersion);
+        Assert.Equal("2", analysis.AnalyzerVersion);
     }
 
     [Fact]
@@ -68,6 +68,39 @@ public sealed class GitCommandAnalyzerTests
 
         Assert.Equal(TerminalOperationClass.GitMutation, analysis.OperationClass);
         Assert.Equal("none", analysis.NetworkIntent);
+    }
+
+    [Fact]
+    public void Submodule_status_is_the_only_deterministic_bounded_form()
+    {
+        var analysis = _analyzer.Analyze(@"C:\tools\git.exe", ["submodule", "status", "--recursive"]);
+
+        Assert.Equal(TerminalOperationClass.ReadOnly, analysis.OperationClass);
+        Assert.Equal("none", analysis.NetworkIntent);
+    }
+
+    [Fact]
+    public void Other_submodule_forms_fail_closed_as_external_mutations()
+    {
+        string[][] forms =
+        [
+            ["submodule"],
+            ["submodule", "foreach", "git status"],
+            ["submodule", "foreach", "--exec", "calc.exe"],
+            ["submodule", "update", "--remote"],
+            ["submodule", "update", "--fetch"],
+            ["submodule", "sync"],
+            ["submodule", "set-url", "origin", @"C:\outside"],
+            ["submodule", "foreach", "--output=export.txt", "git status"],
+        ];
+
+        foreach (var form in forms)
+        {
+            var analysis = _analyzer.Analyze(@"C:\tools\git.exe", form);
+            Assert.Equal(TerminalOperationClass.ExternalMutation, analysis.OperationClass);
+            Assert.Equal("git_submodule_requires_approval", analysis.ReasonCode);
+            Assert.Equal("unknown", analysis.NetworkIntent);
+        }
     }
 
     [Theory]

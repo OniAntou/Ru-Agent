@@ -217,7 +217,7 @@ public sealed class FileReadAdapterTests : IDisposable
         Assert.Equal("one name", result["content"]!.GetValue<string>());
     }
 
-    private static bool TryCreateHardLink(string linkPath, string targetPath)
+    internal static bool TryCreateHardLink(string linkPath, string targetPath)
     {
         if (!OperatingSystem.IsWindows())
         {

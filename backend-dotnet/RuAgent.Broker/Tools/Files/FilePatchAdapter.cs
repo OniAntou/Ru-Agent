@@ -416,7 +416,7 @@ public sealed class FilePatchAdapter
             throw new ArgumentOutOfRangeException(nameof(maxBytes));
         }
 
-        using var stream = new FileStream(
+        using var stream = HardLinkGuard.OpenRead(
             canonicalPath,
             FileMode.Open,
             FileAccess.Read,

@@ -249,6 +249,80 @@ public sealed class FileMutationAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Edit_rejects_hard_link_before_diff_or_mutation()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "ru-edit-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        const string content = "hard-link-edit-marker";
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, content);
+        var link = Full("leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var arguments = new JsonObject
+            {
+                ["path"] = "leak.txt",
+                ["old_string"] = content,
+                ["new_string"] = "replacement",
+                ["expected_sha256"] = Hash(content),
+            };
+            var prepareError = Assert.Throws<UnauthorizedAccessException>(() => _edit.Prepare(arguments));
+            Assert.Equal("hard_link_not_allowed", prepareError.Message);
+            var executeError = Assert.Throws<UnauthorizedAccessException>(() => _edit.Execute(arguments));
+            Assert.Equal("hard_link_not_allowed", executeError.Message);
+            Assert.Equal(content, File.ReadAllText(target));
+        }
+        finally
+        {
+            try { File.Delete(link); } catch { }
+            try { Directory.Delete(outside, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Write_rejects_hard_link_before_diff_or_mutation()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "ru-write-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        const string content = "hard-link-write-marker";
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, content);
+        var link = Full("leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var arguments = new JsonObject
+            {
+                ["path"] = "leak.txt",
+                ["content"] = "replacement",
+                ["expected_sha256"] = Hash(content),
+                ["overwrite"] = true,
+            };
+            var prepareError = Assert.Throws<UnauthorizedAccessException>(() => _write.Prepare(arguments));
+            Assert.Equal("hard_link_not_allowed", prepareError.Message);
+            var executeError = Assert.Throws<UnauthorizedAccessException>(() => _write.Execute(arguments));
+            Assert.Equal("hard_link_not_allowed", executeError.Message);
+            Assert.Equal(content, File.ReadAllText(target));
+        }
+        finally
+        {
+            try { File.Delete(link); } catch { }
+            try { Directory.Delete(outside, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void Edit_4MiB_input_cap_enforced()
     {
         File.WriteAllText(Full("big.txt"), "small");

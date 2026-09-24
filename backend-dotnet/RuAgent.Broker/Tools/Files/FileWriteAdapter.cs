@@ -217,6 +217,10 @@ public sealed class FileWriteAdapter
         {
             return StrictUtf8.GetString(ReadBoundedBytes(canonicalPath));
         }
+        catch (UnauthorizedAccessException)
+        {
+            throw;
+        }
         catch
         {
             return string.Empty;
@@ -225,7 +229,7 @@ public sealed class FileWriteAdapter
 
     private static byte[] ReadBoundedBytes(string canonicalPath)
     {
-        using var stream = new FileStream(
+        using var stream = HardLinkGuard.OpenRead(
             canonicalPath,
             FileMode.Open,
             FileAccess.Read,

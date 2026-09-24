@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Git;
@@ -342,7 +343,192 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Unrestricted_confinement_still_rejects_protected_system_working_directories()
+    public async Task Unconfined_execution_keeps_hard_timeout()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-timeout-");
+        try
+        {
+            var adapter = CreateAdapter(root);
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                new TerminalRunRequest(
+                    "powershell",
+                    ".",
+                    "powershell",
+                    ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 10"],
+                    100,
+                    ApprovalToken: string.Empty,
+                    RequestId: "timeout-request",
+                    SessionId: "timeout-session",
+                    Approved: true),
+                confineWorkspace: false,
+                CancellationToken.None);
+            Assert.Equal("timed_out", result.Status);
+            Assert.True(result.DurationMs < 5_000, result.DurationMs.ToString());
+        }
+        finally
+        {
+            DeleteDirectoryEventually(root);
+        }
+    }
+
+    [Fact]
+    public async Task Unconfined_execution_keeps_output_cap()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-output-cap-");
+        try
+        {
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                new ShellRuntimeResolver(),
+                runner: new StreamingProcessRunner(outputLimitBytes: 32, headCapacityChars: 64, tailCapacityChars: 64));
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                new TerminalRunRequest(
+                    "powershell",
+                    ".",
+                    "powershell",
+                    ["-NoProfile", "-NonInteractive", "-Command", "Write-Output ([string]::new('x', 5000))"],
+                    30_000,
+                    ApprovalToken: string.Empty,
+                    RequestId: "output-request",
+                    SessionId: "output-session",
+                    Approved: true),
+                confineWorkspace: false,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
+            Assert.InRange(result.StdoutBytes, 1, 32);
+            Assert.True(result.StdoutDroppedBytes > 0);
+        }
+        finally
+        {
+            DeleteDirectoryEventually(root);
+        }
+    }
+
+    [Fact]
+    public async Task Unconfined_execution_keeps_cancellation()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-cancel-");
+        try
+        {
+            var adapter = CreateAdapter(root);
+            using var cancellation = new CancellationTokenSource(200);
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                new TerminalRunRequest(
+                    "powershell",
+                    ".",
+                    "powershell",
+                    ["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30"],
+                    120_000,
+                    ApprovalToken: string.Empty,
+                    RequestId: "cancel-request",
+                    SessionId: "cancel-session",
+                    Approved: true),
+                confineWorkspace: false,
+                cancellation.Token);
+            Assert.Equal("cancelled", result.Status);
+            Assert.True(result.DurationMs < 5_000, result.DurationMs.ToString());
+        }
+        finally
+        {
+            DeleteDirectoryEventually(root);
+        }
+    }
+
+    [Fact]
+    public async Task Unconfined_cancellation_kills_real_child_process_tree()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-process-tree-");
+        var childScript = Path.Combine(root, "child.ps1");
+        var marker = Path.Combine(root, "child.pid");
+        var escapedChild = childScript.Replace("'", "''", StringComparison.Ordinal);
+        var escapedMarker = marker.Replace("'", "''", StringComparison.Ordinal);
+        File.WriteAllText(
+            childScript,
+            $"[System.IO.File]::WriteAllText('{escapedMarker}', [string]$PID); Start-Sleep -Seconds 60");
+        using var cancellation = new CancellationTokenSource();
+        Task<StreamingProcessResult>? executionTask = null;
+        var childProcessId = 0;
+        try
+        {
+            var adapter = CreateAdapter(root);
+            var parentScript =
+                "$child = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-File','"
+                + escapedChild
+                + "') -PassThru; Wait-Process -Id $child.Id";
+            executionTask = adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                new TerminalRunRequest(
+                    "powershell",
+                    ".",
+                    "powershell",
+                    ["-NoProfile", "-NonInteractive", "-Command", parentScript],
+                    120_000,
+                    ApprovalToken: string.Empty,
+                    RequestId: "process-tree-request",
+                    SessionId: "process-tree-session",
+                    Approved: true),
+                confineWorkspace: false,
+                cancellation.Token);
+            childProcessId = await WaitForProcessIdAsync(marker, TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+            var result = await executionTask;
+            Assert.Equal("cancelled", result.Status);
+            Assert.True(
+                await WaitForProcessExitAsync(childProcessId, TimeSpan.FromSeconds(5)),
+                $"child process {childProcessId} survived cancellation");
+        }
+        finally
+        {
+            cancellation.Cancel();
+            Exception? cleanupError = null;
+            if (executionTask is not null)
+            {
+                try
+                {
+                    await executionTask;
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                }
+                catch (Exception error)
+                {
+                    cleanupError = error;
+                }
+            }
+
+            if (childProcessId > 0)
+            {
+                try
+                {
+                    await EnsureProcessStoppedAsync(childProcessId);
+                }
+                catch (Exception error)
+                {
+                    cleanupError ??= error;
+                }
+            }
+
+            try
+            {
+                DeleteDirectoryEventually(root);
+            }
+            catch (Exception error)
+            {
+                cleanupError ??= error;
+            }
+
+            if (cleanupError is not null)
+            {
+                ExceptionDispatchInfo.Capture(cleanupError).Throw();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Unrestricted_confinement_allows_protected_system_working_directory()
     {
         var root = CreateTemporaryRoot("ru-terminal-protected-cwd-");
         var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
@@ -350,13 +536,15 @@ public sealed class TerminalAdapterTests
         try
         {
             var adapter = CreateAdapter(root);
-            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request("rg", ["--files"], workingDirectory: windowsDirectory),
-                    confineWorkspace: false,
-                    CancellationToken.None));
-            Assert.Equal("terminal_cwd_not_allowed", error.Message);
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("dotnet", ["--version"], workingDirectory: windowsDirectory),
+                confineWorkspace: false,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
+            Assert.True(
+                string.Equals(Path.GetFullPath(windowsDirectory), result.WorkingDirectory, StringComparison.OrdinalIgnoreCase),
+                result.WorkingDirectory);
         }
         finally
         {
@@ -365,7 +553,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Unrestricted_confinement_refuses_junctions_into_protected_directories()
+    public async Task Unrestricted_confinement_allows_junctions_into_protected_directories()
     {
         var parent = CreateTemporaryRoot("ru-terminal-junction-");
         var workspaceRoot = Path.Combine(parent, "workspace");
@@ -377,16 +565,12 @@ public sealed class TerminalAdapterTests
         try
         {
             var adapter = CreateAdapter(workspaceRoot);
-            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request(
-                        "rg",
-                        ["--files"],
-                        workingDirectory: "windows-link"),
-                    confineWorkspace: false,
-                    CancellationToken.None));
-            Assert.Equal("terminal_cwd_not_allowed", error.Message);
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("dotnet", ["--version"], workingDirectory: "windows-link"),
+                confineWorkspace: false,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
         }
         finally
         {
@@ -396,7 +580,7 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
-    public async Task Unrestricted_confinement_refuses_extended_syntax_protected_directories()
+    public async Task Unrestricted_confinement_allows_extended_syntax_protected_directory()
     {
         var root = CreateTemporaryRoot("ru-terminal-extended-cwd-");
         var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
@@ -404,16 +588,15 @@ public sealed class TerminalAdapterTests
         try
         {
             var adapter = CreateAdapter(root);
-            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-                adapter.RunAsync(
-                    MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request(
-                        "rg",
-                        ["--files"],
-                        workingDirectory: $@"\\?\{windowsDirectory}"),
-                    confineWorkspace: false,
-                    CancellationToken.None));
-            Assert.Equal("terminal_cwd_not_allowed", error.Message);
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request(
+                    "dotnet",
+                    ["--version"],
+                    workingDirectory: $@"\\?\{windowsDirectory}"),
+                confineWorkspace: false,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
         }
         finally
         {
@@ -730,6 +913,98 @@ public sealed class TerminalAdapterTests
         finally
         {
             ForceDeleteDirectory(root);
+        }
+    }
+
+    private static async Task<int> WaitForProcessIdAsync(string markerPath, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        Exception? readError = null;
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (File.Exists(markerPath))
+            {
+                try
+                {
+                    if (int.TryParse(File.ReadAllText(markerPath).Trim(), out var processId))
+                    {
+                        return processId;
+                    }
+                }
+                catch (IOException error)
+                {
+                    readError = error;
+                }
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new IOException("child_process_pid_marker_timeout", readError);
+    }
+
+    private static async Task<bool> WaitForProcessExitAsync(int processId, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(processId);
+                if (process.HasExited)
+                {
+                    return true;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return true;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return false;
+    }
+
+    private static async Task EnsureProcessStoppedAsync(int processId)
+    {
+        if (await WaitForProcessExitAsync(processId, TimeSpan.FromSeconds(5)))
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+            Assert.True(process.HasExited);
+        }
+        catch (ArgumentException)
+        {
+        }
+    }
+
+    private static void DeleteDirectoryEventually(string path)
+    {
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 20 && Directory.Exists(path); attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                lastError = error;
+                Thread.Sleep(100);
+            }
+        }
+
+        if (Directory.Exists(path))
+        {
+            throw new IOException("temporary_directory_cleanup_failed", lastError);
         }
     }
 

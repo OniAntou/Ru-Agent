@@ -1,9 +1,13 @@
+using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy;
 using RuAgent.Broker.Runtime;
+using RuAgent.Broker.Transport;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using Xunit;
@@ -789,6 +793,51 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task V2_forged_execute_token_is_rejected_before_adapter_execution()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var probePath = Path.Combine(fixture.Root, "forged-probe.txt");
+        File.WriteAllText(probePath, "full-access-probe");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        const string sessionId = "session-forged-token";
+        const string runId = "run_forged_token111111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                2,
+                "open-forged-token",
+                AgentMessageTypes.RunOpen,
+                sessionId,
+                null,
+                10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(
+                    runId,
+                    sessionId,
+                    fixture.Root,
+                    EnvelopeTestSnapshots.FullAccessEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        var arguments = new JsonObject { ["path"] = "forged-probe.txt" };
+        await SendAsync(
+            socket,
+            Execute("execute-forged-token", sessionId, runId, "files.read", "forged-token", arguments),
+            cts.Token);
+        var result = await ReceiveAsync(socket, cts.Token);
+
+        Assert.Equal(AgentMessageTypes.ToolExecuteResult, result.MessageType);
+        Assert.Equal(ToolResultStatuses.Denied, result.Payload["status"]!.GetValue<string>());
+        Assert.Equal("decision_stale", result.Payload["error_code"]!.GetValue<string>());
+        Assert.False(result.Payload.ContainsKey("output"));
+        Assert.False(result.Payload.ContainsKey("adapter_invoked"));
+        Assert.Equal("full-access-probe", File.ReadAllText(probePath));
+    }
+
+    [Fact]
     public async Task V2_external_directory_approval_is_reused_by_another_tool_in_the_same_session()
     {
         await using var fixture = await HostFixture.StartAsync();
@@ -852,7 +901,64 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task V2_external_directory_grant_executes_terminal_in_next_run_only_for_same_session()
+    public async Task V2_standard_external_structured_read_executes_after_file_grant()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-standard-external-read-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "standard-external-content");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-standard-external-read";
+            const string runId = "run_standard_external_read111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-standard-external-read", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            var arguments = new JsonObject { ["path"] = Path.Combine(external, "probe.txt") };
+            await SendAsync(socket, Evaluate("evaluate-standard-external-read", sessionId, runId, "read", arguments.DeepClone().AsObject()), cts.Token);
+            var ask = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("ask", ask.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("external_directory_required", ask.Payload["reason_code"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "approve-standard-external-read", AgentMessageTypes.ApprovalRespond, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["run_id"] = runId,
+                        ["approval_id"] = ask.Payload["approval_id"]!.GetValue<string>(),
+                        ["command"] = "allow_session_directory",
+                    }),
+                cts.Token);
+            var authorized = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("authorized", authorized.Payload["status"]!.GetValue<string>());
+            var authorizationToken = authorized.Payload["authorization_token"]!.GetValue<string>();
+
+            await SendAsync(socket, Execute("execute-standard-external-read", sessionId, runId, "read", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
+            var execution = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+            Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+            Assert.Equal("standard-external-content", execution.Payload["output"]!["content"]!.GetValue<string>());
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task V2_file_directory_grant_does_not_authorize_terminal()
     {
         await using var fixture = await HostFixture.StartAsync();
         var external = Path.Combine(Path.GetTempPath(), "ru-broker-terminal-external-" + Guid.NewGuid().ToString("N"));
@@ -915,19 +1021,9 @@ public sealed class BrokerHostTests
             };
             await SendAsync(socket, Evaluate("evaluate-external-terminal-run", sessionId, runB, "terminal.run", terminalArguments.DeepClone().AsObject()), cts.Token);
             var decision = await ReceiveAsync(socket, cts.Token);
-            Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
-            var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
-
-            await SendAsync(
-                socket,
-                Execute("execute-external-terminal-run", sessionId, runB, "terminal.run", authorizationToken, terminalArguments.DeepClone().AsObject()),
-                cts.Token);
-            var execution = await ReceiveAsync(socket, cts.Token);
-            Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
-            Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
-            Assert.True(execution.Payload["adapter_invoked"]!.GetValue<bool>());
-            Assert.Equal(0, execution.Payload["output"]!["exit_code"]!.GetValue<int>());
-            Assert.DoesNotContain("workspace_path_outside_root", execution.Payload.ToJsonString(), StringComparison.Ordinal);
+            Assert.Equal("ask", decision.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("terminal_external_cwd_requires_approval", decision.Payload["reason_code"]!.GetValue<string>());
+            Assert.False(decision.Payload.ContainsKey("authorization_token"));
 
             await SendAsync(
                 socket,
@@ -942,11 +1038,354 @@ public sealed class BrokerHostTests
                 cts.Token);
             var newSessionDecision = await ReceiveAsync(socket, cts.Token);
             Assert.Equal("ask", newSessionDecision.Payload["decision"]!.GetValue<string>());
-            Assert.Equal("external_directory_required", newSessionDecision.Payload["reason_code"]!.GetValue<string>());
+            Assert.Equal("terminal_external_cwd_requires_approval", newSessionDecision.Payload["reason_code"]!.GetValue<string>());
         }
         finally
         {
             Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task V2_full_access_external_structured_read_executes_without_session_grant()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-full-file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "external-file-content");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-full-file";
+            const string runId = "run_full_file11111111111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-full-file", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            var arguments = new JsonObject { ["path"] = Path.Combine(external, "probe.txt") };
+            await SendAsync(socket, Evaluate("evaluate-full-file", sessionId, runId, "read", arguments.DeepClone().AsObject()), cts.Token);
+            var decision = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+            Assert.False(decision.Payload.ContainsKey("approval_id"));
+            var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+
+            await SendAsync(socket, Execute("execute-full-file", sessionId, runId, "read", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
+            var execution = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+            Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+            Assert.Equal("external-file-content", execution.Payload["output"]!["content"]!.GetValue<string>());
+            Assert.Empty(fixture.Host.Session.DirectoryGrants.GetGrantedDirectories(sessionId));
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task V2_full_access_structured_protected_path_remains_denied()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-full-protected";
+        const string runId = "run_full_protected111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-full-protected", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        await SendAsync(
+            socket,
+            Evaluate("evaluate-full-protected", sessionId, runId, "read",
+                new JsonObject { ["path"] = Path.Combine(fixture.Root, ".env.full-access") }),
+            cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("deny", decision.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("protected_path", decision.Payload["reason_code"]!.GetValue<string>());
+        Assert.False(decision.Payload.ContainsKey("authorization_token"));
+    }
+
+    [Fact]
+    public async Task V2_full_access_external_protected_structured_path_remains_denied()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-full-protected-external-" + Guid.NewGuid().ToString("N"));
+        var protectedDirectory = Path.Combine(external, ".env");
+        Directory.CreateDirectory(protectedDirectory);
+        File.WriteAllText(Path.Combine(protectedDirectory, "secret.txt"), "secret");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-full-protected-external";
+            const string runId = "run_full_protected_external111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-full-protected-external", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                Evaluate("evaluate-full-protected-external", sessionId, runId, "read",
+                    new JsonObject { ["path"] = Path.Combine(protectedDirectory, "secret.txt") }),
+                cts.Token);
+            var decision = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("deny", decision.Payload["decision"]!.GetValue<string>());
+            Assert.Equal("protected_path", decision.Payload["reason_code"]!.GetValue<string>());
+            Assert.False(decision.Payload.ContainsKey("authorization_token"));
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_tool_requests_cannot_use_full_access_lease_fields()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-legacy-host-authority-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "probe.txt"), "must-not-be-read");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-legacy-host-authority";
+            const string runId = "run_legacy_host_authority111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-legacy-host-authority", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(1, "legacy-host-read-forged", AgentMessageTypes.ToolRequest, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "read",
+                        ["tool_version"] = "1.0.0",
+                        ["run_id"] = runId,
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject { ["path"] = Path.Combine(external, "probe.txt") },
+                    }),
+                cts.Token);
+            var read = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(ToolResultStatuses.Failed, read.Payload["status"]!.GetValue<string>());
+            Assert.Equal("outside_workspace", read.Payload["error_code"]!.GetValue<string>());
+
+            await SendAsync(
+                socket,
+                new AgentEnvelope(1, "legacy-host-terminal-forged", AgentMessageTypes.ToolRequest, sessionId, null, 10_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["run_id"] = runId,
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "run",
+                            ["executable"] = "dotnet",
+                            ["arguments"] = new JsonArray("--version"),
+                            ["working_directory"] = external,
+                        },
+                    }),
+                cts.Token);
+            var terminal = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, terminal.Payload["status"]!.GetValue<string>());
+            Assert.False(terminal.Payload["adapter_invoked"]!.GetValue<bool>());
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task V2_full_access_external_terminal_executes_without_second_approval()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-full-terminal-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-full-terminal";
+            const string runId = "run_full_terminal111111111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-full-terminal", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            var arguments = new JsonObject
+            {
+                ["executable"] = "dotnet",
+                ["arguments"] = new JsonArray("--version"),
+                ["working_directory"] = external,
+                ["network_intent"] = true,
+            };
+            await SendAsync(socket, Evaluate("evaluate-full-terminal", sessionId, runId, "terminal.run", arguments.DeepClone().AsObject()), cts.Token);
+            var decision = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+            Assert.False(decision.Payload.ContainsKey("approval_id"));
+            var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+
+            await SendAsync(socket, Execute("execute-full-terminal", sessionId, runId, "terminal.run", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
+            var execution = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+            Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+            Assert.Equal(0, execution.Payload["output"]!["exit_code"]!.GetValue<int>());
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task V2_full_access_protected_terminal_cwd_executes_for_authenticated_user()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        Assert.False(string.IsNullOrWhiteSpace(windowsDirectory));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-full-protected-terminal";
+        const string runId = "run_full_protected_terminal111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-full-protected-terminal", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        var arguments = new JsonObject
+        {
+            ["executable"] = "dotnet",
+            ["arguments"] = new JsonArray("--version"),
+            ["working_directory"] = windowsDirectory,
+        };
+        await SendAsync(socket, Evaluate("evaluate-full-protected-terminal", sessionId, runId, "terminal.run", arguments.DeepClone().AsObject()), cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+        await SendAsync(socket, Execute("execute-full-protected-terminal", sessionId, runId, "terminal.run", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
+        var execution = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_full_access_arbitrary_network_shell_runs_as_current_user()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var external = Path.Combine(Path.GetTempPath(), "ru-full-shell-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(external);
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var serverCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var serverTask = ServeLoopbackMarkerAsync(listener, serverCancellation.Token);
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+            const string sessionId = "session-full-shell";
+            const string runId = "run_full_shell1111111111111";
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "open-full-shell", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                    EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+                cts.Token);
+            Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+            var userName = Environment.UserName.Replace("'", "''", StringComparison.Ordinal);
+            var arguments = new JsonObject
+            {
+                ["script"] = "$client = [System.Net.Sockets.TcpClient]::new();"
+                    + $" $client.Connect('127.0.0.1', {port});"
+                    + " $stream = $client.GetStream();"
+                    + " $request = \"GET /marker HTTP/1.1`r`nHost: 127.0.0.1`r`nConnection: close`r`n`r`n\";"
+                    + " $bytes = [System.Text.Encoding]::ASCII.GetBytes($request);"
+                    + " $stream.Write($bytes, 0, $bytes.Length);"
+                    + " $reader = [System.IO.StreamReader]::new($stream);"
+                    + " $response = $reader.ReadToEnd();"
+                    + " $client.Dispose();"
+                    + $" Write-Output ('{userName}:' + $response);",
+                ["working_directory"] = external,
+                ["network_intent"] = true,
+            };
+            await SendAsync(socket, Evaluate("evaluate-full-shell", sessionId, runId, "terminal.shell", arguments.DeepClone().AsObject()), cts.Token);
+            var decision = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+            Assert.False(decision.Payload.ContainsKey("approval_id"));
+            var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+
+            await SendAsync(socket, Execute("execute-full-shell", sessionId, runId, "terminal.shell", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
+            var execution = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+            Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+            var output = execution.Payload["output"]!["stdout_head"]!.GetValue<string>();
+            Assert.Contains(Environment.UserName, output, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("loopback-http-marker", output, StringComparison.Ordinal);
+            var requestLine = await serverTask;
+            Assert.StartsWith("GET /marker", requestLine, StringComparison.Ordinal);
+        }
+        finally
+        {
+            serverCancellation.Cancel();
+            try
+            {
+                await serverTask;
+            }
+            catch (OperationCanceledException) when (serverCancellation.IsCancellationRequested)
+            {
+            }
+
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
         }
     }
 
@@ -1567,6 +2006,644 @@ public sealed class BrokerHostTests
         Assert.Equal("phase_not_available", delta.Payload["error_code"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task Legacy_tool_requests_remain_serialized()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ControlledWebSocket();
+        using var runCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var waitCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var firstStarted = NewSignal();
+        var secondStarted = NewSignal();
+        var release = NewSignal();
+        var active = 0;
+        var maximumActive = 0;
+        var connection = new AgentConnection(
+            fixture.Host.Session,
+            _ => Array.Empty<AgentToolCapability>(),
+            new HashSet<string>(StringComparer.Ordinal),
+            async (request, cancellationToken) =>
+            {
+                var current = Interlocked.Increment(ref active);
+                maximumActive = Math.Max(maximumActive, current);
+                (request.RequestId == "overlap-1" ? firstStarted : secondStarted).TrySetResult(true);
+                try
+                {
+                    await release.Task.WaitAsync(cancellationToken);
+                    return new AgentEnvelope(
+                        request.ProtocolVersion,
+                        request.RequestId,
+                        AgentMessageTypes.ToolResult,
+                        request.SessionId,
+                        request.CorrelationId,
+                        request.DeadlineMs,
+                        new JsonObject { ["status"] = ToolResultStatuses.Succeeded });
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref active);
+                }
+            });
+        var running = connection.RunAsync(socket, runCancellation.Token);
+
+        try
+        {
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "overlap-open",
+                AgentMessageTypes.SessionOpen,
+                "overlap-session",
+                null,
+                10_000,
+                new JsonObject { ["scopes"] = new JsonArray() }));
+            Assert.Equal(
+                AgentMessageTypes.SessionOpened,
+                (await socket.ReceiveAsync(waitCancellation.Token)).MessageType);
+
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "overlap-1",
+                AgentMessageTypes.ToolRequest,
+                "overlap-session",
+                null,
+                10_000,
+                new JsonObject()));
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "overlap-2",
+                AgentMessageTypes.ToolRequest,
+                "overlap-session",
+                null,
+                10_000,
+                new JsonObject()));
+
+            await firstStarted.Task.WaitAsync(waitCancellation.Token);
+            await Task.Delay(50, waitCancellation.Token);
+            Assert.False(secondStarted.Task.IsCompleted);
+            Assert.Equal(1, maximumActive);
+            release.TrySetResult(true);
+            await secondStarted.Task.WaitAsync(waitCancellation.Token);
+
+            var replies = new[]
+            {
+                await socket.ReceiveAsync(waitCancellation.Token),
+                await socket.ReceiveAsync(waitCancellation.Token),
+            };
+            Assert.Equal(
+                new[] { "overlap-1", "overlap-2" },
+                replies.Select(reply => reply.RequestId).OrderBy(id => id, StringComparer.Ordinal));
+            Assert.Equal(1, socket.MaximumConcurrentSends);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            socket.CloseInput();
+            runCancellation.Cancel();
+            try
+            {
+                await running.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ApprovalResponse_is_serialized_with_a_legacy_tool_request()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ControlledWebSocket();
+        using var runCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var waitCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var firstStarted = NewSignal();
+        var secondStarted = NewSignal();
+        var release = NewSignal();
+        var active = 0;
+        var maximumActive = 0;
+        var connection = new AgentConnection(
+            fixture.Host.Session,
+            _ => Array.Empty<AgentToolCapability>(),
+            new HashSet<string>(StringComparer.Ordinal),
+            async (request, cancellationToken) =>
+            {
+                var current = Interlocked.Increment(ref active);
+                maximumActive = Math.Max(maximumActive, current);
+                (request.RequestId == "approval-serial-1" ? firstStarted : secondStarted)
+                    .TrySetResult(true);
+                try
+                {
+                    await release.Task.WaitAsync(cancellationToken);
+                    return new AgentEnvelope(
+                        request.ProtocolVersion,
+                        request.RequestId,
+                        AgentMessageTypes.ToolResult,
+                        request.SessionId,
+                        request.CorrelationId,
+                        request.DeadlineMs,
+                        new JsonObject { ["status"] = ToolResultStatuses.Succeeded });
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref active);
+                }
+            });
+        var running = connection.RunAsync(socket, runCancellation.Token);
+
+        try
+        {
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "approval-serial-open",
+                AgentMessageTypes.SessionOpen,
+                "approval-serial-session",
+                null,
+                10_000,
+                new JsonObject { ["scopes"] = new JsonArray() }));
+            Assert.Equal(
+                AgentMessageTypes.SessionOpened,
+                (await socket.ReceiveAsync(waitCancellation.Token)).MessageType);
+
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "approval-serial-1",
+                AgentMessageTypes.ToolRequest,
+                "approval-serial-session",
+                null,
+                10_000,
+                new JsonObject()));
+            await firstStarted.Task.WaitAsync(waitCancellation.Token);
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "approval-serial-2",
+                AgentMessageTypes.ApprovalResponse,
+                "approval-serial-session",
+                null,
+                10_000,
+                new JsonObject()));
+
+            await Task.Delay(50, waitCancellation.Token);
+            Assert.False(secondStarted.Task.IsCompleted);
+            Assert.Equal(1, maximumActive);
+            release.TrySetResult(true);
+            await secondStarted.Task.WaitAsync(waitCancellation.Token);
+
+            var replies = new[]
+            {
+                await socket.ReceiveAsync(waitCancellation.Token),
+                await socket.ReceiveAsync(waitCancellation.Token),
+            };
+            Assert.Equal(
+                new[] { "approval-serial-1", "approval-serial-2" },
+                replies.Select(reply => reply.RequestId).OrderBy(id => id, StringComparer.Ordinal));
+            Assert.Equal(1, socket.MaximumConcurrentSends);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            socket.CloseInput();
+            runCancellation.Cancel();
+            try
+            {
+                await running.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Tool_handler_exception_is_an_isolated_request_failure()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ControlledWebSocket();
+        using var runCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var waitCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var connection = new AgentConnection(
+            fixture.Host.Session,
+            _ => Array.Empty<AgentToolCapability>(),
+            new HashSet<string>(StringComparer.Ordinal),
+            (request, _) =>
+            {
+                if (request.RequestId == "handler-failure")
+                {
+                    throw new InvalidOperationException("handler_failure");
+                }
+
+                return Task.FromResult(new AgentEnvelope(
+                    request.ProtocolVersion,
+                    request.RequestId,
+                    AgentMessageTypes.ToolResult,
+                    request.SessionId,
+                    request.CorrelationId,
+                    request.DeadlineMs,
+                    new JsonObject { ["status"] = ToolResultStatuses.Succeeded }));
+            });
+        var running = connection.RunAsync(socket, runCancellation.Token);
+
+        try
+        {
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "failure-open",
+                AgentMessageTypes.SessionOpen,
+                "failure-session",
+                null,
+                10_000,
+                new JsonObject { ["scopes"] = new JsonArray() }));
+            _ = await socket.ReceiveAsync(waitCancellation.Token);
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "handler-good",
+                AgentMessageTypes.ToolRequest,
+                "failure-session",
+                null,
+                10_000,
+                new JsonObject()));
+            socket.Enqueue(new AgentEnvelope(
+                1,
+                "handler-failure",
+                AgentMessageTypes.ToolRequest,
+                "failure-session",
+                null,
+                10_000,
+                new JsonObject()));
+
+            var replies = new[]
+            {
+                await socket.ReceiveAsync(waitCancellation.Token),
+                await socket.ReceiveAsync(waitCancellation.Token),
+            };
+            var failure = Assert.Single(replies, reply => reply.RequestId == "handler-failure");
+            Assert.Equal(ToolResultStatuses.Denied, failure.Payload["status"]!.GetValue<string>());
+            Assert.Equal("tool_handler_failed", failure.Payload["error_code"]!.GetValue<string>());
+            Assert.Contains(replies, reply => reply.RequestId == "handler-good");
+        }
+        finally
+        {
+            socket.CloseInput();
+            runCancellation.Cancel();
+            try
+            {
+                await running.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public async Task V2_tool_execute_handlers_overlap_after_serialized_preflight()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var readPath = Path.Combine(fixture.Root, "src", "overlap.txt");
+        File.WriteAllText(readPath, "overlap");
+        using var socket = new ControlledWebSocket();
+        using var runCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var waitCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var firstStarted = NewSignal();
+        var secondStarted = NewSignal();
+        var release = NewSignal();
+        var connection = new AgentConnection(
+            fixture.Host.Session,
+            _ => Array.Empty<AgentToolCapability>(),
+            new HashSet<string>(StringComparer.Ordinal),
+            async (request, cancellationToken) =>
+            {
+                (request.RequestId == "execute-overlap-1" ? firstStarted : secondStarted)
+                    .TrySetResult(true);
+                await release.Task.WaitAsync(cancellationToken);
+                return new AgentEnvelope(
+                    request.ProtocolVersion,
+                    request.RequestId,
+                    AgentMessageTypes.ToolResult,
+                    request.SessionId,
+                    request.CorrelationId,
+                    request.DeadlineMs,
+                    new JsonObject { ["status"] = ToolResultStatuses.Succeeded });
+            });
+        var running = connection.RunAsync(socket, runCancellation.Token);
+        const string sessionId = "session-v2-overlap";
+        var runId = "run_" + new string('c', 31) + "3";
+
+        try
+        {
+            socket.Enqueue(new AgentEnvelope(
+                2,
+                "open-v2-overlap",
+                AgentMessageTypes.RunOpen,
+                sessionId,
+                null,
+                10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(
+                    runId,
+                    sessionId,
+                    fixture.Root,
+                    EnvelopeTestSnapshots.StandardEmpty())));
+            Assert.Equal(
+                AgentMessageTypes.RunOpened,
+                (await socket.ReceiveAsync(waitCancellation.Token)).MessageType);
+
+            var arguments = new JsonObject { ["path"] = "src/overlap.txt" };
+            socket.Enqueue(Evaluate(
+                "evaluate-overlap-1",
+                sessionId,
+                runId,
+                "read",
+                arguments.DeepClone().AsObject()));
+            socket.Enqueue(Evaluate(
+                "evaluate-overlap-2",
+                sessionId,
+                runId,
+                "read",
+                arguments.DeepClone().AsObject()));
+            var decisions = new[]
+            {
+                await socket.ReceiveAsync(waitCancellation.Token),
+                await socket.ReceiveAsync(waitCancellation.Token),
+            };
+            var tokens = decisions.ToDictionary(
+                decision => decision.RequestId,
+                decision => decision.Payload["authorization_token"]!.GetValue<string>());
+
+            socket.Enqueue(Execute(
+                "execute-overlap-1",
+                sessionId,
+                runId,
+                "read",
+                tokens["evaluate-overlap-1"],
+                arguments.DeepClone().AsObject()));
+            socket.Enqueue(Execute(
+                "execute-overlap-2",
+                sessionId,
+                runId,
+                "read",
+                tokens["evaluate-overlap-2"],
+                arguments.DeepClone().AsObject()));
+
+            await Task.WhenAll(firstStarted.Task, secondStarted.Task)
+                .WaitAsync(waitCancellation.Token);
+            release.TrySetResult(true);
+            var replies = new[]
+            {
+                await socket.ReceiveAsync(waitCancellation.Token),
+                await socket.ReceiveAsync(waitCancellation.Token),
+            };
+            Assert.Equal(2, replies.Length);
+        }
+        finally
+        {
+            release.TrySetResult(true);
+            socket.CloseInput();
+            runCancellation.Cancel();
+            try
+            {
+                await running.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Cancelling_run_cancels_in_flight_handler_and_drains_dispatch()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var readPath = Path.Combine(fixture.Root, "src", "cancel.txt");
+        File.WriteAllText(readPath, "cancel");
+        using var socket = new ControlledWebSocket();
+        using var runCancellation = new CancellationTokenSource();
+        using var waitCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var handlerStarted = NewSignal();
+        var handlerCancelled = NewSignal();
+        var connection = new AgentConnection(
+            fixture.Host.Session,
+            _ => Array.Empty<AgentToolCapability>(),
+            new HashSet<string>(StringComparer.Ordinal),
+            async (_, cancellationToken) =>
+            {
+                handlerStarted.TrySetResult(true);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                    throw new InvalidOperationException("cancelled_handler_returned");
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    handlerCancelled.TrySetResult(true);
+                    throw;
+                }
+            });
+        var running = connection.RunAsync(socket, runCancellation.Token);
+        const string sessionId = "session-cancel-handler";
+        var runId = "run_" + new string('e', 31) + "5";
+
+        try
+        {
+            socket.Enqueue(new AgentEnvelope(
+                2,
+                "open-cancel-handler",
+                AgentMessageTypes.RunOpen,
+                sessionId,
+                null,
+                10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(
+                    runId,
+                    sessionId,
+                    fixture.Root,
+                    EnvelopeTestSnapshots.StandardEmpty())));
+            Assert.Equal(
+                AgentMessageTypes.RunOpened,
+                (await socket.ReceiveAsync(waitCancellation.Token)).MessageType);
+
+            var arguments = new JsonObject { ["path"] = "src/cancel.txt" };
+            socket.Enqueue(Evaluate(
+                "evaluate-cancel-handler",
+                sessionId,
+                runId,
+                "read",
+                arguments.DeepClone().AsObject()));
+            var decision = await socket.ReceiveAsync(waitCancellation.Token);
+            var token = decision.Payload["authorization_token"]!.GetValue<string>();
+            socket.Enqueue(Execute(
+                "execute-cancel-handler",
+                sessionId,
+                runId,
+                "read",
+                token,
+                arguments.DeepClone().AsObject()));
+
+            await handlerStarted.Task.WaitAsync(waitCancellation.Token);
+            runCancellation.Cancel();
+            await handlerCancelled.Task.WaitAsync(waitCancellation.Token);
+            await running.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            runCancellation.Cancel();
+            socket.CloseInput();
+            try
+            {
+                await running.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+            {
+            }
+        }
+    }
+
+    private static async Task<string> ServeLoopbackMarkerAsync(
+        TcpListener listener,
+        CancellationToken cancellationToken)
+    {
+        using var client = await listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
+        using var stream = client.GetStream();
+        using var reader = new StreamReader(stream, Encoding.ASCII, true, 1024, leaveOpen: true);
+        var requestLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) ?? string.Empty;
+        while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)))
+        {
+        }
+
+        const string marker = "loopback-http-marker";
+        var response = $"HTTP/1.1 200 OK\r\nContent-Length: {Encoding.ASCII.GetByteCount(marker)}\r\nConnection: close\r\n\r\n{marker}";
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(response), cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        return requestLine;
+    }
+
+    private static TaskCompletionSource<bool> NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private sealed class ControlledWebSocket : WebSocket
+    {
+        private readonly ConcurrentQueue<byte[]> _incoming = new();
+        private readonly ConcurrentQueue<AgentEnvelope> _sent = new();
+        private readonly SemaphoreSlim _incomingAvailable = new(0);
+        private readonly SemaphoreSlim _sentAvailable = new(0);
+        private int _closed;
+        private int _activeSends;
+        private int _maximumConcurrentSends;
+
+        public override WebSocketCloseStatus? CloseStatus => null;
+
+        public override string? CloseStatusDescription => null;
+
+        public override WebSocketState State =>
+            Volatile.Read(ref _closed) == 0 ? WebSocketState.Open : WebSocketState.Closed;
+
+        public override string? SubProtocol => null;
+
+        public int MaximumConcurrentSends => Volatile.Read(ref _maximumConcurrentSends);
+
+        public void Enqueue(AgentEnvelope envelope)
+        {
+            _incoming.Enqueue(Encoding.UTF8.GetBytes(AgentEnvelopeCodec.Serialize(envelope)));
+            _incomingAvailable.Release();
+        }
+
+        public void CloseInput()
+        {
+            Interlocked.Exchange(ref _closed, 1);
+            _incomingAvailable.Release();
+        }
+
+        public async Task<AgentEnvelope> ReceiveAsync(CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                await _sentAvailable.WaitAsync(cancellationToken);
+                if (_sent.TryDequeue(out var received))
+                {
+                    return received;
+                }
+            }
+        }
+
+        public override async Task<WebSocketReceiveResult> ReceiveAsync(
+            ArraySegment<byte> buffer,
+            CancellationToken cancellationToken)
+        {
+            byte[]? payload;
+            while (!_incoming.TryDequeue(out payload))
+            {
+                if (State != WebSocketState.Open)
+                {
+                    return new WebSocketReceiveResult(0, WebSocketMessageType.Close, true);
+                }
+
+                await _incomingAvailable.WaitAsync(cancellationToken);
+            }
+
+            payload.AsSpan(0, Math.Min(payload.Length, buffer.Count))
+                .CopyTo(buffer.AsSpan());
+            return new WebSocketReceiveResult(
+                Math.Min(payload.Length, buffer.Count),
+                WebSocketMessageType.Text,
+                true);
+        }
+
+        public override async Task SendAsync(
+            ArraySegment<byte> buffer,
+            WebSocketMessageType messageType,
+            bool endOfMessage,
+            CancellationToken cancellationToken)
+        {
+            var active = Interlocked.Increment(ref _activeSends);
+            var maximum = Volatile.Read(ref _maximumConcurrentSends);
+            while (active > maximum)
+            {
+                var observed = Interlocked.CompareExchange(
+                    ref _maximumConcurrentSends,
+                    active,
+                    maximum);
+                if (observed == maximum)
+                {
+                    break;
+                }
+
+                maximum = observed;
+            }
+
+            try
+            {
+                await Task.Delay(5, cancellationToken);
+                var payload = buffer.ToArray();
+                _sent.Enqueue(AgentEnvelopeCodec.Parse(Encoding.UTF8.GetString(payload)));
+                _sentAvailable.Release();
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeSends);
+            }
+        }
+
+        public override void Abort() => CloseInput();
+
+        public override Task CloseAsync(
+            WebSocketCloseStatus closeStatus,
+            string? statusDescription,
+            CancellationToken cancellationToken)
+        {
+            CloseInput();
+            return Task.CompletedTask;
+        }
+
+        public override Task CloseOutputAsync(
+            WebSocketCloseStatus closeStatus,
+            string? statusDescription,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override void Dispose()
+        {
+            CloseInput();
+            _incomingAvailable.Dispose();
+            _sentAvailable.Dispose();
+        }
+    }
+
     private sealed class HostFixture : IAsyncDisposable
     {
         private HostFixture(string root, string token, BrokerHost host)
@@ -1629,16 +2706,8 @@ public sealed class BrokerHostTests
         }
     }
 
-    /// <summary>
-    /// The standard preset's promised relaxation must be reachable through the real
-    /// connection path. It depends on the evaluator receiving a workspace cleanliness
-    /// provider: when <c>AgentConnection</c> omitted it, the provider defaulted to
-    /// <c>null</c>, the guard <c>_cleanliness?.IsWorkspaceClean(...) != true</c> was
-    /// always true, and every standard session silently kept asking. This asserts the
-    /// wired end-to-end decision so that regression cannot come back unnoticed.
-    /// </summary>
     [Fact]
-    public async Task V2_standard_preset_auto_allows_workspace_risk_when_the_repo_is_clean()
+    public async Task V2_standard_preset_keeps_workspace_risk_ask_when_the_repo_is_clean()
     {
         await using var fixture = await HostFixture.StartAsync();
         InitializeCleanGitWorkspace(fixture.Root);
@@ -1659,8 +2728,6 @@ public sealed class BrokerHostTests
             cts.Token);
         Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
 
-        // An unknown executable inside the workspace with no network intent is the
-        // documented standard_clean_workspace_allow case; a dirty workspace keeps asking for it.
         var riskyArgs = new JsonObject
         {
             ["executable"] = "where.exe",
@@ -1670,9 +2737,9 @@ public sealed class BrokerHostTests
 
         await SendAsync(socket, Evaluate("evaluate-standard-clean", sessionId, runId, "terminal.run", riskyArgs.DeepClone().AsObject()), cts.Token);
         var decision = await ReceiveAsync(socket, cts.Token);
-        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
-        Assert.Equal("standard_clean_workspace_allow", decision.Payload["reason_code"]!.GetValue<string>());
-        Assert.False(string.IsNullOrWhiteSpace(decision.Payload["authorization_token"]!.GetValue<string>()));
+        Assert.Equal("ask", decision.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("terminal_unknown_executable", decision.Payload["reason_code"]!.GetValue<string>());
+        Assert.False(decision.Payload.ContainsKey("authorization_token"));
     }
 
     [Fact]

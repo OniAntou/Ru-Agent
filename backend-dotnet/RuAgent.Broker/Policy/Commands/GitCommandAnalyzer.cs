@@ -9,7 +9,7 @@ namespace RuAgent.Broker.Policy.Commands;
 /// </summary>
 public sealed class GitCommandAnalyzer : ICommandAnalyzer
 {
-    public const string AnalyzerVersion = "1";
+    public const string AnalyzerVersion = "2";
 
     public string Version => AnalyzerVersion;
 
@@ -75,6 +75,11 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
         var verb = argv[index];
         var rest = argv.Skip(index + 1).ToArray();
 
+        if (string.Equals(verb, "submodule", StringComparison.Ordinal))
+        {
+            return AnalyzeSubmodule(rest);
+        }
+
         if (rest.Any(argument => argument.StartsWith("--output", StringComparison.Ordinal)))
         {
             return new(AnalyzerVersion, TerminalOperationClass.GitMutation, "none", "git_output_redirect");
@@ -120,6 +125,11 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
         }
     }
 
+    private static CommandAnalysis AnalyzeSubmodule(IReadOnlyList<string> arguments) =>
+        arguments.Count > 0 && string.Equals(arguments[0], "status", StringComparison.Ordinal)
+            ? new(AnalyzerVersion, TerminalOperationClass.ReadOnly, "none", "git_submodule_status")
+            : new(AnalyzerVersion, TerminalOperationClass.ExternalMutation, "unknown", "git_submodule_requires_approval");
+
     private static bool IsBranchShowCurrentFlag(string argument) =>
         string.Equals(argument, "--show-current", StringComparison.Ordinal);
 
@@ -127,7 +137,7 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
     {
         "commit" or "add" or "rm" or "mv" or "merge" or "rebase" or "reset" or "checkout" or
         "switch" or "restore" or "clean" or "stash" or "tag" or "cherry-pick" or "revert" or
-        "am" or "apply" or "bisect" or "config" or "worktree" or "submodule" or "gc" or
+        "am" or "apply" or "bisect" or "config" or "worktree" or "gc" or
         "prune" or "replace" or "notes" or "filter-branch" or "format-patch" => true,
         _ => false,
     };

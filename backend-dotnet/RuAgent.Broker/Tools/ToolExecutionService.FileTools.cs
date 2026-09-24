@@ -14,6 +14,7 @@ using RuAgent.Broker.Tools.Web;
 using RuAgent.Broker.Tools.Help;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using BrokerRunLease = RuAgent.Broker.Runtime.BrokerRunLease;
 
 namespace RuAgent.Broker.Tools;
 
@@ -84,25 +85,6 @@ public sealed partial class ToolExecutionService
         return translated;
     }
 
-    /// <summary>
-    /// Selects the adapter root for one files.* call. Lease-rooted targets
-    /// behave exactly as before. Outside targets execute against the longest
-    /// matching session-granted directory; without a grant the adapters keep
-    /// their own <c>outside_workspace</c> denial. Malformed inputs fall back
-    /// to the lease toolset so adapters keep their native errors.
-    /// files.edit/notes resolve via the input path; files.restore peeks the
-    /// stored recovery record's canonical path before dispatch.
-    /// </summary>
-
-    /// <summary>
-    /// Selects the adapter root for one files.* call. Lease-rooted targets
-    /// behave exactly as before. Outside targets execute against the longest
-    /// matching session-granted directory; without a grant the adapters keep
-    /// their own <c>outside_workspace</c> denial. Malformed inputs fall back
-    /// to the lease toolset so adapters keep their native errors.
-    /// files.edit/notes resolve via the input path; files.restore peeks the
-    /// stored recovery record's canonical path before dispatch.
-    /// </summary>
     private RootToolSet ResolveTools(ToolExecutionContext context, string? pathInput)
     {
         var tools = ToolsFor(context);
@@ -112,31 +94,40 @@ public sealed partial class ToolExecutionService
         }
 
         var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
-        if (grants.Count == 0)
-        {
-            return tools;
-        }
-
-        string selectedRoot;
+        var profile = ActivePolicyProfile(context);
         try
         {
-            selectedRoot = Files.FileToolRootSelector.SelectRoot(
-                tools.MutationResolver,
-                tools.MutationResolver.CanonicalRoot,
-                grants,
-                pathInput);
+            var selectedRoot = profile is null
+                ? FileToolRootSelector.SelectRoot(
+                    tools.MutationResolver,
+                    tools.MutationResolver.CanonicalRoot,
+                    grants,
+                    pathInput)
+                : FileToolRootSelector.SelectRoot(
+                    tools.MutationResolver,
+                    tools.MutationResolver.CanonicalRoot,
+                    grants,
+                    profile,
+                    pathInput);
+            if (string.Equals(
+                    selectedRoot,
+                    tools.MutationResolver.CanonicalRoot,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return tools;
+            }
+
+            var shouldCache = profile is null || !IsFullAccessProfile(profile);
+            return ToolsForRoot(selectedRoot, shouldCache);
         }
         catch (ArgumentException)
         {
             return tools;
         }
-
-        if (string.Equals(selectedRoot, tools.MutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
+        catch (UnauthorizedAccessException)
         {
             return tools;
         }
-
-        return ToolsForRoot(selectedRoot);
     }
 
     private static JsonObject WithInternalExpectedHash(CanonicalPathResolver resolver, JsonObject arguments)
@@ -161,9 +152,29 @@ public sealed partial class ToolExecutionService
         return enriched;
  }
 
+    private AgentPolicyProfile? ActivePolicyProfile(ToolExecutionContext context) =>
+        context.IsAuthenticatedV2Execution
+        && ActiveLease(context.RunId, context.SessionId) is { } lease
+            ? AgentPolicyProfileCatalog.Get(lease.Preset)
+            : null;
+
+    private BrokerRunLease? ActiveLease(string runId, string sessionId)
+    {
+        if (!_session.TryGetRunLease(runId, out var lease)
+            || lease is null
+            || lease.IsExpired(DateTimeOffset.UtcNow)
+            || !string.Equals(lease.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return lease;
+    }
+
     private RootToolSet ToolsFor(ToolExecutionContext context)
     {
-        if (!_session.TryGetRunLease(context.RunId, out var lease) || lease is null)
+        if (!context.IsAuthenticatedV2Execution
+            || ActiveLease(context.RunId, context.SessionId) is not { } lease)
         {
             return _defaultTools;
         }
@@ -171,14 +182,26 @@ public sealed partial class ToolExecutionService
         return ToolsForRoot(lease.CanonicalRoot);
     }
 
-    private RootToolSet ToolsForRoot(string canonicalRoot)
+    private RootToolSet ToolsForRoot(string canonicalRoot, bool cache = true)
     {
         var root = Path.GetFullPath(canonicalRoot);
+        if (!cache)
+        {
+            return RootToolSet.Create(root, _approvalTokens);
+        }
+
         return _toolSetsByRoot.GetOrAdd(
             root,
             static (resolvedRoot, approvalTokens) => RootToolSet.Create(resolvedRoot, approvalTokens),
             _approvalTokens);
     }
+
+    private static bool IsFullAccessProfile(AgentPolicyProfile profile) =>
+        string.Equals(
+            profile.Preset,
+            AgentPolicyProfileCatalog.FullAccessPresetWireValue,
+            StringComparison.Ordinal)
+        && profile.DecisionFor(AgentPolicySubject.ExternalStructuredFile) == AgentPolicyDecision.Allow;
 
     private sealed class RootToolSet
     {
@@ -220,7 +243,7 @@ public sealed partial class ToolExecutionService
     {
         try
         {
-            var tools = ResolveRootToolSet(context, TargetPathOf(arguments));
+            var tools = ResolveTools(context, TargetPathOf(arguments));
             int occurrences = 1;
             if (arguments["expected_occurrences"] is JsonValue value
                 && value.TryGetValue<int>(out var parsed))
@@ -263,11 +286,16 @@ public sealed partial class ToolExecutionService
             return ToolsFor(context);
         }
 
-        return ResolveRootToolSet(context, canonicalPath!);
+        return ResolveTools(context, canonicalPath!);
     }
 
     private RootToolSet ResolveRootToolSet(ToolExecutionContext context, string? pathInput)
     {
+        if (ActivePolicyProfile(context)?.TerminalAuthority == PresetTerminalAuthority.WindowsCurrentUser)
+        {
+            return ToolsFor(context);
+        }
+
         var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
         if (string.IsNullOrWhiteSpace(pathInput) || grants.Count == 0)
         {
@@ -362,7 +390,8 @@ public sealed partial class ToolExecutionService
 
     private static byte[] ReadBoundedBytes(string path, int maxBytes)
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
+        HardLinkGuard.RequireSingleLink(path);
+        using var stream = HardLinkGuard.OpenRead(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
         using var output = new MemoryStream(Math.Min(maxBytes, 81920));
         var buffer = new byte[Math.Min(maxBytes, 81920)];
         while (true)

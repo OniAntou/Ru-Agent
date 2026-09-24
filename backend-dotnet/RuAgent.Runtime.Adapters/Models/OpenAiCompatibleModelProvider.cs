@@ -423,6 +423,9 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         HttpStatusCode.Unauthorized => new ModelProviderException("auth_failed", retryable: false),
         HttpStatusCode.Forbidden => new ModelProviderException("forbidden", retryable: false),
         HttpStatusCode.TooManyRequests => new ModelProviderException("rate_limited", retryable: true),
+        // Gateways answer 404 both for unknown models and for models with no
+        // serving capacity; either way the fix is picking another model.
+        HttpStatusCode.NotFound => new ModelProviderException("model_unavailable", retryable: false),
         >= HttpStatusCode.InternalServerError => new ModelProviderException("server_error", retryable: true),
         _ => new ModelProviderException("http_error", retryable: false),
     };

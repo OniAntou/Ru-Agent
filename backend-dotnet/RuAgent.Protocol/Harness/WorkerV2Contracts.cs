@@ -646,7 +646,7 @@ public static class WorkerV2Contracts
                 || !TryGetPromptIdentifier(capability["scope"], 128, allowColon: false, out _)
                 || !TryGetCanonicalObject(capability["input_schema_json"], MaxToolSchemaBytes, out var schemaJson)
                 || !TryGetDigest(capability["input_schema_digest"], out var schemaDigest)
-                || !string.Equals(schemaDigest, ComputeSha256(schemaJson), StringComparison.Ordinal)
+                || !string.Equals(schemaDigest, SchemaDigest(schemaJson), StringComparison.Ordinal)
                 || !TryGetOptionalCanonicalObject(capability["example_arguments_json"], 4 * 1024)
                 || !TryGetPromptIdentifier(capability["availability"], 32, allowColon: false, out var availability)
                 || !capabilityIds.Add(capabilityId))
@@ -898,6 +898,15 @@ public static class WorkerV2Contracts
     {
         return Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(value))).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// The digest a capability must carry: the same key-sorted hash the composer
+    /// writes, not a hash of the wire document order (declaration order is not
+    /// alphabetical, so the two differ for every tool).
+    /// </summary>
+    private static string SchemaDigest(string canonicalJson) =>
+        AgentToolDefinitionCatalog.ComputeSchemaDigest(
+            JsonNode.Parse(canonicalJson)!.AsObject());
 
     private static int PromptUtf8ByteCount(string value)
     {

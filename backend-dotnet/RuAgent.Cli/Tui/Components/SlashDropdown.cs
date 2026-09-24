@@ -12,6 +12,9 @@ public static class SlashDropdown
     public const int MaxWidth = 1000;
     public const int LabelColumn = 12;
 
+    /// <summary>Cells kept for the description when rows carry long labels.</summary>
+    public const int MinDetailReserve = 12;
+
     public static IReadOnlyList<string> Compose(
         int width,
         string title,
@@ -22,22 +25,52 @@ public static class SlashDropdown
     {
         var w = Math.Clamp(width, MinWidth, MaxWidth);
         var lines = new List<string> { Top(w, title) };
+        var labelWidth = LabelColumnFor(w, items);
 
         if (items.Count == 0)
         {
-            lines.Add(Row(w, new DropdownItem("", "no matches"), false, isPlaceholder: true));
+            lines.Add(Row(w, labelWidth, new DropdownItem("", "no matches"), false, isPlaceholder: true));
         }
         else
         {
             var window = Window(items.Count, selected, Math.Max(1, maxVisible));
             for (var i = window.Start; i < window.End; i++)
             {
-                lines.Add(Row(w, items[i], i == selected, isPlaceholder: false));
+                lines.Add(Row(w, labelWidth, items[i], i == selected, isPlaceholder: false));
             }
         }
 
         lines.Add(Footer(w, footer, items.Count == 0 ? 0 : selected + 1, items.Count));
         return lines;
+    }
+
+    /// <summary>
+    /// Label column sized from the longest label so full names show on wide
+    /// terminals, never below the historic width, and always leaving room for
+    /// the description (or the whole row when rows carry no description).
+    /// Measured over every item so scrolling never reflows the column.
+    /// </summary>
+    public static int LabelColumnFor(int width, IReadOnlyList<DropdownItem> items)
+    {
+        var w = Math.Clamp(width, MinWidth, MaxWidth);
+        var inner = Math.Max(1, w - 4);
+        var longest = 0;
+        var hasDetail = false;
+        foreach (var item in items)
+        {
+            longest = Math.Max(longest, TuiText.VisibleWidth(item.Label));
+            if (!string.IsNullOrWhiteSpace(item.Description) || !string.IsNullOrWhiteSpace(item.Detail))
+            {
+                hasDetail = true;
+            }
+        }
+
+        if (!hasDetail)
+        {
+            return Math.Max(LabelColumn, Math.Min(longest, Math.Max(LabelColumn, inner - 2)));
+        }
+
+        return Math.Max(LabelColumn, Math.Min(longest, Math.Max(LabelColumn, inner - MinDetailReserve - 3)));
     }
 
     /// <summary>The closing border, also usable stand-alone for list footers.</summary>
@@ -75,12 +108,12 @@ public static class SlashDropdown
             + TuiPalette.Paint("╮", TuiToken.Brand);
     }
 
-    private static string Row(int width, DropdownItem item, bool isSelected, bool isPlaceholder)
+    private static string Row(int width, int labelWidth, DropdownItem item, bool isSelected, bool isPlaceholder)
     {
         var inner = Math.Max(1, width - 4);
         var prefix = isSelected ? "❯ " : "  ";
-        var label = TuiText.Pad(item.Label, LabelColumn);
-        var rest = inner - 2 - LabelColumn - 1;
+        var label = TuiText.Pad(TuiText.MiddleTruncate(item.Label, labelWidth), labelWidth);
+        var rest = inner - 2 - labelWidth - 1;
 
         var description = rest <= 1
             ? string.Empty

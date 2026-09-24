@@ -23,6 +23,19 @@ public sealed class AgentSlashCommands
     /// </summary>
     public Func<Tui.ChoiceList, CancellationToken, Task<string?>>? Picker { get; set; }
 
+    /// <summary>
+    /// Reads one secret without echo or history. Wired by the CLI to the line reader;
+    /// null means cancelled or non-interactive. Secrets never reach output, history, or logs.
+    /// </summary>
+    public Func<string, CancellationToken, Task<string?>>? SecretPrompt { get; set; }
+
+    /// <summary>
+    /// Masked panel variant of <see cref="SecretPrompt"/>: takes the provider display
+    /// name and renders the framed bullet input. Preferred when wired; otherwise the
+    /// CLI falls back to <see cref="SecretPrompt"/>.
+    /// </summary>
+    public Func<string, CancellationToken, Task<string?>>? SecretPanelPrompt { get; set; }
+
     /// <summary>Live run counters for the status card. Wired by the CLI; may be absent in tests.</summary>
     public Func<Tui.TuiStatusSnapshot?>? SnapshotProvider { get; set; }
 
@@ -56,6 +69,12 @@ public sealed class AgentSlashCommands
         if (slashCmd is "/model" or "/provider")
         {
             await HandleModelAsync(arg, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (slashCmd is "/key")
+        {
+            await HandleKeyAsync(arg, cancellationToken).ConfigureAwait(false);
             return true;
         }
 
@@ -120,6 +139,10 @@ public sealed class AgentSlashCommands
     private static string? ReadBackend(JsonElement settings) =>
         settings.TryGetProperty("backend", out var backend) ? backend.GetString() : null;
 
+    private static bool IsModelsDevBackend(string? backend) =>
+        !string.IsNullOrWhiteSpace(backend)
+        && backend.Trim().StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Credential presence per provider alias. Local providers have no key field and are
     /// omitted, so callers only ever mark providers that can actually be signed out.
@@ -143,6 +166,28 @@ public sealed class AgentSlashCommands
         return states;
     }
 
+    /// <summary>
+    /// Built-in key states plus signed-in Models.dev ids, so pickers can mark a
+    /// provider without a credential instead of letting a run discover it.
+    /// Best-effort: a failed lookup keeps the settings-derived states.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, bool>> ReadAllKeyStatesAsync(JsonElement settings, CancellationToken cancellationToken)
+    {
+        var states = new Dictionary<string, bool>(ReadKeyStates(settings), StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var id in await _settingsClient.GetModelsDevKeysAsync(cancellationToken).ConfigureAwait(false))
+            {
+                states["models.dev:" + id.Trim().ToLowerInvariant()] = true;
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return states;
+    }
+
     private async Task HandleBackendAsync(string? arg, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(arg))
@@ -150,7 +195,9 @@ public sealed class AgentSlashCommands
             // No argument: offer the picker instead of making the operator recall the names.
             var settings = await TryReadSettingsAsync(cancellationToken).ConfigureAwait(false);
             var current = settings.HasValue ? ReadBackend(settings.Value) : null;
-            var keyStates = settings.HasValue ? ReadKeyStates(settings.Value) : null;
+            var keyStates = settings.HasValue
+                ? await ReadAllKeyStatesAsync(settings.Value, cancellationToken).ConfigureAwait(false)
+                : null;
             var list = new Tui.ChoiceList("backend", Tui.TuiSurfaces.BackendChoices(current, keyStates));
             var picked = Picker is null ? null : await Picker(list, cancellationToken).ConfigureAwait(false);
             if (picked is null)
@@ -195,6 +242,7 @@ public sealed class AgentSlashCommands
                 "openai" or "openai api" => "OpenAI",
                 "anthropic" or "anthropic claude" or "claude" => "Anthropic",
                 "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
+                "openrouter" => "models.dev:openrouter",
                 _ when trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
                     => "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant(),
                 _ => trimmed,
@@ -206,7 +254,7 @@ public sealed class AgentSlashCommands
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -239,13 +287,35 @@ public sealed class AgentSlashCommands
                 var configured = KnownBackends
                     .Select(b => (b.Backend, ReadModel(root, b.Backend)))
                     .ToList();
-                var candidates = Tui.TuiSurfaces.ModelChoices(backend, configured, ReadKeyStates(root));
+                if (IsModelsDevBackend(backend))
+                {
+                    configured.Insert(0, (backend ?? string.Empty, ReadModel(root, backend)));
+                }
+
+                var keyStates = await ReadAllKeyStatesAsync(root, cancellationToken).ConfigureAwait(false);
+                IReadOnlyList<Tui.ChoiceItem>? candidates = null;
+                string? candidatesFooter = null;
+                try
+                {
+                    var catalog = await _settingsClient.GetModelsAsync(backend, cancellationToken).ConfigureAwait(false);
+                    if (catalog.Count > 0)
+                    {
+                        candidates = Tui.TuiSurfaces.ModelCatalogChoices(backend, ReadModel(root, backend), catalog, keyStates);
+                        candidatesFooter = backend;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Live catalog is best-effort; configured models still answer.
+                }
+
+                candidates ??= Tui.TuiSurfaces.ModelChoices(backend, configured, keyStates);
 
                 // Fewer than two candidates means there is nothing to choose between: show
                 // the card instead of a one-row picker.
                 if (candidates.Count > 1 && Picker is not null)
                 {
-                    var list = new Tui.ChoiceList("model", candidates);
+                    var list = new Tui.ChoiceList("model", candidates, footer: candidatesFooter);
                     var picked = await Picker(list, cancellationToken).ConfigureAwait(false);
                     if (picked is not null)
                     {
@@ -265,7 +335,7 @@ public sealed class AgentSlashCommands
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -296,11 +366,229 @@ public sealed class AgentSlashCommands
         {
             rows.Add(new Tui.PanelRow("api key", configured ? "configured" : "missing"));
         }
+        else if (IsModelsDevBackend(backend))
+        {
+            rows.Add(new Tui.PanelRow("api key", "use /key <provider> to sign in"));
+        }
 
         foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "model", [new Tui.PanelSection(null, rows)], "/model <name>"))
         {
             _out.WriteLine(line);
         }
+    }
+
+    private async Task HandleKeyAsync(string? arg, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(arg))
+        {
+            await WriteKeyStatusAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var parts = arg.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 2 && string.Equals(parts[0], "remove", StringComparison.OrdinalIgnoreCase))
+        {
+            await RemoveKeyAsync(parts[1], cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (parts.Length != 1)
+        {
+            await _err.WriteLineAsync("usage: /key [provider] or /key remove <provider>").ConfigureAwait(false);
+            return;
+        }
+
+        await SaveKeyAsync(parts[0], cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed record KeyProvider(string Backend, string Display, string? ModelsDevId);
+
+    private static KeyProvider? NormalizeKeyProvider(string input)
+    {
+        var trimmed = input.Trim();
+        var canonical = trimmed.ToLowerInvariant() switch
+        {
+            "openai" or "openai api" => "OpenAI",
+            "anthropic" or "anthropic claude" or "claude" => "Anthropic",
+            "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
+            "openrouter" => "models.dev:openrouter",
+            _ when trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
+                => "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant(),
+            _ => null,
+        };
+
+        if (canonical is null)
+        {
+            return null;
+        }
+
+        if (canonical.StartsWith("models.dev:", StringComparison.Ordinal))
+        {
+            var id = canonical["models.dev:".Length..];
+            if (id.Length == 0 || id.Length > 64
+                || id.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
+            {
+                return null;
+            }
+
+            return new KeyProvider(canonical, canonical, id);
+        }
+
+        return new KeyProvider(canonical, canonical, null);
+    }
+
+    private static string? KeyFieldFor(KeyProvider provider) =>
+        KnownBackends.FirstOrDefault(b => string.Equals(b.Backend, provider.Backend, StringComparison.OrdinalIgnoreCase)).HasKeyField;
+
+    private async Task SaveKeyAsync(string providerArg, CancellationToken cancellationToken)
+    {
+        var provider = NormalizeKeyProvider(providerArg);
+        if (provider is null)
+        {
+            await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider. Use openai, anthropic, custom, or models.dev:<id>.").ConfigureAwait(false);
+            return;
+        }
+
+        if (SecretPrompt is null && SecretPanelPrompt is null)
+        {
+            await _err.WriteLineAsync("interactive_required: /key <provider> needs an interactive terminal.").ConfigureAwait(false);
+            return;
+        }
+
+        string? secret;
+        try
+        {
+            secret = SecretPanelPrompt is not null
+                ? await SecretPanelPrompt(provider.Display, cancellationToken).ConfigureAwait(false)
+                : await SecretPrompt!($"API key for {provider.Display} (ctrl+v to paste, esc to cancel): ", cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (secret is null)
+        {
+            await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  no key entered — key unchanged.")).ConfigureAwait(false);
+            return;
+        }
+
+        secret = secret.Trim();
+        if (secret.Length == 0)
+        {
+            await _err.WriteLineAsync("key must be non-empty — nothing was saved.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var keyField = KeyFieldFor(provider);
+            if (string.IsNullOrEmpty(keyField) && provider.ModelsDevId is null)
+            {
+                await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider.").ConfigureAwait(false);
+                return;
+            }
+
+            JsonObject body = provider.ModelsDevId is not null
+                ? new JsonObject
+                {
+                    ["models_dev_provider_id"] = provider.Backend,
+                    ["models_dev_api_key"] = secret,
+                }
+                : new JsonObject { [keyField!] = secret };
+            await _settingsClient.UpdateAsync(body, cancellationToken).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Signed in to {provider.Display}")).ConfigureAwait(false);
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync(CliErrorText.Format(ex)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"key_error: {ex.Message}").ConfigureAwait(false);
+        }
+
+        await _out.FlushAsync().ConfigureAwait(false);
+    }
+
+    private async Task RemoveKeyAsync(string providerArg, CancellationToken cancellationToken)
+    {
+        var provider = NormalizeKeyProvider(providerArg);
+        if (provider is null)
+        {
+            await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider. Use openai, anthropic, custom, or models.dev:<id>.").ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var message = await _settingsClient.RemoveProviderAsync(provider.Backend, cancellationToken).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ {message}")).ConfigureAwait(false);
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync(CliErrorText.Format(ex)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"key_error: {ex.Message}").ConfigureAwait(false);
+        }
+
+        await _out.FlushAsync().ConfigureAwait(false);
+    }
+
+    private async Task WriteKeyStatusAsync(CancellationToken cancellationToken)
+    {
+        JsonElement? settings;
+        try
+        {
+            settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync(CliErrorText.Format(ex)).ConfigureAwait(false);
+            return;
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"settings_error: {ex.Message}").ConfigureAwait(false);
+            return;
+        }
+
+        var rows = new List<Tui.PanelRow>();
+        if (settings.HasValue)
+        {
+            var states = ReadKeyStates(settings.Value);
+            foreach (var (backend, alias, _, _) in KnownBackends)
+            {
+                var state = states.TryGetValue(alias, out var hasKey) && hasKey ? "signed in" : "no key";
+                rows.Add(new Tui.PanelRow(backend, state));
+            }
+
+            try
+            {
+                var signedIn = await _settingsClient.GetModelsDevKeysAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var id in signedIn)
+                {
+                    var normalized = "models.dev:" + id.Trim().ToLowerInvariant();
+                    if (!rows.Any(r => string.Equals(r.Label, normalized, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        rows.Add(new Tui.PanelRow(normalized, "signed in"));
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Key presence is best-effort; the legacy rows above still answer.
+            }
+        }
+
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "keys", [new Tui.PanelSection(null, rows)], "/key <provider> · /key remove <provider>"))
+        {
+            _out.WriteLine(line);
+        }
+
+        await _out.FlushAsync().ConfigureAwait(false);
     }
 
     private async Task HandleTreeAsync(string? currentSessionId, CancellationToken cancellationToken)
@@ -387,7 +675,7 @@ public sealed class AgentSlashCommands
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -510,7 +798,7 @@ public sealed class AgentSlashCommands
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
         }
         catch (Exception ex)
         {

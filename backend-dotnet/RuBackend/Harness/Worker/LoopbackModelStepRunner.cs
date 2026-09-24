@@ -96,9 +96,11 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception error)
                 {
-                    throw new WorkerProtocolException("provider_bootstrap_failed");
+                    // A config failure already names itself (missing key or model);
+                    // collapsing it would send the reader after the worker instead.
+                    throw new WorkerProtocolException(StableBootstrapCode(error) ?? "provider_bootstrap_failed");
                 }
 
                 if (string.IsNullOrWhiteSpace(providerBootstrapPath))
@@ -553,6 +555,36 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             }
         }
         }
+    }
+
+    /// <summary>
+    /// Keeps a provider selection failure's own bounded code when it already
+    /// satisfies the terminal-code shape (1..64 chars, [a-z] first, [a-z0-9_.]
+    /// after); anything else still collapses to the generic bootstrap failure.
+    /// </summary>
+    private static string? StableBootstrapCode(Exception error)
+    {
+        if (error is not Providers.ProviderCatalogException catalog || string.IsNullOrWhiteSpace(catalog.Code))
+        {
+            return null;
+        }
+
+        var code = catalog.Code.Trim();
+        if (code.Length is < 1 or > 64 || code[0] < 'a' || code[0] > 'z')
+        {
+            return null;
+        }
+
+        foreach (var ch in code)
+        {
+            var ok = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_';
+            if (!ok)
+            {
+                return null;
+            }
+        }
+
+        return code;
     }
 
     private static void DeleteOwnedProviderBootstrap(string path)

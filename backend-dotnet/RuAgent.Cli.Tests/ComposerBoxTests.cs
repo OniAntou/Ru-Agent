@@ -132,4 +132,16 @@ public sealed class ComposerBoxTests : IDisposable
         Assert.Equal("╭" + new string('─', 22) + "╮", lines[0]);
         Assert.Equal("╰" + new string('─', 22) + "╯", lines[2]);
     }
+
+    [Fact]
+    public void Compose_PaintsBufferBrightAndGhostMeta()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
+        {
+            var lines = ComposerBox.Compose(40, ComposerState.Idle, "❯ ", "hi", "ghost", "", "", null);
+
+            Assert.Contains("\u001b[38;2;255;255;255mhi", lines[1], StringComparison.Ordinal);
+            Assert.Contains("\u001b[38;2;148;163;184mghost", lines[1], StringComparison.Ordinal);
+        }
+    }
 }

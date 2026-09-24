@@ -25,7 +25,7 @@ public static class TuiSurfaces
     private static readonly (string Title, string[] Commands)[] HelpGroups =
     [
         ("session & branching", ["/tree", "/status", "/stats", "/tokens", "/export", "/fork", "/rewind", "/history"]),
-        ("model & backend", ["/model", "/backend"]),
+        ("model & backend", ["/model", "/backend", "/key"]),
         ("terminal", ["/clear", "/help", "/exit", "/quit"]),
     ];
 
@@ -115,6 +115,7 @@ public static class TuiSurfaces
         ("custom", "custom", "Custom OpenAI"),
         ("models.dev:opencode", "models.dev:opencode", "Models.dev: OpenCode Zen"),
         ("models.dev:kilo", "models.dev:kilo", "Models.dev: Kilo Gateway"),
+        ("models.dev:openrouter", "models.dev:openrouter", "Models.dev: OpenRouter"),
         ("models.dev:cloudflare-workers-ai", "models.dev:cloudflare-workers-ai", "Models.dev: Cloudflare Workers AI"),
     ];
 
@@ -190,6 +191,83 @@ public static class TuiSurfaces
 
         return items;
     }
+
+    /// <summary>
+    /// Model picker rows from a live catalog: the current model first, then free
+    /// supported models, then the rest alphabetically, then unsupported ones dimmed
+    /// and unpickable. Free models carry a <c>free</c> tag (OpenRouter marks them
+    /// with a <c>:free</c> suffix); a provider without a credential is marked too.
+    /// Labels keep both ends of long ids so providers sharing a prefix stay apart.
+    /// </summary>
+    public static IReadOnlyList<ChoiceItem> ModelCatalogChoices(
+        string? currentBackend,
+        string? currentModel,
+        IReadOnlyList<(string Id, bool Supported)> catalog,
+        IReadOnlyDictionary<string, bool>? keyStates = null)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        var current = NormalizeBackend(currentBackend);
+        var currentId = currentModel?.Trim() ?? string.Empty;
+        var noKey = keyStates is not null && keyStates.TryGetValue(current, out var hasKey) && !hasKey;
+        var items = new List<ChoiceItem>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void Add(string id, bool supported)
+        {
+            if (string.IsNullOrWhiteSpace(id) || !seen.Add(id))
+            {
+                return;
+            }
+
+            var parts = new List<string>();
+            if (string.Equals(id, currentId, StringComparison.Ordinal))
+            {
+                parts.Add("current");
+            }
+
+            if (IsFreeModel(id))
+            {
+                parts.Add("free");
+            }
+
+            if (!supported)
+            {
+                parts.Add("unsupported");
+            }
+            else if (noKey)
+            {
+                parts.Add("no key");
+            }
+
+            items.Add(new ChoiceItem(id.Trim(), string.Join(" · ", parts), id, supported));
+        }
+
+        if (currentId.Length > 0)
+        {
+            Add(currentId, true);
+        }
+
+        foreach (var id in catalog.Where(entry => entry.Supported && IsFreeModel(entry.Id)).Select(entry => entry.Id).OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+        {
+            Add(id, true);
+        }
+
+        foreach (var id in catalog.Where(entry => entry.Supported && !IsFreeModel(entry.Id)).Select(entry => entry.Id).OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+        {
+            Add(id, true);
+        }
+
+        foreach (var id in catalog.Where(entry => !entry.Supported).Select(entry => entry.Id).OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+        {
+            Add(id, false);
+        }
+
+        return items;
+    }
+
+    /// <summary>OpenRouter marks free-tier models with a <c>:free</c> id suffix.</summary>
+    public static bool IsFreeModel(string? id) =>
+        !string.IsNullOrWhiteSpace(id) && id.Trim().EndsWith(":free", StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeBackend(string? backend)
     {

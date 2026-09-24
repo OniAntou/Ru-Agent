@@ -463,7 +463,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             }
             catch (AgentApiException ex)
             {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                 return 1;
             }
         }
@@ -493,13 +493,16 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
+            // Both sides matter here: dev restores the preset a failed create left
+            // behind, and CliErrorText renders the server body as one bounded line
+            // instead of raw JSON.
             if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
             {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                 return 1;
             }
 
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
         catch (OperationCanceledException)
@@ -583,7 +586,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
 
@@ -599,7 +602,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
 
@@ -614,7 +617,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
         return 0;
@@ -650,7 +653,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -665,7 +668,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -680,7 +683,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -735,7 +738,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -914,7 +917,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -993,7 +996,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -1014,7 +1017,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -1055,7 +1058,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -1124,7 +1127,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             }
             catch (AgentApiException ex)
             {
-                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                 return 1;
             }
         }
@@ -1158,7 +1161,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (AgentApiException ex)
         {
-            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
             return 1;
         }
     }
@@ -1375,9 +1378,16 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         _slashCommands.Picker = (list, ct) => cmd.Json
             ? Task.FromResult<string?>(null)
             : lineReader.ReadChoiceAsync(list, _out, ct);
+        _slashCommands.SecretPrompt = (prompt, ct) => cmd.Json
+            ? Task.FromResult<string?>(null)
+            : lineReader.ReadSecretAsync(_out, prompt, ct);
+        _slashCommands.SecretPanelPrompt = (providerDisplay, ct) => cmd.Json
+            ? Task.FromResult<string?>(null)
+            : lineReader.ReadSecretPanelAsync(_out, providerDisplay, Tui.TuiViewport.Width(), ct);
 
         int turn = 0;
         bool landingScreenVisible = true;
+        int starEpoch = 0;
 
         // The composer reopens its own frame after a settled resize; this rebuilds everything
         // around it (region, header, transcript tail) so the new width applies end to end.
@@ -1387,6 +1397,25 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         {
             RedrawScreenForResize();
             return Task.CompletedTask;
+        };
+
+        // Landing star twinkle: the reader polls this while its buffer is empty; a true
+        // answer advances the star epoch so the resize-path rebuild paints a new sky.
+        // Idle-only by construction: first prompt, approval UI or typed text keeps false.
+        lineReader.ShouldTwinkleStars = () =>
+        {
+            if (!landingScreenVisible || turn != 0)
+            {
+                return false;
+            }
+
+            if (typeAhead.Approval is not null || !string.IsNullOrEmpty(typeAhead.Buffer))
+            {
+                return false;
+            }
+
+            starEpoch++;
+            return true;
         };
 
         void RenderLandingScreen()
@@ -1403,7 +1432,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 canonicalWorkspace,
                 backendName,
                 activeModel,
-                cmd.Preset);
+                cmd.Preset,
+                rows,
+                starEpoch);
 
             foreach (var line in landingLines)
             {
@@ -1419,7 +1450,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 var cursorRow = landingLines.Count + 1;
                 for (var i = cursorRow; i < boxTop; i++)
                 {
-                    _out.WriteLine();
+                    _out.WriteLine(Tui.TuiHeader.StarRow(width, 2500 + i, starEpoch));
                 }
             }
 
@@ -1802,7 +1833,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
                     catch (AgentApiException ex)
                     {
-                        await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                        await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -1825,7 +1856,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
                     catch (AgentApiException ex)
                     {
-                        await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                        await _err.WriteLineAsync($"{CliErrorText.Format(ex)}").ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -2003,6 +2034,13 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
                 await WriteBusyConflictAsync(ex).ConfigureAwait(false);
+            }
+            catch (AgentApiException ex)
+            {
+                // Pre-run rejections (missing credential, no model) already name
+                // themselves: one error line, no supplementary text.
+                await FinishTurnAsync().ConfigureAwait(false);
+                await _err.WriteLineAsync(Tui.TuiPalette.Err(CliErrorText.Format(ex))).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

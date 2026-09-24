@@ -54,6 +54,19 @@ public sealed class InteractiveLineReaderTests
         Assert.Equal("first command", reader.History[2]);
     }
 
+    [Theory]
+    [InlineData(null, 4096, "")]
+    [InlineData("", 4096, "")]
+    [InlineData("sk-test-key", 4096, "sk-test-key")]
+    [InlineData("  sk-test-key  \r\n", 4096, "sk-test-key")]
+    [InlineData("sk-test-key\r\nsecond-line", 4096, "sk-test-key")]
+    [InlineData("sk-test-key", 0, "")]
+    [InlineData("sk-test-key", 6, "sk-tes")]
+    public void SanitizePastedText_KeepsFirstTrimmedLineCapped(string? text, int maxChars, string expected)
+    {
+        Assert.Equal(expected, InteractiveLineReader.SanitizePastedText(text, maxChars));
+    }
+
     [Fact]
     public async Task ReadLineWithContinuationAsync_CombinesLinesWithBackslash()
     {
@@ -175,5 +188,95 @@ public sealed class InteractiveLineReaderTests
         Assert.StartsWith("╰", bottom);
         Assert.EndsWith("╯", bottom);
         Assert.Contains("model · fast", bottom);
+    }
+
+    [Theory]
+    [InlineData(120, 100, 10)]
+    [InlineData(80, 80, 0)]
+    [InlineData(50, 80, 0)]
+    [InlineData(100, 100, 0)]
+    public void ComputeBoxLeft_CentersOnlyWithRoomToSpare(int viewport, int box, int expected) =>
+        Assert.Equal(expected, InteractiveLineReader.ComputeBoxLeft(viewport, box));
+
+    [Fact]
+    public void ComposerMaxWidth_KeepsTheBoxNarrow()
+    {
+        Assert.True(InteractiveLineReader.ComposerMaxWidth <= 100);
+        Assert.True(InteractiveLineReader.ComposerMaxWidth >= 40);
+    }
+
+    [Fact]
+    public void BuildMid_WithMargin_IndentsAndMovesTheCursor()
+    {
+        var plain = InteractiveLineReader.BuildMidRewrite(40, "❯ ", "hi", 2, "", false);
+        var indented = InteractiveLineReader.BuildMidRewrite(40, "❯ ", "hi", 2, "", false, 10);
+
+        Assert.StartsWith("\r" + new string(' ', 10), indented, StringComparison.Ordinal);
+        Assert.Contains("\r\x1b[", indented, StringComparison.Ordinal);
+
+        static int CursorColumn(string rewrite)
+        {
+            var marker = "\r\x1b[";
+            var start = rewrite.LastIndexOf(marker, StringComparison.Ordinal) + marker.Length;
+            var end = rewrite.IndexOf('C', start);
+            return int.Parse(rewrite[start..end], System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        Assert.Equal(CursorColumn(plain) + 10, CursorColumn(indented));
+    }
+
+    [Fact]
+    public void BuildBoxOpen_WithMargin_IndentsEveryRow()
+    {
+        var box = InteractiveLineReader.BuildBoxOpen(40, "❯ ", "legend", false, null, null, 6);
+
+        foreach (var row in box.Split(["\r\n", "\n"], StringSplitOptions.None))
+        {
+            var stripped = TuiText.Strip(row);
+            if (stripped.Length == 0 || stripped.StartsWith('\x1b'))
+            {
+                continue;
+            }
+
+            Assert.StartsWith(new string(' ', 6), stripped, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void WithSurfaceBg_FillsWithoutChangingWidth()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
+        {
+            var row = InteractiveLineReader.BuildMid(40, "❯ ", "hi", "", false);
+            var filled = InteractiveLineReader.WithSurfaceBg(row);
+
+            Assert.StartsWith(TuiPalette.SurfaceBgCode(), filled, StringComparison.Ordinal);
+            Assert.EndsWith(TuiPalette.Reset, filled, StringComparison.Ordinal);
+            Assert.Equal(TuiText.VisibleWidth(row), TuiText.VisibleWidth(filled));
+        }
+    }
+
+    [Fact]
+    public void WithSurfaceBg_IsNoopWithoutColour()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var row = InteractiveLineReader.BuildMid(40, "❯ ", "hi", "", false);
+
+            Assert.Equal(row, InteractiveLineReader.WithSurfaceBg(row));
+        }
+    }
+
+    [Fact]
+    public void BuildMid_WithBgAndMargin_OrdersMarginThenFill()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.TrueColor))
+        {
+            var raw = InteractiveLineReader.BuildMid(40, "❯ ", "", "", false, 6, true);
+            var row = TuiText.Strip(raw);
+
+            Assert.StartsWith(new string(' ', 6), row, StringComparison.Ordinal);
+            Assert.Contains(TuiPalette.SurfaceBgCode(), raw, StringComparison.Ordinal);
+        }
     }
 }

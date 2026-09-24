@@ -377,6 +377,7 @@ public sealed class OpenAiResponsesModelProviderTests
     [InlineData(HttpStatusCode.Unauthorized, "auth_failed", false)]
     [InlineData(HttpStatusCode.Forbidden, "forbidden", false)]
     [InlineData(HttpStatusCode.TooManyRequests, "rate_limited", true)]
+    [InlineData(HttpStatusCode.NotFound, "model_unavailable", false)]
     [InlineData(HttpStatusCode.InternalServerError, "server_error", true)]
     public async Task GenerateAsync_maps_http_failures(HttpStatusCode status, string code, bool retryable)
     {

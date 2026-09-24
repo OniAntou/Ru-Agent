@@ -12,6 +12,7 @@ public sealed class InteractiveLineReader
     public static readonly SlashCommandInfo[] KnownCommands =
     [
         new("/model", "Switch or show the active model", "/model [name]"),
+        new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
         new("/fork", "Branch this conversation", "/fork [title]"),
         new("/tree", "Show the session tree", "/tree"),
@@ -31,6 +32,8 @@ public sealed class InteractiveLineReader
 
     private const int MinBoxWidth = 10;
     private const int MaxBoxWidth = 1000;
+    /// <summary>Composer never spans the whole terminal: beyond this it centers like opencode.</summary>
+    public const int ComposerMaxWidth = 100;
     private const int MinDropdownWidth = 24;
     private const int CommandColumnWidth = 11;
     private const int ResizeDebounceMs = 250;
@@ -49,6 +52,9 @@ public sealed class InteractiveLineReader
     /// <summary>Legend gắn ở cạnh dưới composer box (vd "model · preset").</summary>
     public const string DefaultHints = "/ commands · ↑↓ history · tab complete · ctrl+o expand · ctrl+c stop";
 
+    /// <summary>Ghost text shown while the composer is empty, mirroring the opencode ask box.</summary>
+    public const string ComposerPlaceholder = "Ask anything, / for commands, /key for sign-in…";
+
     public string Legend { get; set; } = string.Empty;
 
     /// <summary>Top label displayed on the top border of the composer box (e.g. workspace path and preset).</summary>
@@ -62,6 +68,13 @@ public sealed class InteractiveLineReader
     /// Giúp re-render toàn bộ màn hình một cách sạch sẽ, tránh vỡ viền hoặc reflow rác.
     /// </summary>
     public Func<Task>? OnScreenRefreshedAsync { get; set; }
+
+    /// <summary>
+    /// Host hook for the landing star twinkle. Polled while the composer idles with an
+    /// empty buffer: returning true rebuilds the screen with the next star epoch through
+    /// the same path as a settled resize (host increments the epoch inside).
+    /// </summary>
+    public Func<bool>? ShouldTwinkleStars { get; set; }
 
     public static IReadOnlyList<SlashCommandInfo> FindMatches(string input)
     {
@@ -81,19 +94,37 @@ public sealed class InteractiveLineReader
     public static string BuildTop(int width, bool isSlash) => BuildTop(width, isSlash, null);
 
     public static string BuildTop(int width, bool isSlash, string? topLabel) =>
-        ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, string.Empty, string.Empty, topLabel)[0];
+        BuildTop(width, isSlash, topLabel, 0);
+
+    public static string BuildTop(int width, bool isSlash, string? topLabel, int leftMargin, bool surfaceBg = false)
+    {
+        var row = ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, string.Empty, string.Empty, topLabel)[0];
+        return Indent(surfaceBg ? WithSurfaceBg(row) : row, leftMargin);
+    }
 
     public static string BuildMid(int width, string prompt, string buffer) => BuildMid(width, prompt, buffer, "", false);
 
     public static string BuildMid(int width, string prompt, string buffer, bool isSlash) => BuildMid(width, prompt, buffer, "", isSlash);
 
     public static string BuildMid(int width, string prompt, string buffer, string ghostText, bool isSlash) =>
-        ComposerBox.Compose(width, StateFor(isSlash), prompt, buffer, ghostText, string.Empty, string.Empty, null)[1];
+        BuildMid(width, prompt, buffer, ghostText, isSlash, 0);
+
+    public static string BuildMid(int width, string prompt, string buffer, string ghostText, bool isSlash, int leftMargin, bool surfaceBg = false)
+    {
+        var row = ComposerBox.Compose(width, StateFor(isSlash), prompt, buffer, ghostText, string.Empty, string.Empty, null)[1];
+        return Indent(surfaceBg ? WithSurfaceBg(row) : row, leftMargin);
+    }
 
     public static string BuildBottom(int width, string legend) => BuildBottom(width, legend, false);
 
     public static string BuildBottom(int width, string legend, bool isSlash) =>
-        ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, legend, string.Empty, null)[2];
+        BuildBottom(width, legend, isSlash, 0);
+
+    public static string BuildBottom(int width, string legend, bool isSlash, int leftMargin, bool surfaceBg = false)
+    {
+        var row = ComposerBox.Compose(width, StateFor(isSlash), "│ ", string.Empty, string.Empty, legend, string.Empty, null)[2];
+        return Indent(surfaceBg ? WithSurfaceBg(row) : row, leftMargin);
+    }
 
     private static ComposerState StateFor(bool isSlash) => isSlash ? ComposerState.Slash : ComposerState.Idle;
 
@@ -117,14 +148,17 @@ public sealed class InteractiveLineReader
     /// Steps 2 rows down from Mid (past bottom border to hints row), writes each line,
     /// and steps back up to Mid without trailing newlines that would cause spurious scrolling.
     /// </summary>
-    public static string BuildDropdownRenderSequence(IReadOnlyList<string> lines)
+    public static string BuildDropdownRenderSequence(IReadOnlyList<string> lines) =>
+        BuildDropdownRenderSequence(lines, 0);
+
+    public static string BuildDropdownRenderSequence(IReadOnlyList<string> lines, int leftMargin)
     {
         if (lines == null || lines.Count == 0) return string.Empty;
         var sb = new StringBuilder();
         sb.Append("\x1b[2B");
         for (int i = 0; i < lines.Count; i++)
         {
-            sb.Append("\r\x1b[2K").Append(lines[i]);
+            sb.Append("\r\x1b[2K").Append(Indent(lines[i], leftMargin));
             if (i < lines.Count - 1)
             {
                 sb.Append('\n');
@@ -139,14 +173,17 @@ public sealed class InteractiveLineReader
     /// Steps 2 rows down from Mid (to the hints row), restores hints text, clears all lower dropdown rows,
     /// and steps back up to Mid so the net vertical displacement is zero.
     /// </summary>
-    public static string BuildDropdownClearSequence(int count, int boxWidth, string? hintsText = null)
+    public static string BuildDropdownClearSequence(int count, int boxWidth, string? hintsText = null) =>
+        BuildDropdownClearSequence(count, boxWidth, hintsText, 0);
+
+    public static string BuildDropdownClearSequence(int count, int boxWidth, string? hintsText, int leftMargin)
     {
         if (count <= 0) return string.Empty;
         var sb = new StringBuilder();
         sb.Append("\x1b[2B\r\x1b[2K");
         if (!string.IsNullOrWhiteSpace(hintsText))
         {
-            var h = TuiPalette.Paint(TuiText.Truncate("  " + hintsText.Trim(), boxWidth), TuiToken.Line);
+            var h = Indent(TuiPalette.Paint(TuiText.Truncate("  " + hintsText.Trim(), boxWidth), TuiToken.Line), leftMargin);
             sb.Append(h);
         }
 
@@ -176,9 +213,12 @@ public sealed class InteractiveLineReader
     public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor, bool isSlash) =>
         BuildMidRewrite(width, prompt, buffer, cursor, "", isSlash);
 
-    public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor, string ghostText, bool isSlash)
+    public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor, string ghostText, bool isSlash) =>
+        BuildMidRewrite(width, prompt, buffer, cursor, ghostText, isSlash, 0);
+
+    public static string BuildMidRewrite(int width, string prompt, string buffer, int cursor, string ghostText, bool isSlash, int leftMargin, bool surfaceBg = false)
     {
-        var mid = BuildMid(width, prompt, buffer, ghostText, isSlash);
+        var mid = BuildMid(width, prompt, buffer, ghostText, isSlash, leftMargin, surfaceBg);
         var w = Math.Clamp(width, MinBoxWidth, MaxBoxWidth);
         string text = buffer ?? string.Empty;
         int promptLen = TuiText.VisibleWidth(prompt);
@@ -206,7 +246,7 @@ public sealed class InteractiveLineReader
         }
 
         displayCursor = Math.Clamp(displayCursor, 0, availableForText);
-        int col = 2 + promptLen + displayCursor;
+        int col = 2 + promptLen + displayCursor + Math.Max(0, leftMargin);
         return "\r" + mid + "\r\x1b[" + col + "C";
     }
 
@@ -451,7 +491,10 @@ public sealed class InteractiveLineReader
 
     public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash) => BuildBoxOpen(width, prompt, legend, isSlash, null, null);
 
-    public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash, string? topLabel, string? hints = null)
+    public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash, string? topLabel, string? hints = null) =>
+        BuildBoxOpen(width, prompt, legend, isSlash, topLabel, hints, 0);
+
+    public static string BuildBoxOpen(int width, string prompt, string legend, bool isSlash, string? topLabel, string? hints, int leftMargin, bool surfaceBg = false)
     {
         var newline = Environment.NewLine;
         var lines = ComposerBox.Compose(
@@ -464,27 +507,62 @@ public sealed class InteractiveLineReader
             string.Empty,
             topLabel);
 
+        string BoxRow(string row) => Indent(surfaceBg ? WithSurfaceBg(row) : row, leftMargin);
         var hintsLine = !string.IsNullOrWhiteSpace(hints)
-            ? TuiPalette.Paint(TuiText.Truncate("  " + hints.Trim(), width), TuiToken.Line)
+            ? Indent(TuiPalette.Paint(TuiText.Truncate("  " + hints.Trim(), width), TuiToken.Line), leftMargin)
             : string.Empty;
 
         if (hintsLine.Length > 0)
         {
-            return lines[0] + newline + lines[1] + newline + lines[2] + newline + hintsLine + "\x1b[2A";
+            return BoxRow(lines[0]) + newline + BoxRow(lines[1]) + newline + BoxRow(lines[2]) + newline + hintsLine + "\x1b[2A";
         }
 
-        return lines[0] + newline + lines[1] + newline + lines[2] + "\x1b[1A";
+        return BoxRow(lines[0]) + newline + BoxRow(lines[1]) + newline + BoxRow(lines[2]) + "\x1b[1A";
     }
 
     public static int ComputeBoxWidth()
     {
         if (TuiViewport.TryReadLiveSize(out var columns, out _))
         {
-            // Fit the live terminal: the box may never be wider than the screen it draws into.
-            return Math.Clamp(TuiViewport.UsableWidth(columns, MinBoxWidth), 1, columns);
+            // Fit the live terminal: the box may never be wider than the screen it draws into,
+            // and never wider than the centered card.
+            return Math.Clamp(Math.Min(TuiViewport.UsableWidth(columns, MinBoxWidth), ComposerMaxWidth), 1, columns);
         }
 
-        return DefaultBoxWidth;
+        return Math.Min(DefaultBoxWidth, ComposerMaxWidth);
+    }
+
+    /// <summary>Left margin that centers the box; 0 when there is no room to center.</summary>
+    public static int ComputeBoxLeft(int viewportWidth, int boxWidth) =>
+        viewportWidth <= boxWidth ? 0 : (viewportWidth - boxWidth) / 2;
+
+    /// <summary>Left margin for the current viewport/box pair; 0 without a live console.</summary>
+    public static int ComputeBoxLeftMargin()
+    {
+        if (TuiViewport.TryReadLiveSize(out var columns, out _))
+        {
+            return ComputeBoxLeft(columns, ComputeBoxWidth());
+        }
+
+        return 0;
+    }
+
+    private static string Indent(string line, int leftMargin) =>
+        leftMargin <= 0 ? line : new string(' ', leftMargin) + line;
+
+    /// <summary>
+    /// Wraps one composer row in the elevated surface background. Inner resets are
+    /// re-armed so the fill has no gaps; without colour support it returns the row as-is.
+    /// </summary>
+    public static string WithSurfaceBg(string row)
+    {
+        var bg = TuiPalette.SurfaceBgCode();
+        if (string.IsNullOrEmpty(bg))
+        {
+            return row;
+        }
+
+        return bg + row.Replace(TuiPalette.Reset, TuiPalette.Reset + bg, StringComparison.Ordinal) + TuiPalette.Reset;
     }
 
     public void AddToHistory(string line)
@@ -590,8 +668,302 @@ public sealed class InteractiveLineReader
         return await ReadInteractiveKeyLoopAsync(outWriter, string.Empty, cancellationToken, list).ConfigureAwait(false);
     }
 
+    private const int MaxSecretChars = 4096;
+
     /// <summary>
-    /// Tính số dòng trắng cần đệm để ghim khung nhập xuống đáy viewport.
+    /// Reads one secret without echo, history, or completion. Returns the typed value,
+    /// or null when the operator cancelled (Escape) or the console is not interactive.
+    /// Control characters are ignored; input is capped so a paste cannot grow it.
+    /// Ctrl+V pastes from the Windows clipboard, because raw console input never
+    /// triggers the terminal's own paste binding.
+    /// </summary>
+    public async Task<string?> ReadSecretAsync(
+        TextWriter outWriter,
+        string prompt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(outWriter);
+        if (Console.IsInputRedirected || Console.IsOutputRedirected || !ReferenceEquals(outWriter, Console.Out))
+        {
+            return null;
+        }
+
+        await outWriter.WriteAsync(prompt).ConfigureAwait(false);
+        await outWriter.FlushAsync().ConfigureAwait(false);
+
+        var sb = new StringBuilder();
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                break;
+            }
+
+            if (key.Key == ConsoleKey.Escape)
+            {
+                await outWriter.WriteLineAsync().ConfigureAwait(false);
+                return null;
+            }
+
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (sb.Length > 0)
+                {
+                    sb.Length--;
+                }
+
+                continue;
+            }
+
+            if ((key.Key == ConsoleKey.V && key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || key.KeyChar == '\x16')
+            {
+                var pasted = SanitizePastedText(ReadClipboardText(), MaxSecretChars - sb.Length);
+                sb.Append(pasted);
+                await outWriter.WriteAsync(pasted.Length > 0
+                    ? $" (pasted {pasted.Length} chars)"
+                    : " (clipboard empty — try right-click paste)").ConfigureAwait(false);
+                await outWriter.FlushAsync().ConfigureAwait(false);
+                continue;
+            }
+
+            if (char.IsControl(key.KeyChar) || sb.Length >= MaxSecretChars)
+            {
+                continue;
+            }
+
+            sb.Append(key.KeyChar);
+        }
+
+        await outWriter.WriteLineAsync().ConfigureAwait(false);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Masked secret input inside a framed panel: the provider name on top, one
+    /// bullet per entered character, hints at the bottom. The mask row is repainted
+    /// in place per keystroke; nothing entered ever reaches the output. Returns the
+    /// typed value, or null on Escape, cancellation, or a non-interactive console.
+    /// </summary>
+    public async Task<string?> ReadSecretPanelAsync(
+        TextWriter outWriter,
+        string providerDisplay,
+        int width,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(outWriter);
+        if (Console.IsInputRedirected || Console.IsOutputRedirected || !ReferenceEquals(outWriter, Console.Out))
+        {
+            return null;
+        }
+
+        foreach (var line in KeyInputPanel.Compose(width, providerDisplay, 0))
+        {
+            await outWriter.WriteLineAsync(line).ConfigureAwait(false);
+        }
+
+        await outWriter.FlushAsync().ConfigureAwait(false);
+
+        var sb = new StringBuilder();
+        var canRepaint = true;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                break;
+            }
+
+            if (key.Key == ConsoleKey.Escape)
+            {
+                await outWriter.WriteLineAsync().ConfigureAwait(false);
+                return null;
+            }
+
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (sb.Length > 0)
+                {
+                    sb.Length--;
+                    RepaintMaskRow(outWriter, width, sb.Length, ref canRepaint);
+                }
+
+                continue;
+            }
+
+            string append = string.Empty;
+            if ((key.Key == ConsoleKey.V && key.Modifiers.HasFlag(ConsoleModifiers.Control))
+                || key.KeyChar == '\x16')
+            {
+                append = SanitizePastedText(ReadClipboardText(), MaxSecretChars - sb.Length);
+            }
+            else if (!char.IsControl(key.KeyChar) && sb.Length < MaxSecretChars)
+            {
+                append = key.KeyChar.ToString();
+            }
+
+            if (append.Length > 0)
+            {
+                sb.Append(append);
+                RepaintMaskRow(outWriter, width, sb.Length, ref canRepaint);
+            }
+        }
+
+        await outWriter.WriteLineAsync().ConfigureAwait(false);
+        return sb.ToString();
+    }
+
+    private static void RepaintMaskRow(TextWriter outWriter, int width, int bulletCount, ref bool canRepaint)
+    {
+        if (!canRepaint)
+        {
+            return;
+        }
+
+        try
+        {
+            outWriter.Write("\u001b[2A\r\u001b[2K");
+            outWriter.Write(KeyInputPanel.ComposeMaskRow(width, bulletCount));
+            outWriter.Write("\u001b[2B");
+            outWriter.Flush();
+        }
+        catch (IOException)
+        {
+            canRepaint = false;
+        }
+    }
+
+    /// <summary>
+    /// Keeps the first line of pasted text, trimmed and capped. Clipboard copies
+    /// often trail a newline or spaces that would otherwise silently poison a key.
+    /// Pure so it can be tested without a console.
+    /// </summary>
+    public static string SanitizePastedText(string? text, int maxChars)
+    {
+        if (string.IsNullOrEmpty(text) || maxChars <= 0)
+        {
+            return string.Empty;
+        }
+
+        var line = text.Split(['\r', '\n'], 2, StringSplitOptions.None)[0].Trim();
+        return line.Length <= maxChars ? line : line[..maxChars];
+    }
+
+    private static string? ReadClipboardText()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        string? result = null;
+        try
+        {
+            var thread = new Thread(() => { result = ReadClipboardTextSta(); })
+            {
+                IsBackground = true,
+            };
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        return result;
+    }
+
+    private static string? ReadClipboardTextSta()
+    {
+        const uint CF_UNICODETEXT = 13;
+        try
+        {
+            if (!NativeClipboard.IsClipboardFormatAvailable(CF_UNICODETEXT))
+            {
+                return null;
+            }
+
+            // The clipboard is often held open briefly by another app; retry
+            // instead of reporting an empty paste on the first collision.
+            var opened = false;
+            for (var attempt = 0; attempt < 5 && !opened; attempt++)
+            {
+                if (attempt > 0)
+                {
+                    Thread.Sleep(80);
+                }
+
+                opened = NativeClipboard.OpenClipboard(IntPtr.Zero);
+            }
+
+            if (!opened)
+            {
+                return null;
+            }
+
+            try
+            {
+                var handle = NativeClipboard.GetClipboardData(CF_UNICODETEXT);
+                if (handle == IntPtr.Zero)
+                {
+                    return null;
+                }
+
+                var locked = NativeClipboard.GlobalLock(handle);
+                if (locked == IntPtr.Zero)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    return System.Runtime.InteropServices.Marshal.PtrToStringUni(locked);
+                }
+                finally
+                {
+                    NativeClipboard.GlobalUnlock(handle);
+                }
+            }
+            finally
+            {
+                NativeClipboard.CloseClipboard();
+            }
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static class NativeClipboard
+    {
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool CloseClipboard();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern IntPtr GetClipboardData(uint uFormat);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool IsClipboardFormatAvailable(uint format);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        public static extern IntPtr GlobalLock(IntPtr hMem);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool GlobalUnlock(IntPtr hMem);
+    }
+
+    /// <summary>
     /// Chỉ đệm khi output đã dài gần đầy màn hình (cách đáy không quá
     /// <c>MaxPushPadLines</c> dòng); màn hình còn trống thì trả 0 để khung
     /// nằm ngay dưới nội dung. Pure function nên unit test được.
@@ -655,6 +1027,7 @@ public sealed class InteractiveLineReader
         string tempInput = string.Empty;
         const string boxPrompt = "";
         int boxWidth = ComputeBoxWidth();
+        int boxLeft = ComputeBoxLeftMargin();
         bool lastIsSlash = false;
         int selectedIndex = 0;
         string defaultLegend = Legend;
@@ -678,13 +1051,18 @@ public sealed class InteractiveLineReader
         // box itself lands in the same rows as before.
         await outWriter.WriteLineAsync().ConfigureAwait(false);
         await PushToBottomAsync(outWriter).ConfigureAwait(false);
-        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, defaultLegend, false, topLabelText, hintsText)).ConfigureAwait(false);
-        outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, "", 0, "", false));
+        await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, defaultLegend, false, topLabelText, hintsText, boxLeft, true)).ConfigureAwait(false);
+        outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, "", 0, "", false, boxLeft, true));
         await outWriter.FlushAsync().ConfigureAwait(false);
 
         (string ghost, string legend, IReadOnlyList<SlashCommandInfo> matches) ComputeAutocomplete()
         {
             var text = buffer.ToString();
+            if (text.Length == 0 && !choosing)
+            {
+                return (ComposerPlaceholder, defaultLegend, Array.Empty<SlashCommandInfo>());
+            }
+
             if (!text.StartsWith('/') || text.Contains(' '))
             {
                 return ("", defaultLegend, Array.Empty<SlashCommandInfo>());
@@ -713,7 +1091,7 @@ public sealed class InteractiveLineReader
         {
             if (lastDropdownLines > 0)
             {
-                outWriter.Write(BuildDropdownClearSequence(lastDropdownLines, boxWidth, hintsText));
+                outWriter.Write(BuildDropdownClearSequence(lastDropdownLines, boxWidth, hintsText, boxLeft));
                 lastDropdownLines = 0;
             }
         }
@@ -739,7 +1117,7 @@ public sealed class InteractiveLineReader
                 }
             }
 
-            outWriter.Write(BuildDropdownRenderSequence(lines));
+            outWriter.Write(BuildDropdownRenderSequence(lines, boxLeft));
             lastDropdownLines = lines.Count;
         }
 
@@ -814,14 +1192,15 @@ public sealed class InteractiveLineReader
             lastDropdownLines = 0;
             scrolledForDropdown = false;
             boxWidth = ComputeBoxWidth();
+            boxLeft = ComputeBoxLeftMargin();
 
             var text = buffer.ToString();
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();
 
-            outWriter.Write(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash, topLabelText, hintsText));
+            outWriter.Write(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash, topLabelText, hintsText, boxLeft, true));
             RenderCurrentList(isSlash, matches);
-            outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
+            outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash, boxLeft, true));
             outWriter.Flush();
             lastIsSlash = isSlash;
         }
@@ -834,6 +1213,8 @@ public sealed class InteractiveLineReader
                 RedrawBoxClean();
                 return;
             }
+
+            boxLeft = ComputeBoxLeftMargin();
 
             var text = buffer.ToString();
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
@@ -851,15 +1232,15 @@ public sealed class InteractiveLineReader
             {
                 if (isSlash != lastIsSlash)
                 {
-                    outWriter.Write("\x1b[1A\r\x1b[2K" + BuildTop(boxWidth, isSlash, topLabelText));
-                    outWriter.Write("\x1b[2B\r\x1b[2K" + BuildBottom(boxWidth, leg, isSlash));
+                    outWriter.Write("\x1b[1A\r\x1b[2K" + BuildTop(boxWidth, isSlash, topLabelText, boxLeft, true));
+                    outWriter.Write("\x1b[2B\r\x1b[2K" + BuildBottom(boxWidth, leg, isSlash, boxLeft, true));
                     outWriter.Write("\x1b[1A");
                     lastIsSlash = isSlash;
                 }
 
                 RenderCurrentList(isSlash, matches);
 
-                outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
+                outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash, boxLeft, true));
                 outWriter.Flush();
             }
             catch (IOException)
@@ -904,6 +1285,8 @@ public sealed class InteractiveLineReader
             resizeWatcher.Observe(initCols, initRows, Environment.TickCount64);
         }
 
+        var lastStarTwinkleAt = Environment.TickCount64;
+
         async Task ApplyPendingResizeAsync()
         {
             var cursorTop = Console.CursorTop;
@@ -915,6 +1298,7 @@ public sealed class InteractiveLineReader
             lastDropdownLines = 0;
             scrolledForDropdown = false;
             boxWidth = ComputeBoxWidth();
+            boxLeft = ComputeBoxLeftMargin();
             TuiDebug.Log(
                 "composer",
                 $"resize apply cursorTop={cursorTop} boxWidth={boxWidth} rows={TuiViewport.Height()}");
@@ -939,9 +1323,9 @@ public sealed class InteractiveLineReader
             bool isSlash = text.StartsWith('/') && !text.Contains(' ');
             var (ghost, leg, matches) = ComputeAutocomplete();
 
-            await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash, topLabelText, hintsText)).ConfigureAwait(false);
+            await outWriter.WriteAsync(BuildBoxOpen(boxWidth, boxPrompt, leg, isSlash, topLabelText, hintsText, boxLeft, true)).ConfigureAwait(false);
             RenderCurrentList(isSlash, matches);
-            outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash));
+            outWriter.Write(BuildMidRewrite(boxWidth, boxPrompt, text, cursor, ghost, isSlash, boxLeft, true));
             await outWriter.FlushAsync().ConfigureAwait(false);
             lastIsSlash = isSlash;
         }
@@ -960,7 +1344,18 @@ public sealed class InteractiveLineReader
                 {
                     if (resizeWatcher.Observe(curCols, curRows, Environment.TickCount64))
                     {
+                        lastStarTwinkleAt = Environment.TickCount64;
                         await ApplyPendingResizeAsync().ConfigureAwait(false);
+                    }
+                    else if (!choosing
+                        && ShouldTwinkleStars is not null
+                        && Environment.TickCount64 - lastStarTwinkleAt >= TuiHeader.StarTwinkleIntervalMs)
+                    {
+                        lastStarTwinkleAt = Environment.TickCount64;
+                        if (buffer.Length == 0 && ShouldTwinkleStars())
+                        {
+                            await ApplyPendingResizeAsync().ConfigureAwait(false);
+                        }
                     }
                 }
 

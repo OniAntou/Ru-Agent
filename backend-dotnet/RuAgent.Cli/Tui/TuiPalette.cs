@@ -11,6 +11,7 @@ public enum TuiToken
     Ok,
     Warn,
     Err,
+    Bright,
 }
 
 public enum TuiColorLevel
@@ -199,6 +200,7 @@ public static class TuiPalette
         TuiToken.Ok => "52;211;153",
         TuiToken.Warn => "251;191;36",
         TuiToken.Err => "248;113;113",
+        TuiToken.Bright => "255;255;255",
         _ => "255;255;255",
     };
 
@@ -211,6 +213,7 @@ public static class TuiPalette
         TuiToken.Ok => 79,
         TuiToken.Warn => 221,
         TuiToken.Err => 210,
+        TuiToken.Bright => 231,
         _ => 255,
     };
 
@@ -223,6 +226,7 @@ public static class TuiPalette
         TuiToken.Ok => 10,
         TuiToken.Warn => 11,
         TuiToken.Err => 9,
+        TuiToken.Bright => 15,
         _ => 7,
     };
 }

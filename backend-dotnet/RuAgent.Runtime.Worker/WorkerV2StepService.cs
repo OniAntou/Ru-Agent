@@ -638,6 +638,7 @@ public sealed class WorkerV2StepService
         "server_error" => new WorkerV2StepException("provider_server_error", retryable: true, error),
         "transport_error" => new WorkerV2StepException("provider_transport_error", retryable: true, error),
         "malformed_payload" or "response_too_large" => new WorkerV2StepException("protocol_failure", retryable: false, error),
+        "http_error" or "vision_unsupported" or "empty_model_reply" => new WorkerV2StepException(error.Code, error.Retryable, error),
         _ => new WorkerV2StepException("generation_failed", error.Retryable, error),
     };
 

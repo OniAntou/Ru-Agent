@@ -184,7 +184,7 @@ public sealed class TuiSurfacesPickerTests
 
         Assert.Equal("anthropic", items[0].Value);
         Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
-        Assert.Equal(6, items.Count);
+        Assert.Equal(7, items.Count);
     }
 
     [Fact]
@@ -228,6 +228,7 @@ public sealed class TuiSurfacesPickerTests
         Assert.Equal("custom", items[0].Value);
         Assert.Contains(items, i => i.Value == "models.dev:opencode");
         Assert.Contains(items, i => i.Value == "models.dev:kilo");
+        Assert.Contains(items, i => i.Value == "models.dev:openrouter");
         Assert.Contains(items, i => i.Value == "models.dev:cloudflare-workers-ai");
         Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
     }
@@ -245,6 +246,68 @@ public sealed class TuiSurfacesPickerTests
         Assert.Contains("current", openAi.Detail, StringComparison.Ordinal);
         Assert.Contains("no key", openAi.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain("no key", Assert.Single(items, i => i.Value == "anthropic").Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ModelCatalogChoices_OrdersCurrentFreeSupportedUnsupported()
+    {
+        var items = TuiSurfaces.ModelCatalogChoices(
+            "models.dev:openrouter",
+            "b-model",
+            [("b-model", true), ("a-model", true), ("free-model:free", true), ("z-model", false), ("b-model", true)],
+            new Dictionary<string, bool> { ["models.dev:openrouter"] = true });
+
+        Assert.Equal(4, items.Count);
+        Assert.Equal("b-model", items[0].Value);
+        Assert.Contains("current", items[0].Detail, StringComparison.Ordinal);
+        Assert.Equal("free-model:free", items[1].Value);
+        Assert.Contains("free", items[1].Detail, StringComparison.Ordinal);
+        Assert.True(items[1].Enabled);
+        Assert.Equal("a-model", items[2].Value);
+        Assert.True(items[2].Enabled);
+        Assert.Equal("z-model", items[3].Value);
+        Assert.False(items[3].Enabled);
+        Assert.Contains("unsupported", items[3].Detail, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("x:free", true)]
+    [InlineData("x:FREE", true)]
+    [InlineData("x-model", false)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    public void IsFreeModel_DetectsTheFreeSuffix(string? id, bool expected)
+    {
+        Assert.Equal(expected, TuiSurfaces.IsFreeModel(id));
+    }
+
+    [Fact]
+    public void MiddleTruncate_KeepsBothEndsOfLongIds()
+    {
+        var shortened = TuiText.MiddleTruncate("aion-labs/apertus-8b-instruct-2509:free", 24);
+
+        Assert.Equal(24, TuiText.VisibleWidth(shortened));
+        Assert.StartsWith("aion-labs", shortened, StringComparison.Ordinal);
+        Assert.EndsWith(":free", shortened, StringComparison.Ordinal);
+        Assert.Contains("…", shortened, StringComparison.Ordinal);
+        Assert.Equal("short", TuiText.MiddleTruncate("short", 24));
+    }
+
+    [Fact]
+    public void ModelCatalogChoices_MarksMissingCredentialAndEmptyCatalog()
+    {
+        var items = TuiSurfaces.ModelCatalogChoices(
+            "models.dev:openrouter",
+            null,
+            [("a-model", true)],
+            new Dictionary<string, bool> { ["models.dev:openrouter"] = false });
+
+        Assert.Single(items);
+        Assert.Contains("no key", items[0].Detail, StringComparison.Ordinal);
+
+        var currentOnly = TuiSurfaces.ModelCatalogChoices("OpenAI", "gpt-4o", []);
+        Assert.Single(currentOnly);
+        Assert.Equal("gpt-4o", currentOnly[0].Value);
     }
 
     [Fact]

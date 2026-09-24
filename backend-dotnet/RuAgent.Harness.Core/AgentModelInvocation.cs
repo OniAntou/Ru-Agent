@@ -307,8 +307,34 @@ internal sealed class AgentModelInvocation
         ArgumentException => "prompt_too_large",
         TimeoutException => "model_timeout",
         OperationCanceledException => "cancelled",
+        IStableStepError stable when IsStableStepCode(stable.StepErrorCode) => stable.StepErrorCode.Trim(),
         _ => "model_failed",
     };
+
+    /// <summary>Terminal-code shape: 1..64 chars, [a-z] first, [a-z0-9_.] after.</summary>
+    private static bool IsStableStepCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return false;
+        }
+
+        code = code.Trim();
+        if (code.Length is < 1 or > 64 || code[0] < 'a' || code[0] > 'z')
+        {
+            return false;
+        }
+
+        foreach (var ch in code)
+        {
+            if ((ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '.' && ch != '_')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private async Task MarkModelStepFailureAsync(
         AgentRun run,

@@ -104,6 +104,7 @@ public sealed class TuiTranscript
             {
                 _surface.Line();
             }
+            WriteLines(ComposeAssistantHeader(DateTime.Now));
             _atLineStart = false;
         }
 
@@ -120,6 +121,12 @@ public sealed class TuiTranscript
         RenderStyled(emit);
         _surface.Flush();
     }
+
+    /// <summary>One assistant header per turn: glyph, role and time, printed before the first delta.</summary>
+    public static string ComposeAssistantHeader(DateTime moment) =>
+        TuiPalette.Paint("◆ ", TuiToken.Brand)
+        + TuiPalette.BoldPaint("Ru")
+        + TuiPalette.Paint(" · " + moment.ToString("HH:mm"), TuiToken.Meta);
 
     /// <summary>
     /// Drops text held back for the current streamed answer. A retried model step
@@ -424,7 +431,17 @@ public sealed class TuiTranscript
         var type = envelope.EventType;
         var summary = Escape(envelope.SafeSummary);
 
-        if (type is "run.state_changed" or "model.step_started" or "model.step_completed"
+        if (type == "run.state_changed")
+        {
+            if (string.Equals(envelope.Status, "completed", StringComparison.OrdinalIgnoreCase))
+            {
+                _sawCompletion = true;
+            }
+
+            return;
+        }
+
+        if (type is "model.step_started" or "model.step_completed"
             or "prompt_receipt" or "model.usage_recorded" or "model.reasoning_recorded"
             or "tool.proposed" or "continue.requested")
         {
@@ -468,10 +485,6 @@ public sealed class TuiTranscript
 
             case "run.failed":
                 _terminalCode = string.IsNullOrWhiteSpace(summary) ? "run_failed" : summary;
-                return;
-
-            case "run.completed":
-                _sawCompletion = true;
                 return;
 
             default:
@@ -826,41 +839,23 @@ public sealed class TuiTranscript
             + TuiPalette.Paint(string.Join(" · ", parts), TuiToken.Meta);
     }
 
-    /// <summary>Failure line plus a single actionable remedy line.</summary>
+    /// <summary>Failure card: title plus cause and fix lines from the failure catalog.</summary>
     public static IReadOnlyList<string> ComposeFailure(double seconds, string code)
     {
-        var lines = new List<string>
-        {
+        var info = TuiFailureCatalog.For(code);
+        return
+        [
             TuiPalette.Paint("  ✗ ", TuiToken.Err)
             + TuiPalette.Paint($"{TuiStatusLine.FormatElapsed(seconds)} · ", TuiToken.Meta)
-            + TuiPalette.Paint(code, TuiToken.Err),
-        };
-
-        var remedy = Remedy(code);
-        if (remedy is not null)
-        {
-            lines.Add(TuiPalette.Paint("    " + remedy, TuiToken.Line));
-        }
-
-        return lines;
+            + TuiPalette.Paint(info.Title, TuiToken.Err)
+            + TuiPalette.Paint($" ({info.Code})", TuiToken.Meta),
+            TuiPalette.Paint("    " + info.Cause, TuiToken.Line),
+            TuiPalette.Paint("    " + info.Fix, TuiToken.Line),
+        ];
     }
 
-    public static string? Remedy(string code) => code switch
-    {
-        "provider_rate_limited" or "rate_limited" =>
-            "provider returned HTTP 429 · retry in a moment or switch model with /model",
-        "provider_auth_failed" or "auth_failed" or "unauthorized" =>
-            "provider rejected the credentials · verify the API key, then retry",
-        "provider_timeout" or "timeout" =>
-            "provider timed out · the upstream server may be overloaded",
-        "worker_unavailable" or "provider_failed" or "generation_failed" or "drive_failed" =>
-            "provider execution failed · run /model or check the API settings",
-        "approval_denied" => "approval denied · the run stopped before that tool executed",
-        "approval_expired" => "the approval expired before it was answered · send the request again",
-        "workspace_membership_expired" => "the workspace lease expired · retry the turn",
-        "policy_snapshot_unavailable" => "policy snapshot unavailable · restart the backend, then retry",
-        _ => null,
-    };
+    public static string? Remedy(string code) =>
+        TuiFailureCatalog.TryGet(code, out var info) ? info.Fix : null;
 
     private static string FormatDuration(int durationMs) =>
         durationMs < 1000 ? $"{durationMs}ms" : $"{durationMs / 1000d:0.#}s";

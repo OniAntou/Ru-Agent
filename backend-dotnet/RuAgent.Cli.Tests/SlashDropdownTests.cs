@@ -106,4 +106,43 @@ public sealed class SlashDropdownTests : IDisposable
     {
         Assert.Contains("3/4", SlashDropdown.Footer(40, null, 3, 4), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void LabelColumn_WidensForLongLabelsOnWideTerminals()
+    {
+        var items = new[]
+        {
+            new DropdownItem("cohere/north-mini-code:free", "free"),
+            new DropdownItem("a-model", "current"),
+        };
+        var lines = SlashDropdown.Compose(120, "model", items, 0, 5, null);
+
+        Assert.Contains("cohere/north-mini-code:free", lines[1], StringComparison.Ordinal);
+        Assert.All(lines, line => Assert.Equal(120, TuiText.VisibleWidth(line)));
+    }
+
+    [Fact]
+    public void LabelColumn_ClipsButNeverOverflowsNarrowTerminals()
+    {
+        var items = new[]
+        {
+            new DropdownItem("cohere/north-mini-code:free", "free"),
+            new DropdownItem("a-model", "current"),
+        };
+        var lines = SlashDropdown.Compose(40, "model", items, 0, 5, null);
+
+        Assert.All(lines, line => Assert.True(TuiText.VisibleWidth(line) <= 40));
+        Assert.Contains("…", lines[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LabelColumn_StaysStableWhileScrolling()
+    {
+        var many = Enumerable.Range(0, 20).Select(i => new DropdownItem($"provider/model-{i:00}-with-a-long-name", "supported")).ToArray();
+        var first = SlashDropdown.Compose(120, "model", many, 0, 5, null);
+        var scrolled = SlashDropdown.Compose(120, "model", many, 15, 5, null);
+
+        Assert.Contains("provider/model-00-with-a-long-name", first[1], StringComparison.Ordinal);
+        Assert.Contains("provider/model-15-with-a-long-name", scrolled[3], StringComparison.Ordinal);
+    }
 }

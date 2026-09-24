@@ -55,7 +55,7 @@ public sealed class WorkerUnavailableException : Exception
     }
 }
 
-public sealed class WorkerProtocolException : Exception
+public sealed class WorkerProtocolException : Exception, RuAgent.Harness.Core.IStableStepError
 {
     public WorkerProtocolException(string code)
         : this(code, retryable: false)
@@ -70,6 +70,8 @@ public sealed class WorkerProtocolException : Exception
     }
 
     public string Code { get; }
+
+    public string StepErrorCode => Code;
 
     /// <summary>Worker-reported transient signal (e.g. rate limits). Preserved
     /// from the error envelope so the step driver can retry bounded failures

@@ -111,26 +111,76 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void ComposeFailure_AddsOneActionableRemedyLine()
+    public void ComposeFailure_RendersTitleCauseAndFix()
     {
         var lines = TuiTranscript.ComposeFailure(6.1, "provider_rate_limited");
 
-        Assert.Equal(2, lines.Count);
+        Assert.Equal(3, lines.Count);
         Assert.DoesNotContain("turn", lines[0], StringComparison.Ordinal);
         Assert.Contains("6.1s", lines[0], StringComparison.Ordinal);
         Assert.Contains("provider_rate_limited", lines[0], StringComparison.Ordinal);
-        Assert.Contains("/model", lines[1], StringComparison.Ordinal);
+        Assert.Contains("429", lines[1], StringComparison.Ordinal);
+        Assert.Contains("/model", lines[2], StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ComposeFailure_StaysSingleLineForUnknownCodes()
+    public void ComposeFailure_FallsBackWithCodeAndLogPointer()
     {
-        Assert.Single(TuiTranscript.ComposeFailure(0.5, "some_new_code"));
+        var lines = TuiTranscript.ComposeFailure(0.5, "some_new_code");
+
+        Assert.Equal(3, lines.Count);
+        Assert.Contains("some_new_code", lines[0], StringComparison.Ordinal);
+        Assert.Contains("some_new_code", lines[1], StringComparison.Ordinal);
+        Assert.Contains("/status", lines[2], StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData("provider_rate_limited", true)]
     [InlineData("approval_expired", true)]
+    [InlineData("catalog_unauthorized", true)]
+    [InlineData("provider_not_active", true)]
+    [InlineData("provider_configuration_changed", true)]
+    [InlineData("forbidden", true)]
+    [InlineData("server_error", true)]
+    [InlineData("http_error", true)]
+    [InlineData("transport_error", true)]
+    [InlineData("malformed_payload", true)]
+    [InlineData("response_too_large", true)]
+    [InlineData("vision_unsupported", true)]
+    [InlineData("empty_model_reply", true)]
+    [InlineData("catalog_rate_limited", true)]
+    [InlineData("catalog_timeout", true)]
+    [InlineData("catalog_unavailable", true)]
+    [InlineData("catalog_http_error", true)]
+    [InlineData("catalog_malformed", true)]
+    [InlineData("catalog_too_large", true)]
+    [InlineData("catalog_configuration_error", true)]
+    [InlineData("worker_failed", true)]
+    [InlineData("runtime_drive_failed", true)]
+    [InlineData("repeated_tool_call", true)]
+    [InlineData("prompt_contract_invalid", true)]
+    [InlineData("run_not_runnable", true)]
+    [InlineData("workspace_busy", true)]
+    [InlineData("session_busy", true)]
+    [InlineData("approval_stale", true)]
+    [InlineData("reconcile_stale", true)]
+    [InlineData("reconciliation_required", true)]
+    [InlineData("provider_bootstrap_failed", true)]
+    [InlineData("tool_failed", true)]
+    [InlineData("harness_store_unavailable", true)]
+    [InlineData("session_create_failed", true)]
+    [InlineData("invalid_workspace", true)]
+    [InlineData("invalid_session_id", true)]
+    [InlineData("preset_mismatch", true)]
+    [InlineData("compact_failed", true)]
+    [InlineData("command_unknown", true)]
+    [InlineData("run_failed", true)]
+    [InlineData("model_failed", true)]
+    [InlineData("model_timeout", true)]
+    [InlineData("prompt_too_large", true)]
+    [InlineData("model_unavailable", true)]
+    [InlineData("provider_auth", true)]
+    [InlineData("protocol_failure", true)]
     [InlineData("what_is_this", false)]
     public void Remedy_CoversTheKnownRecoveryPaths(string code, bool hasRemedy)
     {
@@ -138,8 +188,31 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void BuildFooter_JoinsFactsWithTheSummaryDetail()
+    public void ComposeAssistantHeader_NamesTheRoleOnce()
     {
+        var header = TuiText.Strip(TuiTranscript.ComposeAssistantHeader(new DateTime(2026, 9, 24, 8, 36, 0)));
+
+        Assert.Contains("◆", header, StringComparison.Ordinal);
+        Assert.Contains("Ru", header, StringComparison.Ordinal);
+        Assert.Contains("08:36", header, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FirstDelta_PrintsTheAssistantHeaderOnce()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("hello ");
+        transcript.AppendAssistant("world");
+
+        var text = output.ToString();
+        Assert.Contains("◆", text, StringComparison.Ordinal);
+        Assert.Contains("Ru", text, StringComparison.Ordinal);
+        Assert.Equal(1, text.Split('◆').Length - 1);
+    }
+
+    [Fact]
+    public void BuildFooter_JoinsFactsWithTheSummaryDetail()    {
         var footer = TuiTranscript.BuildFooter(18.4, 4, "3 files changed · verified");
 
         Assert.DoesNotContain("turn", footer, StringComparison.Ordinal);
@@ -243,7 +316,7 @@ public sealed class TuiTranscriptTests
         var (transcript, output) = Create();
         transcript.BeginTurn();
         transcript.ApplySummary(new AgentRunSummaryWire("completed", "verified", "LLM", 40, 3, 1, 0));
-        transcript.ApplyDurable(Durable("run.completed", "succeeded", "ok"));
+        transcript.ApplyDurable(Durable("run.state_changed", "completed", "completed"));
         transcript.EndTurn();
 
         Assert.Contains(Rows(output), row =>
@@ -273,6 +346,19 @@ public sealed class TuiTranscriptTests
         transcript.EndTurn();
 
         Assert.DoesNotContain(Rows(output), row => row.Contains('✓') || row.Contains('✗'));
+    }
+
+    [Fact]
+    public void RunStateChanged_WhileRunningPrintsNoFooterAndNoNotice()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("run.state_changed", "running", "running"));
+        transcript.EndTurn();
+
+        var rows = Rows(output);
+        Assert.DoesNotContain(rows, row => row.Contains("run.state_changed", StringComparison.Ordinal));
+        Assert.DoesNotContain(rows, row => row.Contains('✓'));
     }
 
     [Fact]
@@ -390,6 +476,9 @@ public sealed class TuiTranscriptTests
         transcript.Flush();
 
         var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
-        Assert.Contains("\n\nHello there!", text, StringComparison.Ordinal);
+        Assert.Contains("◆ Ru", text, StringComparison.Ordinal);
+        Assert.True(
+            text.IndexOf("◆ Ru", StringComparison.Ordinal) < text.IndexOf("Hello there!", StringComparison.Ordinal),
+            "the assistant header must sit between the settled tool and the prose");
     }
 }

@@ -29,7 +29,9 @@ agent policy remove <rule-id>
 - While a turn streams, keystrokes are captured in the pinned footer: Enter queues one prompt (`PendingPromptSlot`) and sends it when the turn ends, Escape clears the draft then cancels the run, `Ctrl+O` expands the last collapsed tool/diff block. A pending approval takes over the footer with a choice list (`↑↓`/digits to move, Enter to confirm, Escape to deny).
 - `--classic` opts out of the sticky footer and keeps the sequential layout where the composer only appears between turns. The sticky footer is also disabled automatically when stdout is redirected, when `TERM=dumb`, and with `--json`.
 - Information surfaces share one framed panel: `/help` lists every command grouped by area (generated from the reader's own command table), and `/status` (also `/stats`, `/tokens`) prints the session card — session id, preset, backend, model, API-key state, turns, tools, tokens and the workspace leaf.
-- `/model` and `/backend` without an argument open a picker (`↑↓`, digits, `Enter`, `Esc`) listing the models configured on this machine, or the fixed backends; choosing one updates the settings immediately. With no interactive console they print the same information as a panel, and `Esc` cancels silently.
+- `/model` without an argument lists the live provider catalog for the active backend (current model first, then free models, then the rest A–Z, then dimmed unsupported rows; the footer names the backend and the row count), falling back to configured models when the catalog is unreachable; pick with `↑↓`/digits/`Enter`, `Esc` cancels. Free-tier models carry a `free` tag (OpenRouter `:free` suffix) and long ids keep both ends so shared prefixes stay apart. Dropdown label columns size to the longest label on wide terminals (narrow screens clip with `…`); short lists keep the classic 12-cell column.
+- `/model` and `/backend` without an argument open a picker (`↑↓`, digits, `Enter`, `Esc`) listing the models configured on this machine, or the fixed backends (including `models.dev:openrouter`); choosing one updates the settings immediately. `/backend openrouter` and `/model <id>` also work with explicit arguments. With no interactive console they print the same information as a panel, and `Esc` cancels silently.
+- `/key` manages provider API keys without leaving the terminal: bare `/key` shows the sign-in state (legacy providers plus signed-in `models.dev` ids), `/key <provider>` opens a masked panel (one `•` per character, count only, never content) and prompts for the key with no echo (`openai`, `anthropic`, `custom`, `openrouter`, or `models.dev:<id>`; `Ctrl+V` pastes from the clipboard since raw console input swallows the terminal's own paste binding, pasted text is trimmed to the first line, `Esc` cancels, empty input saves nothing), and `/key remove <provider>` signs out via `POST /settings/provider/remove`. Keys travel only inside the `POST /settings` body to the Windows Credential Manager and are never printed, logged, or stored in history. Non-interactive runs report `interactive_required` instead of prompting. Free-tier example: `/backend openrouter`, then `/key openrouter`, then `/model cohere/north-mini-code:free`.
 - Terminal resizes are debounced (180 ms); once the window settles the whole screen is rebuilt (region reset, fresh header, transcript tail reprinted from a bounded line history) rather than patched, because the terminal has already reflowed the rows the UI addressed absolutely. Nothing is drawn while the layout is known to be stale, and a window too short for a footer leaves sticky mode instead of painting rows that do not exist. `RU_TUI_DEBUG=<path>` writes a layout trace for diagnosing this on a real terminal.
 - `session list`, `session fork`, and `session rewind` provide explicit command-line controls for managing session branch trees and time-travel rewinds.
 - `run` creates a single-shot Agent run. If `--session` is omitted, the tracer creates one dedicated session via `POST /sessions/new`, prints `session_id` and `run_id`, and sends a fresh `idempotency_key` (32-char hex GUID). Workspace is canonicalized and bounded to 512 chars; prompt is bounded to 8192 chars; max argument count is 64.
@@ -98,6 +100,31 @@ is running through `PublicHostStarter.GetOrStartAsync` and authenticated
 - Approval id: `apr_` + 32 lower hex
 - Rule id: `rule_` + 32 lower hex
 - Policy file: max 1 MiB, version 1 only, max 64 rules
+- Error text: one-shot failures print `code: message` (server message, max 200 chars, single line), never raw JSON
+
+## Failure catalog
+
+Failed turns print a three-line card: title plus code, cause, and fix
+(`TuiFailureCatalog`, the single source of failure copy for the terminal).
+Covered families: provider auth/key/model (`catalog_unauthorized`,
+`provider_not_active`, `provider_configuration_changed`, `forbidden`),
+rate limits (`catalog_rate_limited` / `rate_limited`, HTTP 429),
+transport (`timeout` / `transport_error`), provider errors
+(`server_error` / `http_error` / `malformed_payload`), catalog reachability
+(`catalog_unavailable` / `catalog_http_error`) and shape
+(`catalog_malformed` / `catalog_too_large` / `catalog_configuration_error`),
+`response_too_large`, `vision_unsupported`, `empty_model_reply`,
+`model_failed` / `model_timeout` / `prompt_too_large` / `model_unavailable`,
+worker reachability (`worker_unavailable` / `worker_failed`, kept apart from
+`provider_failed` / `generation_failed` / `drive_failed` execution failures),
+run lifecycle (`repeated_tool_call`, `prompt_contract_invalid`,
+`run_not_runnable`, `workspace_busy`, `reconciliation_required`,
+`reconcile_stale`, approvals, `tool_failed`, store/preset/session/workspace
+failures, `compact_failed`, `command_invalid` / `command_unknown`).
+Codes outside the table still name themselves and point at
+`%LOCALAPPDATA%\Ru\logs` plus `/status` instead of rendering bare.
+The TUI cannot store keys yet: on a `models.dev:*` backend the `/model` card
+points at GUI Settings → Models instead of a silent absence.
 
 ## References
 

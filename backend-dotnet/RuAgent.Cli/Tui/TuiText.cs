@@ -258,6 +258,49 @@ public static class TuiText
         return "…" + text[startChar..];
     }
 
+    /// <summary>
+    /// Shortens to a visible width keeping both ends (providers usually share a
+    /// prefix, versions share a suffix). Pure so dropdown columns stay readable.
+    /// </summary>
+    public static string MiddleTruncate(string? text, int width)
+    {
+        if (string.IsNullOrEmpty(text) || width <= 1 || VisibleWidth(text) <= width)
+        {
+            return text ?? string.Empty;
+        }
+
+        var tail = Math.Max(1, (width - 1) / 2);
+        var head = width - 1 - tail;
+        return TakeWidth(text, head) + "…" + TakeTailWidth(text, tail);
+    }
+
+    private static string TakeTailWidth(string text, int width)
+    {
+        var used = 0;
+        var index = text.Length;
+        while (index > 0)
+        {
+            var start = index;
+            var codePoint = ReadCodePointBackward(text, ref start);
+            var runeWidth = RuneWidth(codePoint);
+            if (used + runeWidth > width)
+            {
+                break;
+            }
+
+            used += runeWidth;
+            index = start;
+        }
+
+        return text[index..];
+    }
+
+    private static int ReadCodePointBackward(string text, ref int index)
+    {
+        index -= char.IsLowSurrogate(text[index - 1]) && index >= 2 && char.IsHighSurrogate(text[index - 2]) ? 2 : 1;
+        return char.ConvertToUtf32(text, index);
+    }
+
     /// <summary>Truncates then right-pads so the result occupies exactly <paramref name="width"/> cells.</summary>
     public static string Pad(string? text, int width)
     {

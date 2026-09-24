@@ -70,7 +70,7 @@ public static class ComposerBox
         var fill = Math.Max(0, inner - TuiText.VisibleWidth(left));
         return TuiPalette.Paint("╭", token)
             + TuiPalette.Paint("─ ", token)
-            + TuiPalette.Paint(label, TuiToken.Meta)
+            + TuiPalette.Paint(label, TuiToken.Brand)
             + TuiPalette.Paint(" ", token)
             + TuiPalette.Paint(new string('─', fill), token)
             + TuiPalette.Paint("╮", token);
@@ -109,8 +109,8 @@ public static class ComposerBox
 
         return TuiPalette.Paint("│ ", token)
             + prompt
-            + text
-            + (ghostText.Length == 0 ? string.Empty : TuiPalette.Paint(ghostText, TuiToken.Line))
+            + TuiPalette.Paint(text, TuiToken.Bright)
+            + (ghostText.Length == 0 ? string.Empty : TuiPalette.Paint(ghostText, TuiToken.Meta))
             + new string(' ', pad)
             + TuiPalette.Paint(" │", token);
     }

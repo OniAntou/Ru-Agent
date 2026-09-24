@@ -125,6 +125,19 @@ public sealed class AgentAssistantDeltaModelTests
     }
 
     [Fact]
+    public void TryParse_accepts_an_explicit_null_reset_as_an_ordinary_frame()
+    {
+        // The worker serializes unset optionals explicitly: a null reset is an
+        // ordinary delta, and dropping it silences the whole turn.
+        var frame = Frame(8, new { text = "Hi", model_step_id = StepId, execution_id = (string?)null, reset = (bool?)null });
+
+        Assert.True(AgentAssistantDeltaModel.TryParse(frame, out var delta));
+        Assert.NotNull(delta);
+        Assert.False(delta.IsReset);
+        Assert.Equal("Hi", delta.Text);
+    }
+
+    [Fact]
     public void TryParse_rejects_a_reset_frame_that_carries_text()
     {
         var contradictory = Frame(7, new { text = "leaked", model_step_id = StepId, reset = true });

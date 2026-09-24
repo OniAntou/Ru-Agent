@@ -16,6 +16,7 @@ public sealed class TuiPaletteTests
             Assert.Equal("\u001b[38;2;52;211;153m", TuiPalette.Code(TuiToken.Ok));
             Assert.Equal("\u001b[38;2;251;191;36m", TuiPalette.Code(TuiToken.Warn));
             Assert.Equal("\u001b[38;2;248;113;113m", TuiPalette.Code(TuiToken.Err));
+            Assert.Equal("\u001b[38;2;255;255;255m", TuiPalette.Code(TuiToken.Bright));
         }
     }
 
@@ -30,6 +31,7 @@ public sealed class TuiPaletteTests
             Assert.Equal("\u001b[38;5;79m", TuiPalette.Code(TuiToken.Ok));
             Assert.Equal("\u001b[38;5;221m", TuiPalette.Code(TuiToken.Warn));
             Assert.Equal("\u001b[38;5;210m", TuiPalette.Code(TuiToken.Err));
+            Assert.Equal("\u001b[38;5;231m", TuiPalette.Code(TuiToken.Bright));
         }
     }
 
@@ -45,6 +47,7 @@ public sealed class TuiPaletteTests
             Assert.Equal("\u001b[92m", TuiPalette.Code(TuiToken.Ok));
             Assert.Equal("\u001b[93m", TuiPalette.Code(TuiToken.Warn));
             Assert.Equal("\u001b[91m", TuiPalette.Code(TuiToken.Err));
+            Assert.Equal("\u001b[97m", TuiPalette.Code(TuiToken.Bright));
         }
     }
 

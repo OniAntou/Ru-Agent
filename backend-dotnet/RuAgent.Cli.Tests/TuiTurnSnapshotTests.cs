@@ -121,7 +121,7 @@ public sealed class TuiTurnSnapshotTests
             "agent.summary",
             AgentRunSummaryWireCodec.Serialize(new AgentRunSummaryWire("succeeded", "verified", "LLM", 40, 3, 1, 0)),
             9));
-        renderer.RenderFrame(Durable("run.completed", "succeeded", "ok", 10));
+        renderer.RenderFrame(Durable("run.state_changed", "completed", "completed", 10));
         renderer.EndTurn();
         return (output, renderer);
     }
@@ -172,7 +172,7 @@ public sealed class TuiTurnSnapshotTests
         var edit = indexOf("✓ edit");
         var footer = rows.ToList().FindLastIndex(row => row.Contains("✓", StringComparison.Ordinal) && row.Contains("2 tools", StringComparison.Ordinal));
 
-        Assert.DoesNotContain(rows, row => row.Contains("◆", StringComparison.Ordinal));
+        Assert.Equal(0, indexOf("◆ Ru"));
         Assert.True(prose >= 0, "prose missing");
         Assert.True(prose < read, "the first tool row must follow the prose");
         Assert.True(read < edit, "tool rows keep their order");
@@ -209,7 +209,7 @@ public sealed class TuiTurnSnapshotTests
         renderer.Width = 80;
         renderer.BeginTurn();
         renderer.RenderFrame(Durable("tool.execution_completed", "succeeded", "read_only", 5));
-        renderer.RenderFrame(Durable("run.completed", "succeeded", "ok", 6));
+        renderer.RenderFrame(Durable("run.state_changed", "completed", "completed", 6));
         renderer.EndTurn();
 
         var rows = Rows(output);

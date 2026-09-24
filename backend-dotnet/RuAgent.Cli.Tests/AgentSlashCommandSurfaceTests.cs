@@ -238,6 +238,113 @@ public sealed class AgentSlashCommandSurfaceTests
     }
 
     [Fact]
+    public async Task Backend_WithBareOpenrouter_SwitchesToModelsDev()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+
+        await commands.TryHandleAsync("/backend", "openrouter", "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        Assert.Contains("models.dev:openrouter", posted.Single(), StringComparison.Ordinal);
+        Assert.Contains("Switched backend to: models.dev:openrouter", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Model_OnOpenrouterBackend_OffersTheCurrentModelFirst()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, _ => Json(
+            "{\"status\":\"ok\",\"backend\":\"models.dev:openrouter\",\"model\":\"cohere/north-mini-code:free\",\"openai_model\":\"gpt-4o\"}"));
+        IReadOnlyList<ChoiceItem>? offered = null;
+        commands.Picker = (list, _) => { offered = list.Items; return Task.FromResult<string?>(null); };
+
+        Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.NotNull(offered);
+        Assert.Equal("cohere/north-mini-code:free", offered[0].Value);
+        Assert.Contains("current", offered[0].Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithBareOpenrouter_PostsTheIdAndKeyPair()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>("sk-or-test");
+
+        Assert.True(await commands.TryHandleAsync("/key", "openrouter", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var body = Assert.Single(posted);
+        Assert.Contains("models_dev_provider_id", body, StringComparison.Ordinal);
+        Assert.Contains("openrouter", body, StringComparison.Ordinal);
+        Assert.Contains("models_dev_api_key", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-or-test", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Model_WithLiveCatalog_OffersCatalogModels()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/models", StringComparison.Ordinal))
+            {
+                return Json("{\"status\":\"ok\",\"backend\":\"models.dev:openrouter\"," +
+                    "\"catalog\":[{\"id\":\"b-model\",\"supported\":true},{\"id\":\"a-model\",\"supported\":true},{\"id\":\"old-model\",\"supported\":false}]}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"models.dev:openrouter\",\"model\":\"b-model\"}");
+        });
+        IReadOnlyList<ChoiceItem>? offered = null;
+        commands.Picker = (list, _) => { offered = list.Items; return Task.FromResult<string?>("a-model"); };
+
+        Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.NotNull(offered);
+        Assert.Equal("b-model", offered[0].Value);
+        Assert.Contains("current", offered[0].Detail, StringComparison.Ordinal);
+        Assert.Contains(offered, i => i.Value == "a-model" && i.Enabled);
+        Assert.Contains(offered, i => i.Value == "old-model" && !i.Enabled);
+        Assert.Contains("Switched active model to: a-model", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Model_WhenCatalogFails_FallsBackToConfiguredModels()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, request => request.RequestUri!.AbsolutePath.EndsWith("/models", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            : Json("{\"status\":\"ok\",\"backend\":\"models.dev:openrouter\",\"model\":\"b-model\"}"));
+
+        Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.Contains("╭─ model", text, StringComparison.Ordinal);
+        Assert.Contains("b-model", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Model_WithAnArgument_SwitchesDirectly()
     {
         var output = new StringWriter();
@@ -257,6 +364,260 @@ public sealed class AgentSlashCommandSurfaceTests
 
         Assert.Contains("new-model", posted.Single(), StringComparison.Ordinal);
         Assert.Contains("Switched active model to: new-model", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Model_OnModelsDevBackend_ShowsKeyHintInsteadOfSilentAbsence()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, _ => Json(
+            "{\"status\":\"ok\",\"backend\":\"models.dev:opencode\",\"model\":\"glm-5.3-flash\"}"));
+
+        Assert.True(await commands.TryHandleAsync("/model", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.Contains("models.dev:opencode", text, StringComparison.Ordinal);
+        Assert.Contains("glm-5.3-flash", text, StringComparison.Ordinal);
+        Assert.Contains("/key", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithoutArgs_ShowsSignInState()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, request => request.RequestUri!.AbsolutePath.EndsWith("/settings/models-dev-keys", StringComparison.Ordinal)
+            ? Json("{\"status\":\"ok\",\"provider_ids\":[\"opencode\"]}")
+            : Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\",\"has_openai_api_key\":true,\"has_anthropic_api_key\":false}"));
+
+        Assert.True(await commands.TryHandleAsync("/key", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.Contains("╭─ keys", text, StringComparison.Ordinal);
+        Assert.Contains("OpenAI", text, StringComparison.Ordinal);
+        Assert.Contains("signed in", text, StringComparison.Ordinal);
+        Assert.Contains("models.dev", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithProvider_PromptsOnceAndPostsTheKeyField()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"success\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\"}");
+        });
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>("sk-test-key");
+
+        Assert.True(await commands.TryHandleAsync("/key", "openai", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var body = Assert.Single(posted);
+        Assert.Contains("openai_api_key", body, StringComparison.Ordinal);
+        Assert.Contains("sk-test-key", body, StringComparison.Ordinal);
+        var text = output.ToString();
+        Assert.Contains("Signed in to OpenAI", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-test-key", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithModelsDevId_PostsTheIdAndKeyPair()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"models.dev:opencode\",\"model\":\"glm-5.3-flash\"}");
+        });
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>("sk-test-key");
+
+        Assert.True(await commands.TryHandleAsync("/key", "models.dev:opencode", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var body = Assert.Single(posted);
+        Assert.Contains("models_dev_provider_id", body, StringComparison.Ordinal);
+        Assert.Contains("models_dev_api_key", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-test-key", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WhenCancelled_SavesNothing()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add("POST");
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>(null);
+
+        Assert.True(await commands.TryHandleAsync("/key", "openai", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Empty(posted);
+        Assert.Contains("no key entered", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithEmptyKey_SavesNothing()
+    {
+        var posted = new List<string>();
+        var commands = Create(new StringWriter(), request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add("POST");
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>("   ");
+
+        Assert.True(await commands.TryHandleAsync("/key", "openai", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Empty(posted);
+    }
+
+    [Fact]
+    public async Task Key_PrefersTheMaskedPanelOverTheBarePrompt()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        var prompts = 0;
+        commands.SecretPrompt = (_, _) => { prompts++; return Task.FromResult<string?>("sk-bare"); };
+        commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>("sk-panel-key");
+
+        Assert.True(await commands.TryHandleAsync("/key", "openrouter", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var body = Assert.Single(posted);
+        Assert.Contains("sk-panel-key", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-bare", body, StringComparison.Ordinal);
+        Assert.Equal(0, prompts);
+        Assert.Contains("Signed in to models.dev:openrouter", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_PanelCancel_SavesNothing()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add("POST");
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        commands.SecretPanelPrompt = (_, _) => Task.FromResult<string?>(null);
+
+        Assert.True(await commands.TryHandleAsync("/key", "openrouter", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Empty(posted);
+        Assert.Contains("no key entered", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithPaddedKey_TrimsBeforeSaving()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        commands.SecretPrompt = (_, _) => Task.FromResult<string?>("  sk-test-key \r\n");
+
+        Assert.True(await commands.TryHandleAsync("/key", "openai", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var body = Assert.Single(posted);
+        Assert.Contains("sk-test-key", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("  sk-test-key", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Key_WithUnknownProvider_SavesNothing()
+    {
+        var posted = new List<string>();
+        var commands = Create(new StringWriter(), request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add("POST");
+                return Json("{\"status\":\"ok\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+        var prompts = 0;
+        commands.SecretPrompt = (_, _) =>
+        {
+            prompts++;
+            return Task.FromResult<string?>("sk-test-key");
+        };
+
+        Assert.True(await commands.TryHandleAsync("/key", "nope", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+        Assert.True(await commands.TryHandleAsync("/key", "models.dev:BAD!ID", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        Assert.Empty(posted);
+        Assert.Equal(0, prompts);
+    }
+
+    [Fact]
+    public async Task KeyRemove_PostsTheBackendChoice()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                return Json("{\"status\":\"success\",\"message\":\"Signed out.\"}");
+            }
+
+            return Json("{\"status\":\"ok\",\"backend\":\"OpenAI\"}");
+        });
+
+        Assert.True(await commands.TryHandleAsync("/key", "remove openai", "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var body = Assert.Single(posted);
+        Assert.Contains("backend_choice", body, StringComparison.Ordinal);
+        Assert.Contains("Signed out.", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

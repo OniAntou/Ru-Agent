@@ -28,11 +28,16 @@ public sealed class AgentProviderSnapshotFactory(
                 if (_runs.Count >= 64) throw new ProviderCatalogException("provider_snapshot_capacity");
                 var current = await settings.ReadAsync(ct).ConfigureAwait(false);
                 var selected = await catalog.ResolveSelectionAsync(current, ct).ConfigureAwait(false);
+                var key = selected.Account is null ? "" : await credentials.GetAsync("Ru", selected.Account, ct).ConfigureAwait(false) ?? "";
+                // Fail fast before any network fetch: without its credential or model
+                // a run can never produce a reply, so report it now instead of
+                // after connect/receive timeouts and retry backoffs.
+                if (selected.RequiresCredential && string.IsNullOrWhiteSpace(key))
+                    throw new ProviderCatalogException("catalog_unauthorized");
+                if ((selected.Alias is "openai" or "anthropic") && string.IsNullOrWhiteSpace(selected.Model))
+                    throw new ProviderCatalogException("model_unavailable");
                 var models = await catalog.GetAsync(current, false, ct).ConfigureAwait(false);
                 var options = ProviderReasoningPreferences.Resolve(models, selected.Model, ProviderReasoningPreferences.Read(current, selected));
-                var key = selected.Account is null ? "" : await credentials.GetAsync("Ru", selected.Account, ct).ConfigureAwait(false) ?? "";
-                if (selected.Alias is "openai" or "anthropic" && string.IsNullOrWhiteSpace(key))
-                    throw new ProviderCatalogException("catalog_unauthorized");
                 var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
                 if (revision != models.CredentialRevision) throw new ProviderCatalogException("provider_configuration_changed");
                 if (selected.Alias is "openai" or "anthropic")

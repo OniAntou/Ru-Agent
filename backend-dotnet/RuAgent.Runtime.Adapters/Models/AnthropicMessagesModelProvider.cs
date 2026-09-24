@@ -308,6 +308,9 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
         HttpStatusCode.Unauthorized => new("auth_failed", false),
         HttpStatusCode.Forbidden => new("forbidden", false),
         HttpStatusCode.TooManyRequests => new("rate_limited", true),
+        // Gateways answer 404 both for unknown models and for models with no
+        // serving capacity; either way the fix is picking another model.
+        HttpStatusCode.NotFound => new("model_unavailable", false),
         (HttpStatusCode)529 => new("server_error", true),
         >= HttpStatusCode.InternalServerError => new("server_error", true),
         _ => new("http_error", false),

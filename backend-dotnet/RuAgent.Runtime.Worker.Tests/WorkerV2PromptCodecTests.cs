@@ -18,7 +18,8 @@ public sealed class WorkerV2PromptCodecTests
             "Read a bounded file",
             "workspace.read",
             schema,
-            PromptHashForTest.Sha256(schema),
+            RuAgent.Protocol.AgentToolDefinitionCatalog.ComputeSchemaDigest(
+                System.Text.Json.Nodes.JsonNode.Parse(schema)!.AsObject()),
             "{\"path\":\"README.md\"}",
             "enabled"));
 

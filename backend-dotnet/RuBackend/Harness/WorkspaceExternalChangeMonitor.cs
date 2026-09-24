@@ -51,7 +51,22 @@ public sealed class WorkspaceExternalChangeMonitor
         return false;
     }
 
-    public int CaptureExpectedHashes(string workspaceRoot, int maxFiles = 4096)
+    /// <summary>
+    /// Files larger than this are never hashed into the drive-start baseline:
+    /// reading multi-gigabyte binaries on every first drive would stall the run
+    /// for minutes on a large workspace. The live watcher still reports changes
+    /// to them while the drive runs.
+    /// </summary>
+    public const long MaxHashedFileBytes = MaxExpectedContentBytes;
+
+    /// <summary>
+    /// Total bytes hashed per baseline capture. Together with the file-count cap
+    /// this bounds drive-start latency on huge workspaces; coverage past either
+    /// cap was already best-effort, so stopping early weakens nothing new.
+    /// </summary>
+    public const long MaxCaptureTotalBytes = 64L * 1024 * 1024;
+
+    public int CaptureExpectedHashes(string workspaceRoot, int maxFiles = 4096, long maxTotalBytes = MaxCaptureTotalBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         if (maxFiles is < 1 or > 16_384)
@@ -59,8 +74,14 @@ public sealed class WorkspaceExternalChangeMonitor
             throw new ArgumentOutOfRangeException(nameof(maxFiles));
         }
 
+        if (maxTotalBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxTotalBytes));
+        }
+
         ClearExpectedHashes(workspaceRoot);
         var captured = 0;
+        var totalBytes = 0L;
         try
         {
             var enumerationOptions = new EnumerationOptions
@@ -68,20 +89,29 @@ public sealed class WorkspaceExternalChangeMonitor
                 RecurseSubdirectories = true,
                 IgnoreInaccessible = true,
                 ReturnSpecialDirectories = false,
-                AttributesToSkip = FileAttributes.ReparsePoint,
+                AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.Offline,
             };
             foreach (var path in Directory.EnumerateFiles(workspaceRoot, "*", enumerationOptions))
             {
-                if (captured >= maxFiles)
+                if (captured >= maxFiles || totalBytes >= maxTotalBytes)
                 {
                     break;
                 }
 
                 try
                 {
+                    // Size first so an oversized file costs a stat, never a
+                    // multi-gigabyte read (and never hydrates a cloud placeholder).
+                    var length = new FileInfo(path).Length;
+                    if (length > MaxHashedFileBytes)
+                    {
+                        continue;
+                    }
+
                     var relative = Path.GetRelativePath(workspaceRoot, path);
                     var normalized = NormalizeRelativePath(relative);
                     var snapshot = ComputeHashAndOptionalContent(path);
+                    totalBytes += length;
                     var key = ExpectedKey(workspaceRoot, normalized);
                     _expectedHashes[key] = snapshot.Hash;
                     _lastObservedHashes.TryRemove(key, out _);

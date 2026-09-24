@@ -183,6 +183,26 @@ public sealed class Phase1WorkerIntegrationTests
         Assert.DoesNotContain(PrivatePrompt, rawError, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("http_error", false)]
+    [InlineData("vision_unsupported", false)]
+    [InlineData("empty_model_reply", false)]
+    public async Task Provider_codes_reach_the_wire_unchanged(string code, bool retryable)
+    {
+        await using var host = await StartHostAsync(new ThrowingProvider(
+            new ModelProviderException(code, retryable)));
+        using var socket = await ConnectAsync(host);
+        await HelloAsync(socket);
+        _ = await ReceiveAsync(socket);
+        await SendAsync(socket, StartEnvelope("step-code", SystemPromptContext.Empty));
+        var rawError = await ReceiveAsync(socket);
+
+        var error = WorkerV2EnvelopeCodec.Parse(rawError);
+        Assert.Equal(code, error.Payload["code"]!.GetValue<string>());
+        Assert.Equal(retryable, error.Payload["retryable"]!.GetValue<bool>());
+        Assert.DoesNotContain(PrivatePrompt, rawError, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Unsupported_paths_and_malformed_frames_fail_closed_without_payload_echo()
     {

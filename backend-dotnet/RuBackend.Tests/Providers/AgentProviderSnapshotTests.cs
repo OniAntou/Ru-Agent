@@ -59,6 +59,34 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
 
+    [Fact]
+    public async Task Missing_key_fails_fast_before_any_network_fetch()
+    {
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "OpenAI", OpenAiModel = "gpt-4o" }, default);
+        var catalog = new ProviderCatalogService(new HttpClient(new ExplodingHandler()), new EmptyCredentials(), TimeProvider.System);
+        using var factory = new AgentProviderSnapshotFactory(store, new EmptyCredentials(), catalog, _root, (_, _) => Task.FromResult(false));
+
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        Assert.Equal("catalog_unauthorized", error.Code);
+        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
+    }
+
+    [Fact]
+    public async Task Missing_model_fails_fast_before_any_network_fetch()
+    {
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "OpenAI", OpenAiModel = "" }, default);
+        var catalog = new ProviderCatalogService(new HttpClient(new ExplodingHandler()), new KeyedCredentials(), TimeProvider.System);
+        using var factory = new AgentProviderSnapshotFactory(store, new KeyedCredentials(), catalog, _root, (_, _) => Task.FromResult(false));
+
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        Assert.Equal("model_unavailable", error.Code);
+        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
+    }
+
     private async Task<ProviderBootstrapData> ReadAsync(AgentProviderSnapshotFactory factory, string run)
     {
         var path = await factory.CreateAsync(Request(run), default);
@@ -89,5 +117,28 @@ public sealed class AgentProviderSnapshotTests : IDisposable
                   {"data":[{"id":"a","supported_parameters":["reasoning_effort"],"reasoning_efforts":["low","high"]},{"id":"b"}]}
                   """),
             });
+    }
+
+    /// <summary>Any network fetch is a fail: the missing key/model must throw first.</summary>
+    private sealed class ExplodingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("no network fetch may happen before the credential/model check");
+    }
+
+    private sealed class EmptyCredentials : ICredentialStore
+    {
+        public Task<string?> GetAsync(string serviceName, string accountName, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
+        public Task SetAsync(string serviceName, string accountName, string secret, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task DeleteAsync(string serviceName, string accountName, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class KeyedCredentials : ICredentialStore
+    {
+        public Task<string?> GetAsync(string serviceName, string accountName, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>("key-one");
+        public Task SetAsync(string serviceName, string accountName, string secret, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task DeleteAsync(string serviceName, string accountName, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

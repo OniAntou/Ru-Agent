@@ -129,7 +129,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 definition.ToolVersion,
                 definition.Description,
                 definition.Scope,
-                definition.InputSchema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }),
+                AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema),
                 AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
                 definition.ExampleArguments?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }),
                 "enabled"));

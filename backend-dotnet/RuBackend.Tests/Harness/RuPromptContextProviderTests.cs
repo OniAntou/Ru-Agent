@@ -125,7 +125,7 @@ public sealed class RuPromptContextProviderTests
         {
             var definition = AgentToolDefinitionCatalog.Find(capability.Id, capability.Version)!;
             Assert.Equal(definition.Scope, capability.Scope);
-            Assert.Equal(definition.InputSchema.ToJsonString(), capability.InputSchemaJson);
+            Assert.Equal(AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema), capability.InputSchemaJson);
             Assert.Equal(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest);
         }
     }

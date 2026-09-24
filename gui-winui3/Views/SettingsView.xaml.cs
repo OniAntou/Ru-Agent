@@ -36,6 +36,12 @@ namespace RuApp.Views
         private double _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
 
         private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
+
+        private const double ProviderRowDotSize = 6;
+        private const double ProviderRowGap = 8;
+        private const double ProviderRowLabelFontSize = 12.5;
+        private const double ProviderRowCheckFontSize = 12;
+
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
         private IReadOnlyList<DropdownOption>? _providerOptions;
@@ -56,6 +62,7 @@ namespace RuApp.Views
         private readonly HashSet<string> _signedInValues = new(StringComparer.OrdinalIgnoreCase);
         private AppSettingsDto? _lastSettings;
         private IReadOnlyList<string> _modelsDevKeyIds = [];
+        private bool _modelsDevLoadFailed;
 
         public void SetCurrentTheme(UiTheme theme)
         {
@@ -381,13 +388,16 @@ namespace RuApp.Views
             try
             {
                 var providers = await _apiService.GetModelsDevAsync();
+                _modelsDevLoadFailed = providers.Count == 0;
                 RebuildModelsDevOptions(providers);
                 _modelsDevKeyIds = await _apiService.GetModelsDevKeysAsync();
                 RebuildSignedInOptions(providers);
             }
             catch (Exception ex)
             {
+                _modelsDevLoadFailed = true;
                 System.Diagnostics.Debug.WriteLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
+                ApplyProviderFilter(ProviderSearchBox?.Text);
             }
         }
 
@@ -406,10 +416,10 @@ namespace RuApp.Views
 
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
             {
-                Width = 8,
-                Height = 8,
+                Width = ProviderRowDotSize,
+                Height = ProviderRowDotSize,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 8, 0),
+                Margin = new Thickness(0, 0, ProviderRowGap, 0),
                 Visibility = showDot ? Visibility.Visible : Visibility.Collapsed,
             };
             if (success is Microsoft.UI.Xaml.Media.Brush successBrush)
@@ -421,7 +431,7 @@ namespace RuApp.Views
             {
                 Text = name,
                 FontFamily = uiFont as Microsoft.UI.Xaml.Media.FontFamily,
-                FontSize = 12.5,
+                FontSize = ProviderRowLabelFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
@@ -433,10 +443,9 @@ namespace RuApp.Views
             var check = new FontIcon
             {
                 Glyph = "\uE73E",
-                FontSize = 11,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                FontSize = ProviderRowCheckFontSize,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 0, 0),
+                Margin = new Thickness(ProviderRowGap, 0, 0, 0),
                 Visibility = Visibility.Collapsed,
             };
             if (accent is Microsoft.UI.Xaml.Media.Brush accentBrush)
@@ -633,20 +642,23 @@ namespace RuApp.Views
                 SignedInOptionsHeader.Visibility = signedInVisibility;
             }
 
-            if (SignedInOptionsDivider is not null)
-            {
-                SignedInOptionsDivider.Visibility = signedInVisibility;
-            }
-
             if (FixedProvidersHeader is not null)
             {
                 FixedProvidersHeader.Visibility = (anyFixed || anyDev) ? Visibility.Visible : Visibility.Collapsed;
+                int totalProviders = (_providerOptions?.Count ?? 0) + _modelsDevOptions.Count;
+                FixedProvidersHeader.Text = $"PROVIDERS ({totalProviders})";
             }
 
             if (ProviderNoMatchText is not null)
             {
-                ProviderNoMatchText.Visibility =
-                    (!anyFixed && !anyDev && !anySignedIn) ? Visibility.Visible : Visibility.Collapsed;
+                bool noMatch = !anyFixed && !anyDev && !anySignedIn;
+                ProviderNoMatchText.Visibility = noMatch ? Visibility.Visible : Visibility.Collapsed;
+                if (noMatch)
+                {
+                    ProviderNoMatchText.Text = _modelsDevLoadFailed && _modelsDevOptions.Count == 0
+                        ? "Could not load the Models.dev list. Check the backend connection, then reopen Settings."
+                        : "No provider matches.";
+                }
             }
 
             RefreshProviderUI();

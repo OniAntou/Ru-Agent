@@ -5,11 +5,11 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "5d9e123c0423a7507088216cbcd94da17593f95f52cded6ff08a9e369b41a660"
+            "sha256": "50783311209d19d7696dfd5f70343b44ccfc746050e2168f4f703340e7c2a78c"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "1c3c05fa192b555bd4114e26ef85ed24bcfc4043093d75aa29f97cbff2629bb0"
+            "sha256": "4eef3a1ac0c9466d06be367029689991e6ce410a6acc8ed47c0404efd45e1b30"
           },
           {
             "block_id": "environment",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "1.0.0",
         "private_marker": "sk-PHASE1-PRIVATE-MARKER",
-        "prompt_sha256": "26a45ee59455e3e02e0489684ab25e9c54a7ec9697a1354db94b2816d7c0b5a3"
+        "prompt_sha256": "9ebd592c80ab9a5f10ce889621fee1e60c1aa0833ad554d99c016045defcf835"
       },
       "group": "prompt",
       "id": "prompt.basic",

@@ -323,64 +323,77 @@ public sealed class WorkerV2StepService
             return (new List<ModelToolCall>(), string.IsNullOrEmpty(visibleText) ? null : visibleText);
         }
 
-        // Streaming providers send the call id on the first fragment only;
-        // continuation fragments carry just the argument text. A step still
-        // accepts exactly one call, so only distinct non-empty ids conflict.
-        var providerCallIds = fragments
-            .Select(fragment => fragment.ProviderCallId)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        // The model_tool_call_* codes describe the model's own reply: they stay
-        // retryable so the Host hands the rejection back to the model instead
-        // of failing the run closed. Stream/provider anomalies keep
-        // protocol_failure but are also worth one bounded retry; wire and
-        // invariant violations elsewhere stay terminal.
-        if (providerCallIds.Length > 1)
+        // Trust the model's stream shape: a provider call id opens a new call,
+        // and id-less continuation fragments extend the call before them, so
+        // parallel calls arrive as separate groups with their arguments spread
+        // across any number of chunks. The returned calls run in order on the
+        // Host; nothing here rejects a step for having "too many" calls.
+        var groups = new List<CallGroup> { new() };
+        foreach (var fragment in fragments)
         {
-            throw new WorkerV2StepException("model_tool_call_multiple", retryable: true);
-        }
-
-        if (finishReason != "tool_calls")
-        {
-            throw new WorkerV2StepException("protocol_failure", retryable: true);
-        }
-
-        var toolName = fragments.Select(fragment => fragment.ToolName).FirstOrDefault(name => !string.IsNullOrEmpty(name));
-        if (string.IsNullOrEmpty(toolName))
-        {
-            throw new WorkerV2StepException("protocol_failure", retryable: true);
-        }
-
-        var tool = settings["model_tools"] is JsonArray modelTools
-            ? modelTools.OfType<JsonObject>().FirstOrDefault(item => item["tool_id"]?.GetValue<string>() == toolName)
-            : null;
-        var toolVersion = tool?["tool_version"]?.GetValue<string>();
-        if (toolVersion is null)
-        {
-            throw new WorkerV2StepException("model_tool_call_unavailable", retryable: true);
-        }
-
-        var argumentsText = string.Concat(fragments.Select(fragment => fragment.ArgumentsFragment));
-        if (Encoding.UTF8.GetByteCount(argumentsText) > 64 * 1024)
-        {
-            throw new WorkerV2StepException("model_tool_call_invalid", retryable: true);
-        }
-
-        JsonElement arguments;
-        try
-        {
-            using var document = JsonDocument.Parse(argumentsText);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            var opensNewCall = !string.IsNullOrEmpty(fragment.ProviderCallId)
+                && (groups[^1].ProviderCallId is not null
+                    || groups[^1].ToolName is not null
+                    || groups[^1].Arguments.Length > 0);
+            if (opensNewCall)
             {
-                throw new JsonException("arguments must be an object");
+                groups.Add(new CallGroup());
             }
 
-            arguments = document.RootElement.Clone();
+            var group = groups[^1];
+            if (fragment.ProviderCallId is not null)
+            {
+                group.ProviderCallId = fragment.ProviderCallId;
+            }
+
+            if (!string.IsNullOrEmpty(fragment.ToolName))
+            {
+                group.ToolName ??= fragment.ToolName;
+            }
+
+            group.Arguments.Append(fragment.ArgumentsFragment);
         }
-        catch (JsonException error)
+
+        var calls = new List<ModelToolCall>(groups.Count);
+        foreach (var group in groups)
         {
-            throw new WorkerV2StepException("model_tool_call_invalid", retryable: true, error);
+            if (string.IsNullOrEmpty(group.ToolName))
+            {
+                throw new WorkerV2StepException("protocol_failure", retryable: true);
+            }
+
+            var tool = settings["model_tools"] is JsonArray modelTools
+                ? modelTools.OfType<JsonObject>().FirstOrDefault(item => item["tool_id"]?.GetValue<string>() == group.ToolName)
+                : null;
+            var toolVersion = tool?["tool_version"]?.GetValue<string>();
+            if (toolVersion is null)
+            {
+                throw new WorkerV2StepException("model_tool_call_unavailable", retryable: true);
+            }
+
+            var argumentsText = group.Arguments.ToString();
+            if (Encoding.UTF8.GetByteCount(argumentsText) > 64 * 1024)
+            {
+                throw new WorkerV2StepException("model_tool_call_invalid", retryable: true);
+            }
+
+            JsonElement arguments;
+            try
+            {
+                using var document = JsonDocument.Parse(argumentsText);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw new JsonException("arguments must be an object");
+                }
+
+                arguments = document.RootElement.Clone();
+            }
+            catch (JsonException error)
+            {
+                throw new WorkerV2StepException("model_tool_call_invalid", retryable: true, error);
+            }
+
+            calls.Add(new ModelToolCall(group.ProviderCallId, group.ToolName, toolVersion, arguments));
         }
 
         try
@@ -390,15 +403,19 @@ public sealed class WorkerV2StepService
             // reason the feed stayed silent until the run finished. Raw call markup stays
             // out — narration is prose, never the call written out by hand.
             var narration = text.ToString().Trim();
-            return (new List<ModelToolCall>
-            {
-                new(providerCallIds.Length == 1 ? providerCallIds[0] : null, toolName, toolVersion, arguments),
-            }, narration.Length == 0 || IsToolCallMarkup(narration) ? null : narration);
+            return (calls, narration.Length == 0 || IsToolCallMarkup(narration) ? null : narration);
         }
         catch (ArgumentException error)
         {
             throw new WorkerV2StepException("protocol_failure", retryable: false, error);
         }
+    }
+
+    private sealed class CallGroup
+    {
+        public string? ProviderCallId { get; set; }
+        public string? ToolName { get; set; }
+        public StringBuilder Arguments { get; } = new();
     }
 
     /// <summary>

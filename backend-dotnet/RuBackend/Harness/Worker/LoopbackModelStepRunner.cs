@@ -625,13 +625,11 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     internal static string? BuildSelectionFeedback(string errorCode) => errorCode switch
     {
         "model_tool_call_invalid" =>
-            "Your previous tool call was rejected: its arguments were incomplete or invalid. Re-issue exactly one tool call with complete JSON arguments.",
-        "model_tool_call_multiple" =>
-            "Your previous reply was rejected: only one tool call is allowed per step. Re-issue exactly one tool call.",
+            "Your previous tool call was rejected: its arguments were incomplete or invalid. Re-issue the call with complete JSON arguments.",
         "model_tool_call_unavailable" =>
-            "Your previous tool call was rejected: that tool is not advertised. Re-issue exactly one tool call for an advertised tool.",
+            "Your previous tool call was rejected: that tool is not advertised. Re-issue the call for an advertised tool.",
         "invalid_selection" =>
-            "Your previous reply was rejected: the tool selection was malformed. Re-issue exactly one valid JSON tool selection, or answer in plain text.",
+            "Your previous reply was rejected: the tool selection was malformed. Re-issue one valid JSON tool selection, or answer in plain text.",
         _ => null,
     };
 
@@ -765,7 +763,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 || !seen.Add(key)
                 || !string.Equals(definition.Scope, capability.Scope, StringComparison.Ordinal)
                 || !string.Equals(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest, StringComparison.Ordinal)
-                || !string.Equals(definition.InputSchema.ToJsonString(CompactJson), capability.InputSchemaJson, StringComparison.Ordinal))
+                || !string.Equals(AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema), capability.InputSchemaJson, StringComparison.Ordinal))
             {
                 throw new AgentProtocolException("tool_contract_mismatch");
             }

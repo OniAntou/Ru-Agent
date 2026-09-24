@@ -188,24 +188,27 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
-    public async Task Step_service_rejects_parallel_native_calls_as_retryable_model_repair()
+    public async Task Step_service_accepts_parallel_native_calls_and_returns_them_in_order()
     {
         var provider = new FakeModelProvider(
             new ModelDelta(
                 null,
                 new[]
                 {
-                    new ModelToolFragment("call-1", "files.read", "{\"path\":\"README.md\"}"),
-                    new ModelToolFragment("call-2", "files.read", "{\"path\":\"README.md\"}"),
+                    new ModelToolFragment("call-1", "files.read", "{\"path\":\"READ"),
+                    new ModelToolFragment(null, string.Empty, "ME.md\"}"),
+                    new ModelToolFragment("call-2", "files.read", "{\"path\":\"CHANGELOG.md\"}"),
                 },
                 true,
                 "tool_calls"));
 
-        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
-            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+        var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None);
 
-        Assert.Equal("model_tool_call_multiple", error.Code);
-        Assert.True(error.Retryable);
+        Assert.Equal(2, result.ToolCalls.Count);
+        Assert.Equal("call-1", result.ToolCalls[0].ProviderCallId);
+        Assert.Equal("README.md", result.ToolCalls[0].Arguments.GetProperty("path").GetString());
+        Assert.Equal("call-2", result.ToolCalls[1].ProviderCallId);
+        Assert.Equal("CHANGELOG.md", result.ToolCalls[1].Arguments.GetProperty("path").GetString());
     }
 
     [Fact]

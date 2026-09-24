@@ -156,7 +156,10 @@ public sealed class ProviderCatalogTests : IDisposable
     [Fact]
     public async Task ModelsDev_provider_without_name_falls_back_to_id()
     {
-        _handler.Json = ManyProviderJson(60).Replace("\"zeta\"", "\"zeta\"").Replace("https://prov000.example/v1", "https://zeta.example/v1").Replace("\"prov001\":{\"api\":\"https://prov001.example/v1\"}", "\"alpha\":{\"api\":\"https://alpha.example/v1\"}");
+        // "zeta" carries no name field: the parser must fall back to the id.
+        _handler.Json = ManyProviderJson(60)
+            .Replace("\"prov000\":{\"api\":\"https://prov000.example/v1\"}", "\"zeta\":{\"api\":\"https://zeta.example/v1\"}")
+            .Replace("\"prov001\":{\"api\":\"https://prov001.example/v1\"}", "\"alpha\":{\"api\":\"https://alpha.example/v1\"}");
         var service = ModelsDevService();
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
         Assert.Equal("zeta", Assert.Single(providers, p => p.Id == "zeta").Name);

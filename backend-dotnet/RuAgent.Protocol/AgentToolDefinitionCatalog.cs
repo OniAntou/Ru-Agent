@@ -58,19 +58,19 @@ public static class AgentToolDefinitionCatalog
     public static IReadOnlyList<AgentToolDefinition> Get() => Definitions;
     public static AgentToolDefinition? Find(string toolId, string toolVersion) => toolId is not null && toolVersion is not null && ByKey.TryGetValue(Key(toolId, toolVersion), out var definition) ? definition : null;
 
-    public static string ComputeSchemaDigest(JsonObject schema)
+    public static string ComputeSchemaDigest(JsonObject schema) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(CanonicalSchemaJson(schema)))).ToLowerInvariant();
+
+    /// <summary>
+    /// The one wire form of a tool schema: compact JSON with recursively sorted
+    /// keys. Every capability that carries <c>input_schema_json</c> serializes
+    /// through this so the string and <see cref="ComputeSchemaDigest"/> hash the
+    /// same bytes wherever they are checked.
+    /// </summary>
+    public static string CanonicalSchemaJson(JsonObject schema)
     {
         ArgumentNullException.ThrowIfNull(schema);
-        // Property order is not part of a JSON Schema's meaning, but a digest
-        // over ToJsonString makes it part of the *bytes*. The Broker compares a
-        // manifest schema parsed from JSON wire text against the Protocol-built
-        // schema, and refuses to start when the digests differ -- so a
-        // semantically identical manifest written with different key order
-        // would break startup. Hash a recursively key-sorted canonical form
-        // instead (the same reasoning as the policy snapshot canonicalizer).
-        var canonical = Canonicalize(schema).ToJsonString(
-            new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+        return Canonicalize(schema).ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
     }
 
     private static JsonNode Canonicalize(JsonNode node)

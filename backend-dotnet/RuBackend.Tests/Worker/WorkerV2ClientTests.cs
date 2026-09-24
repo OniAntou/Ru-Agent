@@ -1291,13 +1291,12 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         private static PromptCapability Capability(string toolId)
         {
             var definition = AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!;
-            var schema = definition.InputSchema.ToJsonString();
             return new PromptCapability(
                 definition.ToolId,
                 definition.ToolVersion,
                 definition.Description,
                 definition.Scope,
-                schema,
+                AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema),
                 AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
                 definition.ExampleArguments?.ToJsonString(),
                 "enabled");

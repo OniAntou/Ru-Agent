@@ -226,7 +226,8 @@ public sealed class WorkerV2StepServiceTests
                 true,
                 "tool_calls"));
 
-        var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None);
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
 
         Assert.Equal("protocol_failure", error.Code);
         Assert.False(error.Retryable);

@@ -75,19 +75,22 @@ public static class BrokerPolicyContracts
         AgentToolDefinitionCatalog.Get().Select(definition => definition.ToolId).ToArray();
 
     public static bool IsReadOnlyTool(string toolId) =>
-        toolId is "read" or "grep" or "glob";
+        IsWebTool(toolId)
+        || toolId is "read" or "list" or "help" or "skill" or "grep" or "glob";
 
     public static bool IsWebTool(string toolId) =>
         string.Equals(toolId, "web_search", StringComparison.Ordinal)
         || string.Equals(toolId, "web_fetch", StringComparison.Ordinal);
 
-    public static string CanonicalizePreset(string preset) => preset switch
+    public static string CanonicalizePreset(string preset)
     {
-        "plan" => PlanPresetWireValue,
-        "standard" => StandardPresetWireValue,
-        "full_access" => FullAccessPresetWireValue,
-        _ => throw new AgentProtocolException("invalid_preset"),
-    };
+        if (AgentPolicyProfileCatalog.TryGet(preset, out var profile) && profile is not null)
+        {
+            return profile.Preset;
+        }
+
+        throw new AgentProtocolException("invalid_preset");
+    }
 
     public static string CanonicalizeDecision(string decision) => decision switch
     {

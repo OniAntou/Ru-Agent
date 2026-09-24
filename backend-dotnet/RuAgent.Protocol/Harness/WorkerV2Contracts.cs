@@ -13,6 +13,8 @@ public static class WorkerV2Contracts
     public const int MaxRequestIdChars = 128;
     public const int MaxCorrelationIdChars = 128;
     public const int MaxPromptChars = 16_000;
+    public const int MaxModelMessages = 256;
+    public const int MaxModelMessagesBytes = 512 * 1024;
     public const int MaxTextChars = 1_000_000;
     public const int MaxDeltaChars = 64 * 1024;
     public const int MaxToolIdChars = 128;
@@ -22,7 +24,7 @@ public static class WorkerV2Contracts
     public const int MaxToolSchemaBytes = 32 * 1024;
     public const int MaxSettingsBytes = 128 * 1024;
     public const int MaxFrameBytes = 5 * 1024 * 1024;
-    public const int PromptContextSchemaVersion = 1;
+    public const int PromptContextSchemaVersion = 2;
     public const int MaxPromptContextBytes = 512 * 1024;
     public const int MaxPromptInstructionBytes = 64 * 1024;
     public const int MaxCombinedPromptInstructionBytes = 256 * 1024;
@@ -58,14 +60,19 @@ public static class WorkerV2Contracts
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlySet<string> EnvelopeFields = new HashSet<string>(["v", "id", "type", "seq", "correlation_id", "payload"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> EnvelopeRequired = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings", "provider_bootstrap_path", "images"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "model_messages", "system_prompt_context", "settings", "provider_bootstrap_path", "images"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> TurnFields = new HashSet<string>(["prompt", "response"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> ModelMessageFields = new HashSet<string>(["role", "content", "tool_calls", "tool_call_id", "tool_result_code"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> TextModelMessageFields = new HashSet<string>(["role", "content"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> ToolModelMessageFields = new HashSet<string>(["role", "content", "tool_call_id", "tool_result_code"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> FunctionCallFields = new HashSet<string>(["id", "type", "function"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> FunctionFields = new HashSet<string>(["name", "arguments"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(
         ["model_tools", "reasoning", "reasoning_effort", "reasoning_model", "kilo_reasoning_enabled", "api_variant", "max_tokens"],
         StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolFields = new HashSet<string>(["tool_id", "tool_version", "scopes", "availability", "model_enabled", "capability_class", "verification_required"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolOptional = new HashSet<string>(["hint", "input_schema"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "effective_policy", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptEnvironmentFields = new HashSet<string>(["model", "platform", "locale", "timezone", "date", "workspace_label"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptInstructionFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256", "origin"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptInstructionRequiredFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256"], StringComparer.Ordinal);
@@ -270,36 +277,20 @@ public static class WorkerV2Contracts
             throw new AgentProtocolException("invalid_request");
         }
 
-        var turnsNode = payload["turns"];
-        JsonArray turns = turnsNode as JsonArray ?? new JsonArray();
-        if (turnsNode is not null && turnsNode is not JsonArray)
+        var hasLegacyTurns = payload.ContainsKey("turns");
+        var hasModelMessages = payload.ContainsKey("model_messages");
+        if (hasLegacyTurns == hasModelMessages)
         {
             throw new AgentProtocolException("invalid_request");
         }
 
-        if (turns.Count > 8)
+        if (hasLegacyTurns)
         {
-            throw new AgentProtocolException("invalid_request");
+            ValidateLegacyTurns(payload["turns"]);
         }
-
-        foreach (var turnNode in turns)
+        else
         {
-            if (turnNode is not JsonObject turn || turn.Select(p => p.Key).ToHashSet(StringComparer.Ordinal).SetEquals(TurnFields) == false)
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
-
-            var tp = turn["prompt"];
-            var tr = turn["response"];
-            if (tp is not JsonValue tpv || !tpv.TryGetValue<string>(out var promptVal) || string.IsNullOrWhiteSpace(promptVal) || promptVal.Length > MaxPromptChars)
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
-
-            if (tr is not JsonValue trv || !trv.TryGetValue<string>(out var responseVal) || string.IsNullOrWhiteSpace(responseVal) || responseVal.Length > 32_000)
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
+            ValidateModelMessages(payload["model_messages"]);
         }
 
         var promptContextNode = payload["system_prompt_context"];
@@ -358,6 +349,204 @@ public static class WorkerV2Contracts
         }
     }
 
+    private static void ValidateLegacyTurns(JsonNode? turnsNode)
+    {
+        if (turnsNode is not JsonArray turns || turns.Count > 8)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        foreach (var turnNode in turns)
+        {
+            if (turnNode is not JsonObject turn || !HasExactFields(turn, TurnFields))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            if (!TryGetString(turn["prompt"], MaxPromptChars, out var prompt)
+                || string.IsNullOrWhiteSpace(prompt)
+                || !TryGetString(turn["response"], 32_000, out var response)
+                || string.IsNullOrWhiteSpace(response))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+        }
+    }
+
+    private static void ValidateModelMessages(JsonNode? messagesNode)
+    {
+        if (messagesNode is not JsonArray messages
+            || messages.Count > MaxModelMessages
+            || PromptUtf8ByteCount(messages.ToJsonString()) > MaxModelMessagesBytes)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        var pendingCallIds = new Queue<string>();
+        var callIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var messageNode in messages)
+        {
+            if (messageNode is not JsonObject message
+                || !TryGetString(message["role"], 32, out var role)
+                || !TryGetModelContent(message["content"], out var content))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            switch (role)
+            {
+                case "assistant":
+                    ValidateAssistantMessage(message, content, pendingCallIds, callIds);
+                    break;
+                case "tool":
+                    ValidateToolMessage(message, pendingCallIds);
+                    break;
+                case "user":
+                case "system":
+                    if (!HasExactFields(message, TextModelMessageFields)
+                        || string.IsNullOrWhiteSpace(content)
+                        || pendingCallIds.Count > 0)
+                    {
+                        throw new AgentProtocolException("invalid_request");
+                    }
+                    break;
+                default:
+                    throw new AgentProtocolException("invalid_request");
+            }
+        }
+
+        if (pendingCallIds.Count > 0)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+    }
+
+    private static void ValidateAssistantMessage(
+        JsonObject message,
+        string content,
+        Queue<string> pendingCallIds,
+        HashSet<string> callIds)
+    {
+        if (!HasRequiredFields(message, TextModelMessageFields, ModelMessageFields)
+            || message.ContainsKey("tool_call_id")
+            || message.ContainsKey("tool_result_code")
+            || pendingCallIds.Count > 0)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        var calls = new JsonArray();
+        if (message.ContainsKey("tool_calls"))
+        {
+            if (message["tool_calls"] is not JsonArray configuredCalls)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            calls = configuredCalls;
+        }
+
+        if (calls.Count == 0 && string.IsNullOrWhiteSpace(content))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        foreach (var callNode in calls)
+        {
+            var id = ValidateFunctionCall(callNode);
+            if (!callIds.Add(id))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            pendingCallIds.Enqueue(id);
+        }
+    }
+
+    private static string ValidateFunctionCall(JsonNode? callNode)
+    {
+        if (callNode is not JsonObject call
+            || !HasExactFields(call, FunctionCallFields)
+            || !IsSafeIdentifier(call["id"], MaxProviderCallIdChars)
+            || call["type"] is not JsonValue type
+            || !type.TryGetValue<string>(out var typeValue)
+            || typeValue != "function"
+            || call["function"] is not JsonObject function
+            || !HasExactFields(function, FunctionFields)
+            || !IsSafeIdentifier(function["name"], MaxToolIdChars)
+            || !TryGetString(function["arguments"], MaxToolArgumentsBytes, out var arguments))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        try
+        {
+            if (StrictUtf8.GetByteCount(arguments) > MaxToolArgumentsBytes)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            using var document = JsonDocument.Parse(arguments);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+        }
+        catch (JsonException)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        return ((JsonValue)call["id"]!).GetValue<string>();
+    }
+
+    private static void ValidateToolMessage(JsonObject message, Queue<string> pendingCallIds)
+    {
+        if (!HasExactFields(message, ToolModelMessageFields)
+            || !IsSafeIdentifier(message["tool_call_id"], MaxProviderCallIdChars)
+            || !TryGetSafeResultCode(message["tool_result_code"])
+            || pendingCallIds.Count == 0
+            || !string.Equals(
+                pendingCallIds.Dequeue(),
+                ((JsonValue)message["tool_call_id"]!).GetValue<string>(),
+                StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+    }
+
+    private static bool TryGetModelContent(JsonNode? node, out string value)
+    {
+        value = string.Empty;
+        if (node is not JsonValue jsonValue
+            || !jsonValue.TryGetValue<string>(out var text)
+            || text.Length > MaxTextChars
+            || text.Contains('\0'))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = StrictUtf8.GetByteCount(text);
+            value = text;
+            return true;
+        }
+        catch (EncoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetSafeResultCode(JsonNode? node)
+    {
+        return TryGetString(node, 64, out var code)
+            && code[0] is >= 'a' and <= 'z'
+            && code.All(character => char.IsAsciiLetterLower(character)
+                || char.IsAsciiDigit(character)
+                || character is '_' or '.');
+    }
+
     private static void ValidatePromptContext(JsonObject context)
     {
         if (!HasExactFields(context, PromptContextFields))
@@ -382,6 +571,8 @@ public static class WorkerV2Contracts
         {
             throw new AgentProtocolException("invalid_request");
         }
+
+        ValidateEffectivePolicy(context, preset);
 
         if (context["environment"] is not JsonObject environment
             || !HasExactFields(environment, PromptEnvironmentFields)
@@ -497,11 +688,37 @@ public static class WorkerV2Contracts
 
     }
 
+    private static void ValidateEffectivePolicy(JsonObject context, string preset)
+    {
+        if (context["effective_policy"] is not JsonObject effectivePolicyNode)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        try
+        {
+            var profile = AgentPolicyProfileCatalog.ReadProfile(effectivePolicyNode);
+            if (!string.Equals(profile.Preset, preset, StringComparison.Ordinal)
+                || !profile.HasSameSemanticsAs(AgentPolicyProfileCatalog.Get(preset))
+                || !string.Equals(
+                    AgentPolicyProfileCatalog.WriteProfile(profile).ToJsonString(),
+                    effectivePolicyNode.ToJsonString(),
+                    StringComparison.Ordinal))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+        }
+        catch (AgentProtocolException)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+    }
+
     private static void ValidatePromptReceipt(JsonObject receipt)
     {
         if (!HasExactFields(receipt, PromptReceiptFields)
             || !TryGetString(receipt["composer_version"], 32, out var composerVersion)
-            || composerVersion != "1.0.0"
+            || composerVersion != "2.0.0"
             || !TryGetDigest(receipt["prompt_sha256"], out _)
             || receipt["block_digests"] is not JsonArray blocks
             || blocks.Count > MaxPromptReceiptBlocks)
@@ -750,11 +967,12 @@ public static class WorkerV2Contracts
         }
 
         var callsNode = payload["tool_calls"];
-        if (callsNode is not JsonArray calls || calls.Count > 1)
+        if (callsNode is not JsonArray calls)
         {
             throw new AgentProtocolException("invalid_step");
         }
 
+        var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var callNode in calls)
         {
             if (callNode is not JsonObject call || call.Count != 4 || !call.ContainsKey("provider_call_id") || !call.ContainsKey("tool_id") || !call.ContainsKey("tool_version") || !call.ContainsKey("arguments"))
@@ -763,12 +981,15 @@ public static class WorkerV2Contracts
             }
 
             var providerNode = call["provider_call_id"];
-            if (providerNode is not null && providerNode.GetValueKind() != JsonValueKind.Null)
+            if (!IsSafeIdentifier(providerNode, MaxProviderCallIdChars))
             {
-                if (providerNode is not JsonValue pv || !pv.TryGetValue<string>(out var provider) || string.IsNullOrWhiteSpace(provider) || provider.Length > MaxProviderCallIdChars)
-                {
-                    throw new AgentProtocolException("invalid_step");
-                }
+                throw new AgentProtocolException("invalid_step");
+            }
+
+            var providerCallId = ((JsonValue)providerNode!).GetValue<string>();
+            if (!providerCallIds.Add(providerCallId))
+            {
+                throw new AgentProtocolException("invalid_step");
             }
 
             var toolIdNode = call["tool_id"];
@@ -803,7 +1024,7 @@ public static class WorkerV2Contracts
         }
 
         var callsCount = calls.Count;
-        if (finish == "tool_calls" && callsCount != 1)
+        if (finish == "tool_calls" && callsCount == 0)
         {
             throw new AgentProtocolException("invalid_step");
         }
@@ -811,21 +1032,6 @@ public static class WorkerV2Contracts
         if (callsCount > 0 && finish != "tool_calls")
         {
             throw new AgentProtocolException("invalid_step");
-        }
-
-        var hasText = textNode is not null && textNode.GetValueKind() != JsonValueKind.Null && textNode is JsonValue tvr && tvr.TryGetValue<string>(out var t) && !string.IsNullOrEmpty(t);
-        // If tool_calls present, text must be null
-        if (callsCount > 0 && textNode is not null && textNode.GetValueKind() != JsonValueKind.Null)
-        {
-            // need to check if text is not null value
-            if (hasText)
-            {
-                throw new AgentProtocolException("invalid_step");
-            }
-            // also if text is null, it's allowed to be null but we already know calls present, so check case where text is JsonValue null
-            // In our earlier check, hasText false means text is null or empty; but spec says tool call step cannot contain visible text (null allowed). However payload definition requires text field to be null when tool_calls present.
-            // The fixture has "text": null when tool_calls present, so that's allowed. So only fail if text is non-null string.
-            // Already handled: if callsCount>0 and textNode not null and textNode is string with non-null, we threw. If it's Json null, it's ok.
         }
     }
 

@@ -89,12 +89,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         return new SystemPromptContext(
             SystemPromptContext.PromptContextSchemaVersion,
             SystemPromptContext.RequiredAgentProfile,
-            run.Preset switch
-            {
-                AgentPermissionPreset.Plan => "plan",
-                AgentPermissionPreset.FullAccess => "full_access",
-                _ => "standard",
-            },
+            AgentPermissionPresetMapper.ToWireValue(run.Preset),
             environment,
             instructions.Blocks,
             capabilities,
@@ -129,7 +124,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 definition.ToolVersion,
                 definition.Description,
                 definition.Scope,
-                definition.InputSchema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }),
+                AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema),
                 AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
                 definition.ExampleArguments?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }),
                 "enabled"));

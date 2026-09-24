@@ -52,6 +52,7 @@ public sealed class SqliteModelContextSource : IModelContextSource
                    p.context_role,
                    p.context_entry_kind,
                    e.tool_call_id,
+                   e.provider_call_id,
                    e.execution_id,
                    e.safe_code,
                    e.tool_outcome,
@@ -337,19 +338,21 @@ public sealed class SqliteModelContextSource : IModelContextSource
             || reader.IsDBNull(15)
             || reader.IsDBNull(16)
             || reader.IsDBNull(17)
-            || reader.IsDBNull(18))
+            || reader.IsDBNull(18)
+            || reader.IsDBNull(19))
         {
             throw new InvalidDataException("tool_context_metadata_missing");
         }
 
         var receipt = new ToolExecutionReceipt(
-            new ExecutionId(reader.GetString(15)),
+            new ExecutionId(reader.GetString(16)),
             new ToolCallId(reader.GetString(14)),
-            (ToolExecutionOutcome)reader.GetInt32(17),
-            reader.GetString(16),
+            (ToolExecutionOutcome)reader.GetInt32(18),
+            reader.GetString(17),
             metadata.PayloadId,
-            reader.GetBoolean(18),
-            contentEncoding: metadata.Encoding);
+            reader.GetBoolean(19),
+            contentEncoding: metadata.Encoding,
+            providerCallId: reader.GetString(15));
         return ModelContextEntry.ToolResult(sourceId, sequence, receipt, content);
     }
 }

@@ -23,6 +23,7 @@ public static class HarnessSqliteMapper
         model_steps_in_window,
         tool_calls_in_window,
         preset,
+        permission_profile_version,
         policy_snapshot_version,
         policy_snapshot_sha256,
         created_at_utc,
@@ -37,6 +38,14 @@ public static class HarnessSqliteMapper
         HistoryWaitKind? historyWaitKind = reader.IsDBNull(startIndex + 4)
             ? null
             : (HistoryWaitKind)reader.GetInt32(startIndex + 4);
+        if (!AgentPermissionPresetMapper.TryParseWireValue(
+                reader.GetString(startIndex + 10),
+                out var preset))
+        {
+            throw new HarnessStoreException("harness_run_preset_invalid");
+        }
+
+        var permissionProfileVersion = reader.GetInt32(startIndex + 11);
         return new AgentRun(
             new RunId(reader.GetString(startIndex)),
             new SessionId(reader.GetString(startIndex + 1)),
@@ -47,15 +56,16 @@ public static class HarnessSqliteMapper
             reader.GetInt32(startIndex + 7),
             reader.GetInt32(startIndex + 8),
             reader.GetInt32(startIndex + 9),
-            (AgentPermissionPreset)reader.GetInt32(startIndex + 10),
-            reader.GetInt64(startIndex + 11),
-            reader.GetString(startIndex + 12),
-            ParseUtc(reader.GetString(startIndex + 13)),
+            preset,
+            reader.GetInt64(startIndex + 12),
+            reader.GetString(startIndex + 13),
             ParseUtc(reader.GetString(startIndex + 14)),
-            reader.IsDBNull(startIndex + 15)
+            ParseUtc(reader.GetString(startIndex + 15)),
+            reader.IsDBNull(startIndex + 16)
                 ? null
-                : ParseUtc(reader.GetString(startIndex + 15)),
-            reader.IsDBNull(startIndex + 16) ? null : reader.GetString(startIndex + 16));
+                : ParseUtc(reader.GetString(startIndex + 16)),
+            reader.IsDBNull(startIndex + 17) ? null : reader.GetString(startIndex + 17),
+            permissionProfileVersion);
     }
 
     internal static void AddRunProjectionParameters(SqliteCommand command, AgentRun run)
@@ -72,7 +82,10 @@ public static class HarnessSqliteMapper
         command.Parameters.AddWithValue("$budget_window", run.BudgetWindow);
         command.Parameters.AddWithValue("$model_steps", run.ModelStepsInWindow);
         command.Parameters.AddWithValue("$tool_calls", run.ToolCallsInWindow);
-        command.Parameters.AddWithValue("$preset", (int)run.Preset);
+        command.Parameters.AddWithValue("$preset", AgentPermissionPresetMapper.ToWireValue(run.Preset));
+        command.Parameters.AddWithValue(
+            "$permission_profile_version",
+            run.PermissionProfileVersion);
         command.Parameters.AddWithValue("$policy_version", run.PolicySnapshotVersion);
         command.Parameters.AddWithValue("$policy_hash", run.PolicySnapshotSha256);
         command.Parameters.AddWithValue("$created_at", Utc(run.CreatedAt));
@@ -96,12 +109,13 @@ public static class HarnessSqliteMapper
             Optional(reader, 5, value => new PayloadId(value)),
             Optional(reader, 6, value => new ModelStepId(value)),
             Optional(reader, 7, value => new ToolCallId(value)),
-            Optional(reader, 8, value => new ExecutionId(value)),
-            Optional(reader, 9, value => new ApprovalId(value)),
-            reader.IsDBNull(10) ? null : reader.GetInt32(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11),
-            reader.IsDBNull(12) ? null : (ToolExecutionOutcome)reader.GetInt32(12),
-            reader.IsDBNull(13) ? null : reader.GetBoolean(13));
+            Optional(reader, 9, value => new ExecutionId(value)),
+            Optional(reader, 10, value => new ApprovalId(value)),
+            reader.IsDBNull(11) ? null : reader.GetInt32(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.IsDBNull(13) ? null : (ToolExecutionOutcome)reader.GetInt32(13),
+            reader.IsDBNull(14) ? null : reader.GetBoolean(14),
+            reader.IsDBNull(8) ? null : reader.GetString(8));
     }
 
     internal static string EventKind(HarnessEventKind kind) => kind switch

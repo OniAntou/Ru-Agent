@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using RuAgent.Harness.Core;
 
 namespace RuAgent.Harness.Persistence;
 
@@ -13,7 +14,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 10;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -56,7 +57,7 @@ public static class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -65,35 +66,61 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
-                    SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 3)
             {
                 await ApplyMigrationAsync(
                     connection,
-                    SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 4)
             {
                 await ApplyMigrationAsync(
                     connection,
-                    SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 5)
             {
                 await ApplyMigrationAsync(
                     connection,
-                    SchemaVersionFiveToSix + SchemaVersionSixToSeven,
+                    SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 6)
             {
                 await ApplyMigrationAsync(
                     connection,
-                    SchemaVersionSixToSeven,
+                    SchemaVersionSixToSeven + SchemaVersionSevenToEight
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 7)
+            {
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 8)
+            {
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionEightToNine + SchemaVersionNineToTen,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 9)
+            {
+                await ApplyMigrationAsync(
+                    connection,
+                    SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 0)
@@ -107,7 +134,9 @@ public static class HarnessSqliteSchema
                     + SchemaVersionThreeToFour
                     + SchemaVersionFourFinalGate
                     + SchemaVersionFiveToSix
-                    + SchemaVersionSixToSeven,
+                    + SchemaVersionSixToSeven
+                    + SchemaVersionSevenToEight
+                    + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -316,9 +345,9 @@ public static class HarnessSqliteSchema
             kind TEXT NOT NULL CHECK(length(kind) BETWEEN 1 AND 64),
             occurred_at_utc TEXT NOT NULL,
             payload_id TEXT NULL REFERENCES agent_payloads(payload_id) ON DELETE RESTRICT,
-            model_step_id TEXT NULL,
-            tool_call_id TEXT NULL,
-            execution_id TEXT NULL,
+             model_step_id TEXT NULL,
+             tool_call_id TEXT NULL,
+             execution_id TEXT NULL,
             approval_id TEXT NULL,
             safe_count INTEGER NULL CHECK(safe_count >= 0),
             safe_code TEXT NULL CHECK(length(safe_code) BETWEEN 1 AND 64),
@@ -583,5 +612,160 @@ public static class HarnessSqliteSchema
         CREATE INDEX IF NOT EXISTS ix_agent_file_recovery_run ON agent_file_recovery(run_id);
 
         DROP TABLE IF EXISTS workspace_mutations;
+        """;
+
+    private static readonly string SchemaVersionSevenToEight = $"""
+        CREATE TABLE agent_session_settings_v8 (
+            session_id TEXT PRIMARY KEY,
+            preset TEXT NOT NULL CHECK(preset IN ('{AgentPermissionPresetMapper.PlanWireValue}', '{AgentPermissionPresetMapper.StandardWireValue}', '{AgentPermissionPresetMapper.FullAccessWireValue}')),
+            permission_profile_version INTEGER NOT NULL CHECK(permission_profile_version > 0),
+            version INTEGER NOT NULL CHECK(version > 0),
+            updated_at_utc TEXT NOT NULL
+        );
+        INSERT INTO agent_session_settings_v8(
+            session_id,
+            preset,
+            permission_profile_version,
+            version,
+            updated_at_utc)
+            SELECT
+                session_id,
+                '{AgentPermissionPresetMapper.PlanWireValue}',
+                {AgentPermissionPresetMapper.CurrentPermissionProfileVersion},
+                version,
+                updated_at_utc
+            FROM agent_session_settings;
+        DROP TABLE agent_session_settings;
+        ALTER TABLE agent_session_settings_v8 RENAME TO agent_session_settings;
+
+        CREATE TABLE agent_runs_v8 (
+            run_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL REFERENCES agent_workspaces(workspace_id) ON DELETE RESTRICT,
+            state INTEGER NOT NULL CHECK(state BETWEEN 0 AND 10),
+            history_wait_kind INTEGER NULL CHECK(history_wait_kind IN (0, 1)),
+            version INTEGER NOT NULL CHECK(version >= 0),
+            last_sequence INTEGER NOT NULL CHECK(last_sequence >= 0),
+            budget_window INTEGER NOT NULL CHECK(budget_window > 0),
+            model_steps_in_window INTEGER NOT NULL CHECK(model_steps_in_window >= 0),
+            tool_calls_in_window INTEGER NOT NULL CHECK(tool_calls_in_window >= 0),
+            preset TEXT NOT NULL CHECK(preset IN ('{AgentPermissionPresetMapper.PlanWireValue}', '{AgentPermissionPresetMapper.StandardWireValue}', '{AgentPermissionPresetMapper.FullAccessWireValue}')),
+            permission_profile_version INTEGER NOT NULL CHECK(permission_profile_version >= 0),
+            session_preset_version INTEGER NOT NULL CHECK(session_preset_version > 0),
+            policy_snapshot_version INTEGER NOT NULL CHECK(policy_snapshot_version > 0),
+            policy_snapshot_sha256 TEXT NOT NULL CHECK(length(policy_snapshot_sha256) = 64),
+            idempotency_key_sha256 TEXT NOT NULL CHECK(length(idempotency_key_sha256) = 64),
+            normalized_request_sha256 TEXT NOT NULL CHECK(length(normalized_request_sha256) = 64),
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            terminal_at_utc TEXT NULL,
+            terminal_error_code TEXT NULL,
+            base_context_captured_at_utc TEXT NULL,
+            base_context_entry_count INTEGER NOT NULL DEFAULT 0 CHECK(base_context_entry_count >= 0),
+            UNIQUE(session_id, idempotency_key_sha256)
+        );
+        INSERT INTO agent_runs_v8(
+            run_id,
+            session_id,
+            workspace_id,
+            state,
+            history_wait_kind,
+            version,
+            last_sequence,
+            budget_window,
+            model_steps_in_window,
+            tool_calls_in_window,
+            preset,
+            permission_profile_version,
+            session_preset_version,
+            policy_snapshot_version,
+            policy_snapshot_sha256,
+            idempotency_key_sha256,
+            normalized_request_sha256,
+            created_at_utc,
+            updated_at_utc,
+            terminal_at_utc,
+            terminal_error_code,
+            base_context_captured_at_utc,
+            base_context_entry_count)
+            SELECT
+                run_id,
+                session_id,
+                workspace_id,
+                state,
+                history_wait_kind,
+                version,
+                last_sequence,
+                budget_window,
+                model_steps_in_window,
+                tool_calls_in_window,
+                '{AgentPermissionPresetMapper.PlanWireValue}',
+                0,
+                session_preset_version,
+                policy_snapshot_version,
+                policy_snapshot_sha256,
+                idempotency_key_sha256,
+                normalized_request_sha256,
+                created_at_utc,
+                updated_at_utc,
+                terminal_at_utc,
+                terminal_error_code,
+                base_context_captured_at_utc,
+                base_context_entry_count
+            FROM agent_runs;
+        DROP TABLE agent_runs;
+        ALTER TABLE agent_runs_v8 RENAME TO agent_runs;
+        CREATE UNIQUE INDEX ux_agent_runs_active_session
+            ON agent_runs(session_id)
+            WHERE terminal_at_utc IS NULL;
+
+        ALTER TABLE agent_workspaces
+            ADD COLUMN trust_source TEXT NULL CHECK(trust_source IN ('explicit'));
+        ALTER TABLE agent_workspaces
+            ADD COLUMN trust_profile_version INTEGER NOT NULL DEFAULT 1 CHECK(trust_profile_version = 1);
+        UPDATE agent_workspaces
+        SET trust_decision = NULL,
+            trust_decided_at_utc = NULL,
+            trust_source = NULL;
+        """;
+
+    private const string SchemaVersionEightToNine = """
+        ALTER TABLE agent_events
+            ADD COLUMN provider_call_id TEXT NULL CHECK(provider_call_id IS NULL OR length(provider_call_id) BETWEEN 1 AND 256);
+        """;
+
+    private static readonly string SchemaVersionNineToTen = $"""
+        CREATE TABLE IF NOT EXISTS agent_session_preset_snapshots (
+            snapshot_token TEXT PRIMARY KEY CHECK(length(snapshot_token) = 36),
+            session_id TEXT NOT NULL CHECK(length(session_id) BETWEEN 1 AND 64),
+            had_previous_selection INTEGER NOT NULL CHECK(had_previous_selection IN (0, 1)),
+            previous_preset TEXT NULL CHECK(previous_preset IS NULL OR previous_preset IN ('{AgentPermissionPresetMapper.PlanWireValue}', '{AgentPermissionPresetMapper.StandardWireValue}', '{AgentPermissionPresetMapper.FullAccessWireValue}')),
+            previous_permission_profile_version INTEGER NULL CHECK(previous_permission_profile_version IS NULL OR previous_permission_profile_version > 0),
+            previous_version INTEGER NULL CHECK(previous_version IS NULL OR previous_version > 0),
+            previous_updated_at_utc TEXT NULL,
+            applied_preset TEXT NOT NULL CHECK(applied_preset IN ('{AgentPermissionPresetMapper.PlanWireValue}', '{AgentPermissionPresetMapper.StandardWireValue}', '{AgentPermissionPresetMapper.FullAccessWireValue}')),
+            applied_permission_profile_version INTEGER NOT NULL CHECK(applied_permission_profile_version > 0),
+            applied_version INTEGER NOT NULL CHECK(applied_version > 0),
+            expires_at_utc TEXT NOT NULL,
+            consumed_at_utc TEXT NULL,
+            created_at_utc TEXT NOT NULL,
+            CHECK (
+                (had_previous_selection = 0
+                    AND previous_preset IS NULL
+                    AND previous_permission_profile_version IS NULL
+                    AND previous_version IS NULL
+                    AND previous_updated_at_utc IS NULL)
+                OR
+                (had_previous_selection = 1
+                    AND previous_preset IS NOT NULL
+                    AND previous_permission_profile_version IS NOT NULL
+                    AND previous_version IS NOT NULL
+                    AND previous_updated_at_utc IS NOT NULL)
+            )
+        );
+        CREATE INDEX IF NOT EXISTS ix_agent_session_preset_snapshots_expiry
+            ON agent_session_preset_snapshots(expires_at_utc);
+        CREATE INDEX IF NOT EXISTS ix_agent_session_preset_snapshots_session
+            ON agent_session_preset_snapshots(session_id, consumed_at_utc, expires_at_utc);
         """;
 }

@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace RuBackend.Harness.Broker;
 
 /// <summary>
@@ -9,49 +7,167 @@ namespace RuBackend.Harness.Broker;
 /// authorization tokens issued by the Broker so a resumed proposal can
 /// execute without a second ask. State is run-scoped and dies with the run.
 /// </summary>
+public sealed record BrokerRunLeaseIdentity(
+    string RunId,
+    string SessionId,
+    string WorkspaceId,
+    string CanonicalRoot,
+    long PolicyVersion,
+    string PolicySha256,
+    string LeaseId,
+    string BrokerUrl,
+    string AuthTokenSha256,
+    long Generation = 0);
+
 public sealed class BrokerApprovalState
 {
-    private const string KeySeparator = "|";
     private const int MaxAuthorizationTokenChars = 4_096;
+
+    private sealed record AskEntry(
+        string BrokerApprovalId,
+        string ArgsKey,
+        BrokerRunLeaseIdentity Lease);
+
+    private sealed record TokenEntry(
+        string Token,
+        DateTimeOffset ExpiresAt,
+        BrokerRunLeaseIdentity Lease);
+
+    private sealed record TokenKey(BrokerRunLeaseIdentity Lease, string ArgsKey);
 
     private sealed class RunState
     {
-        public readonly ConcurrentDictionary<string, (string BrokerApprovalId, string ArgsKey)> Asks =
+        public readonly Dictionary<string, AskEntry> Asks =
             new(StringComparer.Ordinal);
 
-        public readonly ConcurrentDictionary<string, (string Token, DateTimeOffset ExpiresAt)> Tokens =
-            new(StringComparer.Ordinal);
+        public readonly Dictionary<TokenKey, TokenEntry> Tokens = new();
+        public BrokerRunLeaseIdentity? ActiveLease;
     }
 
-    private readonly ConcurrentDictionary<string, RunState> _runs = new(StringComparer.Ordinal);
+    private readonly object _sync = new();
+    private readonly Dictionary<string, RunState> _runs = new(StringComparer.Ordinal);
 
-    public void RegisterAsk(string runId, string hostApprovalId, string brokerApprovalId, string argsKey)
+    public void ActivateLease(BrokerRunLeaseIdentity lease)
     {
-        Run(runId).Asks[hostApprovalId] = (brokerApprovalId, argsKey);
+        ArgumentNullException.ThrowIfNull(lease);
+        ValidateRunLease(lease.RunId, lease);
+        lock (_sync)
+        {
+            var run = Run(lease.RunId);
+            if (run.ActiveLease == lease)
+            {
+                return;
+            }
+
+            if (run.ActiveLease is { } previous)
+            {
+                if (SameLeaseScope(previous, lease))
+                {
+                    RemoveLeaseEntries(run, previous);
+                }
+                else
+                {
+                    run.Asks.Clear();
+                    run.Tokens.Clear();
+                }
+            }
+
+            run.ActiveLease = lease;
+        }
+    }
+
+    public void InvalidateLease(BrokerRunLeaseIdentity lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        lock (_sync)
+        {
+            if (!_runs.TryGetValue(lease.RunId, out var run)
+                || run.ActiveLease != lease)
+            {
+                return;
+            }
+
+            run.ActiveLease = null;
+            RemoveLeaseEntries(run, lease);
+        }
+    }
+
+    public bool RegisterAsk(
+        string runId,
+        BrokerRunLeaseIdentity lease,
+        string hostApprovalId,
+        string brokerApprovalId,
+        string argsKey)
+    {
+        ValidateRunLease(runId, lease);
+        ArgumentException.ThrowIfNullOrWhiteSpace(hostApprovalId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(brokerApprovalId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(argsKey);
+        lock (_sync)
+        {
+            if (!_runs.TryGetValue(runId, out var run)
+                || run.ActiveLease != lease)
+            {
+                return false;
+            }
+
+            run.Asks[hostApprovalId] = new AskEntry(brokerApprovalId, argsKey, lease);
+            return true;
+        }
     }
 
     public bool TryGetAsk(
         string runId,
+        BrokerRunLeaseIdentity lease,
         string hostApprovalId,
         out string brokerApprovalId,
         out string argsKey)
     {
+        ValidateRunLease(runId, lease);
         brokerApprovalId = string.Empty;
         argsKey = string.Empty;
-        if (_runs.TryGetValue(runId, out var run)
-            && run.Asks.TryGetValue(hostApprovalId, out var ask))
+        lock (_sync)
         {
-            brokerApprovalId = ask.BrokerApprovalId;
-            argsKey = ask.ArgsKey;
-            return true;
-        }
+            if (_runs.TryGetValue(runId, out var run)
+                && run.ActiveLease == lease
+                && run.Asks.TryGetValue(hostApprovalId, out var ask)
+                && ask.Lease == lease)
+            {
+                brokerApprovalId = ask.BrokerApprovalId;
+                argsKey = ask.ArgsKey;
+                return true;
+            }
 
-        return false;
+            return false;
+        }
     }
 
-    public void StoreAuthorizationToken(string runId, string argsKey, string token, DateTimeOffset expiresAt)
+    public void RemoveAsk(
+        string runId,
+        BrokerRunLeaseIdentity lease,
+        string hostApprovalId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ValidateRunLease(runId, lease);
+        lock (_sync)
+        {
+            if (_runs.TryGetValue(runId, out var run)
+                && run.ActiveLease == lease
+                && run.Asks.TryGetValue(hostApprovalId, out var ask)
+                && ask.Lease == lease)
+            {
+                run.Asks.Remove(hostApprovalId);
+            }
+        }
+    }
+
+    public bool StoreAuthorizationToken(
+        string runId,
+        BrokerRunLeaseIdentity lease,
+        string argsKey,
+        string token,
+        DateTimeOffset expiresAt)
+    {
+        ValidateRunLease(runId, lease);
         ArgumentException.ThrowIfNullOrWhiteSpace(argsKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
         if (token.Length > MaxAuthorizationTokenChars)
@@ -59,56 +175,143 @@ public sealed class BrokerApprovalState
             throw new ArgumentOutOfRangeException(nameof(token), "Authorization token exceeds the size limit.");
         }
 
-        Run(runId).Tokens[argsKey] = (token, expiresAt);
+        lock (_sync)
+        {
+            if (!_runs.TryGetValue(runId, out var run)
+                || run.ActiveLease != lease)
+            {
+                return false;
+            }
+
+            run.Tokens[new TokenKey(lease, argsKey)] = new TokenEntry(token, expiresAt, lease);
+            return true;
+        }
     }
 
-    /// <summary>
-    /// Hands one cached authorization token to a single decision. The Broker
-    /// consumes its tokens on first use, so the entry is removed here: a later
-    /// identical proposal must re-evaluate (the session directory grant then
-    /// allows it again) instead of replaying a consumed token into
-    /// <c>decision_stale</c>.
-    /// </summary>
-    public bool TryTakeAuthorizationToken(string runId, string argsKey, out string? token)
+    public bool TryTakeAuthorizationToken(
+        string runId,
+        BrokerRunLeaseIdentity lease,
+        string argsKey,
+        out string? token)
     {
         token = null;
-        if (string.IsNullOrWhiteSpace(runId) || string.IsNullOrWhiteSpace(argsKey))
+        ValidateRunLease(runId, lease);
+        ArgumentException.ThrowIfNullOrWhiteSpace(argsKey);
+        lock (_sync)
         {
-            return false;
-        }
+            if (!_runs.TryGetValue(runId, out var run)
+                || run.ActiveLease != lease)
+            {
+                return false;
+            }
 
-        if (!_runs.TryGetValue(runId, out var run)
-            || !run.Tokens.TryRemove(argsKey, out var entry)
-            || string.IsNullOrWhiteSpace(entry.Token)
-            || entry.Token.Length > MaxAuthorizationTokenChars
-            || entry.ExpiresAt <= DateTimeOffset.UtcNow)
-        {
-            return false;
-        }
+            var key = new TokenKey(lease, argsKey);
+            if (!run.Tokens.TryGetValue(key, out var entry))
+            {
+                return false;
+            }
 
-        token = entry.Token;
-        return true;
+            run.Tokens.Remove(key);
+            if (string.IsNullOrWhiteSpace(entry.Token)
+                || entry.Token.Length > MaxAuthorizationTokenChars
+                || entry.ExpiresAt <= DateTimeOffset.UtcNow)
+            {
+                return false;
+            }
+
+            token = entry.Token;
+            return true;
+        }
     }
 
-    /// <summary>
-    /// Drops cached authorization tokens for one run. Call when the policy
-    /// snapshot rotates (N+1 invalidates pending N decisions) so a token
-    /// issued under the old snapshot cannot authorize the new one.
-    /// </summary>
     public void InvalidateRunTokens(string runId)
     {
-        if (_runs.TryGetValue(runId, out var run))
+        lock (_sync)
         {
-            run.Tokens.Clear();
+            if (_runs.TryGetValue(runId, out var run))
+            {
+                run.Tokens.Clear();
+            }
         }
     }
 
     public void ClearRun(string runId)
     {
-        _runs.TryRemove(runId, out _);
+        lock (_sync)
+        {
+            _runs.Remove(runId);
+        }
     }
 
-    public void Clear() => _runs.Clear();
+    public void Clear()
+    {
+        lock (_sync)
+        {
+            _runs.Clear();
+        }
+    }
 
-    private RunState Run(string runId) => _runs.GetOrAdd(runId, _ => new RunState());
+    private static void RemoveLeaseEntries(RunState run, BrokerRunLeaseIdentity lease)
+    {
+        foreach (var pair in run.Asks.ToArray())
+        {
+            if (SameLeaseScope(pair.Value.Lease, lease))
+            {
+                run.Asks.Remove(pair.Key);
+            }
+        }
+
+        foreach (var pair in run.Tokens.ToArray())
+        {
+            if (pair.Key.Lease == lease)
+            {
+                run.Tokens.Remove(pair.Key);
+            }
+        }
+    }
+
+    private static bool SameLeaseScope(
+        BrokerRunLeaseIdentity left,
+        BrokerRunLeaseIdentity right) =>
+        string.Equals(left.RunId, right.RunId, StringComparison.Ordinal)
+        && string.Equals(left.SessionId, right.SessionId, StringComparison.Ordinal)
+        && string.Equals(left.WorkspaceId, right.WorkspaceId, StringComparison.Ordinal)
+        && string.Equals(left.CanonicalRoot, right.CanonicalRoot, StringComparison.Ordinal)
+        && left.PolicyVersion == right.PolicyVersion
+        && string.Equals(left.PolicySha256, right.PolicySha256, StringComparison.Ordinal)
+        && string.Equals(left.LeaseId, right.LeaseId, StringComparison.Ordinal)
+        && string.Equals(left.BrokerUrl, right.BrokerUrl, StringComparison.Ordinal)
+        && string.Equals(left.AuthTokenSha256, right.AuthTokenSha256, StringComparison.Ordinal);
+
+    private static void ValidateRunLease(string runId, BrokerRunLeaseIdentity lease)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ArgumentNullException.ThrowIfNull(lease);
+        if (!string.Equals(runId, lease.RunId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The lease does not belong to the run.", nameof(lease));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(lease.LeaseId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(lease.PolicySha256);
+        ArgumentException.ThrowIfNullOrWhiteSpace(lease.BrokerUrl);
+        if ((lease.AuthTokenSha256.Length != 64)
+            || !lease.AuthTokenSha256.All(Uri.IsHexDigit)
+            || !Uri.TryCreate(lease.BrokerUrl, UriKind.Absolute, out var brokerUri)
+            || brokerUri.Scheme is not ("ws" or "wss"))
+        {
+            throw new ArgumentException("The Broker descriptor identity is invalid.", nameof(lease));
+        }
+    }
+
+    private RunState Run(string runId)
+    {
+        if (!_runs.TryGetValue(runId, out var run))
+        {
+            run = new RunState();
+            _runs[runId] = run;
+        }
+
+        return run;
+    }
 }

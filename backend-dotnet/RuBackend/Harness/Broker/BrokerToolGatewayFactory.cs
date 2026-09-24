@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
@@ -23,6 +25,9 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
     private readonly BrokerApprovalState _approvals = new();
     private readonly ConcurrentDictionary<string, BrokerToolGateway> _gateways =
         new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, BrokerRunLeaseIdentity> _leases =
+        new(StringComparer.Ordinal);
+    private readonly object _sync = new();
 
     public BrokerToolGatewayFactory(string? descriptorPath)
     {
@@ -58,20 +63,59 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
         var descriptor = LoadDescriptor()
             ?? throw new InvalidOperationException("broker_descriptor_unavailable");
         var canonicalRoot = Path.GetFullPath(workspaceRoot);
-        var gateway = new BrokerToolGateway(
-            new Uri(descriptor.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
-            descriptor.AuthToken,
-            sessionId,
+        var brokerUrl = new Uri(
+            descriptor.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent");
+        var requestedLease = new BrokerRunLeaseIdentity(
             runId.Value,
-            () => BuildRunOpenPayload(sessionId, runId.Value, canonicalRoot, policySnapshot),
-            _approvals);
-        if (_gateways.TryRemove(runId.Value, out var previous))
+            sessionId,
+            policySnapshot.Workspace.WorkspaceId.Value,
+            canonicalRoot,
+            policySnapshot.Version,
+            policySnapshot.Sha256,
+            string.Empty,
+            BrokerUrl: brokerUrl.AbsoluteUri,
+            AuthTokenSha256: Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(descriptor.AuthToken))).ToLowerInvariant());
+        lock (_sync)
         {
-            previous.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        }
+            if (_leases.TryGetValue(runId.Value, out var existingLease)
+                && SameLeaseScope(existingLease!, requestedLease)
+                && _gateways.TryGetValue(runId.Value, out var reusableGateway)
+                && !reusableGateway.IsDisposed)
+            {
+                return reusableGateway;
+            }
 
-        _gateways[runId.Value] = gateway;
-        return gateway;
+            var lease = requestedLease with { LeaseId = Guid.NewGuid().ToString("N") };
+            if (_gateways.TryGetValue(runId.Value, out var existingGateway)
+                && !existingGateway.IsDisposed)
+            {
+                existingGateway.Rebind(
+                    brokerUrl,
+                    descriptor.AuthToken,
+                    sessionId,
+                    runId.Value,
+                    () => BuildRunOpenPayload(sessionId, runId.Value, canonicalRoot, policySnapshot),
+                    lease);
+                _leases[runId.Value] = lease;
+                return existingGateway;
+            }
+
+            _approvals.ActivateLease(lease);
+            _leases[runId.Value] = lease;
+            _gateways.TryRemove(runId.Value, out _);
+            var gateway = new BrokerToolGateway(
+                brokerUrl,
+                descriptor.AuthToken,
+                sessionId,
+                runId.Value,
+                () => BuildRunOpenPayload(sessionId, runId.Value, canonicalRoot, policySnapshot),
+                _approvals,
+                lease);
+
+            _gateways[runId.Value] = gateway;
+            return gateway;
+        }
     }
 
     /// <summary>
@@ -91,14 +135,30 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(hostApprovalId);
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
 
-        if (!_approvals.TryGetAsk(runId, hostApprovalId, out var brokerApprovalId, out var argsKey)
-            || !_gateways.TryGetValue(runId, out var gateway))
+        if (!_gateways.TryGetValue(runId, out var gateway))
+        {
+            return (false, null);
+        }
+
+        var lease = gateway.Lease;
+        if (lease is null
+            || !_approvals.TryGetAsk(
+                runId,
+                lease,
+                hostApprovalId,
+                out var brokerApprovalId,
+                out var argsKey))
         {
             return (false, null);
         }
 
         return await gateway
-            .RespondApprovalAsync(brokerApprovalId, command, argsKey, cancellationToken)
+            .RespondApprovalAsync(
+                brokerApprovalId,
+                command,
+                argsKey,
+                cancellationToken,
+                expectedLease: lease)
             .ConfigureAwait(false);
     }
 
@@ -116,7 +176,12 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
             return true;
         }
 
-        var gateways = _gateways.Values.ToArray();
+        BrokerToolGateway[] gateways;
+        lock (_sync)
+        {
+            gateways = _gateways.Values.ToArray();
+        }
+
         if (gateways.Length == 0)
         {
             return true;
@@ -145,8 +210,15 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
     public void CloseRun(string runId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-        _approvals.ClearRun(runId);
-        if (_gateways.TryRemove(runId, out var gateway))
+        BrokerToolGateway? gateway;
+        lock (_sync)
+        {
+            _approvals.ClearRun(runId);
+            _leases.TryRemove(runId, out _);
+            _gateways.TryRemove(runId, out gateway);
+        }
+
+        if (gateway is not null)
         {
             gateway.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
@@ -154,14 +226,32 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        var gateways = _gateways.ToArray();
-        _gateways.Clear();
-        _approvals.Clear();
+        KeyValuePair<string, BrokerToolGateway>[] gateways;
+        lock (_sync)
+        {
+            gateways = _gateways.ToArray();
+            _gateways.Clear();
+            _leases.Clear();
+            _approvals.Clear();
+        }
+
         foreach (var pair in gateways)
         {
             await pair.Value.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    private static bool SameLeaseScope(
+        BrokerRunLeaseIdentity left,
+        BrokerRunLeaseIdentity right) =>
+        string.Equals(left.RunId, right.RunId, StringComparison.Ordinal)
+        && string.Equals(left.SessionId, right.SessionId, StringComparison.Ordinal)
+        && string.Equals(left.WorkspaceId, right.WorkspaceId, StringComparison.Ordinal)
+        && string.Equals(left.CanonicalRoot, right.CanonicalRoot, StringComparison.Ordinal)
+        && left.PolicyVersion == right.PolicyVersion
+        && string.Equals(left.PolicySha256, right.PolicySha256, StringComparison.Ordinal)
+        && string.Equals(left.BrokerUrl, right.BrokerUrl, StringComparison.Ordinal)
+        && string.Equals(left.AuthTokenSha256, right.AuthTokenSha256, StringComparison.Ordinal);
 
     private static JsonObject BuildRunOpenPayload(
         string sessionId,

@@ -3,6 +3,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Worker;
@@ -40,8 +41,9 @@ public sealed class RuPromptContextProviderTests
                         ToolExecutionOutcome.Succeeded,
                         "ok",
                         null,
-                        sideEffectsPossible: false),
-                    "untrusted tool output"),
+                         sideEffectsPossible: false,
+                         providerCallId: "provider_call"),
+                     "untrusted tool output"),
             },
             Array.Empty<byte>());
         var run = TestRun();
@@ -63,6 +65,41 @@ public sealed class RuPromptContextProviderTests
         Assert.Equal("tool_result", first.RuntimeContext.References[0].Kind);
         Assert.DoesNotContain("arguments", first.RuntimeContext.References[0].Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("base:memory", first.RuntimeContext.References[0].Content, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(AgentPermissionPreset.Plan, "plan")]
+    [InlineData(AgentPermissionPreset.Standard, "standard")]
+    [InlineData(AgentPermissionPreset.FullAccess, "full_access")]
+    public async Task Projects_the_canonical_effective_policy_for_the_run_preset(
+        AgentPermissionPreset preset,
+        string expectedWirePreset)
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)));
+
+        var context = await provider.BuildAsync(
+            TestRun(preset),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            CancellationToken.None);
+
+        Assert.Equal(2, context.SchemaVersion);
+        Assert.Equal(expectedWirePreset, context.Preset);
+        Assert.Equal(expectedWirePreset, AgentPolicyProfileCatalog.Get(expectedWirePreset).Preset);
+        Assert.Equal(
+            AgentPolicyProfileCatalog.Get(expectedWirePreset).DecisionFor(AgentPolicySubject.RiskyTerminal),
+            AgentPolicyProfileCatalog.Get(context.Preset).DecisionFor(AgentPolicySubject.RiskyTerminal));
+        var serialized = System.Text.Encoding.UTF8.GetString(context.SerializeUtf8());
+        Assert.Contains($"\"preset\":\"{expectedWirePreset}\"", serialized, StringComparison.Ordinal);
+        Assert.Contains("\"effective_policy\":", serialized, StringComparison.Ordinal);
+        var effectivePolicy = JsonNode.Parse(serialized)!["effective_policy"]!;
+        Assert.Equal(
+            AgentPolicyProfileCatalog.WriteProfile(AgentPolicyProfileCatalog.Get(expectedWirePreset)).ToJsonString(),
+            effectivePolicy.ToJsonString());
     }
 
     [Fact]
@@ -125,7 +162,7 @@ public sealed class RuPromptContextProviderTests
         {
             var definition = AgentToolDefinitionCatalog.Find(capability.Id, capability.Version)!;
             Assert.Equal(definition.Scope, capability.Scope);
-            Assert.Equal(definition.InputSchema.ToJsonString(), capability.InputSchemaJson);
+            Assert.Equal(AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema), capability.InputSchemaJson);
             Assert.Equal(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest);
         }
     }
@@ -220,14 +257,15 @@ public sealed class RuPromptContextProviderTests
         ToolExecutionOutcome.Succeeded,
         "ok",
         null,
-        sideEffectsPossible: false);
+        sideEffectsPossible: false,
+        providerCallId: $"provider_call_{index}");
 
     [Fact]
     public void Worker_settings_fail_closed_when_prompt_schema_digest_drifts()
     {
         var schema = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}";
         var context = new SystemPromptContext(
-            1,
+            SystemPromptContext.PromptContextSchemaVersion,
             "ru-agent",
             "standard",
             new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
@@ -248,7 +286,7 @@ public sealed class RuPromptContextProviderTests
         OpenAiModel: "test-model",
         AnthropicModel: string.Empty);
 
-    private static AgentRun TestRun() => new(
+    private static AgentRun TestRun(AgentPermissionPreset preset = AgentPermissionPreset.Standard) => new(
         new RunId("run_11111111111111111111111111111111"),
         new SessionId("11111111111111111111111111111111"),
         new WorkspaceId("ws_11111111111111111111111111111111"),
@@ -258,7 +296,7 @@ public sealed class RuPromptContextProviderTests
         100,
         0,
         0,
-        AgentPermissionPreset.Standard,
+        preset,
         1,
         new string('a', 64),
         new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero),

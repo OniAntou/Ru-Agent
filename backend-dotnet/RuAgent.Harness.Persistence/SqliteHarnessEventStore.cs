@@ -318,6 +318,7 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                    payload_id,
                    model_step_id,
                    tool_call_id,
+                   provider_call_id,
                    execution_id,
                    approval_id,
                    safe_count,

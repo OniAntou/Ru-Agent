@@ -191,7 +191,7 @@ public sealed class HeadlessCodingLoopTests
             new[]
             {
                 new ModelToolCall(
-                    null,
+                    "provider_call_1",
                     mappedId,
                     "1.0.0",
                     JsonDocument.Parse(mappedJson).RootElement.Clone()),

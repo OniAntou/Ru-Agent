@@ -74,16 +74,14 @@ public sealed partial class AgentV1Service
             return BoundedError(409, "invalid_run_state", "Run is not awaiting reconciliation.");
         }
 
-        string? intentCode = null;
-        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        var reconciliation = await ReadReconciliationContextAsync(runId, cancellationToken)
+            .ConfigureAwait(false);
+        if (reconciliation.IsMalformed)
         {
-            if (envelope.Event.Kind == "reconciliation.required"
-                && envelope.Event.SafeCode is { } code)
-            {
-                intentCode = code;
-            }
+            return BoundedError(409, "reconciliation_target_invalid", "Reconciliation target is invalid.");
         }
 
+        var intentCode = reconciliation.IntentCode;
         var freshHash = await _snapshots.ComputeFreshHashAsync(runId, cancellationToken).ConfigureAwait(false);
         if (freshHash is null || !string.Equals(freshHash, snapshotHash, StringComparison.Ordinal))
         {
@@ -96,7 +94,13 @@ public sealed partial class AgentV1Service
             });
         }
 
-        return await ApplyReconciliationAsync(run, command, intentCode, cancellationToken).ConfigureAwait(false);
+        return await ApplyReconciliationAsync(
+                run,
+                command,
+                intentCode,
+                reconciliation.Target,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -110,6 +114,7 @@ public sealed partial class AgentV1Service
         AgentRun run,
         ReconciliationCommand command,
         string? intentCode,
+        ReconciliationResolutionTarget? target,
         CancellationToken cancellationToken)
     {
         var runId = run.RunId;
@@ -134,7 +139,13 @@ public sealed partial class AgentV1Service
 
         var now = _time.UtcNow;
         var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, now);
-        var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.ReconciliationResolved, safeCode: command.ToWireToken());
+        var evt = new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.ReconciliationResolved,
+            modelStepId: target?.ModelStepId,
+            toolCallId: target?.ToolCallId,
+            executionId: target?.ExecutionId,
+            safeCode: command.ToWireToken());
         var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
         var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
         if (result.Outcome != HarnessCommitOutcome.Committed)
@@ -150,6 +161,54 @@ public sealed partial class AgentV1Service
             intent_code = intentCode,
         });
     }
+
+    private async Task<ReconciliationContext> ReadReconciliationContextAsync(
+        RunId runId,
+        CancellationToken cancellationToken)
+    {
+        string? intentCode = null;
+        ReconciliationResolutionTarget? target = null;
+        var isMalformed = false;
+        await foreach (var envelope in _store
+            .ReadEventsAsync(runId, 0, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            var item = envelope.Event;
+            if (!string.Equals(item.Kind, "reconciliation.required", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            intentCode = item.SafeCode ?? intentCode;
+            if (item.ModelStepId is null && item.ToolCallId is null && item.ExecutionId is null)
+            {
+                target = null;
+                continue;
+            }
+
+            if (item.ModelStepId is not { } modelStepId
+                || item.ToolCallId is not { } toolCallId
+                || item.ExecutionId is not { } executionId)
+            {
+                isMalformed = true;
+                continue;
+            }
+
+            target = new ReconciliationResolutionTarget(modelStepId, toolCallId, executionId);
+        }
+
+        return new ReconciliationContext(intentCode, target, isMalformed);
+    }
+
+    private sealed record ReconciliationResolutionTarget(
+        ModelStepId ModelStepId,
+        ToolCallId ToolCallId,
+        ExecutionId ExecutionId);
+
+    private sealed record ReconciliationContext(
+        string? IntentCode,
+        ReconciliationResolutionTarget? Target,
+        bool IsMalformed);
 
     public async Task<AgentServiceResult> DispatchCommandAsync(
         string runIdRaw,

@@ -65,11 +65,15 @@ public sealed record StoredWorkspace(
     WorkspaceRootCiphertext EncryptedCanonicalRoot,
     WorkspaceTrustRequest TrustRequest,
     bool IsTrusted,
+    WorkspaceTrustSource? TrustSource,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
 public sealed class SqliteWorkspaceStore
 {
+    private const int CurrentTrustProfileVersion = 1;
+    private const string ExplicitTrustSourceWireValue = "explicit";
+
     private readonly HarnessSqliteOptions _options;
 
     public SqliteWorkspaceStore(HarnessSqliteOptions options)
@@ -141,6 +145,7 @@ public sealed class SqliteWorkspaceStore
                 registration.EncryptedCanonicalRoot,
                 proposedRequest,
                 IsTrusted: false,
+                TrustSource: null,
                 existing?.CreatedAt ?? proposedRequest.CreatedAt,
                 proposedRequest.CreatedAt);
         }
@@ -179,7 +184,8 @@ public sealed class SqliteWorkspaceStore
         var stored = await GetAsync(identity.WorkspaceId, cancellationToken).ConfigureAwait(false);
         return stored is not null
             && stored.Identity == identity
-            && stored.IsTrusted;
+            && stored.TrustRequest.AppliedDecision == WorkspaceTrustDecision.Approve
+            && stored.TrustSource == WorkspaceTrustSource.Explicit;
     }
 
     internal static async Task<StoredWorkspace?> LoadAsync(
@@ -202,6 +208,8 @@ public sealed class SqliteWorkspaceStore
                    trust_expires_at_utc,
                    trust_decision,
                    trust_decided_at_utc,
+                   trust_source,
+                   trust_profile_version,
                    created_at_utc,
                    updated_at_utc
             FROM agent_workspaces
@@ -248,13 +256,23 @@ public sealed class SqliteWorkspaceStore
             request = application.Next;
         }
 
+        WorkspaceTrustSource? trustSource = reader.IsDBNull(11)
+            ? null
+            : ParseTrustSource(reader.GetString(11));
+        if (reader.GetInt32(12) != CurrentTrustProfileVersion)
+        {
+            throw new HarnessStoreException("workspace_trust_corrupt");
+        }
+
         return new StoredWorkspace(
             identity,
             root,
             request,
-            request.AppliedDecision == WorkspaceTrustDecision.Approve,
-            ParseUtc(reader.GetString(11)),
-            ParseUtc(reader.GetString(12)));
+            request.AppliedDecision == WorkspaceTrustDecision.Approve
+                && trustSource == WorkspaceTrustSource.Explicit,
+            trustSource,
+            ParseUtc(reader.GetString(13)),
+            ParseUtc(reader.GetString(14)));
     }
 
     private static async Task InsertAsync(
@@ -278,6 +296,8 @@ public sealed class SqliteWorkspaceStore
                 trust_request_id,
                 trust_requested_at_utc,
                 trust_expires_at_utc,
+                trust_source,
+                trust_profile_version,
                 created_at_utc,
                 updated_at_utc)
             VALUES (
@@ -291,6 +311,8 @@ public sealed class SqliteWorkspaceStore
                 $trust_request_id,
                 $requested_at,
                 $expires_at,
+                NULL,
+                $trust_profile_version,
                 $created_at,
                 $updated_at)
             """;
@@ -322,6 +344,8 @@ public sealed class SqliteWorkspaceStore
                 trust_expires_at_utc = $expires_at,
                 trust_decision = NULL,
                 trust_decided_at_utc = NULL,
+                trust_source = NULL,
+                trust_profile_version = $trust_profile_version,
                 updated_at_utc = $updated_at
             WHERE workspace_id = $workspace_id
             """;
@@ -349,7 +373,16 @@ public sealed class SqliteWorkspaceStore
         command.Parameters.AddWithValue("$trust_request_id", request.RequestId.Value);
         command.Parameters.AddWithValue("$requested_at", request.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("$expires_at", request.ExpiresAt.ToString("O"));
+        command.Parameters.AddWithValue(
+            "$trust_profile_version",
+            CurrentTrustProfileVersion);
     }
+
+    private static WorkspaceTrustSource ParseTrustSource(string value) => value switch
+    {
+        ExplicitTrustSourceWireValue => WorkspaceTrustSource.Explicit,
+        _ => throw new HarnessStoreException("workspace_trust_corrupt"),
+    };
 
     private static DateTimeOffset ParseUtc(string value) =>
         DateTimeOffset.Parse(

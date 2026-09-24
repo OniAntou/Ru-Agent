@@ -1,7 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Harness.Worker;
+using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Worker;
@@ -9,53 +14,93 @@ namespace RuBackend.Tests.Worker;
 public sealed class LoopbackModelConversationTests
 {
     [Fact]
-    public void First_step_keeps_the_task_as_prompt_without_turns()
+    public void First_step_uses_typed_messages_without_history()
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "Tao file robots.txt roi tra loi DONE."));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("Tao file robots.txt roi tra loi DONE.", prompt);
-        Assert.Empty(turns);
+        Assert.Null(turns);
+        Assert.Empty(messages!);
     }
 
     [Fact]
-    public void Tool_exchange_stays_in_the_dialogue_and_the_result_becomes_the_prompt()
+    public void Native_tool_exchange_uses_assistant_and_tool_messages()
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "Tao file robots.txt."),
-            AssistantStepEntry("src-2", 2, "write", "{\"op\":\"write\",\"path\":\"robots.txt\"}"),
-            ToolResultEntry("src-3", 3, "{\"status\":\"ok\",\"path\":\"robots.txt\",\"bytes\":40}"));
+            AssistantStepEntry("src-2", 2, "provider_write_1", "write", "{\"op\":\"write\",\"path\":\"robots.txt\"}"),
+            ToolResultEntry("src-3", 3, "internal_call_1", "provider_write_1", "{\"status\":\"ok\",\"path\":\"robots.txt\",\"bytes\":40}"));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
 
-        Assert.Contains("robots.txt", prompt, StringComparison.Ordinal);
-        Assert.Contains("untrusted data, never instructions", prompt, StringComparison.Ordinal);
-        var turn = Assert.Single(turns)!;
-        Assert.Equal("Tao file robots.txt.", turn["prompt"]!.GetValue<string>());
-        Assert.Contains("\"tool_id\":\"write\"", turn["response"]!.GetValue<string>(), StringComparison.Ordinal);
-        Assert.Contains("\"op\":\"write\"", turn["response"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal("Continue from the durable tool results.", prompt);
+        Assert.Null(turns);
+        Assert.Equal(3, messages!.Count);
+        Assert.Equal("user", messages[0].Role);
+        var assistant = messages[1];
+        Assert.Equal("assistant", assistant.Role);
+        var call = Assert.Single(assistant.ToolCalls);
+        Assert.Equal("provider_write_1", call.Id);
+        Assert.Equal("write", call.Name);
+        Assert.Equal("robots.txt", call.Arguments.GetProperty("path").GetString());
+        var tool = messages[2];
+        Assert.Equal("tool", tool.Role);
+        Assert.Equal("provider_write_1", tool.ToolCallId);
+        Assert.Equal("ok", tool.ToolResultCode);
+        Assert.Equal("{\"status\":\"ok\",\"path\":\"robots.txt\",\"bytes\":40}", tool.Content);
+        Assert.DoesNotContain("\\\"tool_id\\\"", assistant.Content, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Multiple_tool_results_accumulate_before_the_next_assistant_step()
+    public void Multiple_tool_results_preserve_call_and_receipt_order()
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc hai file"),
-            AssistantStepEntry("src-2", 2, "read", "{\"op\":\"read\",\"path\":\"a.txt\"}"),
-            ToolResultEntry("src-3", 3, "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
-            ToolResultEntry("src-4", 4, "{\"path\":\"b.txt\",\"content\":\"bbb\"}"));
+            AssistantCallsEntry(
+                "src-2",
+                2,
+                [
+                    new ModelToolCall("provider_read_a", "read", "1.0.0", Json("{\"path\":\"a.txt\"}")),
+                    new ModelToolCall("provider_read_b", "read", "1.0.0", Json("{\"path\":\"b.txt\"}")),
+                ]),
+            ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_a", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
+            ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_b", "{\"path\":\"b.txt\",\"content\":\"bbb\"}"));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
 
-        Assert.Contains("a.txt", prompt, StringComparison.Ordinal);
-        Assert.Contains("b.txt", prompt, StringComparison.Ordinal);
-        Assert.Single(turns);
+        Assert.Equal("Continue from the durable tool results.", prompt);
+        Assert.Null(turns);
+        Assert.Equal(4, messages!.Count);
+        Assert.Equal(["provider_read_a", "provider_read_b"], messages[1].ToolCalls.Select(item => item.Id));
+        Assert.Equal(["provider_read_a", "provider_read_b"], messages.Skip(2).Select(item => item.ToolCallId));
     }
 
     [Fact]
-    public void Compacted_summary_reaches_the_model_through_the_conversation()
+    public void Exact_provider_receipts_reject_out_of_order_delivery()
+    {
+        var context = Snapshot(
+            ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc hai file"),
+            AssistantCallsEntry(
+                "src-2",
+                2,
+                [
+                    new ModelToolCall("provider_read_a", "read", "1.0.0", Json("{\"path\":\"a.txt\"}")),
+                    new ModelToolCall("provider_read_b", "read", "1.0.0", Json("{\"path\":\"b.txt\"}")),
+                ]),
+            ToolResultEntry("src-3", 3, "internal_call_a", "provider_read_b", "{\"path\":\"a.txt\"}"),
+            ToolResultEntry("src-4", 4, "internal_call_b", "provider_read_a", "{\"path\":\"b.txt\"}"));
+
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            LoopbackModelStepRunner.BuildConversationForTests(context));
+
+        Assert.Equal("model_history_invalid", error.Code);
+    }
+
+    [Fact]
+    public void Compacted_summary_is_a_user_message_and_keeps_final_prompt()
     {
         var context = Snapshot(
             ModelContextEntry.Summary(
@@ -65,122 +110,333 @@ public sealed class LoopbackModelConversationTests
                 [new ContextEntryRange("history-a", 1, 1)]),
             ModelContextEntry.Text("src-2", 2, ModelContextRole.User, "tiep tuc"));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
 
         Assert.Contains("previously we wrote robots.txt", prompt, StringComparison.Ordinal);
         Assert.Contains("tiep tuc", prompt, StringComparison.Ordinal);
-        Assert.Empty(turns);
+        Assert.Null(turns);
+        var summary = Assert.Single(messages!);
+        Assert.Equal("user", summary.Role);
+        Assert.Equal("compacted history summary:\npreviously we wrote robots.txt", summary.Content);
     }
 
     [Fact]
-    public void Assistant_text_after_a_tool_result_pairs_the_result_with_the_reply()
+    public void User_summary_assistant_sequence_is_preserved()
+    {
+        var context = Snapshot(
+            ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "first request"),
+            ModelContextEntry.Summary(
+                "cmp-1",
+                2,
+                "compacted context",
+                [new ContextEntryRange("history-a", 1, 1)]),
+            ModelContextEntry.Assistant(
+                "src-3",
+                3,
+                new AssistantStep("answer", [], AssistantFinishReason.Stop, 2)));
+
+        var (_, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
+
+        Assert.NotNull(messages);
+        Assert.Equal(["user", "user", "assistant"], messages.Select(message => message.Role));
+        Assert.Equal("first request", messages[0].Content);
+        Assert.Contains("compacted context", messages[1].Content, StringComparison.Ordinal);
+        Assert.Equal("answer", messages[2].Content);
+    }
+
+    [Fact]
+    public void Assistant_text_after_tool_results_closes_the_native_batch()
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file"),
-            AssistantStepEntry("src-2", 2, "read", "{\"op\":\"read\",\"path\":\"a.txt\"}"),
-            ToolResultEntry("src-3", 3, "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
+            AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"a.txt\"}"),
+            ToolResultEntry("src-3", 3, "internal_call_1", "provider_read_1", "{\"path\":\"a.txt\",\"content\":\"aaa\"}"),
             ModelContextEntry.Assistant(
                 "src-4",
                 4,
                 new AssistantStep("Da doc xong.", [], AssistantFinishReason.Stop, 8)));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
 
         Assert.Equal("doc file", prompt);
-        Assert.Equal(2, turns.Count);
-        Assert.Contains("Da doc xong.", turns[1]!["response"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Null(turns);
+        Assert.NotNull(messages);
+        Assert.Equal(["user", "assistant", "tool", "assistant"], messages.Select(item => item.Role));
+        Assert.Equal("Da doc xong.", messages[3].Content);
     }
 
     [Fact]
-    public void Oversized_tool_output_is_clamped_inside_the_prompt_budget()
+    public void Oversized_tool_output_is_clamped_without_becoming_the_prompt()
     {
         var context = Snapshot(
             ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file lon"),
-            AssistantStepEntry("src-2", 2, "read", "{\"op\":\"read\",\"path\":\"big.txt\"}"),
+            AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"big.txt\"}"),
             ToolResultEntry(
                 "src-3",
                 3,
+                "internal_call_1",
+                "provider_read_1",
                 "{\"path\":\"big.txt\",\"content\":\"" + new string('x', 40_000) + "\"}"));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(context);
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(context);
 
-        Assert.True(prompt.Length <= 16_000, $"prompt length was {prompt.Length}");
-        Assert.Contains("truncated", prompt, StringComparison.Ordinal);
-        Assert.Single(turns);
+        Assert.Equal("Continue from the durable tool results.", prompt);
+        Assert.Null(turns);
+        Assert.NotNull(messages);
+        Assert.True(messages[2].Content.Length <= 6_000, $"tool content length was {messages[2].Content.Length}");
+        Assert.Contains("truncated", messages[2].Content, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Ignored_noop_entries_after_tool_results_keep_continuation_prompt(bool assistantNoop)
+    {
+        var entries = new List<ModelContextEntry>
+        {
+            ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "doc file"),
+            AssistantStepEntry("src-2", 2, "provider_read_1", "read", "{\"path\":\"a.txt\"}"),
+            ToolResultEntry("src-3", 3, "internal_call_1", "provider_read_1", "result"),
+        };
+        entries.Add(assistantNoop
+            ? ModelContextEntry.Assistant(
+                "src-4",
+                4,
+                new AssistantStep(null, [], AssistantFinishReason.Stop, 0))
+            : ModelContextEntry.Text("src-4", 4, ModelContextRole.User, ""));
+
+        var (prompt, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
+
+        Assert.Equal("Continue from the durable tool results.", prompt);
+        Assert.Equal("tool", messages![^1].Role);
     }
 
     [Fact]
-    public void Stale_history_is_trimmed_head_first_while_the_newest_result_stays_whole()
+    public void Native_history_budget_counts_exact_array_bytes_at_limit_and_over()
+    {
+        var emptyWire = new JsonArray
+        {
+            new JsonObject
+            {
+                ["role"] = "assistant",
+                ["content"] = "",
+                ["tool_calls"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["id"] = "provider_read_1",
+                        ["type"] = "function",
+                        ["function"] = new JsonObject
+                        {
+                            ["name"] = "read",
+                            ["arguments"] = "{}",
+                        },
+                    },
+                },
+            },
+            new JsonObject
+            {
+                ["role"] = "tool",
+                ["content"] = "r",
+                ["tool_call_id"] = "provider_read_1",
+                ["tool_result_code"] = "ok",
+            },
+        };
+        const int limit = 512 * 1024;
+        var contentLength = limit - Encoding.UTF8.GetByteCount(emptyWire.ToJsonString());
+        var context = Snapshot(
+            ModelContextEntry.Assistant(
+                "src-1",
+                1,
+                new AssistantStep(
+                    new string('a', contentLength),
+                    [new ModelToolCall("provider_read_1", "read", "1.0.0", Json("{}"))],
+                    AssistantFinishReason.ToolCalls,
+                    1)),
+            ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
+
+        var (_, _, messages) = LoopbackModelStepRunner.BuildConversationForTests(context, hasImages: true);
+        Assert.Equal(2, messages!.Count);
+        Assert.Equal(limit, Encoding.UTF8.GetByteCount(
+            RuAgent.Runtime.Worker.WorkerV2PromptCodec.WriteModelMessages(messages).ToJsonString()));
+
+        var oversized = Snapshot(
+            ModelContextEntry.Assistant(
+                "src-1",
+                1,
+                new AssistantStep(
+                    new string('a', contentLength + 1),
+                    [new ModelToolCall("provider_read_1", "read", "1.0.0", Json("{}"))],
+                    AssistantFinishReason.ToolCalls,
+                    1)),
+            ToolResultEntry("src-2", 2, "internal_call_1", "provider_read_1", "r"));
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            LoopbackModelStepRunner.BuildConversationForTests(oversized, hasImages: true));
+        Assert.Equal("model_history_too_large", error.Code);
+    }
+
+    [Fact]
+    public void Multi_message_history_uses_n_minus_one_separators_at_exact_budget()
+    {
+        const int limit = 512 * 1024;
+        var emptyWire = new JsonArray
+        {
+            new JsonObject { ["role"] = "user", ["content"] = "" },
+            new JsonObject { ["role"] = "user", ["content"] = "new" },
+            new JsonObject { ["role"] = "assistant", ["content"] = "done" },
+        };
+        var oldLength = limit - Encoding.UTF8.GetByteCount(emptyWire.ToJsonString());
+
+        var exact = Snapshot(
+            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength)),
+            ModelContextEntry.Text("new", 2, ModelContextRole.User, "new"),
+            ModelContextEntry.Assistant(
+                "done",
+                3,
+                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
+        var (_, _, exactMessages) = LoopbackModelStepRunner.BuildConversationForTests(exact);
+
+        Assert.Equal(3, exactMessages!.Count);
+        Assert.Equal(limit, ModelRequest.MeasureModelMessagesBytes(exactMessages));
+        Assert.Equal(limit, Encoding.UTF8.GetByteCount(
+            RuAgent.Runtime.Worker.WorkerV2PromptCodec.WriteModelMessages(exactMessages).ToJsonString()));
+
+        var oversized = Snapshot(
+            ModelContextEntry.Text("old", 1, ModelContextRole.User, new string('o', oldLength + 1)),
+            ModelContextEntry.Text("new", 2, ModelContextRole.User, "new"),
+            ModelContextEntry.Assistant(
+                "done",
+                3,
+                new AssistantStep("done", [], AssistantFinishReason.Stop, 0)));
+        var (_, _, trimmedMessages) = LoopbackModelStepRunner.BuildConversationForTests(oversized);
+
+        Assert.Equal(["user", "assistant"], trimmedMessages!.Select(message => message.Role));
+        var retainedUser = trimmedMessages!.First(message => message.Role == "user");
+        Assert.Equal("new", retainedUser.Content);
+    }
+
+    [Fact]
+    public void Stale_native_history_is_trimmed_by_complete_batches()
     {
         var entries = new List<ModelContextEntry>
         {
             ModelContextEntry.Text("src-0", 1, ModelContextRole.User, "nhiem vu goc"),
         };
         var sequence = 2L;
-        for (var index = 0; index < 8; index++)
+        for (var index = 0; index < 90; index++)
         {
-            entries.Add(AssistantStepEntry($"stale-a-{index}", sequence++, "read", "{\"op\":\"read\",\"path\":\"stale.txt\"}"));
-            entries.Add(ToolResultEntry($"stale-t-{index}", sequence++, $"{{\"stale\":{index},\"content\":\"{new string('s', 4_000)}\"}}"));
+            entries.Add(AssistantStepEntry(
+                $"stale-a-{index}",
+                sequence++,
+                $"provider_stale_{index}",
+                "read",
+                "{\"path\":\"stale.txt\"}"));
+            entries.Add(ToolResultEntry(
+                $"stale-t-{index}",
+                sequence++,
+                $"internal_stale_{index}",
+                $"provider_stale_{index}",
+                $"{{\"stale\":{index},\"content\":\"{new string('s', 10_000)}\"}}"));
         }
-        entries.Add(AssistantStepEntry("src-new-a", sequence++, "read", "{\"op\":\"read\",\"path\":\"fresh.txt\"}"));
-        entries.Add(ToolResultEntry("src-new-t", sequence, "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\"}"));
+        entries.Add(AssistantStepEntry("src-new-a", sequence++, "provider_fresh", "read", "{\"path\":\"fresh.txt\"}"));
+        entries.Add(ToolResultEntry("src-new-t", sequence, "internal_fresh", "provider_fresh", "{\"path\":\"fresh.txt\",\"content\":\"ket qua moi nhat\"}"));
 
-        var (prompt, turns) = LoopbackModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
+        var (prompt, turns, messages) = LoopbackModelStepRunner.BuildConversationForTests(Snapshot(entries.ToArray()));
 
-        Assert.Contains("ket qua moi nhat", prompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("truncated", prompt, StringComparison.Ordinal);
-        Assert.True(turns.Count <= 8);
-        Assert.True(turns.Count < 9, "all stale history should not fit beside a full prompt");
-        var totalTurnChars = turns.Sum(turn =>
-            turn!["prompt"]!.GetValue<string>().Length + turn["response"]!.GetValue<string>().Length);
-        Assert.True(totalTurnChars <= 32_000, $"turns were {totalTurnChars} chars");
+        Assert.Equal("Continue from the durable tool results.", prompt);
+        Assert.Null(turns);
+        Assert.NotNull(messages);
+        Assert.NotEmpty(messages);
+        Assert.True(messages.Count <= 256, $"messages count was {messages.Count}");
+        var lowerBoundBytes = messages.Sum(message =>
+            Encoding.UTF8.GetByteCount(message.Content)
+            + message.ToolCalls.Sum(call => Encoding.UTF8.GetByteCount(call.Arguments.GetRawText())));
+        Assert.True(lowerBoundBytes <= 512 * 1024, $"history lower-bound bytes were {lowerBoundBytes}");
+        Assert.True(messages.Count < 181, $"history was not trimmed: {messages.Count} messages");
+        Assert.Equal("provider_fresh", messages[^2].ToolCalls.Single().Id);
+        Assert.Equal("provider_fresh", messages[^1].ToolCallId);
     }
 
     [Fact]
-    public void Rejected_tool_call_feedback_is_appended_and_clamped()
+    public void Null_provider_call_id_fails_closed_at_construction()
     {
-        var prompt = LoopbackModelStepRunner.ApplySelectionFeedbackForTests("task", "model_tool_call_invalid");
-        Assert.Contains("[harness]", prompt, StringComparison.Ordinal);
-        Assert.Contains("arguments were incomplete or invalid", prompt, StringComparison.Ordinal);
+        var error = Assert.Throws<ArgumentException>(() => AssistantStepEntry(
+            "src-2",
+            2,
+            null!,
+            "read",
+            "{\"path\":\"a.txt\"}"));
 
-        // Provider/stream anomalies keep the plain retry without model feedback.
-        Assert.Equal("task", LoopbackModelStepRunner.ApplySelectionFeedbackForTests("task", "protocol_failure"));
+        Assert.Equal("providerCallId", error.ParamName);
+    }
 
-        // The note never pushes the prompt past the worker budget.
-        var clamped = LoopbackModelStepRunner.ApplySelectionFeedbackForTests(
-            new string('x', 20_000),
-            "invalid_selection");
-        Assert.True(clamped.Length <= 16_000, $"prompt={clamped.Length}");
-        Assert.Contains("[harness]", clamped, StringComparison.Ordinal);
+    [Fact]
+    public void Ambiguous_id_less_multi_call_cannot_enter_history()
+    {
+        var error = Assert.Throws<ArgumentException>(() => AssistantCallsEntry(
+            "src-2",
+            2,
+            [
+                new ModelToolCall(null!, "read", "1.0.0", Json("{\"path\":\"a.txt\"}")),
+                new ModelToolCall(null!, "read", "1.0.0", Json("{\"path\":\"b.txt\"}")),
+            ]));
+
+        Assert.Equal("providerCallId", error.ParamName);
+    }
+
+    [Fact]
+    public void Tool_result_without_a_preceding_call_fails_closed()
+    {
+        var context = Snapshot(ToolResultEntry("src-1", 1, "internal_call_1", "provider_orphan", "orphan"));
+
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            LoopbackModelStepRunner.BuildConversationForTests(context));
+
+        Assert.Equal("model_history_invalid", error.Code);
     }
 
     private static ModelContextSnapshot Snapshot(params ModelContextEntry[] entries) =>
         new(entries, Array.Empty<byte>());
 
+    private static JsonElement Json(string value) => JsonDocument.Parse(value).RootElement.Clone();
+
     private static ModelContextEntry AssistantStepEntry(
         string sourceId,
         long sequence,
+        string providerCallId,
         string toolId,
         string argumentsJson) =>
+        AssistantCallsEntry(
+            sourceId,
+            sequence,
+            [new ModelToolCall(providerCallId, toolId, "1.0.0", Json(argumentsJson))]);
+
+    private static ModelContextEntry AssistantCallsEntry(
+        string sourceId,
+        long sequence,
+        IReadOnlyList<ModelToolCall> calls) =>
         ModelContextEntry.Assistant(
             sourceId,
             sequence,
-            new AssistantStep(
-                null,
-                [new ModelToolCall(null, toolId, "1.0.0", JsonDocument.Parse(argumentsJson).RootElement)],
-                AssistantFinishReason.ToolCalls,
-                16));
+            new AssistantStep(null, calls, AssistantFinishReason.ToolCalls, 16));
 
-    private static ModelContextEntry ToolResultEntry(string sourceId, long sequence, string content) =>
+    private static ModelContextEntry ToolResultEntry(
+        string sourceId,
+        long sequence,
+        string toolCallId,
+        string providerCallId,
+        string content) =>
         ModelContextEntry.ToolResult(
             sourceId,
             sequence,
             new ToolExecutionReceipt(
                 new ExecutionId("exec_" + new string('a', 32)),
-                new ToolCallId("call_" + new string('b', 32)),
+                new ToolCallId("call_" + Convert.ToHexString(
+                    SHA256.HashData(Encoding.UTF8.GetBytes(toolCallId))).ToLowerInvariant()[..32]),
                 ToolExecutionOutcome.Succeeded,
                 "ok",
                 null,
-                sideEffectsPossible: false),
+                sideEffectsPossible: false,
+                providerCallId: providerCallId),
             content);
 }

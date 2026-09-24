@@ -1,17 +1,56 @@
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Persistence.Policy;
 
 namespace RuAgent.Harness.Persistence;
 
 internal static class HarnessSqliteWriteSet
 {
+    internal static void ValidateSessionPresetSnapshotWrite(
+        string snapshotToken,
+        AgentSessionPermissionSelection? previous,
+        AgentSessionPermissionSelection applied)
+    {
+        if (!AgentSessionPermissionStore.IsValidSnapshotToken(snapshotToken)
+            || previous is not null
+            && (previous.SessionId.Value != applied.SessionId.Value
+                || previous.Version >= applied.Version))
+        {
+            throw new ArgumentException("Invalid session preset snapshot write.", nameof(snapshotToken));
+        }
+    }
+
+    internal static void ValidateSessionPresetSnapshotConsume(
+        string snapshotToken,
+        string sessionId,
+        AgentPermissionPreset appliedPreset,
+        int appliedPermissionProfileVersion,
+        long appliedVersion)
+    {
+        if (!AgentSessionPermissionStore.IsValidSnapshotToken(snapshotToken)
+            || string.IsNullOrWhiteSpace(sessionId)
+            || !Enum.IsDefined(appliedPreset)
+            || appliedPermissionProfileVersion <= 0
+            || appliedVersion <= 0)
+        {
+            throw new ArgumentException("Invalid session preset snapshot consume.", nameof(snapshotToken));
+        }
+    }
+
     internal static void ValidateNewRun(NewAgentRun request)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.Run.Version != 0)
         {
             throw new ArgumentException("A new run must start at version zero.", nameof(request));
+        }
+
+        if (request.Run.PermissionProfileVersion != AgentPermissionPresetMapper.CurrentPermissionProfileVersion)
+        {
+            throw new ArgumentException(
+                "A new run must use the current permission profile version.",
+                nameof(request));
         }
 
         if (request.Events.Count == 0 || request.Run.LastSequence != request.Events.Count)
@@ -39,6 +78,7 @@ internal static class HarnessSqliteWriteSet
         if (commit.NextRun.SessionId != current.SessionId
             || commit.NextRun.WorkspaceId != current.WorkspaceId
             || commit.NextRun.Preset != current.Preset
+            || commit.NextRun.PermissionProfileVersion != current.PermissionProfileVersion
             || commit.NextRun.PolicySnapshotVersion != current.PolicySnapshotVersion
             || !string.Equals(
                 commit.NextRun.PolicySnapshotSha256,
@@ -89,6 +129,7 @@ internal static class HarnessSqliteWriteSet
                 model_steps_in_window,
                 tool_calls_in_window,
                 preset,
+                permission_profile_version,
                 session_preset_version,
                 policy_snapshot_version,
                 policy_snapshot_sha256,
@@ -110,6 +151,7 @@ internal static class HarnessSqliteWriteSet
                 $model_steps,
                 $tool_calls,
                 $preset,
+                $permission_profile_version,
                 $session_preset_version,
                 $policy_version,
                 $policy_hash,
@@ -184,8 +226,9 @@ internal static class HarnessSqliteWriteSet
                     occurred_at_utc,
                     payload_id,
                     model_step_id,
-                    tool_call_id,
-                    execution_id,
+                     tool_call_id,
+                     provider_call_id,
+                     execution_id,
                     approval_id,
                     safe_count,
                     safe_code,
@@ -199,8 +242,9 @@ internal static class HarnessSqliteWriteSet
                     $occurred_at,
                     $payload_id,
                     $model_step_id,
-                    $tool_call_id,
-                    $execution_id,
+                     $tool_call_id,
+                     $provider_call_id,
+                     $execution_id,
                     $approval_id,
                     $safe_count,
                     $safe_code,
@@ -215,6 +259,7 @@ internal static class HarnessSqliteWriteSet
             AddOptional(command, "$payload_id", intent.PayloadId?.Value);
             AddOptional(command, "$model_step_id", intent.ModelStepId?.Value);
             AddOptional(command, "$tool_call_id", intent.ToolCallId?.Value);
+            AddOptional(command, "$provider_call_id", intent.ProviderCallId);
             AddOptional(command, "$execution_id", intent.ExecutionId?.Value);
             AddOptional(command, "$approval_id", intent.ApprovalId?.Value);
             command.Parameters.AddWithValue(

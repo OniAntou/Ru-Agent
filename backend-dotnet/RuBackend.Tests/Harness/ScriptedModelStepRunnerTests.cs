@@ -32,6 +32,7 @@ public sealed class ScriptedModelStepRunnerTests
 
         var step = Assert.Single(steps);
         var call = Assert.Single(step.ToolCalls);
+        Assert.Equal("ru_call_script_1", call.ProviderCallId);
         Assert.Equal("todo_write", call.ToolId);
 
         // A version is required by the protocol, so an omitted one has to default rather

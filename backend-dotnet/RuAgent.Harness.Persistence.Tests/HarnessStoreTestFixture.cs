@@ -75,7 +75,8 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
         long selectionVersion = 1,
         IReadOnlyList<HarnessPayloadIntent>? payloads = null,
         IReadOnlyList<ConversationOutboxIntent>? outbox = null,
-        HarnessRunStatus? status = null)
+        HarnessRunStatus? status = null,
+        int permissionProfileVersion = 1)
     {
         var run = new AgentRun(
             Run(runNumber),
@@ -91,7 +92,8 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
             policySnapshotVersion: 1,
             policySnapshotSha256: Sha('c'),
             Timestamp,
-            Timestamp);
+            Timestamp,
+            permissionProfileVersion: permissionProfileVersion);
         return new NewAgentRun(
             run,
             [new HarnessEventIntent(Event(runNumber), HarnessEventKind.RunStateChanged)],

@@ -15,16 +15,35 @@ namespace RuBackend.Tests.Worker;
 
 public sealed class WorkerV2ContractTests
 {
-    private static readonly string FixturePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tests", "fixtures", "worker-v2-protocol.json");
-
     private static JsonObject LoadFixture()
     {
-        var candidate = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "tests", "fixtures", "worker-v2-protocol.json"));
-        var path = File.Exists(candidate) ? candidate : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "..", "tests", "fixtures", "worker-v2-protocol.json"));
-        // Fallback to repo root
-        if (!File.Exists(path))
+        string? path = null;
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
-            path = @"D:\LLM\tests\fixtures\worker-v2-protocol.json";
+            var candidate = Path.Combine(directory.FullName, "tests", "fixtures", "worker-v2-protocol.json");
+            if (File.Exists(candidate))
+            {
+                path = candidate;
+                break;
+            }
+        }
+
+        if (path is null)
+        {
+            for (var directory = new DirectoryInfo(Directory.GetCurrentDirectory()); directory is not null; directory = directory.Parent)
+            {
+                var candidate = Path.Combine(directory.FullName, "tests", "fixtures", "worker-v2-protocol.json");
+                if (File.Exists(candidate))
+                {
+                    path = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (path is null)
+        {
+            throw new FileNotFoundException("worker-v2-protocol.json");
         }
 
         var json = File.ReadAllText(path);
@@ -49,7 +68,7 @@ public sealed class WorkerV2ContractTests
             ["finish_reason"] = "tool_calls",
             ["prompt_receipt"] = new JsonObject
             {
-                ["composer_version"] = "1.0.0",
+                ["composer_version"] = "2.0.0",
                 ["prompt_sha256"] = Digest(),
                 ["block_digests"] = new JsonArray(new JsonObject
                 {
@@ -80,24 +99,146 @@ public sealed class WorkerV2ContractTests
     }
 
     [Fact]
+    public void Step_done_accepts_zero_calls_with_stop()
+    {
+        WorkerV2Contracts.ValidateStepDone(ValidStepDone());
+    }
+
+    [Fact]
+    public void Step_done_accepts_one_call_with_tool_calls()
+    {
+        WorkerV2Contracts.ValidateStepDone(ValidStepDone(
+            calls: new JsonArray(ValidCall()),
+            finishReason: "tool_calls"));
+    }
+
+    [Fact]
+    public void Step_done_accepts_three_calls_with_tool_calls_and_narration()
+    {
+        WorkerV2Contracts.ValidateStepDone(ValidStepDone(
+            text: "I will inspect all three files.",
+            calls: new JsonArray(ValidCall("call-1"), ValidCall("call-2"), ValidCall("call-3")),
+            finishReason: "tool_calls"));
+    }
+
+    [Fact]
+    public void Step_done_rejects_empty_tool_calls_with_tool_calls_finish()
+    {
+        var error = Assert.Throws<AgentProtocolException>(() =>
+            WorkerV2Contracts.ValidateStepDone(ValidStepDone(finishReason: "tool_calls")));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_calls_with_stop_finish()
+    {
+        var error = Assert.Throws<AgentProtocolException>(() =>
+            WorkerV2Contracts.ValidateStepDone(ValidStepDone(calls: new JsonArray(ValidCall()))));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_invalid_provider_call_id()
+    {
+        var call = ValidCall();
+        call["provider_call_id"] = 42;
+        var payload = ValidStepDone(calls: new JsonArray(call), finishReason: "tool_calls");
+
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(payload));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_unsafe_provider_call_id()
+    {
+        var payload = ValidStepDone(
+            calls: new JsonArray(ValidCall("call/unsafe")),
+            finishReason: "tool_calls");
+
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(payload));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_missing_provider_call_id()
+    {
+        var call = ValidCall();
+        call["provider_call_id"] = null;
+
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(
+            ValidStepDone(calls: new JsonArray(call), finishReason: "tool_calls")));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_duplicate_provider_call_ids()
+    {
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(
+            ValidStepDone(
+                calls: new JsonArray(ValidCall("call_1"), ValidCall("call_1")),
+                finishReason: "tool_calls")));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_invalid_tool_version()
+    {
+        var payload = ValidStepDone(
+            calls: new JsonArray(ValidCall(toolVersion: "1.0")),
+            finishReason: "tool_calls");
+
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(payload));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_invalid_call_shape()
+    {
+        var call = ValidCall();
+        call["unexpected"] = true;
+        var payload = ValidStepDone(calls: new JsonArray(call), finishReason: "tool_calls");
+
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(payload));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
+    public void Step_done_rejects_oversized_arguments_with_valid_receipt()
+    {
+        var payload = ValidStepDone(
+            calls: new JsonArray(ValidCall(arguments: new JsonObject { ["path"] = new string('a', 64 * 1024 + 1) })),
+            finishReason: "tool_calls");
+
+        var error = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateStepDone(payload));
+
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    [Fact]
     public void Golden_valid_envelopes_round_trip()
     {
         var fixture = LoadFixture();
         var valid = fixture["valid_envelopes"] as JsonArray ?? throw new InvalidOperationException("valid_envelopes missing");
-        Assert.Equal(7, valid.Count);
+        Assert.Equal(8, valid.Count);
         foreach (var entry in valid)
         {
             var obj = entry as JsonObject ?? throw new InvalidOperationException("entry not object");
             var name = obj["name"]!.GetValue<string>();
             var envelope = obj["envelope"] as JsonObject ?? throw new InvalidOperationException("envelope missing");
             var json = envelope.ToJsonString();
-            // Parse via WorkerV2EnvelopeCodec should succeed
             var parsed = WorkerV2EnvelopeCodec.Parse(json);
             var serialized = WorkerV2EnvelopeCodec.Serialize(parsed);
             var reparsed = WorkerV2EnvelopeCodec.Parse(serialized);
             Assert.Equal(parsed.Type, reparsed.Type);
             Assert.Equal(parsed.Id, reparsed.Id);
-            // Also validate via contracts
             WorkerV2Contracts.ValidateEnvelope(envelope);
         }
     }
@@ -311,7 +452,7 @@ public sealed class WorkerV2ContractTests
         var payload = WorkerV2PromptCodec.WriteContext(context);
 
         Assert.Equal(
-            ["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"],
+            ["schema_version", "agent_profile", "preset", "effective_policy", "environment", "instruction_blocks", "capabilities", "runtime_context"],
             payload.Select(property => property.Key));
         Assert.False(payload.ContainsKey("memory_context"));
         Assert.Equal(
@@ -334,7 +475,7 @@ public sealed class WorkerV2ContractTests
         var receipt = PromptContextFixture.Receipt(context);
 
         var parsed = WorkerV2PromptCodec.ReadReceipt(receipt, context);
-        Assert.Equal("1.0.0", parsed.ComposerVersion);
+        Assert.Equal("2.0.0", parsed.ComposerVersion);
         Assert.DoesNotContain("text", WorkerV2PromptCodec.WriteReceipt(parsed).ToJsonString(), StringComparison.Ordinal);
 
         var unknown = (JsonObject)receipt.DeepClone();
@@ -358,6 +499,38 @@ public sealed class WorkerV2ContractTests
         Assert.Throws<AgentProtocolException>(() => WorkerV2PromptCodec.ReadReceipt(null, context));
     }
 
+    private static JsonObject ValidStepDone(
+        string? text = null,
+        JsonArray? calls = null,
+        string finishReason = "stop") =>
+        new()
+        {
+            ["text"] = text,
+            ["tool_calls"] = calls ?? new JsonArray(),
+            ["finish_reason"] = finishReason,
+            ["prompt_receipt"] = ValidPromptReceipt(),
+        };
+
+    private static JsonObject ValidCall(
+        string? providerCallId = "call-1",
+        string toolVersion = "1.0.0",
+        JsonObject? arguments = null) =>
+        new()
+        {
+            ["provider_call_id"] = providerCallId,
+            ["tool_id"] = "read",
+            ["tool_version"] = toolVersion,
+            ["arguments"] = arguments ?? new JsonObject { ["path"] = "README.md" },
+        };
+
+    private static JsonObject ValidPromptReceipt() =>
+        new()
+        {
+            ["composer_version"] = "2.0.0",
+            ["prompt_sha256"] = new string('a', 64),
+            ["block_digests"] = new JsonArray(),
+        };
+
     private static void AssertInvalidReceipt(JsonObject receipt, SystemPromptContext context)
     {
         // The shared codec is protocol-owned, so it raises the protocol exception;
@@ -373,7 +546,7 @@ public sealed class WorkerV2ContractTests
         {
             const string content = "root guidance";
             return new SystemPromptContext(
-                1,
+                SystemPromptContext.PromptContextSchemaVersion,
                 "ru-agent",
                 "standard",
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
@@ -413,17 +586,17 @@ public sealed class WorkerV2ContractTests
                 new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = zero },
                 new JsonObject { ["block_id"] = "agent.contract", ["sha256"] = zero },
                 new JsonObject { ["block_id"] = "environment", ["sha256"] = zero },
+                new JsonObject { ["block_id"] = "profile", ["sha256"] = zero },
                 new JsonObject
                 {
                     ["block_id"] = "instruction.root:Ru.md",
                     ["sha256"] = context.InstructionBlocks[0].ContentSha256,
                 },
-                new JsonObject { ["block_id"] = "profile", ["sha256"] = zero },
                 new JsonObject { ["block_id"] = "capabilities", ["sha256"] = zero },
                 new JsonObject { ["block_id"] = "runtime", ["sha256"] = zero });
             return new JsonObject
             {
-                ["composer_version"] = "1.0.0",
+                ["composer_version"] = "2.0.0",
                 ["prompt_sha256"] = zero,
                 ["block_digests"] = blocks,
             };

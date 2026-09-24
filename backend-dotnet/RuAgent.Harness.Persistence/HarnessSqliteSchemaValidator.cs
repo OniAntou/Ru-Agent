@@ -16,8 +16,32 @@ internal static class HarnessSqliteSchemaValidator
                 "display_identity_hash",
                 "trust_request_id",
                 "trust_decision",
+                "trust_source",
+                "trust_profile_version",
             ],
-            ["agent_session_settings"] = ["session_id", "preset", "version"],
+            ["agent_session_settings"] =
+            [
+                "session_id",
+                "preset",
+                "permission_profile_version",
+                "version",
+            ],
+            ["agent_session_preset_snapshots"] =
+            [
+                "snapshot_token",
+                "session_id",
+                "had_previous_selection",
+                "previous_preset",
+                "previous_permission_profile_version",
+                "previous_version",
+                "previous_updated_at_utc",
+                "applied_preset",
+                "applied_permission_profile_version",
+                "applied_version",
+                "expires_at_utc",
+                "consumed_at_utc",
+                "created_at_utc",
+            ],
             ["agent_runs"] =
             [
                 "run_id",
@@ -26,6 +50,7 @@ internal static class HarnessSqliteSchemaValidator
                 "state",
                 "version",
                 "last_sequence",
+                "permission_profile_version",
                 "session_preset_version",
                 "idempotency_key_sha256",
                 "normalized_request_sha256",
@@ -57,6 +82,7 @@ internal static class HarnessSqliteSchemaValidator
                 "sequence",
                 "kind",
                 "payload_id",
+                "provider_call_id",
                 "tool_outcome",
                 "side_effects_possible",
             ],
@@ -141,10 +167,12 @@ internal static class HarnessSqliteSchemaValidator
                   'ix_agent_conversation_outbox_dispatch',
                   'ix_agent_context_compactions_run_created',
                   'ix_workspace_path_claims_active',
-                  'ix_workspace_change_journal_sequence')
+                  'ix_workspace_change_journal_sequence',
+                  'ix_agent_session_preset_snapshots_expiry',
+                  'ix_agent_session_preset_snapshots_session')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 7;
+            .ConfigureAwait(false) ?? 0L) == 9;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

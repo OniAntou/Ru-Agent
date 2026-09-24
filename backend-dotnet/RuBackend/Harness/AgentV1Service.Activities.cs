@@ -53,10 +53,12 @@ public sealed partial class AgentV1Service
                 case "tool.proposed"
                     when evt.ToolCallId is { } proposedCallId
                         && evt.ModelStepId is { } proposedStep
+                        && evt.ProviderCallId is { } providerCallId
                         && evt.PayloadId is { } argsPayloadId
                         && evt.SafeCount is { } modelOrder:
                     proposed[proposedCallId.Value] = new ProposedReplayCall(
                         proposedCallId,
+                        providerCallId,
                         proposedStep,
                         modelOrder,
                         argsPayloadId,
@@ -68,10 +70,12 @@ public sealed partial class AgentV1Service
                     break;
                 case "tool.execution_completed"
                     when evt.ToolCallId is { } completedCallId
+                        && evt.ProviderCallId is { } completedProviderCallId
                         && evt.ExecutionId is { } completedExecutionId:
                     completedCallIds.Add(completedCallId.Value);
                     completed.Add(new CompletedReplayCall(
                         completedCallId,
+                        completedProviderCallId,
                         completedExecutionId,
                         evt.PayloadId,
                         evt.SafeCode,
@@ -111,7 +115,11 @@ public sealed partial class AgentV1Service
             }
 
             var proposal = await RebuildProposalAsync(runId, proposalCall, cancellationToken).ConfigureAwait(false);
-            if (proposal is null)
+            if (proposal is null
+                || !string.Equals(
+                    proposal.ProviderCallId,
+                    call.ProviderCallId,
+                    StringComparison.Ordinal))
             {
                 continue;
             }
@@ -261,6 +269,7 @@ public sealed partial class AgentV1Service
                 runId,
                 call.ModelStepId,
                 call.ToolCallId,
+                call.ProviderCallId,
                 call.ModelOrder,
                 toolIdElement.GetString() ?? string.Empty,
                 toolVersionElement.GetString() ?? string.Empty,
@@ -321,7 +330,8 @@ public sealed partial class AgentV1Service
                 call.ResultPayloadId,
                 call.SideEffectsPossible.Value,
                 modelContent,
-                encoding);
+                encoding,
+                call.ProviderCallId);
         }
         catch (ArgumentException)
         {
@@ -432,6 +442,7 @@ public sealed partial class AgentV1Service
 
     private sealed record ProposedReplayCall(
         ToolCallId ToolCallId,
+        string ProviderCallId,
         ModelStepId ModelStepId,
         int ModelOrder,
         PayloadId ArgsPayloadId,
@@ -439,6 +450,7 @@ public sealed partial class AgentV1Service
 
     private sealed record CompletedReplayCall(
         ToolCallId ToolCallId,
+        string ProviderCallId,
         ExecutionId ExecutionId,
         PayloadId? ResultPayloadId,
         string? SafeCode,

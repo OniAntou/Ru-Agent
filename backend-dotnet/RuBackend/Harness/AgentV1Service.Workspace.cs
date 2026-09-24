@@ -357,10 +357,6 @@ public sealed partial class AgentV1Service
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Untrusted runs expose the pending trust challenge so clients can approve the
-    /// workspace they actually created; trusted or terminal runs carry no challenge.
-    /// </summary>
     private async Task<(string? TrustRequestId, string? DisplayIdentityHash)> ResolveTrustChallengeAsync(
         AgentRun run,
         CancellationToken cancellationToken)
@@ -371,7 +367,7 @@ public sealed partial class AgentV1Service
         }
 
         var registration = await _workspaceStore.GetAsync(run.WorkspaceId, cancellationToken).ConfigureAwait(false);
-        if (registration is null || registration.TrustRequest.AppliedDecision is not null)
+        if (registration is null)
         {
             return (null, null);
         }
@@ -429,8 +425,37 @@ public sealed partial class AgentV1Service
             return BoundedError(404, "workspace_not_found", "Workspace not found.");
         }
 
-        var currentIdentity = storedWs.Identity;
         var trustRequestId = new TrustRequestId(req.TrustRequestId);
+        if (storedWs.TrustRequest.RequestId != trustRequestId)
+        {
+            return BoundedError(409, "trust_stale", "trust_stale");
+        }
+
+        if (!string.Equals(
+                storedWs.TrustRequest.DisplayedIdentityHash,
+                req.DisplayIdentityHash,
+                StringComparison.Ordinal))
+        {
+            return BoundedError(409, "trust_stale", "trust_display_hash_mismatch");
+        }
+
+        if (run.State != HarnessRunState.WaitingWorkspaceTrust)
+        {
+            return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, MapRunState(run.Status)));
+        }
+
+        WorkspaceIdentity currentIdentity;
+        try
+        {
+            currentIdentity = await _trustService.RevalidateIdentityAsync(storedWs, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HarnessStoreException ex)
+        {
+            _logger?.LogWarning(ex, "workspace trust identity revalidation failed");
+            return BoundedError(409, ex.Code ?? "trust_stale", ex.Message);
+        }
+
         var response = new WorkspaceTrustResponse(trustRequestId, currentIdentity, req.DisplayIdentityHash, decision);
         var now = _time.UtcNow;
 
@@ -447,13 +472,6 @@ public sealed partial class AgentV1Service
         if (!storeResult.Accepted)
         {
             return BoundedError(409, "trust_stale", storeResult.ErrorCode ?? "trust_stale");
-        }
-
-        if (storeResult.Idempotent)
-        {
-            var currentRun = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-            var status = currentRun is null ? "unknown" : MapRunState(currentRun.Status);
-            return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, status));
         }
 
         if (decision == WorkspaceTrustDecision.Approve)
@@ -510,7 +528,21 @@ public sealed partial class AgentV1Service
                 Array.Empty<HarnessPayloadIntent>(),
                 new[] { outboxIntent });
 
-            var commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+            HarnessCommitResult commitResult;
+            try
+            {
+                commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HarnessStoreException ex)
+            {
+                _logger?.LogWarning(ex, "workspace trust run transition commit failed");
+                return BoundedError(409, "commit_conflict", "Commit conflict.");
+            }
+
             if (commitResult.Outcome != HarnessCommitOutcome.Committed)
             {
                 return BoundedError(409, "commit_conflict", "Commit conflict.");
@@ -526,7 +558,7 @@ public sealed partial class AgentV1Service
                 return BoundedError(404, "run_not_found", "Run not found.");
             }
 
-            if (currentRun.State.IsTerminal())
+            if (currentRun.State != HarnessRunState.WaitingWorkspaceTrust)
             {
                 return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, MapRunState(currentRun.Status)));
             }
@@ -553,7 +585,21 @@ public sealed partial class AgentV1Service
                 Array.Empty<HarnessPayloadIntent>(),
                 Array.Empty<ConversationOutboxIntent>());
 
-            var commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+            HarnessCommitResult commitResult;
+            try
+            {
+                commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HarnessStoreException ex)
+            {
+                _logger?.LogWarning(ex, "workspace trust run transition commit failed");
+                return BoundedError(409, "commit_conflict", "Commit conflict.");
+            }
+
             if (commitResult.Outcome != HarnessCommitOutcome.Committed)
             {
                 return BoundedError(409, "commit_conflict", "Commit conflict.");
@@ -561,47 +607,6 @@ public sealed partial class AgentV1Service
 
             return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, "cancelled"));
         }
-    }
-
-    private static bool IsWithinPath(string candidate, string root)
-    {
-        var normalizedCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
-        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-        return string.Equals(normalizedCandidate, normalizedRoot, StringComparison.OrdinalIgnoreCase)
-            || normalizedCandidate.StartsWith(
-                normalizedRoot + Path.DirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase)
-            || Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar
-                && normalizedCandidate.StartsWith(
-                    normalizedRoot + Path.AltDirectorySeparatorChar,
-                    StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsProjectRootWorkspace(string canonicalWorkspacePath)
-    {
-        var candidates = new List<string> { Directory.GetCurrentDirectory() };
-        var envRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRoot))
-        {
-            candidates.Add(envRoot);
-        }
-
-        foreach (var candidate in candidates)
-        {
-            try
-            {
-                if (IsWithinPath(canonicalWorkspacePath, candidate))
-                {
-                    return true;
-                }
-            }
-            catch
-            {
-                // Ignore invalid paths
-            }
-        }
-
-        return false;
     }
 
     private static string ResolveWorkspaceFile(string root, string relativePath) =>

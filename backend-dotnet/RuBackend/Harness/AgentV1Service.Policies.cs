@@ -111,7 +111,7 @@ public sealed partial class AgentV1Service
         {
             if (kindProp.ValueKind != JsonValueKind.String)
             {
-                return BoundedError(400, "invalid_kind", "kind must be policy_rule or session_preset.");
+                return BoundedError(400, "invalid_kind", "kind must be policy_rule, session_preset, or session_preset_restore.");
             }
 
             var kind = kindProp.GetString()?.Trim().ToLowerInvariant();
@@ -120,9 +120,14 @@ public sealed partial class AgentV1Service
                 return await HandleSessionPresetAsync(body, isInteractive, cancellationToken).ConfigureAwait(false);
             }
 
+            if (kind == "session_preset_restore")
+            {
+                return await RestoreSessionPresetAsync(body, cancellationToken).ConfigureAwait(false);
+            }
+
             if (kind != "policy_rule")
             {
-                return BoundedError(400, "invalid_kind", "kind must be policy_rule or session_preset.");
+                return BoundedError(400, "invalid_kind", "kind must be policy_rule, session_preset, or session_preset_restore.");
             }
         }
 
@@ -382,13 +387,105 @@ public sealed partial class AgentV1Service
         return new AgentServiceResult(201, new { rule_id = ruleId.Value, scope = scopeRaw, decision = decRaw, matcher = respMatcher, creation_order = creationOrder, expires_at = expiresAt?.ToString("O", CultureInfo.InvariantCulture), version = 1 });
     }
 
+    private static string CreateSessionPresetSnapshotToken()
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        RandomNumberGenerator.Fill(bytes);
+        return $"sps_{Convert.ToHexString(bytes).ToLowerInvariant()}";
+    }
+
+    private async Task<AgentServiceResult> RestoreSessionPresetAsync(
+        JsonElement body,
+        CancellationToken cancellationToken)
+    {
+        var allowedFields = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "kind", "session_id", "snapshot_token"
+        };
+        foreach (var property in body.EnumerateObject())
+        {
+            if (!allowedFields.Contains(property.Name))
+            {
+                return BoundedError(400, "unknown_field", "Unknown session preset restore field.");
+            }
+        }
+
+        if (!body.TryGetProperty("session_id", out var sessionProp)
+            || sessionProp.ValueKind != JsonValueKind.String
+            || !IsSessionId(sessionProp.GetString()!.Trim()))
+        {
+            return BoundedError(400, "invalid_session_id", "session_id invalid.");
+        }
+        if (!body.TryGetProperty("snapshot_token", out var tokenProp)
+            || tokenProp.ValueKind != JsonValueKind.String
+            || !AgentSessionPermissionStore.IsValidSnapshotToken(tokenProp.GetString()))
+        {
+            return BoundedError(400, "invalid_snapshot_token", "snapshot_token invalid.");
+        }
+
+        var sessionId = new SessionId(sessionProp.GetString()!.Trim());
+        var token = tokenProp.GetString()!;
+        SessionPresetRestoreResult result;
+        try
+        {
+            result = await _permissionStore.RestoreSnapshotAsync(
+                    sessionId,
+                    token,
+                    _time.UtcNow,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HarnessStoreException ex)
+        {
+            return BoundedError(500, ex.Code ?? "preset_restore_failed", ex.Message);
+        }
+        catch (Exception)
+        {
+            return BoundedError(500, "preset_restore_failed", "preset_restore_failed");
+        }
+
+        return result.Outcome switch
+        {
+            SessionPresetRestoreOutcome.Restored => RestoreSessionPresetResult(sessionId, result, replayed: false),
+            SessionPresetRestoreOutcome.Replayed => RestoreSessionPresetResult(sessionId, result, replayed: true),
+            SessionPresetRestoreOutcome.NotFound => BoundedError(409, "preset_snapshot_not_found", "preset_snapshot_not_found"),
+            SessionPresetRestoreOutcome.Expired => BoundedError(409, "preset_snapshot_expired", "preset_snapshot_expired"),
+            SessionPresetRestoreOutcome.SessionMismatch => BoundedError(409, "preset_snapshot_mismatch", "preset_snapshot_mismatch"),
+            SessionPresetRestoreOutcome.VersionConflict => BoundedError(409, "preset_version_conflict", "preset_version_conflict"),
+            SessionPresetRestoreOutcome.ReplayConflict => BoundedError(409, "preset_snapshot_replay_conflict", "preset_snapshot_replay_conflict"),
+            _ => BoundedError(500, "preset_restore_failed", "preset_restore_failed"),
+        };
+    }
+
+    private static AgentServiceResult RestoreSessionPresetResult(
+        SessionId sessionId,
+        SessionPresetRestoreResult result,
+        bool replayed)
+    {
+        return new AgentServiceResult(200, new
+        {
+            status = "ok",
+            session_id = sessionId.Value,
+            preset = result.Selection is null
+                ? null
+                : AgentPermissionPresetMapper.ToWireValue(result.Selection.Preset),
+            version = result.Selection?.Version ?? 0,
+            restored = true,
+            replayed,
+        });
+    }
+
     private async Task<AgentServiceResult> HandleSessionPresetAsync(JsonElement body, bool isInteractive, CancellationToken cancellationToken)
     {
         try
         {
             var allowedFields = new HashSet<string>(StringComparer.Ordinal)
             {
-                "kind", "session_id", "preset", "expected_version"
+                "kind", "session_id", "preset", "expected_version", "snapshot_token"
             };
             foreach (var property in body.EnumerateObject())
             {
@@ -434,6 +531,18 @@ public sealed partial class AgentV1Service
                 return BoundedError(400, "invalid_preset_version", "expected_version must be non-negative.");
             }
 
+            var snapshotToken = CreateSessionPresetSnapshotToken();
+            if (body.TryGetProperty("snapshot_token", out var tokenProp))
+            {
+                if (tokenProp.ValueKind != JsonValueKind.String
+                    || !AgentSessionPermissionStore.IsValidSnapshotToken(tokenProp.GetString()))
+                {
+                    return BoundedError(400, "invalid_snapshot_token", "snapshot_token invalid.");
+                }
+
+                snapshotToken = tokenProp.GetString()!;
+            }
+
             if (preset == AgentPermissionPreset.FullAccess && !isInteractive)
             {
                 return BoundedError(403, "interactive_required", "The Full Access preset requires interactive confirmation.");
@@ -446,10 +555,25 @@ public sealed partial class AgentV1Service
             }
 
             var now = _time.UtcNow;
-            var result = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), preset, expectedVersion, now, cancellationToken).ConfigureAwait(false);
-            if (result.Outcome == SessionPermissionOutcome.VersionConflict)
+            var result = await _permissionStore.SetInteractivelyWithSnapshotAsync(
+                    new SessionId(sessionIdRaw),
+                    preset,
+                    expectedVersion,
+                    snapshotToken,
+                    now,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (result.Outcome == SessionPresetMutationOutcome.VersionConflict)
             {
                 return BoundedError(409, "preset_version_conflict", "preset_version_conflict");
+            }
+            if (result.Outcome == SessionPresetMutationOutcome.CapacityExceeded)
+            {
+                return BoundedError(503, "preset_snapshot_capacity_exceeded", "preset_snapshot_capacity_exceeded");
+            }
+            if (result.Outcome == SessionPresetMutationOutcome.TokenConflict)
+            {
+                return BoundedError(409, "preset_snapshot_token_conflict", "preset_snapshot_token_conflict");
             }
 
             if (result.Selection is null)
@@ -458,14 +582,8 @@ public sealed partial class AgentV1Service
             }
 
             var sel = result.Selection;
-            var presetWire = sel.Preset switch
-            {
-                AgentPermissionPreset.Plan => "plan",
-                AgentPermissionPreset.Standard => "standard",
-                AgentPermissionPreset.FullAccess => "full_access",
-                _ => "standard",
-            };
-            return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = presetWire, version = sel.Version, updated_at = sel.UpdatedAt.ToString("O") });
+            var presetWire = AgentPermissionPresetMapper.ToWireValue(sel.Preset);
+            return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = presetWire, version = sel.Version, updated_at = sel.UpdatedAt.ToString("O"), snapshot_token = result.SnapshotToken ?? snapshotToken });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -473,7 +591,7 @@ public sealed partial class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(400, ex.Code, "Unable to update session permissions.");
+            return BoundedError(500, ex.Code, "Unable to update session permissions.");
         }
         catch (Exception)
         {

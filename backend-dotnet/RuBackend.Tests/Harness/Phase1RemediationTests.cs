@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Core.Workspace;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -74,6 +75,11 @@ public sealed class Phase1RemediationTests
             $"trust returned {(int)resp.StatusCode}: {trustBody}");
         var json = JsonDocument.Parse(trustBody).RootElement;
         Assert.Equal("waiting_history", json.GetProperty("status").GetString());
+        await AssertTrustStateAsync(
+            tmp.DataPaths.AgentHarnessDatabase,
+            created.GetProperty("workspace_id").GetString()!,
+            expectedDecision: WorkspaceTrustDecision.Approve,
+            expectedSource: "explicit");
 
         using var getResp = await client.GetAsync($"/agent/v1/runs/{runId}");
         var getJson = await getResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -81,10 +87,78 @@ public sealed class Phase1RemediationTests
     }
 
     [Fact]
-    public async Task Project_root_workspace_auto_trusts_and_maps_legacy_full_to_standard()
+    public async Task Trust_denial_cancels_run_without_writing_trusted_state()
     {
         using var tmp = TempWorkspace.Create();
-        var prevEnv = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(
+            client,
+            sessionId,
+            tmp.Path,
+            "prompt",
+            "key-" + Guid.NewGuid().ToString("N"));
+        var runId = created.GetProperty("run_id").GetString()!;
+
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            new
+            {
+                trust_request_id = created.GetProperty("trust_request_id").GetString(),
+                display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+                decision = "deny",
+            });
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("cancelled", body.GetProperty("status").GetString());
+        await AssertTrustStateAsync(
+            tmp.DataPaths.AgentHarnessDatabase,
+            created.GetProperty("workspace_id").GetString()!,
+            expectedDecision: WorkspaceTrustDecision.Deny,
+            expectedSource: null);
+    }
+
+    [Fact]
+    public async Task Current_directory_workspace_waits_for_explicit_trust()
+    {
+        var workspace = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            ".ru-task10-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            using var tmp = TempWorkspace.Create();
+            using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+            using var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+
+            var created = await CreateRunAsync(
+                client,
+                sessionId,
+                workspace,
+                "prompt",
+                "key-" + Guid.NewGuid().ToString("N"));
+
+            Assert.Equal("waiting_workspace_trust", created.GetProperty("status").GetString());
+            await AssertTrustStateAsync(
+                tmp.DataPaths.AgentHarnessDatabase,
+                created.GetProperty("workspace_id").GetString()!,
+                expectedDecision: null,
+                expectedSource: null);
+        }
+        finally
+        {
+            try { Directory.Delete(workspace, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public async Task RU_PROJECT_ROOT_workspace_waits_for_explicit_trust()
+    {
+        using var tmp = TempWorkspace.Create();
+        var previous = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
         Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", tmp.Path);
         try
         {
@@ -92,26 +166,129 @@ public sealed class Phase1RemediationTests
             using var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
 
-            var runPayload = new
-            {
-                session_id = sessionId,
-                workspace_path = tmp.Path,
-                prompt = "hello",
-                idempotency_key = "key-" + Guid.NewGuid().ToString("N"),
-                preset = "full_access"
-            };
+            var created = await CreateRunAsync(
+                client,
+                sessionId,
+                tmp.Path,
+                "prompt",
+                "key-" + Guid.NewGuid().ToString("N"));
 
-            using var resp = await client.PostAsJsonAsync("/agent/v1/runs", runPayload);
-            var body = await resp.Content.ReadAsStringAsync();
-            Assert.True(resp.IsSuccessStatusCode, $"Expected success, got {resp.StatusCode}: {body}");
-
-            var json = JsonDocument.Parse(body).RootElement;
-            Assert.Equal("waiting_history_user", json.GetProperty("status").GetString());
-            Assert.Equal("standard", json.GetProperty("preset").GetString());
+            Assert.Equal("waiting_workspace_trust", created.GetProperty("status").GetString());
+            await AssertTrustStateAsync(
+                tmp.DataPaths.AgentHarnessDatabase,
+                created.GetProperty("workspace_id").GetString()!,
+                expectedDecision: null,
+                expectedSource: null);
         }
         finally
         {
-            Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", prevEnv);
+            Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", previous);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_full_request_remains_standard_while_workspace_waits_for_trust()
+    {
+        using var tmp = TempWorkspace.Create();
+        var previous = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", tmp.Path);
+        try
+        {
+            using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+            using var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            using var response = await client.PostAsJsonAsync(
+                "/agent/v1/runs",
+                new
+                {
+                    session_id = sessionId,
+                    workspace_path = tmp.Path,
+                    prompt = "prompt",
+                    preset = "full_access",
+                    idempotency_key = "key-" + Guid.NewGuid().ToString("N"),
+                });
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var json = JsonDocument.Parse(body).RootElement;
+
+            Assert.Equal("waiting_workspace_trust", json.GetProperty("status").GetString());
+            Assert.Equal("standard", json.GetProperty("preset").GetString());
+            await AssertTrustStateAsync(
+                tmp.DataPaths.AgentHarnessDatabase,
+                json.GetProperty("workspace_id").GetString()!,
+                expectedDecision: null,
+                expectedSource: null);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", previous);
+        }
+    }
+
+    [Fact]
+    public async Task Project_root_child_workspace_waits_for_explicit_trust()
+    {
+        using var tmp = TempWorkspace.Create();
+        var workspace = Path.Combine(tmp.Path, "child-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+        var previous = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", tmp.Path);
+        try
+        {
+            using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+            using var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+
+            var created = await CreateRunAsync(
+                client,
+                sessionId,
+                workspace,
+                "prompt",
+                "key-" + Guid.NewGuid().ToString("N"));
+
+            Assert.Equal("waiting_workspace_trust", created.GetProperty("status").GetString());
+            await AssertTrustStateAsync(
+                tmp.DataPaths.AgentHarnessDatabase,
+                created.GetProperty("workspace_id").GetString()!,
+                expectedDecision: null,
+                expectedSource: null);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", previous);
+        }
+    }
+
+    [Fact]
+    public async Task Project_root_persistence_failure_does_not_become_approval()
+    {
+        using var tmp = TempWorkspace.Create();
+        var previous = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+        Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", tmp.Path);
+        try
+        {
+            using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+            using var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            await AddTrustPersistenceFailureTriggerAsync(tmp.DataPaths.AgentHarnessDatabase);
+
+            var created = await CreateRunAsync(
+                client,
+                sessionId,
+                tmp.Path,
+                "prompt",
+                "key-" + Guid.NewGuid().ToString("N"));
+
+            Assert.Equal("waiting_workspace_trust", created.GetProperty("status").GetString());
+            await AssertTrustStateAsync(
+                tmp.DataPaths.AgentHarnessDatabase,
+                created.GetProperty("workspace_id").GetString()!,
+                expectedDecision: null,
+                expectedSource: null);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_PROJECT_ROOT", previous);
         }
     }
 
@@ -124,7 +301,7 @@ public sealed class Phase1RemediationTests
             new[]
             {
                 new RuAgent.Harness.Core.ModelToolCall(
-                    null,
+                    "provider_call_1",
                     "list",
                     "1.0.0",
                     JsonDocument.Parse("{\"path\":\".\"}").RootElement),
@@ -260,6 +437,56 @@ public sealed class Phase1RemediationTests
         }
 
         return await resp.Content.ReadFromJsonAsync<JsonElement>();
+    }
+
+    private static async Task AddTrustPersistenceFailureTriggerAsync(string databasePath)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TRIGGER fail_workspace_trust_approval
+            BEFORE UPDATE OF trust_decision ON agent_workspaces
+            WHEN NEW.trust_decision = 0
+            BEGIN
+                SELECT RAISE(ABORT, 'workspace trust persistence failure');
+            END;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task AssertTrustStateAsync(
+        string databasePath,
+        string workspaceId,
+        WorkspaceTrustDecision? expectedDecision,
+        string? expectedSource)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT trust_decision, trust_source FROM agent_workspaces WHERE workspace_id = $workspace_id";
+        command.Parameters.AddWithValue("$workspace_id", workspaceId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var decision = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
+        var source = reader.IsDBNull(1) ? null : reader.GetString(1);
+        var expectedStoredDecision = expectedDecision is null
+            ? (int?)null
+            : (int)expectedDecision.Value;
+        Assert.Equal(expectedStoredDecision, decision);
+        Assert.Equal(expectedSource, source);
     }
 
     private sealed class TempWorkspace : IDisposable

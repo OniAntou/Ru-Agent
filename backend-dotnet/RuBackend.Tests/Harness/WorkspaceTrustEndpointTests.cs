@@ -91,6 +91,115 @@ public sealed class WorkspaceTrustEndpointTests
     }
 
     [Fact]
+    public async Task Trust_apply_rejects_identity_and_display_hash_mismatches_without_writing_source()
+    {
+        var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var tempRoot = Path.Combine(Path.GetTempPath(), "trust-binding-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var resolver = new WindowsWorkspaceIdentityResolver();
+            var identity = await resolver.ResolveAsync(tempRoot);
+            var store = new SqliteWorkspaceStore(fixture.Options);
+            var trustStore = new WorkspaceTrustRequestStore(fixture.Options);
+            var requestId = new TrustRequestId("trust_" + Guid.NewGuid().ToString("N"));
+            var now = DateTimeOffset.UtcNow;
+            var request = new WorkspaceTrustRequest(requestId, identity, now, now.AddMinutes(10));
+            await store.RegisterAsync(
+                new WorkspaceRegistration(
+                    identity,
+                    new WorkspaceRootCiphertext(new byte[12], new byte[] { 1 }, new byte[16])),
+                request,
+                CancellationToken.None);
+            var movedIdentity = new WorkspaceIdentity(
+                identity.WorkspaceId,
+                "volume-moved",
+                "root-file-moved",
+                new string('f', 64));
+
+            var identityResult = await trustStore.ApplyAsync(
+                new WorkspaceTrustResponse(
+                    requestId,
+                    movedIdentity,
+                    identity.DisplayIdentityHash,
+                    WorkspaceTrustDecision.Approve),
+                identity,
+                now.AddMinutes(1),
+                CancellationToken.None);
+            var displayHashResult = await trustStore.ApplyAsync(
+                new WorkspaceTrustResponse(
+                    requestId,
+                    identity,
+                    new string('e', 64),
+                    WorkspaceTrustDecision.Approve),
+                identity,
+                now.AddMinutes(1),
+                CancellationToken.None);
+            var stored = await store.GetAsync(identity.WorkspaceId, CancellationToken.None);
+
+            Assert.False(identityResult.Accepted);
+            Assert.Equal("workspace_identity_mismatch", identityResult.ErrorCode);
+            Assert.False(displayHashResult.Accepted);
+            Assert.Equal("trust_display_hash_mismatch", displayHashResult.ErrorCode);
+            Assert.NotNull(stored);
+            Assert.False(stored!.IsTrusted);
+            Assert.Null(stored.TrustSource);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Trust_persistence_failure_does_not_write_trusted_state()
+    {
+        var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var tempRoot = Path.Combine(Path.GetTempPath(), "trust-persistence-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var resolver = new WindowsWorkspaceIdentityResolver();
+            var identity = await resolver.ResolveAsync(tempRoot);
+            var store = new SqliteWorkspaceStore(fixture.Options);
+            var trustStore = new WorkspaceTrustRequestStore(fixture.Options);
+            var service = new WorkspaceTrustService(resolver, store, trustStore);
+            var requestId = new TrustRequestId("trust_" + Guid.NewGuid().ToString("N"));
+            var now = DateTimeOffset.UtcNow;
+            var request = new WorkspaceTrustRequest(requestId, identity, now, now.AddMinutes(10));
+            await store.RegisterAsync(
+                new WorkspaceRegistration(
+                    identity,
+                    new WorkspaceRootCiphertext(new byte[12], new byte[] { 1 }, new byte[16])),
+                request,
+                CancellationToken.None);
+            await AddTrustFailureTriggerAsync(fixture.Options);
+
+            var error = await Assert.ThrowsAsync<HarnessStoreException>(() => service.DecideAsync(
+                new WorkspaceTrustResponse(
+                    requestId,
+                    identity,
+                    identity.DisplayIdentityHash,
+                    WorkspaceTrustDecision.Approve),
+                identity,
+                now.AddMinutes(1),
+                CancellationToken.None));
+            var stored = await store.GetAsync(identity.WorkspaceId, CancellationToken.None);
+
+            Assert.Equal("workspace_trust_store_failed", error.Code);
+            Assert.NotNull(stored);
+            Assert.False(stored!.IsTrusted);
+            Assert.Null(stored.TrustSource);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task No_model_step_before_approval()
     {
         var fixture = await HarnessStoreTestFixture.CreateAsync();
@@ -179,6 +288,28 @@ public sealed class WorkspaceTrustEndpointTests
 
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async Task AddTrustFailureTriggerAsync(HarnessSqliteOptions options)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = options.DatabasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TRIGGER fail_workspace_trust_approval
+            BEFORE UPDATE OF trust_decision ON agent_workspaces
+            WHEN NEW.trust_decision = 0
+            BEGIN
+                SELECT RAISE(ABORT, 'workspace trust persistence failure');
+            END;
+            """;
+        await command.ExecuteNonQueryAsync();
     }
 
     private sealed class HarnessStoreTestFixture : IAsyncDisposable

@@ -8,6 +8,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
+using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Worker;
 using RuBackend.Worker;
 
@@ -27,6 +28,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     // Conversation blocks stay small; the untrusted runtime references keep the
     // full-fidelity tool output.
     private const int MaxConversationBlockChars = 6_000;
+    private const string DurableToolContinuationPrompt = "Continue from the durable tool results.";
 
     // Tests shrink this window; production retries for the full window.
     internal TimeSpan StartupConnectWindowOverride { get; set; }
@@ -200,7 +202,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         }
 
         var hasImages = images is { Count: > 0 };
-        var (prompt, turns) = BuildConversation(request.Context, hasImages);
+        var (prompt, turns, modelMessages) = BuildConversation(request.Context, hasImages);
         if (selectionFeedbackCode is not null
             && BuildSelectionFeedback(selectionFeedbackCode) is { } selectionFeedback)
         {
@@ -212,10 +214,17 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         var startPayload = new JsonObject
         {
             ["prompt"] = prompt,
-            ["turns"] = turns,
             ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(request.PromptContext),
             ["settings"] = settings,
         };
+        if (modelMessages is not null)
+        {
+            startPayload["model_messages"] = WorkerV2PromptCodec.WriteModelMessages(modelMessages);
+        }
+        else
+        {
+            startPayload["turns"] = turns ?? throw new WorkerProtocolException("model_history_invalid");
+        }
         if (hasImages)
         {
             var imagesArr = new JsonArray();
@@ -386,7 +395,14 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                         var argsJson = argsNode.ToJsonString();
                         using var argsDocument = JsonDocument.Parse(argsJson);
                         var argsElement = argsDocument.RootElement.Clone();
-                        toolCalls.Add(new ModelToolCall(providerCallId, toolId, toolVersion, argsElement));
+                        try
+                        {
+                            toolCalls.Add(new ModelToolCall(providerCallId!, toolId, toolVersion, argsElement));
+                        }
+                        catch (ArgumentException)
+                        {
+                            throw new WorkerProtocolException("invalid_step");
+                        }
                     }
 
                     AssistantFinishReason mappedReason = finishReason switch
@@ -414,7 +430,15 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                             throw new WorkerProtocolException("invalid_step");
                         }
                     }
-                    finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0, usage);
+                    try
+                    {
+                        finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0, usage);
+                    }
+                    catch (ArgumentException)
+                    {
+                        throw new WorkerProtocolException("invalid_step");
+                    }
+
                     try
                     {
                         finalReceipt = WorkerV2PromptCodec.ReadReceipt(
@@ -517,15 +541,98 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Projects the run context into the worker conversation shape. Each
-    /// user-side block (the task, a tool result, a compacted summary) pairs
-    /// with the assistant step that followed it, and the newest user-side block
-    /// becomes the prompt. Tool exchanges therefore stay in the dialogue as
-    /// "assistant call -> untrusted tool output", which is what lets the model
-    /// know its own work already happened instead of re-issuing it.
-    /// </summary>
-    private static (string Prompt, JsonArray Turns) BuildConversation(
+    private static (string Prompt, JsonArray? Turns, IReadOnlyList<ModelTurn>? Messages) BuildConversation(
+        ModelContextSnapshot context,
+        bool hasImages)
+    {
+        try
+        {
+            var (prompt, messages) = BuildTypedConversation(context, hasImages);
+            return (prompt, null, messages);
+        }
+        catch (WorkerProtocolException)
+        {
+            throw;
+        }
+        catch (ArgumentException)
+        {
+            throw new WorkerProtocolException("model_history_invalid");
+        }
+    }
+
+    private static (string Prompt, IReadOnlyList<ModelTurn> Messages) BuildTypedConversation(
+        ModelContextSnapshot context,
+        bool hasImages)
+    {
+        var units = new List<List<ModelTurn>>();
+        var pendingUserBlocks = new List<string>();
+        var pendingPromptBlocks = new List<string>();
+        var pendingCalls = new Queue<ModelFunctionCall>();
+        var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var providerIdsByToolCall = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in context.Entries)
+        {
+            if (entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.System)
+            {
+                EnsureNoPendingCalls(pendingCalls);
+                if (!string.IsNullOrWhiteSpace(entry.Content))
+                {
+                    AddPendingUserBlocks(units, pendingUserBlocks);
+                    units.Add(new List<ModelTurn> { new("system", entry.Content) });
+                }
+                continue;
+            }
+
+            if (entry.Kind == ModelContextEntryKind.Text && entry.Role == ModelContextRole.User)
+            {
+                EnsureNoPendingCalls(pendingCalls);
+                if (!string.IsNullOrWhiteSpace(entry.Content))
+                {
+                    pendingUserBlocks.Add(entry.Content);
+                    pendingPromptBlocks.Add(entry.Content);
+                }
+                continue;
+            }
+
+            if (entry.Kind == ModelContextEntryKind.Summary && !string.IsNullOrWhiteSpace(entry.Content))
+            {
+                EnsureNoPendingCalls(pendingCalls);
+                var summary = ClampConversationBlock(
+                    $"compacted history summary:\n{entry.Content}",
+                    MaxConversationBlockChars);
+                AddPendingUserBlocks(units, pendingUserBlocks);
+                units.Add(new List<ModelTurn> { new("user", summary) });
+                pendingPromptBlocks.Add(summary);
+                continue;
+            }
+
+            if (entry.Kind == ModelContextEntryKind.AssistantStep && entry.AssistantStep is { } step)
+            {
+                EnsureNoPendingCalls(pendingCalls);
+                if (step.ToolCalls.Count > 0 || !string.IsNullOrWhiteSpace(step.Text))
+                {
+                    pendingPromptBlocks.Clear();
+                }
+                AddAssistantMessages(units, pendingUserBlocks, step, providerCallIds, pendingCalls);
+                continue;
+            }
+
+            if (entry.Kind == ModelContextEntryKind.ToolResult)
+            {
+                AddToolResultMessage(units, entry, pendingCalls, providerIdsByToolCall);
+            }
+        }
+
+        if (pendingCalls.Count > 0)
+        {
+            throw new WorkerProtocolException("model_history_invalid");
+        }
+
+        var messages = FitModelMessagesToBudget(units);
+        return (ResolveTypedPrompt(messages, pendingPromptBlocks, hasImages), messages);
+    }
+
+    private static (string Prompt, JsonArray Turns) BuildLegacyConversation(
         ModelContextSnapshot context,
         bool hasImages)
     {
@@ -590,8 +697,6 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             return (ClampPendingToPromptBudget(pending, turns), turns);
         }
 
-        // No user-side block is awaiting a reply: fall back to the last user
-        // text so continuation turns keep a meaningful prompt.
         var fallback = context.Entries
             .LastOrDefault(entry => entry.Kind == ModelContextEntryKind.Text
                 && entry.Role == ModelContextRole.User)?.Content;
@@ -600,21 +705,164 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             return (fallback, turns);
         }
 
-        if (hasImages)
-        {
-            return (string.Empty, turns);
-        }
-
-        // Context must contain at least one user-side entry for the model step.
-        // If none is found the context assembly pipeline failed to include the
-        // user prompt — surface a clear error rather than sending a meaningless
-        // placeholder that confuses the model.
-        throw new WorkerProtocolException("missing_user_prompt");
+        return hasImages
+            ? (string.Empty, turns)
+            : throw new WorkerProtocolException("missing_user_prompt");
     }
 
-    internal static (string Prompt, JsonArray Turns) BuildConversationForTests(
+    internal static (string Prompt, JsonArray? Turns, IReadOnlyList<ModelTurn>? Messages) BuildConversationForTests(
         ModelContextSnapshot context,
         bool hasImages = false) => BuildConversation(context, hasImages);
+
+    private static void EnsureNoPendingCalls(Queue<ModelFunctionCall> pendingCalls)
+    {
+        if (pendingCalls.Count > 0)
+        {
+            throw new WorkerProtocolException("model_history_invalid");
+        }
+    }
+
+    private static void AddAssistantMessages(
+        List<List<ModelTurn>> units,
+        List<string> pendingUserBlocks,
+        AssistantStep step,
+        HashSet<string> providerCallIds,
+        Queue<ModelFunctionCall> pendingCalls)
+    {
+        if (step.ToolCalls.Count == 0)
+        {
+            if (string.IsNullOrWhiteSpace(step.Text))
+            {
+                return;
+            }
+
+            AddPendingUserBlocks(units, pendingUserBlocks);
+            units.Add(new List<ModelTurn> { new("assistant", step.Text) });
+            return;
+        }
+
+        AddPendingUserBlocks(units, pendingUserBlocks);
+        var calls = new List<ModelFunctionCall>(step.ToolCalls.Count);
+        foreach (var call in step.ToolCalls)
+        {
+            var providerCallId = call.ProviderCallId
+                ?? throw new WorkerProtocolException("model_history_invalid");
+            if (!providerCallIds.Add(providerCallId))
+            {
+                throw new WorkerProtocolException("model_history_invalid");
+            }
+
+            var functionCall = new ModelFunctionCall(providerCallId, call.ToolId, call.Arguments);
+            calls.Add(functionCall);
+            pendingCalls.Enqueue(functionCall);
+        }
+
+        units.Add(new List<ModelTurn>
+        {
+            new("assistant", step.Text ?? string.Empty, calls),
+        });
+    }
+
+    private static void AddPendingUserBlocks(
+        List<List<ModelTurn>> units,
+        List<string> pendingUserBlocks)
+    {
+        foreach (var block in pendingUserBlocks)
+        {
+            units.Add(new List<ModelTurn> { new("user", block) });
+        }
+
+        pendingUserBlocks.Clear();
+    }
+
+    private static void AddToolResultMessage(
+        List<List<ModelTurn>> units,
+        ModelContextEntry entry,
+        Queue<ModelFunctionCall> pendingCalls,
+        Dictionary<string, string> providerIdsByToolCall)
+    {
+        var receipt = entry.ToolReceipt
+            ?? throw new WorkerProtocolException("model_history_invalid");
+        if (pendingCalls.Count == 0 || units.Count == 0)
+        {
+            throw new WorkerProtocolException("model_history_invalid");
+        }
+
+        var providerCallId = receipt.ProviderCallId
+            ?? throw new WorkerProtocolException("model_history_invalid");
+        var call = pendingCalls.Peek();
+        if (!string.Equals(call.Id, providerCallId, StringComparison.Ordinal)
+            || !providerIdsByToolCall.TryAdd(receipt.ToolCallId.Value, providerCallId))
+        {
+            throw new WorkerProtocolException("model_history_invalid");
+        }
+
+        pendingCalls.Dequeue();
+        units[^1].Add(new ModelTurn(
+            "tool",
+            ClampConversationBlock(entry.Content ?? string.Empty, MaxConversationBlockChars),
+            toolCallId: call.Id,
+            toolResultCode: receipt.Code));
+    }
+
+    private static string ResolveTypedPrompt(
+        IReadOnlyList<ModelTurn> messages,
+        List<string> pendingPromptBlocks,
+        bool hasImages)
+    {
+        if (pendingPromptBlocks.Count > 0)
+        {
+            return ClampConversationBlock(
+                string.Join("\n\n", pendingPromptBlocks),
+                WorkerV2Contracts.MaxPromptChars);
+        }
+
+        if (messages.Count > 0 && messages[^1].Role == "tool")
+        {
+            return DurableToolContinuationPrompt;
+        }
+
+        var fallback = messages.LastOrDefault(message => message.Role == "user")?.Content;
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
+        }
+
+        return hasImages
+            ? string.Empty
+            : throw new WorkerProtocolException("missing_user_prompt");
+    }
+
+    private static IReadOnlyList<ModelTurn> FitModelMessagesToBudget(
+        List<List<ModelTurn>> units)
+    {
+        var selected = new List<List<ModelTurn>>();
+        for (var index = units.Count - 1; index >= 0; index--)
+        {
+            var unit = units[index];
+            var candidateMessages = selected
+                .SelectMany(selectedUnit => selectedUnit)
+                .Concat(unit)
+                .ToArray();
+            var candidateCount = candidateMessages.Length;
+            var candidateBytes = ModelRequest.MeasureModelMessagesBytes(candidateMessages);
+            if (candidateCount > WorkerV2Contracts.MaxModelMessages
+                || candidateBytes > WorkerV2Contracts.MaxModelMessagesBytes)
+            {
+                if (selected.Count == 0)
+                {
+                    throw new WorkerProtocolException("model_history_too_large");
+                }
+
+                break;
+            }
+
+            selected.Add(unit);
+        }
+
+        selected.Reverse();
+        return selected.SelectMany(unit => unit).ToArray();
+    }
 
     /// <summary>
     /// Model-facing feedback for the bounded retry after a rejected tool
@@ -625,13 +873,11 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     internal static string? BuildSelectionFeedback(string errorCode) => errorCode switch
     {
         "model_tool_call_invalid" =>
-            "Your previous tool call was rejected: its arguments were incomplete or invalid. Re-issue exactly one tool call with complete JSON arguments.",
-        "model_tool_call_multiple" =>
-            "Your previous reply was rejected: only one tool call is allowed per step. Re-issue exactly one tool call.",
+            "Your previous tool call was rejected: its arguments were incomplete or invalid. Re-issue the call with complete JSON arguments.",
         "model_tool_call_unavailable" =>
-            "Your previous tool call was rejected: that tool is not advertised. Re-issue exactly one tool call for an advertised tool.",
+            "Your previous tool call was rejected: that tool is not advertised. Re-issue the call for an advertised tool.",
         "invalid_selection" =>
-            "Your previous reply was rejected: the tool selection was malformed. Re-issue exactly one valid JSON tool selection, or answer in plain text.",
+            "Your previous reply was rejected: the tool selection was malformed. Re-issue one valid JSON tool selection, or answer in plain text.",
         _ => null,
     };
 
@@ -765,7 +1011,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 || !seen.Add(key)
                 || !string.Equals(definition.Scope, capability.Scope, StringComparison.Ordinal)
                 || !string.Equals(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest, StringComparison.Ordinal)
-                || !string.Equals(definition.InputSchema.ToJsonString(CompactJson), capability.InputSchemaJson, StringComparison.Ordinal))
+                || !string.Equals(AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema), capability.InputSchemaJson, StringComparison.Ordinal))
             {
                 throw new AgentProtocolException("tool_contract_mismatch");
             }

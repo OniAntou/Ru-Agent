@@ -211,6 +211,8 @@ internal sealed class AgentRunLifecycle
             throw new InvalidOperationException("invalid_run_state");
         }
 
+        var resolutionTarget = await ReadResolutionTargetAsync(runId, cancellationToken)
+            .ConfigureAwait(false);
         var stateChange = AgentRunStateMachine.TryTransition(
             run.Status,
             HarnessRunTransition.ApplyReconciliation);
@@ -239,12 +241,49 @@ internal sealed class AgentRunLifecycle
                     new HarnessEventIntent(
                         _ids.NewEventId(),
                         HarnessEventKind.ReconciliationResolved,
+                        modelStepId: resolutionTarget?.ModelStepId,
+                        toolCallId: resolutionTarget?.ToolCallId,
+                        executionId: resolutionTarget?.ExecutionId,
                         safeCode: command.ToWireToken()),
                 },
                 Array.Empty<HarnessPayloadIntent>(),
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<ReconciliationResolutionTarget?> ReadResolutionTargetAsync(
+        RunId runId,
+        CancellationToken cancellationToken)
+    {
+        ReconciliationResolutionTarget? target = null;
+        await foreach (var envelope in _store
+            .ReadEventsAsync(runId, 0, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            var item = envelope.Event;
+            if (!string.Equals(item.Kind, "reconciliation.required", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (item.ModelStepId is null && item.ToolCallId is null && item.ExecutionId is null)
+            {
+                target = null;
+                continue;
+            }
+
+            if (item.ModelStepId is not { } modelStepId
+                || item.ToolCallId is not { } toolCallId
+                || item.ExecutionId is not { } executionId)
+            {
+                throw new InvalidOperationException("reconciliation_resolution_target_invalid");
+            }
+
+            target = new ReconciliationResolutionTarget(modelStepId, toolCallId, executionId);
+        }
+
+        return target;
     }
 
     private async Task<AgentRun> RequireRunAsync(
@@ -281,6 +320,11 @@ internal sealed class AgentRunLifecycle
             _ => throw new InvalidOperationException("unknown_commit_outcome"),
         };
     }
+
+    private sealed record ReconciliationResolutionTarget(
+        ModelStepId ModelStepId,
+        ToolCallId ToolCallId,
+        ExecutionId ExecutionId);
 
     private static string StateCode(HarnessRunState state) => state switch
     {

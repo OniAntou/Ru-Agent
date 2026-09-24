@@ -1,9 +1,17 @@
 ---
 status: accepted
 date: 2026-08-29
+current_extension: ADR-0011 model autonomy and workspace trust boundary
+  (`0011-model-autonomy-and-workspace-trust-boundary.md`, accepted
+  2026-09-24).
 ---
 
 # RuAgentBroker is the single tool execution authority
+
+> Current execution profile: [ADR 0011](0011-model-autonomy-and-workspace-trust-boundary.md)
+> keeps Broker as the sole execution authority and binds its canonical profile
+> fallback to the explicit workspace trust decision. This ADR's original
+> rationale and migration history remain unchanged.
 
 Ru had two parallel tool implementations: the in-process `HarnessToolGateway`
 (~4,300 lines inside the ASP.NET Core web host) and the process-isolated

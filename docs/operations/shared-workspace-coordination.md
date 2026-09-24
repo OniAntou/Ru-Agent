@@ -5,6 +5,27 @@ workspace policy selected through `PUT /agent/v1/workspaces/{workspaceId}/concur
 The coordinator persists a monotonic commit sequence in SQLite and uses a
 renewable membership lease for each active Ru run.
 
+## Trust and preset boundary
+
+Workspace trust is independent of workspace coordination and autonomy. The
+canonical root must receive one explicit trust decision for its
+`WorkspaceIdentity`; the GUI confirms it and CLI `run`/`chat` use
+`--trust-workspace`. A moved or recreated root is a new identity and must be
+trusted again. Session-scoped folder grants and preset selections are not shared
+with another/forked session, while the explicit trust decision follows the
+canonical identity. Full Access additionally requires the GUI gate or CLI
+`--confirm-full-access`.
+
+The canonical profiles are `plan` (workspace read/Web auto; terminal and
+mutation deny), `standard` (bounded-local in-workspace mutation auto;
+external/escape ask), and `full_access` (external structured file and arbitrary
+terminal auto; structured protected paths deny). Full Access terminal runs as
+the current Windows user, can affect data outside the workspace, and is not a
+network/path sandbox. Hard timeout, output cap, cancellation, and process-tree
+cleanup remain enforced. Shared coordination still serializes known claims and
+journals authoritative external changes, but it cannot infer every side effect
+of an arbitrary command.
+
 External tools such as Codex, Opencode, editors, and build processes are not
 identified by process name. Ru detects their file changes by comparing an
 authoritative SHA-256 hash with the expected workspace hash and records the

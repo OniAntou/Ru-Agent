@@ -209,7 +209,7 @@ public sealed class AgentApprovalLiveDeliveryTests
             new[]
             {
                 new ModelToolCall(
-                    null,
+                    "provider_call_1",
                     toolId,
                     "1.0.0",
                     JsonDocument.Parse(node.ToJsonString()).RootElement.Clone()),

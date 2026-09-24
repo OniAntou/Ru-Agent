@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using Xunit;
 
@@ -282,6 +283,239 @@ public sealed class AgentSessionPermissionEndpointTests
         Assert.Equal((HttpStatusCode)409, resp2.StatusCode);
         var json = await resp2.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("preset_version_conflict", json.GetProperty("error_code").GetString());
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear();
+    }
+
+    [Fact]
+    public async Task SessionPreset_CapacityRejectsBeforeMutationWithoutEviction()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        var sessionId = await CreateSessionAsync(client);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(10).ToString("O");
+        var createdAt = DateTimeOffset.UtcNow.ToString("O");
+        await using (var connection = new SqliteConnection($"Data Source={dataPaths.AgentHarnessDatabase};Mode=ReadWrite;Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                INSERT INTO agent_session_preset_snapshots(
+                    snapshot_token, session_id, had_previous_selection,
+                    previous_preset, previous_permission_profile_version,
+                    previous_version, previous_updated_at_utc,
+                    applied_preset, applied_permission_profile_version,
+                    applied_version, expires_at_utc, consumed_at_utc, created_at_utc)
+                VALUES ($token, $session_id, 0, NULL, NULL, NULL, NULL,
+                    'standard', 1, 1, $expires_at, NULL, $created_at)
+                """;
+            var token = command.Parameters.Add("$token", SqliteType.Text);
+            var capacitySession = command.Parameters.Add("$session_id", SqliteType.Text);
+            var expires = command.Parameters.Add("$expires_at", SqliteType.Text);
+            var created = command.Parameters.Add("$created_at", SqliteType.Text);
+            expires.Value = expiresAt;
+            created.Value = createdAt;
+            for (var i = 0; i < 1024; i++)
+            {
+                token.Value = "sps_" + i.ToString("x32");
+                capacitySession.Value = "capacity-" + i.ToString("x32");
+                await command.ExecuteNonQueryAsync();
+            }
+            await transaction.CommitAsync();
+        }
+
+        using var response = await client.PostAsJsonAsync("/agent/v1/policies", new
+        {
+            kind = "session_preset",
+            session_id = sessionId,
+            preset = "full_access",
+            expected_version = 0,
+            snapshot_token = "sps_" + new string('f', 32)
+        });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("preset_snapshot_capacity_exceeded", body.GetProperty("error_code").GetString());
+        await using var verify = new SqliteConnection($"Data Source={dataPaths.AgentHarnessDatabase};Mode=ReadOnly;Pooling=False");
+        await verify.OpenAsync();
+        await using var count = verify.CreateCommand();
+        count.CommandText = "SELECT (SELECT COUNT(*) FROM agent_session_settings WHERE session_id = $session_id), (SELECT COUNT(*) FROM agent_session_preset_snapshots)";
+        count.Parameters.AddWithValue("$session_id", sessionId);
+        await using var reader = await count.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(0L, reader.GetInt64(0));
+        Assert.Equal(1024L, reader.GetInt64(1));
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnection.ClearAllPools();
+    }
+
+    [Fact]
+    public async Task SessionPreset_StorageFailureIsReturnedAsServerError()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        var sessionId = await CreateSessionAsync(client);
+
+        await using (var connection = new SqliteConnection($"Data Source={dataPaths.AgentHarnessDatabase};Mode=ReadWrite;Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TRIGGER fail_session_preset_insert
+                BEFORE INSERT ON agent_session_settings
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced storage failure');
+                END;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var response = await client.PostAsJsonAsync("/agent/v1/policies", new
+        {
+            kind = "session_preset",
+            session_id = sessionId,
+            preset = "standard",
+            expected_version = 0
+        });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("harness_permission_store_failed", body.GetProperty("error_code").GetString());
+
+        await using (var connection = new SqliteConnection($"Data Source={dataPaths.AgentHarnessDatabase};Mode=ReadWrite;Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DROP TRIGGER fail_session_preset_insert";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear();
+    }
+
+    [Fact]
+    public async Task SessionPreset_SnapshotRestoresNewSessionToNoSelection()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        var sessionId = await CreateSessionAsync(client);
+
+        using var setResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "standard", expected_version = 0 });
+        var setJson = await setResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var snapshotToken = setJson.GetProperty("snapshot_token").GetString()!;
+        Assert.True(setResponse.IsSuccessStatusCode);
+        Assert.False(string.IsNullOrWhiteSpace(snapshotToken));
+
+        using var restoreResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset_restore", session_id = sessionId, snapshot_token = snapshotToken });
+        var restoreJson = await restoreResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(restoreResponse.IsSuccessStatusCode);
+        Assert.Equal("ok", restoreJson.GetProperty("status").GetString());
+        Assert.Equal(0, restoreJson.GetProperty("version").GetInt64());
+
+        using var recreateResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 0 });
+        Assert.True(recreateResponse.IsSuccessStatusCode);
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear();
+    }
+
+    [Fact]
+    public async Task SessionPreset_SnapshotRestoresPriorSelection()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        var sessionId = await CreateSessionAsync(client);
+
+        using var firstResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "standard", expected_version = 0 });
+        using var secondResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 1 });
+        var secondJson = await secondResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(firstResponse.IsSuccessStatusCode);
+        Assert.True(secondResponse.IsSuccessStatusCode);
+
+        using var restoreResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset_restore", session_id = sessionId, snapshot_token = secondJson.GetProperty("snapshot_token").GetString() });
+        var restoreJson = await restoreResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(restoreResponse.IsSuccessStatusCode);
+        Assert.Equal("standard", restoreJson.GetProperty("preset").GetString());
+        Assert.Equal(1, restoreJson.GetProperty("version").GetInt64());
+
+        using var updateResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "standard", expected_version = 1 });
+        Assert.True(updateResponse.IsSuccessStatusCode);
+
+        try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+        SqliteConnectionClear();
+    }
+
+    [Fact]
+    public async Task SessionPreset_UsesClientTokenAndRestoreReplayIsSafe()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        var sessionId = await CreateSessionAsync(client);
+        var token = "sps_" + new string('c', 32);
+
+        using var setResponse = await client.PostAsJsonAsync("/agent/v1/policies", new
+        {
+            kind = "session_preset",
+            session_id = sessionId,
+            preset = "standard",
+            expected_version = 0,
+            snapshot_token = token
+        });
+        var setJson = await setResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(setResponse.IsSuccessStatusCode);
+        Assert.Equal(token, setJson.GetProperty("snapshot_token").GetString());
+
+        using var firstRestore = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset_restore", session_id = sessionId, snapshot_token = token });
+        var firstJson = await firstRestore.Content.ReadFromJsonAsync<JsonElement>();
+        using var replay = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset_restore", session_id = sessionId, snapshot_token = token });
+        var replayJson = await replay.Content.ReadFromJsonAsync<JsonElement>();
+        using var later = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 0, snapshot_token = "sps_" + new string('d', 32) });
+        using var blockedReplay = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset_restore", session_id = sessionId, snapshot_token = token });
+
+        Assert.True(firstRestore.IsSuccessStatusCode);
+        Assert.Equal("ok", firstJson.GetProperty("status").GetString());
+        Assert.True(replay.IsSuccessStatusCode);
+        Assert.True(replayJson.GetProperty("replayed").GetBoolean());
+        Assert.True(later.IsSuccessStatusCode);
+        Assert.Equal((HttpStatusCode)409, blockedReplay.StatusCode);
+    }
+
+    [Fact]
+    public async Task SessionPreset_RestoreRejectsConcurrentVersionChange()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        using var factory = new BackendWebApplicationFactory(dataPaths: dataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        client.DefaultRequestHeaders.Add("X-Interactive-Confirmed", "true");
+        var sessionId = await CreateSessionAsync(client);
+
+        using var firstResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "standard", expected_version = 0 });
+        var firstJson = await firstResponse.Content.ReadFromJsonAsync<JsonElement>();
+        using var secondResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 1 });
+        Assert.True(firstResponse.IsSuccessStatusCode);
+        Assert.True(secondResponse.IsSuccessStatusCode);
+
+        using var restoreResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset_restore", session_id = sessionId, snapshot_token = firstJson.GetProperty("snapshot_token").GetString() });
+        var restoreJson = await restoreResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal((HttpStatusCode)409, restoreResponse.StatusCode);
+        Assert.Equal("preset_version_conflict", restoreJson.GetProperty("error_code").GetString());
+
+        using var currentResponse = await client.PostAsJsonAsync("/agent/v1/policies", new { kind = "session_preset", session_id = sessionId, preset = "plan", expected_version = 2 });
+        Assert.True(currentResponse.IsSuccessStatusCode);
 
         try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
         SqliteConnectionClear();

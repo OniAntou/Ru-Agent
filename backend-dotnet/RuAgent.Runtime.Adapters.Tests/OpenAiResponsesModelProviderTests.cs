@@ -315,8 +315,18 @@ public sealed class OpenAiResponsesModelProviderTests
         var handler = new RecordingHandler(_ => throw new InvalidOperationException("HTTP must not run"));
         var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
 
+        IReadOnlyList<ModelTurn> turns = role == "tool"
+            ? new[]
+            {
+                new ModelTurn(
+                    "assistant",
+                    string.Empty,
+                    [new ModelFunctionCall("call_1", "read", System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone())]),
+                new ModelTurn("tool", "hidden", toolCallId: "call_1", toolResultCode: "ok"),
+            }
+            : new[] { new ModelTurn(role, "hidden") };
         var ex = await Assert.ThrowsAsync<ModelProviderException>(async () =>
-            await CollectAsync(provider.GenerateAsync(Request(turns: [new ModelTurn(role, "hidden")]), CancellationToken.None)));
+            await CollectAsync(provider.GenerateAsync(Request(turns: turns), CancellationToken.None)));
 
         Assert.Equal("malformed_payload", ex.Code);
     }

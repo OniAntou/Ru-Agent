@@ -79,6 +79,7 @@ public sealed class FileSearchAdapter
                 if (fileGlobRegex is not null && !fileGlobRegex.IsMatch(relative) && !fileGlobRegex.IsMatch(Path.GetFileName(relative))) continue;
                 try
                 {
+                    HardLinkGuard.RequireSingleLink(resolved.CanonicalPath);
                     var info = new FileInfo(resolved.CanonicalPath);
                     if (!info.Exists || info.Length > FileToolLimits.MaxSearchFileSize) continue;
                     if (candidateBytes + info.Length > FileToolLimits.MaxTotalSearchBytes)
@@ -112,9 +113,10 @@ public sealed class FileSearchAdapter
     {
         try
         {
+            HardLinkGuard.RequireSingleLink(path);
             var text = await Task.Run(() =>
             {
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
+                using var stream = HardLinkGuard.OpenRead(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
                 return ReadSearchText(stream, FileToolLimits.MaxSearchFileSize, 8000, cancellationToken);
             }, cancellationToken).ConfigureAwait(false);
             if (text is null) return FileSearchOutcome.SkippedFile;

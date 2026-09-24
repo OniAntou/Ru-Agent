@@ -18,11 +18,13 @@ public sealed partial class AgentConnection
     private readonly Func<CapabilityProfile, IReadOnlyList<AgentToolCapability>> _capabilityProvider;
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _toolHandler;
+    private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _authenticatedToolHandler;
     private readonly Action<string>? _sessionClosedHandler;
     private readonly PendingApprovalStore _pendingV2;
     private readonly ApprovalTokenService _authTokens;
     private readonly IReadOnlyList<string>? _advertisedCapabilities;
-    private readonly IWorkspaceCleanlinessProvider? _cleanliness;
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly SemaphoreSlim _lifecycleGate;
 
     public AgentConnection(
         BrokerSession session,
@@ -33,7 +35,8 @@ public sealed partial class AgentConnection
         PendingApprovalStore? pendingV2Store = null,
         ApprovalTokenService? approvalTokenService = null,
         IReadOnlyList<string>? advertisedCapabilities = null,
-        IWorkspaceCleanlinessProvider? cleanliness = null)
+        SemaphoreSlim? lifecycleGate = null,
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? authenticatedToolHandler = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _capabilityProvider = capabilityProvider ?? throw new ArgumentNullException(nameof(capabilityProvider));
@@ -41,6 +44,7 @@ public sealed partial class AgentConnection
             executableScopes ?? throw new ArgumentNullException(nameof(executableScopes)),
             StringComparer.Ordinal);
         _toolHandler = toolHandler;
+        _authenticatedToolHandler = authenticatedToolHandler;
         _sessionClosedHandler = sessionClosedHandler;
         // State is scoped to the BrokerHost by callers that need reconnect support;
         // a directly constructed connection gets private state instead of sharing
@@ -48,7 +52,7 @@ public sealed partial class AgentConnection
         _pendingV2 = pendingV2Store ?? new PendingApprovalStore();
         _authTokens = approvalTokenService ?? new ApprovalTokenService();
         _advertisedCapabilities = advertisedCapabilities;
-        _cleanliness = cleanliness;
+        _lifecycleGate = lifecycleGate ?? new SemaphoreSlim(1, 1);
     }
 
     internal PendingApprovalStore PendingV2Store => _pendingV2;
@@ -59,6 +63,9 @@ public sealed partial class AgentConnection
     {
         ArgumentNullException.ThrowIfNull(socket);
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
+        using var dispatchCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var dispatched = new HashSet<Task>();
+        var dispatchSync = new object();
         try
         {
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
@@ -94,13 +101,135 @@ public sealed partial class AgentConnection
                     continue;
                 }
 
+                if (IsConcurrentToolRequest(request.MessageType))
+                {
+                    var dispatch = DispatchRequestAsync(socket, request, dispatchCancellation.Token);
+                    lock (dispatchSync)
+                    {
+                        dispatched.Add(dispatch);
+                    }
+
+                    _ = dispatch.ContinueWith(
+                        completed =>
+                        {
+                            lock (dispatchSync)
+                            {
+                                dispatched.Remove(completed);
+                            }
+                        },
+                        CancellationToken.None,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default);
+                    continue;
+                }
+
                 var reply = await HandleAsync(request, cancellationToken).ConfigureAwait(false);
                 await SendAsync(socket, reply, cancellationToken).ConfigureAwait(false);
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         finally
         {
+            dispatchCancellation.Cancel();
+            Task[] pending;
+            lock (dispatchSync)
+            {
+                pending = dispatched.ToArray();
+            }
+
+            try
+            {
+                await Task.WhenAll(pending).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+            }
+
             ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static bool IsConcurrentToolRequest(string messageType) =>
+        messageType is AgentMessageTypes.ToolEvaluate
+            or AgentMessageTypes.ToolExecute;
+
+    private async Task DispatchRequestAsync(
+        WebSocket socket,
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        AgentEnvelope reply;
+        try
+        {
+            reply = await HandleAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            reply = ToolError(request, "tool_handler_failed", "tool request failed");
+        }
+
+        try
+        {
+            await SendAsync(socket, reply, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception error) when (error is
+            WebSocketException
+            or IOException
+            or ObjectDisposedException
+            or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task<AgentEnvelope> HandleLegacyToolRequestAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        if (!_session.Owns(request.SessionId))
+        {
+            return ToolError(request, "broker_not_ready", "session is not open");
+        }
+
+        if (_toolHandler is null)
+        {
+            return ToolError(request, "broker_not_ready", "tool execution is not registered");
+        }
+
+        try
+        {
+            return await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return ToolError(request, "tool_handler_failed", "tool request failed");
+        }
+    }
+
+    private async Task<AgentEnvelope> WithLifecycleAsync(
+        Func<Task<AgentEnvelope>> operation,
+        CancellationToken cancellationToken)
+    {
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await operation().ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
         }
     }
 
@@ -114,34 +243,51 @@ public sealed partial class AgentConnection
         switch (request.MessageType)
         {
             case AgentMessageTypes.Hello:
-                return HandleHello(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(HandleHello(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.Health:
                 return Reply(request, AgentMessageTypes.HealthOk, new JsonObject
             {
                 ["status"] = "ready",
             });
             case AgentMessageTypes.SessionOpen:
-                return OpenSession(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(OpenSession(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.SessionClose:
-                return CloseSession(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(CloseSession(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.RunOpen:
-                return HandleRunOpen(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(HandleRunOpen(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.RunPolicyRebind:
-                return HandleRunPolicyRebind(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(HandleRunPolicyRebind(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.RunClose:
-                return HandleRunClose(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(HandleRunClose(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.ToolRequest:
             case AgentMessageTypes.ApprovalResponse:
-                if (!_session.Owns(request.SessionId))
-                {
-                    return ToolError(request, "broker_not_ready", "session is not open");
-                }
-
-                return _toolHandler is null
-                    ? ToolError(request, "broker_not_ready", "tool execution is not registered")
-                    : await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+                return await WithLifecycleAsync(
+                        () => HandleLegacyToolRequestAsync(request, cancellationToken),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.ToolEvaluate:
-                return await HandleToolEvaluateAsync(request, cancellationToken).ConfigureAwait(false);
+                return await WithLifecycleAsync(
+                        () => HandleToolEvaluateAsync(request, cancellationToken),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.ToolExecute:
                 return await HandleToolExecuteAsync(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.ToolOutputDelta:
@@ -158,9 +304,15 @@ public sealed partial class AgentConnection
                     return ToolError(request, "broker_not_ready", "session is not open");
                 }
 
-                return await HandleApprovalRespondAsync(request, cancellationToken).ConfigureAwait(false);
+                return await WithLifecycleAsync(
+                        () => HandleApprovalRespondAsync(request, cancellationToken),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.SessionGrantsRevoke:
-                return HandleSessionGrantsRevoke(request);
+                return await WithLifecycleAsync(
+                        () => Task.FromResult(HandleSessionGrantsRevoke(request)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             case AgentMessageTypes.Cancel:
                 return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
             {
@@ -341,14 +493,22 @@ public sealed partial class AgentConnection
                 ["safe_summary"] = "invalid agent envelope",
             });
 
-    private static async Task SendAsync(
+    private async Task SendAsync(
         WebSocket socket,
         AgentEnvelope envelope,
         CancellationToken cancellationToken)
     {
         var bytes = Encoding.UTF8.GetBytes(AgentEnvelopeCodec.Serialize(envelope));
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken)
-            .ConfigureAwait(false);
+        await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _sendGate.Release();
+        }
     }
 
     private static async Task<string?> ReceiveTextAsync(

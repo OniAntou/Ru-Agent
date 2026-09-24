@@ -13,21 +13,33 @@ public enum AssistantFinishReason
     Error,
 }
 
+internal static class ProviderCallIdContract
+{
+    internal static bool IsValid(string? value) =>
+        value is { Length: >= 1 and <= 256 }
+        && value.All(character =>
+            character is (>= 'a' and <= 'z')
+                or (>= 'A' and <= 'Z')
+                or (>= '0' and <= '9')
+                or '_'
+                or '-'
+                or '.');
+}
+
 public sealed record ModelToolCall
 {
     public const int MaximumArgumentBytes = 1024 * 1024;
 
     public ModelToolCall(
-        string? providerCallId,
+        string providerCallId,
         string toolId,
         string toolVersion,
         JsonElement arguments)
     {
-        if (providerCallId is not null
-            && (string.IsNullOrWhiteSpace(providerCallId) || providerCallId.Length > 256))
+        if (!ProviderCallIdContract.IsValid(providerCallId))
         {
             throw new ArgumentException(
-                "Provider call identifier exceeds 256 characters.",
+                "Provider call identifier must be a bounded safe token.",
                 nameof(providerCallId));
         }
 
@@ -47,7 +59,7 @@ public sealed record ModelToolCall
         Arguments = arguments.Clone();
     }
 
-    public string? ProviderCallId { get; }
+    public string ProviderCallId { get; }
 
     public string ToolId { get; }
 
@@ -97,6 +109,15 @@ public sealed record AssistantStep
         if (calls.Any(call => call is null))
         {
             throw new ArgumentException("Tool call collection cannot contain null.", nameof(toolCalls));
+        }
+
+        var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var call in calls)
+        {
+            if (!providerCallIds.Add(call.ProviderCallId))
+            {
+                throw new ArgumentException("Provider call identifiers must be unique.", nameof(toolCalls));
+            }
         }
 
         if (finishReason == AssistantFinishReason.ToolCalls && calls.Length == 0)

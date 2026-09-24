@@ -170,7 +170,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         };
         foreach (var turn in request.Turns)
         {
-            messages.Add(new JsonObject { ["role"] = turn.Role, ["content"] = turn.Content });
+            messages.Add(SerializeTurn(turn));
         }
 
         if (request.Images.Count > 0)
@@ -232,6 +232,39 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         }
 
         return body.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    private static JsonObject SerializeTurn(ModelTurn turn)
+    {
+        var message = new JsonObject
+        {
+            ["role"] = turn.Role,
+            ["content"] = turn.Content,
+        };
+        if (turn.Role == "assistant" && turn.ToolCalls.Count > 0)
+        {
+            var calls = new JsonArray();
+            foreach (var call in turn.ToolCalls)
+            {
+                calls.Add(new JsonObject
+                {
+                    ["id"] = call.Id,
+                    ["type"] = "function",
+                    ["function"] = new JsonObject
+                    {
+                        ["name"] = call.Name,
+                        ["arguments"] = call.Arguments.GetRawText(),
+                    },
+                });
+            }
+            message["tool_calls"] = calls;
+        }
+        else if (turn.Role == "tool")
+        {
+            message["tool_call_id"] = turn.ToolCallId;
+        }
+
+        return message;
     }
 
     private static JsonArray BuildToolDeclarations(JsonObject settings)

@@ -312,6 +312,42 @@ public sealed class FilePatchAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Patch_rejects_hard_link_before_diff_or_mutation()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "ru-patch-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        const string content = "hard-link-patch-marker";
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, content);
+        var link = Full("leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var adapter = new FilePatchAdapter(_root);
+            var arguments = new JsonObject
+            {
+                ["patch"] = BuildPatch("leak.txt", content, "replacement"),
+                ["expected_hashes"] = new JsonObject { ["leak.txt"] = Hash(content) },
+            };
+            var prepareError = Assert.Throws<UnauthorizedAccessException>(() => adapter.Prepare(arguments));
+            Assert.Equal("hard_link_not_allowed", prepareError.Message);
+            var executeError = Assert.Throws<UnauthorizedAccessException>(() => adapter.Execute(arguments));
+            Assert.Equal("hard_link_not_allowed", executeError.Message);
+            Assert.Equal(content, File.ReadAllText(target));
+        }
+        finally
+        {
+            try { File.Delete(link); } catch { }
+            try { Directory.Delete(outside, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void Patch_bounded_and_rejected_if_too_large()
     {
         var largePatch = new string('a', FilePatchAdapter.MaxPatchBytes + 1);

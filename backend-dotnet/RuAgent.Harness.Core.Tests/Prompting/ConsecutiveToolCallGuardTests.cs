@@ -140,7 +140,8 @@ public sealed class ConsecutiveToolCallGuardTests
                     ToolExecutionOutcome.Succeeded,
                     "ok",
                     null,
-                    false),
+                    sideEffectsPossible: false,
+                providerCallId: "provider_call"),
                 "{}"));
         }
 
@@ -150,7 +151,7 @@ public sealed class ConsecutiveToolCallGuardTests
     private static ModelToolCall Call(string arguments)
     {
         using var document = JsonDocument.Parse(arguments);
-        return new ModelToolCall(null, "files.read", "1", document.RootElement);
+        return new ModelToolCall("provider_call", "files.read", "1", document.RootElement);
     }
 
     private static ModelContextSnapshot InfraFailureContext(ModelToolCall call, string code)
@@ -176,6 +177,7 @@ public sealed class ConsecutiveToolCallGuardTests
                 ToolExecutionOutcome.Failed,
                 code,
                 null,
-                false),
+                sideEffectsPossible: false,
+                providerCallId: "provider_call"),
             "{}");
 }

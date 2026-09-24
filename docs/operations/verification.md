@@ -13,6 +13,39 @@
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
 | `git diff --check` | passed |
 
+## Model trust boundary verification (2026-09-24)
+
+The focused contract for the shipped autonomy boundary is:
+
+```powershell
+dotnet test backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~Phase1GoldenParityTests"
+dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV2PromptContractTests|FullyQualifiedName~WorkerV2ContractTests.Golden_valid_envelopes_round_trip|FullyQualifiedName~WorkerV2ContractTests.Golden_invalid_raw_envelopes_reject_with_expected_code"
+.\.venv\Scripts\python.exe -m pytest -q tests\test_current_documentation.py tests\test_readme_counts.py tests\test_ci_contract.py tests\test_aspnetcore_route_matrix.py
+```
+
+The golden fixture pins prompt composer `2.0.0`, schema-v2 effective policy,
+profile-before-instruction block order, the exact prompt/block digests, and the
+private-marker exclusion contract. The protocol fixtures retain one-call and
+text-selection examples and include a narration + three-call native batch whose
+ordered provider IDs are `call-1`, `call-2`, and `call-3` and whose finish reason
+is `tool_calls`. The actual Worker contract command above runs
+`WorkerV2PromptContractTests` and both golden protocol consumers from
+`RuBackend.Tests`.
+
+The current session-scoped matrix is: `plan` auto workspace read + Web and denies
+terminal/mutation; `standard` auto bounded-local in-workspace mutation and asks
+external/escape; `full_access` auto external structured files + arbitrary
+terminal while structured protected paths deny. Workspace trust is explicit once
+per canonical identity: the GUI confirms it, while CLI `run`/`chat` require
+`--trust-workspace`; Full Access additionally requires the GUI gate or CLI
+`--confirm-full-access`. Full-access terminal runs as the current Windows user,
+can access data outside the workspace, and is not a network/path sandbox. Hard
+timeout, output cap, cancellation, and process-tree cleanup remain enforced.
+
+The completed-archive guard intentionally rejects active files under
+`docs/superpowers`. Those temporary plan/spec artifacts move outside the checkout
+in Task 14; do not weaken the guard to accommodate them.
+
 > **Job Object: cửa sổ spawn trước khi assign đã đóng (2026-09-19).**
 > Trước đây `WorkerBrokerProcessManager` tạo con bằng `Process.Start` rồi mới `job.Assign`, nên một
 > tiến trình cháu sinh ra trong khoảng giữa hai bước đó không thuộc job nào và sống sót qua

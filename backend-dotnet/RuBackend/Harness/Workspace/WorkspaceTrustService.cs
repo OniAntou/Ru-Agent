@@ -113,6 +113,37 @@ public sealed class WorkspaceTrustService
         }
     }
 
+    public async Task<WorkspaceIdentity> RevalidateIdentityAsync(
+        StoredWorkspace stored,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+        try
+        {
+            var canonical = await DecryptCanonicalRootAsync(stored, cancellationToken).ConfigureAwait(false);
+            var liveIdentity = await _resolver.ResolveAsync(canonical, cancellationToken).ConfigureAwait(false);
+            if (liveIdentity != stored.Identity)
+            {
+                throw new HarnessStoreException("workspace_identity_changed");
+            }
+
+            return liveIdentity;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _ = exception;
+            throw new HarnessStoreException("workspace_identity_changed");
+        }
+    }
+
     private async Task<WorkspaceRootCiphertext> EncryptCanonicalRootAsync(
         WorkspaceIdentity identity,
         string canonicalRoot,

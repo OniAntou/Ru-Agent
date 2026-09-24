@@ -24,9 +24,9 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly TracerProvider? _telemetry;
     private readonly PendingApprovalStore _pendingV2 = new();
     private readonly ApprovalTokenService _authTokens = new();
-    // One probe per host so its short-lived cleanliness cache survives across
-    // tool evaluations; the standard clean-workspace auto-allow depends on this answer.
-    private readonly IWorkspaceCleanlinessProvider _cleanliness = new GitWorkspaceCleanlinessProvider();
+    private readonly object _connectionSync = new();
+    private readonly HashSet<Task> _connections = [];
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private bool _disposed;
 
     private BrokerHost(
@@ -103,14 +103,30 @@ public sealed class BrokerHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        Task[] connections;
+        lock (_connectionSync)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            connections = _connections.ToArray();
         }
 
-        _disposed = true;
         IsReady = false;
         try { _shutdown.Cancel(); } catch { }
+
+        try
+        {
+            await Task.WhenAll(connections).WaitAsync(TimeSpan.FromSeconds(10))
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
+
         _tools.ClearPendingApprovals();
         _pendingV2.Clear();
         _authTokens.Clear();
@@ -154,7 +170,7 @@ public sealed class BrokerHost : IAsyncDisposable
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted,
             _shutdown.Token);
-        await new AgentConnection(
+        var connectionTask = new AgentConnection(
             _session,
             profile => _tools.ListCapabilities(profile),
             _tools.ListCapabilities()
@@ -165,8 +181,39 @@ public sealed class BrokerHost : IAsyncDisposable
             pendingV2Store: _pendingV2,
             approvalTokenService: _authTokens,
             advertisedCapabilities: _session.AdvertisedCapabilities,
-            cleanliness: _cleanliness)
-            .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
+            lifecycleGate: _lifecycleGate,
+            authenticatedToolHandler: (request, token) => ExecuteToolAsync(request, token, isAuthenticatedV2Execution: true))
+            .RunAsync(socket, linkedCancellation.Token);
+        var tracked = false;
+        lock (_connectionSync)
+        {
+            if (!_disposed)
+            {
+                _connections.Add(connectionTask);
+                tracked = true;
+            }
+        }
+
+        if (!tracked)
+        {
+            linkedCancellation.Cancel();
+        }
+
+        try
+        {
+            await connectionTask.ConfigureAwait(false);
+        }
+        finally
+        {
+            if (tracked)
+            {
+                lock (_connectionSync)
+                {
+                    _connections.Remove(connectionTask);
+                }
+            }
+        }
+
     }
 
     private static IReadOnlyList<string> AdvertisedCapabilities(Configuration.WebOptions? web)
@@ -176,12 +223,15 @@ public sealed class BrokerHost : IAsyncDisposable
 
     private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteToolAsync(
         RuAgent.Protocol.AgentEnvelope request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isAuthenticatedV2Execution = false)
     {
         using var telemetryActivity = BrokerTelemetry.StartToolActivity();
         var result = request.MessageType == RuAgent.Protocol.AgentMessageTypes.ApprovalResponse
             ? await _tools.RespondToApprovalAsync(request, cancellationToken).ConfigureAwait(false)
-            : await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+            : isAuthenticatedV2Execution
+                ? await _tools.ExecuteAuthenticatedV2Async(request, cancellationToken).ConfigureAwait(false)
+                : await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         BrokerTelemetry.SetToolOutcome(
             telemetryActivity,
             BrokerTelemetry.ReadToolId(request.Payload),

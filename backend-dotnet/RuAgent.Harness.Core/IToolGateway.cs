@@ -17,3 +17,10 @@ public interface IToolGateway
 
     Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken);
 }
+
+public interface IApprovalCleanupGateway
+{
+    Task<bool> RevokeApprovalAsync(
+        ApprovalId approvalId,
+        CancellationToken cancellationToken);
+}

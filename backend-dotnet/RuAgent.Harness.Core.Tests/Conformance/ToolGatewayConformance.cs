@@ -175,7 +175,11 @@ public abstract class ToolGatewayConformance : IDisposable
         Assert.Equal(ToolAccessKind.ReadOnly, decision.AccessKind);
 
         var prepared = await Gateway.PrepareAsync(
-            new ApprovedToolExecution(proposal, NextExecutionId(), decision.CanonicalIntentToken!),
+            new ApprovedToolExecution(
+                proposal,
+                NextExecutionId(),
+                decision.CanonicalIntentToken!,
+                decision.GatewayGeneration),
             CancellationToken.None);
         Assert.Empty(prepared.PreparationPayloads);
 
@@ -346,7 +350,11 @@ public abstract class ToolGatewayConformance : IDisposable
         Assert.Equal(PolicyDecision.Allow, decision.Decision);
 
         var prepared = await Gateway.PrepareAsync(
-            new ApprovedToolExecution(proposal, new ExecutionId(Identifier("exec_")), decision.CanonicalIntentToken!),
+            new ApprovedToolExecution(
+                proposal,
+                new ExecutionId(Identifier("exec_")),
+                decision.CanonicalIntentToken!,
+                decision.GatewayGeneration),
             CancellationToken.None);
 
         var chunks = new List<ToolOutputChunk>();
@@ -522,6 +530,7 @@ public abstract class ToolGatewayConformance : IDisposable
             new RunId(Identifier("run_")),
             new ModelStepId(Identifier("step_")),
             new ToolCallId(Identifier("call_")),
+            "provider_call_1",
             modelOrder: 1,
             toolId,
             ToolVersion,
@@ -552,7 +561,11 @@ public abstract class ToolGatewayConformance : IDisposable
             $"expected Allow for {toolId}, got {decision.Decision}: {decision.SafeCode}");
 
         var prepared = await gateway.PrepareAsync(
-            new ApprovedToolExecution(proposal, NextExecutionId(), decision.CanonicalIntentToken!),
+            new ApprovedToolExecution(
+                proposal,
+                NextExecutionId(),
+                decision.CanonicalIntentToken!,
+                decision.GatewayGeneration),
             CancellationToken.None);
 
         return await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);

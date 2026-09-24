@@ -36,26 +36,42 @@ file is capped, search results are capped, terminal output is truncated, and
 every command dies with its own timeout. A pathological request degrades into
 a bounded result, never a frozen app.
 
-## You approve what matters
+## Autonomy, trust, and approval
 
-Ru never silently mutates things outside your project. **Permissions are
-session-scoped**: every conversation starts at the `standard` preset —
-read-only `plan` asks before every change, and `full_access` exists only when
-you opt in with an explicit confirmation.
+Every run uses one of three canonical, session-scoped presets:
 
-Approval is required for:
+- **`plan`**: workspace reads and Web run automatically; terminal and mutation
+  requests are denied.
+- **`standard`**: bounded-local in-workspace mutation runs automatically;
+  external structured access, path escape, and risky terminal intent ask first.
+- **`full_access`**: external structured files and arbitrary terminal commands
+  run automatically; structured protected paths and hard-invalid requests are
+  still denied.
 
-- Access outside your workspace (`external_directory_required`)
-- Deletion (`terminal_delete_requires_approval`)
-- Unknown executables (`terminal_unknown_executable`)
-- Mutating outside the workspace from a terminal
-  (`terminal_external_mutation_requires_approval`)
-- Extended timeouts (`terminal_timeout_requires_approval`)
-- Web access on the read-only `plan` preset (`web_approval_required`)
+Workspace trust is separate from the session preset and must be approved
+**explicitly once per canonical identity**. The GUI shows a confirmation
+dialog; CLI `run` and `chat` require `--trust-workspace`. Moving or recreating
+the workspace produces a new canonical identity and requires trust again.
+Selecting `full_access` never implies workspace trust.
 
-Approvals are one-time unless you press *Always* for a folder in that session.
-Nothing you grant survives a restart. Protected paths — your `.git`, `.env`
-files, and credential stores — are denied outright at every preset.
+Full Access also requires an explicit gate. The GUI keeps its confirmation
+dialog; CLI `run` and `chat` require `--confirm-full-access` before changing
+session state. `--json` is accepted only with that explicit CLI confirmation.
+
+Approvals remain exact-intent and single-use. The current reasons include
+`external_directory_required`, `terminal_delete_requires_approval`,
+`terminal_unknown_executable`,
+`terminal_external_mutation_requires_approval`, and
+`terminal_timeout_requires_approval`. `web_approval_required` remains a
+compatibility reason for an explicit ask rule, but the canonical `plan` profile
+allows Web and does not synthesize that approval. No provider, model, protocol,
+or tool fallback bypasses a denial.
+
+> **Full Access terminal warning:** commands run as the current Windows user,
+> can read or change data outside the workspace, and can use the network. This
+> is not a network/path sandbox. Process timeout, output cap, cancellation, and
+> process-tree cleanup still apply. Structured file tools separately retain
+> canonical/symlink/junction/hard-link containment and protected-path denial.
 
 ## Your data stays local
 

@@ -141,6 +141,45 @@ public sealed class AgentReconcileEndpointTests
     }
 
     [Fact]
+    public async Task Applied_resolution_preserves_known_execution_identity()
+    {
+        var factory = await CreateHostAsync();
+        try
+        {
+            await SeedRunAsync(
+                factory,
+                HarnessRunState.ReconciliationRequired,
+                knownExecution: true);
+            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
+            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            using var client = factory.CreateAuthenticatedClient();
+            using var response = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{ReconciledRunId}/reconcile",
+                new { outcome = "applied", snapshot_hash = hash });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+            HarnessEvent? resolution = null;
+            await foreach (var envelope in store.ReadEventsAsync(new RunId(ReconciledRunId), 0, CancellationToken.None))
+            {
+                if (envelope.Event.Kind == "reconciliation.resolved")
+                {
+                    resolution = envelope.Event;
+                }
+            }
+
+            Assert.NotNull(resolution);
+            Assert.Equal(new ModelStepId("step_77777777777777777777777777777777"), resolution!.ModelStepId);
+            Assert.Equal(new ToolCallId("call_77777777777777777777777777777777"), resolution.ToolCallId);
+            Assert.Equal(new ExecutionId("exec_77777777777777777777777777777777"), resolution.ExecutionId);
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task NotApplied_resolution_returns_the_run_to_running_without_a_gate()
     {
         var factory = await CreateHostAsync();
@@ -259,7 +298,10 @@ public sealed class AgentReconcileEndpointTests
         return new TestHost(factory, root);
     }
 
-    private static async Task SeedRunAsync(TestHost host, HarnessRunState state)
+    private static async Task SeedRunAsync(
+        TestHost host,
+        HarnessRunState state,
+        bool knownExecution = false)
     {
         var workspaceStore = host.Factory.Services.GetRequiredService<RuAgent.Harness.Persistence.Workspace.SqliteWorkspaceStore>();
         var workspace = new WorkspaceIdentity(
@@ -315,15 +357,22 @@ public sealed class AgentReconcileEndpointTests
             new string('b', 64),
             BackendHarnessTestFixture.Timestamp,
             BackendHarnessTestFixture.Timestamp);
+        var reconciliationRequired = new HarnessEventIntent(
+            new EventId("evt_66666666666666666666666666666666"),
+            HarnessEventKind.ReconciliationRequired,
+            modelStepId: knownExecution
+                ? new ModelStepId("step_77777777777777777777777777777777")
+                : null,
+            toolCallId: knownExecution
+                ? new ToolCallId("call_77777777777777777777777777777777")
+                : null,
+            executionId: knownExecution
+                ? new ExecutionId("exec_77777777777777777777777777777777")
+                : null,
+            safeCode: "recovery_ambiguous");
         var request = new NewAgentRun(
             run,
-            new[]
-            {
-                new HarnessEventIntent(
-                    new EventId("evt_66666666666666666666666666666666"),
-                    HarnessEventKind.ReconciliationRequired,
-                    safeCode: "recovery_ambiguous"),
-            },
+            new[] { reconciliationRequired },
             Array.Empty<HarnessPayloadIntent>(),
             Array.Empty<ConversationOutboxIntent>(),
             new RunCreationIdentity(new string('c', 64), new string('d', 64), 1));

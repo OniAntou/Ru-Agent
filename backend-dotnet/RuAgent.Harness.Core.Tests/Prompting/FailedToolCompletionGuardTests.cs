@@ -218,11 +218,12 @@ public sealed class FailedToolCompletionGuardTests
             outcome,
             code,
             null,
-            false);
+            false,
+            providerCallId: "provider_call");
 
     private static ModelToolCall Call(string toolId, string arguments)
     {
         using var document = JsonDocument.Parse(arguments);
-        return new ModelToolCall(null, toolId, "1.0.0", document.RootElement);
+        return new ModelToolCall("provider_call", toolId, "1.0.0", document.RootElement);
     }
 }

@@ -1,5 +1,6 @@
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;
@@ -101,5 +102,51 @@ public sealed class FileToolRootSelectorTests : IDisposable
             Path.Combine(nested, "x.txt"));
 
         Assert.EndsWith("nested", selected.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Full_access_selects_nearest_existing_external_ancestor_without_a_grant()
+    {
+        var nested = Path.Combine(_granted, "nested");
+        Directory.CreateDirectory(nested);
+        var selected = FileToolRootSelector.SelectRoot(
+            _leaseResolver,
+            _leaseResolver.CanonicalRoot,
+            Array.Empty<string>(),
+            AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
+            Path.Combine(nested, "x.txt"));
+
+        Assert.Equal(
+            Path.GetFullPath(nested),
+            selected.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    [Fact]
+    public void Full_access_protected_target_remains_denied()
+    {
+        var error = Assert.Throws<UnauthorizedAccessException>(() => FileToolRootSelector.SelectRoot(
+            _leaseResolver,
+            _leaseResolver.CanonicalRoot,
+            Array.Empty<string>(),
+            AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
+            Path.Combine(_leaseRoot, ".env.local")));
+
+        Assert.Equal("protected_path", error.Message);
+    }
+
+    [Fact]
+    public void Full_access_external_protected_target_remains_denied()
+    {
+        var protectedDirectory = Path.Combine(_granted, ".env");
+        Directory.CreateDirectory(protectedDirectory);
+        File.WriteAllText(Path.Combine(protectedDirectory, "secret.txt"), "secret");
+        var error = Assert.Throws<UnauthorizedAccessException>(() => FileToolRootSelector.SelectRoot(
+            _leaseResolver,
+            _leaseResolver.CanonicalRoot,
+            Array.Empty<string>(),
+            AgentPolicyProfileCatalog.Get(AgentPolicyProfileCatalog.FullAccessPresetWireValue),
+            Path.Combine(protectedDirectory, "secret.txt")));
+
+        Assert.Equal("protected_path", error.Message);
     }
 }

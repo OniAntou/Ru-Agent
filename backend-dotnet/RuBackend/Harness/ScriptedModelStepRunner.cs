@@ -100,9 +100,11 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                 ? JsonDocument.Parse(args.ToJsonString()).RootElement.Clone()
                 : JsonDocument.Parse("{}").RootElement.Clone();
 
+            var providerCallId = tool["provider_call_id"]?.GetValue<string>()
+                ?? $"ru_call_script_{steps.Count + 1}";
             steps.Add(new AssistantStep(
                 text,
-                new[] { new ModelToolCall(null, toolId, toolVersion, arguments) },
+                new[] { new ModelToolCall(providerCallId, toolId, toolVersion, arguments) },
                 AssistantFinishReason.ToolCalls,
                 0));
         }

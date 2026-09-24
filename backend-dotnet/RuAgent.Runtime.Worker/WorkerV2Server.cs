@@ -268,7 +268,8 @@ public sealed class WorkerV2Server
             var result = await _steps.RunAsync(
                 envelope.Payload,
                 PublishDeltaAsync,
-                cancellationSource.Token).ConfigureAwait(false);
+                cancellationSource.Token,
+                modelStepId: envelope.Id).ConfigureAwait(false);
             var toolCalls = new JsonArray();
             foreach (var call in result.ToolCalls)
             {

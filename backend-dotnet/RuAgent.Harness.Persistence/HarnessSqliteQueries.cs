@@ -54,7 +54,7 @@ internal static class HarnessSqliteQueries
 
         return new ExistingRun(
             HarnessSqliteMapper.ReadRun(reader),
-            reader.GetString(17));
+            reader.GetString(18));
     }
 
     internal static Task<AgentRun?> FindActiveSessionRunAsync(

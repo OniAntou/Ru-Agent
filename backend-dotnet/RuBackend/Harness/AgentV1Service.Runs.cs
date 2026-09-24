@@ -303,27 +303,6 @@ public sealed partial class AgentV1Service
         }
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
-        bool isProjectRoot = IsProjectRootWorkspace(canonicalWorkspacePath);
-        if (!isTrusted && isProjectRoot)
-        {
-            isTrusted = true;
-            if (pendingTrustRequest is not null)
-            {
-                var trustResponse = new WorkspaceTrustResponse(
-                    pendingTrustRequest.RequestId,
-                    workspaceIdentity,
-                    workspaceIdentity.DisplayIdentityHash,
-                    WorkspaceTrustDecision.Approve);
-                try
-                {
-                    await _trustStore.ApplyAsync(trustResponse, workspaceIdentity, now, cancellationToken).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Ignore concurrency or persistence store errors if already applied
-                }
-            }
-        }
 
         // Materialize the durable coordinator before inserting the run. This
         // makes shared-mode policy visible to the event store for this very
@@ -561,7 +540,7 @@ public sealed partial class AgentV1Service
         var runs = new List<AgentRun>();
         await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
         var sql = new StringBuilder();
-        sql.Append("SELECT run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, policy_snapshot_version, policy_snapshot_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code FROM agent_runs WHERE session_id = $session_id ");
+        sql.Append("SELECT run_id, session_id, workspace_id, state, history_wait_kind, version, last_sequence, budget_window, model_steps_in_window, tool_calls_in_window, preset, permission_profile_version, policy_snapshot_version, policy_snapshot_sha256, created_at_utc, updated_at_utc, terminal_at_utc, terminal_error_code FROM agent_runs WHERE session_id = $session_id ");
         if (anchorCreatedAt is not null && anchorRunId is not null)
         {
             sql.Append("AND ((created_at_utc < $anchor_created) OR (created_at_utc = $anchor_created AND run_id < $anchor_run_id)) ");
@@ -772,20 +751,18 @@ public sealed partial class AgentV1Service
                 return BoundedError(409, "reconciliation_unavailable", "Reconciliation services are not available.");
             }
 
-            string? intentCode = null;
-            await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+            var reconciliation = await ReadReconciliationContextAsync(runId, cancellationToken)
+                .ConfigureAwait(false);
+            if (reconciliation.IsMalformed)
             {
-                if (envelope.Event.Kind == "reconciliation.required"
-                    && envelope.Event.SafeCode is { } code)
-                {
-                    intentCode = code;
-                }
+                return BoundedError(409, "reconciliation_target_invalid", "Reconciliation target is invalid.");
             }
 
             return await ApplyReconciliationAsync(
                     run,
                     UnknownContinueCommand,
-                    intentCode,
+                    reconciliation.IntentCode,
+                    reconciliation.Target,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -975,7 +952,8 @@ public sealed partial class AgentV1Service
             current.CreatedAt,
             updatedAt,
             terminalAt,
-            terminalErrorCode);
+            terminalErrorCode,
+            current.PermissionProfileVersion);
     }
 
     private async Task<string?> FindIdempotentNormalizedHashAsync(string sessionId, string idempotencySha, CancellationToken ct)
@@ -1008,15 +986,7 @@ public sealed partial class AgentV1Service
         WorkspaceId: run.WorkspaceId.Value,
         Status: MapRunState(run.Status),
         HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
-        // Single preset: legacy stored FullAccess rows still project as full_access
-        // for wire compatibility; new runs are always standard.
-        Preset: run.Preset switch
-        {
-            AgentPermissionPreset.Plan => "plan",
-            AgentPermissionPreset.Standard => "standard",
-            AgentPermissionPreset.FullAccess => "full_access",
-            _ => "standard",
-        },
+        Preset: AgentPermissionPresetMapper.ToWireValue(run.Preset),
         PolicySnapshotVersion: run.PolicySnapshotVersion,
         PolicySnapshotSha256: run.PolicySnapshotSha256,
         Version: run.Version,

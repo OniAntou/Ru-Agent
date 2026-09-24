@@ -6,7 +6,7 @@ namespace RuAgent.Harness.Core.Tests;
 public sealed class ProjectBoundaryTests
 {
     [Fact]
-    public void CoreProject_has_no_dependency_edges()
+    public void CoreProject_has_only_the_approved_protocol_dependency()
     {
         var backendRoot = FindBackendRoot();
         var projectPath = Path.Combine(
@@ -17,9 +17,14 @@ public sealed class ProjectBoundaryTests
         Assert.True(File.Exists(projectPath), $"Missing Core project: {projectPath}");
 
         var project = XDocument.Load(projectPath);
+        var projectReferences = project
+            .Descendants("ProjectReference")
+            .Select(element => element.Attribute("Include")?.Value)
+            .ToArray();
+
         Assert.Empty(project.Descendants("FrameworkReference"));
         Assert.Empty(project.Descendants("PackageReference"));
-        Assert.Empty(project.Descendants("ProjectReference"));
+        Assert.Equal(new[] { "..\\RuAgent.Protocol\\RuAgent.Protocol.csproj" }, projectReferences);
     }
 
     private static string FindBackendRoot()

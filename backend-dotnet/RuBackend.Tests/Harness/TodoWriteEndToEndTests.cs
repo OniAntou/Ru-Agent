@@ -39,7 +39,7 @@ public sealed class TodoWriteEndToEndTests
             new[]
             {
                 new ModelToolCall(
-                    null,
+                    "provider_call_1",
                     "todo_write",
                     "1.0.0",
                     JsonDocument.Parse("""

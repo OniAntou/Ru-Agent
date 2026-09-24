@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
+using BrokerRunLease = RuAgent.Broker.Runtime.BrokerRunLease;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;
@@ -54,6 +56,396 @@ public sealed class ToolExecutionServiceTests
             Assert.Equal("approvals", result.Output["query"]!.GetValue<string>());
             Assert.True(result.Output["results"] is JsonArray);
             Assert.False(result.Output.ContainsKey("approval_id"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Full_access_external_read_uses_ephemeral_root_without_session_grant()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-full-read-" + Guid.NewGuid().ToString("N"));
+        var workspaceRoot = Path.Combine(root, "workspace");
+        var externalRoot = Path.Combine(root, "external");
+        Directory.CreateDirectory(workspaceRoot);
+        Directory.CreateDirectory(externalRoot);
+        File.WriteAllText(Path.Combine(externalRoot, "probe.txt"), "external-content");
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath);
+        var snapshot = EnvelopeTestSnapshots.FullAccessEmpty();
+        const string sessionId = "session-full-read";
+        const string runId = "run_full_read_11111111111111";
+        var lease = BrokerRunLease.CreateValidated(
+            runId,
+            sessionId,
+            snapshot.Workspace.WorkspaceId,
+            workspaceRoot,
+            snapshot.Workspace.VolumeSerialNumber,
+            snapshot.Workspace.RootFileId,
+            snapshot.Workspace.DisplayIdentityHash,
+            snapshot.Preset,
+            snapshot.Version,
+            EnvelopeTestSnapshots.HashOf(snapshot),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            snapshot);
+        Assert.True(session.TryOpenRunLease(lease, out var leaseError), leaseError);
+        try
+        {
+            var service = new ToolExecutionService(session, workspaceRoot);
+            var result = await service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersionV2,
+                    "read-full-1",
+                    AgentMessageTypes.ToolExecute,
+                    sessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "read",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = runId,
+                        ["arguments"] = new JsonObject
+                        {
+                            ["path"] = Path.Combine(externalRoot, "probe.txt"),
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.Equal("external-content", result.Output["content"]!.GetValue<string>());
+            Assert.Empty(session.DirectoryGrants.GetGrantedDirectories(sessionId));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Full_access_external_roots_are_not_retained_in_global_toolset_cache()
+    {
+        var fixture = CreateFullAccessService("ru-full-cache-");
+        try
+        {
+            for (var index = 0; index < 2; index++)
+            {
+                var external = Path.Combine(fixture.Root, "external-" + index);
+                Directory.CreateDirectory(external);
+                File.WriteAllText(Path.Combine(external, "probe.txt"), "cache-marker-" + index);
+                var result = await fixture.Service.ExecuteAuthenticatedV2Async(
+                    new AgentEnvelope(
+                        AgentEnvelopeCodec.ProtocolVersionV2,
+                        "full-cache-" + index,
+                        AgentMessageTypes.ToolExecute,
+                        fixture.SessionId,
+                        null,
+                        30_000,
+                        new JsonObject
+                        {
+                            ["tool_id"] = "read",
+                            ["tool_version"] = "1.0.0",
+                            ["capability_class"] = "internal",
+                            ["run_id"] = fixture.RunId,
+                            ["arguments"] = new JsonObject
+                            {
+                                ["path"] = Path.Combine(external, "probe.txt"),
+                            },
+                        }),
+                    CancellationToken.None);
+                Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            }
+
+            Assert.Equal(1, fixture.Service.CachedRootToolSetCount);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Authenticated_service_marker_does_not_authorize_a_legacy_envelope()
+    {
+        var fixture = CreateFullAccessService("ru-marker-legacy-");
+        try
+        {
+            var external = Path.Combine(fixture.Root, "external");
+            Directory.CreateDirectory(external);
+            File.WriteAllText(Path.Combine(external, "probe.txt"), "must-not-be-read");
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "marker-legacy-read",
+                    AgentMessageTypes.ToolRequest,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "read",
+                        ["tool_version"] = "1.0.0",
+                        ["run_id"] = fixture.RunId,
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["path"] = Path.Combine(external, "probe.txt"),
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("outside_workspace", result.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_tool_request_ignores_forged_full_access_fields_for_external_read()
+    {
+        var fixture = CreateFullAccessService("ru-legacy-read-");
+        try
+        {
+            var external = Path.Combine(fixture.Root, "external");
+            Directory.CreateDirectory(external);
+            File.WriteAllText(Path.Combine(external, "probe.txt"), "must-not-be-read");
+            var result = await fixture.Service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "legacy-read-forged",
+                    AgentMessageTypes.ToolRequest,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "read",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["path"] = Path.Combine(external, "probe.txt"),
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("outside_workspace", result.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_tool_request_ignores_forged_full_access_fields_for_external_terminal()
+    {
+        var fixture = CreateFullAccessService("ru-legacy-terminal-");
+        try
+        {
+            var external = Path.Combine(fixture.Root, "external");
+            Directory.CreateDirectory(external);
+            var result = await fixture.Service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "legacy-terminal-forged",
+                    AgentMessageTypes.ToolRequest,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "run",
+                            ["executable"] = "dotnet",
+                            ["arguments"] = new JsonArray("--version"),
+                            ["working_directory"] = external,
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
+            Assert.False(result.AdapterInvoked);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_approval_response_keeps_external_terminal_confined()
+    {
+        var fixture = CreateFullAccessService("ru-legacy-approval-");
+        try
+        {
+            var external = Path.Combine(fixture.Root, "external");
+            Directory.CreateDirectory(external);
+            var pending = await fixture.Service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "legacy-terminal-pending",
+                    AgentMessageTypes.ToolRequest,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "run",
+                            ["executable"] = "dotnet",
+                            ["arguments"] = new JsonArray("--version"),
+                            ["working_directory"] = external,
+                        },
+                    }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
+
+            var result = await fixture.Service.RespondToApprovalAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "legacy-terminal-approval",
+                    AgentMessageTypes.ApprovalResponse,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(),
+                        ["approved"] = true,
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("workspace_path_outside_root", result.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Standard_lease_legacy_token_does_not_skip_terminal_approval()
+    {
+        var fixture = CreateLeaseService("ru-standard-authority-", EnvelopeTestSnapshots.StandardEmpty());
+        try
+        {
+            var external = Path.Combine(fixture.Root, "external");
+            Directory.CreateDirectory(external);
+            var result = await fixture.Service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "standard-terminal-forged",
+                    AgentMessageTypes.ToolRequest,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "run",
+                            ["executable"] = "dotnet",
+                            ["arguments"] = new JsonArray("--version"),
+                            ["working_directory"] = external,
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
+            Assert.False(result.AdapterInvoked);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task No_lease_legacy_token_does_not_skip_terminal_approval()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-no-lease-authority-" + Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(root, "workspace");
+        var external = Path.Combine(root, "external");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(external);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath);
+        session.Open(
+            "session-no-lease",
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspace);
+        try
+        {
+            var result = await service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "no-lease-terminal-forged",
+                    AgentMessageTypes.ToolRequest,
+                    "session-no-lease",
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "bash",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = "forged-run",
+                        ["authorization_token"] = "forged-token",
+                        ["arguments"] = new JsonObject
+                        {
+                            ["mode"] = "run",
+                            ["executable"] = "dotnet",
+                            ["arguments"] = new JsonArray("--version"),
+                            ["working_directory"] = external,
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
+            Assert.False(result.AdapterInvoked);
         }
         finally
         {
@@ -427,6 +819,76 @@ public sealed class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task Edit_approval_preview_does_not_read_hard_linked_content()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-edit-preview-hardlink-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        session.Open(
+            "session-edit-preview-hardlink",
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.WorkspaceWrite], StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        var outside = Path.Combine(Path.GetTempPath(), "ru-edit-preview-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        const string content = "hard-link-preview-marker old";
+        var target = Path.Combine(outside, "secret.txt");
+        File.WriteAllText(target, content);
+        var link = Path.Combine(workspaceRoot, "leak.txt");
+        if (!FileReadAdapterTests.TryCreateHardLink(link, target))
+        {
+            Directory.Delete(outside, recursive: true);
+            Directory.Delete(root, recursive: true);
+            return;
+        }
+
+        try
+        {
+            var envelope = new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersion,
+                "req-" + Guid.NewGuid().ToString("N"),
+                AgentMessageTypes.ToolRequest,
+                "session-edit-preview-hardlink",
+                null,
+                30_000,
+                new JsonObject
+                {
+                    ["tool_id"] = "edit",
+                    ["tool_version"] = "1.0.0",
+                    ["capability_class"] = "tool",
+                    ["arguments"] = new JsonObject
+                    {
+                        ["path"] = "leak.txt",
+                        ["old_string"] = "old",
+                        ["new_string"] = "new",
+                    },
+                });
+
+            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
+
+            Assert.Equal("approval_required", result.Status);
+            var preview = result.Output[ApprovalPreviewFields.Field]!.GetValue<string>();
+            Assert.DoesNotContain("hard-link-preview-marker", preview);
+        }
+        finally
+        {
+            try { File.Delete(link); } catch { }
+            try { Directory.Delete(outside, recursive: true); } catch { }
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void Schema_validator_rejects_missing_required_property()
     {
         var schema = new JsonObject
@@ -680,6 +1142,45 @@ public sealed class ToolExecutionServiceTests
             ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(),
             ["approved"] = true,
         });
+
+    private static (string Root, string SessionId, string RunId, BrokerSession Session, ToolExecutionService Service) CreateFullAccessService(string prefix) =>
+        CreateLeaseService(prefix, EnvelopeTestSnapshots.FullAccessEmpty());
+
+    private static (string Root, string SessionId, string RunId, BrokerSession Session, ToolExecutionService Service) CreateLeaseService(
+        string prefix,
+        BrokerPolicySnapshotWire snapshot)
+    {
+        var root = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspace);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath);
+        var sessionId = "session-" + snapshot.Preset + "-" + Guid.NewGuid().ToString("N");
+        var runId = "run_" + Guid.NewGuid().ToString("N");
+        var lease = BrokerRunLease.CreateValidated(
+            runId,
+            sessionId,
+            snapshot.Workspace.WorkspaceId,
+            workspace,
+            snapshot.Workspace.VolumeSerialNumber,
+            snapshot.Workspace.RootFileId,
+            snapshot.Workspace.DisplayIdentityHash,
+            snapshot.Preset,
+            snapshot.Version,
+            EnvelopeTestSnapshots.HashOf(snapshot),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            snapshot);
+        Assert.True(session.TryOpenRunLease(lease, out var leaseError), leaseError);
+        return (root, sessionId, runId, session, new ToolExecutionService(session, workspace));
+    }
 
     [Fact]
     public async Task Tool_execute_without_valid_authorization_is_stale()

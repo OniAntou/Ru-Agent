@@ -177,10 +177,16 @@ public sealed class ReconciliationStateTests
             CancellationToken.None);
 
         Assert.Equal(HarnessRunState.Running, resolved.State);
-        Assert.Contains(
+        var required = Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ReconciliationRequired);
+        var resolution = Assert.Single(
             store.Commits.SelectMany(commit => commit.Events),
             item => item.Kind == HarnessEventKind.ReconciliationResolved
-                    && item.SafeCode == "applied");
+                && item.SafeCode == "applied");
+        Assert.Equal(required.ModelStepId, resolution.ModelStepId);
+        Assert.Equal(required.ToolCallId, resolution.ToolCallId);
+        Assert.Equal(required.ExecutionId, resolution.ExecutionId);
     }
 
     [Fact]
@@ -336,12 +342,13 @@ public sealed class ReconciliationStateTests
         await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.False(gate.IsMutationDenied(RunId()));
-        var resolved = store.Commits
-            .SelectMany(commit => commit.Events)
-            .Where(item => item.Kind == HarnessEventKind.ReconciliationResolved)
-            .Select(item => item.SafeCode)
-            .ToList();
-        Assert.Contains(ReconciliationGateProjection.InspectionRecordedCode, resolved);
+        var inspection = Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ReconciliationResolved
+                && item.SafeCode == ReconciliationGateProjection.InspectionRecordedCode);
+        Assert.NotNull(inspection.ModelStepId);
+        Assert.NotNull(inspection.ToolCallId);
+        Assert.NotNull(inspection.ExecutionId);
     }
 
     private static HarnessEvent Event(

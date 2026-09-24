@@ -35,6 +35,7 @@ public sealed class WorkerV2StepService
     /// <summary>Tail-kept provider reasoning per step. The projector clamps
     /// further for the activity wire; this cap bounds worker memory.</summary>
     private const int MaximumReasoningChars = 8_000;
+    private const string DirectModelStepId = "worker";
     private static readonly WorkerV2Options DefaultOptions = new(
         0,
         "test-worker",
@@ -77,7 +78,8 @@ public sealed class WorkerV2StepService
     public async Task<WorkerV2StepResult> RunAsync(
         JsonObject startPayload,
         Func<string, ValueTask>? onDelta,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? modelStepId = null)
     {
         ArgumentNullException.ThrowIfNull(startPayload);
         WorkerV2StartRequest start;
@@ -107,11 +109,14 @@ public sealed class WorkerV2StepService
             ProviderProtocols.ChatCompletions,
             StringComparison.Ordinal);
         var snapshot = SystemPromptComposer.Compose(start.Context, nativeToolCalling);
+        var requestTurns = nativeToolCalling
+            ? start.EffectiveTurns
+            : WorkerV2PromptCodec.ProjectTextTurns(start.EffectiveTurns, start.Settings);
         var request = new ModelRequest(
             providerBootstrap.Model,
             snapshot.Text,
             start.Prompt,
-            start.Turns,
+            requestTurns,
             BuildRequestSettings(start.Settings, providerBootstrap.RequestOptions),
             providerBootstrap.Endpoint,
             providerBootstrap.Credential,
@@ -204,7 +209,10 @@ public sealed class WorkerV2StepService
             }
 
         finishReason ??= toolFragments.Count > 0 ? "tool_calls" : "stop";
-        var (calls, visibleText) = ParseToolCalls(toolFragments, start.Settings, finishReason, text);
+        var providerStepId = string.IsNullOrWhiteSpace(modelStepId)
+            ? DirectModelStepId
+            : modelStepId;
+        var (calls, visibleText) = ParseToolCalls(toolFragments, start.Settings, finishReason, text, providerStepId);
         if (calls.Count > 0)
         {
             finishReason = "tool_calls";
@@ -303,11 +311,12 @@ public sealed class WorkerV2StepService
         IReadOnlyList<ModelToolFragment> fragments,
         JsonObject settings,
         string finishReason,
-        StringBuilder text)
+        StringBuilder text,
+        string modelStepId)
     {
         if (fragments.Count == 0)
         {
-            var (promptSelection, visibleText) = ParsePromptToolSelection(text.ToString(), settings);
+            var (promptSelection, visibleText) = ParsePromptToolSelection(text.ToString(), settings, modelStepId);
             if (promptSelection is not null)
             {
                 return ([promptSelection], visibleText);
@@ -323,15 +332,11 @@ public sealed class WorkerV2StepService
             return (new List<ModelToolCall>(), string.IsNullOrEmpty(visibleText) ? null : visibleText);
         }
 
-        // Trust the model's stream shape: a provider call id opens a new call,
-        // and id-less continuation fragments extend the call before them, so
-        // parallel calls arrive as separate groups with their arguments spread
-        // across any number of chunks. The returned calls run in order on the
-        // Host; nothing here rejects a step for having "too many" calls.
         var groups = new List<CallGroup> { new() };
         foreach (var fragment in fragments)
         {
-            var opensNewCall = !string.IsNullOrEmpty(fragment.ProviderCallId)
+            var hasProviderCallId = !string.IsNullOrEmpty(fragment.ProviderCallId);
+            var opensNewCall = hasProviderCallId
                 && (groups[^1].ProviderCallId is not null
                     || groups[^1].ToolName is not null
                     || groups[^1].Arguments.Length > 0);
@@ -341,7 +346,16 @@ public sealed class WorkerV2StepService
             }
 
             var group = groups[^1];
-            if (fragment.ProviderCallId is not null)
+            if (!hasProviderCallId)
+            {
+                var hasExistingCallData = group.ToolName is not null || group.Arguments.Length > 0;
+                if (groups.Count > 1 || (hasExistingCallData && !string.IsNullOrEmpty(fragment.ToolName)))
+                {
+                    throw new WorkerV2StepException("protocol_failure", retryable: false);
+                }
+            }
+
+            if (hasProviderCallId)
             {
                 group.ProviderCallId = fragment.ProviderCallId;
             }
@@ -393,7 +407,17 @@ public sealed class WorkerV2StepService
                 throw new WorkerV2StepException("model_tool_call_invalid", retryable: true, error);
             }
 
-            calls.Add(new ModelToolCall(group.ProviderCallId, group.ToolName, toolVersion, arguments));
+            var providerCallId = group.ProviderCallId
+                ?? $"ru_call_{modelStepId}_{calls.Count + 1}";
+
+            try
+            {
+                calls.Add(new ModelToolCall(providerCallId, group.ToolName, toolVersion, arguments));
+            }
+            catch (ArgumentException error)
+            {
+                throw new WorkerV2StepException("protocol_failure", retryable: false, error);
+            }
         }
 
         try
@@ -432,7 +456,10 @@ public sealed class WorkerV2StepService
         return candidate.Length != 0 && candidate[0] is '{' or '[';
     }
 
-    private static (ModelToolCall? Call, string? VisibleText) ParsePromptToolSelection(string text, JsonObject settings)
+    private static (ModelToolCall? Call, string? VisibleText) ParsePromptToolSelection(
+        string text,
+        JsonObject settings,
+        string modelStepId)
     {
         var modelTools = settings["model_tools"] as JsonArray;
         var hasTools = modelTools is { Count: > 0 };
@@ -446,7 +473,7 @@ public sealed class WorkerV2StepService
                 return (null, text);
             }
 
-            return (BuildSelectionCall(modelTools, candidate, advertised), null);
+            return (BuildSelectionCall(modelTools, candidate, advertised, modelStepId), null);
         }
 
         // Trailing wrapper: prose first, tool call last. A complete trailing
@@ -458,7 +485,7 @@ public sealed class WorkerV2StepService
             {
                 var trailing = ModelToolSelectionParser.Parse(
                     ModelToolSelectionParser.NormalizeCandidate(block), advertised);
-                return (BuildSelectionCall(modelTools, trailing), string.IsNullOrWhiteSpace(prose) ? null : prose);
+                return (BuildSelectionCall(modelTools, trailing, modelStepId), string.IsNullOrWhiteSpace(prose) ? null : prose);
             }
             catch (ModelToolSelectionException error) when (
                 error.Code is "unknown_tool" or "invalid_tool_version")
@@ -487,7 +514,7 @@ public sealed class WorkerV2StepService
             {
                 var selected = ModelToolSelectionParser.Parse(
                     ModelToolSelectionParser.NormalizeCandidate(callJson), advertised);
-                return (BuildSelectionCall(modelTools, selected),
+                return (BuildSelectionCall(modelTools, selected, modelStepId),
                     string.IsNullOrWhiteSpace(callProse) ? null : callProse);
             }
             catch (ModelToolSelectionException error) when (
@@ -530,7 +557,11 @@ public sealed class WorkerV2StepService
             .ToHashSet(StringComparer.Ordinal)
         ?? new HashSet<string>(StringComparer.Ordinal);
 
-    private static ModelToolCall BuildSelectionCall(JsonArray? modelTools, string candidate, HashSet<string> advertised)
+    private static ModelToolCall BuildSelectionCall(
+        JsonArray? modelTools,
+        string candidate,
+        HashSet<string> advertised,
+        string modelStepId)
     {
         ModelToolSelection selection;
         try
@@ -547,10 +578,13 @@ public sealed class WorkerV2StepService
             throw new WorkerV2StepException("invalid_selection", retryable: true, error);
         }
 
-        return BuildSelectionCall(modelTools, selection);
+        return BuildSelectionCall(modelTools, selection, modelStepId);
     }
 
-    private static ModelToolCall BuildSelectionCall(JsonArray? modelTools, ModelToolSelection selection)
+    private static ModelToolCall BuildSelectionCall(
+        JsonArray? modelTools,
+        ModelToolSelection selection,
+        string modelStepId)
     {
         var configuredTool = modelTools?
             .OfType<JsonObject>()
@@ -568,7 +602,8 @@ public sealed class WorkerV2StepService
 
         try
         {
-            return new ModelToolCall(null, selection.ToolId, selection.ToolVersion, selection.Arguments);
+            var providerCallId = $"ru_call_{modelStepId}_1";
+            return new ModelToolCall(providerCallId, selection.ToolId, selection.ToolVersion, selection.Arguments);
         }
         catch (ArgumentException error)
         {

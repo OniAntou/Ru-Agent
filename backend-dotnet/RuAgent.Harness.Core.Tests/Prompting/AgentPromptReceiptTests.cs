@@ -119,7 +119,7 @@ public sealed class AgentPromptReceiptTests
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)))
             .ToLowerInvariant();
         return new SystemPromptContext(
-            1,
+            SystemPromptContext.PromptContextSchemaVersion,
             "ru-agent",
             "standard",
             new PromptEnvironment(
@@ -157,10 +157,10 @@ public sealed class AgentPromptReceiptTests
                 new PromptBlockDigest("ru.persona", zero),
                 new PromptBlockDigest("agent.contract", zero),
                 new PromptBlockDigest("environment", zero),
+                new PromptBlockDigest("profile", zero),
                 new PromptBlockDigest(
                     "instruction.root:Ru.md",
                     instructionDigest ?? context.InstructionBlocks[0].ContentSha256),
-                new PromptBlockDigest("profile", zero),
                 new PromptBlockDigest("capabilities", zero),
                 new PromptBlockDigest("runtime", zero),
             ]);

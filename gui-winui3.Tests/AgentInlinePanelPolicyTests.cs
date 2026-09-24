@@ -3,13 +3,6 @@ using Xunit;
 
 namespace RuApp.Tests;
 
-/// <summary>
-/// The inline Agent panel above the composer: when it shows, what it says, and when
-/// trust is granted silently.
-///
-/// These are the rules that used to be interleaved with control assignments inside
-/// ChatView.UpdateAgentInlineState; they are now exercised directly.
-/// </summary>
 public sealed class AgentInlinePanelPolicyTests
 {
     [Fact]
@@ -120,21 +113,46 @@ public sealed class AgentInlinePanelPolicyTests
     }
 
     [Fact]
-    public void Workspace_trust_is_granted_silently_without_approval_ui()
+    public void Pending_workspace_trust_is_actionable_for_the_active_run()
     {
         var state = AgentInlinePanelPolicy.Evaluate(Input(needsWorkspaceTrust: true, isBusy: true));
 
-        Assert.True(state.AutoApproveWorkspaceTrust);
+        Assert.True(ReadStateFlag(state, "ShowWorkspaceTrust"));
+        Assert.True(state.ShowInlinePanel);
         Assert.False(state.ShowApproval);
         Assert.False(state.ShowStop);
     }
 
     [Fact]
-    public void Trust_does_not_ask_again_once_the_run_is_underway()
+    public void Workspace_trust_from_another_session_is_never_actionable()
     {
-        var state = AgentInlinePanelPolicy.Evaluate(Input(needsWorkspaceTrust: false, isBusy: true));
+        var state = AgentInlinePanelPolicy.Evaluate(Input(
+            runBelongsToAnotherSession: true,
+            needsWorkspaceTrust: true,
+            isBusy: true));
 
-        Assert.False(state.AutoApproveWorkspaceTrust);
+        Assert.False(ReadStateFlag(state, "ShowWorkspaceTrust"));
+        Assert.False(state.ShowInlinePanel);
+    }
+
+    [Fact]
+    public void A_workspace_trust_decision_in_flight_suppresses_interaction()
+    {
+        var state = AgentInlinePanelPolicy.Evaluate(Input(
+            needsWorkspaceTrust: true,
+            interactionPending: true));
+
+        Assert.True(ReadStateFlag(state, "ShowWorkspaceTrust"));
+        Assert.True(state.SuppressInteraction);
+    }
+
+    [Fact]
+    public void The_state_exposes_an_explicit_workspace_trust_flag()
+    {
+        var stateType = typeof(AgentInlinePanelState);
+
+        Assert.NotNull(stateType.GetProperty("ShowWorkspaceTrust"));
+        Assert.Null(stateType.GetProperty("AutoApproveWorkspaceTrust"));
     }
 
     [Fact]
@@ -169,6 +187,13 @@ public sealed class AgentInlinePanelPolicyTests
 
         Assert.True(state.SuppressInteraction);
         Assert.True(state.ShowApproval, "Suppression disables the controls; it does not hide them.");
+    }
+
+    private static bool ReadStateFlag(AgentInlinePanelState state, string propertyName)
+    {
+        var property = state.GetType().GetProperty(propertyName);
+        Assert.NotNull(property);
+        return (bool)property!.GetValue(state)!;
     }
 
     private static AgentInlinePanelInput Input(

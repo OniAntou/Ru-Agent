@@ -5,9 +5,17 @@ supersedes: superseded by session-scoped directory grants + terminal risk
   classifications (2026-09-04 plan). The preset picker is no longer exposed
   in ChatView or `agent run`; current permission model lives in
   `docs/architecture.md` and `docs/operations/agent-tools.md`.
+superseded_by: ADR-0011 model autonomy and workspace trust boundary
+  (`0011-model-autonomy-and-workspace-trust-boundary.md`, accepted
+  2026-09-24).
 ---
 
 # Agent capability profiles (Standard / Full Access)
+
+> Current decision: [ADR 0011](0011-model-autonomy-and-workspace-trust-boundary.md)
+> defines the canonical `plan` / `standard` / `full_access` matrix, explicit
+> canonical-identity trust, and native multi-call behavior. The sections below
+> preserve this ADR's superseded rationale and history.
 
 Ru exposes one generation mode: Agent. The Worker v2 settings currently
 advertise the same ten file/terminal bindings in Standard and Full Access.

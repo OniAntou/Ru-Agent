@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using RuAgent.Harness.Core.Approval;
 
 namespace RuAgent.Harness.Core;
 
@@ -25,15 +25,11 @@ public interface IRetainedApprovalStash
     void Drop(RunId runId);
 }
 
-/// <summary>
-/// Process-local stash. Entries die with the backend (restart falls back to the
-/// old re-propose flow) and are swept after 24h. One slot per run: a step returns
-/// on the first Ask, so a second stash always supersedes the first.
-/// </summary>
 public sealed class InMemoryRetainedApprovalStash : IRetainedApprovalStash
 {
-    private static readonly TimeSpan TimeToLive = TimeSpan.FromHours(24);
-    private readonly ConcurrentDictionary<string, RetainedApprovalStep> _steps = new(StringComparer.Ordinal);
+    private static readonly TimeSpan TimeToLive = ApprovalState.DefaultLifetime;
+    private readonly object _gate = new();
+    private readonly Dictionary<string, RetainedApprovalStep> _steps = new(StringComparer.Ordinal);
     private readonly ITimeProvider? _time;
 
     public InMemoryRetainedApprovalStash(ITimeProvider? time = null) => _time = time;
@@ -41,48 +37,74 @@ public sealed class InMemoryRetainedApprovalStash : IRetainedApprovalStash
     public void Stash(RunId runId, RetainedApprovalStep step)
     {
         ArgumentNullException.ThrowIfNull(step);
-        SweepExpired();
-        _steps[runId.Value] = step;
+        lock (_gate)
+        {
+            SweepExpired();
+            _steps[runId.Value] = step;
+        }
     }
 
     public bool TryPeek(RunId runId, out RetainedApprovalStep? step)
     {
-        if (_steps.TryGetValue(runId.Value, out var found) && !IsExpired(found))
+        lock (_gate)
         {
-            step = found;
-            return true;
-        }
+            if (_steps.TryGetValue(runId.Value, out var found)
+                && !IsExpired(found))
+            {
+                step = found;
+                return true;
+            }
 
-        step = null;
-        return false;
+            _steps.Remove(runId.Value);
+            step = null;
+            return false;
+        }
     }
 
     public bool TryTake(RunId runId, ApprovalId approvalId, out RetainedApprovalStep? step)
     {
-        if (_steps.TryGetValue(runId.Value, out var found)
-            && !IsExpired(found)
-            && string.Equals(found.ApprovalId.Value, approvalId.Value, StringComparison.Ordinal)
-            && _steps.TryRemove(runId.Value, out step))
+        lock (_gate)
         {
+            if (!_steps.TryGetValue(runId.Value, out var found))
+            {
+                step = null;
+                return false;
+            }
+
+            if (IsExpired(found))
+            {
+                _steps.Remove(runId.Value);
+                step = null;
+                return false;
+            }
+
+            if (!string.Equals(found.ApprovalId.Value, approvalId.Value, StringComparison.Ordinal))
+            {
+                step = null;
+                return false;
+            }
+
+            _steps.Remove(runId.Value);
+            step = found;
             return true;
         }
-
-        step = null;
-        return false;
     }
 
     public void Drop(RunId runId)
     {
-        _steps.TryRemove(runId.Value, out _);
+        lock (_gate)
+        {
+            _steps.Remove(runId.Value);
+        }
     }
 
     private void SweepExpired()
     {
-        foreach (var pair in _steps)
+        foreach (var pair in _steps.ToArray())
         {
             if (IsExpired(pair.Value))
             {
-                _steps.TryRemove(pair.Key, out _);
+                _steps.Remove(pair.Key);
             }
         }
     }

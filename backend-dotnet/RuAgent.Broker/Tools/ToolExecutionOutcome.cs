@@ -13,7 +13,8 @@ public sealed record ToolExecutionContext(
     string? ApprovalToken = null,
     bool ConfinementRequired = true,
     IReadOnlySet<string>? SessionScopes = null,
-    string RunId = "");
+    string RunId = "",
+    bool IsAuthenticatedV2Execution = false);
 
 public sealed record ToolExecutionOutcome(
     string Status,

@@ -47,9 +47,20 @@ public sealed partial class ToolExecutionService
             cancellationToken);
     }
 
-    public async Task<ToolResult> ExecuteAsync(
+    public Task<ToolResult> ExecuteAsync(
         AgentEnvelope request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: false);
+
+    internal Task<ToolResult> ExecuteAuthenticatedV2Async(
+        AgentEnvelope request,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(request, cancellationToken, isAuthenticatedV2Execution: true);
+
+    private async Task<ToolResult> ExecuteAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken,
+        bool isAuthenticatedV2Execution)
     {
         var started = Stopwatch.StartNew();
         try
@@ -91,10 +102,10 @@ public sealed partial class ToolExecutionService
                     adapterInvoked: false);
             }
 
-            // V2 executes arrive with a consumed authorization token
-            // (AgentConnection consumes it before dispatch), so the v1 approval
-            // prompt must not re-gate them; approval already happened at evaluate.
-            var isV2Authorized = ReadAuthorizationToken(request.Payload) is not null;
+            var isAuthenticatedV2 = isAuthenticatedV2Execution
+                && request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2
+                && request.MessageType == AgentMessageTypes.ToolExecute;
+            var isV2Authorized = isAuthenticatedV2;
             if (decision.RequiresApproval && !isV2Authorized)
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
@@ -143,9 +154,10 @@ public sealed partial class ToolExecutionService
                 contextRequest: request,
                 binding,
                 arguments,
-                approved: ReadAuthorizationToken(request.Payload) is not null,
-                approvalToken: ReadAuthorizationToken(request.Payload),
+                approved: isV2Authorized,
+                approvalToken: null,
                 ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
+                isAuthenticatedV2,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -261,6 +273,7 @@ public sealed partial class ToolExecutionService
                 approved: pending.TerminalApprovalToken is null,
                 pending.TerminalApprovalToken,
                 ReadOptionalString(pending.Request.Payload, "run_id") ?? pending.Request.SessionId,
+                isAuthenticatedV2Execution: false,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -384,6 +397,20 @@ public sealed partial class ToolExecutionService
         return null;
     }
 
+    private bool IsWindowsCurrentUserAuthority(
+        string runId,
+        string sessionId,
+        bool isAuthenticatedV2Execution)
+    {
+        if (!isAuthenticatedV2Execution || ActiveLease(runId, sessionId) is not { } lease)
+        {
+            return false;
+        }
+
+        return AgentPolicyProfileCatalog.Get(lease.Preset).TerminalAuthority
+            == PresetTerminalAuthority.WindowsCurrentUser;
+    }
+
     private async Task<ToolResult> ExecuteBindingAsync(
         AgentEnvelope receiptRequest,
         AgentEnvelope contextRequest,
@@ -392,6 +419,7 @@ public sealed partial class ToolExecutionService
         bool approved,
         string? approvalToken,
         string runId,
+        bool isAuthenticatedV2Execution,
         CancellationToken cancellationToken)
     {
         var started = Stopwatch.StartNew();
@@ -434,9 +462,13 @@ public sealed partial class ToolExecutionService
             contextRequest.DeadlineMs,
             approved,
             approvalToken,
-            ConfinementRequired: true,
+            ConfinementRequired: !IsWindowsCurrentUserAuthority(
+                runId,
+                contextRequest.SessionId,
+                isAuthenticatedV2Execution),
             sessionScopes,
-            runId);
+            runId,
+            IsAuthenticatedV2Execution: isAuthenticatedV2Execution);
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));

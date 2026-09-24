@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net;
+using System.Security.Cryptography;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -51,6 +52,353 @@ public sealed class AgentCommands
         return new AgentCommands(session, httpClient, outWriter, errWriter);
     }
 
+    private const int PresetVersionRetryLimit = 3;
+
+    private static string CreateSnapshotToken()
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        RandomNumberGenerator.Fill(bytes);
+        return $"sps_{Convert.ToHexString(bytes).ToLowerInvariant()}";
+    }
+
+    private sealed record SessionPresetUpdateResult(
+        string SessionId,
+        long Version,
+        string SnapshotToken);
+
+    private async Task<SessionPresetUpdateResult?> UpdateSessionPresetAsync(
+        string sessionId,
+        string preset,
+        bool interactive,
+        CancellationToken cancellationToken)
+    {
+        var snapshotToken = CreateSnapshotToken();
+        for (var expectedVersion = 0; expectedVersion <= PresetVersionRetryLimit; expectedVersion++)
+        {
+            try
+            {
+                var response = await _agentClient.SetSessionPresetAsync(
+                    sessionId,
+                    preset,
+                    expectedVersion,
+                    interactive,
+                    cancellationToken,
+                    snapshotToken).ConfigureAwait(false);
+                if (!response.TryGetProperty("version", out var versionElement)
+                    || versionElement.ValueKind != JsonValueKind.Number
+                    || !versionElement.TryGetInt64(out var version)
+                    || version <= 0
+                    || !response.TryGetProperty("session_id", out var sessionElement)
+                    || sessionElement.ValueKind != JsonValueKind.String
+                    || !string.Equals(sessionElement.GetString(), sessionId, StringComparison.Ordinal)
+                    || !response.TryGetProperty("preset", out var presetElement)
+                    || presetElement.ValueKind != JsonValueKind.String
+                    || !string.Equals(presetElement.GetString(), preset, StringComparison.Ordinal)
+                    || response.TryGetProperty("snapshot_token", out var tokenElement)
+                    && (tokenElement.ValueKind != JsonValueKind.String
+                        || !string.Equals(tokenElement.GetString(), snapshotToken, StringComparison.Ordinal)))
+                {
+                    await _err.WriteLineAsync("preset_update_failed: invalid preset update response.").ConfigureAwait(false);
+                    if (!await RestorePresetOrReportAsync(new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                        .ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    return null;
+                }
+
+                return new SessionPresetUpdateResult(sessionId, version, snapshotToken);
+            }
+            catch (AgentApiException ex) when (
+                IsDeterministicPresetVersionConflict(ex) &&
+                expectedVersion < PresetVersionRetryLimit)
+            {
+            }
+            catch (AgentApiException ex) when (IsDeterministicPresetVersionConflict(ex))
+            {
+                await _err.WriteLineAsync("preset_version_conflict: preset_version_conflict").ConfigureAwait(false);
+                return null;
+            }
+            catch (AgentApiException ex)
+            {
+                if (IsPreCommitPresetError(ex))
+                {
+                    await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                    return null;
+                }
+
+                if (!await RestorePresetOrReportAsync(
+new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                    .ConfigureAwait(false))
+                {
+                    await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                    return null;
+                }
+
+                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return null;
+            }
+            catch (OperationCanceledException)
+            {
+                if (!await RestorePresetOrReportAsync(
+new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                    .ConfigureAwait(false))
+                {
+                    throw;
+                }
+
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (!await RestorePresetOrReportAsync(
+new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
+                    .ConfigureAwait(false))
+                {
+                    await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
+                    return null;
+                }
+
+                await _err.WriteLineAsync($"preset_update_failed: {ex.Message}").ConfigureAwait(false);
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsDeterministicPresetVersionConflict(AgentApiException error)
+    {
+        return error.StatusCode == 409
+            && error.ErrorCode == "preset_version_conflict";
+    }
+
+    private static bool IsPreCommitPresetError(AgentApiException error)
+    {
+        return (error.StatusCode, error.ErrorCode) switch
+        {
+            (400, "invalid_request" or "invalid_kind" or "invalid_session_id" or "invalid_preset" or "invalid_preset_version" or "invalid_snapshot_token" or "unknown_field") => true,
+            (401, "unauthorized" or "policy_create_failed") => true,
+            (403, "forbidden" or "interactive_required" or "policy_create_failed") => true,
+            (404, "session_not_found") => true,
+            (409, "preset_version_conflict" or "preset_snapshot_token_conflict") => true,
+            (413, "request_too_large" or "payload_too_large" or "policy_create_failed") => true,
+            (503, "preset_snapshot_capacity_exceeded") => true,
+            _ => false,
+        };
+    }
+
+    private static bool IsValidRestoreResponse(JsonElement response, string expectedSessionId)
+    {
+        if (response.ValueKind != JsonValueKind.Object
+            || !response.TryGetProperty("status", out var statusElement)
+            || statusElement.ValueKind != JsonValueKind.String
+            || !string.Equals(statusElement.GetString(), "ok", StringComparison.Ordinal)
+            || !response.TryGetProperty("session_id", out var sessionElement)
+            || sessionElement.ValueKind != JsonValueKind.String
+            || !string.Equals(sessionElement.GetString(), expectedSessionId, StringComparison.Ordinal)
+            || !response.TryGetProperty("restored", out var restoredElement)
+            || restoredElement.ValueKind != JsonValueKind.True
+            || !response.TryGetProperty("replayed", out var replayedElement)
+            || replayedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+            || !response.TryGetProperty("preset", out var presetElement)
+            || presetElement.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)
+            || !response.TryGetProperty("version", out var versionElement)
+            || versionElement.ValueKind != JsonValueKind.Number
+            || !versionElement.TryGetInt64(out var version)
+            || version < 0)
+        {
+            return false;
+        }
+
+        if (presetElement.ValueKind == JsonValueKind.Null)
+            return version == 0;
+
+        return version > 0
+            && presetElement.GetString() is "plan" or "standard" or "full_access";
+    }
+
+    private async Task<bool> RestoreSessionPresetAsync(
+        SessionPresetUpdateResult update,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var response = await _agentClient.RestoreSessionPresetAsync(
+                    update.SessionId,
+                    update.SnapshotToken,
+                    cancellationToken).ConfigureAwait(false);
+                if (!IsValidRestoreResponse(response, update.SessionId))
+                {
+                    await _err.WriteLineAsync("preset_restore_failed: invalid restore response.").ConfigureAwait(false);
+                    return false;
+                }
+
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (AgentApiException ex) when (ex.ErrorCode == "invalid_response")
+            {
+                await _err.WriteLineAsync("preset_restore_failed: invalid restore response.").ConfigureAwait(false);
+                return false;
+            }
+            catch (AgentApiException ex) when (
+                attempt == 0
+                && (ex.StatusCode is null || ex.StatusCode >= 500))
+            {
+                await _err.WriteLineAsync($"preset_restore_retry: {ex.ErrorCode}").ConfigureAwait(false);
+            }
+            catch (AgentApiException ex)
+            {
+                await _err.WriteLineAsync($"preset_restore_failed: {ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+            catch (JsonException ex)
+            {
+                await _err.WriteLineAsync($"preset_restore_failed: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+            catch (Exception ex) when (attempt == 0)
+            {
+                await _err.WriteLineAsync($"preset_restore_retry: {ex.GetType().Name}").ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"preset_restore_failed: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        await _err.WriteLineAsync("preset_restore_failed: restore retry failed.").ConfigureAwait(false);
+        return false;
+    }
+
+    private async Task<bool> RestorePresetOrReportAsync(
+        SessionPresetUpdateResult update)
+    {
+        if (await RestoreSessionPresetAsync(update, CancellationToken.None).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        await _err.WriteLineAsync("preset_restore_failed: refusing to continue.").ConfigureAwait(false);
+        return false;
+    }
+
+    private static bool IsAcceptedTrustStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        return status.Trim().ToLowerInvariant() is
+            "waiting_history" or
+            "waiting_history_user" or
+            "waiting_history_final" or
+            "running" or
+            "waiting_approval" or
+            "waiting_user" or
+            "reconciliation_required" or
+            "completed";
+    }
+
+    private static bool IsKnownCreateStatus(string? status)
+    {
+        return status?.Trim().ToLowerInvariant() is
+            "waiting_workspace_trust" or
+            "waiting_history" or
+            "waiting_history_user" or
+            "waiting_history_final" or
+            "running" or
+            "waiting_approval" or
+            "waiting_user" or
+            "reconciliation_required" or
+            "completed";
+    }
+
+    private async Task<bool> HandleWorkspaceTrustAsync(
+        CreateAgentRunResponse response,
+        string expectedSessionId,
+        string expectedPreset,
+        bool trustWorkspace,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(response.RunId)
+            || string.IsNullOrWhiteSpace(response.SessionId)
+            || string.IsNullOrWhiteSpace(response.WorkspaceId)
+            || !string.Equals(response.SessionId, expectedSessionId, StringComparison.Ordinal)
+            || !string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
+            || !IsKnownCreateStatus(response.Status))
+        {
+            await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
+            return false;
+        }
+
+        if (string.Equals(response.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!trustWorkspace)
+            {
+                await _out.WriteLineAsync(
+                    $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.").ConfigureAwait(false);
+                return false;
+            }
+
+            var trustRequestId = response.TrustRequestId;
+            var displayHash = response.DisplayIdentityHash;
+            if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+            {
+                await _err.WriteLineAsync("workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
+                return false;
+            }
+
+            try
+            {
+                var trustResponse = await _agentClient.TrustAsync(
+                    response.RunId,
+                    new TrustAgentRunRequest(trustRequestId, displayHash, "approve"),
+                    cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(trustResponse.RunId, response.RunId, StringComparison.Ordinal)
+                    || !string.Equals(trustResponse.TrustRequestId, trustRequestId, StringComparison.Ordinal)
+                    || !IsAcceptedTrustStatus(trustResponse.Status))
+                {
+                    await _err.WriteLineAsync("workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
+                    return false;
+                }
+
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (AgentApiException ex)
+            {
+                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        if (!IsAcceptedTrustStatus(response.Status))
+        {
+            await _err.WriteLineAsync("agent_create_failed: unsafe create response status.").ConfigureAwait(false);
+            return false;
+        }
+
+        return true;
+    }
+
     private static string ReadReasoningEffort(System.Text.Json.JsonElement settings)
     {
         if (settings.TryGetProperty("reasoning_effort", out var direct) && !string.IsNullOrWhiteSpace(direct.GetString()))
@@ -73,6 +421,18 @@ public sealed class AgentCommands
 
     public async Task<int> RunAsync(RunCommand cmd, CancellationToken cancellationToken)
     {
+        if (cmd.Preset is not ("plan" or "standard" or "full_access"))
+        {
+            await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
+            return 1;
+        }
+
+        if (cmd.Preset == "full_access" && !cmd.ConfirmFullAccess)
+        {
+            await _err.WriteLineAsync("full_access_confirmation_required: --confirm-full-access is required.").ConfigureAwait(false);
+            return 1;
+        }
+
         string canonicalWorkspace;
         try
         {
@@ -108,101 +468,116 @@ public sealed class AgentCommands
             }
         }
 
-        var preset = cmd.Preset;
-        long? presetVersion = null;
-
-        if (preset != "plan" && preset != "standard" && preset != "full_access")
+        var presetUpdate = await UpdateSessionPresetAsync(
+            sessionId,
+            cmd.Preset,
+            cmd.ConfirmFullAccess,
+            cancellationToken).ConfigureAwait(false);
+        if (presetUpdate is null)
         {
-            await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
             return 1;
         }
 
-        // For standard, if we have a new session, version will be 1 (implicit). For existing, we need to match stored version.
-        // Try to fetch existing preset version: for standard, we can omit version if new, or use stored if existing.
-        // For simplicity, if isNewSession, leave null (server will create 1). If existing, try to use 1 or stored?
-        // We'll leave null and let server handle lenient replay for standard.
-        presetVersion = null;
-
-        var idempotencyKey = Guid.NewGuid().ToString("N");
         var request = new CreateAgentRunRequest(
             sessionId,
             canonicalWorkspace,
             cmd.Prompt,
-            preset,
-            presetVersion,
-            idempotencyKey);
+            cmd.Preset,
+            presetUpdate.Version,
+            Guid.NewGuid().ToString("N"));
 
-        CreateAgentRunResponse resp;
+        CreateAgentRunResponse response;
         try
         {
-            resp = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
+            response = await _agentClient.CreateRunAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
+            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+            {
+                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return 1;
+            }
+
             await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
             return 1;
         }
-
-        await _out.WriteLineAsync($"session_id: {resp.SessionId}").ConfigureAwait(false);
-        await _out.WriteLineAsync($"run_id: {resp.RunId}").ConfigureAwait(false);
-
-        string runId = resp.RunId;
-        if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase))
+        catch (OperationCanceledException)
         {
-            var trustRequestId = resp.TrustRequestId;
-            var displayHash = resp.DisplayIdentityHash;
-            if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
             {
-                var run = await _agentClient.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-                trustRequestId = run.TrustRequestId;
-                displayHash = run.DisplayIdentityHash;
+                throw;
             }
 
-            if (!string.IsNullOrWhiteSpace(trustRequestId) && !string.IsNullOrWhiteSpace(displayHash) && !cmd.Json && _in == Console.In && !Console.IsInputRedirected)
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
             {
-                await _out.WriteAsync($"Untrusted workspace: {canonicalWorkspace}\nTrust this workspace? [1: Approve / 2: Deny] (default: 1): ").ConfigureAwait(false);
-                await _out.FlushAsync().ConfigureAwait(false);
-                var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                var normalized = string.IsNullOrWhiteSpace(answer) ? "1" : answer.Trim().ToLowerInvariant();
+                await _err.WriteLineAsync($"agent_create_failed: {ex.Message}").ConfigureAwait(false);
+                return 1;
+            }
 
-                bool approve = normalized is "1" or "trust" or "yes" or "y" or "approve";
-                var decision = approve ? "approve" : "deny";
-                try
-                {
-                    var trustReq = new TrustAgentRunRequest(trustRequestId, displayHash, decision);
-                    await _agentClient.TrustAsync(runId, trustReq, cancellationToken).ConfigureAwait(false);
-                    if (!approve)
-                    {
-                        await _out.WriteLineAsync("Workspace trust denied.").ConfigureAwait(false);
-                        return 1;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
-                    return 1;
-                }
-            }
-            else
+            await _err.WriteLineAsync($"agent_create_failed: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+
+        bool trustAccepted;
+        try
+        {
+            await _out.WriteLineAsync($"session_id: {response.SessionId}").ConfigureAwait(false);
+            await _out.WriteLineAsync($"run_id: {response.RunId}").ConfigureAwait(false);
+            trustAccepted = await HandleWorkspaceTrustAsync(
+                response,
+                sessionId,
+                cmd.Preset,
+                cmd.TrustWorkspace,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
             {
-                await _out.WriteLineAsync($"waiting_workspace_trust: run 'ru agent trust {runId} --approve' to proceed.").ConfigureAwait(false);
+                throw;
             }
+
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+            {
+                await _err.WriteLineAsync($"agent_output_failed: {ex.Message}").ConfigureAwait(false);
+                return 1;
+            }
+
+            await _err.WriteLineAsync($"agent_output_failed: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+        if (!trustAccepted)
+        {
+            if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+            {
+                return 1;
+            }
+
+            return 1;
         }
 
         try
         {
-            await StreamEventsAsync(runId, cmd.Json, cancellationToken).ConfigureAwait(false);
+            await StreamEventsAsync(response.RunId, cmd.Json, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             try
             {
-                await _agentClient.CancelAsync(runId, CancellationToken.None).ConfigureAwait(false);
+                await _agentClient.CancelAsync(response.RunId, CancellationToken.None).ConfigureAwait(false);
                 await _out.WriteLineAsync("cancelled").ConfigureAwait(false);
             }
             catch (Exception)
             {
-                // Best-effort cancel during shutdown; teardown continues regardless.
             }
             return 130;
         }
@@ -888,6 +1263,18 @@ public sealed class AgentCommands
 
     public async Task<int> ChatAsync(ChatCommand cmd, CancellationToken cancellationToken)
     {
+        if (cmd.Preset is not ("plan" or "standard" or "full_access"))
+        {
+            await _err.WriteLineAsync("invalid_preset: preset must be plan, standard, or full_access").ConfigureAwait(false);
+            return 1;
+        }
+
+        if (cmd.Preset == "full_access" && !cmd.ConfirmFullAccess)
+        {
+            await _err.WriteLineAsync("full_access_confirmation_required: --confirm-full-access is required.").ConfigureAwait(false);
+            return 1;
+        }
+
         string canonicalWorkspace;
         try
         {
@@ -1460,14 +1847,25 @@ public sealed class AgentCommands
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
             }
+            var presetUpdate = await UpdateSessionPresetAsync(
+                sessionId,
+                cmd.Preset,
+                cmd.ConfirmFullAccess,
+                cancellationToken).ConfigureAwait(false);
+            if (presetUpdate is null)
+            {
+                return 1;
+            }
+
             var idempotencyKey = Guid.NewGuid().ToString("N");
             var request = new CreateAgentRunRequest(
                 sessionId,
                 canonicalWorkspace,
                 line,
                 cmd.Preset,
-                null,
+                presetUpdate.Version,
                 idempotencyKey);
+            var presetCommitted = false;
 
             try
             {
@@ -1487,65 +1885,23 @@ public sealed class AgentCommands
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
-                if (string.Equals(resp.Status, "waiting_workspace_trust", StringComparison.OrdinalIgnoreCase)
-                    || (!string.IsNullOrEmpty(resp.TrustRequestId) && !string.IsNullOrEmpty(resp.DisplayIdentityHash)))
+                if (!await HandleWorkspaceTrustAsync(
+                        resp,
+                        sessionId,
+                        cmd.Preset,
+                        cmd.TrustWorkspace,
+                        turnCts.Token).ConfigureAwait(false))
                 {
-                    var trustRequestId = resp.TrustRequestId;
-                    var displayHash = resp.DisplayIdentityHash;
-                    if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+                    if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                     {
-                        var run = await _agentClient.GetRunAsync(resp.RunId, cancellationToken).ConfigureAwait(false);
-                        trustRequestId = run.TrustRequestId;
-                        displayHash = run.DisplayIdentityHash;
+                        await FinishTurnAsync().ConfigureAwait(false);
+                        return 1;
                     }
 
-                    if (!string.IsNullOrWhiteSpace(trustRequestId) && !string.IsNullOrWhiteSpace(displayHash))
-                    {
-                        // Fail closed: never prompt (and never default-approve) when stdin
-                        // is a redirected real console or output is JSON. A redirected
-                        // Console.In yields null answers that would otherwise default to
-                        // "1" and auto-approve trust. An explicitly injected reader
-                        // (_in != Console.In) is a deliberate caller/test seam and stays
-                        // promptable.
-                        if (cmd.Json || (_in == Console.In && Console.IsInputRedirected))
-                        {
-                            await _out.WriteLineAsync($"waiting_workspace_trust: run 'ru agent trust {resp.RunId} --approve' to proceed.").ConfigureAwait(false);
-                            await FinishTurnAsync().ConfigureAwait(false);
-                            continue;
-                        }
-
-                        await _out.WriteAsync(Tui.TuiPalette.BoldPaint(Tui.TuiPalette.Warn($"\n  ⚠ Untrusted workspace: {canonicalWorkspace}\n  ❯ Trust this workspace? [1: Approve (Trust) / 2: Deny] (default: 1): "))).ConfigureAwait(false);
-                        await _out.FlushAsync().ConfigureAwait(false);
-                        var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                        var normalized = string.IsNullOrWhiteSpace(answer) ? "1" : answer.Trim().ToLowerInvariant();
-
-                        bool approve = normalized is "1" or "trust" or "yes" or "y" or "approve";
-                        var decision = approve ? "approve" : "deny";
-                        try
-                        {
-                            var trustReq = new TrustAgentRunRequest(trustRequestId, displayHash, decision);
-                            await _agentClient.TrustAsync(resp.RunId, trustReq, cancellationToken).ConfigureAwait(false);
-                            if (approve)
-                            {
-                                await _out.WriteLineAsync(Tui.TuiPalette.Ok("  ✓ Workspace trusted. Resuming execution...\n")).ConfigureAwait(false);
-                            }
-                            else
-                            {
-                                await _out.WriteLineAsync(Tui.TuiPalette.Err("  ✗ Workspace trust denied. Execution aborted.\n")).ConfigureAwait(false);
-                                await _out.FlushAsync().ConfigureAwait(false);
-                                await FinishTurnAsync().ConfigureAwait(false);
-                                continue;
-                            }
-                            await _out.FlushAsync().ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
-                            await FinishTurnAsync().ConfigureAwait(false);
-                            continue;
-                        }
-                    }
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    return 1;
                 }
+                presetCommitted = true;
 
                 async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
                 {
@@ -1628,16 +1984,34 @@ public sealed class AgentCommands
             }
             catch (OperationCanceledException)
             {
+                if (!presetCommitted
+                    && !await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                {
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    return 1;
+                }
                 await FinishTurnAsync().ConfigureAwait(false);
                 await _out.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
             }
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {
+                if (!presetCommitted
+                    && !await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                {
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    return 1;
+                }
                 await FinishTurnAsync().ConfigureAwait(false);
                 await WriteBusyConflictAsync(ex).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                if (!presetCommitted
+                    && !await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
+                {
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    return 1;
+                }
                 await FinishTurnAsync().ConfigureAwait(false);
                 await _err.WriteLineAsync(Tui.TuiPalette.Err($"run_error: {ex.Message}")).ConfigureAwait(false);
             }

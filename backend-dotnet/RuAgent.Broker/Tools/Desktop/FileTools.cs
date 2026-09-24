@@ -244,7 +244,7 @@ public sealed class FileTools
     {
         var buffer = new byte[checked(maxBytes + 1)];
         var total = 0;
-        using var stream = new FileStream(
+        using var stream = HardLinkGuard.OpenRead(
             path,
             FileMode.Open,
             FileAccess.Read,

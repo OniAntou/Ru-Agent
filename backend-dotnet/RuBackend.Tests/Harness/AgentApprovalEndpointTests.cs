@@ -497,6 +497,86 @@ public sealed class AgentApprovalEndpointTests
     }
 
     [Fact]
+    public async Task Batch_approval_persists_all_calls_and_resumes_without_reproposal()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        File.WriteAllText(Path.Combine(wsPath, "README.md"), "batch");
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                BatchToolStep(),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(
+                dataPaths: dataPaths,
+                modelStepRunner: runner,
+                withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(
+                client,
+                sessionId,
+                wsPath,
+                "batch approval");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            var before = await ReadEventsAsync(client, runId);
+            var proposedBefore = before
+                .Where(item => item.GetProperty("event_type").GetString() == "tool.proposed")
+                .ToArray();
+            Assert.Equal(3, proposedBefore.Length);
+            Assert.Equal(
+                new[] { "1", "2", "3" },
+                proposedBefore.Select(item => item.GetProperty("safe_summary").GetString()).ToArray());
+            Assert.DoesNotContain(
+                before,
+                item => item.GetProperty("event_type").GetString() == "tool.execution_requested");
+            Assert.DoesNotContain(
+                before,
+                item => item.GetProperty("event_type").GetString() == "tool.execution_completed");
+            var requestedBefore = before
+                .Where(item => item.GetProperty("event_type").GetString() == "approval.requested")
+                .ToArray();
+            Assert.Single(requestedBefore);
+            Assert.Equal(
+                "terminal_unknown_executable",
+                requestedBefore[0].GetProperty("safe_summary").GetString());
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var approvalResponse = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{runId}/approvals/{approvalId}",
+                new { scope = "once", decision = "allow" });
+            Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline));
+
+            var after = await ReadEventsAsync(client, runId);
+            Assert.Equal(
+                3,
+                after.Count(item => item.GetProperty("event_type").GetString() == "tool.proposed"));
+            Assert.Equal(
+                3,
+                after.Count(item => item.GetProperty("event_type").GetString() == "tool.execution_completed"));
+            Assert.Equal(
+                1,
+                after.Count(item => item.GetProperty("event_type").GetString() == "approval.requested"));
+            Assert.Equal(2, runner.RequestCount);
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear();
+        }
+    }
+
+    [Fact]
     public async Task Approval_OnceScope_DoesNotPersistReusableRule()
     {
         var wsPath = CreateTempWorkspace(out var dataPaths);
@@ -688,6 +768,8 @@ public sealed class AgentApprovalEndpointTests
     {
         private readonly Queue<AssistantStep> _steps = new();
 
+        public int RequestCount { get; private set; }
+
         public ScriptedRunner(params AssistantStep[] steps)
         {
             foreach (var s in steps) _steps.Enqueue(s);
@@ -695,10 +777,37 @@ public sealed class AgentApprovalEndpointTests
 
         public Task<ModelStepResult> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> publishDelta, CancellationToken cancellationToken)
         {
+            RequestCount++;
             var step = _steps.Count > 0 ? _steps.Dequeue() : FinalStep("script exhausted; done");
             return Task.FromResult(new ModelStepResult(step, SystemPromptReceipt.Empty));
         }
     }
+
+    private static AssistantStep BatchToolStep() =>
+        new(
+            null,
+            new[]
+            {
+                new ModelToolCall(
+                    "provider-batch-1",
+                    "read",
+                    "1.0.0",
+                    JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone()),
+                new ModelToolCall(
+                    "provider-batch-2",
+                    "bash",
+                    "1.0.0",
+                    JsonDocument.Parse(
+                        "{\"mode\":\"run\",\"executable\":\"unknown-tool-batch.exe\",\"arguments\":[\"--version\"]}")
+                        .RootElement.Clone()),
+                new ModelToolCall(
+                    "provider-batch-3",
+                    "read",
+                    "1.0.0",
+                    JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone()),
+            },
+            AssistantFinishReason.ToolCalls,
+            0);
 
     private static AssistantStep ToolCall(string toolId, string argumentsJson)
     {
@@ -708,7 +817,7 @@ public sealed class AgentApprovalEndpointTests
             new[]
             {
                 new ModelToolCall(
-                    null,
+                    "provider_call_1",
                     mappedId,
                     "1.0.0",
                     JsonDocument.Parse(mappedJson).RootElement.Clone()),

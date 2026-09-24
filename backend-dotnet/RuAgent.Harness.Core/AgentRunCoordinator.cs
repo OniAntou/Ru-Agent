@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Prompting;
@@ -23,6 +25,7 @@ public sealed class AgentRunCoordinator
     private readonly AgentRunStepHandlers _steps;
     private readonly AgentModelInvocation _invocation;
     private readonly IRetainedApprovalStash _retainedStash;
+    private readonly Func<RunId, CancellationToken, Task>? _approvalResolutionRaceHook;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -41,10 +44,12 @@ public sealed class AgentRunCoordinator
         IAgentReplyEffectSink? replyEffects = null,
         ISystemPromptContextProvider? promptContextProvider = null,
         ContextBudgetPolicy? contextBudgetPolicy = null,
-        IRetainedApprovalStash? retainedStash = null)
+        IRetainedApprovalStash? retainedStash = null,
+        Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
+        _approvalResolutionRaceHook = approvalResolutionRaceHook;
         _contextAssembler = contextAssembler
             ?? throw new ArgumentNullException(nameof(contextAssembler));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
@@ -311,20 +316,33 @@ public sealed class AgentRunCoordinator
         CancellationToken cancellationToken) =>
         _lifecycle.ResumeAfterApprovalAsync(runId, cancellationToken);
 
-    /// <summary>
-    /// Executes proposals parked by an earlier approval wait without a new model
-    /// step. Only resumes when the durable stream proves this exact approval was
-    /// resolved; anything else drops the stash and reports nothing to resume, so
-    /// a stale or foreign approval can never execute parked calls.
-    /// </summary>
+    public void RestoreRetainedApproval(RunId runId, RetainedApprovalStep step)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        if (step.Proposals.Count == 0
+            || step.Proposals.Any(proposal => proposal.RunId != runId))
+        {
+            throw new InvalidOperationException("retained_approval_run_mismatch");
+        }
+
+        if (_retainedStash.TryPeek(runId, out var existing)
+            && !SameRetainedApproval(existing!, step))
+        {
+            throw new InvalidOperationException("retained_approval_stash_mismatch");
+        }
+
+        _retainedStash.Stash(runId, step);
+    }
+
     public async Task<AgentRunStepResult?> TryResumeRetainedApprovalAsync(
         RunId runId,
         CancellationToken cancellationToken)
     {
+        AgentRun? activeRun = null;
         try
         {
-            var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-            if (run.State != HarnessRunState.Running)
+            activeRun = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (activeRun.State != HarnessRunState.Running)
             {
                 _retainedStash.Drop(runId);
                 return null;
@@ -335,9 +353,30 @@ public sealed class AgentRunCoordinator
                 return null;
             }
 
-            var resolved = await HasApprovalResolutionAsync(runId, retained.ApprovalId, cancellationToken)
+            var resolution = await GetApprovalResolutionAsync(
+                    runId,
+                    retained.ApprovalId,
+                    cancellationToken)
                 .ConfigureAwait(false);
-            if (!resolved)
+            if (resolution == ApprovalResolutionState.Expired)
+            {
+                _retainedStash.Drop(runId);
+                try
+                {
+                    var failed = await _lifecycle
+                        .FailAsync(runId, "approval_expired", CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return AgentRunStepResult.Blocked(failed, "approval_expired");
+                }
+                catch
+                {
+                    return AgentRunStepResult.Blocked(
+                        activeRun,
+                        "approval_expired");
+                }
+            }
+
+            if (resolution != ApprovalResolutionState.Resolved)
             {
                 _retainedStash.Drop(runId);
                 return null;
@@ -348,12 +387,143 @@ public sealed class AgentRunCoordinator
                 return null;
             }
 
-            var result = await _tools.ResumeRetainedAsync(run, claimed, cancellationToken).ConfigureAwait(false);
+            var result = await _tools.ResumeRetainedAsync(activeRun, claimed, cancellationToken)
+                .ConfigureAwait(false);
             return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
         }
-        catch (Exception error) when (error is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
         {
             _retainedStash.Drop(runId);
+            if (activeRun is { State: HarnessRunState.Running })
+            {
+                try
+                {
+                    var failed = await _lifecycle
+                        .FailAsync(runId, "retained_approval_resume_failed", CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return AgentRunStepResult.Blocked(
+                        failed,
+                        "retained_approval_resume_failed");
+                }
+                catch
+                {
+                    return AgentRunStepResult.Blocked(
+                        activeRun,
+                        "retained_approval_resume_failed");
+                }
+            }
+
+            return null;
+        }
+    }
+
+    public async Task<AgentRunStepResult?> TryRefreshRetainedApprovalAsync(
+        RunId runId,
+        CancellationToken cancellationToken)
+    {
+        AgentRun? activeRun = null;
+        try
+        {
+            activeRun = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (activeRun.State != HarnessRunState.WaitingApproval)
+            {
+                return null;
+            }
+
+            if (_approvalResolutionRaceHook is { } raceHook)
+            {
+                await raceHook(runId, cancellationToken).ConfigureAwait(false);
+                activeRun = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+                if (activeRun.State != HarnessRunState.WaitingApproval)
+                {
+                    return null;
+                }
+            }
+
+            if (!_retainedStash.TryPeek(runId, out var retained) || retained is null)
+            {
+                return null;
+            }
+
+            var resolution = await GetApprovalResolutionAsync(
+                    runId,
+                    retained.ApprovalId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            activeRun = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (activeRun.State != HarnessRunState.WaitingApproval)
+            {
+                return null;
+            }
+
+            if (resolution != ApprovalResolutionState.Pending)
+            {
+                if (resolution == ApprovalResolutionState.Expired)
+                {
+                    _retainedStash.Drop(runId);
+                    try
+                    {
+                        var failed = await _lifecycle
+                            .FailAsync(runId, "approval_expired", CancellationToken.None)
+                            .ConfigureAwait(false);
+                        return AgentRunStepResult.Blocked(failed, "approval_expired");
+                    }
+                    catch
+                    {
+                        return AgentRunStepResult.Blocked(activeRun, "approval_expired");
+                    }
+                }
+
+                return null;
+            }
+
+            if (!_retainedStash.TryTake(runId, retained.ApprovalId, out var claimed)
+                || claimed is null)
+            {
+                return null;
+            }
+
+            var result = await _tools
+                .RefreshRetainedApprovalAsync(activeRun, claimed, cancellationToken)
+                .ConfigureAwait(false);
+            return new AgentRunStepResult(result.Run, result.Receipts, result.ErrorCode);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            var current = await _store.GetRunAsync(runId, CancellationToken.None).ConfigureAwait(false);
+            if (current?.State == HarnessRunState.Running)
+            {
+                return null;
+            }
+
+            _retainedStash.Drop(runId);
+            if (activeRun is { State: HarnessRunState.WaitingApproval })
+            {
+                try
+                {
+                    var failed = await _lifecycle
+                        .FailAsync(runId, "retained_approval_recovery_failed", CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return AgentRunStepResult.Blocked(
+                        failed,
+                        "retained_approval_recovery_failed");
+                }
+                catch
+                {
+                    return AgentRunStepResult.Blocked(
+                        activeRun,
+                        "retained_approval_recovery_failed");
+                }
+            }
+
             return null;
         }
     }
@@ -417,31 +587,108 @@ public sealed class AgentRunCoordinator
         await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false)
         ?? throw new KeyNotFoundException("run_not_found");
 
-    private async Task<bool> HasApprovalResolutionAsync(
+    private async Task<ApprovalResolutionState> GetApprovalResolutionAsync(
         RunId runId,
         ApprovalId approvalId,
         CancellationToken cancellationToken)
     {
-        var requestSequence = 0L;
-        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        HarnessEvent? request = null;
+        var resolved = false;
+        var superseded = false;
+        await foreach (var envelope in _store
+            .ReadEventsAsync(runId, 0, cancellationToken)
+            .ConfigureAwait(false))
         {
-            var evt = envelope.Event;
-            if (requestSequence == 0
-                && string.Equals(evt.Kind, "approval.requested", StringComparison.Ordinal)
-                && evt.ApprovalId is { } found
+            var item = envelope.Event;
+            if (string.Equals(item.Kind, "approval.requested", StringComparison.Ordinal)
+                && item.ApprovalId is { } found
                 && string.Equals(found.Value, approvalId.Value, StringComparison.Ordinal))
             {
-                requestSequence = evt.Sequence;
+                if (request is not null)
+                {
+                    throw new InvalidOperationException("approval_request_duplicate");
+                }
+
+                request = item;
+                continue;
             }
-            else if (requestSequence > 0
-                && string.Equals(evt.Kind, "run.state_changed", StringComparison.Ordinal)
-                && string.Equals(evt.SafeCode, "approval_resolved", StringComparison.Ordinal))
+
+            if (request is not null
+                && string.Equals(item.Kind, "approval.requested", StringComparison.Ordinal))
             {
-                return true;
+                superseded = true;
+                continue;
+            }
+
+            if (!superseded
+                && request is not null
+                && item.Sequence > request.Sequence
+                && string.Equals(item.Kind, "run.state_changed", StringComparison.Ordinal)
+                && string.Equals(item.SafeCode, "approval_resolved", StringComparison.Ordinal))
+            {
+                resolved = true;
             }
         }
 
-        return false;
+        if (request is null)
+        {
+            return ApprovalResolutionState.Missing;
+        }
+
+        return ApprovalState.IsExpired(request.OccurredAt, _time.UtcNow)
+            ? ApprovalResolutionState.Expired
+            : resolved
+                ? ApprovalResolutionState.Resolved
+                : ApprovalResolutionState.Pending;
+    }
+
+    private static bool SameRetainedApproval(
+        RetainedApprovalStep left,
+        RetainedApprovalStep right)
+    {
+        if (left.ApprovalId != right.ApprovalId
+            || left.ModelStepId != right.ModelStepId
+            || left.Proposals.Count != right.Proposals.Count)
+        {
+            return false;
+        }
+
+        return left.Proposals
+            .OrderBy(item => item.ModelOrder)
+            .Zip(
+                right.Proposals.OrderBy(item => item.ModelOrder),
+                (first, second) =>
+                    first.RunId == second.RunId
+                    && first.ModelStepId == second.ModelStepId
+                    && first.ToolCallId == second.ToolCallId
+                    && first.ProviderCallId == second.ProviderCallId
+                    && first.ModelOrder == second.ModelOrder
+                    && first.ToolId == second.ToolId
+                    && first.ToolVersion == second.ToolVersion
+                    && SameArguments(first.Arguments, second.Arguments))
+            .All(matches => matches);
+    }
+
+    private static bool SameArguments(JsonElement left, JsonElement right)
+    {
+        try
+        {
+            return JsonNode.DeepEquals(
+                JsonNode.Parse(left.GetRawText()),
+                JsonNode.Parse(right.GetRawText()));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private enum ApprovalResolutionState
+    {
+        Missing,
+        Pending,
+        Resolved,
+        Expired,
     }
 
     private async Task<AgentRun> CommitAsync(

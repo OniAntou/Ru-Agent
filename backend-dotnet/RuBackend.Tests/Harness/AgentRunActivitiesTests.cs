@@ -84,7 +84,7 @@ public sealed class AgentRunActivitiesTests
             new[]
             {
                 new ModelToolCall(
-                    null,
+                    "provider_call_1",
                     "todo_write",
                     "1.0.0",
                     JsonDocument.Parse("""
@@ -154,7 +154,7 @@ public sealed class AgentRunActivitiesTests
             new[]
             {
                 new ModelToolCall(
-                    null,
+                    "provider_call_1",
                     "todo_write",
                     "1.0.0",
                     JsonDocument.Parse("""

@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Broker.Tools.Git;
@@ -333,11 +332,6 @@ public sealed class TerminalAdapter
         {
             throw new UnauthorizedAccessException("workspace_path_outside_root");
         }
-
-        if (!confineWorkspace && IsProtectedLocation(intent.CanonicalWorkingDirectory))
-        {
-            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
-        }
     }
 
     private static void ValidateWriteSet(bool readOnly, IReadOnlyList<string>? writeSet)
@@ -395,45 +389,5 @@ public sealed class TerminalAdapter
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }
-    }
-
-    internal bool IsProtectedLocation(string candidate)
-    {
-        if (!Directory.Exists(candidate))
-        {
-            return true;
-        }
-
-        try
-        {
-            var finalPath = FinalPathResolver.Resolve(candidate);
-            foreach (var protectedLocation in ProtectedLocations())
-            {
-                var baseDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(protectedLocation));
-                if (finalPath.Equals(baseDirectory, StringComparison.OrdinalIgnoreCase)
-                    || finalPath.StartsWith(baseDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return true;
-        }
-    }
-
-    private static IEnumerable<string> ProtectedLocations()
-    {
-        yield return ProtectedLocation("WINDIR", Environment.SpecialFolder.Windows);
-        yield return ProtectedLocation("ProgramFiles", Environment.SpecialFolder.ProgramFiles);
-    }
-
-    private static string ProtectedLocation(string variable, Environment.SpecialFolder fallback)
-    {
-        var value = Environment.GetEnvironmentVariable(variable);
-        return string.IsNullOrWhiteSpace(value) ? Environment.GetFolderPath(fallback) : value;
     }
 }

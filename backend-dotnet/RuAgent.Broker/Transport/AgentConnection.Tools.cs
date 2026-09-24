@@ -50,7 +50,7 @@ public sealed partial class AgentConnection
             return Task.FromResult(DecisionReply(request, "deny", error.Code, null, error.Hint));
         }
 
-        var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants, cleanliness: _cleanliness)
+        var evaluation = new PolicySnapshotEvaluator(_session.DirectoryGrants)
             .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
 
         string? authorizationToken = null;
@@ -155,6 +155,37 @@ public sealed partial class AgentConnection
 
     private async Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
+        ToolExecutePreparation preparation;
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            preparation = PrepareToolExecute(request);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        if (preparation.Error is not null)
+        {
+            return preparation.Error;
+        }
+
+        var result = _authenticatedToolHandler is { } authenticatedHandler
+            ? await authenticatedHandler(request, cancellationToken).ConfigureAwait(false)
+            : await preparation.Handler!(request, cancellationToken).ConfigureAwait(false);
+        return new AgentEnvelope(
+            result.ProtocolVersion,
+            result.RequestId,
+            AgentMessageTypes.ToolExecuteResult,
+            result.SessionId,
+            result.CorrelationId,
+            result.DeadlineMs,
+            (JsonObject)result.Payload.DeepClone());
+    }
+
+    private ToolExecutePreparation PrepareToolExecute(AgentEnvelope request)
+    {
         var payload = request.Payload;
         var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
         var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
@@ -165,26 +196,30 @@ public sealed partial class AgentConnection
 
         if (!TryGetOwnedRunLease(request, runId, out var lease, out var leaseError) || lease is null)
         {
-            return ToolError(request, leaseError, "run lease is not open");
+            return new ToolExecutePreparation(
+                ToolError(request, leaseError, "run lease is not open"),
+                null);
         }
 
         if (!lease.AdvertisedCapabilities.Contains(toolId))
         {
-            return ToolError(request, "phase_not_available", "tool is not advertised yet");
+            return new ToolExecutePreparation(
+                ToolError(request, "phase_not_available", "tool is not advertised yet"),
+                null);
         }
 
-        // Single-token flow: every execute needs a one-time authorization
-        // token bound to snapshot version + intent hash + tool identity.
-        // Tool dispatch coordination: authorization must be consumed BEFORE
-        // adapter invocation.
         if (string.IsNullOrWhiteSpace(authorizationToken))
         {
-            return ToolError(request, "invalid_execute", "missing authorization token");
+            return new ToolExecutePreparation(
+                ToolError(request, "invalid_execute", "missing authorization token"),
+                null);
         }
 
         if (payload["arguments"] is not JsonObject authArguments)
         {
-            return ToolError(request, "invalid_execute", "missing arguments");
+            return new ToolExecutePreparation(
+                ToolError(request, "invalid_execute", "missing arguments"),
+                null);
         }
 
         PolicyContext authContext;
@@ -194,10 +229,12 @@ public sealed partial class AgentConnection
         }
         catch (PolicyContextException error)
         {
-            return ToolError(
-                request,
-                error.Code,
-                error.Hint ?? "execution intent could not be re-resolved");
+            return new ToolExecutePreparation(
+                ToolError(
+                    request,
+                    error.Code,
+                    error.Hint ?? "execution intent could not be re-resolved"),
+                null);
         }
 
         var expected = new ApprovalBinding(
@@ -212,35 +249,26 @@ public sealed partial class AgentConnection
 
         if (!_authTokens.TryConsume(authorizationToken!, expected, out _))
         {
-            return ToolError(request, "decision_stale", "authorization is no longer valid");
+            return new ToolExecutePreparation(
+                ToolError(request, "decision_stale", "authorization is no longer valid"),
+                null);
         }
 
-        if (_toolHandler is null)
-        {
-            return ToolError(request, "broker_not_ready", "tool execution is not registered");
-        }
-
-        var result = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
-        return new AgentEnvelope(
-            result.ProtocolVersion,
-            result.RequestId,
-            AgentMessageTypes.ToolExecuteResult,
-            result.SessionId,
-            result.CorrelationId,
-            result.DeadlineMs,
-            (JsonObject)result.Payload.DeepClone());
+        return _toolHandler is null && _authenticatedToolHandler is null
+            ? new ToolExecutePreparation(
+                ToolError(request, "broker_not_ready", "tool execution is not registered"),
+                null)
+            : new ToolExecutePreparation(null, _toolHandler);
     }
+
+    private sealed record ToolExecutePreparation(
+        AgentEnvelope? Error,
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? Handler);
 
     private static string? ReadOptionalPayloadString(JsonObject payload, string key) =>
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
             ? result
             : null;
-
-    /// <summary>
-    /// Nearest existing ancestor directory of the evaluation boundary.
-    /// File targets grant their parent; external cwds grant themselves.
-    /// Returns null when nothing usable exists (fail closed, no grant).
-    /// </summary>
 
     /// <summary>
     /// Nearest existing ancestor directory of the evaluation boundary.

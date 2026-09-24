@@ -30,6 +30,7 @@ public sealed class HarnessEventTests
                 "ModelStepId",
                 "OccurredAt",
                 "PayloadId",
+                "ProviderCallId",
                 "RunId",
                 "SafeCode",
                 "SafeCount",
@@ -45,6 +46,18 @@ public sealed class HarnessEventTests
         Assert.All(
             typeof(HarnessEvent).GetProperties(),
             property => Assert.False(property.CanWrite, property.Name));
+    }
+
+    [Fact]
+    public void Invalid_provider_call_id_is_rejected_at_event_boundary()
+    {
+        Assert.Throws<ArgumentException>(() => new HarnessEvent(
+            new EventId("evt_11111111111111111111111111111111"),
+            new RunId("run_11111111111111111111111111111111"),
+            1,
+            "tool.execution_completed",
+            DateTimeOffset.UtcNow,
+            providerCallId: "provider/unsafe"));
     }
 
     [Theory]

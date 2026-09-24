@@ -104,15 +104,7 @@ public sealed record ModelContextSnapshot
         foreach (var call in step.ToolCalls)
         {
             writer.WriteStartObject();
-            if (call.ProviderCallId is null)
-            {
-                writer.WriteNull("provider_call_id");
-            }
-            else
-            {
-                writer.WriteString("provider_call_id", call.ProviderCallId);
-            }
-
+            writer.WriteString("provider_call_id", call.ProviderCallId);
             writer.WriteString("tool_id", call.ToolId);
             writer.WriteString("tool_version", call.ToolVersion);
             writer.WritePropertyName("arguments");
@@ -137,6 +129,7 @@ public sealed record ModelContextSnapshot
     {
         writer.WriteString("execution_id", receipt.ExecutionId.Value);
         writer.WriteString("tool_call_id", receipt.ToolCallId.Value);
+        writer.WriteString("provider_call_id", receipt.ProviderCallId);
         writer.WriteString("outcome", OutcomeName(receipt.Outcome));
         writer.WriteString("code", receipt.Code);
         if (receipt.ResultPayloadId is { } payloadId)

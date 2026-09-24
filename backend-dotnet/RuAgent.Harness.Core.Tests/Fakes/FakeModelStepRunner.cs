@@ -53,9 +53,9 @@ public sealed class FakeModelStepRunner : IModelStepRunner
             new("agent.contract", new string('0', 64)),
             new("environment", new string('0', 64)),
         };
+        blocks.Add(new PromptBlockDigest("profile", new string('0', 64)));
         blocks.AddRange(context.InstructionBlocks.Select(instruction =>
             new PromptBlockDigest($"instruction.{instruction.SourceId}", instruction.ContentSha256)));
-        blocks.Add(new PromptBlockDigest("profile", new string('0', 64)));
         blocks.Add(new PromptBlockDigest("capabilities", new string('0', 64)));
         blocks.Add(new PromptBlockDigest("runtime", new string('0', 64)));
         return new SystemPromptReceipt(

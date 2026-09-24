@@ -356,7 +356,7 @@ public sealed class TuiInteractiveTests
         Assert.Equal("D:\\repo", cmd2.WorkspacePath);
         Assert.Equal("sess-custom", cmd2.SessionId);
 
-        var res3 = AgentCliParser.Parse(["repl", "--preset", "full"]);
+        var res3 = AgentCliParser.Parse(["repl", "--preset", "full", "--confirm-full-access"]);
         Assert.True(res3.Success);
         var cmd3 = Assert.IsType<ChatCommand>(res3.Command);
         Assert.Equal("full_access", cmd3.Preset);
@@ -504,7 +504,7 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public async Task ChatAsync_HandlesWaitingWorkspaceTrust_PromptsAndResumes()
+    public async Task ChatAsync_WithTrustFlagApprovesAndResumes()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
         var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
@@ -513,7 +513,10 @@ public sealed class TuiInteractiveTests
         var runId = "run_" + new string('a', 32);
         var trustReqId = "tr_" + new string('b', 32);
         var displayHash = new string('c', 64);
+        var calls = new List<string>();
+        long requestVersion = -1;
         bool trustCalled = false;
+        bool restoreCalled = false;
 
         var handler = new FakeHandler(req =>
         {
@@ -526,8 +529,25 @@ public sealed class TuiInteractiveTests
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"session_id\":\"sess_123\"}", Encoding.UTF8, "application/json") };
             }
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                calls.Add("preset");
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                {
+                    restoreCalled = true;
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":null,\"version\":0,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                }
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
+            }
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
             {
+                calls.Add("run");
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                var versionElement = document.RootElement.GetProperty("preset_selection_version");
+                requestVersion = versionElement.ValueKind == JsonValueKind.Number
+                    ? versionElement.GetInt64()
+                    : -1;
                 var runJson = JsonSerializer.Serialize(new
                 {
                     run_id = runId,
@@ -565,21 +585,23 @@ public sealed class TuiInteractiveTests
             return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
         });
 
-        var inReader = new StringReader("hello\n1\n/exit\n");
+        var inReader = new StringReader("hello\n/exit\n");
         var outWriter = new StringWriter();
         var errWriter = new StringWriter();
         var httpClient = new HttpClient(handler);
 
         var commands = new AgentCommands(session, httpClient, outWriter, errWriter, inReader);
-        var cmd = new ChatCommand("C:\\untrusted\\workspace", "sess_123", "standard", false);
+        var cmd = new ChatCommand("C:\\untrusted\\workspace", "sess_123", "standard", false, TrustWorkspace: true);
 
         var exit = await commands.ChatAsync(cmd, CancellationToken.None);
 
         Assert.Equal(0, exit);
         Assert.True(trustCalled);
+        Assert.False(restoreCalled);
+        Assert.Equal(new[] { "preset", "run" }, calls);
+        Assert.Equal(1, requestVersion);
         var outStr = outWriter.ToString();
-        Assert.Contains("Trust this workspace?", outStr);
-        Assert.Contains("Workspace trusted", outStr);
+        Assert.DoesNotContain("Trust this workspace?", outStr);
     }
 
     [Fact]
@@ -786,7 +808,7 @@ public sealed class TuiInteractiveTests
     }
 
     [Fact]
-    public async Task ChatAsync_NeverAutoApprovesTrust_InJsonMode()
+    public async Task ChatAsync_WithoutTrustFlagReturnsTrustRequiredInJsonMode()
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
         var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
@@ -795,7 +817,10 @@ public sealed class TuiInteractiveTests
         var runId = "run_" + new string('a', 32);
         var trustReqId = "tr_" + new string('b', 32);
         var displayHash = new string('c', 64);
+        var calls = new List<string>();
+        long requestVersion = -1;
         bool trustCalled = false;
+        bool restoreCalled = false;
 
         var handler = new FakeHandler(req =>
         {
@@ -808,8 +833,25 @@ public sealed class TuiInteractiveTests
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"session_id\":\"sess_123\"}", Encoding.UTF8, "application/json") };
             }
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                calls.Add("preset");
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                {
+                    restoreCalled = true;
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":null,\"version\":0,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                }
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
+            }
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
             {
+                calls.Add("run");
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                var versionElement = document.RootElement.GetProperty("preset_selection_version");
+                requestVersion = versionElement.ValueKind == JsonValueKind.Number
+                    ? versionElement.GetInt64()
+                    : -1;
                 var runJson = JsonSerializer.Serialize(new
                 {
                     run_id = runId,
@@ -852,11 +894,259 @@ public sealed class TuiInteractiveTests
 
         var exit = await commands.ChatAsync(cmd, CancellationToken.None);
 
-        Assert.Equal(0, exit);
+        Assert.Equal(1, exit);
         Assert.False(trustCalled);
+        Assert.True(restoreCalled);
         var outStr = outWriter.ToString();
-        Assert.Contains("waiting_workspace_trust", outStr);
+        Assert.Contains("workspace_trust_required", outStr);
         Assert.DoesNotContain("Trust this workspace?", outStr);
+    }
+
+    [Fact]
+    public async Task ChatAsync_WithoutTrustFlagRestoresActualSelectionWithoutReadingTrustPrompt()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+        var runId = "run_" + new string('a', 32);
+        var trustReqId = "tr_" + new string('b', 32);
+        var state = "plan";
+        var restoreCalled = false;
+        var eventsCalled = false;
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                {
+                    restoreCalled = true;
+                    state = "plan";
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                }
+
+                state = "full_access";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "full_access", version = 1 }), Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
+            {
+                var runJson = JsonSerializer.Serialize(new
+                {
+                    run_id = runId,
+                    session_id = "sess_123",
+                    workspace_id = "ws_test",
+                    status = "waiting_workspace_trust",
+                    preset = "full_access",
+                    policy_snapshot_version = 1L,
+                    policy_snapshot_sha256 = new string('d', 64),
+                    version = 1L,
+                    last_sequence = 0L,
+                    created_at = DateTimeOffset.UtcNow.ToString("O"),
+                    updated_at = DateTimeOffset.UtcNow.ToString("O"),
+                    trust_request_id = trustReqId,
+                    display_identity_hash = new string('e', 64)
+                });
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent(runJson, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                eventsCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("id: 1\ndata: {}\n\n", Encoding.UTF8, "text/event-stream") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        });
+        var reader = new CountingReader("hello\n");
+        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), new StringWriter(), reader);
+
+        var exit = await commands.ChatAsync(
+            new ChatCommand("C:\\untrusted\\workspace", "sess_123", "full_access", true, TrustWorkspace: false, ConfirmFullAccess: true),
+            CancellationToken.None);
+
+        Assert.Equal(1, exit);
+        Assert.True(restoreCalled);
+        Assert.Equal("plan", state);
+        Assert.Equal(1, reader.ReadCount);
+        Assert.False(eventsCalled);
+    }
+
+    [Theory]
+    [InlineData("mismatch")]
+    [InlineData("failure")]
+    public async Task ChatAsync_FullAccessTrustFailureRestoresActualSelection(string failureMode)
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+        var runId = "run_" + new string('a', 32);
+        var state = "plan";
+        var restoreCalled = false;
+        var eventsCalled = false;
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                {
+                    restoreCalled = true;
+                    state = "plan";
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                }
+
+                state = "full_access";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "full_access", version = 1 }), Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
+            {
+                var runJson = JsonSerializer.Serialize(new
+                {
+                    run_id = runId,
+                    session_id = "sess_123",
+                    workspace_id = "ws_test",
+                    status = "waiting_workspace_trust",
+                    preset = "full_access",
+                    policy_snapshot_version = 1L,
+                    policy_snapshot_sha256 = new string('d', 64),
+                    version = 1L,
+                    last_sequence = 0L,
+                    created_at = DateTimeOffset.UtcNow.ToString("O"),
+                    updated_at = DateTimeOffset.UtcNow.ToString("O"),
+                    trust_request_id = "tr_" + new string('b', 32),
+                    display_identity_hash = new string('e', 64)
+                });
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent(runJson, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains($"/agent/v1/runs/{runId}/trust"))
+            {
+                return failureMode == "mismatch"
+                    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"run_id\":\"run_other\",\"trust_request_id\":\"tr_other\",\"status\":\"waiting_history\"}", Encoding.UTF8, "application/json") }
+                    : new HttpResponseMessage(HttpStatusCode.Conflict) { Content = new StringContent("{\"error_code\":\"trust_failed\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                eventsCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("id: 1\ndata: {}\n\n", Encoding.UTF8, "text/event-stream") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        });
+        var reader = new CountingReader("hello\n");
+        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), new StringWriter(), reader);
+
+        var exit = await commands.ChatAsync(
+            new ChatCommand("C:\\untrusted\\workspace", "sess_123", "full_access", true, TrustWorkspace: true, ConfirmFullAccess: true),
+            CancellationToken.None);
+
+        Assert.Equal(1, exit);
+        Assert.True(restoreCalled);
+        Assert.Equal("plan", state);
+        Assert.Equal(1, reader.ReadCount);
+        Assert.False(eventsCalled);
+    }
+
+    [Fact]
+    public async Task ChatAsync_InvalidCreateStatusRestoresBeforeStreaming()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+        var state = "plan";
+        var restoreCalled = false;
+        var eventsCalled = false;
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                {
+                    restoreCalled = true;
+                    state = "plan";
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                }
+
+                state = "standard";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"snapshot_token\":\"sps_" + new string('a', 32) + "\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs"))
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{\"run_id\":\"run_" + new string('a', 32) + "\",\"session_id\":\"sess_123\",\"workspace_id\":\"ws_test\",\"status\":\"failed\",\"preset\":\"standard\",\"created_at\":\"2026-09-24T00:00:00Z\",\"updated_at\":\"2026-09-24T00:00:00Z\"}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                eventsCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("id: 1\ndata: {}\n\n", Encoding.UTF8, "text/event-stream") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        });
+        var reader = new CountingReader("hello\n");
+        var commands = new AgentCommands(session, new HttpClient(handler), new StringWriter(), new StringWriter(), reader);
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", true), CancellationToken.None);
+
+        Assert.Equal(1, exit);
+        Assert.True(restoreCalled);
+        Assert.Equal("plan", state);
+        Assert.Equal(1, reader.ReadCount);
+        Assert.False(eventsCalled);
+    }
+
+    [Fact]
+    public async Task ChatAsync_OutputFailureBeforeCreateRestoresBeforeStreaming()
+    {
+        var proc = System.Diagnostics.Process.GetCurrentProcess();
+        var desc = new RuntimeDescriptor(1, "http://127.0.0.1:8000/", "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
+        var session = PublicHostSession.FromDescriptor(desc);
+        var state = "plan";
+        var restoreCalled = false;
+        var runCalled = false;
+        var eventsCalled = false;
+        var handler = new FakeHandler(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                {
+                    restoreCalled = true;
+                    state = "plan";
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"plan\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                }
+
+                state = "standard";
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs"))
+            {
+                runCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{\"run_id\":\"run_" + new string('a', 32) + "\",\"session_id\":\"sess_123\",\"workspace_id\":\"ws_test\",\"status\":\"running\",\"preset\":\"standard\",\"created_at\":\"2026-09-24T00:00:00Z\",\"updated_at\":\"2026-09-24T00:00:00Z\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Get && uri.Contains("/events"))
+            {
+                eventsCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("id: 1\ndata: {}\n\n", Encoding.UTF8, "text/event-stream") };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        });
+        var reader = new CountingReader("hello\n");
+        var commands = new AgentCommands(session, new HttpClient(handler), new ThrowOnWriteWriter(), new StringWriter(), reader);
+
+        var exit = await commands.ChatAsync(new ChatCommand("C:\\workspace", "sess_123", "standard", true), CancellationToken.None);
+
+        Assert.Equal(0, exit);
+        Assert.True(restoreCalled);
+        Assert.Equal("plan", state);
+        Assert.False(runCalled);
+        Assert.False(eventsCalled);
     }
 
     [Fact]
@@ -877,6 +1167,13 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Post && uri.Contains("/sessions/new"))
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"session_id\":\"sess_123\"}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
+            {
+                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs"))
             {
@@ -1041,6 +1338,32 @@ public sealed class TuiInteractiveTests
                 throw new IOException("Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host.");
             }
             return await base.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class ThrowOnWriteWriter : StringWriter
+    {
+        public override void WriteLine(string? value) => throw new IOException("output failed");
+        public override void WriteLine() => throw new IOException("output failed");
+    }
+
+    private sealed class CountingReader : StringReader
+    {
+        private readonly Queue<string?> _lines;
+        public CountingReader(string value) : base(value)
+        {
+            _lines = new Queue<string?>(value.Split('\n').Select(line => line.TrimEnd('\r')));
+        }
+        public int ReadCount { get; private set; }
+        public override string? ReadLine()
+        {
+            ReadCount++;
+            return _lines.Count == 0 ? null : _lines.Dequeue();
+        }
+        public override ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken)
+        {
+            ReadCount++;
+            return ValueTask.FromResult(_lines.Count == 0 ? null : _lines.Dequeue());
         }
     }
 

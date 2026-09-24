@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests.Prompting;
@@ -25,6 +26,12 @@ public sealed class Phase1GoldenParityTests
         var second = SystemPromptComposer.Compose(context);
         Assert.Equal(snapshot.Text, second.Text);
         Assert.Equal(snapshot.Receipt.PromptSha256, Sha256(snapshot.Text));
+        Assert.Equal(
+            promptCase["input"]!["effective_policy"]!.ToJsonString(),
+            JsonNode.Parse(context.SerializeUtf8())!["effective_policy"]!.ToJsonString());
+        Assert.Equal(
+            promptCase["expected"]!["composer_version"]!.GetValue<string>(),
+            snapshot.Receipt.ComposerVersion);
         Assert.Equal(
             promptCase["expected"]!["prompt_sha256"]!.GetValue<string>(),
             snapshot.Receipt.PromptSha256);
@@ -50,6 +57,76 @@ public sealed class Phase1GoldenParityTests
             StringComparison.Ordinal);
 
         snapshot.Receipt.ValidateAgainst(context, snapshot.Text);
+    }
+
+    [Fact]
+    public void Native_multi_call_fixtures_use_narration_three_calls_and_tool_call_finish()
+    {
+        var baseline = LoadFixture();
+        var baselineEnvelope = FindCase(baseline, "protocol.native_multi_call")["input"]!["envelope"]!;
+        var workerFixture = LoadFixture("worker-v2-protocol.json");
+        var workerEntry = ((JsonArray)workerFixture["valid_envelopes"]!).Single(
+            item => item!["name"]!.GetValue<string>() == "step_done_multi_call")!;
+        var workerEnvelope = workerEntry["envelope"]!;
+        var oneCallEntry = ((JsonArray)workerFixture["valid_envelopes"]!).Single(
+            item => item!["name"]!.GetValue<string>() == "step_done_tool_call")!;
+
+        WorkerV2Contracts.ValidateEnvelope(baselineEnvelope.AsObject());
+        WorkerV2Contracts.ValidateEnvelope(workerEnvelope.AsObject());
+        WorkerV2Contracts.ValidateEnvelope(oneCallEntry["envelope"]!.AsObject());
+        AssertNativeMultiCall(baselineEnvelope["payload"]!);
+        AssertNativeMultiCall(workerEnvelope["payload"]!);
+        Assert.Equal(
+            "tool_selection.valid",
+            FindCase(baseline, "tool_selection.valid")["id"]!.GetValue<string>());
+        var oneCallPayload = oneCallEntry["envelope"]!["payload"]!;
+        var oneCall = Assert.Single(((JsonArray)oneCallPayload["tool_calls"]!).AsArray());
+        Assert.Equal("call-1", oneCall!["provider_call_id"]!.GetValue<string>());
+        Assert.Equal("tool_calls", oneCallPayload["finish_reason"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Fixture_privacy_values_are_explicit_synthetic_sentinels()
+    {
+        var baseline = LoadFixture();
+        var promptCase = FindCase(baseline, "prompt.basic");
+        var cancellationCase = FindCase(baseline, "cancellation.before_dispatch");
+        var privacyCase = FindCase(baseline, "privacy.redaction");
+        var workerFixture = LoadFixture("worker-v2-protocol.json");
+        var hello = ((JsonArray)workerFixture["valid_envelopes"]!).Single(
+            item => item!["name"]!.GetValue<string>() == "hello")!;
+        var start = ((JsonArray)workerFixture["valid_envelopes"]!).Single(
+            item => item!["name"]!.GetValue<string>() == "step_start")!;
+        var delta = ((JsonArray)workerFixture["valid_envelopes"]!).Single(
+            item => item!["name"]!.GetValue<string>() == "step_delta")!;
+
+        Assert.Equal(
+            "PHASE1_PRIVATE_MARKER_SENTINEL",
+            promptCase["expected"]!["private_marker"]!.GetValue<string>());
+        Assert.Equal(
+            "SYNTHETIC_USER_TEXT_SENTINEL",
+            cancellationCase["input"]!["prompt"]!.GetValue<string>());
+        Assert.Equal(
+            "PRIVATE_CREDENTIAL_SENTINEL",
+            privacyCase["input"]!["credential"]!.GetValue<string>());
+        Assert.Equal(
+            "SYNTHETIC_USER_TEXT_SENTINEL",
+            privacyCase["input"]!["prompt_text"]!.GetValue<string>());
+        Assert.Equal(
+            "WORKER_AUTH_SENTINEL",
+            hello["envelope"]!["payload"]!["token"]!.GetValue<string>());
+        Assert.Equal(
+            "SYNTHETIC_USER_TEXT_SENTINEL",
+            start["envelope"]!["payload"]!["prompt"]!.GetValue<string>());
+        Assert.Equal(
+            "SYNTHETIC_ASSISTANT_TEXT_SENTINEL",
+            delta["envelope"]!["payload"]!["text"]!.GetValue<string>());
+
+        var fixtureText = baseline.ToJsonString() + workerFixture.ToJsonString();
+        Assert.DoesNotContain("secret", fixtureText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sk-", fixtureText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("xin chào anh", fixtureText, StringComparison.Ordinal);
+        Assert.DoesNotContain("PRIVATE-PROMPT", fixtureText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -95,7 +172,7 @@ public sealed class Phase1GoldenParityTests
             ((JsonObject)measurement["baseline"]!).Select(item => item.Key).ToHashSet(StringComparer.Ordinal));
     }
 
-    private static JsonNode LoadFixture()
+    private static JsonNode LoadFixture(string fileName = "python-csharp-phase1-baseline.json")
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
@@ -104,7 +181,7 @@ public sealed class Phase1GoldenParityTests
                 directory.FullName,
                 "tests",
                 "fixtures",
-                "python-csharp-phase1-baseline.json");
+                fileName);
             if (File.Exists(candidate))
             {
                 return JsonNode.Parse(File.ReadAllText(candidate))!;
@@ -119,6 +196,17 @@ public sealed class Phase1GoldenParityTests
 
     private static JsonNode FindCase(JsonNode fixture, string caseId) =>
         ((JsonArray)fixture["cases"]!).Single(item => item!["id"]!.GetValue<string>() == caseId)!;
+
+    private static void AssertNativeMultiCall(JsonNode payload)
+    {
+        Assert.Equal("SYNTHETIC_NARRATION_SENTINEL", payload["text"]!.GetValue<string>());
+        var calls = (JsonArray)payload["tool_calls"]!;
+        Assert.Equal(3, calls.Count);
+        Assert.Equal(
+            new[] { "call-1", "call-2", "call-3" },
+            calls.Select(call => call!["provider_call_id"]!.GetValue<string>()));
+        Assert.Equal("tool_calls", payload["finish_reason"]!.GetValue<string>());
+    }
 
     private static SystemPromptContext LoadPromptContext(JsonNode input)
     {

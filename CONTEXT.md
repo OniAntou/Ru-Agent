@@ -39,9 +39,11 @@ and capabilities exchanged with the managed C# Runtime Worker.
 _Avoid_: Runtime HTTP relay
 
 **Agent Session**:
-An explicit, in-memory user session in which Ru may request bounded tools and
-skills. It expires with the session and never becomes a global permission.
-_Avoid_: permanent Agent mode permission
+An explicit user session in which Ru may request bounded tools, skills,
+session-scoped folder grants, and a stored preset selection. It does not grant
+workspace trust: trust is an explicit decision bound to the canonical workspace
+identity and is evaluated independently of the Agent session.
+_Avoid_: permanent Agent mode permission or preset-implied trust
 
 **Conversation Session**:
 The persisted conversation and history record owned by the Public Host. The
@@ -119,29 +121,33 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The session-scoped Agent preset (`plan`, `standard`, opt-in `full_access`).
-The model-visible Worker v2 list is the runtime projection of twelve Protocol
-definitions, one purpose per tool: `read` (`offset`/`limit`), `list`
-(`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
-`todo_write` (the session task list), `write`
-with `op=write|delete|restore`, `edit`, `bash`, the on-demand `skill` loader
-(prompt carries only name and description; the body is pulled with `read`),
-and the independently enabled
-standalone `web_search`/`web_fetch` tools with `network.search`/`network.fetch`
-scopes, Google HTML primary with DuckDuckGo HTML fallback (plan-ask,
-automatic on `standard`/`full_access`).
-Standard is the default: every
-run starts standard unless the stored session selection says `plan` or
-`full_access`. `plan` is read-only: every mutation asks or denies, nothing
-auto-allows. `full_access` is opt-in per session with interactive
-confirmation; only hard denies (protected paths, invalid requests) still
-apply. On a clean workspace `standard` auto-allows the in-workspace
-terminal/delete/unknown-executable subset plus read-only probes outside the
-workspace (`standard_clean_workspace_allow`), while mutations outside the
-workspace, timeouts, rule asks, and
-invariants still ask or deny; there is no provider, model, protocol, or
-tool fallback.
-_Avoid_: permanent permission
+The session-scoped Agent preset (`plan`, `standard`, opt-in `full_access`) mapped
+to the immutable `AgentPolicyProfileCatalog` in `RuAgent.Protocol`. The catalog,
+not prompt text or a client switch, is the canonical source used by both the
+effective-policy prompt projector and Broker fallback evaluation. `plan` allows
+workspace reads and Web, and denies terminal and mutation. `standard` allows
+workspace reads, Web, in-workspace mutation, and bounded-local terminal; it asks
+for external structured files and risky terminal intent. `full_access` allows
+external structured files and risky/arbitrary terminal intent, but structured
+protected paths and hard-invalid requests remain denied. Standard is the
+default; `full_access` requires a GUI confirmation or CLI
+`--confirm-full-access`. The model-visible Worker v2 list remains the runtime projection of
+twelve Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
+`list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
+`todo_write`, `write` with `op=write|delete|restore`, `edit`, `bash`, `skill`,
+and standalone `web_search`/`web_fetch`. There is no provider, model, protocol,
+tool, or workspace-cleanliness fallback.
+_Avoid_: permission inferred from prompt text, repository cleanliness, or a
+client-local preset table
+
+**Native Tool Batch**:
+One model step may contain optional narration and one or more ordered native
+tool calls. The Host persists the assistant call batch and every durable result;
+approval resume rehydrates and re-evaluates the retained proposals without a new
+model proposal. Read-only calls may execute concurrently in model order with at
+most eight active, while mutations and terminal calls retain sequential
+barriers. A text-selection provider path still emits exactly one JSON selection.
+_Avoid_: one-call-per-step rule, reissuing approved calls
 
 **Agent Persona Source**:
 The root-selected `Ru.md` instruction is the sole Agent persona/style source.
@@ -151,13 +157,13 @@ override Broker policy.
 _Avoid_: embedded fallback persona
 
 **Approval Token**:
-A short-lived, one-time value bound to the exact request identity and
-canonical arguments for an external or destructive action.
-Approval proposals survive approval: the pipeline stashes them in memory and
-resumes without a new model proposal after `approval_resolved`; a repeated
-identical deny still terminates the run. A transport failure retries once for
-any access kind before reporting terminally.
-_Avoid_: reusable confirmation flag
+A short-lived, single-use value bound to the exact request, canonical arguments,
+lease, and policy snapshot for an ask decision. Approval proposals are retained
+in memory while live and reconstructed from durable events and encrypted
+argument payloads after restart; resume re-evaluates the complete batch and
+never asks the model to reissue it. A repeated identical deny still terminates
+the run, and there is no provider/model/protocol/tool fallback.
+_Avoid_: reusable confirmation flag or approval-time reissue
 
 **Policy Snapshot**:
 The immutable, versioned, SHA-256-canonical binding of preset, trusted
@@ -176,27 +182,28 @@ rest and only the active decrypted snapshot contains them.
 _Avoid_: repository-stored authority
 
 **Workspace Trust**:
-The binding of a canonical root to its Windows volume serial and root file
-identity (`WorkspaceIdentity` `ws_*` + `DisplayIdentityHash`), persisted as
-one active trusted identity per workspace and validated via final-path
-resolution; a moved identity creates a fresh trust request and no preset
-ever bypasses it.
-_Avoid_: repository-marker trust
+An explicit decision, with source `explicit`, binding one canonical root to its
+Windows volume serial, root-file identity, and display hash
+(`WorkspaceIdentity` `ws_*` + `DisplayIdentityHash`). Trust is requested once
+per canonical identity, validated by final-path resolution, and independent of
+the session preset. The GUI requires an explicit confirmation; CLI `run` and
+`chat` require `--trust-workspace`. A moved or recreated identity is untrusted
+again. No preset or clean-repository state grants trust.
+_Avoid_: repository-marker, path-only, or preset-implied trust
 
 **Workspace Terminal**:
-The non-admin terminal adapter constrained to the configured workspace,
-allowlisted executables, bounded output, cancellation, and process-tree
-cleanup. `bash` with `mode=run` auto-forms (read/test/build/lint/local-Git) run on an
-authorization token; external mutation, deletion, extended timeouts, every
-`bash` with `mode=shell` script, unknown executables, a git directory override
-(`-C`), a non-inert `git -c key=value` config override, and global/system git
-config writes require a one-time approval token. A clean-workspace `standard`
-session auto-allows the in-workspace subset above; networked calls,
-timeouts, and protected paths stay gated. Network use is audit metadata
-plus an approval classifier, never a separate scope gate. An ambiguous outcome
-pauses with a waiting status detail and `Continue` clears the inspection gate
-with a `gate_cleared_by_user` audit event.
-_Avoid_: unrestricted Bash/PowerShell access
+The terminal adapter runs under Broker policy with bounded output, hard timeout,
+cancellation, redaction, and process-tree cleanup. `plan` denies terminal
+authority. `standard` allows only classifier-bounded local intent inside the
+trusted workspace; external cwd/argv, arbitrary shell, deletion, unknown
+executables, and other risky intent ask. `full_access` delegates arbitrary
+terminal execution as the current Windows user. Full Access can read or change
+data outside the workspace and use the network; it is not a path or network
+sandbox. Structured protected-path denial does not become terminal confinement,
+and clean/dirty repository state does not change a decision. An ambiguous
+mutation outcome pauses for inspection until explicit Continue.
+_Avoid_: treating repository cleanliness as authorization or Full Access
+terminal as sandboxed
 
 **Connector Adapter**:
 An isolated calendar, task, or mail integration that separates preview from

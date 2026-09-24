@@ -1,8 +1,23 @@
+extern alias Broker;
+
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Data.Sqlite;
+using RuBackend.Business;
+using RuBackend.Business.Sessions;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Persistence;
+using RuBackend.Harness;
 using RuBackend.Harness.Reconciliation;
 using Xunit;
+using BrokerTestHostHost = Broker::RuAgent.Broker.Runtime.BrokerHost;
 
 namespace RuBackend.Tests.Harness;
 
@@ -16,6 +31,1146 @@ public sealed class HarnessRecoveryScannerTests
 
     private static readonly ToolCallId AmbiguousCall =
         new("call_11111111111111111111111111111111");
+
+    [Fact]
+    public async Task Retained_approval_rehydrates_the_complete_encrypted_batch_in_order()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+            var step = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+
+            Assert.NotNull(step);
+            Assert.Equal(3, step!.Proposals.Count);
+            Assert.Equal(new[] { 1, 2, 3 }, step.Proposals.Select(item => item.ModelOrder));
+            Assert.Equal(
+                new[] { "provider_1", "provider_2", "provider_3" },
+                step.Proposals.Select(item => item.ProviderCallId));
+            Assert.Equal("read", step.Proposals[0].ToolId);
+            Assert.Equal("1", step.Proposals[0].ToolVersion);
+            Assert.Equal(
+                "secret-argument-1",
+                step.Proposals[0].Arguments.GetProperty("path").GetString());
+            Assert.Equal("apr_" + new string('d', 32), step.ApprovalId.Value);
+            Assert.Equal("provider_2", step.Proposals[1].ProviderCallId);
+            Assert.Equal("step_11111111111111111111111111111111", step.ModelStepId.Value);
+
+            await using var connection = new SqliteConnection(
+                new SqliteConnectionStringBuilder
+                {
+                    DataSource = fixture.Options.DatabasePath,
+                    Mode = SqliteOpenMode.ReadOnly,
+                    Pooling = false,
+                }.ToString());
+            await connection.OpenAsync();
+            var argumentPayloadIds = await fixture.PayloadStore.ListPayloadIdsAsync(
+                run.RunId,
+                HarnessPayloadKind.ToolArguments,
+                CancellationToken.None);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT protected_content FROM agent_payloads WHERE payload_id = $payload_id";
+            command.Parameters.AddWithValue("$payload_id", argumentPayloadIds[0].Value);
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            var ciphertext = (byte[])reader[0];
+            Assert.DoesNotContain(
+                "secret-argument-1",
+                System.Text.Encoding.UTF8.GetString(ciphertext),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_returns_null_after_all_batch_receipts()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var waiting = await SeedApprovalBatchAsync(fixture);
+            var current = await fixture.EventStore.GetRunAsync(waiting.RunId, CancellationToken.None);
+            Assert.NotNull(current);
+            var toolCalls = new[]
+            {
+                new ToolCallId("call_" + new string('1', 32)),
+                new ToolCallId("call_" + new string('2', 32)),
+                new ToolCallId("call_" + new string('3', 32)),
+            };
+            var events = new List<HarnessEventIntent>
+            {
+                new(
+                    new EventId("evt_" + new string('f', 32)),
+                    HarnessEventKind.RunStateChanged,
+                    safeCode: "approval_resolved"),
+            };
+            for (var index = 0; index < toolCalls.Length; index++)
+            {
+                var executionId = new ExecutionId($"exec_{(index + 1).ToString("x32")}");
+                events.Add(new HarnessEventIntent(
+                    new EventId($"evt_{(100 + index).ToString("x32")}"),
+                    HarnessEventKind.ToolExecutionRequested,
+                    modelStepId: new ModelStepId("step_11111111111111111111111111111111"),
+                    toolCallId: toolCalls[index],
+                    providerCallId: $"provider_{index + 1}",
+                    executionId: executionId));
+                events.Add(new HarnessEventIntent(
+                    new EventId($"evt_{(200 + index).ToString("x32")}"),
+                    HarnessEventKind.ToolExecutionCompleted,
+                    modelStepId: new ModelStepId("step_11111111111111111111111111111111"),
+                    toolCallId: toolCalls[index],
+                    providerCallId: $"provider_{index + 1}",
+                    executionId: executionId,
+                    safeCode: "ok",
+                    toolOutcome: ToolExecutionOutcome.Succeeded,
+                    sideEffectsPossible: false));
+            }
+
+            var next = new AgentRun(
+                current!.RunId,
+                current.SessionId,
+                current.WorkspaceId,
+                new HarnessRunStatus(HarnessRunState.Running),
+                current.Version + 1,
+                current.LastSequence + events.Count,
+                current.BudgetWindow,
+                current.ModelStepsInWindow,
+                current.ToolCallsInWindow,
+                current.Preset,
+                current.PolicySnapshotVersion,
+                current.PolicySnapshotSha256,
+                current.CreatedAt,
+                Timestamp.AddSeconds(2));
+            var commit = await fixture.EventStore.CommitAsync(
+                new HarnessCommit(
+                    current.RunId,
+                    current.Version,
+                    next,
+                    events,
+                    Array.Empty<HarnessPayloadIntent>(),
+                    Array.Empty<ConversationOutboxIntent>()),
+                CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+            var step = await rehydrator.RehydrateAsync(waiting.RunId, CancellationToken.None);
+
+            Assert.Null(step);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_excludes_denials_around_the_ask()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.DeniedAroundAsk);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+            var step = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+
+            Assert.NotNull(step);
+            Assert.Single(step!.Proposals);
+            Assert.Equal(2, step.Proposals[0].ModelOrder);
+            Assert.Equal("provider_2", step.Proposals[0].ProviderCallId);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_rejects_an_expired_request()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddHours(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_expired", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(BatchCorruption.MissingOrder)]
+    [InlineData(BatchCorruption.DuplicateOrder)]
+    [InlineData(BatchCorruption.OutOfOrder)]
+    [InlineData(BatchCorruption.MismatchedVersion)]
+    [InlineData(BatchCorruption.MismatchedProvider)]
+    [InlineData(BatchCorruption.MismatchedSafeCount)]
+    [InlineData(BatchCorruption.MissingAssistant)]
+    public async Task Retained_approval_rehydration_rejects_broken_identity_data(
+        BatchCorruption corruption)
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, corruption);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.DoesNotContain("secret-argument-1", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_accepts_a_fully_denied_batch_without_approval()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.AllDenied);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_missing", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_fails_closed_without_an_approval_event()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.MissingApproval);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_missing", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_rejects_mismatched_execution_identity()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.ExecutionIdMismatch);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_execution_mismatch", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Retained_approval_rehydration_rejects_unknown_outcomes()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.OutcomeUnknown);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_execution_unknown", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Complete_allow_batch_is_skipped_when_run_is_running()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.AllAllowComplete);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var step = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+
+            Assert.Null(step);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Current_waiting_batch_with_complete_execution_but_no_approval_fails_closed()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.MissingApprovalComplete);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_missing", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Completion_before_request_is_rejected()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.CompletionBeforeRequest);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_execution_order", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Orphan_execution_model_step_is_rejected()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.OrphanExecutionStep);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_execution_model_mismatch", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Duplicate_execution_id_is_rejected()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.DuplicateExecutionId);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_execution_duplicate", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Reconciliation_only_execution_identity_is_rejected()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, BatchCorruption.ReconciliationOnlyExecution);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_execution_reconciliation_mismatch", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(BatchCorruption.ResolutionExecutionMismatch)]
+    [InlineData(BatchCorruption.ResolutionModelStepMismatch)]
+    [InlineData(BatchCorruption.ResolutionToolCallMismatch)]
+    [InlineData(BatchCorruption.ResolutionExecutionMissing)]
+    [InlineData(BatchCorruption.ResolutionModelStepMissing)]
+    [InlineData(BatchCorruption.ResolutionToolCallMissing)]
+    public async Task Reconciliation_resolution_requires_exact_execution_identity(
+        BatchCorruption corruption)
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture, corruption);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(run.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_reconciliation_resolution_mismatch", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Restart_rehydrator_accepts_execution_specific_reconciliation_resolution()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(
+                fixture,
+                BatchCorruption.ResolvedReconciliationHistory);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var step = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+
+            Assert.NotNull(step);
+            Assert.Equal("step_11111111111111111111111111111111", step!.ModelStepId.Value);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Restart_rehydrator_accepts_run_level_reconciliation_resolution()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(
+                fixture,
+                BatchCorruption.RunLevelReconciliationHistory);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var step = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+
+            Assert.NotNull(step);
+            Assert.Equal("step_11111111111111111111111111111111", step!.ModelStepId.Value);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task A_complete_allow_batch_does_not_hide_a_new_incomplete_batch()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var current = await CreateDistinctRunAsync(
+                fixture,
+                new HarnessRunStatus(HarnessRunState.Running),
+                "run_" + Guid.NewGuid().ToString("N"));
+            var events = new List<HarnessEventIntent>();
+            var payloads = new List<HarnessPayloadIntent>();
+
+            void AddBatch(char marker, bool complete)
+            {
+                var step = new ModelStepId("step_" + new string(marker, 32));
+                var call = new ModelToolCall(
+                    "provider_" + marker,
+                    "read",
+                    "1",
+                    JsonSerializer.SerializeToElement(new { path = "file-" + marker }));
+                var assistantPayloadId = new PayloadId("payload_" + new string(marker, 31) + "a");
+                var assistantBytes = AssistantStepJsonCodec.Serialize(
+                    new AssistantStep(null, new[] { call }, AssistantFinishReason.ToolCalls, 1));
+                payloads.Add(new HarnessPayloadIntent(
+                    assistantPayloadId,
+                    HarnessPayloadKind.AssistantStep,
+                    HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Json,
+                    assistantBytes.Length,
+                    assistantBytes));
+                var argumentPayloadId = new PayloadId("payload_" + new string(marker, 31) + "b");
+                var argumentBytes = System.Text.Encoding.UTF8.GetBytes(new JsonObject
+                {
+                    ["provider_call_id"] = call.ProviderCallId,
+                    ["tool_id"] = call.ToolId,
+                    ["tool_version"] = call.ToolVersion,
+                    ["arguments"] = JsonNode.Parse(call.Arguments.GetRawText()),
+                }.ToJsonString());
+                payloads.Add(new HarnessPayloadIntent(
+                    argumentPayloadId,
+                    HarnessPayloadKind.ToolArguments,
+                    HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Json,
+                    argumentBytes.Length,
+                    argumentBytes));
+                var toolCallId = new ToolCallId("call_" + new string(marker, 32));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ModelStepCompleted,
+                    modelStepId: step,
+                    payloadId: assistantPayloadId,
+                    safeCount: 1));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ToolProposed,
+                    modelStepId: step,
+                    toolCallId: toolCallId,
+                    providerCallId: call.ProviderCallId,
+                    payloadId: argumentPayloadId,
+                    safeCount: 1));
+                if (complete)
+                {
+                    var executionId = new ExecutionId("exec_" + new string(marker, 32));
+                    events.Add(new HarnessEventIntent(
+                        NewEventId(),
+                        HarnessEventKind.ToolExecutionRequested,
+                        modelStepId: step,
+                        toolCallId: toolCallId,
+                        providerCallId: call.ProviderCallId,
+                        executionId: executionId,
+                        safeCode: "ok"));
+                    events.Add(new HarnessEventIntent(
+                        NewEventId(),
+                        HarnessEventKind.ToolExecutionCompleted,
+                        modelStepId: step,
+                        toolCallId: toolCallId,
+                        providerCallId: call.ProviderCallId,
+                        executionId: executionId,
+                        safeCode: "ok",
+                        toolOutcome: ToolExecutionOutcome.Succeeded,
+                        sideEffectsPossible: false));
+                }
+            }
+
+            AddBatch('1', complete: true);
+            AddBatch('2', complete: false);
+            var next = new AgentRun(
+                current.RunId,
+                current.SessionId,
+                current.WorkspaceId,
+                new HarnessRunStatus(HarnessRunState.WaitingApproval),
+                current.Version + 1,
+                current.LastSequence + events.Count,
+                current.BudgetWindow,
+                current.ModelStepsInWindow,
+                current.ToolCallsInWindow,
+                current.Preset,
+                current.PolicySnapshotVersion,
+                current.PolicySnapshotSha256,
+                current.CreatedAt,
+                Timestamp.AddSeconds(1));
+            var commit = await fixture.EventStore.CommitAsync(
+                new HarnessCommit(
+                    current.RunId,
+                    current.Version,
+                    next,
+                    events,
+                    payloads,
+                    Array.Empty<ConversationOutboxIntent>()),
+                CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(current.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_missing", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task An_old_resolved_batch_does_not_hide_a_new_incomplete_batch()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var current = await CreateDistinctRunAsync(
+                fixture,
+                new HarnessRunStatus(HarnessRunState.Running),
+                "run_" + Guid.NewGuid().ToString("N"));
+            var events = new List<HarnessEventIntent>();
+            var payloads = new List<HarnessPayloadIntent>();
+
+            void AddBatch(char marker, bool includeApproval)
+            {
+                var step = new ModelStepId("step_" + new string(marker, 32));
+                var call = new ModelToolCall(
+                    "provider_" + marker,
+                    "read",
+                    "1",
+                    JsonDocument.Parse($"{{\"path\":\"file-{marker}\"}}").RootElement.Clone());
+                var assistantPayloadId = new PayloadId("payload_" + new string(marker, 31) + "a");
+                var assistantBytes = AssistantStepJsonCodec.Serialize(
+                    new AssistantStep(null, new[] { call }, AssistantFinishReason.ToolCalls, 1));
+                payloads.Add(new HarnessPayloadIntent(
+                    assistantPayloadId,
+                    HarnessPayloadKind.AssistantStep,
+                    HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Json,
+                    assistantBytes.Length,
+                    assistantBytes));
+                var argumentPayloadId = new PayloadId("payload_" + new string(marker, 31) + "b");
+                var argumentNode = new JsonObject
+                {
+                    ["provider_call_id"] = call.ProviderCallId,
+                    ["tool_id"] = call.ToolId,
+                    ["tool_version"] = call.ToolVersion,
+                    ["arguments"] = JsonNode.Parse(call.Arguments.GetRawText()),
+                };
+                var argumentBytes = System.Text.Encoding.UTF8.GetBytes(argumentNode.ToJsonString());
+                payloads.Add(new HarnessPayloadIntent(
+                    argumentPayloadId,
+                    HarnessPayloadKind.ToolArguments,
+                    HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Json,
+                    argumentBytes.Length,
+                    argumentBytes));
+                var toolCallId = new ToolCallId("call_" + new string(marker, 32));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                     HarnessEventKind.ModelStepCompleted,
+                     modelStepId: step,
+                     payloadId: assistantPayloadId,
+                     safeCount: 1));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ToolProposed,
+                    modelStepId: step,
+                    toolCallId: toolCallId,
+                    providerCallId: call.ProviderCallId,
+                    payloadId: argumentPayloadId,
+                    safeCount: 1));
+                if (includeApproval)
+                {
+                    events.Add(new HarnessEventIntent(
+                        NewEventId(),
+                        HarnessEventKind.ApprovalRequested,
+                        modelStepId: step,
+                        toolCallId: toolCallId,
+                        providerCallId: call.ProviderCallId,
+                        approvalId: new ApprovalId("apr_" + new string(marker, 32)),
+                        safeCode: "approval_required"));
+                }
+            }
+
+            AddBatch('1', includeApproval: true);
+            events.Add(new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.RunStateChanged,
+                safeCode: "approval_resolved"));
+            AddBatch('2', includeApproval: false);
+            var next = new AgentRun(
+                current.RunId,
+                current.SessionId,
+                current.WorkspaceId,
+                new HarnessRunStatus(HarnessRunState.WaitingApproval),
+                current.Version + 1,
+                current.LastSequence + events.Count,
+                current.BudgetWindow,
+                current.ModelStepsInWindow,
+                current.ToolCallsInWindow,
+                current.Preset,
+                current.PolicySnapshotVersion,
+                current.PolicySnapshotSha256,
+                current.CreatedAt,
+                Timestamp.AddSeconds(1));
+            var commit = await fixture.EventStore.CommitAsync(
+                new HarnessCommit(
+                    current.RunId,
+                    current.Version,
+                    next,
+                    events,
+                    payloads,
+                    Array.Empty<ConversationOutboxIntent>()),
+                CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                rehydrator.RehydrateAsync(current.RunId, CancellationToken.None));
+
+            Assert.Equal("retained_approval_missing", error.Message);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Resolved_approval_without_dispatch_stays_available_for_rehydration()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var waiting = await SeedApprovalBatchAsync(fixture);
+            var current = await fixture.EventStore.GetRunAsync(waiting.RunId, CancellationToken.None);
+            Assert.NotNull(current);
+            var next = new AgentRun(
+                current!.RunId,
+                current.SessionId,
+                current.WorkspaceId,
+                new HarnessRunStatus(HarnessRunState.Running),
+                current.Version + 1,
+                current.LastSequence + 1,
+                current.BudgetWindow,
+                current.ModelStepsInWindow,
+                current.ToolCallsInWindow,
+                current.Preset,
+                current.PolicySnapshotVersion,
+                current.PolicySnapshotSha256,
+                current.CreatedAt,
+                Timestamp.AddSeconds(2));
+            var commit = await fixture.EventStore.CommitAsync(
+                new HarnessCommit(
+                    current.RunId,
+                    current.Version,
+                    next,
+                    new[]
+                    {
+                        new HarnessEventIntent(
+                            new EventId("evt_" + new string('e', 32)),
+                            HarnessEventKind.RunStateChanged,
+                            safeCode: "approval_resolved"),
+                    },
+                    Array.Empty<HarnessPayloadIntent>(),
+                    Array.Empty<ConversationOutboxIntent>()),
+                CancellationToken.None);
+            Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
+
+            var summaries = await ScanAsync(
+                fixture,
+                new[] { waiting.RunId },
+                Timestamp.AddMinutes(1));
+
+            Assert.Empty(summaries);
+            var after = await fixture.EventStore.GetRunAsync(waiting.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Running, after!.State);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Rebuilt_coordinator_resumes_durable_batch_without_reproposal()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = (await fixture.SeedRunAsync(
+                new HarnessRunStatus(HarnessRunState.Running))).Run;
+            var model = new RestartModelRunner();
+            var gateway = new RestartGateway();
+            var first = NewRestartCoordinator(
+                model,
+                gateway,
+                fixture.EventStore,
+                new InMemoryRetainedApprovalStash());
+
+            var paused = await first.RunOneStepAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.WaitingApproval, paused.Run.State);
+            await first.ResumeAfterApprovalAsync(run.RunId, CancellationToken.None);
+
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore);
+            var retained = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+            Assert.NotNull(retained);
+            var secondStash = new InMemoryRetainedApprovalStash();
+            var second = NewRestartCoordinator(
+                model,
+                gateway,
+                fixture.EventStore,
+                secondStash);
+            second.RestoreRetainedApproval(run.RunId, retained!);
+            var resumed = await second.TryResumeRetainedApprovalAsync(
+                run.RunId,
+                CancellationToken.None);
+
+            Assert.NotNull(resumed);
+            Assert.Null(resumed!.ErrorCode);
+            Assert.Equal(3, resumed.Receipts.Count);
+            Assert.Equal(6, gateway.Proposals.Count);
+            Assert.Equal(3, gateway.ExecuteAttempts.Count);
+            Assert.Single(model.Requests);
+            var events = new List<HarnessEvent>();
+            await foreach (var envelope in fixture.EventStore.ReadEventsAsync(
+                run.RunId,
+                0,
+                CancellationToken.None))
+            {
+                events.Add(envelope.Event);
+            }
+
+            Assert.Equal(3, events.Count(item => item.Kind == "tool.proposed"));
+            Assert.Equal(3, events.Count(item => item.Kind == "tool.execution_completed"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Runtime_approval_race_re_reads_running_state_after_null_refresh()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await SeedApprovalBatchAsync(fixture);
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(Timestamp.AddMinutes(1)));
+            var retained = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+            Assert.NotNull(retained);
+            var stash = new InMemoryRetainedApprovalStash(new FixedTime(Timestamp));
+            var first = NewRestartCoordinator(
+                new RestartModelRunner(),
+                new RestartGateway(),
+                fixture.EventStore,
+                stash);
+            first.RestoreRetainedApproval(run.RunId, retained!);
+            var second = NewRestartCoordinator(
+                new RestartModelRunner(),
+                new RestartGateway(),
+                fixture.EventStore,
+                stash,
+                (_, _) => first.ResumeAfterApprovalAsync(run.RunId, CancellationToken.None));
+
+            var refresh = await second.TryRefreshRetainedApprovalAsync(
+                run.RunId,
+                CancellationToken.None);
+            Assert.Null(refresh);
+
+            var sessionPaths = new DataPaths(
+                Path.Combine(fixture.RootPath, "settings.json"),
+                Path.Combine(fixture.RootPath, "sessions"),
+                Path.Combine(fixture.RootPath, "activity.log"));
+            var sessions = new SessionStore(sessionPaths, TimeProvider.System);
+            var dispatcher = new AgentConversationOutboxDispatcher(
+                new HarnessOutboxStore(fixture.Options),
+                fixture.PayloadStore,
+                sessions,
+                new HarnessModelContextBootstrapper(
+                    sessions,
+                    fixture.PayloadStore,
+                    new CryptographicIdGenerator(),
+                    TimeProvider.System),
+                new AgentRunHistoryTransitionSink(
+                    new UnusedCoordinatorFactory(),
+                    new AgentRuntimeRootRegistry()),
+                TimeProvider.System);
+            var service = new AgentRuntimeLoopService(
+                dispatcher,
+                fixture.EventStore,
+                new UnusedCoordinatorFactory(),
+                new AgentRuntimeRootRegistry(),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<AgentRuntimeLoopService>.Instance,
+                retainedApprovalRehydrator: rehydrator);
+            var race = await service.ReconcileApprovalRefreshRaceAsync(
+                run.RunId.Value,
+                run.RunId,
+                second,
+                rehydrator,
+                CancellationToken.None);
+
+            Assert.True(race.Continue);
+            Assert.Equal(
+                HarnessRunState.Running,
+                (await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None))!.State);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Real_broker_restart_rehydrates_and_re_evaluates_without_reproposal(
+        bool resolveBeforeRestart)
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var previousWorkspaceRoot = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
+        var brokerRoot = Path.Combine(fixture.RootPath, "broker-restart");
+        var workspaceRoot = Path.Combine(fixture.RootPath, "workspace");
+        var sessionRoot = Path.Combine(brokerRoot, "session");
+        var externalFile = Path.Combine(brokerRoot, "two.txt");
+        var descriptorPath = Path.Combine(brokerRoot, "broker.json");
+        Directory.CreateDirectory(brokerRoot);
+        Directory.CreateDirectory(workspaceRoot);
+        Directory.CreateDirectory(sessionRoot);
+        await File.WriteAllTextAsync(Path.Combine(workspaceRoot, "one.txt"), "one");
+        await File.WriteAllTextAsync(Path.Combine(workspaceRoot, "three.txt"), "three");
+        await File.WriteAllTextAsync(externalFile, "two");
+        Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", workspaceRoot);
+        BrokerTestHostHost? brokerA = null;
+        BrokerTestHostHost? brokerB = null;
+        RuBackend.Harness.Broker.BrokerToolGatewayFactory? factoryA = null;
+        RuBackend.Harness.Broker.BrokerToolGatewayFactory? factoryB = null;
+        try
+        {
+            async Task<BrokerTestHostHost> StartBrokerAsync()
+            {
+                var descriptor = new RuAgent.Protocol.BrokerSessionDescriptor(
+                    "http://127.0.0.1:" + GetFreePort(),
+                    "broker-restart-" + Guid.NewGuid().ToString("N"),
+                    1,
+                    sessionRoot,
+                    DateTimeOffset.UtcNow.AddMinutes(30));
+                await File.WriteAllTextAsync(
+                    descriptorPath,
+                    JsonSerializer.Serialize(
+                        descriptor,
+                        RuAgent.Protocol.BrokerSessionDescriptor.JsonOptions));
+                return await BrokerTestHostHost.StartAsync(descriptorPath);
+            }
+
+            var run = (await fixture.SeedRunAsync(
+                new HarnessRunStatus(HarnessRunState.Running))).Run;
+            var snapshot = PolicySnapshotCanonicalizer.Create(
+                1,
+                AgentPermissionPreset.Standard,
+                new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
+                    new WorkspaceId("ws_11111111111111111111111111111111"),
+                    "volume-1",
+                    "root-file-1",
+                    new string('a', 64)),
+                [],
+                DateTimeOffset.UtcNow);
+            brokerA = await StartBrokerAsync();
+            factoryA = new RuBackend.Harness.Broker.BrokerToolGatewayFactory(descriptorPath);
+            var gatewayA = Assert.IsType<RuBackend.Harness.Broker.BrokerToolGateway>(
+                factoryA.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value));
+            var model = new RestartModelRunner(externalFile);
+            var first = NewRestartCoordinator(
+                model,
+                gatewayA,
+                fixture.EventStore,
+                new InMemoryRetainedApprovalStash());
+
+            var paused = await first.RunOneStepAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.WaitingApproval, paused.Run.State);
+            var firstEvents = await ReadEventsAsync(fixture, run.RunId);
+            var oldApproval = Assert.Single(
+                firstEvents,
+                item => item.Event.Kind == "approval.requested");
+            var oldApprovalId = oldApproval.Event.ApprovalId!.Value.Value;
+
+            if (resolveBeforeRestart)
+            {
+                var authorized = await factoryA.RespondApprovalAsync(
+                    run.RunId.Value,
+                    oldApprovalId,
+                    "allow_session_directory",
+                    CancellationToken.None);
+                Assert.True(authorized.Authorized);
+                await first.ResumeAfterApprovalAsync(run.RunId, CancellationToken.None);
+            }
+
+            await factoryA.DisposeAsync();
+            factoryA = null;
+            await brokerA.DisposeAsync();
+            brokerA = null;
+
+            brokerB = await StartBrokerAsync();
+            factoryB = new RuBackend.Harness.Broker.BrokerToolGatewayFactory(descriptorPath);
+            var gatewayB = Assert.IsType<RuBackend.Harness.Broker.BrokerToolGateway>(
+                factoryB.Create(workspaceRoot, snapshot, run.RunId, run.SessionId.Value));
+            var second = NewRestartCoordinator(
+                model,
+                gatewayB,
+                fixture.EventStore,
+                new InMemoryRetainedApprovalStash());
+            var rehydrator = new RetainedApprovalRehydrator(
+                fixture.EventStore,
+                fixture.PayloadStore,
+                new FixedTime(DateTimeOffset.UtcNow.AddMinutes(1)));
+            var retained = await rehydrator.RehydrateAsync(run.RunId, CancellationToken.None);
+            Assert.NotNull(retained);
+            second.RestoreRetainedApproval(run.RunId, retained!);
+            var refreshed = resolveBeforeRestart
+                ? await second.TryResumeRetainedApprovalAsync(run.RunId, CancellationToken.None)
+                : await second.TryRefreshRetainedApprovalAsync(run.RunId, CancellationToken.None);
+
+            Assert.NotNull(refreshed);
+            Assert.Equal("approval_required", refreshed!.ErrorCode);
+            Assert.Equal(HarnessRunState.WaitingApproval, refreshed.Run.State);
+            var secondEvents = await ReadEventsAsync(fixture, run.RunId);
+            var approvals = secondEvents
+                .Where(item => item.Event.Kind == "approval.requested")
+                .ToArray();
+            Assert.Equal(2, approvals.Length);
+            Assert.NotEqual(oldApprovalId, approvals[1].Event.ApprovalId!.Value.Value);
+            Assert.Equal(3, secondEvents.Count(item => item.Event.Kind == "tool.proposed"));
+            Assert.Equal(0, secondEvents.Count(item => item.Event.Kind == "tool.execution_requested"));
+            Assert.Equal(0, secondEvents.Count(item => item.Event.Kind == "tool.execution_completed"));
+            Assert.Single(model.Requests);
+
+            var freshApprovalId = approvals[1].Event.ApprovalId!.Value.Value;
+            var freshAuthorized = await factoryB.RespondApprovalAsync(
+                run.RunId.Value,
+                freshApprovalId,
+                "allow_session_directory",
+                CancellationToken.None);
+            Assert.True(freshAuthorized.Authorized);
+            await second.ResumeAfterApprovalAsync(run.RunId, CancellationToken.None);
+            var completed = await second.TryResumeRetainedApprovalAsync(
+                run.RunId,
+                CancellationToken.None);
+
+            Assert.NotNull(completed);
+            Assert.Null(completed!.ErrorCode);
+            Assert.Equal(3, completed.Receipts.Count);
+            var finalEvents = await ReadEventsAsync(fixture, run.RunId);
+            Assert.Equal(3, finalEvents.Count(item => item.Event.Kind == "tool.proposed"));
+            Assert.Equal(2, finalEvents.Count(item => item.Event.Kind == "approval.requested"));
+            Assert.Single(model.Requests);
+        }
+        finally
+        {
+            if (factoryB is not null)
+            {
+                await factoryB.DisposeAsync();
+            }
+
+            if (factoryA is not null)
+            {
+                await factoryA.DisposeAsync();
+            }
+
+            if (brokerB is not null)
+            {
+                await brokerB.DisposeAsync();
+            }
+
+            if (brokerA is not null)
+            {
+                await brokerA.DisposeAsync();
+            }
+
+            Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", previousWorkspaceRoot);
+            await fixture.DisposeAsync();
+        }
+    }
 
     [Fact]
     public async Task Crash_before_any_dispatch_fails_the_run_safely_without_effects()
@@ -196,6 +1351,37 @@ public sealed class HarnessRecoveryScannerTests
     }
 
     [Fact]
+    public async Task Migrated_active_run_with_old_permission_profile_fails_closed()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var tracked = new List<RunId>();
+            var run = await CreateDistinctRunAsync(
+                fixture,
+                new HarnessRunStatus(HarnessRunState.Running),
+                "run_66666666666666666666666666666666");
+            await SetLegacyPermissionProfileVersionAsync(fixture, run.RunId);
+            run = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None)
+                ?? throw new InvalidOperationException("run missing");
+            tracked.Add(run.RunId);
+
+            var summaries = await ScanAsync(fixture, tracked);
+
+            var summary = Assert.Single(summaries);
+            Assert.Equal(run.RunId, summary.RunId);
+            Assert.Equal("failed_permission_profile_changed", summary.Action);
+            var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Failed, after!.State);
+            Assert.Equal("permission_profile_changed", after.TerminalErrorCode);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task Recovery_never_reissues_an_old_mutation_execution_id()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();
@@ -219,6 +1405,659 @@ public sealed class HarnessRecoveryScannerTests
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static AgentRunCoordinator NewRestartCoordinator(
+        IModelStepRunner model,
+        IToolGateway gateway,
+        SqliteHarnessEventStore store,
+        IRetainedApprovalStash stash,
+        Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null) =>
+        new(
+            model,
+            gateway,
+            store,
+            new AgentContextAssembler(new RestartContextSource()),
+            new CryptographicIdGenerator(),
+            new SystemTimeProvider(),
+            new ToolCallScheduler(),
+            new TransientFrameBuffer(4096),
+            promptContextProvider: new RestartPromptProvider(),
+            retainedStash: stash,
+            approvalResolutionRaceHook: approvalResolutionRaceHook);
+
+    private sealed class UnusedCoordinatorFactory : IAgentRuntimeCoordinatorFactory
+    {
+        public AgentRunCoordinator Create(
+            string workspaceRoot,
+            PolicySnapshot? policySnapshot = null,
+            RunId? runId = null,
+            string? agentSessionId = null,
+            ContextBudgetPolicy? contextBudgetPolicy = null) =>
+            throw new NotSupportedException();
+
+        public Task<AgentRunCoordinator> CreateAsync(
+            string workspaceRoot,
+            PolicySnapshot? policySnapshot = null,
+            RunId? runId = null,
+            string? agentSessionId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<AgentRunCoordinator>(new NotSupportedException());
+
+        public void DropRetainedApproval(RunId runId)
+        {
+        }
+    }
+
+    private sealed class RestartModelRunner : IModelStepRunner
+    {
+        private readonly string? _externalPath;
+
+        public RestartModelRunner(string? externalPath = null) => _externalPath = externalPath;
+
+        public List<ModelStepRequest> Requests { get; } = new();
+
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            var step = new AssistantStep(
+                null,
+                new[]
+                {
+                    new ModelToolCall(
+                        "provider_restart_1",
+                        "read",
+                        "1",
+                        JsonDocument.Parse("{\"path\":\"one.txt\"}").RootElement.Clone()),
+                    new ModelToolCall(
+                        "provider_restart_2",
+                        "read",
+                        "1",
+                        JsonSerializer.SerializeToElement(new
+                        {
+                            path = _externalPath ?? "two.txt",
+                        }).Clone()),
+                    new ModelToolCall(
+                        "provider_restart_3",
+                        "read",
+                        "1",
+                        JsonDocument.Parse("{\"path\":\"three.txt\"}").RootElement.Clone()),
+                },
+                AssistantFinishReason.ToolCalls,
+                1);
+            return Task.FromResult(new ModelStepResult(step, SystemPromptReceipt.Empty));
+        }
+    }
+
+    private sealed class RestartGateway : IToolGateway
+    {
+        private bool _hasAsked;
+
+        public List<ToolProposal> Proposals { get; } = new();
+        public List<ExecutionId> ExecuteAttempts { get; } = new();
+
+        public Task<ToolProposalDecision> EvaluateAsync(
+            ToolProposal proposal,
+            CancellationToken cancellationToken)
+        {
+            Proposals.Add(proposal);
+            if (proposal.ModelOrder == 2 && !_hasAsked)
+            {
+                _hasAsked = true;
+                return Task.FromResult(ToolProposalDecision.Ask(
+                    ToolAccessKind.Mutation,
+                    new ApprovalId("apr_" + new string('a', 32))));
+            }
+
+            return Task.FromResult(ToolProposalDecision.Allow(
+                ToolAccessKind.ReadOnly,
+                $"restart-{proposal.ModelOrder}"));
+        }
+
+        public Task<PreparedToolExecution> PrepareAsync(
+            ApprovedToolExecution execution,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new PreparedToolExecution(
+                execution.ExecutionId,
+                execution.Proposal.ToolCallId,
+                execution.Proposal.ModelOrder,
+                ToolAccessKind.ReadOnly,
+                "restart-preparation",
+                Array.Empty<PreparedPayload>()));
+
+        public Task<ToolExecutionReceipt> ExecuteAsync(
+            PreparedToolExecution execution,
+            Func<ToolOutputChunk, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            ExecuteAttempts.Add(execution.ExecutionId);
+            return Task.FromResult(new ToolExecutionReceipt(
+                execution.ExecutionId,
+                execution.ToolCallId,
+                ToolExecutionOutcome.Succeeded,
+                "ok",
+                null,
+                sideEffectsPossible: false,
+                modelContent: "{\"ok\":true}"u8.ToArray()));
+        }
+
+        public Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class RestartContextSource : IModelContextSource
+    {
+        public Task<ModelContextSourceSnapshot> LoadAsync(
+            RunId runId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ModelContextSourceSnapshot(
+                Array.Empty<ModelContextEntry>(),
+                Array.Empty<ModelContextEntry>()));
+    }
+
+    private sealed class RestartPromptProvider : ISystemPromptContextProvider
+    {
+        public Task<SystemPromptContext> BuildAsync(
+            AgentRun run,
+            ModelContextSnapshot modelContext,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(SystemPromptContext.Empty);
+    }
+
+    public enum BatchCorruption
+    {
+        None,
+        MissingOrder,
+        DuplicateOrder,
+        OutOfOrder,
+        MismatchedVersion,
+        MismatchedProvider,
+        MismatchedSafeCount,
+        MissingAssistant,
+        MissingApproval,
+        MissingApprovalComplete,
+        AllAllowComplete,
+        CompletionBeforeRequest,
+        OrphanExecutionStep,
+        DuplicateExecutionId,
+        ReconciliationOnlyExecution,
+        ResolvedReconciliationHistory,
+        RunLevelReconciliationHistory,
+        ResolutionExecutionMismatch,
+        ResolutionModelStepMismatch,
+        ResolutionToolCallMismatch,
+        ResolutionExecutionMissing,
+        ResolutionModelStepMissing,
+        ResolutionToolCallMissing,
+        ExecutionIdMismatch,
+        OutcomeUnknown,
+        AllDenied,
+        DeniedAroundAsk,
+    }
+
+    private static async Task<AgentRun> SeedApprovalBatchAsync(
+        BackendHarnessTestFixture fixture,
+        BatchCorruption corruption = BatchCorruption.None)
+    {
+        var request = await fixture.SeedRunAsync(
+            new HarnessRunStatus(HarnessRunState.Running));
+        var current = request.Run;
+        var modelStepId = new ModelStepId("step_11111111111111111111111111111111");
+        var calls = new[]
+        {
+            new ModelToolCall(
+                "provider_1",
+                "read",
+                "1",
+                JsonDocument.Parse("{\"path\":\"secret-argument-1\"}").RootElement.Clone()),
+            new ModelToolCall(
+                "provider_2",
+                "read",
+                "1",
+                JsonDocument.Parse("{\"path\":\"secret-argument-2\"}").RootElement.Clone()),
+            new ModelToolCall(
+                "provider_3",
+                "read",
+                "1",
+                JsonDocument.Parse("{\"path\":\"secret-argument-3\"}").RootElement.Clone()),
+        };
+        var assistantPayloadId = new PayloadId("payload_" + new string('a', 32));
+        var assistantBytes = AssistantStepJsonCodec.Serialize(
+            new AssistantStep(null, calls, AssistantFinishReason.ToolCalls, 1));
+        var payloads = new List<HarnessPayloadIntent>
+        {
+            new(
+                assistantPayloadId,
+                HarnessPayloadKind.AssistantStep,
+                HarnessPayloadAudience.AuthenticatedClient
+                    | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                assistantBytes.Length,
+                assistantBytes),
+        };
+        var events = new List<HarnessEventIntent>();
+        if (corruption is BatchCorruption.ResolvedReconciliationHistory
+            or BatchCorruption.RunLevelReconciliationHistory
+            or BatchCorruption.ResolutionExecutionMismatch
+            or BatchCorruption.ResolutionModelStepMismatch
+            or BatchCorruption.ResolutionToolCallMismatch
+            or BatchCorruption.ResolutionExecutionMissing
+            or BatchCorruption.ResolutionModelStepMissing
+            or BatchCorruption.ResolutionToolCallMissing)
+        {
+            var oldStep = new ModelStepId("step_" + new string('e', 32));
+            var oldCall = new ToolCallId("call_" + new string('e', 32));
+            var oldExecution = new ExecutionId("exec_" + new string('e', 32));
+            ModelStepId? resolutionModelStepId = oldStep;
+            ToolCallId? resolutionToolCallId = oldCall;
+            ExecutionId? resolutionExecutionId = oldExecution;
+            if (corruption == BatchCorruption.ResolutionModelStepMismatch)
+            {
+                resolutionModelStepId = new ModelStepId("step_" + new string('d', 32));
+            }
+
+            if (corruption == BatchCorruption.ResolutionToolCallMismatch)
+            {
+                resolutionToolCallId = new ToolCallId("call_" + new string('d', 32));
+            }
+
+            if (corruption == BatchCorruption.ResolutionExecutionMismatch)
+            {
+                resolutionExecutionId = new ExecutionId("exec_" + new string('d', 32));
+            }
+
+            if (corruption == BatchCorruption.ResolutionModelStepMissing)
+            {
+                resolutionModelStepId = null;
+            }
+
+            if (corruption == BatchCorruption.ResolutionToolCallMissing)
+            {
+                resolutionToolCallId = null;
+            }
+
+            if (corruption == BatchCorruption.ResolutionExecutionMissing)
+            {
+                resolutionExecutionId = null;
+            }
+            var oldAssistantPayloadId = new PayloadId("payload_" + new string('e', 32));
+            var oldAssistantBytes = AssistantStepJsonCodec.Serialize(
+                new AssistantStep(
+                    null,
+                    new[]
+                    {
+                        new ModelToolCall(
+                            "provider_history",
+                            "read",
+                            "1",
+                            JsonDocument.Parse("{\"path\":\"history.txt\"}").RootElement.Clone()),
+                    },
+                    AssistantFinishReason.ToolCalls,
+                    1));
+            payloads.Add(new HarnessPayloadIntent(
+                oldAssistantPayloadId,
+                HarnessPayloadKind.AssistantStep,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                oldAssistantBytes.Length,
+                oldAssistantBytes));
+            var oldArgumentPayloadId = new PayloadId("payload_" + new string('f', 32));
+            var oldArgumentBytes = System.Text.Encoding.UTF8.GetBytes(new JsonObject
+            {
+                ["provider_call_id"] = "provider_history",
+                ["tool_id"] = "read",
+                ["tool_version"] = "1",
+                ["arguments"] = JsonNode.Parse("{\"path\":\"history.txt\"}"),
+            }.ToJsonString());
+            payloads.Add(new HarnessPayloadIntent(
+                oldArgumentPayloadId,
+                HarnessPayloadKind.ToolArguments,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                oldArgumentBytes.Length,
+                oldArgumentBytes));
+            events.Add(new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: oldStep,
+                payloadId: oldAssistantPayloadId,
+                safeCount: 1));
+            events.Add(new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.ToolProposed,
+                modelStepId: oldStep,
+                toolCallId: oldCall,
+                providerCallId: "provider_history",
+                payloadId: oldArgumentPayloadId,
+                safeCount: 1));
+            events.Add(new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.ToolExecutionRequested,
+                modelStepId: oldStep,
+                toolCallId: oldCall,
+                providerCallId: "provider_history",
+                executionId: oldExecution,
+                safeCode: "side_effects_possible"));
+            if (corruption == BatchCorruption.RunLevelReconciliationHistory)
+            {
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ToolExecutionCompleted,
+                    modelStepId: oldStep,
+                    toolCallId: oldCall,
+                    providerCallId: "provider_history",
+                    executionId: oldExecution,
+                    safeCode: "ok",
+                    toolOutcome: ToolExecutionOutcome.Succeeded,
+                    sideEffectsPossible: false));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ReconciliationResolved,
+                    safeCode: "gate_cleared_by_user"));
+            }
+            else
+            {
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ToolExecutionCompleted,
+                    modelStepId: oldStep,
+                    toolCallId: oldCall,
+                    providerCallId: "provider_history",
+                    executionId: oldExecution,
+                    safeCode: "unknown",
+                    toolOutcome: ToolExecutionOutcome.OutcomeUnknown,
+                    sideEffectsPossible: true));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ReconciliationRequired,
+                    modelStepId: oldStep,
+                    toolCallId: oldCall,
+                    providerCallId: "provider_history",
+                    executionId: oldExecution,
+                    safeCode: "unknown"));
+                events.Add(new HarnessEventIntent(
+                    NewEventId(),
+                    HarnessEventKind.ReconciliationResolved,
+                    modelStepId: resolutionModelStepId,
+                    toolCallId: resolutionToolCallId,
+                    providerCallId: "provider_history",
+                    executionId: resolutionExecutionId,
+                    safeCode: "applied"));
+            }
+        }
+        if (corruption != BatchCorruption.MissingAssistant)
+        {
+            events.Add(new HarnessEventIntent(
+                new EventId("evt_" + new string('b', 32)),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                payloadId: assistantPayloadId,
+                safeCount: calls.Length));
+        }
+        var proposedToolCallIds = new[]
+        {
+            new ToolCallId("call_" + new string('1', 32)),
+            new ToolCallId("call_" + new string('2', 32)),
+            new ToolCallId("call_" + new string('3', 32)),
+        };
+        var orders = corruption switch
+        {
+            BatchCorruption.MissingOrder => new[] { 1, 3 },
+            BatchCorruption.DuplicateOrder => new[] { 1, 1, 3 },
+            BatchCorruption.OutOfOrder => new[] { 1, 3, 2 },
+            _ => new[] { 1, 2, 3 },
+        };
+        for (var index = 0; index < orders.Length; index++)
+        {
+            var order = orders[index];
+            var callIndex = order - 1;
+            var payloadId = new PayloadId($"payload_{(index + 1).ToString("x32")}");
+            var providerCallId = corruption == BatchCorruption.MismatchedProvider && index == 0
+                ? "provider_bad"
+                : calls[callIndex].ProviderCallId;
+            var toolVersion = corruption == BatchCorruption.MismatchedVersion && index == 0
+                ? "2"
+                : calls[callIndex].ToolVersion;
+            var node = new JsonObject
+            {
+                ["provider_call_id"] = calls[callIndex].ProviderCallId,
+                ["tool_id"] = calls[callIndex].ToolId,
+                ["tool_version"] = toolVersion,
+                ["arguments"] = JsonNode.Parse(calls[callIndex].Arguments.GetRawText()),
+            };
+            var bytes = System.Text.Encoding.UTF8.GetBytes(node.ToJsonString());
+            payloads.Add(new HarnessPayloadIntent(
+                payloadId,
+                HarnessPayloadKind.ToolArguments,
+                HarnessPayloadAudience.AuthenticatedClient
+                    | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                bytes.Length,
+                bytes));
+            events.Add(new HarnessEventIntent(
+                new EventId($"evt_{(index + 1).ToString("x32")}"),
+                HarnessEventKind.ToolProposed,
+                modelStepId: modelStepId,
+                toolCallId: proposedToolCallIds[index],
+                providerCallId: providerCallId,
+                    payloadId: payloadId,
+                    safeCount: corruption == BatchCorruption.MismatchedSafeCount && index == 0
+                        ? 2
+                        : order));
+        }
+
+        void AddExecutionPair(
+            int index,
+            ModelStepId step,
+            ToolCallId toolCallId,
+            string providerCallId,
+            ExecutionId executionId,
+            bool completionFirst = false,
+            bool denied = false)
+        {
+            var request = new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.ToolExecutionRequested,
+                modelStepId: step,
+                toolCallId: toolCallId,
+                providerCallId: providerCallId,
+                executionId: executionId,
+                safeCode: denied ? "policy_denied" : "ok");
+            var completion = new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.ToolExecutionCompleted,
+                modelStepId: step,
+                toolCallId: toolCallId,
+                providerCallId: providerCallId,
+                executionId: executionId,
+                safeCode: denied ? "policy_denied" : "ok",
+                toolOutcome: denied ? ToolExecutionOutcome.Failed : ToolExecutionOutcome.Succeeded,
+                sideEffectsPossible: false);
+            if (completionFirst)
+            {
+                events.Add(completion);
+                events.Add(request);
+            }
+            else
+            {
+                events.Add(request);
+                events.Add(completion);
+            }
+        }
+
+        if (corruption == BatchCorruption.AllDenied)
+        {
+            for (var index = 0; index < proposedToolCallIds.Length; index++)
+            {
+                AddExecutionPair(
+                    index,
+                    modelStepId,
+                    proposedToolCallIds[index],
+                    calls[index].ProviderCallId,
+                    new ExecutionId($"exec_{(400 + index).ToString("x32")}"),
+                    denied: true);
+            }
+        }
+
+        if (corruption == BatchCorruption.DeniedAroundAsk)
+        {
+            foreach (var index in new[] { 0, 2 })
+            {
+                AddExecutionPair(
+                    index,
+                    modelStepId,
+                    proposedToolCallIds[index],
+                    calls[index].ProviderCallId,
+                    new ExecutionId($"exec_{(300 + index).ToString("x32")}"),
+                    denied: true);
+            }
+        }
+
+        if (corruption is BatchCorruption.MissingApprovalComplete
+            or BatchCorruption.AllAllowComplete
+            or BatchCorruption.CompletionBeforeRequest
+            or BatchCorruption.OrphanExecutionStep
+            or BatchCorruption.DuplicateExecutionId
+            or BatchCorruption.ReconciliationOnlyExecution)
+        {
+            for (var index = 0; index < proposedToolCallIds.Length; index++)
+            {
+                var executionId = corruption == BatchCorruption.DuplicateExecutionId && index < 2
+                    ? new ExecutionId("exec_" + new string('5', 32))
+                    : new ExecutionId($"exec_{(500 + index).ToString("x32")}");
+                AddExecutionPair(
+                    index,
+                    modelStepId,
+                    proposedToolCallIds[index],
+                    calls[index].ProviderCallId,
+                    executionId,
+                    completionFirst: corruption == BatchCorruption.CompletionBeforeRequest && index == 0);
+            }
+        }
+
+        if (corruption == BatchCorruption.OrphanExecutionStep)
+        {
+            AddExecutionPair(
+                0,
+                new ModelStepId("step_" + new string('9', 32)),
+                new ToolCallId("call_" + new string('9', 32)),
+                "provider_orphan",
+                new ExecutionId("exec_" + new string('9', 32)));
+        }
+
+        if (corruption == BatchCorruption.ReconciliationOnlyExecution)
+        {
+            events.Add(new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.ReconciliationRequired,
+                modelStepId: new ModelStepId("step_" + new string('8', 32)),
+                toolCallId: new ToolCallId("call_" + new string('8', 32)),
+                executionId: new ExecutionId("exec_" + new string('8', 32)),
+                safeCode: "reconciliation_orphan"));
+        }
+
+        if (corruption is not BatchCorruption.MissingApproval
+            and not BatchCorruption.MissingApprovalComplete
+            and not BatchCorruption.AllAllowComplete
+            and not BatchCorruption.CompletionBeforeRequest
+            and not BatchCorruption.OrphanExecutionStep
+            and not BatchCorruption.DuplicateExecutionId
+            and not BatchCorruption.ReconciliationOnlyExecution
+            and not BatchCorruption.AllDenied)
+        {
+            events.Add(new HarnessEventIntent(
+                new EventId("evt_" + new string('c', 32)),
+                HarnessEventKind.ApprovalRequested,
+                modelStepId: modelStepId,
+                toolCallId: proposedToolCallIds[1],
+                providerCallId: calls[1].ProviderCallId,
+                approvalId: new ApprovalId("apr_" + new string('d', 32)),
+                safeCode: "approval_required"));
+        }
+
+        if (corruption is BatchCorruption.ExecutionIdMismatch or BatchCorruption.OutcomeUnknown)
+        {
+            events.Add(new HarnessEventIntent(
+                NewEventId(),
+                HarnessEventKind.RunStateChanged,
+                safeCode: "approval_resolved"));
+        }
+
+        if (corruption == BatchCorruption.ExecutionIdMismatch)
+        {
+            events.Add(new HarnessEventIntent(
+                new EventId("evt_" + new string('d', 32)),
+                HarnessEventKind.ToolExecutionRequested,
+                modelStepId: modelStepId,
+                toolCallId: proposedToolCallIds[0],
+                providerCallId: calls[0].ProviderCallId,
+                executionId: new ExecutionId("exec_" + new string('1', 32))));
+            events.Add(new HarnessEventIntent(
+                new EventId("evt_" + new string('e', 32)),
+                HarnessEventKind.ToolExecutionCompleted,
+                modelStepId: modelStepId,
+                toolCallId: proposedToolCallIds[0],
+                providerCallId: calls[0].ProviderCallId,
+                executionId: new ExecutionId("exec_" + new string('2', 32)),
+                safeCode: "ok",
+                toolOutcome: ToolExecutionOutcome.Succeeded,
+                sideEffectsPossible: false));
+        }
+
+        if (corruption == BatchCorruption.OutcomeUnknown)
+        {
+            events.Add(new HarnessEventIntent(
+                new EventId("evt_" + new string('f', 32)),
+                HarnessEventKind.ToolExecutionRequested,
+                modelStepId: modelStepId,
+                toolCallId: proposedToolCallIds[1],
+                providerCallId: calls[1].ProviderCallId,
+                executionId: new ExecutionId("exec_" + new string('3', 32))));
+            events.Add(new HarnessEventIntent(
+                new EventId("evt_" + new string('0', 32)),
+                HarnessEventKind.ToolExecutionCompleted,
+                modelStepId: modelStepId,
+                toolCallId: proposedToolCallIds[1],
+                providerCallId: calls[1].ProviderCallId,
+                executionId: new ExecutionId("exec_" + new string('3', 32)),
+                safeCode: "unknown",
+                toolOutcome: ToolExecutionOutcome.OutcomeUnknown,
+                sideEffectsPossible: true));
+        }
+
+        var next = new AgentRun(
+            current.RunId,
+            current.SessionId,
+            current.WorkspaceId,
+            new HarnessRunStatus(
+                corruption is BatchCorruption.CompletionBeforeRequest
+                    or BatchCorruption.AllAllowComplete
+                    ? HarnessRunState.Running
+                    : HarnessRunState.WaitingApproval),
+            current.Version + 1,
+            current.LastSequence + events.Count,
+            current.BudgetWindow,
+            current.ModelStepsInWindow,
+            current.ToolCallsInWindow,
+            current.Preset,
+            current.PolicySnapshotVersion,
+            current.PolicySnapshotSha256,
+            current.CreatedAt,
+            Timestamp.AddSeconds(1));
+        var result = await fixture.EventStore.CommitAsync(
+            new HarnessCommit(
+                current.RunId,
+                current.Version,
+                next,
+                events,
+                payloads,
+                Array.Empty<ConversationOutboxIntent>()),
+            CancellationToken.None);
+        Assert.Equal(HarnessCommitOutcome.Committed, result.Outcome);
+        return next;
     }
 
     // ------------------------------------------------------------------
@@ -295,6 +2134,28 @@ public sealed class HarnessRecoveryScannerTests
         return result.Run!;
     }
 
+    private static async Task SetLegacyPermissionProfileVersionAsync(
+        BackendHarnessTestFixture fixture,
+        RunId runId)
+    {
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = fixture.Options.DatabasePath,
+            Mode = SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE agent_runs
+            SET permission_profile_version = 0
+            WHERE run_id = $run_id
+            """;
+        command.Parameters.AddWithValue("$run_id", runId.Value);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
     private static async Task CommitEventAsync(
         BackendHarnessTestFixture fixture,
         AgentRun current,
@@ -314,7 +2175,9 @@ public sealed class HarnessRecoveryScannerTests
             current.PolicySnapshotVersion,
             current.PolicySnapshotSha256,
             current.CreatedAt,
-            Timestamp);
+            Timestamp,
+            terminalAt: null,
+            permissionProfileVersion: current.PermissionProfileVersion);
         var result = await fixture.EventStore.CommitAsync(
             new HarnessCommit(
                 current.RunId,
@@ -442,6 +2305,13 @@ public sealed class HarnessRecoveryScannerTests
             new FixedTime(now ?? Timestamp),
             _ => Task.FromResult<IReadOnlyList<RunId>>(tracked)).SweepPendingRunsAsync(CancellationToken.None);
         return sweep.Recovered;
+    }
+
+    private static int GetFreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     private static EventId NewEventId() =>

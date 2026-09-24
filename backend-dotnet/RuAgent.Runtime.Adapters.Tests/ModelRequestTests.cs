@@ -58,6 +58,173 @@ public sealed class ModelRequestTests
         Assert.Throws<ArgumentException>(() => CreateRequest(list));
     }
 
+    [Fact]
+    public void ModelFunctionCall_requires_a_safe_identifier()
+    {
+        var arguments = System.Text.Json.JsonDocument.Parse("{}").RootElement;
+
+        Assert.Throws<ArgumentException>(() => new ModelFunctionCall(null!, "read", arguments));
+        Assert.Throws<ArgumentException>(() => new ModelFunctionCall("call/unsafe", "read", arguments));
+    }
+
+    [Fact]
+    public void ModelRequest_exposes_a_true_read_only_turn_collection()
+    {
+        var original = new ModelTurn("user", "original");
+        var request = new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            new List<ModelTurn> { original },
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk");
+        var mutable = Assert.IsAssignableFrom<IList<ModelTurn>>(request.Turns);
+
+        Assert.Throws<NotSupportedException>(() => mutable[0] = new ModelTurn("user", "mutated"));
+        Assert.Equal("original", request.Turns[0].Content);
+    }
+
+    [Fact]
+    public void ModelRequest_accepts_exact_512_kib_history_boundary()
+    {
+        const int limit = 512 * 1024;
+        var emptyWire = new JsonArray
+        {
+            new JsonObject { ["role"] = "user", ["content"] = "" },
+        };
+        var content = new string(
+            'x',
+            limit - System.Text.Encoding.UTF8.GetByteCount(emptyWire.ToJsonString()));
+        var request = new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            [new ModelTurn("user", content)],
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk");
+
+        Assert.Single(request.Turns);
+    }
+
+    [Fact]
+    public void ModelRequest_rejects_one_byte_over_512_kib_history()
+    {
+        const int limit = 512 * 1024;
+        var emptyWire = new JsonArray
+        {
+            new JsonObject { ["role"] = "user", ["content"] = "" },
+        };
+        var content = new string(
+            'x',
+            limit - System.Text.Encoding.UTF8.GetByteCount(emptyWire.ToJsonString()) + 1);
+
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            [new ModelTurn("user", content)],
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk"));
+    }
+
+    [Fact]
+    public void ModelRequest_accepts_256_message_history_boundary()
+    {
+        var turns = Enumerable.Range(0, 256)
+            .Select(_ => new ModelTurn("user", "x"))
+            .ToArray();
+
+        var request = new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            turns,
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk");
+
+        Assert.Equal(256, request.Turns.Count);
+    }
+
+    [Fact]
+    public void ModelRequest_rejects_more_than_256_messages()
+    {
+        var turns = Enumerable.Range(0, 257)
+            .Select(_ => new ModelTurn("user", "x"))
+            .ToArray();
+
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            turns,
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk"));
+    }
+
+    [Fact]
+    public void ModelRequest_rejects_history_larger_than_512_kib()
+    {
+        var turns = Enumerable.Range(0, 6)
+            .Select(_ => new ModelTurn("user", new string('x', 100_000)))
+            .ToArray();
+
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            turns,
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk"));
+    }
+
+    [Fact]
+    public void ModelRequest_rejects_tool_result_without_preceding_call()
+    {
+        var turns = new[]
+        {
+            new ModelTurn("tool", "result", toolCallId: "call_1", toolResultCode: "ok"),
+        };
+
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            turns,
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk"));
+    }
+
+    [Fact]
+    public void ModelRequest_rejects_assistant_call_batch_without_results()
+    {
+        var turns = new[]
+        {
+            new ModelTurn(
+                "assistant",
+                string.Empty,
+                [new ModelFunctionCall(
+                    "call_1",
+                    "read",
+                    System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone())]),
+        };
+
+        Assert.Throws<ArgumentException>(() => new ModelRequest(
+            "gpt-4o",
+            "sys",
+            "hi",
+            turns,
+            new JsonObject(),
+            new Uri("https://api.openai.com/v1"),
+            "sk"));
+    }
+
     [Theory]
     [InlineData("image/gif")]
     [InlineData("image/bmp")]

@@ -285,7 +285,7 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Plan is read-only; Standard asks before mutations; Full Access skips approvals" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Text="Plan: read + Web auto; terminal and mutation deny. Standard: in-workspace bounded local mutation auto; external/escape ask. Full Access: external structured files and arbitrary terminal auto; structured protected paths deny" Style="{StaticResource SettingDescStyle}" />
                                 </StackPanel>
                                 <Button x:Name="PresetButton"
                                         Grid.Column="1"

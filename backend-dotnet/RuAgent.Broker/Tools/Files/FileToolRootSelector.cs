@@ -1,30 +1,61 @@
 using RuAgent.Broker.Tools.Paths;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools.Files;
 
-/// <summary>
-/// Selects which workspace root a files.* call executes against.
-/// Inside the lease root → lease root (behavior unchanged).
-/// Outside → the longest matching session-granted directory, else throws
-/// <c>outside_workspace</c> exactly as adapters did before. Protected paths
-/// are not decided here; the selected toolset's adapters still deny them.
-/// Callers must let <see cref="ArgumentException"/> fall through to the
-/// lease-rooted adapters so malformed inputs keep their original errors.
-/// </summary>
 internal static class FileToolRootSelector
 {
     internal static string SelectRoot(
         CanonicalPathResolver leaseResolver,
         string leaseRoot,
         IReadOnlyList<string> grantedDirectories,
+        string pathInput) =>
+        SelectRootCore(leaseResolver, leaseRoot, grantedDirectories, null, pathInput);
+
+    internal static string SelectRoot(
+        CanonicalPathResolver leaseResolver,
+        string leaseRoot,
+        IReadOnlyList<string> grantedDirectories,
+        AgentPolicyProfile profile,
+        string pathInput) =>
+        SelectRootCore(leaseResolver, leaseRoot, grantedDirectories, profile, pathInput);
+
+    internal static string SelectRoot(
+        CanonicalPathResolver leaseResolver,
+        string leaseRoot,
+        IReadOnlyList<string> grantedDirectories,
+        string pathInput,
+        AgentPolicyProfile profile) =>
+        SelectRootCore(leaseResolver, leaseRoot, grantedDirectories, profile, pathInput);
+
+    private static string SelectRootCore(
+        CanonicalPathResolver leaseResolver,
+        string leaseRoot,
+        IReadOnlyList<string> grantedDirectories,
+        AgentPolicyProfile? profile,
         string pathInput)
     {
         ArgumentNullException.ThrowIfNull(leaseResolver);
         ArgumentNullException.ThrowIfNull(grantedDirectories);
-        var canonical = leaseResolver.Resolve(pathInput).CanonicalPath;
+        var resolved = leaseResolver.Resolve(pathInput);
+        if (resolved.IsProtected)
+        {
+            throw new UnauthorizedAccessException("protected_path");
+        }
+
+        var canonical = resolved.CanonicalPath;
         if (IsWithin(canonical, leaseRoot))
         {
             return leaseRoot;
+        }
+
+        if (IsFullAccess(profile))
+        {
+            var ancestor = FindNearestExistingDirectory(canonical);
+            if (ancestor is not null)
+            {
+                return ancestor;
+            }
         }
 
         string? best = null;
@@ -48,6 +79,38 @@ internal static class FileToolRootSelector
         }
 
         throw new UnauthorizedAccessException("outside_workspace");
+    }
+
+    private static bool IsFullAccess(AgentPolicyProfile? profile) =>
+        profile is not null
+        && string.Equals(
+            profile.Preset,
+            AgentPolicyProfileCatalog.FullAccessPresetWireValue,
+            StringComparison.Ordinal)
+        && profile.DecisionFor(AgentPolicySubject.ExternalStructuredFile) == AgentPolicyDecision.Allow;
+
+    private static string? FindNearestExistingDirectory(string canonicalPath)
+    {
+        var current = Directory.Exists(canonicalPath)
+            ? canonicalPath
+            : Path.GetDirectoryName(canonicalPath);
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            if (Directory.Exists(current))
+            {
+                return Path.GetFullPath(current);
+            }
+
+            var parent = Path.GetDirectoryName(current);
+            if (string.Equals(parent, current, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            current = parent;
+        }
+
+        return null;
     }
 
     private static bool IsWithin(string candidate, string directory)

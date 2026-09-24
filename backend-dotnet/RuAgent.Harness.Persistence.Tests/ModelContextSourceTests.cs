@@ -94,6 +94,7 @@ public sealed class ModelContextSourceTests
                     HarnessStoreTestFixture.Event(21),
                     HarnessEventKind.ToolExecutionCompleted,
                     toolCallId: new ToolCallId("call_11111111111111111111111111111111"),
+                    providerCallId: "provider-call-1",
                     executionId: new ExecutionId("exec_11111111111111111111111111111111"),
                     payloadId: toolPayload.PayloadId,
                     safeCode: "ok",
@@ -123,6 +124,9 @@ public sealed class ModelContextSourceTests
             first.Entries.Select(entry => entry.SourceId));
         var restoredStep = first.Entries[3].AssistantStep!;
         Assert.Equal(assistantStep.Text, restoredStep.Text);
+        Assert.Equal("provider-call-1", Assert.Single(restoredStep.ToolCalls).ProviderCallId);
+        Assert.Equal("call_11111111111111111111111111111111", first.Entries[4].ToolReceipt!.ToolCallId.Value);
+        Assert.Equal("provider-call-1", first.Entries[4].ToolReceipt!.ProviderCallId);
         Assert.Equal(assistantStep.FinishReason, restoredStep.FinishReason);
         Assert.Equal(assistantStep.EstimatedInputTokens, restoredStep.EstimatedInputTokens);
         Assert.Equal(
@@ -131,6 +135,52 @@ public sealed class ModelContextSourceTests
         Assert.Equal(ToolExecutionOutcome.Succeeded, first.Entries[4].ToolReceipt!.Outcome);
         Assert.Equal("file contents", first.Entries[4].Content);
         Assert.Equal(first.CanonicalUtf8.ToArray(), afterRestart.CanonicalUtf8.ToArray());
+    }
+
+    [Theory]
+    [InlineData("{\"text\":null,\"tool_calls\":[{\"provider_call_id\":\"provider-duplicate\",\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}},{\"provider_call_id\":\"provider-duplicate\",\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}],\"finish_reason\":\"tool_calls\",\"estimated_input_tokens\":42}")]
+    [InlineData("{\"text\":null,\"tool_calls\":[{\"provider_call_id\":\"provider/unsafe\",\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}],\"finish_reason\":\"tool_calls\",\"estimated_input_tokens\":42}")]
+    [InlineData("{\"text\":null,\"tool_calls\":[{\"provider_call_id\":null,\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}],\"finish_reason\":\"tool_calls\",\"estimated_input_tokens\":42}")]
+    [InlineData("{\"text\":null,\"tool_calls\":[{\"tool_id\":\"read\",\"tool_version\":\"1.0.0\",\"arguments\":{}}],\"finish_reason\":\"tool_calls\",\"estimated_input_tokens\":42}")]
+    public async Task Restart_rejects_invalid_native_provider_call_ids(string assistantJson)
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId,
+            [],
+            HarnessStoreTestFixture.Timestamp.AddSeconds(1),
+            CancellationToken.None);
+        var payload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(70),
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            4096,
+            Encoding.UTF8.GetBytes(assistantJson));
+        var next = NextRun(request.Run, version: 1, lastSequence: 2);
+        await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                0,
+                next,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(70),
+                    HarnessEventKind.ModelStepCompleted,
+                    modelStepId: new ModelStepId("step_11111111111111111111111111111111"),
+                    payloadId: payload.PayloadId)],
+                [payload],
+                []),
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            new SqliteModelContextSource(fixture.Options, fixture.PayloadStore)
+                .LoadAsync(request.Run.RunId, CancellationToken.None));
+
+        Assert.Equal("context_payload_invalid", exception.Code);
     }
 
     [Fact]

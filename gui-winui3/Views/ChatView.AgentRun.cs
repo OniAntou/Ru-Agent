@@ -111,6 +111,11 @@ namespace RuApp.Views
         }
 
         private bool _isSendButtonInStopMode;
+        private string? _workspaceTrustDialogRunId;
+        private string? _workspaceTrustDialogSessionId;
+        private string? _workspaceTrustDialogHandledRunId;
+        private string? _workspaceTrustDialogHandledSessionId;
+        private AgentRunController? _workspaceTrustDialogController;
 
         private void UpdateSendButtonMode(bool isAgentRunning)
         {
@@ -157,8 +162,42 @@ namespace RuApp.Views
             UpdateQueuedTurnsPanel();
         }
 
+        private void ResetWorkspaceTrustDialogIfRunChanged(AgentRunController? controller)
+        {
+            bool hasInFlightGuard = _workspaceTrustDialogRunId is not null;
+            bool hasHandledRun = _workspaceTrustDialogHandledRunId is not null;
+            if (!hasInFlightGuard && !hasHandledRun)
+            {
+                return;
+            }
+
+            var run = controller?.CurrentRun;
+            bool sameController = ReferenceEquals(_workspaceTrustDialogController, controller);
+            bool sameRun = run is not null
+                && ((hasInFlightGuard
+                        && string.Equals(run.RunId, _workspaceTrustDialogRunId, StringComparison.Ordinal))
+                    || (hasHandledRun
+                        && string.Equals(run.RunId, _workspaceTrustDialogHandledRunId, StringComparison.Ordinal)));
+            bool sameSession = run is not null
+                && string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal)
+                && ((hasInFlightGuard
+                        && string.Equals(run.SessionId, _workspaceTrustDialogSessionId, StringComparison.Ordinal))
+                    || (hasHandledRun
+                        && string.Equals(run.SessionId, _workspaceTrustDialogHandledSessionId, StringComparison.Ordinal)));
+
+            if (!sameController || !sameRun || !sameSession)
+            {
+                _workspaceTrustDialogRunId = null;
+                _workspaceTrustDialogSessionId = null;
+                _workspaceTrustDialogHandledRunId = null;
+                _workspaceTrustDialogHandledSessionId = null;
+                _workspaceTrustDialogController = null;
+            }
+        }
+
         private void UpdateAgentInlineState()
         {
+            ResetWorkspaceTrustDialogIfRunChanged(_agentController);
             bool agentBusy = AgentRunActivityPolicy.Evaluate(SnapshotRunActivity()).IsSessionBusy;
             if (_agentBusySeen && !agentBusy)
             {
@@ -205,10 +244,9 @@ namespace RuApp.Views
             {
             }
 
-            if (state.AutoApproveWorkspaceTrust && controller is not null)
+            if (state.ShowWorkspaceTrust)
             {
-                // Workspace trust is auto-granted: a project-root chat starts silently.
-                _ = controller.TrustAsync(approve: true);
+                ShowWorkspaceTrustDialogAsync();
             }
 
             AgentInlinePanel.Visibility = state.ShowInlinePanel ? Visibility.Visible : Visibility.Collapsed;
@@ -246,6 +284,102 @@ namespace RuApp.Views
             if (AgentStopButton is not null)
             {
                 AgentStopButton.IsEnabled = !state.SuppressInteraction;
+            }
+        }
+
+        private async void ShowWorkspaceTrustDialogAsync()
+        {
+            var controller = _agentController;
+            var run = controller?.CurrentRun;
+            if (_workspaceTrustDialogRunId is not null)
+            {
+                return;
+            }
+
+            if (controller is null
+                || run is null
+                || !string.Equals(run.SessionId, _activeSessionId, StringComparison.Ordinal)
+                || !controller.NeedsWorkspaceTrust
+                || XamlRoot is null)
+            {
+                return;
+            }
+
+            if (_workspaceTrustDialogHandledRunId is not null
+                && ReferenceEquals(_workspaceTrustDialogController, controller)
+                && string.Equals(_workspaceTrustDialogHandledRunId, run.RunId, StringComparison.Ordinal)
+                && string.Equals(_workspaceTrustDialogHandledSessionId, run.SessionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _workspaceTrustDialogRunId = run.RunId;
+            _workspaceTrustDialogSessionId = run.SessionId;
+            _workspaceTrustDialogController = controller;
+            _agentActionPending = true;
+            UpdateAgentInlineState();
+
+            Exception? failure = null;
+            try
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "Trust this workspace?",
+                    Content = "This run needs explicit workspace trust before it can start. Approve only if you trust this workspace and the Coding Agent.",
+                    PrimaryButtonText = "Approve",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = XamlRoot,
+                };
+
+                ContentDialogResult result = await dialog.ShowAsync();
+                bool isCurrentRequest = ReferenceEquals(_agentController, controller)
+                    && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
+                    && controller.CurrentRun is { } currentRun
+                    && string.Equals(currentRun.RunId, run.RunId, StringComparison.Ordinal)
+                    && string.Equals(currentRun.SessionId, _activeSessionId, StringComparison.Ordinal)
+                    && controller.NeedsWorkspaceTrust;
+                if (!isCurrentRequest)
+                {
+                    return;
+                }
+
+                if (result == ContentDialogResult.Primary)
+                {
+                    await controller.TrustAsync(approve: true);
+                }
+                else
+                {
+                    await controller.TrustAsync(approve: false);
+                }
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+            finally
+            {
+                bool ownsGuard = ReferenceEquals(_workspaceTrustDialogController, controller)
+                    && string.Equals(_workspaceTrustDialogRunId, run.RunId, StringComparison.Ordinal)
+                    && string.Equals(_workspaceTrustDialogSessionId, run.SessionId, StringComparison.Ordinal);
+                if (ownsGuard)
+                {
+                    _workspaceTrustDialogHandledRunId = run.RunId;
+                    _workspaceTrustDialogHandledSessionId = run.SessionId;
+                    _workspaceTrustDialogRunId = null;
+                    _workspaceTrustDialogSessionId = null;
+                }
+
+                if (_workspaceTrustDialogRunId is null)
+                {
+                    _agentActionPending = false;
+                    UpdateAgentInlineState();
+                }
+
+                if (failure is not null && ownsGuard)
+                {
+                    ShowAgentError(failure);
+                }
             }
         }
 
@@ -341,6 +475,11 @@ namespace RuApp.Views
             monitor?.Cancel();
             monitor?.Dispose();
             _agentActionPending = false;
+            _workspaceTrustDialogRunId = null;
+            _workspaceTrustDialogSessionId = null;
+            _workspaceTrustDialogHandledRunId = null;
+            _workspaceTrustDialogHandledSessionId = null;
+            _workspaceTrustDialogController = null;
             _isSendingUserTurn = false;
             _activeAgentUsage = null;
             _agentPreset = AgentPermissionPreset.Standard;
@@ -823,6 +962,11 @@ namespace RuApp.Views
         private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)
         {
             _activeAgentRunId = null;
+            _workspaceTrustDialogRunId = null;
+            _workspaceTrustDialogSessionId = null;
+            _workspaceTrustDialogHandledRunId = null;
+            _workspaceTrustDialogHandledSessionId = null;
+            _workspaceTrustDialogController = null;
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
             _activeAgentUsage = null;
@@ -1133,7 +1277,7 @@ namespace RuApp.Views
             var dialog = new ContentDialog
             {
                 Title = "Allow Full Access for this session?",
-                Content = "Full Access runs without approval prompts except for hard denies (protected paths and invalid requests). Only use it in a workspace you trust.",
+                Content = "Full Access runs terminal commands as the current Windows user and may read or write data outside the workspace, including network resources. Process timeout, output, and cancellation controls still apply; Full Access is not a network or path sandbox.",
                 PrimaryButtonText = "Allow",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Close,

@@ -12,7 +12,6 @@ namespace RuApp.Services;
 /// <param name="ShowStop">The stop control is visible.</param>
 /// <param name="StatusText">Status line text, empty when it must be hidden.</param>
 /// <param name="IsRunning">The send control reads as "running".</param>
-/// <param name="AutoApproveWorkspaceTrust">Trust should be granted without asking.</param>
 /// <param name="ClearActivityVisibility">The remembered activity visibility must be reset.</param>
 /// <param name="SuppressInteraction">Approve/deny/stop are disabled while an action is in flight.</param>
 public sealed record AgentInlinePanelState(
@@ -21,7 +20,7 @@ public sealed record AgentInlinePanelState(
     bool ShowStop,
     string StatusText,
     bool IsRunning,
-    bool AutoApproveWorkspaceTrust,
+    bool ShowWorkspaceTrust,
     bool ClearActivityVisibility,
     bool SuppressInteraction);
 
@@ -53,7 +52,7 @@ public static class AgentInlinePanelPolicy
             ShowStop: false,
             StatusText: string.Empty,
             IsRunning: false,
-            AutoApproveWorkspaceTrust: false,
+            ShowWorkspaceTrust: false,
             ClearActivityVisibility: clearActivityVisibility,
             SuppressInteraction: input.InteractionPending);
 
@@ -87,17 +86,15 @@ public static class AgentInlinePanelPolicy
 
         bool isRunning = input.CanCancel || input.RunPending;
 
-        // Workspace trust is auto-granted: a project-root chat starts silently, with
-        // no approval UI to answer.
         if (input.NeedsWorkspaceTrust)
         {
             return new AgentInlinePanelState(
-                ShowInlinePanel: false,
+                ShowInlinePanel: true,
                 ShowApproval: false,
                 ShowStop: false,
-                StatusText: string.Empty,
+                StatusText: input.StatusText,
                 IsRunning: isRunning,
-                AutoApproveWorkspaceTrust: true,
+                ShowWorkspaceTrust: true,
                 ClearActivityVisibility: false,
                 SuppressInteraction: input.InteractionPending);
         }
@@ -114,7 +111,7 @@ public static class AgentInlinePanelPolicy
             ShowStop: false,
             StatusText: input.StatusText,
             IsRunning: isRunning,
-            AutoApproveWorkspaceTrust: false,
+            ShowWorkspaceTrust: false,
             ClearActivityVisibility: false,
             SuppressInteraction: input.InteractionPending);
     }

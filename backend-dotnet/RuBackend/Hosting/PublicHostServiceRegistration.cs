@@ -14,6 +14,7 @@ using RuBackend.Conversation;
 using RuBackend.Diagnostics;
 using RuBackend.Harness;
 using RuBackend.Harness.Broker;
+using RuBackend.Harness.Reconciliation;
 using RuBackend.Harness.Worker;
 using RuBackend.Harness.Workspace;
 using RuBackend.Providers;
@@ -173,6 +174,7 @@ internal static class PublicHostServiceRegistration
                 services.GetRequiredService<HarnessSqliteOptions>(),
                 services.GetRequiredService<HarnessPayloadCryptography>(),
                 services.GetRequiredService<KnownSecretRedactor>()));
+        services.AddSingleton<RetainedApprovalRehydrator>();
         services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
         services.AddSingleton<IHarnessEventStore>(services =>
             new SqliteHarnessEventStore(

@@ -16,7 +16,8 @@ public sealed record HarnessEvent
         int? safeCount = null,
         string? safeCode = null,
         ToolExecutionOutcome? toolOutcome = null,
-        bool? sideEffectsPossible = null)
+        bool? sideEffectsPossible = null,
+        string? providerCallId = null)
     {
         _ = eventId.Value;
         _ = runId.Value;
@@ -64,6 +65,11 @@ public sealed record HarnessEvent
                 nameof(toolOutcome));
         }
 
+        if (providerCallId is not null && !ProviderCallIdContract.IsValid(providerCallId))
+        {
+            throw new ArgumentException("Provider call identifier is invalid.", nameof(providerCallId));
+        }
+
         EventId = eventId;
         RunId = runId;
         Sequence = sequence;
@@ -72,6 +78,7 @@ public sealed record HarnessEvent
         PayloadId = payloadId;
         ModelStepId = modelStepId;
         ToolCallId = toolCallId;
+        ProviderCallId = providerCallId;
         ExecutionId = executionId;
         ApprovalId = approvalId;
         SafeCount = safeCount;
@@ -95,6 +102,8 @@ public sealed record HarnessEvent
     public ModelStepId? ModelStepId { get; }
 
     public ToolCallId? ToolCallId { get; }
+
+    public string? ProviderCallId { get; }
 
     public ExecutionId? ExecutionId { get; }
 

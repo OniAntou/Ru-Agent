@@ -84,7 +84,7 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
                 body,
                 (int)resp.StatusCode);
 
-        return ParseCreateResponseStrict(body);
+        return ParseCreateResponseStrict(body, request.SessionId, request.Preset);
     }
 
     public async Task<GetAgentRunResponse> GetRunAsync(string runId, CancellationToken ct = default)
@@ -451,13 +451,43 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             var msg = ExtractErrorMessage(body) ?? (string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}" : body);
             throw new AgentApiException(code, msg, (int)resp.StatusCode);
         }
-        return ParseJsonClone(body);
+        try
+        {
+            return ParseJsonClone(body);
+        }
+        catch (JsonException exception)
+        {
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
     }
 
-    public async Task<JsonElement> SetSessionPresetAsync(string sessionId, string preset, long expectedVersion, bool interactive, CancellationToken ct = default)
+    public async Task<JsonElement> SetSessionPresetAsync(
+        string sessionId,
+        string preset,
+        long expectedVersion,
+        bool interactive,
+        CancellationToken ct = default,
+        string? snapshotToken = null)
     {
-        var payload = new { kind = "session_preset", session_id = sessionId, preset, expected_version = expectedVersion };
+        object payload = snapshotToken is null
+            ? new { kind = "session_preset", session_id = sessionId, preset, expected_version = expectedVersion }
+            : new { kind = "session_preset", session_id = sessionId, preset, expected_version = expectedVersion, snapshot_token = snapshotToken };
         return await CreatePolicyAsync(payload, interactive, ct).ConfigureAwait(false);
+    }
+
+    public async Task<JsonElement> RestoreSessionPresetAsync(
+        string sessionId,
+        string snapshotToken,
+        CancellationToken ct = default)
+    {
+        var payload = new
+        {
+            kind = "session_preset_restore",
+            session_id = sessionId,
+            snapshot_token = snapshotToken,
+        };
+        var response = await CreatePolicyAsync(payload, interactive: false, ct).ConfigureAwait(false);
+        return ParseRestoreResponseStrict(response.GetRawText(), sessionId);
     }
 
     public async Task DeletePolicyAsync(string ruleId, bool interactive, CancellationToken ct = default)
@@ -503,30 +533,135 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         return document.RootElement.Clone();
     }
 
-    private static CreateAgentRunResponse ParseCreateResponseStrict(string json)
+    private static JsonElement ParseRestoreResponseStrict(string json, string expectedSessionId)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new AgentApiException("invalid_response", "Restore response must be an object.");
+            }
+
+            var allowed = new HashSet<string>(
+                ["status", "session_id", "preset", "version", "restored", "replayed"],
+                StringComparer.Ordinal);
+            var fields = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var property in root.EnumerateObject())
+            {
+                if (!allowed.Contains(property.Name) || !fields.TryAdd(property.Name, property.Value))
+                {
+                    throw new AgentApiException("invalid_response", "Restore response contains an unknown or duplicate field.");
+                }
+            }
+
+            if (fields.Count != allowed.Count
+                || !fields.TryGetValue("status", out var status)
+                || status.ValueKind != JsonValueKind.String
+                || !string.Equals(status.GetString(), "ok", StringComparison.Ordinal)
+                || !fields.TryGetValue("session_id", out var session)
+                || session.ValueKind != JsonValueKind.String
+                || !string.Equals(session.GetString(), expectedSessionId, StringComparison.Ordinal)
+                || !fields.TryGetValue("restored", out var restored)
+                || restored.ValueKind != JsonValueKind.True
+                || !fields.TryGetValue("replayed", out var replayed)
+                || replayed.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+                || !fields.TryGetValue("preset", out var preset)
+                || preset.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)
+                || !fields.TryGetValue("version", out var version)
+                || version.ValueKind != JsonValueKind.Number
+                || !version.TryGetInt64(out var versionValue)
+                || versionValue < 0)
+            {
+                throw new AgentApiException("invalid_response", "Invalid restore response.");
+            }
+
+            if (preset.ValueKind == JsonValueKind.Null)
+            {
+                if (versionValue != 0)
+                {
+                    throw new AgentApiException("invalid_response", "Invalid restore version.");
+                }
+            }
+            else if (versionValue <= 0
+                || preset.GetString() is not ("plan" or "standard" or "full_access"))
+            {
+                throw new AgentApiException("invalid_response", "Invalid restore selection.");
+            }
+
+            return root.Clone();
+        }
+    }
+
+    private static CreateAgentRunResponse ParseCreateResponseStrict(
+        string json,
+        string expectedSessionId,
+        string expectedPreset)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
         using (doc)
         {
-        var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
-        foreach (var prop in root.EnumerateObject())
-        {
-            if (!allowed.Contains(prop.Name))
-                throw new AgentApiException("unknown_field", $"Unexpected field {prop.Name}");
+            var root = doc.RootElement;
+            var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (!allowed.Contains(prop.Name))
+                    throw new AgentApiException("unknown_field", $"Unexpected field {prop.Name}");
+            }
+            try
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var result = JsonSerializer.Deserialize<CreateAgentRunResponse>(json, options);
+                if (result is null
+                    || string.IsNullOrWhiteSpace(result.RunId)
+                    || string.IsNullOrWhiteSpace(result.SessionId)
+                    || string.IsNullOrWhiteSpace(result.WorkspaceId)
+                    || !string.Equals(result.SessionId, expectedSessionId, StringComparison.Ordinal)
+                    || !string.Equals(result.Preset, expectedPreset, StringComparison.Ordinal)
+                    || !IsKnownCreateStatus(result.Status)
+                    || result.Status.Equals("waiting_workspace_trust", StringComparison.OrdinalIgnoreCase)
+                        && (string.IsNullOrWhiteSpace(result.TrustRequestId)
+                            || string.IsNullOrWhiteSpace(result.DisplayIdentityHash)))
+                {
+                    throw new AgentApiException("invalid_response", "Invalid create response binding.");
+                }
+
+                ValidateRunId(result.RunId);
+                if (result.TrustRequestId is not null && string.IsNullOrWhiteSpace(result.TrustRequestId)
+                    || result.DisplayIdentityHash is not null && string.IsNullOrWhiteSpace(result.DisplayIdentityHash))
+                {
+                    throw new AgentApiException("invalid_response", "Invalid challenge identifiers.");
+                }
+
+                return result;
+            }
+            catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
         }
-        try
-        {
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var result = JsonSerializer.Deserialize<CreateAgentRunResponse>(json, options);
-            if (result is null || string.IsNullOrWhiteSpace(result.RunId) || string.IsNullOrWhiteSpace(result.SessionId))
-                throw new AgentApiException("invalid_response", "Missing ids");
-            ValidateRunId(result.RunId);
-            return result;
-        }
-        catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
-        }
+    }
+
+    private static bool IsKnownCreateStatus(string? status)
+    {
+        return status?.Trim().ToLowerInvariant() is
+            "waiting_workspace_trust" or
+            "waiting_history" or
+            "waiting_history_user" or
+            "waiting_history_final" or
+            "running" or
+            "waiting_approval" or
+            "waiting_user" or
+            "reconciliation_required" or
+            "completed";
     }
 
     private static GetAgentRunResponse ParseGetResponseStrict(string json)

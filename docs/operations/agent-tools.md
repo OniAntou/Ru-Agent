@@ -2,7 +2,7 @@
 
 This document is the operating contract for Ru's action execution kernel v1
 plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces (2026-09-05).
+v2 surfaces, updated 2026-09-24.
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
@@ -101,8 +101,10 @@ carries `op` (`write`, `delete`, `restore`); `bash` carries `mode`
 `web_search` takes `query` (1–512 chars) plus optional `max_results` (1–10,
 default 10); `web_fetch` takes `url`; `skill` takes `name` (1–96) and loads one
 workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone with their own
-`network.search`/`network.fetch` scopes: they ask for one-time approval on the
-`plan` preset and run automatically on `standard` and `full_access`.
+`network.search`/`network.fetch` scopes and are automatic in the canonical
+`plan`, `standard`, and `full_access` profiles. `web_approval_required` remains
+available only when an explicit ordered rule asks; profile fallback does not
+synthesize it.
 Google HTML (`https://www.google.com/search`) is the primary search engine
 with DuckDuckGo HTML (`https://html.duckduckgo.com/html/`) as automatic
 fallback; a consent/block page with no usable result anchors fails closed as
@@ -113,92 +115,63 @@ boundary.
 
 | Capability family | Model exposure | Broker behavior |
 | --- | --- | --- |
-| `glob`, `grep`, `list` | always advertised | automatic inside the trusted or session-granted root |
-| `read` | always advertised | automatic inside the trusted or session-granted root; `read` carries no `op` discriminator |
-| `write` with `op=write`, `edit` | always advertised | ordinary trusted-root changes are allowed; outside roots ask for `external_directory_required`; preimage mismatch returns `workspace_changed` |
-| `write` with `op=delete`, `op=restore` | always advertised | automatic in a trusted or session-granted root; delete is recoverable and restore is one-time |
-| `bash` with `mode=run`, `mode=shell` | always advertised | recognized safe commands are automatic; deletion, unknown executables, git `-C` directory overrides, non-inert `git -c key=value` config overrides, and `git config --global`/`--system`/`--file`/`--edit` require one-time approval |
-| `web_search`, `web_fetch` | advertised when managed Web is enabled | plan-ask (`web_approval_required`), automatic on `standard`/`full_access`, bounded, sanitized, explicitly untrusted; empty results fall back Google → DuckDuckGo, redirect targets are decoded and policy-validated |
+| `glob`, `grep`, `list` | always advertised | `plan`: trusted-workspace read auto, external deny; `standard`: trusted/session-granted read auto, external ask; `full_access`: external structured read auto, structured protected path deny |
+| `read` | always advertised | same canonical read matrix; `read` carries no `op` discriminator |
+| `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, structured protected path deny; preimage mismatch returns `workspace_changed` |
+| `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
+| `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox |
+| `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; empty results fall back Google → DuckDuckGo and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
 
 ### Session folder grants and bash approval
 
-Ordinary tools run automatically in the trusted root. An explicit absolute
-path outside that root asks once for `external_directory_required`; approval
-adds the canonical folder to the current live session and all tools may use it
-subject to schemas, protected paths, and hard invariants. The folder grant is
-not shared with another or forked session and is lost when the app restarts.
-Continuing the same live session reuses it. Relative traversal cannot escape a
-trusted root. When the user supplies an absolute path inside a granted folder,
-the model must preserve that exact path instead of rewriting it relative to the
-trusted workspace. When executing `bash` with `mode=run` or `mode=shell` with a
-working directory inside a session-granted directory, the Broker selects an
-effective root toolset (`RootToolSet`) rooted at that granted directory.
-Confinement remains enabled against that root toolset so child commands cannot
-escape the granted root, path formatting uses the selected root, and
-external-root terminal adapters share the Broker's approval-token authority for
-unknown or destructive commands. The implementation never disables confinement
-globally.
+Canonical `plan` denies terminal and mutation. Canonical `standard` allows only
+classifier-bounded local terminal intent inside the trusted workspace; deletion,
+unknown executables, arbitrary shell, external cwd/argv, and other risky intent
+ask with the existing reason codes. Repository cleanliness does not change the
+decision. Canonical `full_access` delegates arbitrary terminal execution as the
+current Windows user. It can read or change data outside the workspace and open
+sockets; it is not a network/path sandbox. Hard timeout, output cap,
+cancellation, redaction, and process-tree cleanup still apply.
 
-Only `bash` commands with `mode=run` that perform destructive deletion, external mutation
-(network egress, package installs, push/fetch/pull), run longer than the
-standard timeout window, launch an unknown executable, override the git
-directory (`-C`), pass a non-inert `git -c key=value` override, or write
-external git configuration (`git config --global`/`--system`/`--file`/`--edit`)
-ask for a one-time terminal approval; every `bash` script with `mode=shell`
-asks. Recognized read-only,
-test,
-build, lint, and local Git run commands are not dangerous solely by command name
-(see `TerminalAutoPolicy`, consumed by the evaluator fallback and enforced by
-the adapter execution leg).
-Terminal calls
-still run as the current Windows user and may execute host code or open sockets;
-`network_intent` is audit metadata, not network isolation. Current time,
-machine/process status, application discovery, and optional volume commands use
-an advertised terminal tool. Note-file creation uses `write` with `op=write`.
+An explicit absolute structured-file path outside the trusted root asks for
+`external_directory_required` under `standard`. Approval records a
+session-scoped `CanonicalDirectoryIdentity` for structured descendants; it is
+not shared with another/forked session, lost on restart, and never authorizes
+terminal intent. Full Access instead selects an ephemeral nearest external
+ancestor for that structured call and does not persist a folder grant.
+Structured protected paths remain denied in every preset, and canonical,
+symlink, junction, and hard-link checks stay active. An ambiguous mutation
+pauses for inspection until explicit Continue.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
 and is not model-usable at this checkpoint. Any internal adapter or test fixture
 for patch application does not create a public model capability.
 
-## Model selection channel
+## Model-first selection and native batches
 
-The model invokes its advertised bindings through the exact selection contract
-rendered by System Prompt Composer. Each capability includes ID/version,
-description, scope, strict proposal schema, example, and digest; selection is
-one JSON object with `tool_id`, `tool_version`, and `arguments`, with no prose
-success claim. The Worker also accepts that exact object inside one
-attribute-free `<tool_call>...</tool_call>` wrapper or an attribute-free leading
-`<tool_call>` followed by a complete JSON object through the end of the response
-for compatibility with providers that emit textual tool markup; malformed, nested,
-prefixed, or suffixed wrappers remain prose and never execute. Runs start in
-the `standard` preset unless the stored session selection says `plan` or
-`full_access`).
-Each
-step allows at most 10 sequential tool selections; exhausting that budget
-forces one final wrap-up answer without tools. Approvals still gate mutating
-tools — a card with a bounded preview and an explicit user decision precede
-every side effect, in every profile.
+The Host advertises the same canonical tool definitions to the prompt and Worker.
+On a provider-native path, one model generation may emit optional narration and
+one or more ordered tool calls. On the compatibility text-selection path, the
+model emits exactly one JSON object with `tool_id`, `tool_version`, and
+`arguments`, without selection prose. The text path also accepts the existing
+strict wrapper forms; malformed markup remains ordinary text and never executes.
 
-An exact consecutive repeat of the same tool ID, version, and canonical
-arguments terminates the run with `repeated_tool_call` before a second Broker
-dispatch. This applies to read-only calls as well as mutations and terminal
-commands, preventing model loops from duplicating side effects.
+The runtime evaluates a complete batch before executing any call. If any
+non-denied call asks, prepared authorization is discarded and the whole retained
+batch pauses for one explicit decision. Resolution re-evaluates the exact durable
+proposals under the current lease; the model is not asked to reissue an approved
+call. A denial may return a repair hint, while an exact repeated call is stopped
+by `repeated_tool_call` before duplicate dispatch. An empty final step fails as
+`empty_model_reply`.
 
-A final model step that carries neither text nor tool calls fails the run with
-`empty_model_reply`; an empty completion never ends a run silently, and the
-GUI renders guidance copy for that bounded code.
-
-A tool selection the model emits incomplete is treated as a repairable mistake,
-not a terminal one: `model_tool_call_invalid` (unparsable or oversized
-arguments), `model_tool_call_multiple` (more than one call in a step), and
-`model_tool_call_unavailable` (an unadvertised tool) are retryable, and the
-Host re-drives the step with a bounded `[harness]` note telling the model what
-was rejected and to re-issue exactly one complete call. `invalid_selection`
-from the text contract retries the same way. Wire, invariant, and security
-violations stay terminal and are never retried.
+The shared budget remains 256 model-initiated tool calls per window; there is no
+new low per-step cap. Read-only calls may execute concurrently in chunks of at
+most eight while receipts retain model order. Mutations and terminal calls are
+sequential and act as barriers; an unknown mutation outcome stops later work
+until reconciliation. A model cannot claim success before durable receipts.
 
 Use the `help` tool when the user asks how Ru's own features, architecture,
 configuration, tools, providers, or operating boundaries work. It returns
@@ -258,13 +231,14 @@ Web bindings through the Broker gateway. Workspace `SKILL.md` roots are
 prompt guidance and grant nothing by themselves. WinUI renders a received grant;
 it does not infer workspace, terminal, Web, connector, or skill access.
 
-The Worker emits at most one tool request at a time and at most 10 sequential
-tool requests in one conversational turn. It receives only the bounded enabled
-capabilities and emits an exact ID/version plus typed arguments. No prose is
-execution. A visible success reply is legal only after a matching outer
-`succeeded` receipt with `verification_state: verified`. Timeout, cancellation,
-policy denial, malformed context, or adapter failure terminates that action
-with a deterministic failure receipt.
+The Worker may return one or more native calls in a step and preserves their
+provider IDs and order. The Host sends only bounded enabled capabilities, exact
+tool versions, and typed arguments; narration is display text, never execution.
+The scheduler allows at most eight overlapping read-only executions, keeps
+mutation/terminal calls sequential, and appends receipts in model order. A
+visible success reply is legal only after matching durable success receipts.
+Timeout, cancellation, policy denial, malformed context, or adapter failure
+terminates or reconciles the action with a deterministic receipt.
 
 If the model produces ordinary assistant prose immediately following a committed
 tool batch that contains any failed or unverified receipt, the coordinator suppresses
@@ -289,28 +263,25 @@ into desktop side effects; structured selection is the only action channel.
 
 ## File and terminal boundaries
 
-File and terminal bindings are advertised by the Worker v2 settings as the
-matrix above shows. On the headless Agent v2 path, `bash` with `mode=run` and
-`mode=shell` execute as the current Windows user and can run arbitrary host
-code or open sockets; analyzer/rule/approval decisions remain authoritative.
-The managed Git commit workflow is shipped inside terminal execution with
-temporary-index isolation, path attribution rollback, and refusal when the
-real index already contains staged user changes. The Agent permission model is
-not an OS-enforced filesystem/network sandbox; its `network`
-field and `network_intent` are descriptive input validation and audit/approval
-metadata, not an operating-system sandbox or network-isolation boundary. A
-zero exit is `succeeded`; non-zero exit and start failure are `failed`; timeout
-is `timed_out`. File tools run automatically in the trusted root or a folder
-granted to the same live session; protected paths and hard invariants stay
-gated. Every mutation binds the preimage hash captured by Broker preparation and
-fails with `workspace_changed` on mismatch without writing; the hash is not a
-model argument. `write` with `op=delete` keeps its bounded, host-configurable recovery cap
-(default and hard maximum 4 MiB) and returns an opaque `recovery_id`.
-`edit` accepts LF-authored markers in CRLF files while preserving the
-file's newline style. `read` with `op=search` uses bounded concurrent reads, propagates
-cancellation, and sorts results by ordinal path/line before applying its result
-cap. Bash children receive redirected stdin that is closed immediately;
-TTY/editor-style requests remain rejected by canonical command policy.
+File and terminal bindings use the canonical matrix above. `plan` terminal
+authority is denied. `standard` confines terminal execution to classifier-bounded
+local intent and asks for external/escape/risky intent. `full_access` may run
+arbitrary `bash` as the current Windows user against any path and may open
+sockets; this is terminal delegation, not a network/path sandbox. Repository
+cleanliness is irrelevant. Full Access still has hard timeout, output cap,
+cancellation, redaction, and process-tree cleanup. Structured protected paths
+remain denied, but they do not re-impose terminal confinement.
+
+The managed Git commit workflow retains temporary-index isolation, path rollback
+attribution, and refusal when the real index already contains staged user
+changes. A zero exit is `succeeded`; non-zero exit and start failure are
+`failed`; timeout is `timed_out`. Standard structured-file tools use the trusted
+root or a session-scoped canonical folder grant; Full Access uses an ephemeral
+per-call external root. Every structured mutation binds a Broker-captured
+preimage and fails with `workspace_changed` on mismatch without writing.
+`write` with `op=delete` keeps its bounded recovery cap and opaque recovery ID.
+Bash children receive redirected stdin that is closed immediately; TTY/editor
+requests remain rejected by canonical command policy.
 
 ### Skill guidance (`SKILL.md`)
 
@@ -378,19 +349,15 @@ adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates
 
-For the managed Agent path, web tools are enabled with Google HTML search
-`https://www.google.com/search` as primary and DuckDuckGo HTML
-`https://html.duckduckgo.com/html/` as automatic fallback, and always
-require approval (`RU_AGENT_BROKER_WEB_REQUIRE_APPROVAL=true`). `web_search`
-is advertised with `network.search`; `web_fetch` is advertised with
-`network.fetch`; the normal Harness policy remains authoritative. Automatic
-redirects are disabled or validated hop-by-hop; private, loopback, link-local,
-multicast, reserved, and test-net targets are rejected. Responses enforce a
-configured byte cap, strict UTF-8/content-type checks, sanitizer limits, and
-at most ten validated search citations. Tool results contain only bounded
-source/content fields plus an `untrusted` marker; fetched text retains the
-`[untrusted_web_reference]` marker. This is a web-tool policy boundary, not
-the future OS-enforced filesystem/network sandbox.
+For the managed Agent path, Web tools use Google HTML search
+`https://www.google.com/search` with DuckDuckGo HTML
+`https://html.duckduckgo.com/html/` fallback. Canonical `plan`, `standard`, and
+`full_access` all allow Web; an explicit ordered ask rule may still return the
+legacy `web_approval_required` reason. Redirects are validated hop-by-hop and
+private/reserved targets are rejected. Responses retain byte, UTF-8,
+content-type, sanitizer, and citation caps, and all returned content stays
+explicitly untrusted. These are bounded Web-tool controls, not the future
+OS-enforced filesystem/network sandbox.
 
 ## Agent activity shown in WinUI
 
@@ -410,11 +377,19 @@ or private payload content.
 
 ## Agent permission UX
 
-Every Agent run is session-scoped. The chat composer offers `Plan`
-(read-only), `Standard` (default), and opt-in `Full Access`; the Broker
-remains the only authority and the stored session selection decides what a run
-may do. Host and the UI only display the server-selected pending approval kind
-with one bounded message per reason code:
+Every Agent run is session-scoped. The chat composer offers canonical `Plan`,
+`Standard` (default), and opt-in `Full Access`; the Broker remains the only
+authority. Plan allows workspace read/Web and denies terminal/mutation.
+Standard auto-allows bounded-local in-workspace mutation and asks for
+external/escape/risky intent. Full Access auto-allows external structured files
+and arbitrary terminal while structured protected paths remain denied.
+
+Workspace trust is not a preset. It is explicit once per canonical identity:
+the GUI requires a guarded Approve action, while CLI `run`/`chat` require
+`--trust-workspace`. A moved or recreated identity asks again. Full Access
+requires its GUI confirmation or CLI `--confirm-full-access`. Host and UI only
+display the server-selected pending approval kind with one bounded message per
+reason code:
 
 - `external_directory_required` — Ru cần dùng thư mục ngoài project
   trong đoạn chat này, cho đến khi ứng dụng đóng. The approval opens a
@@ -430,26 +405,24 @@ with one bounded message per reason code:
   mutation ngoài workspace (push/fetch mạng, cài package, restore).
   The approval returns an ephemeral one-time terminal token, never a
   reusable rule.
-- `terminal_timeout_requires_approval` — Lệnh terminal này chạy lâu hơn
-  cửa sổ chuẩn (900s). The approval returns an ephemeral one-time terminal
-  token, never a reusable rule.
-- `web_approval_required` — Ru cần phê duyệt trước khi gọi web bên ngoài.
-  The approval returns an ephemeral one-time token, never a reusable rule.
-  Web tools ask on the `plan` preset and run automatically on `standard` and
-  `full_access`; explicit rules can still deny them first, and managed
-  startup keeps the bounded web executor on.
+- `terminal_timeout_requires_approval` — compatibility reason retained for an
+  explicit ask rule. Canonical profile fallback no longer creates a 900-second
+  approval gate; a timeout above the protocol hard maximum is denied in every
+  preset.
+- `web_approval_required` — compatibility reason emitted only when an explicit
+  ordered rule asks for Web. Canonical `plan`, `standard`, and `full_access`
+  otherwise allow Web automatically; the returned authorization is
+  single-use and exact-intent bound.
 
-Recognized local Git mutations, read-only/test/build/lint run commands are
-auto-allowed (shell scripts always ask); network-affecting external mutations, direct terminal
-deletion, extended timeouts, and unrecognized executables require a single-use approval
-even inside the project root or an approved folder. A `standard` session on a
-clean workspace (no tracked git modifications, 60s cache, fail-closed on
-missing git/errors/timeouts) auto-allows the in-workspace subset above with
-reason `standard_clean_workspace_allow`; networked terminal calls, timeouts,
-explicit rule asks, invariants, and protected paths stay gated. The CLI exposes the same model with
-`agent approve <run-id> <approval-id>` and `agent deny`; `agent run` /
-`agent chat` accept `--preset plan|standard|full_access` (`full_access`
-needs interactive confirmation and cannot combine with `--json`).
+Standard auto-allows only classifier-bounded local terminal intent; arbitrary
+shell, deletion, unknown executables, external cwd/argv, and other risky forms
+ask even if the repository is clean. Full Access removes those profile asks and
+delegates terminal execution to the current Windows user, but it is not a
+network/path sandbox. The CLI exposes the same model through `agent approve` /
+`agent deny`; `agent run` and `agent chat` accept `--preset
+plan|standard|full_access`, `--trust-workspace`, and
+`--confirm-full-access`. `--json` is accepted only with explicit trust and
+Full Access confirmation.
 
 The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only
@@ -516,10 +489,11 @@ cursor. The UI presents one active run, ignores stale or uncorrelated frames,
 and reconnects by replaying durable events without duplicating history. A
 disconnect marks an ambiguous request as a bounded retryable error; it never
 silently replays a request that might already have committed. An approved run
-resumes its stashed proposals without a new model proposal; an ambiguous
-mutation outcome pauses with a waiting status detail, and an explicit
-`Continue` clears the inspection gate with a `gate_cleared_by_user` audit
-event in the same commit.
+rehydrates and re-evaluates its durable retained batch without a new model
+proposal or duplicate proposal event; the model is never asked to reissue an
+approved call. An ambiguous mutation outcome pauses with a waiting status
+detail, and explicit `Continue` clears the inspection gate with a
+`gate_cleared_by_user` audit event in the same commit.
 
 The short-intent resolver may answer only an exact, high-confidence greeting
 or acknowledgement locally. Corrections, filesystem/path, search, network,

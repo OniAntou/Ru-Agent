@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Tools.Files;
 
@@ -62,7 +63,8 @@ public static class FileHashService
             return Missing;
         }
 
-        using var stream = new FileStream(
+        HardLinkGuard.RequireSingleLink(canonicalPath);
+        using var stream = HardLinkGuard.OpenRead(
             canonicalPath,
             FileMode.Open,
             FileAccess.Read,

@@ -185,4 +185,52 @@ public sealed class AgentApprovalUiContractTests
         var assembly = typeof(AgentRunController).Assembly;
         Assert.Null(assembly.GetType("RuApp.Services.ChatWebSocketClient"));
     }
+
+    [Fact]
+    public void Full_access_confirmation_names_the_windows_authority_and_remaining_controls()
+    {
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "ConfirmFullAccessAsync");
+
+        Assert.Contains("current Windows user", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("outside the workspace", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("timeout", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("output", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cancellation", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Full_access_confirmation_precedes_the_preset_commit()
+    {
+        var body = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendAgentTurnAsync");
+        int confirmation = body.IndexOf("ConfirmFullAccessAsync", StringComparison.Ordinal);
+        int preset = body.IndexOf("EnsureAgentPresetAsync", StringComparison.Ordinal);
+
+        Assert.True(confirmation >= 0, "The Full Access gate must remain present.");
+        Assert.True(preset > confirmation, "The Full Access gate must run before EnsureAgentPresetAsync.");
+    }
+
+    [Fact]
+    public void Settings_permission_copy_matches_the_canonical_matrix()
+    {
+        var document = GuiSource.Xml("Views", "SettingsView.xaml");
+        var permissionLabel = document.Descendants()
+            .Single(element => element.Name.LocalName == "TextBlock"
+                && string.Equals(
+                    GuiSource.AttributeValue(element, "Text"),
+                    "Permission Preset",
+                    StringComparison.Ordinal));
+        var permissionPanel = permissionLabel.Parent;
+        Assert.NotNull(permissionPanel);
+
+        var description = permissionPanel!.Elements()
+            .Single(element => element.Name.LocalName == "TextBlock"
+                && !ReferenceEquals(element, permissionLabel));
+        var copy = GuiSource.AttributeValue(description, "Text");
+        Assert.NotNull(copy);
+
+        Assert.Contains("Plan: read + Web auto", copy, StringComparison.Ordinal);
+        Assert.Contains("Standard: in-workspace bounded local mutation auto", copy, StringComparison.Ordinal);
+        Assert.Contains("Full Access: external structured files and arbitrary terminal auto", copy, StringComparison.Ordinal);
+        Assert.Contains("structured protected paths deny", copy, StringComparison.Ordinal);
+    }
 }

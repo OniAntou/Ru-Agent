@@ -11,6 +11,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
+using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Worker;
 using RuBackend.Harness.Worker;
 using RuBackend.Worker;
@@ -108,6 +109,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             var start = await ReceiveTextAsync(socket);
             var startJson = JsonNode.Parse(start) as JsonObject ?? throw new InvalidOperationException();
             Assert.Equal("agent.step.start", startJson["type"]!.GetValue<string>());
+            var startPayload = startJson["payload"]!.AsObject();
+            Assert.False(startPayload.ContainsKey("turns"));
+            Assert.True(startPayload.ContainsKey("model_messages"));
             var requestId = startJson["id"]!.GetValue<string>();
             var correlation = startJson["correlation_id"]!.GetValue<string>();
 
@@ -179,6 +183,50 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal("Hello ", deltas[0]);
         Assert.Equal("world", deltas[1]);
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RunStepAsync_maps_native_multi_call_narration_from_worker_server()
+    {
+        var provider = new MultiCallProvider();
+        await StartServer(context =>
+        {
+            var server = new WorkerV2Server(_token, new WorkerV2StepService(provider));
+            return server.HandleAsync(context);
+        });
+
+        await using var runner = new LoopbackModelStepRunner(
+            new AgentWorkerClientOptions(new Uri(_url), _token));
+        var request = new ModelStepRequest(
+            new RunId("run_33333333333333333333333333333333"),
+            new ModelStepId("step_33333333333333333333333333333333"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "inspect both files")],
+                Array.Empty<byte>()),
+            PromptContextFixture.Create(),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('c', 64));
+        var deltas = new List<string>();
+
+        var result = await runner.RunStepAsync(
+            request,
+            delta =>
+            {
+                deltas.Add(delta.Content);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal("I will inspect both files.", result.Step.Text);
+        Assert.Equal(AssistantFinishReason.ToolCalls, result.Step.FinishReason);
+        Assert.Equal(2, result.Step.ToolCalls.Count);
+        Assert.Equal("ru_call_step_33333333333333333333333333333333_1", result.Step.ToolCalls[0].ProviderCallId);
+        Assert.Equal("read", result.Step.ToolCalls[0].ToolId);
+        Assert.Equal("README.md", result.Step.ToolCalls[0].Arguments.GetProperty("path").GetString());
+        Assert.Equal("call-2", result.Step.ToolCalls[1].ProviderCallId);
+        Assert.Equal("CHANGELOG.md", result.Step.ToolCalls[1].Arguments.GetProperty("path").GetString());
+        Assert.Equal(new[] { "I will inspect both files." }, deltas);
     }
 
     [Fact]
@@ -306,8 +354,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
 
         var payload = observedStart!["payload"]!.AsObject();
         Assert.Equal(
-            ["prompt", "turns", "system_prompt_context", "settings"],
+            ["prompt", "system_prompt_context", "settings", "model_messages"],
             payload.Select(property => property.Key));
+        Assert.Empty(payload["model_messages"]!.AsArray());
         Assert.False(payload.ContainsKey("memory_context"));
         Assert.False(payload["settings"]!.AsObject().ContainsKey("allow_web_search"));
         Assert.Equal(
@@ -524,7 +573,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["finish_reason"] = "stop",
                     ["prompt_receipt"] = new JsonObject
                     {
-                        ["composer_version"] = "1.0.0",
+            ["composer_version"] = "2.0.0",
                         ["prompt_sha256"] = new string('0', 64),
                         ["block_digests"] = new JsonArray(),
                     },
@@ -1232,6 +1281,30 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(3, starts);
     }
 
+    private sealed class MultiCallProvider : IModelProvider
+    {
+        public async IAsyncEnumerable<ModelDelta> GenerateAsync(
+            ModelRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            yield return new ModelDelta(
+                "I will inspect both files.",
+                Array.Empty<ModelToolFragment>(),
+                false,
+                null);
+            yield return new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment(null, "read", "{\"path\":\"README.md\"}"),
+                    new ModelToolFragment("call-2", "read", "{\"path\":\"CHANGELOG.md\"}"),
+                },
+                true,
+                "tool_calls");
+            await Task.Yield();
+        }
+    }
+
     private static JsonObject PromptReceiptJson(SystemPromptContext? context = null)
     {
         var blocks = new JsonArray(
@@ -1243,7 +1316,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             new JsonObject { ["block_id"] = "runtime", ["sha256"] = new string('0', 64) });
         if (context is not null)
         {
-            var insertionIndex = 3;
+            var insertionIndex = 4;
             foreach (var instruction in context.InstructionBlocks)
             {
                 blocks.Insert(
@@ -1258,7 +1331,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
 
         return new JsonObject
         {
-            ["composer_version"] = "1.0.0",
+            ["composer_version"] = "2.0.0",
             ["prompt_sha256"] = new string('0', 64),
             ["block_digests"] = blocks,
         };
@@ -1270,7 +1343,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         {
             const string content = "root guidance";
             return new SystemPromptContext(
-                1,
+                SystemPromptContext.PromptContextSchemaVersion,
                 "ru-agent",
                 "standard",
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),

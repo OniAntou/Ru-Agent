@@ -40,7 +40,10 @@ public sealed class AgentPolicyControllerTests
             return Task.CompletedTask;
         }
 
-        public Task<JsonElement> SetSessionPresetAsync(string sessionId, string preset, long expectedVersion, bool interactive, CancellationToken cancellationToken = default)
+        public Task<JsonElement> SetSessionPresetAsync(string sessionId, string preset, long expectedVersion, bool interactive, CancellationToken cancellationToken = default, string? snapshotToken = null)
+            => Task.FromResult(JsonDocument.Parse("{}").RootElement.Clone());
+
+        public Task<JsonElement> RestoreSessionPresetAsync(string sessionId, string snapshotToken, CancellationToken cancellationToken = default)
             => Task.FromResult(JsonDocument.Parse("{}").RootElement.Clone());
     }
 

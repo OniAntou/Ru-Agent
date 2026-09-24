@@ -3,10 +3,14 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol.Harness;
 using RuBackend.Business.Settings;
 using RuBackend.Harness;
+using RuBackend.Harness.Workspace;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -414,6 +418,299 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
+    public async Task Trust_endpoint_rejects_display_hash_mismatch_without_state_change()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{created.GetProperty("run_id").GetString()}/trust",
+            new
+            {
+                trust_request_id = created.GetProperty("trust_request_id").GetString(),
+                display_identity_hash = new string('0', 64),
+                decision = "approve",
+            });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("trust_stale", body.GetProperty("error_code").GetString());
+        Assert.Equal("trust_display_hash_mismatch", body.GetProperty("message").GetString());
+        await AssertWorkspaceUntrustedAsync(factory, tmp.Path);
+    }
+
+    [Fact]
+    public async Task Trust_endpoint_persistence_failure_returns_safe_error_without_trust()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+        await AddTrustFailureTriggerAsync(tmp.DataPaths.AgentHarnessDatabase);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{created.GetProperty("run_id").GetString()}/trust",
+            new
+            {
+                trust_request_id = created.GetProperty("trust_request_id").GetString(),
+                display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+                decision = "approve",
+            });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("workspace_trust_store_failed", body.GetProperty("error_code").GetString());
+        await AssertWorkspaceUntrustedAsync(factory, tmp.Path);
+        using var runResponse = await client.GetAsync(
+            $"/agent/v1/runs/{created.GetProperty("run_id").GetString()}");
+        var runBody = await runResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("waiting_workspace_trust", runBody.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Trust_endpoint_rejects_stale_request_after_denial()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+        var oldRequestId = created.GetProperty("trust_request_id").GetString()!;
+        var resolver = factory.Services.GetRequiredService<WindowsWorkspaceIdentityResolver>();
+        var store = factory.Services.GetRequiredService<SqliteWorkspaceStore>();
+        var trustStore = factory.Services.GetRequiredService<WorkspaceTrustRequestStore>();
+        var identity = await resolver.ResolveAsync(tmp.Path);
+        var stored = await store.GetAsync(identity.WorkspaceId, CancellationToken.None);
+        Assert.NotNull(stored);
+        var denial = await trustStore.ApplyAsync(
+            new WorkspaceTrustResponse(
+                new TrustRequestId(oldRequestId),
+                identity,
+                identity.DisplayIdentityHash,
+                WorkspaceTrustDecision.Deny),
+            identity,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+        Assert.True(denial.Accepted);
+        var fresh = await factory.Services.GetRequiredService<WorkspaceTrustService>()
+            .EnsureTrustRequestAsync(tmp.Path);
+        Assert.NotEqual(oldRequestId, fresh.RequestId.Value);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{created.GetProperty("run_id").GetString()}/trust",
+            new
+            {
+                trust_request_id = oldRequestId,
+                display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+                decision = "approve",
+            });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("trust_stale", body.GetProperty("error_code").GetString());
+        await AssertWorkspaceUntrustedAsync(factory, tmp.Path);
+    }
+
+    [Fact]
+    public async Task Trust_endpoint_rejects_moved_identity_without_approving_new_root()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+        var oldRequestId = created.GetProperty("trust_request_id").GetString()!;
+        var resolver = factory.Services.GetRequiredService<WindowsWorkspaceIdentityResolver>();
+        var store = factory.Services.GetRequiredService<SqliteWorkspaceStore>();
+        var identity = await resolver.ResolveAsync(tmp.Path);
+        var movedIdentity = new WorkspaceIdentity(
+            identity.WorkspaceId,
+            identity.VolumeSerialNumber + "-moved",
+            identity.RootFileId + "-moved",
+            new string('f', 64));
+        var movedRequestId = new TrustRequestId("trust_" + Guid.NewGuid().ToString("N"));
+        var now = DateTimeOffset.UtcNow;
+        await store.RegisterAsync(
+            new WorkspaceRegistration(
+                movedIdentity,
+                new WorkspaceRootCiphertext(new byte[12], new byte[] { 1 }, new byte[16])),
+            new WorkspaceTrustRequest(movedRequestId, movedIdentity, now, now.AddMinutes(10)),
+            CancellationToken.None);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{created.GetProperty("run_id").GetString()}/trust",
+            new
+            {
+                trust_request_id = oldRequestId,
+                display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+                decision = "approve",
+            });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var stored = await store.GetAsync(identity.WorkspaceId, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("trust_stale", body.GetProperty("error_code").GetString());
+        Assert.NotNull(stored);
+        Assert.Equal(movedIdentity, stored!.Identity);
+        Assert.False(stored.IsTrusted);
+        Assert.Null(stored.TrustSource);
+    }
+
+    [Fact]
+    public async Task Trust_approval_revalidates_live_identity_before_persisting()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+        var runId = created.GetProperty("run_id").GetString()!;
+        var resolver = factory.Services.GetRequiredService<WindowsWorkspaceIdentityResolver>();
+        var originalIdentity = await resolver.ResolveAsync(tmp.Path);
+        var movedPath = Path.Combine(
+            Path.GetDirectoryName(tmp.Path)!,
+            "moved-" + Guid.NewGuid().ToString("N"));
+        Directory.Move(tmp.Path, movedPath);
+        Directory.CreateDirectory(tmp.Path);
+        var recreatedIdentity = await resolver.ResolveAsync(tmp.Path);
+        Assert.NotEqual(originalIdentity, recreatedIdentity);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            new
+            {
+                trust_request_id = created.GetProperty("trust_request_id").GetString(),
+                display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+                decision = "approve",
+            });
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("workspace_identity_changed", body.GetProperty("error_code").GetString());
+        await AssertWorkspaceTrustStateAsync(
+            factory,
+            originalIdentity,
+            expectedDecision: null,
+            expectedSource: null);
+        Assert.Equal(0, await CountOutboxAsync(tmp.DataPaths.AgentHarnessDatabase, runId));
+        using var runResponse = await client.GetAsync($"/agent/v1/runs/{runId}");
+        var runBody = await runResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("waiting_workspace_trust", runBody.GetProperty("status").GetString());
+    }
+
+    [Theory]
+    [InlineData("approve", "waiting_history", "waiting_history", 1)]
+    [InlineData("deny", "cancelled", "cancelled", 0)]
+    public async Task Trust_retry_repairs_transition_after_run_commit_failure(
+        string decision,
+        string expectedStatus,
+        string expectedSafeCode,
+        int expectedOutboxCount)
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+        var runId = created.GetProperty("run_id").GetString()!;
+        await AddRunCommitFailureGateAsync(tmp.DataPaths.AgentHarnessDatabase);
+
+        using var firstResponse = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            CreateTrustPayload(created, decision));
+        var firstBodyText = await firstResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+        var firstBody = JsonDocument.Parse(firstBodyText).RootElement;
+        Assert.Equal("commit_conflict", firstBody.GetProperty("error_code").GetString());
+        await AssertWorkspaceTrustStateAsync(
+            factory,
+            await ResolveIdentityAsync(factory, tmp.Path),
+            decision == "approve" ? WorkspaceTrustDecision.Approve : WorkspaceTrustDecision.Deny,
+            decision == "approve" ? "explicit" : null);
+        Assert.Equal(0, await CountOutboxAsync(tmp.DataPaths.AgentHarnessDatabase, runId));
+        Assert.Equal(
+            0,
+            await CountSafeEventAsync(tmp.DataPaths.AgentHarnessDatabase, runId, expectedSafeCode));
+        using var waitingResponse = await client.GetAsync($"/agent/v1/runs/{runId}");
+        var waitingBody = await waitingResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("waiting_workspace_trust", waitingBody.GetProperty("status").GetString());
+        Assert.Equal(
+            created.GetProperty("trust_request_id").GetString(),
+            waitingBody.GetProperty("trust_request_id").GetString());
+        Assert.Equal(
+            created.GetProperty("display_identity_hash").GetString(),
+            waitingBody.GetProperty("display_identity_hash").GetString());
+
+        await ClearRunCommitFailureGateAsync(tmp.DataPaths.AgentHarnessDatabase);
+        using var retryResponse = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            CreateTrustPayload(created, decision));
+        var retryBody = await retryResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(HttpStatusCode.OK, retryResponse.StatusCode);
+        Assert.Equal(expectedStatus, retryBody.GetProperty("status").GetString());
+        Assert.Equal(expectedOutboxCount, await CountOutboxAsync(tmp.DataPaths.AgentHarnessDatabase, runId));
+        Assert.Equal(
+            1,
+            await CountSafeEventAsync(tmp.DataPaths.AgentHarnessDatabase, runId, expectedSafeCode));
+
+        using var replayResponse = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            CreateTrustPayload(created, decision));
+        var replayBody = await replayResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+        var expectedReplayStatus = decision == "approve" ? "waiting_history_user" : expectedStatus;
+        Assert.Equal(expectedReplayStatus, replayBody.GetProperty("status").GetString());
+        Assert.Equal(expectedOutboxCount, await CountOutboxAsync(tmp.DataPaths.AgentHarnessDatabase, runId));
+        Assert.Equal(
+            1,
+            await CountSafeEventAsync(tmp.DataPaths.AgentHarnessDatabase, runId, expectedSafeCode));
+    }
+
+    [Fact]
+    public async Task Concurrent_trust_retries_commit_one_transition_and_one_outbox()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path);
+        var runId = created.GetProperty("run_id").GetString()!;
+        await AddRunCommitFailureGateAsync(tmp.DataPaths.AgentHarnessDatabase);
+
+        using var firstResponse = await client.PostAsJsonAsync(
+            $"/agent/v1/runs/{runId}/trust",
+            CreateTrustPayload(created, "approve"));
+        Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+        await ClearRunCommitFailureGateAsync(tmp.DataPaths.AgentHarnessDatabase);
+
+        var retryTasks = new[]
+        {
+            client.PostAsJsonAsync($"/agent/v1/runs/{runId}/trust", CreateTrustPayload(created, "approve")),
+            client.PostAsJsonAsync($"/agent/v1/runs/{runId}/trust", CreateTrustPayload(created, "approve")),
+        };
+        var retryResponses = await Task.WhenAll(retryTasks);
+
+        Assert.Contains(retryResponses, response => response.StatusCode == HttpStatusCode.OK);
+        Assert.All(
+            retryResponses,
+            response => Assert.Contains(
+                response.StatusCode,
+                new[] { HttpStatusCode.OK, HttpStatusCode.Conflict }));
+        Assert.Equal(1, await CountOutboxAsync(tmp.DataPaths.AgentHarnessDatabase, runId));
+        Assert.Equal(
+            1,
+            await CountSafeEventAsync(tmp.DataPaths.AgentHarnessDatabase, runId, "waiting_history"));
+        foreach (var response in retryResponses)
+        {
+            response.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Workspace_concurrency_endpoint_validates_identity_and_reports_missing_workspace()
     {
         using var factory = new BackendWebApplicationFactory();
@@ -463,6 +760,167 @@ public sealed class AgentV1EndpointTests
         var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
         return json.GetProperty("session_id").GetString()!;
     }
+
+    private static object CreateTrustPayload(JsonElement created, string decision) => new
+    {
+        trust_request_id = created.GetProperty("trust_request_id").GetString(),
+        display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+        decision,
+    };
+
+    private static async Task AddRunCommitFailureGateAsync(string databasePath)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS trust_retry_gate (fail_next INTEGER NOT NULL);
+            DELETE FROM trust_retry_gate;
+            INSERT INTO trust_retry_gate(fail_next) VALUES (1);
+            CREATE TRIGGER IF NOT EXISTS fail_workspace_trust_run_commit
+            BEFORE UPDATE OF state ON agent_runs
+            WHEN EXISTS (SELECT 1 FROM trust_retry_gate WHERE fail_next = 1)
+            BEGIN
+                SELECT RAISE(ABORT, 'run commit persistence failure');
+            END;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ClearRunCommitFailureGateAsync(string databasePath)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM trust_retry_gate";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<long> CountOutboxAsync(string databasePath, string runId)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM agent_conversation_outbox WHERE run_id = $run_id";
+        command.Parameters.AddWithValue("$run_id", runId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<long> CountSafeEventAsync(
+        string databasePath,
+        string runId,
+        string safeCode)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM agent_events WHERE run_id = $run_id AND safe_code = $safe_code";
+        command.Parameters.AddWithValue("$run_id", runId);
+        command.Parameters.AddWithValue("$safe_code", safeCode);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task AddTrustFailureTriggerAsync(string databasePath)
+    {
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite,
+            Pooling = false,
+        }.ToString();
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TRIGGER fail_workspace_trust_approval
+            BEFORE UPDATE OF trust_decision ON agent_workspaces
+            WHEN NEW.trust_decision = 0
+            BEGIN
+                SELECT RAISE(ABORT, 'workspace trust persistence failure');
+            END;
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<JsonElement> CreateRunAsync(
+        HttpClient client,
+        string sessionId,
+        string workspacePath)
+    {
+        Directory.CreateDirectory(workspacePath);
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = sessionId,
+                workspace_path = workspacePath,
+                prompt = "trust flow",
+                preset = "standard",
+                idempotency_key = "trust-key-" + Guid.NewGuid().ToString("N"),
+            });
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK,
+            $"Create run failed {response.StatusCode}: {body}");
+        return JsonDocument.Parse(body).RootElement.Clone();
+    }
+
+    private static async Task AssertWorkspaceUntrustedAsync(
+        BackendWebApplicationFactory factory,
+        string workspacePath)
+    {
+        var identity = await ResolveIdentityAsync(factory, workspacePath);
+        await AssertWorkspaceTrustStateAsync(factory, identity, expectedDecision: null, expectedSource: null);
+    }
+
+    private static async Task AssertWorkspaceTrustStateAsync(
+        BackendWebApplicationFactory factory,
+        WorkspaceIdentity identity,
+        WorkspaceTrustDecision? expectedDecision,
+        string? expectedSource)
+    {
+        var store = factory.Services.GetRequiredService<SqliteWorkspaceStore>();
+        var stored = await store.GetAsync(identity.WorkspaceId, CancellationToken.None);
+        Assert.NotNull(stored);
+        var expectedTrustSource = expectedSource == "explicit"
+            ? WorkspaceTrustSource.Explicit
+            : (WorkspaceTrustSource?)null;
+        var expectedIsTrusted = expectedDecision == WorkspaceTrustDecision.Approve
+            && expectedTrustSource == WorkspaceTrustSource.Explicit;
+        Assert.Equal(expectedDecision, stored!.TrustRequest.AppliedDecision);
+        Assert.Equal(expectedTrustSource, stored.TrustSource);
+        Assert.Equal(expectedIsTrusted, stored.IsTrusted);
+    }
+
+    private static Task<WorkspaceIdentity> ResolveIdentityAsync(
+        BackendWebApplicationFactory factory,
+        string workspacePath) =>
+        factory.Services.GetRequiredService<WindowsWorkspaceIdentityResolver>()
+            .ResolveAsync(workspacePath);
 
     private static SettingsSnapshot CreateSettingsSnapshot(string backend, string model) => new(
         new JsonObject(),

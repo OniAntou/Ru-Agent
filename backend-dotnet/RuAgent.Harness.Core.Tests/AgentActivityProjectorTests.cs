@@ -576,6 +576,7 @@ public sealed class AgentActivityProjectorTests
             Run,
             Step,
             new ToolCallId("call_44444444444444444444444444444444"),
+            "provider_call_1",
             1,
             toolId,
             "1",

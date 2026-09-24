@@ -103,6 +103,12 @@ public sealed class HarnessRecoveryScanner(
             return null;
         }
 
+        if (run.PermissionProfileVersion != AgentPermissionPresetMapper.CurrentPermissionProfileVersion)
+        {
+            return await FailRunAsync(run, "permission_profile_changed", cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         // Workspace trust requests expire after ten minutes. If the host died or
         // the client abandoned the prompt, leaving this row non-terminal would
         // keep the workspace's unique active-run lock forever. Trust is a
@@ -124,19 +130,34 @@ public sealed class HarnessRecoveryScanner(
             return null;
         }
 
-        var requested = new List<(ExecutionId ExecutionId, string? SafeCode)>();
+        var requested = new List<(
+            ExecutionId ExecutionId,
+            string? SafeCode,
+            ModelStepId? ModelStepId,
+            ToolCallId? ToolCallId,
+            string? ProviderCallId)>();
         var completed = new HashSet<string>(StringComparer.Ordinal);
+        var hasToolProposal = false;
         await foreach (var envelope in store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
             var item = envelope.Event;
             if (item.Kind == "tool.execution_requested" && item.ExecutionId is { } executionId)
             {
-                requested.Add((executionId, item.SafeCode));
+                requested.Add((
+                    executionId,
+                    item.SafeCode,
+                    item.ModelStepId,
+                    item.ToolCallId,
+                    item.ProviderCallId));
             }
             else if (item.Kind == "tool.execution_completed"
                      && item.ExecutionId is { } completedId)
             {
                 _ = completed.Add(completedId.Value);
+            }
+            else if (item.Kind == "tool.proposed")
+            {
+                hasToolProposal = true;
             }
         }
 
@@ -146,8 +167,14 @@ public sealed class HarnessRecoveryScanner(
 
         if (requested.Count == 0)
         {
+            if (hasToolProposal)
+            {
+                return null;
+            }
+
             // The process died before any tool dispatch: no effects are possible.
-            return await FailRunAsync(run, "recovery_pre_dispatch", cancellationToken).ConfigureAwait(false);
+            return await FailRunAsync(run, "recovery_pre_dispatch", cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (incomplete.Count == 0)
@@ -180,6 +207,9 @@ public sealed class HarnessRecoveryScanner(
                         new HarnessEventIntent(
                             new RuAgent.Harness.Core.EventId($"evt_{Guid.NewGuid():N}"),
                             HarnessEventKind.ReconciliationRequired,
+                            modelStepId: incomplete[0].ModelStepId,
+                            toolCallId: incomplete[0].ToolCallId,
+                            providerCallId: incomplete[0].ProviderCallId,
                             executionId: incomplete[0].ExecutionId,
                             safeCode: "recovery_ambiguous"),
                     },
@@ -216,7 +246,8 @@ public sealed class HarnessRecoveryScanner(
             current.CreatedAt,
             updatedAt,
             terminalAt,
-            terminalErrorCode);
+            terminalErrorCode,
+            current.PermissionProfileVersion);
     }
 
     private async Task<RecoveredRunSummary?> FailRunAsync(
@@ -254,6 +285,7 @@ public sealed class HarnessRecoveryScanner(
             {
                 "recovery_read_only_incomplete" => "failed_read_only_incomplete",
                 "approval_expired" => "failed_approval_expired",
+                "permission_profile_changed" => "failed_permission_profile_changed",
                 _ => "failed_pre_dispatch",
             })
             : null;

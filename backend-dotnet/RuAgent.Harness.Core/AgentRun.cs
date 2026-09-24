@@ -18,7 +18,8 @@ public sealed record AgentRun
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
         DateTimeOffset? terminalAt = null,
-        string? terminalErrorCode = null)
+        string? terminalErrorCode = null,
+        int permissionProfileVersion = 1)
     {
         _ = runId.Value;
         _ = sessionId.Value;
@@ -59,6 +60,11 @@ public sealed record AgentRun
             throw new ArgumentOutOfRangeException(nameof(preset));
         }
 
+        if (permissionProfileVersion < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(permissionProfileVersion));
+        }
+
         if (!IsSha256(policySnapshotSha256))
         {
             throw new ArgumentException(
@@ -91,6 +97,7 @@ public sealed record AgentRun
         UpdatedAt = updatedAt;
         TerminalAt = terminalAt;
         TerminalErrorCode = terminalErrorCode;
+        PermissionProfileVersion = permissionProfileVersion;
     }
 
     public RunId RunId { get; }
@@ -129,6 +136,8 @@ public sealed record AgentRun
 
     public string? TerminalErrorCode { get; }
 
+    public int PermissionProfileVersion { get; }
+
     internal AgentRun Advance(
         HarnessRunStatus nextStatus,
         int nextBudgetWindow,
@@ -160,7 +169,8 @@ public sealed record AgentRun
             CreatedAt,
             updatedAt,
             terminalAt,
-            terminalErrorCode);
+            terminalErrorCode,
+            PermissionProfileVersion);
     }
 
     private static void ValidateTerminalMetadata(

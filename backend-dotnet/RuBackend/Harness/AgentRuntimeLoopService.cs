@@ -368,6 +368,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _recoveredApprovalIds =
+        new(StringComparer.Ordinal);
 
     /// <summary>
     /// Which runs already hold a workspace baseline for the drive session now in progress.
@@ -375,6 +377,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     /// </summary>
     private readonly WorkspaceBaselineTracker _capturedBaselines = new();
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
+    private readonly RetainedApprovalRehydrator? _retainedApprovalRehydrator;
     private readonly HarnessRecoveryScanner _recoveryScanner;
 
     public AgentRuntimeLoopService(
@@ -387,7 +390,8 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         WorkspaceExternalChangeMonitor? workspaceChangeMonitor = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         WorkspaceJournalProtector? workspaceJournalProtector = null,
-        Broker.BrokerToolGatewayFactory? brokerGateways = null)
+        Broker.BrokerToolGatewayFactory? brokerGateways = null,
+        RetainedApprovalRehydrator? retainedApprovalRehydrator = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -399,6 +403,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
         _brokerGateways = brokerGateways;
+        _retainedApprovalRehydrator = retainedApprovalRehydrator;
         _recoveryScanner = new HarnessRecoveryScanner(_store, new SystemTimeProvider());
     }
 
@@ -486,25 +491,31 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         try
         {
             var run = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
-            if (run is null || run.State != HarnessRunState.Running)
+            if (run is null)
             {
-                if (run is { } loaded)
-                {
-                    if (loaded.State.IsTerminal())
-                    {
-                        _summaryPublisher?.TryPublishSummary(loaded);
-                        _roots.Remove(new RunId(runIdValue));
-                    }
-                    else if (HarnessRecoveryScanner.IsExpiredApprovalWait(loaded, DateTimeOffset.UtcNow))
-                    {
-                        // The durable approval is past its lifetime, so no client can
-                        // resolve it any more. Fail the run now instead of leaving it
-                        // parked with the workspace's unique active-run lock.
-                        await ReleaseExpiredApprovalAsync(runIdValue, loaded, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                }
+                return;
+            }
 
+            if (run.State.IsTerminal())
+            {
+                _summaryPublisher?.TryPublishSummary(run);
+                RemoveRunRegistration(new RunId(runIdValue));
+                return;
+            }
+
+            if (HarnessRecoveryScanner.IsExpiredApprovalWait(run, DateTimeOffset.UtcNow))
+            {
+                // The durable approval is past its lifetime, so no client can
+                // resolve it any more. Fail the run now instead of leaving it
+                // parked with the workspace's unique active-run lock.
+                await ReleaseExpiredApprovalAsync(runIdValue, run, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (run.State != HarnessRunState.Running
+                && run.State != HarnessRunState.WaitingApproval)
+            {
                 return;
             }
 
@@ -554,6 +565,42 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _logger.LogWarning("run {RunId} failed because its approval expired", runIdValue);
         await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
         RemoveRunRegistration(runId);
+    }
+
+    internal async Task<(bool Continue, RetainedApprovalStep? Retained)> ReconcileApprovalRefreshRaceAsync(
+        string runIdValue,
+        RunId runId,
+        AgentRunCoordinator coordinator,
+        RetainedApprovalRehydrator rehydrator,
+        CancellationToken cancellationToken)
+    {
+        var racedRun = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
+        if (racedRun is null)
+        {
+            return (false, null);
+        }
+
+        if (racedRun.State.IsTerminal())
+        {
+            _summaryPublisher?.TryPublishSummary(racedRun);
+            RemoveRunRegistration(runId);
+            return (false, null);
+        }
+
+        if (racedRun.State != HarnessRunState.Running)
+        {
+            return (false, null);
+        }
+
+        var retained = await rehydrator
+            .RehydrateAsync(runId, cancellationToken)
+            .ConfigureAwait(false);
+        if (retained is not null)
+        {
+            coordinator.RestoreRetainedApproval(runId, retained);
+        }
+
+        return (true, retained);
     }
 
     private async Task<AgentRun?> LoadRunAsync(string runIdValue, CancellationToken cancellationToken) =>
@@ -630,11 +677,124 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 return;
             }
 
+            var rehydrator = _retainedApprovalRehydrator;
+            RetainedApprovalStep? retained = null;
+            if (rehydrator is not null)
+            {
+                retained = await rehydrator
+                    .RehydrateAsync(runId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (workspaceRun.State == HarnessRunState.WaitingApproval)
+            {
+                if (rehydrator is null || retained is null)
+                {
+                    await coordinator.FailAsync(
+                            runId,
+                            "retained_approval_recovery_failed",
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+                    RemoveRunRegistration(runId);
+                    return;
+                }
+
+                if (_recoveredApprovalIds.TryGetValue(runIdValue, out var recoveredApprovalId)
+                    && string.Equals(
+                        recoveredApprovalId,
+                        retained.ApprovalId.Value,
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                coordinator.RestoreRetainedApproval(runId, retained);
+                var refreshed = await coordinator
+                    .TryRefreshRetainedApprovalAsync(runId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (refreshed is null)
+                {
+                    var race = await ReconcileApprovalRefreshRaceAsync(
+                            runIdValue,
+                            runId,
+                            coordinator,
+                            rehydrator,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!race.Continue)
+                    {
+                        return;
+                    }
+
+                    retained = race.Retained;
+                }
+                else
+                {
+                    if (refreshed.Run.State.IsTerminal())
+                    {
+                        _summaryPublisher?.TryPublishSummary(refreshed.Run);
+                        RemoveRunRegistration(runId);
+                        return;
+                    }
+
+                    if (refreshed.ErrorCode != "approval_required")
+                    {
+                        await coordinator.FailAsync(
+                                runId,
+                                "retained_approval_recovery_failed",
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+                        RemoveRunRegistration(runId);
+                        return;
+                    }
+
+                    var current = await rehydrator
+                        .RehydrateAsync(runId, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (current is null)
+                    {
+                        await coordinator.FailAsync(
+                                runId,
+                                "retained_approval_recovery_failed",
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+                        RemoveRunRegistration(runId);
+                        return;
+                    }
+
+                    _recoveredApprovalIds[runIdValue] = current.ApprovalId.Value;
+                    return;
+                }
+            }
+
+            if (retained is not null)
+            {
+                coordinator.RestoreRetainedApproval(runId, retained);
+            }
+
+            _recoveredApprovalIds.TryRemove(runIdValue, out _);
             // A previous drive may have parked proposals in an approval wait.
             // Resume them before the model steps: the receipts land in durable
             // state, so the next model step continues naturally. Null or stale
             // means nothing parked; stepping proceeds unchanged.
-            await coordinator.TryResumeRetainedApprovalAsync(runId, cancellationToken).ConfigureAwait(false);
+            var resumed = await coordinator
+                .TryResumeRetainedApprovalAsync(runId, cancellationToken)
+                .ConfigureAwait(false);
+            if (resumed is not null
+                && (resumed.Run.State != HarnessRunState.Running
+                    || resumed.ErrorCode is not null))
+            {
+                if (resumed.Run.State.IsTerminal())
+                {
+                    _summaryPublisher?.TryPublishSummary(resumed.Run);
+                    RemoveRunRegistration(runId);
+                }
+
+                return;
+            }
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -669,6 +829,19 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 }
 
                 var result = await stepTask.ConfigureAwait(false);
+                if (result.Run.State == HarnessRunState.WaitingApproval
+                    && result.ErrorCode == "approval_required"
+                    && rehydrator is not null)
+                {
+                    var current = await rehydrator
+                        .RehydrateAsync(runId, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (current is not null)
+                    {
+                        _recoveredApprovalIds[runIdValue] = current.ApprovalId.Value;
+                    }
+                }
+
                 if (result.Run.State == HarnessRunState.Running && result.ErrorCode is null)
                 {
                     continue;
@@ -834,6 +1007,14 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
     private static string NormalizeDriveFailureCode(Exception error)
     {
+        if (error is InvalidDataException
+            && error.Message.StartsWith("retained_approval_", StringComparison.Ordinal))
+        {
+            return error.Message == "retained_approval_expired"
+                ? "approval_expired"
+                : "retained_approval_rehydration_failed";
+        }
+
         // Terminal codes must satisfy AgentRun/HarnessEventIntent validation:
         // 1..64 chars, starts [a-z], rest [a-z0-9_.]. Never embed raw messages.
         if (error is RuBackend.Worker.WorkerUnavailableException)

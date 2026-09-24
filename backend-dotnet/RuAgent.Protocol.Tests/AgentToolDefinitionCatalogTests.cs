@@ -159,6 +159,27 @@ public sealed class AgentToolDefinitionCatalogTests
         }
     }
 
+    [Theory]
+    [InlineData("read", true)]
+    [InlineData("list", true)]
+    [InlineData("help", true)]
+    [InlineData("skill", true)]
+    [InlineData("grep", true)]
+    [InlineData("glob", true)]
+    [InlineData("web_search", true)]
+    [InlineData("web_fetch", true)]
+    [InlineData("todo_write", false)]
+    [InlineData("write", false)]
+    [InlineData("edit", false)]
+    [InlineData("bash", false)]
+    [InlineData("future_tool", false)]
+    public void Broker_access_catalog_is_conservative_for_parallel_reads(
+        string toolId,
+        bool expected)
+    {
+        Assert.Equal(expected, RuAgent.Protocol.Harness.BrokerPolicyContracts.IsReadOnlyTool(toolId));
+    }
+
     [Fact]
     public void Model_contract_catalog_projects_the_entire_canonical_catalog()
     {

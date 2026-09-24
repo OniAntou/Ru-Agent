@@ -39,16 +39,25 @@ completed plans must be removed from the checkout rather than archived here.
 - [Shared workspace coordination](adr/0008-shared-workspace-coordination.md)
 - [Broker execution authority](adr/0009-broker-execution-authority.md)
 - [Product logic outside WinUI code-behind](adr/0010-product-logic-outside-winui-code-behind.md)
+- [Model autonomy and workspace trust boundary](adr/0011-model-autonomy-and-workspace-trust-boundary.md)
 
 Git history is the recovery source for removed dated plans and specifications.
 
-Agent permissions are session-scoped (`standard` default, read-only `plan`,
-opt-in `full_access` with interactive confirmation; a clean-workspace
-`standard` session auto-allows the in-workspace
-terminal/external-directory/delete/unknown-executable subset as
-`standard_clean_workspace_allow`). The current approval reasons are
-`external_directory_required`, `terminal_delete_requires_approval`,
+Agent permissions use the canonical, session-scoped `plan` / `standard` /
+`full_access` profiles from `RuAgent.Protocol`: `plan` allows workspace read and
+Web while denying terminal and mutation; `standard` auto-allows bounded-local
+in-workspace mutation and asks for external/escape intent; `full_access` allows
+external structured files and arbitrary terminal while structured protected
+paths remain denied. Workspace trust is explicit once per canonical identity:
+the GUI confirms it and CLI `run`/`chat` use `--trust-workspace`. Full Access
+requires the GUI gate or CLI `--confirm-full-access`.
+
+The canonical profiles do not synthesize `web_approval_required`; that legacy
+reason remains available to an explicit ask rule. Current approval reasons also
+include `external_directory_required`, `terminal_delete_requires_approval`,
 `terminal_external_mutation_requires_approval`,
-`terminal_timeout_requires_approval`, `web_approval_required`, and
-`terminal_unknown_executable`; no folder grant survives a restarted or new
-session.
+`terminal_timeout_requires_approval`, and `terminal_unknown_executable`.
+Folder grants remain session-scoped, while workspace trust follows the canonical
+identity. Full-access terminal runs as the current Windows user, can access data
+outside the workspace, and is not a network/path sandbox. Hard timeout, output
+cap, cancellation, and process-tree cleanup remain enforced.

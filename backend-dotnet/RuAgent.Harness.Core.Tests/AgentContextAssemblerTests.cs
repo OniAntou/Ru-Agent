@@ -10,6 +10,24 @@ public sealed class AgentContextAssemblerTests
         new("run_11111111111111111111111111111111");
 
     [Fact]
+    public void Tool_result_requires_provider_relationship()
+    {
+        var error = Assert.Throws<ArgumentException>(() => ModelContextEntry.ToolResult(
+            "tool-1",
+            1,
+            new ToolExecutionReceipt(
+                new ExecutionId("exec_11111111111111111111111111111111"),
+                new ToolCallId("call_11111111111111111111111111111111"),
+                ToolExecutionOutcome.Succeeded,
+                "ok",
+                null,
+                sideEffectsPossible: false),
+            "{}"));
+
+        Assert.Equal("receipt", error.ParamName);
+    }
+
+    [Fact]
     public async Task Session_base_precedes_run_local_and_each_partition_uses_durable_sequence()
     {
         var source = new StubContextSource(
@@ -108,7 +126,7 @@ public sealed class AgentContextAssemblerTests
         Assert.False(snapshot.Entries is ModelContextEntry[]);
         Assert.DoesNotContain(
             typeof(AgentContextAssembler).Assembly.GetReferencedAssemblies(),
-            assembly => assembly.Name is "RuApp" or "RuAgent.Protocol");
+            assembly => assembly.Name == "RuApp");
     }
 
     private static StubContextSource NewEquivalentSource() =>
@@ -134,7 +152,7 @@ public sealed class AgentContextAssemblerTests
                 "1",
                 Json("{\"path\":\"README.md\"}")),
             new ModelToolCall(
-                null,
+                "provider-call-2",
                 "files.list",
                 "1",
                 Json("{\"path\":\"docs\"}")),
@@ -155,7 +173,8 @@ public sealed class AgentContextAssemblerTests
                 ToolExecutionOutcome.Succeeded,
                 "ok",
                 new PayloadId("payload_11111111111111111111111111111111"),
-                sideEffectsPossible: false),
+                sideEffectsPossible: false,
+                providerCallId: "provider-call-1"),
             "{\"content\":\"bounded result\"}");
 
     private static JsonElement Json(string json) =>

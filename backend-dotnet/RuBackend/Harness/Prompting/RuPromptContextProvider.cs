@@ -89,12 +89,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         return new SystemPromptContext(
             SystemPromptContext.PromptContextSchemaVersion,
             SystemPromptContext.RequiredAgentProfile,
-            run.Preset switch
-            {
-                AgentPermissionPreset.Plan => "plan",
-                AgentPermissionPreset.FullAccess => "full_access",
-                _ => "standard",
-            },
+            AgentPermissionPresetMapper.ToWireValue(run.Preset),
             environment,
             instructions.Blocks,
             capabilities,

@@ -73,18 +73,15 @@ public sealed record PolicyEvaluation(
 /// </summary>
 public sealed class PolicySnapshotEvaluator
 {
-    private readonly CommandAnalyzerRegistry _analyzers;
     private readonly ISessionDirectoryGrantRegistry _directoryGrants;
-    private readonly IWorkspaceCleanlinessProvider? _cleanliness;
+    private readonly TerminalIntentClassifier _terminalClassifier;
 
     public PolicySnapshotEvaluator(
         ISessionDirectoryGrantRegistry? directoryGrants = null,
-        CommandAnalyzerRegistry? analyzers = null,
-        IWorkspaceCleanlinessProvider? cleanliness = null)
+        CommandAnalyzerRegistry? analyzers = null)
     {
         _directoryGrants = directoryGrants ?? new SessionDirectoryGrantRegistry();
-        _analyzers = analyzers ?? new CommandAnalyzerRegistry();
-        _cleanliness = cleanliness;
+        _terminalClassifier = new TerminalIntentClassifier(analyzers);
     }
 
     public PolicyEvaluation Evaluate(
@@ -96,49 +93,8 @@ public sealed class PolicySnapshotEvaluator
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(invariants);
-
-        var verdict = EvaluateInner(snapshot, context, invariants, now);
-        if (!string.Equals(verdict.Decision, "ask", StringComparison.Ordinal)
-            || !IsStandardAllowableAsk(verdict.ReasonCode, context)
-            || !string.Equals(snapshot.Preset, BrokerPolicyContracts.StandardPresetWireValue, StringComparison.Ordinal)
-            || _cleanliness?.IsWorkspaceClean(context.CanonicalWorkspaceRoot) != true)
-        {
-            return verdict;
-        }
-
-        return new PolicyEvaluation("allow", "standard_clean_workspace_allow", verdict.MatchedRuleId);
+        return EvaluateInner(snapshot, context, invariants, now);
     }
-
-    /// <summary>
-    /// The Ask codes a clean standard workspace may auto-allow. Timeouts,
-    /// explicit user rules and protocol invariants always keep asking: only
-    /// in-workspace terminal/delete prompts, outside-workspace read-only
-    /// probes, and clean-workspace unknown executables are lifted. Anything
-    /// that mutates outside the workspace still asks no matter how clean the
-    /// repo is, and networked terminal calls stay gated.
-    /// </summary>
-    private static bool IsStandardAllowableAsk(string reasonCode, PolicyContext context) =>
-        reasonCode switch
-        {
-            "terminal_external_mutation_requires_approval" or "terminal_unknown_executable"
-                => string.Equals(context.NetworkIntent, PolicyNetworkIntents.None, StringComparison.Ordinal)
-                    && !context.NetworkDeclared,
-            "terminal_delete_requires_approval"
-                => context.Target is { IsInsideWorkspace: true },
-            "external_directory_required" => IsReadOnlyProbe(context),
-            _ => false,
-        };
-
-    /// <summary>
-    /// Read-only probes over an outside-workspace directory: seeing bytes is
-    /// not consent to change them, so the clean-workspace lift stops here.
-    /// </summary>
-    private static bool IsReadOnlyProbe(PolicyContext context) =>
-        context.OperationClass is PolicyOperationClasses.Read
-            or PolicyOperationClasses.List
-            or PolicyOperationClasses.Glob
-            or PolicyOperationClasses.Search
-            or PolicyOperationClasses.Discovery;
 
     private PolicyEvaluation EvaluateInner(
         BoundPolicySnapshot snapshot,
@@ -167,21 +123,31 @@ public sealed class PolicySnapshotEvaluator
             return Deny("intent_hash_invalid");
         }
 
-        var boundary = context.Target ?? context.WorkingDirectory;
-        if (boundary is { IsProtected: true })
+        if (IsTerminal(context)
+            && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.HardMaxTimeoutMs)
+        {
+            return Deny("timeout_exceeds_hard_max");
+        }
+
+        var structuredTarget = context.Target;
+        if (structuredTarget is { IsProtected: true })
         {
             return Deny("protected_path");
         }
 
-        if (boundary is { IsOutsideWorkspace: true }
-            && !_directoryGrants.Contains(context.SessionId, boundary.CanonicalPath))
+        if (structuredTarget is { IsOutsideWorkspace: true })
         {
-            if (string.Equals(snapshot.Preset, BrokerPolicyContracts.FullAccessPresetWireValue, StringComparison.Ordinal))
+            var external = ProfileDecision(
+                snapshot,
+                AgentPolicySubject.ExternalStructuredFile,
+                "external_directory_required");
+            if (string.Equals(external.Decision, "ask", StringComparison.Ordinal)
+                && _directoryGrants.Contains(context.SessionId, structuredTarget.CanonicalPath))
             {
-                return Allow("full_access_allow");
+                return Allow("external_directory_grant_allow");
             }
 
-            return Ask("external_directory_required");
+            return external;
         }
 
         string? matchedDecision = null;
@@ -217,135 +183,76 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
-        // full_access allows everything except hard denies (handled above).
-        // Web approvals are handled below. No approval surfaces.
-        if (string.Equals(snapshot.Preset, BrokerPolicyContracts.FullAccessPresetWireValue, StringComparison.Ordinal))
-        {
-            if (IsWebTool(context))
-            {
-                return Allow("full_access_allow");
-            }
-
-            if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
-            {
-                var timeoutMs = context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs;
-                if (timeoutMs > TerminalLimits.HardMaxTimeoutMs)
-                {
-                    return Deny("timeout_exceeds_hard_max");
-                }
-
-                return new PolicyEvaluation(
-                    "allow",
-                    "full_access_allow",
-                    MatchedRuleId: null,
-                    AnalyzerRiskPending: true);
-            }
-
-            return Allow("full_access_allow");
-        }
-
-        // Web tools ask on plan only: standard browses without approval
-        // (full_access already allowed above).
-        if (IsWebTool(context))
-        {
-            if (IsPlanPreset(snapshot))
-            {
-                return Ask("plan_preset_requires_approval");
-            }
-
-            if (string.Equals(snapshot.Preset, BrokerPolicyContracts.StandardPresetWireValue, StringComparison.Ordinal))
-            {
-                return Allow("standard_web_allow");
-            }
-
-            return Ask("web_approval_required");
-        }
-
-        return EffectiveFallback(snapshot, context);
+        return ProfileFallback(snapshot, context);
     }
 
     private static bool IsPlanPreset(BoundPolicySnapshot snapshot) =>
         string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal);
 
-    /// <summary>
-    /// The plan-gated surface: every mutation-class tool call (write/edit/bash/web)
-    /// needs an explicit decision. Reads never gate here.
-    /// </summary>
     private static bool IsPlanGatedCall(PolicyContext context) =>
         string.Equals(context.OperationClass, PolicyOperationClasses.Write, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Edit, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Delete, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Patch, StringComparison.Ordinal)
         || string.Equals(context.OperationClass, PolicyOperationClasses.Mutation, StringComparison.Ordinal)
-        || string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal)
-        || IsWebTool(context);
+        || string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);
 
-    private PolicyEvaluation EffectiveFallback(BoundPolicySnapshot snapshot, PolicyContext context)
+    private PolicyEvaluation ProfileFallback(BoundPolicySnapshot snapshot, PolicyContext context)
     {
-        // plan is a read-only gate: gated calls ask instead of taking the
-        // standard allow paths below; reads still flow.
-        if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
+        if (IsTerminal(context))
         {
-            return Ask("plan_preset_requires_approval");
+            var classification = _terminalClassifier.Classify(context);
+            var subject = classification.IsBoundedLocal
+                ? AgentPolicySubject.BoundedLocalTerminal
+                : AgentPolicySubject.RiskyTerminal;
+            var reasonCode = classification.IsBoundedLocal
+                ? "recognized_safe_form"
+                : classification.ReasonCode;
+            return ProfileDecision(snapshot, subject, reasonCode, AnalyzerRiskPending: true);
         }
 
-        if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
+        if (IsWebTool(context))
         {
-            var timeoutMs = context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs;
-            if (timeoutMs > TerminalLimits.HardMaxTimeoutMs)
-            {
-                return Deny("timeout_exceeds_hard_max");
-            }
-
-            if (timeoutMs > TerminalLimits.StandardApprovalThresholdMs)
-            {
-                return Ask("terminal_timeout_requires_approval");
-            }
-
-            return TerminalFallback(context);
+            var reasonCode = IsPlanPreset(snapshot) ? "plan_web_allow" : "standard_web_allow";
+            return ProfileDecision(snapshot, AgentPolicySubject.Web, reasonCode);
         }
 
-        return Allow("standard_workspace_allow");
+        var workspaceSubject = context.OperationClass is PolicyOperationClasses.Read
+            or PolicyOperationClasses.List
+            or PolicyOperationClasses.Glob
+            or PolicyOperationClasses.Search
+            or PolicyOperationClasses.Discovery
+            ? AgentPolicySubject.WorkspaceRead
+            : AgentPolicySubject.WorkspaceMutation;
+        return ProfileDecision(snapshot, workspaceSubject, "standard_workspace_allow");
     }
 
-    private PolicyEvaluation TerminalFallback(PolicyContext context)
+    private static PolicyEvaluation ProfileDecision(
+        BoundPolicySnapshot snapshot,
+        AgentPolicySubject subject,
+        string reasonCode,
+        bool AnalyzerRiskPending = false)
     {
-        // Single terminal verdict. bash mode=shell always asks: arbitrary script
-        // text cannot be auto-classified safe, so the AST verdict only feeds the
-        // approval preview, never an allow. Keep in sync with TerminalAutoPolicy
-        // (run payloads) and TerminalAdapter (execution leg).
-        if (IsShellMode(context))
+        var decision = AgentPolicyProfileCatalog.Get(snapshot.Preset).DecisionFor(subject);
+        var wireDecision = decision switch
         {
-            var shellAnalysis = context.TerminalAnalysis
-                ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
-            return shellAnalysis.OperationClass switch
-            {
-                TerminalOperationClass.ExternalMutation => Ask("terminal_external_mutation_requires_approval"),
-                TerminalOperationClass.DirectDelete => Ask("terminal_delete_requires_approval"),
-                _ => Ask("terminal_unknown_executable"),
-            };
-        }
-
-        var analysis = context.TerminalAnalysis
-            ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
-        // External mutations (network egress, package installs, push/fetch/pull)
-        // always require explicit approval. The analyzer verdict only feeds the
-        // approval preview; it never auto-allows side effects outside the workspace.
-        // Keep in sync with TerminalAutoPolicy: auto = read/test/build/lint/git-mutation.
-        if (TerminalAutoPolicy.IsAutoExecutable(analysis.OperationClass))
-        {
-            return new PolicyEvaluation(
-                "allow",
-                "recognized_safe_form",
-                MatchedRuleId: null,
-                AnalyzerRiskPending: true);
-        }
-        return analysis.OperationClass switch
-        {
-            TerminalOperationClass.ExternalMutation => Ask("terminal_external_mutation_requires_approval"),
-            TerminalOperationClass.DirectDelete => Ask("terminal_delete_requires_approval"),
-            _ => Ask("terminal_unknown_executable"),
+            AgentPolicyDecision.Allow => BrokerPolicyContracts.AllowWireValue,
+            AgentPolicyDecision.Ask => BrokerPolicyContracts.AskWireValue,
+            AgentPolicyDecision.Deny => BrokerPolicyContracts.DenyWireValue,
+            _ => throw new AgentProtocolException("invalid_decision"),
         };
+        var effectiveReason = wireDecision == BrokerPolicyContracts.AllowWireValue
+            && string.Equals(snapshot.Preset, BrokerPolicyContracts.FullAccessPresetWireValue, StringComparison.Ordinal)
+                ? "full_access_allow"
+                : wireDecision == BrokerPolicyContracts.DenyWireValue
+                    && string.Equals(snapshot.Preset, BrokerPolicyContracts.PlanPresetWireValue, StringComparison.Ordinal)
+                    ? "plan_preset_requires_approval"
+                    : reasonCode;
+        return new PolicyEvaluation(
+            wireDecision,
+            effectiveReason,
+            MatchedRuleId: null,
+            AnalyzerRiskPending: AnalyzerRiskPending && wireDecision == BrokerPolicyContracts.AllowWireValue);
     }
 
     private static PolicyEvaluation Allow(string reasonCode) =>
@@ -355,9 +262,8 @@ public sealed class PolicySnapshotEvaluator
         string.Equals(context.ToolId, "web_search", StringComparison.Ordinal)
         || string.Equals(context.ToolId, "web_fetch", StringComparison.Ordinal);
 
-    private static bool IsShellMode(PolicyContext context) =>
-        string.Equals(context.ToolId, "bash", StringComparison.Ordinal)
-        && string.Equals(context.BashMode, "shell", StringComparison.Ordinal);
+    private static bool IsTerminal(PolicyContext context) =>
+        string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal);
 
     private static PolicyEvaluation Ask(string reasonCode, string? matchedRuleId = null) =>
         new("ask", reasonCode, matchedRuleId);

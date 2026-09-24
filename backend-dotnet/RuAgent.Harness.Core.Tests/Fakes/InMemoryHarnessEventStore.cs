@@ -92,6 +92,7 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
                         payloadId: intent.PayloadId,
                         modelStepId: intent.ModelStepId,
                         toolCallId: intent.ToolCallId,
+                        providerCallId: intent.ProviderCallId,
                         executionId: intent.ExecutionId,
                         approvalId: intent.ApprovalId,
                         safeCount: intent.SafeCount,

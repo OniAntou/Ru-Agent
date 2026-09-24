@@ -5,36 +5,36 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "5d9e123c0423a7507088216cbcd94da17593f95f52cded6ff08a9e369b41a660"
+            "sha256": "7708ab908d093a8a4e004f72eb4cd8e3f7ca7d661563ea75675d2cf329ff7e36"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "1c3c05fa192b555bd4114e26ef85ed24bcfc4043093d75aa29f97cbff2629bb0"
+            "sha256": "d1b575f7e7e128a9a67022b13aa3e221d4e064f410be13cc704bf1b9dbcef96b"
           },
           {
             "block_id": "environment",
             "sha256": "fa2638c4eee02029cce4809489f2a352240328dc522e66833fbd099739862e87"
           },
           {
+            "block_id": "profile",
+            "sha256": "1eaa0d4be6f6c2138608676c7f346ff1b0070b62903585961e163791006d3d80"
+          },
+          {
             "block_id": "instruction.root:Ru.md",
             "sha256": "bce56d097302d30b7e72962ed8db4586cd0a70418836de6acdecaa644a261ec4"
           },
           {
-            "block_id": "profile",
-            "sha256": "ed22ea51280f50112da08792a4cef56a88ea873015f69c56929c03e178d3991b"
-          },
-          {
             "block_id": "capabilities",
-            "sha256": "4ca6ffed01782ff3c366f75cdaf81a4612b2c19b992ecafbc7d6da1ba0dc71ba"
+            "sha256": "8e36c7802cb2cc54fb0bcc7e04164c61b8feb513caf3f2c9c56a1ad2ecdf9fc2"
           },
           {
             "block_id": "runtime",
             "sha256": "3e590028cfe3145f1874d6ede282bf027dfc66fcd7f025c91a21636d1bdacf21"
           }
         ],
-        "composer_version": "1.0.0",
-        "private_marker": "sk-PHASE1-PRIVATE-MARKER",
-        "prompt_sha256": "26a45ee59455e3e02e0489684ab25e9c54a7ec9697a1354db94b2816d7c0b5a3"
+        "composer_version": "2.0.0",
+        "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
+        "prompt_sha256": "a65a3eedb1b0f18bbc208d89deb12c33fcf49cc95515c7542af0237ebd91e258"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -79,6 +79,21 @@
           }
         ],
         "preset": "standard",
+        "effective_policy": {
+          "version": "1",
+          "preset": "standard",
+          "terminal_authority": "bounded_local",
+          "rules": [
+            { "subject": "workspace_read", "decision": "allow" },
+            { "subject": "web", "decision": "allow" },
+            { "subject": "workspace_mutation", "decision": "allow" },
+            { "subject": "bounded_local_terminal", "decision": "allow" },
+            { "subject": "external_structured_file", "decision": "ask" },
+            { "subject": "risky_terminal", "decision": "ask" },
+            { "subject": "structured_protected_path", "decision": "deny" },
+            { "subject": "hard_invalid", "decision": "deny" }
+          ]
+        },
         "runtime_context": {
           "hardware": null,
           "mood": null,
@@ -90,7 +105,7 @@
             }
           ]
         },
-        "schema_version": 1
+        "schema_version": 2
       }
     },
     {
@@ -142,13 +157,61 @@
     },
     {
       "expected": {
+        "accepted": true
+      },
+      "group": "protocol",
+      "id": "protocol.native_multi_call",
+      "input": {
+        "envelope": {
+          "v": 2,
+          "id": "step-native-multi",
+          "type": "agent.step.done",
+          "seq": 1,
+          "correlation_id": "corr-native-multi",
+          "payload": {
+            "text": "SYNTHETIC_NARRATION_SENTINEL",
+            "tool_calls": [
+              {
+                "provider_call_id": "call-1",
+                "tool_id": "files.read",
+                "tool_version": "1.0.0",
+                "arguments": { "path": "README.md" }
+              },
+              {
+                "provider_call_id": "call-2",
+                "tool_id": "files.read",
+                "tool_version": "1.0.0",
+                "arguments": { "path": "CHANGELOG.md" }
+              },
+              {
+                "provider_call_id": "call-3",
+                "tool_id": "files.read",
+                "tool_version": "1.0.0",
+                "arguments": { "path": "CONTEXT.md" }
+              }
+            ],
+            "finish_reason": "tool_calls",
+            "prompt_receipt": {
+              "composer_version": "2.0.0",
+              "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "block_digests": [
+                { "block_id": "ru.persona", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+                { "block_id": "agent.contract", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "expected": {
         "completed": false
       },
       "group": "cancellation",
       "id": "cancellation.before_dispatch",
       "input": {
         "cancelled": true,
-        "prompt": "xin chào anh"
+        "prompt": "SYNTHETIC_USER_TEXT_SENTINEL"
       }
     },
     {
@@ -159,8 +222,8 @@
       "group": "privacy",
       "id": "privacy.redaction",
       "input": {
-        "credential": "sk-PRIVATE-CREDENTIAL-77ae",
-        "prompt_text": "PRIVATE-PROMPT-9f1c"
+        "credential": "PRIVATE_CREDENTIAL_SENTINEL",
+        "prompt_text": "SYNTHETIC_USER_TEXT_SENTINEL"
       }
     }
   ],

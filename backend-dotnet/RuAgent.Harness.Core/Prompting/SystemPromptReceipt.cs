@@ -17,7 +17,7 @@ public sealed record PromptBlockDigest
 
 public sealed record SystemPromptReceipt
 {
-    public const string SupportedComposerVersion = "1.0.0";
+    public const string SupportedComposerVersion = "2.0.0";
 
     /// <summary>
     /// A deterministic receipt for the transitional empty context used by legacy
@@ -93,9 +93,9 @@ public sealed record SystemPromptReceipt
             "ru.persona",
             "agent.contract",
             "environment",
+            "profile",
         };
         expectedIds.AddRange(context.InstructionBlocks.Select(item => $"instruction.{item.SourceId}"));
-        expectedIds.Add("profile");
         expectedIds.Add("capabilities");
         expectedIds.Add("runtime");
 

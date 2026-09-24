@@ -39,7 +39,7 @@ public sealed class ToolCallSchedulerTests
             .Clone();
 
         Assert.Throws<ArgumentException>(() => new ModelToolCall(
-            null,
+            "provider-call",
             "files.read",
             "1",
             oversized));
@@ -190,6 +190,154 @@ public sealed class ToolCallSchedulerTests
     }
 
     [Fact]
+    public async Task Read_only_chunks_never_exceed_eight_and_keep_model_order()
+    {
+        var scheduler = new ToolCallScheduler();
+        var calls = Enumerable.Range(1, 12)
+            .Select(index => PreparedForLargeBatch(index))
+            .ToArray();
+        var active = 0;
+        var maximumActive = 0;
+
+        var receipts = await scheduler.ExecuteAsync(
+            calls,
+            async (call, cancellationToken) =>
+            {
+                var current = Interlocked.Increment(ref active);
+                maximumActive = Math.Max(maximumActive, current);
+                await Task.Delay(20, cancellationToken);
+                Interlocked.Decrement(ref active);
+                return Receipt(call);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ToolCallScheduler.MaxReadConcurrency, maximumActive);
+        Assert.True(maximumActive > 1);
+        Assert.Equal(calls.Select(call => call.ExecutionId), receipts.Select(receipt => receipt.ExecutionId));
+    }
+
+    [Fact]
+    public async Task OutcomeUnknown_in_a_read_chunk_stops_later_reads_and_mutations()
+    {
+        var scheduler = new ToolCallScheduler();
+        var firstChunkStarted = NewSignal();
+        var releaseFirstChunk = NewSignal();
+        var calls = Enumerable.Range(1, 10)
+            .Select(index => PreparedForLargeBatch(
+                index,
+                index == 10 ? ToolAccessKind.Mutation : ToolAccessKind.ReadOnly))
+            .ToArray();
+        var startedInFirstChunk = 0;
+        var startedAfterChunk = 0;
+
+        var scheduling = scheduler.ExecuteAsync(
+            calls,
+            async (call, cancellationToken) =>
+            {
+                if (call.ModelOrder <= ToolCallScheduler.MaxReadConcurrency)
+                {
+                    if (Interlocked.Increment(ref startedInFirstChunk)
+                        == ToolCallScheduler.MaxReadConcurrency)
+                    {
+                        firstChunkStarted.TrySetResult();
+                    }
+
+                    await releaseFirstChunk.Task.WaitAsync(cancellationToken);
+                    return call.ModelOrder == 1
+                        ? new ToolExecutionReceipt(
+                            call.ExecutionId,
+                            call.ToolCallId,
+                            ToolExecutionOutcome.OutcomeUnknown,
+                            "transport_failure",
+                            null,
+                            sideEffectsPossible: false)
+                        : Receipt(call);
+                }
+
+                Interlocked.Increment(ref startedAfterChunk);
+                return Receipt(call);
+            },
+            CancellationToken.None);
+
+        await firstChunkStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        releaseFirstChunk.TrySetResult();
+        var receipts = await scheduling.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(0, startedAfterChunk);
+        Assert.Equal(8, receipts.Count);
+        Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, receipts[0].Outcome);
+    }
+
+    [Fact]
+    public async Task Read_chunks_release_a_mutation_barrier_before_following_reads()
+    {
+        var scheduler = new ToolCallScheduler();
+        var firstChunkStarted = NewSignal();
+        var readsStarted = NewSignal();
+        var releaseReads = NewSignal();
+        var mutationStarted = NewSignal();
+        var releaseMutation = NewSignal();
+        var finalReadStarted = NewSignal();
+        var calls = Enumerable.Range(1, 13)
+            .Select(index => PreparedForLargeBatch(index, index == 11
+                ? ToolAccessKind.Mutation
+                : ToolAccessKind.ReadOnly))
+            .ToArray();
+        var activeReads = 0;
+        var maximumReads = 0;
+        var readCount = 0;
+
+        var scheduling = scheduler.ExecuteAsync(
+            calls,
+            async (call, cancellationToken) =>
+            {
+                if (call.AccessKind == ToolAccessKind.ReadOnly && call.ModelOrder <= 10)
+                {
+                    var current = Interlocked.Increment(ref activeReads);
+                    maximumReads = Math.Max(maximumReads, current);
+                    var currentReadCount = Interlocked.Increment(ref readCount);
+                    if (currentReadCount == ToolCallScheduler.MaxReadConcurrency)
+                    {
+                        firstChunkStarted.TrySetResult();
+                    }
+
+                    if (currentReadCount == 10)
+                    {
+                        readsStarted.TrySetResult();
+                    }
+
+                    await releaseReads.Task.WaitAsync(cancellationToken);
+                    Interlocked.Decrement(ref activeReads);
+                }
+                else if (call.AccessKind == ToolAccessKind.Mutation)
+                {
+                    mutationStarted.TrySetResult();
+                    await releaseMutation.Task.WaitAsync(cancellationToken);
+                }
+                else
+                {
+                    finalReadStarted.TrySetResult();
+                }
+
+                return Receipt(call);
+            },
+            CancellationToken.None);
+
+        await firstChunkStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(mutationStarted.Task.IsCompleted);
+        releaseReads.TrySetResult();
+        await readsStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await mutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(finalReadStarted.Task.IsCompleted);
+        releaseMutation.TrySetResult();
+        await finalReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var receipts = await scheduling;
+
+        Assert.Equal(ToolCallScheduler.MaxReadConcurrency, maximumReads);
+        Assert.Equal(calls.Select(call => call.ExecutionId), receipts.Select(receipt => receipt.ExecutionId));
+    }
+
+    [Fact]
     public async Task Duplicate_model_order_or_tool_identity_fails_closed()
     {
         var scheduler = new ToolCallScheduler();
@@ -262,7 +410,7 @@ public sealed class ToolCallSchedulerTests
 
     private static ModelToolCall ModelCall(string toolId, string path) =>
         new(
-            null,
+            $"provider-{toolId}",
             toolId,
             "1",
             JsonDocument.Parse($"{{\"path\":\"{path}\"}}").RootElement.Clone());
@@ -278,6 +426,20 @@ public sealed class ToolCallSchedulerTests
             accessKind,
             $"prepared-{id}",
             Array.Empty<PreparedPayload>());
+
+    private static PreparedToolExecution PreparedForLargeBatch(
+        int modelOrder,
+        ToolAccessKind accessKind = ToolAccessKind.ReadOnly)
+    {
+        var suffix = modelOrder.ToString("x", System.Globalization.CultureInfo.InvariantCulture);
+        return new PreparedToolExecution(
+            new ExecutionId($"exec_{new string('a', 31)}{suffix}"),
+            new ToolCallId($"call_{new string('b', 31)}{suffix}"),
+            modelOrder,
+            accessKind,
+            $"prepared-{modelOrder}",
+            Array.Empty<PreparedPayload>());
+    }
 
     private static ToolExecutionReceipt Receipt(PreparedToolExecution call) =>
         new(

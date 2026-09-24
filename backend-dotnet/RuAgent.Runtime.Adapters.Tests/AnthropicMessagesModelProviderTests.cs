@@ -393,9 +393,19 @@ public sealed class AnthropicMessagesModelProviderTests
         var handler = new RecordingHandler(_ => throw new InvalidOperationException("HTTP must not run"));
         var provider = new AnthropicMessagesModelProvider(new HttpClient(handler));
 
+        IReadOnlyList<ModelTurn> turns = role == "tool"
+            ? new[]
+            {
+                new ModelTurn(
+                    "assistant",
+                    string.Empty,
+                    [new ModelFunctionCall("call_1", "read", System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone())]),
+                new ModelTurn("tool", "hidden", toolCallId: "call_1", toolResultCode: "ok"),
+            }
+            : new[] { new ModelTurn(role, "hidden") };
         var ex = await Assert.ThrowsAsync<ModelProviderException>(async () =>
             await CollectAsync(provider.GenerateAsync(
-                Request(null, 8192, [new ModelTurn(role, "hidden")]),
+                Request(null, 8192, turns),
                 CancellationToken.None)));
 
         Assert.Equal("malformed_payload", ex.Code);

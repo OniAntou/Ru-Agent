@@ -34,7 +34,8 @@ public sealed record HarnessEventIntent
         int? safeCount = null,
         string? safeCode = null,
         ToolExecutionOutcome? toolOutcome = null,
-        bool? sideEffectsPossible = null)
+        bool? sideEffectsPossible = null,
+        string? providerCallId = null)
     {
         _ = eventId.Value;
         ValidateOptional(modelStepId, id => id.Value);
@@ -69,10 +70,16 @@ public sealed record HarnessEventIntent
                 nameof(toolOutcome));
         }
 
+        if (providerCallId is not null && !ProviderCallIdContract.IsValid(providerCallId))
+        {
+            throw new ArgumentException("Provider call ID is invalid.", nameof(providerCallId));
+        }
+
         EventId = eventId;
         Kind = kind;
         ModelStepId = modelStepId;
         ToolCallId = toolCallId;
+        ProviderCallId = providerCallId;
         ExecutionId = executionId;
         ApprovalId = approvalId;
         PayloadId = payloadId;
@@ -89,6 +96,8 @@ public sealed record HarnessEventIntent
     public ModelStepId? ModelStepId { get; }
 
     public ToolCallId? ToolCallId { get; }
+
+    public string? ProviderCallId { get; }
 
     public ExecutionId? ExecutionId { get; }
 

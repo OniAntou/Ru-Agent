@@ -38,6 +38,46 @@ public sealed class WorkerV2ServerContractTests
     }
 
     [Fact]
+    public async Task Server_preserves_native_call_order_and_assigns_missing_request_ids()
+    {
+        await using var host = await StartHostAsync(new FakeModelProvider(
+            new ModelDelta("I will inspect both files.", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment(null, "files.read", "{\"path\":\"README.md\"}"),
+                    new ModelToolFragment("call-2", "files.read", "{\"path\":\"CHANGELOG.md\"}"),
+                },
+                true,
+                "tool_calls")));
+        using var socket = await host.GetTestServer().CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost/worker/v2"), CancellationToken.None);
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "hello-1", "hello", null, new JsonObject { ["token"] = "worker-secret" })));
+        _ = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(
+            2,
+            "step-multi",
+            "agent.step.start",
+            null,
+            StartPayload(includeTool: true))));
+
+        var delta = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        Assert.Equal("agent.step.delta", delta.Type);
+        Assert.Equal("I will inspect both files.", delta.Payload["text"]!.GetValue<string>());
+
+        var done = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        Assert.Equal("agent.step.done", done.Type);
+        Assert.Equal("I will inspect both files.", done.Payload["text"]!.GetValue<string>());
+        var calls = done.Payload["tool_calls"]!.AsArray();
+        Assert.Equal(2, calls.Count);
+        Assert.Equal("ru_call_step-multi_1", calls[0]!["provider_call_id"]!.GetValue<string>());
+        Assert.Equal("README.md", calls[0]!["arguments"]!["path"]!.GetValue<string>());
+        Assert.Equal("call-2", calls[1]!["provider_call_id"]!.GetValue<string>());
+        Assert.Equal("CHANGELOG.md", calls[1]!["arguments"]!["path"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Server_rejects_wrong_token_without_exposing_secret()
     {
         await using var host = await StartHostAsync(new FakeModelProvider(new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop")));
@@ -94,13 +134,34 @@ public sealed class WorkerV2ServerContractTests
         return app;
     }
 
-    private static JsonObject StartPayload() => new()
+    private static JsonObject StartPayload(bool includeTool = false)
     {
-        ["prompt"] = "xin chào",
-        ["turns"] = new JsonArray(),
-        ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(SystemPromptContext.Empty),
-        ["settings"] = new JsonObject(),
-    };
+        var settings = new JsonObject();
+        if (includeTool)
+        {
+            settings["model_tools"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["tool_id"] = "files.read",
+                    ["tool_version"] = "1.0.0",
+                    ["scopes"] = new JsonArray("workspace.read"),
+                    ["availability"] = "executable",
+                    ["model_enabled"] = true,
+                    ["capability_class"] = "tool",
+                    ["verification_required"] = false,
+                },
+            };
+        }
+
+        return new JsonObject
+        {
+            ["prompt"] = "xin chào",
+            ["turns"] = new JsonArray(),
+            ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(SystemPromptContext.Empty),
+            ["settings"] = settings,
+        };
+    }
 
     private static async Task SendTextAsync(WebSocket socket, string text)
     {

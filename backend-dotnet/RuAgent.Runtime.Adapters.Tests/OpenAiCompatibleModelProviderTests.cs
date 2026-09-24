@@ -419,11 +419,51 @@ public sealed class OpenAiCompatibleModelProviderTests
         Assert.Equal("vision_unsupported", ex.Code);
     }
 
-    private static ModelRequest Request(JsonObject? settings = null) => new(
+    [Fact]
+    public async Task GenerateAsync_serializes_native_assistant_and_tool_messages()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+        var turns = new[]
+        {
+            new ModelTurn("user", "inspect both files"),
+            new ModelTurn(
+                "assistant",
+                "I will inspect both files.",
+                [new ModelFunctionCall(
+                    "call_1",
+                    "read",
+                    System.Text.Json.JsonDocument.Parse("{\"path\":\"a.txt\"}").RootElement.Clone())]),
+            new ModelTurn("tool", "untrusted tool result", toolCallId: "call_1", toolResultCode: "ok"),
+        };
+
+        _ = await provider.GenerateAsync(Request(turns: turns), CancellationToken.None).ToListAsync();
+
+        var messages = JsonNode.Parse(handler.RequestBody!)!["messages"]!.AsArray();
+        Assert.Equal(["system", "user", "assistant", "tool", "user"], messages.Select(item => item!["role"]!.GetValue<string>()));
+        var assistant = messages[2]!.AsObject();
+        Assert.Equal("I will inspect both files.", assistant["content"]!.GetValue<string>());
+        var call = Assert.Single(assistant["tool_calls"]!.AsArray())!.AsObject();
+        Assert.Equal("call_1", call["id"]!.GetValue<string>());
+        Assert.Equal("function", call["type"]!.GetValue<string>());
+        Assert.Equal("read", call["function"]!["name"]!.GetValue<string>());
+        Assert.Equal("{\"path\":\"a.txt\"}", call["function"]!["arguments"]!.GetValue<string>());
+        var tool = messages[3]!.AsObject();
+        Assert.Equal("call_1", tool["tool_call_id"]!.GetValue<string>());
+        Assert.Equal("untrusted tool result", tool["content"]!.GetValue<string>());
+        Assert.False(tool.ContainsKey("tool_result_code"));
+    }
+
+    private static ModelRequest Request(
+        JsonObject? settings = null,
+        IReadOnlyList<ModelTurn>? turns = null) => new(
         "test-model",
         "system prompt",
         "hello",
-        Array.Empty<ModelTurn>(),
+        turns ?? Array.Empty<ModelTurn>(),
         settings ?? new JsonObject { ["temperature"] = 0.7 },
         new Uri("https://provider.invalid/v1/chat/completions"),
         "provider-secret");

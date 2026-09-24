@@ -10,6 +10,28 @@ namespace RuAgent.Harness.Core.Tests;
 
 public sealed class AgentRunCoordinatorTests
 {
+    [Fact]
+    public async Task Null_provider_call_id_fails_before_model_step_commit()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(
+            new NullProviderCallRunner(),
+            new FakeToolGateway(),
+            store);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            coordinator.RunOneStepAsync(RunId(), CancellationToken.None));
+
+        Assert.Equal("providerCallId", error.ParamName);
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Payloads),
+            payload => payload.Kind == HarnessPayloadKind.AssistantStep);
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Events),
+            intent => intent.Kind == HarnessEventKind.ModelStepCompleted);
+    }
+
     private static readonly DateTimeOffset Epoch =
         new(2026, 8, 24, 8, 0, 0, TimeSpan.Zero);
 
@@ -221,7 +243,9 @@ public sealed class AgentRunCoordinatorTests
             commit => commit.Events.Any(item => item.Kind == HarnessEventKind.ToolProposed));
         var arguments = Assert.Single(proposedCommit.Payloads);
         Assert.Equal(HarnessPayloadKind.ToolArguments, arguments.Kind);
-        Assert.Equal(arguments.PayloadId, Assert.Single(proposedCommit.Events).PayloadId);
+        var proposedEvent = Assert.Single(proposedCommit.Events);
+        Assert.Equal(arguments.PayloadId, proposedEvent.PayloadId);
+        Assert.Equal("provider-call", proposedEvent.ProviderCallId);
         using (var document = JsonDocument.Parse(arguments.Plaintext))
         {
             Assert.Equal("provider-call", document.RootElement.GetProperty("provider_call_id").GetString());
@@ -236,6 +260,7 @@ public sealed class AgentRunCoordinatorTests
             commit => commit.Events.Any(item =>
                 item.Kind == HarnessEventKind.ToolExecutionRequested));
         Assert.Single(requestedCommit.Payloads);
+        Assert.Equal("provider-call", Assert.Single(requestedCommit.Events).ProviderCallId);
         Assert.True(trace.IndexOf("prepare") < trace.IndexOf("commit:ToolExecutionRequested"));
         Assert.True(trace.IndexOf("commit:ToolExecutionRequested") < trace.IndexOf("execute"));
         Assert.True(trace.IndexOf("execute") < trace.IndexOf("commit:ToolExecutionCompleted"));
@@ -248,6 +273,8 @@ public sealed class AgentRunCoordinatorTests
         Assert.Equal(
             resultPayload.PayloadId,
             Assert.Single(result.Receipts).ResultPayloadId);
+        Assert.Equal("provider-call", Assert.Single(receiptCommit.Events).ProviderCallId);
+        Assert.Equal("provider-call", Assert.Single(result.Receipts).ProviderCallId);
 
         // Naming the payload must not empty the content. This assertion used to require
         // IsEmpty, which recorded a bug as intended behaviour: readers downstream consult
@@ -290,7 +317,8 @@ public sealed class AgentRunCoordinatorTests
                     ToolExecutionOutcome.Failed,
                     "malformed_call",
                     null,
-                    false),
+                    sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
                 "{}"));
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep());
@@ -341,7 +369,8 @@ public sealed class AgentRunCoordinatorTests
                         ToolExecutionOutcome.Failed,
                         "malformed_call",
                         null,
-                        false),
+                        sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
                     "{}"),
             ]);
         var model = new FakeModelStepRunner();
@@ -381,7 +410,8 @@ public sealed class AgentRunCoordinatorTests
                     ToolExecutionOutcome.Succeeded,
                     "ok",
                     null,
-                    false),
+                    sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
                 "{}"));
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep(path: "docs/README.md"));
@@ -412,7 +442,8 @@ public sealed class AgentRunCoordinatorTests
                     ToolExecutionOutcome.Failed,
                     toolErrorCode,
                     null,
-                    false),
+                    sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
                 "{}"));
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep("I succeeded in running the command!"));
@@ -487,7 +518,8 @@ public sealed class AgentRunCoordinatorTests
                     ToolExecutionOutcome.Failed,
                     "workspace_path_outside_root",
                     null,
-                    false),
+                    sideEffectsPossible: false,
+                    providerCallId: "provider_call"),
                 "{}"));
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep(path: "recovery.txt"));
@@ -628,7 +660,343 @@ public sealed class AgentRunCoordinatorTests
         var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
         Assert.Contains(events, @event => @event.Kind == HarnessEventKind.ToolExecutionCompleted);
         Assert.Contains(events, @event => @event.Kind == HarnessEventKind.ApprovalRequested);
-        Assert.DoesNotContain(events, @event => @event.Kind == HarnessEventKind.ToolExecutionRequested);
+        var deniedRequest = Assert.Single(
+            events,
+            @event => @event.Kind == HarnessEventKind.ToolExecutionRequested);
+        var deniedCompletion = Assert.Single(
+            events,
+            @event => @event.Kind == HarnessEventKind.ToolExecutionCompleted);
+        Assert.Equal(deniedRequest.ExecutionId, deniedCompletion.ExecutionId);
+        Assert.True(events.IndexOf(deniedRequest) < events.IndexOf(deniedCompletion));
+    }
+
+    [Fact]
+    public async Task Approval_batch_persists_every_proposal_and_re_evaluates_after_resolution()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: 3));
+        var approval = new ApprovalId("apr_" + new string('a', 32));
+        const long gatewayGeneration = 41;
+        var hasAsked = false;
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = proposal =>
+            {
+                if (proposal.ModelOrder == 2 && !hasAsked)
+                {
+                    hasAsked = true;
+                    return ToolProposalDecision.Ask(ToolAccessKind.Mutation, approval);
+                }
+
+                return ToolProposalDecision.Allow(
+                    ToolAccessKind.ReadOnly,
+                    $"canonical-{proposal.ModelOrder}",
+                    gatewayGeneration);
+            },
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var paused = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingApproval, paused.Run.State);
+        Assert.Equal(3, gateway.Proposals.Count);
+        Assert.Equal(
+            new[] { "provider-call-1", "provider-call-2", "provider-call-3" },
+            gateway.Proposals.Select(proposal => proposal.ProviderCallId));
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Equal(2, gateway.CancelAttempts.Count);
+        var proposed = store.Commits
+            .SelectMany(commit => commit.Events)
+            .Where(item => item.Kind == HarnessEventKind.ToolProposed)
+            .ToArray();
+        Assert.Equal(3, proposed.Length);
+        Assert.Equal(
+            new[] { 1, 2, 3 },
+            proposed.Select(item => item.SafeCount!.Value).ToArray());
+        Assert.Equal(
+            gateway.Proposals.Select(proposal => proposal.ToolCallId.Value).ToArray(),
+            proposed.Select(item => item.ToolCallId!.Value.Value).ToArray());
+        var approvalEvent = Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ApprovalRequested);
+        Assert.Equal("provider-call-2", approvalEvent.ProviderCallId);
+        Assert.Equal(gateway.Proposals[1].ToolCallId, approvalEvent.ToolCallId);
+        Assert.Single(model.Requests);
+
+        await coordinator.ResumeAfterApprovalAsync(RunId(), CancellationToken.None);
+        var resumed = await coordinator.TryResumeRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+
+        Assert.NotNull(resumed);
+        Assert.Null(resumed.ErrorCode);
+        Assert.Equal(6, gateway.Proposals.Count);
+        Assert.Equal(3, gateway.ExecuteAttempts.Count);
+        Assert.Equal(3, resumed.Receipts.Count);
+        Assert.Equal(5, gateway.ApprovedExecutions.Count);
+        Assert.All(
+            gateway.ApprovedExecutions,
+            approved => Assert.Equal(gatewayGeneration, approved.GatewayGeneration));
+        Assert.Equal(5, gateway.PreparedExecutions.Count);
+        Assert.All(
+            gateway.PreparedExecutions,
+            prepared => Assert.Equal(gatewayGeneration, prepared.GatewayGeneration));
+        Assert.Single(model.Requests);
+        Assert.Equal(
+            3,
+            store.Commits
+                .SelectMany(commit => commit.Events)
+                .Count(item => item.Kind == HarnessEventKind.ToolProposed));
+    }
+
+    [Fact]
+    public async Task Approval_batch_retains_only_non_denied_proposals_around_an_ask()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: 3));
+        var approval = new ApprovalId("apr_" + new string('b', 32));
+        var hasAsked = false;
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = proposal =>
+            {
+                if (proposal.ModelOrder == 2 && !hasAsked)
+                {
+                    hasAsked = true;
+                    return ToolProposalDecision.Ask(ToolAccessKind.Mutation, approval);
+                }
+
+                return proposal.ModelOrder is 1 or 3
+                    ? ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "policy_denied")
+                    : ToolProposalDecision.Allow(ToolAccessKind.ReadOnly, "canonical-2");
+            },
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var stash = new InMemoryRetainedApprovalStash(new IncrementingTimeProvider(Epoch));
+        var coordinator = Coordinator(model, gateway, store, retainedStash: stash);
+
+        var paused = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingApproval, paused.Run.State);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Equal(3, gateway.Proposals.Count);
+        Assert.Equal(2, paused.Receipts.Count);
+        Assert.Equal(
+            new[] { "policy_denied", "policy_denied" },
+            paused.Receipts.Select(receipt => receipt.Code));
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        Assert.Equal(3, events.Count(item => item.Kind == HarnessEventKind.ToolProposed));
+        Assert.Equal(2, events.Count(item => item.Kind == HarnessEventKind.ToolExecutionCompleted));
+        Assert.Single(events, item => item.Kind == HarnessEventKind.ApprovalRequested);
+
+        await coordinator.ResumeAfterApprovalAsync(RunId(), CancellationToken.None);
+        var resumed = await coordinator.TryResumeRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+
+        Assert.Equal(4, gateway.Proposals.Count);
+        Assert.NotNull(resumed);
+        Assert.Equal(new[] { 2 }, gateway.Proposals.Skip(3).Select(proposal => proposal.ModelOrder));
+        Assert.Single(gateway.ExecuteAttempts);
+        Assert.Single(resumed.Receipts);
+        Assert.Equal(
+            3,
+            store.Commits
+                .SelectMany(commit => commit.Events)
+                .Count(item => item.Kind == HarnessEventKind.ToolProposed));
+    }
+
+    [Fact]
+    public async Task Resume_revalidation_failure_fails_closed_without_a_new_model_step()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var approval = new ApprovalId("apr_" + new string('c', 32));
+        var firstEvaluation = true;
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ =>
+            {
+                if (firstEvaluation)
+                {
+                    firstEvaluation = false;
+                    return ToolProposalDecision.Ask(ToolAccessKind.Mutation, approval);
+                }
+
+                throw new InvalidOperationException("intent_changed");
+            },
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        await coordinator.ResumeAfterApprovalAsync(RunId(), CancellationToken.None);
+        var result = await coordinator.TryResumeRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(HarnessRunState.Failed, result!.Run.State);
+        Assert.Equal("retained_approval_resume_failed", result.ErrorCode);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Single(model.Requests);
+    }
+
+    [Fact]
+    public async Task Resume_revalidation_ask_creates_a_fresh_gate_without_execution()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var firstApproval = new ApprovalId("apr_" + new string('d', 32));
+        var secondApproval = new ApprovalId("apr_" + new string('e', 32));
+        var firstEvaluation = true;
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ =>
+            {
+                if (firstEvaluation)
+                {
+                    firstEvaluation = false;
+                    return ToolProposalDecision.Ask(ToolAccessKind.Mutation, firstApproval);
+                }
+
+                return ToolProposalDecision.Ask(ToolAccessKind.Mutation, secondApproval);
+            },
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        await coordinator.ResumeAfterApprovalAsync(RunId(), CancellationToken.None);
+        var result = await coordinator.TryResumeRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("approval_required", result!.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingApproval, result.Run.State);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Single(model.Requests);
+        Assert.Equal(
+            2,
+            store.Commits
+                .SelectMany(commit => commit.Events)
+                .Count(item => item.Kind == HarnessEventKind.ApprovalRequested));
+    }
+
+    [Fact]
+    public async Task Approval_resolution_race_returns_null_after_run_becomes_running()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var approval = new ApprovalId("apr_" + new string('5', 32));
+        var firstGateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => ToolProposalDecision.Ask(ToolAccessKind.Mutation, approval),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var stash = new InMemoryRetainedApprovalStash(new IncrementingTimeProvider(Epoch));
+        var first = Coordinator(model, firstGateway, store, retainedStash: stash);
+        var paused = await first.RunOneStepAsync(RunId(), CancellationToken.None);
+        Assert.Equal(HarnessRunState.WaitingApproval, paused.Run.State);
+        var second = Coordinator(
+            new FakeModelStepRunner(),
+            new FakeToolGateway(),
+            store,
+            retainedStash: stash,
+            approvalResolutionRaceHook: (_, _) => first.ResumeAfterApprovalAsync(RunId(), CancellationToken.None));
+
+        var result = await second.TryRefreshRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+
+        Assert.Null(result);
+        Assert.Equal(
+            HarnessRunState.Running,
+            (await store.GetRunAsync(RunId(), CancellationToken.None))!.State);
+        var resumed = await second.TryResumeRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+        Assert.NotNull(resumed);
+        Assert.Null(resumed!.ErrorCode);
+        Assert.Single(resumed.Receipts);
+    }
+
+    [Fact]
+    public async Task Waiting_approval_recovery_re_evaluates_without_a_new_model_step()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var firstApproval = new ApprovalId("apr_" + new string('1', 32));
+        var secondApproval = new ApprovalId("apr_" + new string('2', 32));
+        var firstEvaluation = true;
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => firstEvaluation
+                ? FirstAsk(firstApproval, () => firstEvaluation = false)
+                : ToolProposalDecision.Ask(ToolAccessKind.Mutation, secondApproval),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var paused = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        var refreshed = await coordinator.TryRefreshRetainedApprovalAsync(
+            RunId(),
+            CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingApproval, paused.Run.State);
+        Assert.NotNull(refreshed);
+        Assert.Equal("approval_required", refreshed!.ErrorCode);
+        Assert.Equal(HarnessRunState.WaitingApproval, refreshed.Run.State);
+        Assert.Equal(2, gateway.Proposals.Count);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Single(model.Requests);
+        Assert.Equal(
+            2,
+            store.Commits.SelectMany(commit => commit.Events)
+                .Count(item => item.Kind == HarnessEventKind.ApprovalRequested));
+
+        static ToolProposalDecision FirstAsk(
+            ApprovalId approvalId,
+            Action markEvaluated)
+        {
+            markEvaluated();
+            return ToolProposalDecision.Ask(ToolAccessKind.Mutation, approvalId);
+        }
+    }
+
+    [Fact]
+    public async Task Multiple_asks_revoke_extra_approval_before_persisting_one_gate()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: 2));
+        var firstApproval = new ApprovalId("apr_" + new string('3', 32));
+        var secondApproval = new ApprovalId("apr_" + new string('4', 32));
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = proposal => ToolProposalDecision.Ask(
+                ToolAccessKind.Mutation,
+                proposal.ModelOrder == 1 ? firstApproval : secondApproval),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingApproval, result.Run.State);
+        Assert.Equal(new[] { secondApproval }, gateway.RevokedApprovals);
+        Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind == HarnessEventKind.ApprovalRequested);
+        Assert.Empty(gateway.ExecuteAttempts);
     }
 
     [Fact]
@@ -805,14 +1173,16 @@ public sealed class AgentRunCoordinatorTests
     }
 
     private static AgentRunCoordinator Coordinator(
-        FakeModelStepRunner model,
+        IModelStepRunner model,
         FakeToolGateway gateway,
         InMemoryHarnessEventStore store,
         TransientFrameBuffer? frames = null,
         ITransientContentRedactor? redactor = null,
         IAgentReplyPolicy? replyPolicy = null,
         IAgentReplyEffectSink? replyEffects = null,
-        IModelContextSource? contextSource = null) =>
+        IModelContextSource? contextSource = null,
+        IRetainedApprovalStash? retainedStash = null,
+        Func<RunId, CancellationToken, Task>? approvalResolutionRaceHook = null) =>
         new(
             model,
             gateway,
@@ -825,7 +1195,9 @@ public sealed class AgentRunCoordinatorTests
             redactor,
             replyPolicy: replyPolicy,
             replyEffects: replyEffects,
-            promptContextProvider: new FakeSystemPromptContextProvider());
+            promptContextProvider: new FakeSystemPromptContextProvider(),
+            retainedStash: retainedStash,
+            approvalResolutionRaceHook: approvalResolutionRaceHook);
 
     private static async Task<HarnessTransientFrame> ReadOneFrameAsync(
         TransientFrameBuffer frames)
@@ -876,6 +1248,29 @@ public sealed class AgentRunCoordinatorTests
 
     private static RunId RunId() =>
         new("run_11111111111111111111111111111111");
+
+    private sealed class NullProviderCallRunner : IModelStepRunner
+    {
+        public Task<ModelStepResult> RunStepAsync(
+            ModelStepRequest request,
+            Func<AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            var call = new ModelToolCall(
+                null!,
+                "read",
+                "1",
+                JsonDocument.Parse("{}").RootElement.Clone());
+            var step = new AssistantStep(
+                null,
+                [call],
+                AssistantFinishReason.ToolCalls,
+                estimatedInputTokens: 1);
+            return Task.FromResult(new ModelStepResult(
+                step,
+                SystemPromptComposer.Compose(request.PromptContext).Receipt));
+        }
+    }
 
     private sealed class EmptyContextSource : IModelContextSource
     {

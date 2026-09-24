@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core.Prompting;
 
@@ -196,7 +197,7 @@ public sealed record PromptRuntimeContext
 
 public sealed record SystemPromptContext
 {
-    public const int PromptContextSchemaVersion = 1;
+    public const int PromptContextSchemaVersion = 2;
     public const string RequiredAgentProfile = "ru-agent";
     public const int MaxInstructionBlocks = 16;
     public const int MaxCapabilities = 16;
@@ -241,6 +242,7 @@ public sealed record SystemPromptContext
             throw new ArgumentException("Unsupported Agent preset.", nameof(preset));
         }
 
+        var effectivePolicy = AgentPolicyProfileCatalog.Get(preset);
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(instructionBlocks);
         ArgumentNullException.ThrowIfNull(capabilities);
@@ -297,6 +299,7 @@ public sealed record SystemPromptContext
         SchemaVersion = schemaVersion;
         AgentProfile = agentProfile;
         Preset = preset;
+        EffectivePolicy = effectivePolicy;
         Environment = environment;
         InstructionBlocks = new ReadOnlyCollection<PromptInstructionBlock>(copiedInstructions);
         Capabilities = new ReadOnlyCollection<PromptCapability>(copiedCapabilities);
@@ -314,6 +317,8 @@ public sealed record SystemPromptContext
 
     public string Preset { get; }
 
+    public AgentPolicyProfile EffectivePolicy { get; }
+
     public PromptEnvironment Environment { get; }
 
     public IReadOnlyList<PromptInstructionBlock> InstructionBlocks { get; }
@@ -329,6 +334,7 @@ public sealed record SystemPromptContext
             schema_version = SchemaVersion,
             agent_profile = AgentProfile,
             preset = Preset,
+            effective_policy = AgentPolicyProfileCatalog.WriteProfile(EffectivePolicy),
             environment = new
             {
                 model = Environment.Model,

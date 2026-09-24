@@ -2,6 +2,7 @@ using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests.Prompting;
@@ -13,7 +14,7 @@ public sealed class SystemPromptContractTests
     {
         var context = PromptFixtures.ValidContext();
 
-        Assert.Equal(1, context.SchemaVersion);
+        Assert.Equal(2, context.SchemaVersion);
         Assert.Equal("ru-agent", context.AgentProfile);
         Assert.Equal("standard", context.Preset);
         Assert.Single(context.InstructionBlocks);
@@ -22,6 +23,30 @@ public sealed class SystemPromptContractTests
         Assert.Contains("\"origin\":\"Workspace\"", Encoding.UTF8.GetString(context.SerializeUtf8()), StringComparison.Ordinal);
         Assert.Throws<ArgumentException>(() =>
             PromptFixtures.ContextWithInstructionBytes(64 * 1024 + 1));
+    }
+
+    [Fact]
+    public void Context_derives_and_serializes_the_canonical_effective_policy()
+    {
+        var context = PromptFixtures.ValidContext();
+
+        Assert.Equal(2, context.SchemaVersion);
+        Assert.Equal("2.0.0", SystemPromptReceipt.SupportedComposerVersion);
+
+        var serialized = Encoding.UTF8.GetString(context.SerializeUtf8());
+        Assert.Contains("\"effective_policy\":{\"version\":\"1\",\"preset\":\"standard\"", serialized, StringComparison.Ordinal);
+        Assert.Contains("\"terminal_authority\":\"bounded_local\"", serialized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Prompt_text_tampering_does_not_mutate_the_canonical_profile()
+    {
+        var profile = AgentPolicyProfileCatalog.Get("plan");
+        var prompt = SystemPromptComposer.Compose(PromptFixtures.ValidContext(preset: "plan")).Text;
+        var tampered = prompt.Replace("workspace_mutation=deny", "workspace_mutation=allow", StringComparison.Ordinal);
+
+        Assert.NotEqual(prompt, tampered);
+        Assert.Equal(AgentPolicyDecision.Deny, profile.DecisionFor(AgentPolicySubject.WorkspaceMutation));
     }
 
     [Fact]
@@ -41,6 +66,19 @@ public sealed class SystemPromptContractTests
     }
 
     [Fact]
+    public void Context_rejects_the_pre_v2_schema()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SystemPromptContext(
+            1,
+            "ru-agent",
+            "standard",
+            new PromptEnvironment("test-model", "windows", "vi-VN", "UTC", "2026-08-29", "LLM"),
+            Array.Empty<PromptInstructionBlock>(),
+            Array.Empty<PromptCapability>(),
+            new PromptRuntimeContext(null, null, Array.Empty<PromptReference>())));
+    }
+
+    [Fact]
     public void Instruction_block_rejects_undefined_origin_values()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -54,11 +92,11 @@ public sealed class SystemPromptContractTests
 
     private static class PromptFixtures
     {
-        public static SystemPromptContext ValidContext() =>
+        public static SystemPromptContext ValidContext(string preset = "standard") =>
             new(
-                1,
+                SystemPromptContext.PromptContextSchemaVersion,
                 "ru-agent",
-                "standard",
+                preset,
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
                 new[]
                 {
@@ -78,7 +116,7 @@ public sealed class SystemPromptContractTests
         {
             var content = new string('x', bytes);
             return new SystemPromptContext(
-                1,
+                SystemPromptContext.PromptContextSchemaVersion,
                 "ru-agent",
                 "standard",
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
@@ -88,19 +126,19 @@ public sealed class SystemPromptContractTests
         }
 
         public static SystemPromptReceipt Receipt(string promptSha256, IReadOnlyList<PromptBlockDigest> blocks) =>
-            new("1.0.0", promptSha256, blocks);
+            new(SystemPromptReceipt.SupportedComposerVersion, promptSha256, blocks);
 
         public static SystemPromptReceipt ValidReceipt(SystemPromptContext context) =>
             new(
-                "1.0.0",
+                SystemPromptReceipt.SupportedComposerVersion,
                 "b".PadRight(64, 'b'),
                 new[]
                 {
                     new PromptBlockDigest("ru.persona", "b".PadRight(64, 'b')),
                     new PromptBlockDigest("agent.contract", "b".PadRight(64, 'b')),
                     new PromptBlockDigest("environment", "b".PadRight(64, 'b')),
-                    new PromptBlockDigest("instruction.root:Ru.md", context.InstructionBlocks[0].ContentSha256),
                     new PromptBlockDigest("profile", "b".PadRight(64, 'b')),
+                    new PromptBlockDigest("instruction.root:Ru.md", context.InstructionBlocks[0].ContentSha256),
                     new PromptBlockDigest("capabilities", "b".PadRight(64, 'b')),
                     new PromptBlockDigest("runtime", "b".PadRight(64, 'b')),
                 });

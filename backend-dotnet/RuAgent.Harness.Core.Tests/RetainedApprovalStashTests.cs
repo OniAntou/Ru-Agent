@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RuAgent.Harness.Core.Approval;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests;
@@ -53,6 +54,51 @@ public sealed class RetainedApprovalStashTests
     }
 
     [Fact]
+    public void Stash_sweeps_expired_entries_before_replacing_a_slot()
+    {
+        var now = new MutableTime(DateTimeOffset.UtcNow);
+        var stash = new InMemoryRetainedApprovalStash(now);
+        stash.Stash(
+            Run,
+            new RetainedApprovalStep(
+                Array.Empty<ToolProposal>(),
+                Approval,
+                new ModelStepId("step_77777777777777777777777777777777"),
+                now.UtcNow));
+        now.Advance(ApprovalState.DefaultLifetime + TimeSpan.FromSeconds(1));
+        var replacement = Retained(
+            OtherApproval,
+            new ModelStepId("step_88888888888888888888888888888888")) with
+        {
+            StashedAt = now.UtcNow,
+        };
+
+        stash.Stash(Run, replacement);
+
+        Assert.True(stash.TryTake(Run, OtherApproval, out var taken));
+        Assert.Same(replacement, taken);
+    }
+
+    [Fact]
+    public void Approval_entries_expire_with_the_durable_approval_lifetime()
+    {
+        var now = new MutableTime(DateTimeOffset.UtcNow);
+        var stash = new InMemoryRetainedApprovalStash(now);
+        stash.Stash(
+            Run,
+            new RetainedApprovalStep(
+                Array.Empty<ToolProposal>(),
+                Approval,
+                new ModelStepId("step_77777777777777777777777777777777"),
+                now.UtcNow));
+
+        now.Advance(ApprovalState.DefaultLifetime + TimeSpan.FromSeconds(1));
+
+        Assert.False(stash.TryPeek(Run, out _));
+        Assert.False(stash.TryTake(Run, Approval, out _));
+    }
+
+    [Fact]
     public void Expired_entries_are_invisible()
     {
         var stash = new InMemoryRetainedApprovalStash();
@@ -75,6 +121,7 @@ public sealed class RetainedApprovalStashTests
                     Run,
                     modelStepId,
                     new ToolCallId("call_77777777777777777777777777777777"),
+                    "provider_call_1",
                     1,
                     "read",
                     "1",
@@ -83,4 +130,11 @@ public sealed class RetainedApprovalStashTests
             approvalId,
             modelStepId,
             DateTimeOffset.UtcNow);
+
+    private sealed class MutableTime(DateTimeOffset now) : ITimeProvider
+    {
+        public DateTimeOffset UtcNow { get; private set; } = now;
+
+        public void Advance(TimeSpan duration) => UtcNow += duration;
+    }
 }

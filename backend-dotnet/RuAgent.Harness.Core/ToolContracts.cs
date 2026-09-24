@@ -16,6 +16,7 @@ public sealed record ToolProposal
         RunId runId,
         ModelStepId modelStepId,
         ToolCallId toolCallId,
+        string providerCallId,
         int modelOrder,
         string toolId,
         string toolVersion,
@@ -24,6 +25,11 @@ public sealed record ToolProposal
         _ = runId.Value;
         _ = modelStepId.Value;
         _ = toolCallId.Value;
+        if (!ProviderCallIdContract.IsValid(providerCallId))
+        {
+            throw new ArgumentException("Provider call ID must be a bounded safe token.", nameof(providerCallId));
+        }
+
         if (modelOrder <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(modelOrder));
@@ -47,6 +53,7 @@ public sealed record ToolProposal
         RunId = runId;
         ModelStepId = modelStepId;
         ToolCallId = toolCallId;
+        ProviderCallId = providerCallId;
         ModelOrder = modelOrder;
         ToolId = toolId;
         ToolVersion = toolVersion;
@@ -56,6 +63,7 @@ public sealed record ToolProposal
     public RunId RunId { get; }
     public ModelStepId ModelStepId { get; }
     public ToolCallId ToolCallId { get; }
+    public string ProviderCallId { get; }
     public int ModelOrder { get; }
     public string ToolId { get; }
     public string ToolVersion { get; }
@@ -70,14 +78,21 @@ public sealed record ToolProposalDecision
         string? canonicalIntentToken,
         ApprovalId? approvalId,
         string safeCode,
-        string? denyHint)
+        string? denyHint,
+        long? gatewayGeneration)
     {
+        if (gatewayGeneration is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(gatewayGeneration));
+        }
+
         Decision = decision;
         AccessKind = accessKind;
         CanonicalIntentToken = canonicalIntentToken;
         ApprovalId = approvalId;
         SafeCode = safeCode;
         DenyHint = denyHint;
+        GatewayGeneration = gatewayGeneration;
     }
 
     /// <summary>
@@ -93,10 +108,12 @@ public sealed record ToolProposalDecision
     public ApprovalId? ApprovalId { get; }
     public string SafeCode { get; }
     public string? DenyHint { get; }
+    public long? GatewayGeneration { get; }
 
     public static ToolProposalDecision Allow(
         ToolAccessKind accessKind,
-        string canonicalIntentToken)
+        string canonicalIntentToken,
+        long? gatewayGeneration = null)
     {
         ValidateAccessKind(accessKind);
 
@@ -112,13 +129,15 @@ public sealed record ToolProposalDecision
             canonicalIntentToken,
             null,
             "allowed",
-            denyHint: null);
+            denyHint: null,
+            gatewayGeneration);
     }
 
     public static ToolProposalDecision Ask(
         ToolAccessKind accessKind,
         ApprovalId approvalId,
-        string safeCode = "approval_required")
+        string safeCode = "approval_required",
+        long? gatewayGeneration = null)
     {
         ValidateAccessKind(accessKind);
         _ = approvalId.Value;
@@ -133,13 +152,15 @@ public sealed record ToolProposalDecision
             null,
             approvalId,
             safeCode,
-            denyHint: null);
+            denyHint: null,
+            gatewayGeneration);
     }
 
     public static ToolProposalDecision Deny(
         ToolAccessKind accessKind,
         string safeCode,
-        string? denyHint = null)
+        string? denyHint = null,
+        long? gatewayGeneration = null)
     {
         ValidateAccessKind(accessKind);
         if (!IsSafeCode(safeCode))
@@ -153,7 +174,8 @@ public sealed record ToolProposalDecision
             null,
             null,
             safeCode,
-            BoundHint(denyHint));
+            BoundHint(denyHint),
+            gatewayGeneration);
     }
 
     private static string? BoundHint(string? hint)
@@ -197,7 +219,8 @@ public sealed record ApprovedToolExecution
     public ApprovedToolExecution(
         ToolProposal proposal,
         ExecutionId executionId,
-        string canonicalIntentToken)
+        string canonicalIntentToken,
+        long? gatewayGeneration = null)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         _ = executionId.Value;
@@ -207,12 +230,19 @@ public sealed record ApprovedToolExecution
             throw new ArgumentException("Canonical intent token must be bounded.", nameof(canonicalIntentToken));
         }
 
+        if (gatewayGeneration is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(gatewayGeneration));
+        }
+
         Proposal = proposal;
         ExecutionId = executionId;
         CanonicalIntentToken = canonicalIntentToken;
+        GatewayGeneration = gatewayGeneration;
     }
 
     public ToolProposal Proposal { get; }
     public ExecutionId ExecutionId { get; }
     public string CanonicalIntentToken { get; }
+    public long? GatewayGeneration { get; }
 }

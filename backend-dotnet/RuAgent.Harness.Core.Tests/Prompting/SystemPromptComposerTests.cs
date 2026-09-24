@@ -1,5 +1,6 @@
 using System.Text;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests.Prompting;
@@ -19,17 +20,52 @@ public sealed class SystemPromptComposerTests
                 "ru.persona",
                 "agent.contract",
                 "environment",
-                "instruction.root:Ru.md",
                 "profile",
+                "instruction.root:Ru.md",
                 "capabilities",
                 "runtime",
             },
             snapshot.Receipt.BlockDigests.Select(item => item.BlockId));
+        Assert.Equal("2.0.0", snapshot.Receipt.ComposerVersion);
         snapshot.Receipt.ValidateAgainst(context, snapshot.Text);
     }
 
     [Fact]
-    public void Compose_with_native_tool_calling_swaps_the_selection_contract()
+    public void Compose_renders_effective_policy_before_instruction_blocks()
+    {
+        var context = PromptFixtures.ValidContext(preset: "plan");
+
+        var snapshot = SystemPromptComposer.Compose(context);
+
+        var profileIndex = snapshot.Text.IndexOf("## profile", StringComparison.Ordinal);
+        var instructionIndex = snapshot.Text.IndexOf("## instruction.root:Ru.md", StringComparison.Ordinal);
+        Assert.True(profileIndex >= 0);
+        Assert.True(instructionIndex >= 0);
+        Assert.True(profileIndex < instructionIndex);
+        Assert.Contains(
+            "effective_policy:\nprofile_version: 1\npreset: plan\nterminal_authority: denied\nworkspace_read=allow\nweb=allow\nworkspace_mutation=deny\nbounded_local_terminal=deny\nexternal_structured_file=deny\nrisky_terminal=deny\nstructured_protected_path=deny\nhard_invalid=deny\nbroker_authority: true",
+            snapshot.Text,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("standard", "terminal_authority: bounded_local", "bounded_local_terminal=allow", "risky_terminal=ask")]
+    [InlineData("full_access", "terminal_authority: windows_current_user", "risky_terminal=allow", "external_structured_file=allow")]
+    public void Compose_projects_the_canonical_effective_policy_summary(
+        string preset,
+        string terminalAuthority,
+        string boundedTerminal,
+        string externalFile)
+    {
+        var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext(preset: preset));
+
+        Assert.Contains(terminalAuthority, snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains(boundedTerminal, snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains(externalFile, snapshot.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compose_with_native_tool_calling_allows_batched_calls_without_reissue_prose()
     {
         var context = PromptFixtures.ValidContext();
 
@@ -37,9 +73,14 @@ public sealed class SystemPromptComposerTests
         var textSelection = SystemPromptComposer.Compose(context);
 
         Assert.Contains("TOOL CALLING:", native.Text, StringComparison.Ordinal);
-        Assert.Contains("native tool-calling interface", native.Text, StringComparison.Ordinal);
+        Assert.Contains("one or more advertised calls", native.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("call one capability per step", native.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("re-issue the identical call", native.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("after the user approves, re-issue", native.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("TOOL SELECTION CONTRACT:", native.Text, StringComparison.Ordinal);
         Assert.Contains("TOOL SELECTION CONTRACT:", textSelection.Text, StringComparison.Ordinal);
+        Assert.Contains("emit exactly one JSON object", textSelection.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("re-issue the identical call", textSelection.Text, StringComparison.Ordinal);
         Assert.NotEqual(textSelection.Receipt.PromptSha256, native.Receipt.PromptSha256);
         native.Receipt.ValidateAgainst(context, native.Text);
     }
@@ -155,10 +196,10 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("Use write with op=write to create or overwrite a file, op=delete to remove a file (recoverable once with op=restore).", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("shell scripts, external mutations, direct deletion", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("A standard session on a clean workspace auto-allows the in-workspace subset", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("A standard session on a clean workspace auto-allows the in-workspace subset", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("pauses for inspection", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("repair hint", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Do not invent aliases or fallback tools", snapshot.Text, StringComparison.Ordinal);
     }
 
@@ -211,11 +252,13 @@ public sealed class SystemPromptComposerTests
             PromptRuntimeContext? runtime = null,
             string sourceId = "root:Ru.md",
             string displayName = "Ru.md",
-            PromptInstructionOrigin origin = PromptInstructionOrigin.Workspace) =>
+            PromptInstructionOrigin origin = PromptInstructionOrigin.Workspace,
+            string preset = "standard",
+            int schemaVersion = SystemPromptContext.PromptContextSchemaVersion) =>
             new(
-                1,
+                schemaVersion,
                 "ru-agent",
-                "standard",
+                preset,
                 new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
                 new[]
                 {

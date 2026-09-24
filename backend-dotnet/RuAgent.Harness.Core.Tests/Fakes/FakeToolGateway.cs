@@ -2,7 +2,7 @@ using RuAgent.Harness.Core.Persistence;
 
 namespace RuAgent.Harness.Core.Tests.Fakes;
 
-public sealed class FakeToolGateway : IToolGateway
+public sealed class FakeToolGateway : IToolGateway, IApprovalCleanupGateway
 {
     private readonly IList<string>? _trace;
     private int _remainingTransportFailures;
@@ -29,7 +29,13 @@ public sealed class FakeToolGateway : IToolGateway
 
     public List<ExecutionId> ExecuteAttempts { get; } = new();
 
+    public List<ApprovedToolExecution> ApprovedExecutions { get; } = new();
+
+    public List<PreparedToolExecution> PreparedExecutions { get; } = new();
+
     public List<ExecutionId> CancelAttempts { get; } = new();
+
+    public List<ApprovalId> RevokedApprovals { get; } = new();
 
     public IReadOnlyList<string> OutputChunks { get; set; } = [];
 
@@ -55,13 +61,17 @@ public sealed class FakeToolGateway : IToolGateway
         CancellationToken cancellationToken)
     {
         _trace?.Add("prepare");
-        return Task.FromResult(new PreparedToolExecution(
+        ApprovedExecutions.Add(execution);
+        var prepared = new PreparedToolExecution(
             execution.ExecutionId,
             execution.Proposal.ToolCallId,
             execution.Proposal.ModelOrder,
             PreparedKind ?? AccessKind,
             $"prepared-{execution.Proposal.ModelOrder}",
-            PreparationPayloads));
+            PreparationPayloads,
+            execution.GatewayGeneration);
+        PreparedExecutions.Add(prepared);
+        return Task.FromResult(prepared);
     }
 
     public async Task<ToolExecutionReceipt> ExecuteAsync(
@@ -114,5 +124,13 @@ public sealed class FakeToolGateway : IToolGateway
         CancelAttempts.Add(executionId);
         _trace?.Add("cancel");
         return Task.CompletedTask;
+    }
+
+    public Task<bool> RevokeApprovalAsync(
+        ApprovalId approvalId,
+        CancellationToken cancellationToken)
+    {
+        RevokedApprovals.Add(approvalId);
+        return Task.FromResult(true);
     }
 }

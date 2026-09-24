@@ -77,6 +77,41 @@ public sealed class Phase1WorkerIntegrationTests
     }
 
     [Fact]
+    public async Task Native_multi_call_round_trip_preserves_narration_and_order()
+    {
+        await using var host = await StartHostAsync(new SequenceProvider(
+            new ModelDelta("I will inspect both files.", Array.Empty<ModelToolFragment>(), false, null),
+            new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment(null, "files.read", "{\"path\":\"README.md\"}"),
+                    new ModelToolFragment("call-2", "files.read", "{\"path\":\"CHANGELOG.md\"}"),
+                },
+                true,
+                "tool_calls")));
+
+        using var socket = await ConnectAsync(host);
+        await HelloAsync(socket);
+        _ = await ReceiveAsync(socket);
+        await SendAsync(socket, StartEnvelope("step-multi", SystemPromptContext.Empty, includeTool: true));
+
+        var delta = WorkerV2EnvelopeCodec.Parse(await ReceiveAsync(socket));
+        Assert.Equal(WorkerV2Contracts.AgentStepDelta, delta.Type);
+        Assert.Equal("I will inspect both files.", delta.Payload["text"]!.GetValue<string>());
+
+        var done = WorkerV2EnvelopeCodec.Parse(await ReceiveAsync(socket));
+        Assert.Equal(WorkerV2Contracts.AgentStepDone, done.Type);
+        Assert.Equal("I will inspect both files.", done.Payload["text"]!.GetValue<string>());
+        var calls = done.Payload["tool_calls"]!.AsArray();
+        Assert.Equal(2, calls.Count);
+        Assert.Equal("ru_call_step-multi_1", calls[0]!["provider_call_id"]!.GetValue<string>());
+        Assert.Equal("README.md", calls[0]!["arguments"]!["path"]!.GetValue<string>());
+        Assert.Equal("call-2", calls[1]!["provider_call_id"]!.GetValue<string>());
+        Assert.Equal("CHANGELOG.md", calls[1]!["arguments"]!["path"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Tool_arguments_stay_confined_to_the_done_tool_calls_field()
     {
         await using var host = await StartHostAsync(new SequenceProvider(

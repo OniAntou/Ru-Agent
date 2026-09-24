@@ -24,16 +24,13 @@ public static class AssistantStepJsonCodec
             writer.WriteStartArray();
             foreach (var call in step.ToolCalls)
             {
-                writer.WriteStartObject();
-                if (call.ProviderCallId is null)
+                if (!ProviderCallIdContract.IsValid(call.ProviderCallId))
                 {
-                    writer.WriteNull("provider_call_id");
-                }
-                else
-                {
-                    writer.WriteString("provider_call_id", call.ProviderCallId);
+                    throw new ArgumentException("Provider call identifier is invalid.", nameof(step));
                 }
 
+                writer.WriteStartObject();
+                writer.WriteString("provider_call_id", call.ProviderCallId);
                 writer.WriteString("tool_id", call.ToolId);
                 writer.WriteString("tool_version", call.ToolVersion);
                 writer.WritePropertyName("arguments");
@@ -69,14 +66,19 @@ public static class AssistantStepJsonCodec
             var calls = root.GetProperty("tool_calls")
                 .EnumerateArray()
                 .Select(call => new ModelToolCall(
-                    call.TryGetProperty("provider_call_id", out var providerCallId)
-                        && providerCallId.ValueKind != JsonValueKind.Null
-                            ? providerCallId.GetString()
-                            : null,
+                    call.GetProperty("provider_call_id").GetString()!,
                     call.GetProperty("tool_id").GetString()!,
                     call.GetProperty("tool_version").GetString()!,
                     call.GetProperty("arguments")))
                 .ToArray();
+            var providerCallIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var call in calls)
+            {
+                if (!providerCallIds.Add(call.ProviderCallId))
+                {
+                    throw new InvalidDataException("assistant_step_provider_call_id_duplicate");
+                }
+            }
             ModelUsage? usage = null;
             if (root.TryGetProperty("usage", out var usageElement))
             {

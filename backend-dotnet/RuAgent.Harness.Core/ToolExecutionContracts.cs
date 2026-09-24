@@ -47,7 +47,8 @@ public sealed record PreparedToolExecution
         int modelOrder,
         ToolAccessKind accessKind,
         string preparationToken,
-        IReadOnlyList<PreparedPayload> preparationPayloads)
+        IReadOnlyList<PreparedPayload> preparationPayloads,
+        long? gatewayGeneration = null)
     {
         _ = executionId.Value;
         _ = toolCallId.Value;
@@ -68,6 +69,11 @@ public sealed record PreparedToolExecution
                 nameof(preparationToken));
         }
 
+        if (gatewayGeneration is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(gatewayGeneration));
+        }
+
         ArgumentNullException.ThrowIfNull(preparationPayloads);
         var payloads = preparationPayloads.ToArray();
         if (payloads.Any(payload => payload is null))
@@ -83,6 +89,7 @@ public sealed record PreparedToolExecution
         AccessKind = accessKind;
         PreparationToken = preparationToken;
         PreparationPayloads = new ReadOnlyCollection<PreparedPayload>(payloads);
+        GatewayGeneration = gatewayGeneration;
     }
 
     public ExecutionId ExecutionId { get; }
@@ -96,6 +103,8 @@ public sealed record PreparedToolExecution
     public string PreparationToken { get; }
 
     public IReadOnlyList<PreparedPayload> PreparationPayloads { get; }
+
+    public long? GatewayGeneration { get; }
 }
 
 public enum ToolExecutionOutcome
@@ -171,7 +180,8 @@ public sealed record ToolExecutionReceipt
         PayloadId? resultPayloadId,
         bool sideEffectsPossible,
         ReadOnlyMemory<byte> modelContent = default,
-        HarnessPayloadEncoding contentEncoding = HarnessPayloadEncoding.Json)
+        HarnessPayloadEncoding contentEncoding = HarnessPayloadEncoding.Json,
+        string? providerCallId = null)
     {
         _ = executionId.Value;
         _ = toolCallId.Value;
@@ -195,6 +205,11 @@ public sealed record ToolExecutionReceipt
             throw new ArgumentOutOfRangeException(nameof(contentEncoding));
         }
 
+        if (providerCallId is not null && !ProviderCallIdContract.IsValid(providerCallId))
+        {
+            throw new ArgumentException("Provider call identifier is invalid.", nameof(providerCallId));
+        }
+
         if (modelContent.Length > HarnessPayloadIntent.MaximumByteCap)
         {
             throw new ArgumentException("Tool result content exceeds the Core cap.", nameof(modelContent));
@@ -208,6 +223,7 @@ public sealed record ToolExecutionReceipt
         SideEffectsPossible = sideEffectsPossible;
         ModelContent = modelContent.ToArray();
         ContentEncoding = contentEncoding;
+        ProviderCallId = providerCallId;
     }
 
     public ExecutionId ExecutionId { get; }
@@ -225,6 +241,24 @@ public sealed record ToolExecutionReceipt
     public ReadOnlyMemory<byte> ModelContent { get; }
 
     public HarnessPayloadEncoding ContentEncoding { get; }
+
+    public string? ProviderCallId { get; }
+
+    internal ToolExecutionReceipt WithProviderCallId(string providerCallId) =>
+        new(
+            ExecutionId,
+            ToolCallId,
+            Outcome,
+            Code,
+            ResultPayloadId,
+            SideEffectsPossible,
+            ModelContent,
+            ContentEncoding,
+            ProviderCallId is null
+                ? providerCallId
+                : string.Equals(ProviderCallId, providerCallId, StringComparison.Ordinal)
+                    ? ProviderCallId
+                    : throw new ArgumentException("Provider call identifier mismatch.", nameof(providerCallId)));
 
     /// <summary>
     /// Returns a copy of this receipt that names the payload its content was stored under.
@@ -247,7 +281,8 @@ public sealed record ToolExecutionReceipt
             payloadId,
             SideEffectsPossible,
             ModelContent,
-            ContentEncoding);
+            ContentEncoding,
+            ProviderCallId);
 
     private static bool IsSafeCode(string? value) =>
         value is { Length: >= 1 and <= 64 }

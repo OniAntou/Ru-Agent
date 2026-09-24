@@ -4,6 +4,8 @@ namespace RuAgent.Harness.Core;
 
 public sealed class ToolCallScheduler
 {
+    public const int MaxReadConcurrency = 8;
+
     public async Task<IReadOnlyList<ToolExecutionReceipt>> ExecuteAsync(
         IReadOnlyList<PreparedToolExecution> calls,
         Func<PreparedToolExecution, CancellationToken, Task<ToolExecutionReceipt>> execute,
@@ -45,13 +47,26 @@ public sealed class ToolCallScheduler
                 }
 
                 var batch = ordered[index..end];
-                var tasks = batch
-                    .Select(call => execute(call, cancellationToken))
-                    .ToArray();
-                var batchReceipts = await Task.WhenAll(tasks).ConfigureAwait(false);
-                for (var batchIndex = 0; batchIndex < batch.Length; batchIndex++)
+                for (var batchIndex = 0; batchIndex < batch.Length; batchIndex += MaxReadConcurrency)
                 {
-                    receipts.Add(ValidateReceipt(batch[batchIndex], batchReceipts[batchIndex]));
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var chunk = batch
+                        .Skip(batchIndex)
+                        .Take(MaxReadConcurrency)
+                        .ToArray();
+                    var tasks = chunk
+                        .Select(call => execute(call, cancellationToken))
+                        .ToArray();
+                    var chunkReceipts = await Task.WhenAll(tasks).ConfigureAwait(false);
+                    for (var chunkIndex = 0; chunkIndex < chunk.Length; chunkIndex++)
+                    {
+                        receipts.Add(ValidateReceipt(chunk[chunkIndex], chunkReceipts[chunkIndex]));
+                    }
+
+                    if (chunkReceipts.Any(receipt => receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown))
+                    {
+                        return new ReadOnlyCollection<ToolExecutionReceipt>(receipts);
+                    }
                 }
 
                 index = end;

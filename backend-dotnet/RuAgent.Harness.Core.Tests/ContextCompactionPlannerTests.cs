@@ -25,7 +25,7 @@ public sealed class ContextCompactionPlannerTests
                 7,
                 new AssistantStep(
                     "tool call pending",
-                    [new ModelToolCall(null, "files.read", "1.0.0", JsonDocument.Parse("{}").RootElement)],
+                    [new ModelToolCall("provider-call-1", "files.read", "1.0.0", JsonDocument.Parse("{}").RootElement)],
                     AssistantFinishReason.ToolCalls,
                     8)),
         };

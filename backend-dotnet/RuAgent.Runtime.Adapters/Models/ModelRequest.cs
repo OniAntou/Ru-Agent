@@ -1,9 +1,12 @@
+using System.Text;
 using System.Text.Json.Nodes;
 
 namespace RuAgent.Runtime.Adapters.Models;
 
 public sealed record ModelRequest
 {
+    private const int MaxModelMessages = 256;
+    private const int MaxModelMessagesBytes = 512 * 1024;
     public ModelRequest(
         string model,
         string systemPrompt,
@@ -41,10 +44,12 @@ public sealed record ModelRequest
         }
 
         ArgumentNullException.ThrowIfNull(turns);
-        if (turns.Count > 32 || turns.Any(turn => turn is null))
+        if (turns.Count > MaxModelMessages || turns.Any(turn => turn is null))
         {
             throw new ArgumentException("Model turns exceed the adapter cap.", nameof(turns));
         }
+
+        ValidateModelHistory(turns);
 
         ArgumentNullException.ThrowIfNull(settings);
         if (settings.ToJsonString().Length > 128 * 1024)
@@ -106,12 +111,12 @@ public sealed record ModelRequest
         Model = model;
         SystemPrompt = systemPrompt;
         Prompt = prompt;
-        Turns = turns.ToArray();
+        Turns = Array.AsReadOnly(turns.ToArray());
         Settings = (JsonObject)settings.DeepClone();
         Endpoint = endpoint;
         Credential = credential ?? throw new ArgumentNullException(nameof(credential));
         MaximumOutputTokens = maximumOutputTokens;
-        Images = images is null ? Array.Empty<ModelImage>() : images.ToArray();
+        Images = Array.AsReadOnly(images is null ? Array.Empty<ModelImage>() : images.ToArray());
     }
 
     public string Model { get; }
@@ -131,4 +136,82 @@ public sealed record ModelRequest
     public int? MaximumOutputTokens { get; }
 
     public IReadOnlyList<ModelImage> Images { get; }
+
+    public static long MeasureModelMessagesBytes(IReadOnlyList<ModelTurn> messages)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        long bytes = 2;
+        for (var index = 0; index < messages.Count; index++)
+        {
+            bytes = checked(bytes + Encoding.UTF8.GetByteCount(messages[index].ToJsonObject().ToJsonString()));
+            if (index > 0)
+            {
+                bytes = checked(bytes + 1);
+            }
+        }
+
+        return bytes;
+    }
+
+    private static void ValidateModelHistory(IReadOnlyList<ModelTurn> turns)
+    {
+        var pendingCallIds = new Queue<string>();
+        var callIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var turn in turns)
+        {
+            ValidateTurnPairing(turn, pendingCallIds, callIds);
+        }
+
+        if (MeasureModelMessagesBytes(turns) > MaxModelMessagesBytes)
+        {
+            throw new ArgumentException("Model history exceeds the adapter byte cap.", nameof(turns));
+        }
+
+        if (pendingCallIds.Count > 0)
+        {
+            throw new ArgumentException("Model history contains an unmatched tool call batch.", nameof(turns));
+        }
+    }
+
+    private static void ValidateTurnPairing(
+        ModelTurn turn,
+        Queue<string> pendingCallIds,
+        HashSet<string> callIds)
+    {
+        if (turn.Role == "assistant" && turn.ToolCalls.Count > 0)
+        {
+            if (pendingCallIds.Count > 0)
+            {
+                throw new ArgumentException("Model history contains interleaved tool call batches.");
+            }
+
+            foreach (var call in turn.ToolCalls)
+            {
+                if (call.Id is null || !callIds.Add(call.Id))
+                {
+                    throw new ArgumentException("Model history contains a duplicate tool call ID.");
+                }
+
+                pendingCallIds.Enqueue(call.Id);
+            }
+
+            return;
+        }
+
+        if (turn.Role == "tool")
+        {
+            if (pendingCallIds.Count == 0
+                || !string.Equals(pendingCallIds.Dequeue(), turn.ToolCallId, StringComparison.Ordinal))
+            {
+                throw new ArgumentException("Model history contains an unmatched tool result.");
+            }
+
+            return;
+        }
+
+        if (pendingCallIds.Count > 0)
+        {
+            throw new ArgumentException("Model history contains an unmatched tool call batch.");
+        }
+    }
 }

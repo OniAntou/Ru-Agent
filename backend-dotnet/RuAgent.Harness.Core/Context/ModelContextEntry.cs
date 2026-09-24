@@ -118,6 +118,11 @@ public sealed record ModelContextEntry
         string modelContent)
     {
         ArgumentNullException.ThrowIfNull(receipt);
+        if (receipt.ProviderCallId is null)
+        {
+            throw new ArgumentException("Tool results require a provider call relationship.", nameof(receipt));
+        }
+
         ArgumentNullException.ThrowIfNull(modelContent);
         return new ModelContextEntry(
             sourceId,

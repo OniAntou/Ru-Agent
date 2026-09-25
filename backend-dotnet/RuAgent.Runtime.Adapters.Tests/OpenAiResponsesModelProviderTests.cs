@@ -149,6 +149,38 @@ public sealed class OpenAiResponsesModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_ignores_unknown_future_event()
+    {
+        var sse =
+            SseEvent("response.created", new JsonObject { ["type"] = "response.created" }) +
+            SseEvent("response.output_text.delta", new JsonObject { ["type"] = "response.output_text.delta", ["delta"] = "Hello" }) +
+            SseEvent("response.future_thing", new JsonObject { ["type"] = "response.future_thing", ["payload"] = new JsonObject { ["x"] = 1 } }) +
+            SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed" } });
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+
+        Assert.Equal("Hello", deltas[0].Text);
+        Assert.True(deltas[^1].Completed);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_ignores_unknown_future_event_arriving_after_completion()
+    {
+        var sse =
+            SseEvent("response.completed", new JsonObject { ["type"] = "response.completed", ["response"] = new JsonObject { ["model"] = "test-model", ["status"] = "completed" } }) +
+            SseEvent("response.future_tail", new JsonObject { ["type"] = "response.future_tail" });
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sse, Encoding.UTF8, "text/event-stream") });
+        var provider = new OpenAiResponsesModelProvider(new HttpClient(handler));
+
+        var deltas = await CollectAsync(provider.GenerateAsync(Request(), CancellationToken.None));
+
+        Assert.Single(deltas);
+        Assert.True(deltas[0].Completed);
+    }
+
+    [Fact]
     public async Task GenerateAsync_preserves_usage_from_completed_response()
     {
         var completed = new JsonObject

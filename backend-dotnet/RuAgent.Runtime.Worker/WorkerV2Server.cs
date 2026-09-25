@@ -58,17 +58,9 @@ public sealed class WorkerV2Server
         // corrupts under that, so this one is concurrent too, and the cancel
         // path below tolerates losing the race against the task's Dispose.
         var cancellations = new ConcurrentDictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
-        var seenRequests = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
-        // Only ever touched inside the send lock (NextSequence is called from SendOrderedAsync
-        // while it holds that lock), so this one stays a plain Dictionary.
-        var sequences = new Dictionary<string, long>(StringComparer.Ordinal);
-
-        long NextSequence(string id)
-        {
-            var next = sequences.TryGetValue(id, out var value) ? value : 1;
-            sequences[id] = checked(next + 1);
-            return next;
-        }
+        // Duplicate-request detection and per-request frame sequence, bounded so a
+        // long-lived connection cannot grow per-request state without limit.
+        var history = new WorkerRequestHistory();
 
         try
         {
@@ -79,7 +71,7 @@ public sealed class WorkerV2Server
             }
             catch (AgentProtocolException error)
             {
-                await SendErrorAsync(socket, sendLock, "connection", error.Code, false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                await SendErrorAsync(socket, sendLock, "connection", error.Code, false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                 await CloseAsync(socket, WebSocketCloseStatus.PolicyViolation, connectionCancellation).ConfigureAwait(false);
                 return;
             }
@@ -96,14 +88,14 @@ public sealed class WorkerV2Server
             }
             catch (AgentProtocolException error)
             {
-                await SendErrorAsync(socket, sendLock, "connection", error.Code, false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                await SendErrorAsync(socket, sendLock, "connection", error.Code, false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                 await CloseAsync(socket, WebSocketCloseStatus.PolicyViolation, connectionCancellation).ConfigureAwait(false);
                 return;
             }
 
             if (hello.Type != WorkerV2Contracts.Hello)
             {
-                await SendErrorAsync(socket, sendLock, hello.Id, "hello_required", false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                await SendErrorAsync(socket, sendLock, hello.Id, "hello_required", false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                 await CloseAsync(socket, WebSocketCloseStatus.PolicyViolation, connectionCancellation).ConfigureAwait(false);
                 return;
             }
@@ -135,7 +127,7 @@ public sealed class WorkerV2Server
                 }
                 catch (AgentProtocolException error)
                 {
-                    await SendErrorAsync(socket, sendLock, "connection", error.Code, false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                    await SendErrorAsync(socket, sendLock, "connection", error.Code, false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                     continue;
                 }
 
@@ -151,7 +143,7 @@ public sealed class WorkerV2Server
                 }
                 catch (AgentProtocolException error)
                 {
-                    await SendErrorAsync(socket, sendLock, "connection", error.Code, false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                    await SendErrorAsync(socket, sendLock, "connection", error.Code, false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                     continue;
                 }
 
@@ -159,7 +151,7 @@ public sealed class WorkerV2Server
                 {
                     if (!cancellations.TryGetValue(envelope.Id, out var cancellation))
                     {
-                        await SendErrorAsync(socket, sendLock, envelope.Id, "request_not_found", false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                        await SendErrorAsync(socket, sendLock, envelope.Id, "request_not_found", false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                     }
                     else
                     {
@@ -180,31 +172,34 @@ public sealed class WorkerV2Server
 
                 if (envelope.Type != WorkerV2Contracts.AgentStepStart)
                 {
-                    await SendErrorAsync(socket, sendLock, envelope.Id, "unsupported_operation", false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                    await SendErrorAsync(socket, sendLock, envelope.Id, "unsupported_operation", false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                     continue;
                 }
 
-                if (!seenRequests.TryAdd(envelope.Id, 0))
+                if (!history.TryBegin(envelope.Id))
                 {
-                    await SendErrorAsync(socket, sendLock, envelope.Id, "duplicate_request", false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                    await SendErrorAsync(socket, sendLock, envelope.Id, "duplicate_request", false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                     continue;
                 }
 
                 if (requestTasks.Count > 0)
                 {
-                    await SendErrorAsync(socket, sendLock, envelope.Id, "request_in_progress", false, NextSequence, connectionCancellation).ConfigureAwait(false);
+                    await SendErrorAsync(socket, sendLock, envelope.Id, "request_in_progress", false, history.NextSequence, connectionCancellation).ConfigureAwait(false);
                     continue;
                 }
 
                 var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(connectionCancellation);
                 cancellations[envelope.Id] = cancellationSource;
-                // Register the slot before starting, so the request task can never finish and
-                // remove its own entry before the loop stores it -- a bare assignment after
-                // the start leaves a completed task in the map for the life of the connection,
-                // and the request_in_progress gate above reads that map.
-                requestTasks.TryAdd(envelope.Id, Task.CompletedTask);
-                var task = RunRequestAsync(socket, sendLock, envelope, cancellationSource, NextSequence, requestTasks, cancellations);
+                var task = RunRequestAsync(socket, sendLock, envelope, cancellationSource, history.NextSequence, requestTasks, cancellations);
                 requestTasks[envelope.Id] = task;
+                // The request task removes its own entry when it settles. If it settled
+                // before the store above (fully synchronous completion), that removal has
+                // already run and this completed task would otherwise sit in the map for
+                // the life of the connection, wedging the request_in_progress gate.
+                if (task.IsCompleted)
+                {
+                    requestTasks.TryRemove(envelope.Id, out _);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -230,6 +225,9 @@ public sealed class WorkerV2Server
             var tasks = requestTasks.Values.ToArray();
             if (tasks.Length > 0)
             {
+                // Cannot throw: a request task sends its error frames through
+                // TrySendErrorAsync and funnels every failure into catch(Exception),
+                // so it always settles without faulting.
                 await Task.WhenAll(tasks).ConfigureAwait(false);
             }
 
@@ -303,26 +301,26 @@ public sealed class WorkerV2Server
                 sendLock,
                 envelope.Id,
                 WorkerV2Contracts.AgentStepDone,
-                null,
+                envelope.CorrelationId,
                 donePayload,
                 nextSequence,
                 CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            await SendErrorAsync(socket, sendLock, envelope.Id, "cancelled", false, nextSequence, CancellationToken.None).ConfigureAwait(false);
+            await TrySendErrorAsync(socket, sendLock, envelope.Id, "cancelled", false, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
         catch (WorkerV2StepException error)
         {
-            await SendErrorAsync(socket, sendLock, envelope.Id, error.Code, error.Retryable, nextSequence, CancellationToken.None).ConfigureAwait(false);
+            await TrySendErrorAsync(socket, sendLock, envelope.Id, error.Code, error.Retryable, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
         catch (AgentProtocolException)
         {
-            await SendErrorAsync(socket, sendLock, envelope.Id, "protocol_failure", false, nextSequence, CancellationToken.None).ConfigureAwait(false);
+            await TrySendErrorAsync(socket, sendLock, envelope.Id, "protocol_failure", false, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception)
         {
-            await SendErrorAsync(socket, sendLock, envelope.Id, "generation_failed", true, nextSequence, CancellationToken.None).ConfigureAwait(false);
+            await TrySendErrorAsync(socket, sendLock, envelope.Id, "generation_failed", true, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -331,6 +329,27 @@ public sealed class WorkerV2Server
             {
                 owned.Dispose();
             }
+        }
+    }
+
+    private static async Task TrySendErrorAsync(
+        WebSocket socket,
+        SemaphoreSlim sendLock,
+        string id,
+        string code,
+        bool retryable,
+        Func<string, long> nextSequence,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendErrorAsync(socket, sendLock, id, code, retryable, nextSequence, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The peer is gone, so the error frame is undeliverable. A request
+            // task must never fault: connection cleanup awaits every request
+            // task and a fault here would escape into the teardown path.
         }
     }
 

@@ -39,8 +39,20 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                 await foreach (var evt in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (terminal is not null) throw new ModelProviderException("malformed_payload", false);
                     if (evt.Event is null) throw new ModelProviderException("malformed_payload", false);
+                    if (evt.Event is not (
+                        "response.output_text.delta" or "response.completed" or "error"
+                        or "response.failed" or "response.reasoning.delta" or "response.reasoning_summary_text.delta"
+                        or "response.created" or "response.in_progress" or "response.output_item.added"
+                        or "response.content_part.added" or "response.output_item.done" or "response.content_part.done"
+                        or "response.reasoning.done" or "response.queued"))
+                    {
+                        // Forward compatibility: unknown future event names are
+                        // ignored, like the Anthropic adapter does. Known event
+                        // names keep their strict shape and ordering validation.
+                        continue;
+                    }
+                    if (terminal is not null) throw new ModelProviderException("malformed_payload", false);
                     if (evt.Data.Length == 0) throw new ModelProviderException("malformed_payload", false);
                     JsonObject data;
                     try { data = JsonNode.Parse(evt.Data) as JsonObject ?? throw new JsonException(); }

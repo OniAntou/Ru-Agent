@@ -121,6 +121,47 @@ public sealed class WorkerV2ServerContractTests
         Assert.False(error.Payload["retryable"]!.GetValue<bool>());
     }
 
+    [Fact]
+    public async Task Server_runs_back_to_back_requests_without_wedging_the_progress_gate()
+    {
+        await using var host = await StartHostAsync(new ImmediateModelProvider(new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop")));
+        using var socket = await host.GetTestServer().CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost/worker/v2"), CancellationToken.None);
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "hello-1", "hello", null, new JsonObject { ["token"] = "worker-secret" })));
+        _ = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+
+        for (var i = 1; i <= 5; i++)
+        {
+            await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, $"request-{i}", "agent.step.start", null, StartPayload())));
+
+            var delta = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+            Assert.Equal("agent.step.delta", delta.Type);
+            var done = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+            Assert.Equal("agent.step.done", done.Type);
+            Assert.Equal($"request-{i}", done.Id);
+        }
+    }
+
+    [Fact]
+    public async Task Server_rejects_a_duplicate_request_id()
+    {
+        await using var host = await StartHostAsync(new ImmediateModelProvider(new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop")));
+        using var socket = await host.GetTestServer().CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost/worker/v2"), CancellationToken.None);
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "hello-1", "hello", null, new JsonObject { ["token"] = "worker-secret" })));
+        _ = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "request-dup", "agent.step.start", null, StartPayload())));
+        _ = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        _ = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "request-dup", "agent.step.start", null, StartPayload())));
+
+        var error = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        Assert.Equal("error", error.Type);
+        Assert.Equal("request-dup", error.Id);
+        Assert.Equal("duplicate_request", error.Payload["code"]!.GetValue<string>());
+        Assert.False(error.Payload["retryable"]!.GetValue<bool>());
+    }
+
     private static async Task<WebApplication> StartHostAsync(IModelProvider provider)
     {
         var builder = WebApplication.CreateBuilder();
@@ -187,6 +228,22 @@ public sealed class WorkerV2ServerContractTests
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Yield();
+                yield return delta;
+            }
+        }
+    }
+
+    private sealed class ImmediateModelProvider : IModelProvider
+    {
+        private readonly IReadOnlyList<ModelDelta> _deltas;
+        public ImmediateModelProvider(params ModelDelta[] deltas) => _deltas = deltas;
+
+        public async IAsyncEnumerable<ModelDelta> GenerateAsync(ModelRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask;
+            foreach (var delta in _deltas)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
                 yield return delta;
             }
         }

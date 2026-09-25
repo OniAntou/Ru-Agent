@@ -138,6 +138,9 @@ public static class BoundedSseReader
         }
 
         if (lineBytes.Count > 0) _ = ProcessLine();
+        // A stream that ends without the framing blank line is a message-framing
+        // violation by contract: fail closed instead of dispatching a partial
+        // event (pinned by Rejects_EOF_with_unfinished_event tests).
         if (currentEvent is not null || dataLines.Count > 0)
             throw new ModelProviderException("malformed_payload", false);
     }

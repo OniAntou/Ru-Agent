@@ -670,6 +670,119 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RunStepAsync_rejects_a_done_frame_with_a_missing_correlation_id()
+    {
+        await StartServer(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject
+                {
+                    ["version"] = 2,
+                    ["capabilities"] = new JsonArray("agent.step"),
+                },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.done",
+                ["seq"] = 1,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "done",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(PromptContextFixture.Create()),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(
+            new AgentWorkerClientOptions(new Uri(_url), _token));
+        var request = new ModelStepRequest(
+            new RunId("run_55555555555555555555555555555555"),
+            new ModelStepId("step_55555555555555555555555555555555"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            PromptContextFixture.Create(),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('f', 64));
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None));
+
+        Assert.Equal("invalid_correlation_id", error.Code);
+    }
+
+    [Fact]
+    public async Task RunStepAsync_rejects_a_done_frame_with_a_foreign_correlation_id()
+    {
+        await StartServer(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject
+                {
+                    ["version"] = 2,
+                    ["capabilities"] = new JsonArray("agent.step"),
+                },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.done",
+                ["seq"] = 1,
+                ["correlation_id"] = "run_99999999999999999999999999999999",
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "done",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(PromptContextFixture.Create()),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(
+            new AgentWorkerClientOptions(new Uri(_url), _token));
+        var request = new ModelStepRequest(
+            new RunId("run_66666666666666666666666666666666"),
+            new ModelStepId("step_66666666666666666666666666666666"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            PromptContextFixture.Create(),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('0', 64));
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None));
+
+        Assert.Equal("invalid_correlation_id", error.Code);
+    }
+
+    [Fact]
     public async Task RunStepAsync_advertises_every_runtime_tool_with_its_scope()
     {
         var observedStart = new TaskCompletionSource<JsonObject>(

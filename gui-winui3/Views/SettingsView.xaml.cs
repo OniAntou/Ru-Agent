@@ -40,15 +40,13 @@ namespace RuApp.Views
 
         private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
 
-        private const double ProviderRowLabelFontSize = 12.5;
+        private const double ProviderRowLabelFontSize = 13;
         private const double ProviderFlyoutMinHeight = 320;
         private const double ProviderFlyoutBottomMargin = 24;
-        // Room kept below the list for the A-Z strip, which sits beside it. Without it a
-        // full-height list would push the strip past the flyout.
-        private const double ProviderLetterStripReserve = 40;
-        private const double ProviderLetterButtonSize = 15;
-        private const double ProviderLetterFontSize = 9.5;
-        private const double ProviderLetterDisabledOpacity = 0.28;
+        // Room kept under the list for the A-Z strip, which overlays its right edge.
+        private const double ProviderLetterStripReserve = 36;
+        private const double ProviderLetterButtonSize = 16;
+        private const double ProviderLetterFontSize = 10;
 
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
@@ -562,14 +560,20 @@ namespace RuApp.Views
             if (FixedProvidersHeader is not null)
             {
                 int total = _providerRows.Count;
-                FixedProvidersHeader.Visibility = matching > 0 ? Visibility.Visible : Visibility.Collapsed;
-                // The count is always shown: the catalog is ~190 rows, so "191" is what
-                // tells the user this is a search box, not a short list still loading.
+                // The count stays visible even at zero matches. Hiding the header exactly
+                // when a search finds nothing left the panel with no guidance at all, and
+                // "PROVIDERS (0 of 191)" is the honest answer: the catalog is there, the
+                // query is what is narrow.
                 FixedProvidersHeader.Text = _modelsDevLoadFailed && total <= 1
                     ? $"PROVIDERS ({total}) - Models.dev list unavailable"
                     : matching < total
                         ? $"PROVIDERS ({matching} of {total})"
                         : $"PROVIDERS ({total})";
+            }
+
+            if (ProviderNoMatchText is not null)
+            {
+                ProviderNoMatchText.Visibility = matching == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
 
             RefreshProviderUI();
@@ -637,15 +641,28 @@ namespace RuApp.Views
         private Button BuildProviderLetterButton(char letter, int? index)
         {
             // Plain text, not RuDropdownItemButtonStyle: this is an index glyph, so it
-            // carries no button chrome, no hover fill, and no padding of its own.
+            // carries no button chrome and no padding of its own.
+            //
+            // Live and dead letters are separated by COLOUR, not by alpha. Dimming text
+            // to mark it unavailable put ~88% of the index below the contrast floor --
+            // muted at 22% over the surface measured about 1.5:1, so the letters that
+            // could not be reached were also unreadable, and the strip read as broken
+            // rather than as an index. Muted passes at 7:1 on dark and 5.6:1 on light;
+            // ink marks the letters that lead somewhere.
             var label = new TextBlock
             {
                 Text = letter.ToString(),
                 FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
                 FontSize = ProviderLetterFontSize,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
-                Opacity = index is not null ? 1.0 : ProviderLetterDisabledOpacity,
+                TextAlignment = TextAlignment.Center,
+                Width = ProviderLetterButtonSize,
+                Foreground = index is not null
+                    ? (Brush)Application.Current.Resources["RuInkBrush"]
+                    : (Brush)Application.Current.Resources["RuMutedBrush"],
+                FontWeight = index is not null
+                    ? Microsoft.UI.Text.FontWeights.SemiBold
+                    : Microsoft.UI.Text.FontWeights.Normal,
             };
 
             var button = new Button
@@ -660,8 +677,14 @@ namespace RuApp.Views
                 Margin = new Thickness(0),
                 Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 BorderThickness = new Thickness(0),
+                // A transparent button still paints Fluent's hover and pressed fills, which
+                // at this size read as noise. The index answers to the glyph, not to a slab.
                 IsEnabled = index is not null,
             };
+            button.Resources["ButtonBackgroundPointerOver"] =
+                new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            button.Resources["ButtonBackgroundPressed"] =
+                new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             AutomationProperties.SetName(button, $"Jump to providers starting with {letter}");
             button.Click += OnProviderLetterClick;
             return button;

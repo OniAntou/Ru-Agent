@@ -50,8 +50,7 @@ public sealed class ProviderRow : INotifyPropertyChanged
             value,
             nameof(IsSelected),
             nameof(CheckVisibility),
-            nameof(NameWeight),
-            nameof(NameOpacity));
+            nameof(NameWeight));
     }
 
     public bool HasKey
@@ -66,9 +65,12 @@ public sealed class ProviderRow : INotifyPropertyChanged
 
     public Visibility KeyDotVisibility => HasKey ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>
+    /// The selected row reads as selected from weight plus the trailing check. A third
+    /// signal (a dimming opacity on every other row) only lowered the contrast of the
+    /// normal state, which is the state the user reads most.
+    /// </summary>
     public Windows.UI.Text.FontWeight NameWeight => IsSelected ? FontWeights.SemiBold : FontWeights.Normal;
-
-    public double NameOpacity => IsSelected ? 1.0 : 0.88;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

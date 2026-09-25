@@ -22,7 +22,7 @@
                     <Color x:Key="RuAccentSoftColor">#E2E8F0</Color>
                     <Color x:Key="RuAccentHoverColor">#334155</Color>
                     <Color x:Key="RuAccentPressedColor">#0B1220</Color>
-                    <Color x:Key="RuSuccessColor">#10B981</Color>
+                    <Color x:Key="RuSuccessColor">#047857</Color>
                     <Color x:Key="RuWarningColor">#F59E0B</Color>
                     <Color x:Key="RuDangerColor">#B91C1C</Color>
                     <Color x:Key="RuInfoColor">#075985</Color>

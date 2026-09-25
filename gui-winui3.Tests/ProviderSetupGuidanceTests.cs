@@ -581,6 +581,85 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     /// <summary>
+    /// The index separates reachable letters from unreachable ones by colour, never by
+    /// opacity.
+    /// </summary>
+    /// <remarks>
+    /// Dimming the dead letters looked right in isolation and measured about 1.5:1
+    /// against the surface, so the ~88% of the index that could not be reached was also
+    /// unreadable and the strip read as broken rather than as an index. Muted passes at
+    /// 7:1 on dark and 5.6:1 on light; ink marks the letters that lead somewhere.
+    /// </remarks>
+    [Fact]
+    public void The_index_marks_dead_letters_with_colour_not_transparency()
+    {
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+        string body = GuiSource.MethodBody(code, "BuildProviderLetterButton");
+
+        Assert.Contains("RuInkBrush", body, StringComparison.Ordinal);
+        Assert.Contains("RuMutedBrush", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Opacity", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProviderLetterDisabledOpacity", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_index_glyphs_share_one_character_cell()
+    {
+        // A narrow I and a wide A centred in their own boxes make the strip read as
+        // ragged. One centred cell per letter keeps the column straight.
+        string body = GuiSource.MethodBody(
+            GuiSource.Text("Views", "SettingsView.xaml.cs"),
+            "BuildProviderLetterButton");
+
+        Assert.Contains("TextAlignment.Center", body, StringComparison.Ordinal);
+        Assert.Contains("Width = ProviderLetterButtonSize", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The list must not let Fluent paint its own selection on top of the app's.
+    /// </summary>
+    /// <remarks>
+    /// WinUI's default ListViewItem selected state uses the user's Windows accent colour
+    /// plus an indicator bar, so a clicked row carried the system accent, the app's own
+    /// fill and the check mark at once, one of them foreign to the palette. The row's
+    /// selected look is the app's, and only the app's.
+    /// </remarks>
+    [Fact]
+    public void The_list_does_not_draw_a_second_selection_visual()
+    {
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var list = GuiSource.Require(settings, "ProviderListView");
+
+        Assert.Equal("None", GuiSource.AttributeValue(list, "SelectionMode"));
+        // Clicking still commits a provider, so item click stays enabled.
+        Assert.Equal("True", GuiSource.AttributeValue(list, "IsItemClickEnabled"));
+    }
+
+    /// <summary>
+    /// A search with no hits still reports the count and says so.
+    /// </summary>
+    /// <remarks>
+    /// The count is what tells the user the catalog is intact and the query is narrow.
+    /// Collapsing the header at zero matches removed the panel's only guidance exactly
+    /// when it was needed.
+    /// </remarks>
+    [Fact]
+    public void The_empty_result_state_still_reports_the_count()
+    {
+        string body = GuiSource.MethodBody(
+            GuiSource.Text("Views", "SettingsView.xaml.cs"),
+            "ApplyProviderFilter");
+
+        Assert.DoesNotContain("FixedProvidersHeader.Visibility", body, StringComparison.Ordinal);
+        Assert.Contains("ProviderNoMatchText.Visibility", body, StringComparison.Ordinal);
+
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var empty = GuiSource.Require(settings, "ProviderNoMatchText");
+        Assert.Equal("No provider matches", GuiSource.AttributeValue(empty, "Text"));
+        Assert.Equal("Collapsed", GuiSource.AttributeValue(empty, "Visibility"));
+    }
+
+    /// <summary>
     /// <see cref="GuiSource.AttributeValue"/> matches a local name, which does not
     /// resolve the namespaced <c>x:Key</c> that identifies a style.
     /// </summary>

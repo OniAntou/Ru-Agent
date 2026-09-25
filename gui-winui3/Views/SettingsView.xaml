@@ -435,19 +435,26 @@
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
                                             <StackPanel Spacing="0">
-                                                <Grid ColumnDefinitions="Auto,*" Margin="6,6,6,8">
+                                                <!--
+                                                  Search is the primary way through a ~190-row
+                                                  catalog, so it carries the weight: full-width,
+                                                  accent icon, hairline under it. The trailing
+                                                  letter index is deliberately quiet so the eye
+                                                  lands on search first.
+                                                -->
+                                                <Grid ColumnDefinitions="Auto,*" Margin="12,12,12,8">
                                                     <FontIcon Glyph="&#xE721;"
-                                                              FontSize="13"
-                                                              Foreground="{StaticResource RuAccentBrush}"
+                                                              FontSize="14"
+                                                              Foreground="{StaticResource RuMutedBrush}"
                                                               VerticalAlignment="Center"
                                                               Margin="0,0,8,0" />
                                                     <TextBox x:Name="ProviderSearchBox"
                                                              Grid.Column="1"
                                                              AutomationProperties.Name="Search providers"
-                                                             PlaceholderText="Search providers…"
+                                                             PlaceholderText="Search providers"
                                                              TextChanged="OnProviderSearchChanged"
                                                              FontFamily="{StaticResource RuUiFontFamily}"
-                                                             FontSize="12.5"
+                                                             FontSize="13"
                                                              MinHeight="0"
                                                              Padding="0"
                                                              Margin="0"
@@ -473,13 +480,22 @@
                                                         </TextBox.Resources>
                                                     </TextBox>
                                                 </Grid>
-                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="8,0,8,0" />
+                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5" />
+                                                <!--
+                                                  Small, letter-spaced, muted: a section label
+                                                  that names the list and then gets out of the
+                                                  way. It carries the count because the count is
+                                                  what tells the user this is a search box and
+                                                  not a short list still loading.
+                                                -->
                                                 <TextBlock x:Name="FixedProvidersHeader"
                                                            Text="PROVIDERS"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="10.5"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           CharacterSpacing="80"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="6,6,6,2" />
+                                                           Margin="12,8,12,4" />
                                                 <!--
                                                   The catalog is ~190 rows, so the list gets an
                                                   A-Z index. It overlays the right edge of the
@@ -502,10 +518,10 @@
                                                     <ListView x:Name="ProviderListView"
                                                               VerticalAlignment="Top"
                                                               MaxHeight="560"
-                                                              SelectionMode="Single"
+                                                              SelectionMode="None"
                                                               IsItemClickEnabled="True"
                                                               ItemClick="OnProviderRowClicked"
-                                                              Padding="0,0,22,4"
+                                                              Padding="0,0,28,6"
                                                               ScrollViewer.HorizontalScrollMode="Disabled"
                                                               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                                         <ListView.Resources>
@@ -530,36 +546,56 @@
                                                         </ListView.ItemContainerStyle>
                                                         <ListView.ItemTemplate>
                                                             <DataTemplate x:DataType="models:ProviderRow">
-                                                                <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="26" Padding="8,3,8,3">
-                                                                    <Ellipse Width="6" Height="6"
-                                                                             VerticalAlignment="Center"
-                                                                             Margin="0,0,8,0"
-                                                                             Fill="{StaticResource RuSuccessBrush}"
-                                                                             Visibility="{x:Bind KeyDotVisibility, Mode=OneWay}" />
-                                                                    <TextBlock Grid.Column="1"
-                                                                               Text="{x:Bind DisplayName}"
+                                                                <!--
+                                                                  Row rhythm: a 32px line gives a long list a
+                                                                  comfortable scanning cadence, and the 14px
+                                                                  inset matches the header above so the first
+                                                                  character of every name lines up with the
+                                                                  section label over it, which is why nothing
+                                                                  sits to the left of the label. The key dot
+                                                                  lives in the trailing cluster instead: as a
+                                                                  leading column it pushed labelled rows 16px
+                                                                  right of unlabelled ones and broke the edge.
+                                                                -->
+                                                                <Grid ColumnDefinitions="*,Auto"
+                                                                      MinHeight="32"
+                                                                      Padding="12,0,8,0">
+                                                                    <TextBlock Text="{x:Bind DisplayName}"
                                                                                FontFamily="{StaticResource RuUiFontFamily}"
-                                                                               FontSize="12.5"
+                                                                               FontSize="13"
                                                                                Foreground="{StaticResource RuInkBrush}"
                                                                                FontWeight="{x:Bind NameWeight, Mode=OneWay}"
-                                                                               Opacity="{x:Bind NameOpacity, Mode=OneWay}"
                                                                                VerticalAlignment="Center"
                                                                                TextTrimming="CharacterEllipsis" />
-                                                                    <FontIcon Grid.Column="2"
-                                                                              Glyph="&#xE73E;"
-                                                                              FontSize="12"
-                                                                              Foreground="{StaticResource RuAccentBrush}"
-                                                                              VerticalAlignment="Center"
-                                                                              Margin="8,0,0,0"
-                                                                              Visibility="{x:Bind CheckVisibility, Mode=OneWay}" />
+                                                                    <StackPanel Grid.Column="1"
+                                                                                Orientation="Horizontal"
+                                                                                Spacing="8"
+                                                                                VerticalAlignment="Center">
+                                                                        <Ellipse Width="6" Height="6"
+                                                                                 Fill="{StaticResource RuSuccessBrush}"
+                                                                                 Visibility="{x:Bind KeyDotVisibility, Mode=OneWay}"
+                                                                                 AutomationProperties.Name="Key stored" />
+                                                                        <FontIcon Glyph="&#xE73E;"
+                                                                                  FontSize="11.5"
+                                                                                  Foreground="{StaticResource RuInkBrush}"
+                                                                                  Visibility="{x:Bind CheckVisibility, Mode=OneWay}"
+                                                                                  AutomationProperties.Name="Selected provider" />
+                                                                    </StackPanel>
                                                                 </Grid>
                                                             </DataTemplate>
                                                         </ListView.ItemTemplate>
                                                     </ListView>
+                                                    <TextBlock x:Name="ProviderNoMatchText"
+                                                               Text="No provider matches"
+                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                               FontSize="12"
+                                                               Foreground="{StaticResource RuMutedBrush}"
+                                                               Margin="12,8,12,12"
+                                                               Visibility="Collapsed" />
                                                  <ItemsControl x:Name="ProviderLetterJumpStrip"
                                                                HorizontalAlignment="Right"
                                                                VerticalAlignment="Top"
-                                                               Margin="0,2,4,0"
+                                                               Margin="0,6,8,0"
                                                                AutomationProperties.Name="Jump to provider letter">
                                                      <ItemsControl.ItemsPanel>
                                                          <ItemsPanelTemplate>

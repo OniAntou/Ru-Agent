@@ -54,6 +54,41 @@ public static class TerminalBlockListPolicy
         return blockCount > maximumBlocks ? blockCount - maximumBlocks : 0;
     }
 
+    /// <summary>
+    /// The block a completion settles: the unfinished block with the exact
+    /// execution id. When the caller never learned the id (the command opened no
+    /// block because it printed nothing), the newest unfinished block settles
+    /// instead. A known id with no block settles nothing: retargeting another
+    /// execution's block would hide the command that actually finished.
+    /// </summary>
+    public static RuApp.Models.TerminalOutputBlock? SelectCompletionTarget(
+        IReadOnlyList<RuApp.Models.TerminalOutputBlock> blocks,
+        string? executionId)
+    {
+        ArgumentNullException.ThrowIfNull(blocks);
+
+        for (var index = blocks.Count - 1; index >= 0; index--)
+        {
+            var candidate = blocks[index];
+            if (candidate.IsCompleted)
+            {
+                continue;
+            }
+
+            if (executionId is null)
+            {
+                return candidate;
+            }
+
+            if (string.Equals(candidate.ExecutionId, executionId, StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>True while the list is at or past the cap, so an add needs an eviction.</summary>
     public static bool RequiresEviction(int blockCount, int maximumBlocks = MaximumBlocks) =>
         blockCount >= maximumBlocks;

@@ -240,10 +240,6 @@ namespace RuApp.Views
 
             UpdateSendButtonMode(isAgentRunning: state.IsRunning);
 
-            if (state.ClearActivityVisibility)
-            {
-            }
-
             if (state.ShowWorkspaceTrust)
             {
                 ShowWorkspaceTrustDialogAsync();
@@ -535,6 +531,7 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error in OnSendClick: {ex.Message}");
+                ShowAgentError(ex);
             }
         }
 
@@ -1323,11 +1320,6 @@ namespace RuApp.Views
 
         private void ShowAgentError(Exception exception)
         {
-            if (HasRenderedAgentReply())
-            {
-                return;
-            }
-
             string status = exception switch
             {
                 AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message),

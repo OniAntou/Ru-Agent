@@ -82,25 +82,27 @@ namespace RuApp.Controls
         }
 
         /// <summary>
-        /// Completes the block for this outcome. The newest unfinished block carrying
-        /// the same label wins; otherwise the newest unfinished block.
+        /// Completes the block opened for this execution. Matching is by execution
+        /// id (see <see cref="TerminalBlockListPolicy.SelectCompletionTarget"/>):
+        /// a known id that owns no block settles nothing, so one command's outcome
+        /// can never land on another command's block.
         /// </summary>
-        public void CompleteBlock(string label, bool failed)
+        public void CompleteBlock(string? executionId, bool failed)
         {
-            ArgumentNullException.ThrowIfNull(label);
+            TerminalBlockListPolicy.SelectCompletionTarget(TerminalBlocks, executionId)?.Complete(failed);
+        }
 
-            TerminalOutputBlock? block = null;
-            foreach (var candidate in TerminalBlocks)
+        /// <summary>
+        /// Settles every block still open. A block that never recorded its
+        /// completion cannot keep claiming "running" after the run has ended, so
+        /// it settles as failed: it did not finish in front of the reader.
+        /// </summary>
+        public void SettleRunningBlocks()
+        {
+            foreach (var block in TerminalBlocks.Where(candidate => !candidate.IsCompleted).ToList())
             {
-                if (!candidate.IsCompleted
-                    && string.Equals(candidate.Title, label, StringComparison.Ordinal))
-                {
-                    block = candidate;
-                }
+                block.Complete(failed: true);
             }
-
-            block ??= TerminalBlocks.LastOrDefault(candidate => !candidate.IsCompleted);
-            block?.Complete(failed);
         }
 
         /// <summary>Shows the panel and pins the scroll to the newest output.</summary>

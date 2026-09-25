@@ -12,7 +12,6 @@ namespace RuApp.Services;
 /// <param name="ShowStop">The stop control is visible.</param>
 /// <param name="StatusText">Status line text, empty when it must be hidden.</param>
 /// <param name="IsRunning">The send control reads as "running".</param>
-/// <param name="ClearActivityVisibility">The remembered activity visibility must be reset.</param>
 /// <param name="SuppressInteraction">Approve/deny/stop are disabled while an action is in flight.</param>
 public sealed record AgentInlinePanelState(
     bool ShowInlinePanel,
@@ -21,7 +20,6 @@ public sealed record AgentInlinePanelState(
     string StatusText,
     bool IsRunning,
     bool ShowWorkspaceTrust,
-    bool ClearActivityVisibility,
     bool SuppressInteraction);
 
 /// <summary>The facts the inline panel is derived from; a plain projection of the controller.</summary>
@@ -45,7 +43,7 @@ public static class AgentInlinePanelPolicy
     /// session the user has navigated away from, and when the turn is finished with
     /// nothing left to act on.
     /// </summary>
-    private static AgentInlinePanelState Hidden(AgentInlinePanelInput input, bool clearActivityVisibility) =>
+    private static AgentInlinePanelState Hidden(AgentInlinePanelInput input) =>
         new(
             ShowInlinePanel: false,
             ShowApproval: false,
@@ -53,7 +51,6 @@ public static class AgentInlinePanelPolicy
             StatusText: string.Empty,
             IsRunning: false,
             ShowWorkspaceTrust: false,
-            ClearActivityVisibility: clearActivityVisibility,
             SuppressInteraction: input.InteractionPending);
 
     public static AgentInlinePanelState Evaluate(AgentInlinePanelInput input)
@@ -63,17 +60,16 @@ public static class AgentInlinePanelPolicy
         // Without a controller there is nothing to drive the panel from.
         if (!input.HasController)
         {
-            return Hidden(input, clearActivityVisibility: false);
+            return Hidden(input);
         }
 
         // A run owned by another session must not paint its state into this chat.
         if (input.RunBelongsToAnotherSession)
         {
-            return Hidden(input, clearActivityVisibility: false);
+            return Hidden(input);
         }
 
-        // Nothing is running and nothing can be acted on: the panel collapses and
-        // the remembered activity visibility resets.
+        // Nothing is running and nothing can be acted on: the panel collapses.
         if (!input.IsBusy
             && !input.CanCancel
             && !input.HasPendingApproval
@@ -81,7 +77,7 @@ public static class AgentInlinePanelPolicy
             && !input.CanContinue
             && !input.KeepTerminalFailureVisible)
         {
-            return Hidden(input, clearActivityVisibility: true);
+            return Hidden(input);
         }
 
         bool isRunning = input.CanCancel || input.RunPending;
@@ -95,7 +91,6 @@ public static class AgentInlinePanelPolicy
                 StatusText: input.StatusText,
                 IsRunning: isRunning,
                 ShowWorkspaceTrust: true,
-                ClearActivityVisibility: false,
                 SuppressInteraction: input.InteractionPending);
         }
 
@@ -112,7 +107,6 @@ public static class AgentInlinePanelPolicy
             StatusText: input.StatusText,
             IsRunning: isRunning,
             ShowWorkspaceTrust: false,
-            ClearActivityVisibility: false,
             SuppressInteraction: input.InteractionPending);
     }
 }

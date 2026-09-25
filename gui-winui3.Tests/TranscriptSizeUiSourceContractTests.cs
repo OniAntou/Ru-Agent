@@ -23,10 +23,10 @@ public sealed class TranscriptSizeUiSourceContractTests
         // The size is applied from code when a row's template is realised, so the
         // elements have to be findable. Two message surfaces: the segmented reply and
         // the legacy block a failure card renders into.
-        Assert.Single(document.Descendants().Where(element =>
-            (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentLegacyTextBlock"));
-        Assert.Single(document.Descendants().Where(element =>
-            (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentReplyTextBlock"));
+        Assert.Single(document.Descendants(), element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentLegacyTextBlock");
+        Assert.Single(document.Descendants(), element =>
+            (string?)element.Attribute(GuiSource.Xaml + "Name") == "AgentReplyTextBlock");
 
         // The activity line lives in the activity template.
         var activity = document.Descendants()

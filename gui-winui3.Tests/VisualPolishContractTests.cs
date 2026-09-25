@@ -240,6 +240,21 @@ public sealed class VisualPolishContractTests
     }
 
     [Fact]
+    public void Code_behind_severity_and_chrome_colors_come_from_the_theme_palette()
+    {
+        // Severity rows, log rows, and the native title bar used to paint from
+        // private hex palettes constructed in code-behind, which the XAML scans
+        // above cannot see. Those literals must not come back.
+        var diagnostics = GuiSource.Text("Views", "DiagnosticsView.xaml.cs");
+        var log = GuiSource.Text("Views", "LogView.xaml.cs");
+        var shell = GuiSource.Text("MainWindow.xaml.cs");
+
+        Assert.DoesNotContain("FromArgb(", diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain("FromArgb(", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColorHelper.FromArgb", shell, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Welcome_overlay_paints_only_from_theme_tokens()
     {
         var overlay = GuiSource.Text("Controls", "WelcomeOverlay.cs");

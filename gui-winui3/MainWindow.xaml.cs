@@ -114,28 +114,22 @@ namespace RuApp
             LabelThemeToggle.Text = label;
             ThemeToggleIcon.Glyph = isDark ? "\uE793" : "\uE706";
             AutomationProperties.SetName(ThemeToggleButton, label);
-            ApplyTitleBarTheme(isDark);
+            ApplyTitleBarTheme();
         }
 
-        private void ApplyTitleBarTheme(bool isDark)
+        private void ApplyTitleBarTheme()
         {
             if (_appWindow?.TitleBar is not { } titleBar)
             {
                 return;
             }
 
-            var foreground = isDark
-                ? Microsoft.UI.ColorHelper.FromArgb(255, 238, 242, 235)
-                : Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
-            var muted = isDark
-                ? Microsoft.UI.ColorHelper.FromArgb(255, 169, 179, 167)
-                : Microsoft.UI.ColorHelper.FromArgb(255, 95, 104, 95);
-            var hover = isDark
-                ? Microsoft.UI.ColorHelper.FromArgb(255, 45, 54, 47)
-                : Microsoft.UI.ColorHelper.FromArgb(255, 217, 221, 213);
-            var pressed = isDark
-                ? Microsoft.UI.ColorHelper.FromArgb(255, 57, 68, 58)
-                : Microsoft.UI.ColorHelper.FromArgb(255, 200, 206, 198);
+            // The native title bar takes Colors, but they come from the theme
+            // palette so the chrome cannot drift from the app theme.
+            var foreground = ((SolidColorBrush)Application.Current.Resources["RuInkBrush"]).Color;
+            var muted = ((SolidColorBrush)Application.Current.Resources["RuMutedBrush"]).Color;
+            var hover = ((SolidColorBrush)Application.Current.Resources["RuAccentSoftBrush"]).Color;
+            var pressed = ((SolidColorBrush)Application.Current.Resources["RuLineBrush"]).Color;
 
             titleBar.ButtonForegroundColor = foreground;
             titleBar.ButtonHoverForegroundColor = foreground;
@@ -470,6 +464,7 @@ namespace RuApp
         }
 
         private bool _isSettingsModalOpen;
+        private object? _settingsModalPreviousFocus;
 
         private void OnSettingsModalOverlaySizeChanged(object sender, SizeChangedEventArgs e)
         {
@@ -498,6 +493,7 @@ namespace RuApp
 
             NavSettings.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
             NavSettings.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+            _settingsModalPreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSettingsButton?.Focus(FocusState.Programmatic);
         }
 
@@ -523,6 +519,13 @@ namespace RuApp
                 NavSettings.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                 NavSettings.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
             }
+
+            if (_settingsModalPreviousFocus is Control previousFocus)
+            {
+                previousFocus.Focus(FocusState.Programmatic);
+            }
+
+            _settingsModalPreviousFocus = null;
         }
 
         private void OnSettingsBackdropPointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
@@ -1003,6 +1006,15 @@ namespace RuApp
         {
             if (_apiService == null || _chatView == null) return;
             var session = await _apiService.CreateSessionAsync();
+            if (session is null)
+            {
+                // A dead button with no explanation is indistinguishable from a
+                // broken one: say the session could not be created.
+                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                StatusText.Text = "Could not create a new chat session";
+                return;
+            }
+
             if (session != null)
             {
                 await LoadSessionsAsync();

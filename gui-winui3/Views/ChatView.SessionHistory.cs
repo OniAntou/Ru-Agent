@@ -160,7 +160,10 @@ namespace RuApp.Views
             }
             catch (Exception exception)
             {
-                ShowAgentError(exception);
+                // The run may still be alive server-side, so this is a refresh
+                // failure, not a start failure: say exactly that instead of
+                // dropping it behind the start-failure copy.
+                ShowAgentInlineStatus($"Could not refresh the Coding Agent run: {exception.Message}");
             }
         }
 
@@ -211,7 +214,7 @@ namespace RuApp.Views
                             Messages.Add(streamedMessage);
                         }
 
-                        streamedMessage.Content = streamedReply;
+                        streamedMessage.Content = streamedReply ?? string.Empty;
                         streamedMessage.IsStreaming = false;
                         streamedMessage.Usage = _activeAgentUsage;
                         UpdateLiveTailText(streamedMessage);
@@ -513,7 +516,18 @@ namespace RuApp.Views
                     CloseButtonText = "Close",
                     XamlRoot = XamlRoot,
                 };
-                await dialog.ShowAsync();
+                try
+                {
+                    await dialog.ShowAsync();
+                }
+                catch (Exception ex)
+                {
+                    // WinUI throws when a dialog opens while another one is
+                    // still up; an async void handler would take the dispatcher
+                    // down with it.
+                    System.Diagnostics.Debug.WriteLine($"[ChatView] Image preview dialog failed: {ex.Message}");
+                    ShowAgentInlineStatus("Could not open the image preview.");
+                }
             }
         }
 
@@ -774,8 +788,14 @@ namespace RuApp.Views
                 _sessionOpenGenerationSessionId = sessionId;
                 // The generation bump is what tells a load still in flight for the previous
                 // session that it has been superseded, so it stops instead of painting its
-                // history under this session's title.
+                // history under this session's title. The open token stops the superseded
+                // load's I/O as well, instead of only discarding its paint.
+                var previousOpenCts = _sessionOpenCts;
+                _sessionOpenCts = new CancellationTokenSource();
+                previousOpenCts?.Cancel();
+                previousOpenCts?.Dispose();
                 var generation = ++_sessionOpenGeneration;
+                var openToken = _sessionOpenCts.Token;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
                 JumpToLatestForNewTurn();
@@ -799,7 +819,7 @@ namespace RuApp.Views
                 // what makes the activity feed survive leaving the session or closing the app;
                 // without it the rows exist only as transient frames and are gone the moment
                 // the live connection ends.
-                var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, CancellationToken.None);
+                var replayedRuns = await LoadReplayedRunActivitiesAsync(sessionId, openToken);
                 if (!IsCurrentOpen(generation)) return;
 
                 if (history != null)
@@ -839,6 +859,13 @@ namespace RuApp.Views
                         {
                             item.AgentActivities = new ObservableCollection<AgentActivityItem>(
                                 replayedRuns[placement.ReplayIndex]);
+                            // Register by id so live frames for a still-running run
+                            // update these rows in place instead of appending
+                            // duplicates beside them, same as the reopen path above.
+                            foreach (var replayed in item.AgentActivities)
+                            {
+                                _agentActivityById.TryAdd(replayed.ActivityId, replayed);
+                            }
                         }
 
                         Messages.Add(item);
@@ -854,7 +881,7 @@ namespace RuApp.Views
                 // has no provider report and the meter hides its system-plus-
                 // tools row. Replay the newest durable report onto the last
                 // assistant bubble; the forced repaint below picks it up.
-                var restoredUsage = await _apiService.GetLatestSessionUsageAsync(sessionId, CancellationToken.None);
+                var restoredUsage = await _apiService.GetLatestSessionUsageAsync(sessionId, openToken);
                 if (restoredUsage is not null && IsCurrentOpen(generation))
                 {
                     _activeAgentUsage = restoredUsage;
@@ -869,6 +896,11 @@ namespace RuApp.Views
                         }
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer open superseded this load: its token cancelled the I/O
+                // on purpose, and the newer session owns the screen.
             }
             catch (Exception ex)
             {
@@ -1039,7 +1071,7 @@ namespace RuApp.Views
 
                 try
                 {
-                    var branchTitle = $"{_activeSessionTitle} (Nhánh @ {index + 1})";
+                    var branchTitle = $"{_activeSessionTitle} (branch @ {index + 1})";
                     var forked = await _apiService.ForkSessionAsync(_activeSessionId, index, branchTitle);
                     if (forked != null)
                     {
@@ -1050,6 +1082,7 @@ namespace RuApp.Views
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"[ChatView] Error forking session: {ex.Message}");
+                    ShowAgentInlineStatus($"Could not fork the session: {ex.Message}");
                 }
             }
         }
@@ -1077,6 +1110,7 @@ namespace RuApp.Views
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"[ChatView] Error rewinding session: {ex.Message}");
+                    ShowAgentInlineStatus($"Could not rewind the session: {ex.Message}");
                 }
             }
         }
@@ -1086,6 +1120,9 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
+            _sessionOpenCts?.Cancel();
+            _sessionOpenCts?.Dispose();
+            _sessionOpenCts = null;
             if (_contextMeterTimer is not null)
             {
                 _contextMeterTimer.Tick -= OnContextMeterTimerTick;

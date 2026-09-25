@@ -308,6 +308,7 @@ namespace RuApp
         }
 
         private bool _isSessionUsageOpen;
+        private object? _sessionUsagePreviousFocus;
 
         private async Task OpenSessionUsageAsync(string sessionId, string? sessionTitle)
         {
@@ -319,6 +320,7 @@ namespace RuApp
             _isSessionUsageOpen = true;
             SessionUsageOverlay.Visibility = Visibility.Visible;
             ApplySessionUsageCardSize();
+            _sessionUsagePreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSessionUsageButton?.Focus(FocusState.Programmatic);
 
             await SessionUsagePanelControl.LoadAsync(_apiService, sessionId, sessionTitle);
@@ -333,6 +335,13 @@ namespace RuApp
 
             _isSessionUsageOpen = false;
             SessionUsageOverlay.Visibility = Visibility.Collapsed;
+
+            if (_sessionUsagePreviousFocus is Control previousFocus)
+            {
+                previousFocus.Focus(FocusState.Programmatic);
+            }
+
+            _sessionUsagePreviousFocus = null;
         }
 
         private void OnSessionUsageOverlaySizeChanged(object sender, SizeChangedEventArgs e)

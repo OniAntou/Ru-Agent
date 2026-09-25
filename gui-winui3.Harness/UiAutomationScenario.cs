@@ -43,7 +43,7 @@ public sealed class UiAutomationScenario : IAsyncDisposable
             AutomationElement button = await WaitForElementAsync(NewSessionAutomationId, timeout);
             Invoke(button);
             bool replaced = await WaitUntilAsync(
-                () => CountVisibleMessageItems() == 0,
+                () => VisibleMessageNames().Count == 0,
                 timeout);
             return Check(
                 "gui.session_replace",
@@ -78,7 +78,7 @@ public sealed class UiAutomationScenario : IAsyncDisposable
         {
             AutomationElement input = await WaitForElementAsync(ChatInputAutomationId, timeout);
             stage = "set_chat_input";
-            SetValue(input, "Harness agent turn");
+            SetValue(input, HarnessUserPrompt);
             stage = "find_send_button";
             AutomationElement send = await WaitForElementAsync(SendButtonAutomationId, timeout);
             stage = "invoke_send";
@@ -91,10 +91,16 @@ public sealed class UiAutomationScenario : IAsyncDisposable
             if (activity && scenario is "agent-cancel" or "agent-stale-result")
             {
                 HarnessGuiCheck replaced = await ReplaceSessionAsync(timeout);
-                await Task.Delay(TimeSpan.FromSeconds(2));
-                bool noLateAgentUpdate = !HasUserAndAssistantMessages()
-                    && !VisibleMessageContainsPrivateMarker()
-                    && !AgentSurfaceContainsPrivateMarker();
+                // A negative can only be watched for a bounded window, but the
+                // watch fails the moment a late update appears instead of only
+                // sampling after a fixed sleep, so a 1.9-second-late render can
+                // no longer slip through the gap.
+                bool lateUpdateSeen = await WaitUntilAsync(
+                    () => HasUserAndAssistantMessages()
+                        || VisibleMessageContainsPrivateMarker()
+                        || AgentSurfaceContainsPrivateMarker(),
+                    TimeSpan.FromSeconds(2));
+                bool noLateAgentUpdate = !lateUpdateSeen;
                 bool lifecyclePassed = replaced.Status == "passed"
                     && noLateAgentUpdate;
                 return Check(
@@ -127,7 +133,7 @@ public sealed class UiAutomationScenario : IAsyncDisposable
                 passed
                     ? null
                     : $"agent_assertions_failed:activity={activity};"
-                        + $"message_items={CountVisibleMessageItems()};"
+                        + $"message_items={VisibleMessageNames().Count};"
                         + $"reply_contract={truthfulAgentReply};"
                         + $"private_absent={privateAbsent}");
         }
@@ -285,21 +291,31 @@ public sealed class UiAutomationScenario : IAsyncDisposable
         return _window;
     }
 
-    private bool HasUserAndAssistantMessages()
-        => CountVisibleMessageItems() >= 2;
+    private const string HarnessUserPrompt = "Harness agent turn";
 
-    private int CountVisibleMessageItems()
+    private bool HasUserAndAssistantMessages()
+    {
+        // Counting rows cannot tell one user echo from two user messages: the
+        // user row is the text this harness typed, so the assistant reply must
+        // be a different row.
+        IReadOnlyList<string> names = VisibleMessageNames();
+        bool hasUser = names.Any(name => name.Contains(HarnessUserPrompt, StringComparison.Ordinal));
+        bool hasReply = names.Any(name => !name.Contains(HarnessUserPrompt, StringComparison.Ordinal));
+        return hasUser && hasReply;
+    }
+
+    private IReadOnlyList<string> VisibleMessageNames()
     {
         AutomationElement? messages = FindByAutomationId(ChatMessagesAutomationId);
         if (messages == null)
         {
-            return 0;
+            return Array.Empty<string>();
         }
 
         AutomationElementCollection items = messages.FindAll(
             TreeScope.Descendants,
             new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
-        return items.Count;
+        return items.Cast<AutomationElement>().Select(GetName).ToArray();
     }
 
     private bool VisibleMessageContainsPrivateMarker()
@@ -335,7 +351,9 @@ public sealed class UiAutomationScenario : IAsyncDisposable
     private bool AgentSurfaceContainsPrivateMarker()
     {
         string activity = GetName(FindByAutomationId(AgentActivityAutomationId));
-        string[] forbidden = ["token", "secret", "arguments", "request_body", "transcript"];
+        // Credential-shaped markers only: a bare "token" also matches honest copy
+        // like "tokens used" and failed the harness for a non-leak.
+        string[] forbidden = ["access_token", "bearer ", "api_key", "apikey", "secret", "arguments", "request_body", "transcript"];
         return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 

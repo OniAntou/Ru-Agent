@@ -228,7 +228,7 @@
             </Setter>
         </Style>
         <DataTemplate x:Key="WorkspaceGroupTemplate" x:DataType="services:WorkspaceGroupRow">
-            <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}" CommandParameter="{x:Bind IsExpanded, Mode=OneWay}" PointerEntered="WorkspaceGroupToggle_PointerEntered" PointerExited="WorkspaceGroupToggle_PointerExited"
+            <Button x:Name="WorkspaceGroupToggle" Click="OnWorkspaceGroupClick" Tag="{x:Bind Group.Key}" CommandParameter="{x:Bind IsExpanded, Mode=OneTime}" PointerEntered="WorkspaceGroupToggle_PointerEntered" PointerExited="WorkspaceGroupToggle_PointerExited"
                     Style="{StaticResource WorkspaceRowButtonStyle}"
                     ToolTipService.ToolTip="{x:Bind Group.Path}">
                 <Button.ContextFlyout>

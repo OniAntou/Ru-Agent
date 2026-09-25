@@ -775,6 +775,25 @@ public sealed class AgentActivityItemTests
         Assert.True(item.IsVisibleInFeed);
     }
 
+    [Fact]
+    public void A_row_settled_by_interruption_keeps_that_outcome_when_a_deferred_frame_arrives()
+    {
+        var item = new AgentActivityItem(Activity(
+            AgentActivityState.Started,
+            kind: AgentActivityKind.Terminal,
+            detail: "git status"));
+        item.SettleInterruptedRun();
+
+        var applied = item.UpdateFrom(Activity(
+            AgentActivityState.Completed,
+            kind: AgentActivityKind.Terminal,
+            detail: "git status"));
+
+        Assert.False(applied);
+        Assert.True(item.IsSettledInterruption);
+        Assert.True(item.IsFailed);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,

@@ -137,6 +137,9 @@ namespace RuApp.Views
 
             AgentActivityGrouper.SettleRunningRows(AgentActivities);
             AgentActivityGrouper.Reconcile(AgentActivities);
+            // A block that never recorded its completion cannot keep claiming
+            // "running" once the run has ended.
+            TerminalPanelControl.SettleRunningBlocks();
         }
 
         private void ApplyAgentActivity(AgentActivityModel activity, bool allowWhenIdle = false)
@@ -181,6 +184,14 @@ namespace RuApp.Views
         /// know how the terminal panel names its blocks, which is the panel's business.
         /// </remarks>
         private AgentActivityItem? _runningTerminalItem;
+
+        /// <summary>
+        /// The panel block the running command streams into, bound on its first
+        /// output chunk. Completion settles the block by this id, never by label:
+        /// "Running X" and "Ran X" are different strings, and settling the newest
+        /// unfinished block instead would land one command's outcome on another.
+        /// </summary>
+        private string? _runningTerminalExecutionId;
 
         private void TrackTerminalOutputRow(AgentActivityItem item)
         {
@@ -343,7 +354,7 @@ namespace RuApp.Views
 
         private void TrackTerminalToolState(AgentActivityItem item)
         {
-            if (item.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking)
+            if (item.Kind != RuAgent.Protocol.Harness.AgentActivityKind.Terminal)
             {
                 return;
             }
@@ -351,13 +362,16 @@ namespace RuApp.Views
             if (item.State == RuAgent.Protocol.Harness.AgentActivityState.Started)
             {
                 TerminalPanelControl.NoteToolLabel(item.DisplayText);
+                _runningTerminalExecutionId = null;
                 return;
             }
 
             if (item.State is RuAgent.Protocol.Harness.AgentActivityState.Completed
                 or RuAgent.Protocol.Harness.AgentActivityState.Failed)
             {
-                CompleteTerminalBlock(item.DisplayText, failed: item.State == RuAgent.Protocol.Harness.AgentActivityState.Failed);
+                CompleteTerminalBlock(
+                    _runningTerminalExecutionId,
+                    failed: item.State == RuAgent.Protocol.Harness.AgentActivityState.Failed);
             }
         }
 
@@ -402,7 +416,7 @@ namespace RuApp.Views
             {
                 content.Append('\n').Append(item.MetadataText);
             }
-            if (_agentController.CanContinue)
+            if (_agentController is { CanContinue: true })
             {
                 content.Append("\nType **Continue** to resume.");
             }
@@ -629,6 +643,7 @@ namespace RuApp.Views
             }
 
             TerminalPanelControl.AppendOutput(output.ExecutionId, output.Text);
+            _runningTerminalExecutionId ??= output.ExecutionId;
 
             // The feed row for the command being run reads the same stream, so the reader
             // can see what a command printed without leaving the transcript. A row that
@@ -636,13 +651,17 @@ namespace RuApp.Views
             _runningTerminalItem?.AppendTerminalOutput(output.Text);
         }
 
-        private void CompleteTerminalBlock(string label, bool failed) =>
-            TerminalPanelControl.CompleteBlock(label, failed);
+        private void CompleteTerminalBlock(string? executionId, bool failed)
+        {
+            TerminalPanelControl.CompleteBlock(executionId, failed);
+            _runningTerminalExecutionId = null;
+        }
 
         private void ClearTerminalBlocks()
         {
             TerminalPanelControl.Clear();
             _runningTerminalItem = null;
+            _runningTerminalExecutionId = null;
         }
 
         // ── Activity text wave animation ──────────────────────────────

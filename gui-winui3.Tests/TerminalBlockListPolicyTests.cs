@@ -1,3 +1,4 @@
+using RuApp.Models;
 using RuApp.Services;
 using Xunit;
 
@@ -93,5 +94,90 @@ public sealed class TerminalBlockListPolicyTests
     public void A_non_positive_cap_is_rejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => TerminalBlockListPolicy.EvictionCount(3, 0));
+    }
+
+    [Fact]
+    public void A_completion_settles_the_block_of_its_own_execution()
+    {
+        var older = new TerminalOutputBlock("exec_a", "Running first");
+        var newer = new TerminalOutputBlock("exec_b", "Running second");
+        var blocks = new List<TerminalOutputBlock> { older, newer };
+
+        var target = TerminalBlockListPolicy.SelectCompletionTarget(blocks, "exec_a");
+
+        Assert.Same(older, target);
+    }
+
+    [Fact]
+    public void A_completion_never_settles_another_execution_s_block()
+    {
+        // The old label matching ("Running X" recorded, "Ran X" completed) fell
+        // through to the newest unfinished block here, landing one command's
+        // outcome on another command's output.
+        var block = new TerminalOutputBlock("exec_a", "Running first");
+        var blocks = new List<TerminalOutputBlock> { block };
+
+        var target = TerminalBlockListPolicy.SelectCompletionTarget(blocks, "exec_other");
+
+        Assert.Null(target);
+        Assert.False(block.IsCompleted);
+    }
+
+    [Fact]
+    public void A_completion_without_a_known_id_settles_the_newest_unfinished_block()
+    {
+        var older = new TerminalOutputBlock("exec_a", "Running first");
+        var newer = new TerminalOutputBlock("exec_b", "Running second");
+        var blocks = new List<TerminalOutputBlock> { older, newer };
+
+        var target = TerminalBlockListPolicy.SelectCompletionTarget(blocks, null);
+
+        Assert.Same(newer, target);
+    }
+
+    [Fact]
+    public void A_completion_never_retargets_a_block_that_already_settled()
+    {
+        var settled = new TerminalOutputBlock("exec_a", "Ran first");
+        settled.Complete(failed: false);
+        var open = new TerminalOutputBlock("exec_b", "Running second");
+        var blocks = new List<TerminalOutputBlock> { settled, open };
+
+        Assert.Null(TerminalBlockListPolicy.SelectCompletionTarget(blocks, "exec_a"));
+    }
+
+    [Fact]
+    public void With_no_unfinished_block_a_completion_settles_nothing()
+    {
+        var block = new TerminalOutputBlock("exec_a", "Ran first");
+        block.Complete(failed: true);
+        var blocks = new List<TerminalOutputBlock> { block };
+
+        Assert.Null(TerminalBlockListPolicy.SelectCompletionTarget(blocks, null));
+        Assert.Null(TerminalBlockListPolicy.SelectCompletionTarget(blocks, "exec_a"));
+    }
+
+    [Fact]
+    public void A_block_settles_once_and_carries_the_outcome_in_its_state_text()
+    {
+        var block = new TerminalOutputBlock("exec_a", "Running first");
+        Assert.Equal("running", block.StateText);
+
+        block.Complete(failed: true);
+        Assert.Equal("failed", block.StateText);
+
+        block.Complete(failed: false);
+        Assert.Equal("failed", block.StateText);
+    }
+
+    [Fact]
+    public void A_settled_block_stops_accepting_output()
+    {
+        var block = new TerminalOutputBlock("exec_a", "Ran first");
+        block.Complete(failed: false);
+
+        block.AppendText("late chunk");
+
+        Assert.Equal(string.Empty, block.Text);
     }
 }

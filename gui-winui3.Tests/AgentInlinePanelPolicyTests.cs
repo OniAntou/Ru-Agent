@@ -34,13 +34,12 @@ public sealed class AgentInlinePanelPolicyTests
     }
 
     [Fact]
-    public void An_idle_turn_with_nothing_to_act_on_collapses_and_resets_activity_visibility()
+    public void An_idle_turn_with_nothing_to_act_on_collapses()
     {
         var state = AgentInlinePanelPolicy.Evaluate(Input());
 
         Assert.False(state.ShowInlinePanel);
         Assert.False(state.IsRunning);
-        Assert.True(state.ClearActivityVisibility, "The remembered activity visibility must reset.");
     }
 
     [Theory]
@@ -56,18 +55,29 @@ public sealed class AgentInlinePanelPolicyTests
         // so none of them may be dropped by the idle branch.
         var input = flag switch
         {
-            nameof(AgentInlinePanelInput.IsBusy) => Input(isBusy: true),
-            nameof(AgentInlinePanelInput.CanCancel) => Input(canCancel: true),
-            nameof(AgentInlinePanelInput.HasPendingApproval) => Input(hasPendingApproval: true),
-            nameof(AgentInlinePanelInput.NeedsWorkspaceTrust) => Input(needsWorkspaceTrust: true),
-            nameof(AgentInlinePanelInput.CanContinue) => Input(canContinue: true),
-            nameof(AgentInlinePanelInput.KeepTerminalFailureVisible) => Input(keepTerminalFailureVisible: true),
+            nameof(AgentInlinePanelInput.IsBusy) => Input(isBusy: true, statusText: "working"),
+            nameof(AgentInlinePanelInput.CanCancel) => Input(canCancel: true, statusText: "working"),
+            nameof(AgentInlinePanelInput.HasPendingApproval) => Input(hasPendingApproval: true, statusText: "working"),
+            nameof(AgentInlinePanelInput.NeedsWorkspaceTrust) => Input(needsWorkspaceTrust: true, statusText: "working"),
+            nameof(AgentInlinePanelInput.CanContinue) => Input(canContinue: true, statusText: "working"),
+            nameof(AgentInlinePanelInput.KeepTerminalFailureVisible) => Input(keepTerminalFailureVisible: true, statusText: "working"),
             _ => throw new ArgumentOutOfRangeException(nameof(flag)),
         };
 
         var state = AgentInlinePanelPolicy.Evaluate(input);
 
-        Assert.False(state.ClearActivityVisibility, $"{flag} must not reset activity visibility.");
+        Assert.True(state.ShowInlinePanel, $"{flag} must keep the panel from collapsing.");
+    }
+
+    [Fact]
+    public void The_removed_activity_visibility_flag_cannot_return()
+    {
+        // The flag drove an auto-expand behaviour that was deleted with its
+        // guard; the empty consumer branch is gone too, so the projection must
+        // not quietly grow the promise again.
+        string code = GuiSource.Text("Services", "AgentInlinePanelPolicy.cs");
+
+        Assert.DoesNotContain("ClearActivityVisibility", code, StringComparison.Ordinal);
     }
 
     [Fact]

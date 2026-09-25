@@ -231,9 +231,10 @@ public sealed class GroupedProviderCatalogControllerTests
         await controller.DisposeAsync();
         var eventsAtDispose = events;
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
-        await Task.Delay(50);
-        Assert.Equal(eventsAtDispose, events);
+        // Awaiting the refresh orders every publication in its own pipeline, so
+        // the no-event assertion needs no sleep window to be deterministic.
         Assert.False(await refresh);
+        Assert.Equal(eventsAtDispose, events);
 
         controller.SetSelection("openai", "model");
         Assert.Equal(eventsAtDispose, events);

@@ -605,9 +605,9 @@ namespace RuApp.Views
 
         public SolidColorBrush LevelBrush => Level.ToUpperInvariant() switch
         {
-            "ERROR" or "CRITICAL" => new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 239, 68, 68)),
-            "WARNING" or "WARN" => new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 245, 158, 11)),
-            _ => new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 59, 130, 246)),
+            "ERROR" or "CRITICAL" => (SolidColorBrush)Application.Current.Resources["RuDangerBrush"],
+            "WARNING" or "WARN" => (SolidColorBrush)Application.Current.Resources["RuWarningBrush"],
+            _ => (SolidColorBrush)Application.Current.Resources["RuInfoBrush"],
         };
 
         public SolidColorBrush DotBrush => LevelBrush;

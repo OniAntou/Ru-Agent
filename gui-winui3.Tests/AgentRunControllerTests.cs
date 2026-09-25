@@ -374,9 +374,10 @@ public sealed class AgentRunControllerTests
             null,
             "idem-late-delta"));
 
-        for (var attempt = 0; attempt < 100 && controller.CurrentRun is null; attempt++)
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (controller.CurrentRun is null && DateTime.UtcNow < deadline)
         {
-            await Task.Delay(1);
+            await Task.Delay(10);
         }
 
         Assert.NotNull(controller.CurrentRun);

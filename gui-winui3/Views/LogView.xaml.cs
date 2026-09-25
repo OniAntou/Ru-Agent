@@ -347,11 +347,10 @@ namespace RuApp.Views
 
     public sealed class LogRow
     {
-        private static readonly SolidColorBrush ChatBrush = FromArgb(0xFF, 0x3C, 0x87, 0xFF);
-        private static readonly SolidColorBrush EmotionBrush = FromArgb(0xFF, 0xB0, 0x6E, 0xF0);
-        private static readonly SolidColorBrush VtsBrush = FromArgb(0xFF, 0xFF, 0x5C, 0x92);
-        private static readonly SolidColorBrush ObservationBrush = FromArgb(0xFF, 0x2D, 0xC9, 0xB8);
-        private static readonly SolidColorBrush InfoBrush = FromArgb(0xFF, 0x8A, 0x8A, 0x8A);
+        // Legacy record kinds (chat/emotion/vts/observation) still render, but
+        // they paint from the theme palette like everything else.
+        private static SolidColorBrush Brush(string key) =>
+            (SolidColorBrush)Application.Current.Resources[key];
 
         public string Time { get; }
         public string Badge { get; }
@@ -369,21 +368,13 @@ namespace RuApp.Views
             Detail = detail;
             DotBrush = kind switch
             {
-                LogRowKind.Chat => ChatBrush,
-                LogRowKind.Emotion => EmotionBrush,
-                LogRowKind.Vts => VtsBrush,
-                LogRowKind.Observation => ObservationBrush,
-                _ => InfoBrush,
+                LogRowKind.Chat => Brush("RuInfoBrush"),
+                LogRowKind.Emotion => Brush("RuVioletBrush"),
+                LogRowKind.Vts => Brush("RuPinkBrush"),
+                LogRowKind.Observation => Brush("RuSuccessBrush"),
+                _ => Brush("RuMutedBrush"),
             };
             LabelBrush = DotBrush;
         }
-
-        private static SolidColorBrush FromArgb(byte a, byte r, byte g, byte b)
-        {
-            var brush = new SolidColorBrush();
-            brush.Color = Windows.UI.Color.FromArgb(a, r, g, b);
-            return brush;
-        }
-
     }
 }

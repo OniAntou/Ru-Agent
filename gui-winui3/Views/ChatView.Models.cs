@@ -430,7 +430,7 @@ namespace RuApp.Views
             }
 
             var (totalChars, totalImages) = AgentContextMeterPolicy.Measure(
-                Messages.Select(message => (message.Content, message.Attachments?.Count ?? 0)),
+                Messages.Select(message => ((string?)message.Content, message.Attachments?.Count ?? 0)),
                 draftText,
                 PendingAttachments.Count);
 

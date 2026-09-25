@@ -341,7 +341,7 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("DisplayTime", GuiSource.AttributeValue(timeText, "Text"));
 
         var app = GuiSource.Xml("App.xaml");
-        Assert.True(app.Descendants().Any(element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "SessionTimeConverter"));
+        Assert.Contains(app.Descendants(), element => element.Attribute(GuiSource.Xaml + "Key")?.Value == "SessionTimeConverter");
 
     }
 

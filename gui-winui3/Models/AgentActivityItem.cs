@@ -680,6 +680,14 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
             return false;
         }
 
+        // A row settled by SettleInterruptedRun keeps that outcome: a deferred
+        // frame arriving after the run ended must not turn the interruption into
+        // a completion, and must not replace its wording.
+        if (IsSettledInterruption)
+        {
+            return false;
+        }
+
         Apply(activity);
         return true;
     }

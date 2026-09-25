@@ -94,6 +94,7 @@ namespace RuApp.Views
         /// newer attempt has taken over.
         /// </summary>
         private long _sessionOpenGeneration;
+        private CancellationTokenSource? _sessionOpenCts;
 
         /// <summary>The session <see cref="_sessionOpenGeneration"/> was opened for.</summary>
         private string _sessionOpenGenerationSessionId = string.Empty;

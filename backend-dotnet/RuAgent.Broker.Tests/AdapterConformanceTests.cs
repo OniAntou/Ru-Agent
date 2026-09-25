@@ -22,8 +22,7 @@ public sealed class AdapterConformanceTests
 
             JsonObject read = files.Read("data/value.txt");
             var terminal = new TerminalAdapter(
-                guard,
-                new ShellRuntimeResolver());
+                guard);
             StreamingProcessResult result = await terminal.RunAsync(
                 MakeGrant(),
                 new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000),

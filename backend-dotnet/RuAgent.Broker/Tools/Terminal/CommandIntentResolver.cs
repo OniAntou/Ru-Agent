@@ -37,6 +37,11 @@ public sealed class CommandIntentResolver
     private static readonly FrozenSet<string> ShellRuntimeAllowlist =
         new[] { "powershell", "pwsh" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    // The fixed invocation prefix for both allowlisted runtimes. It is part of
+    // the canonical argv so the approval-bound intent hash covers the exact
+    // command line that will execute.
+    private static readonly string[] ShellPrefixArguments = ["-NoProfile", "-NonInteractive", "-Command"];
+
     private static readonly string[] WindowsExecutableExtensions = [".com", ".exe", ".bat", ".cmd"];
 
     private readonly CanonicalPathResolver _paths;
@@ -102,7 +107,7 @@ public sealed class CommandIntentResolver
         var resolvedExecutable = ResolvePowerShellExecutable(runtime);
         return BuildIntent(
             resolvedExecutable,
-            [request.Script],
+            [.. ShellPrefixArguments, request.Script],
             workingDirectory,
             request.NetworkIntent,
             timeoutMs);

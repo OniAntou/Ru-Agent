@@ -223,6 +223,138 @@ public sealed class CanonicalPathResolverTests : IDisposable
         Assert.Contains("Alternate data streams", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Broken_link_is_classified_by_its_target_not_its_location()
+    {
+        var missingTarget = Path.Combine(Path.GetTempPath(), "ru-broken-target-" + Guid.NewGuid().ToString("N"));
+        var link = Path.Combine(_root, "broken");
+        var created = TryCreateJunction(link, missingTarget);
+        if (!created)
+        {
+            return;
+        }
+
+        try
+        {
+            var resolved = _resolver.Resolve(@"broken\child.txt");
+
+            Assert.NotEqual(PathClassification.InsideWorkspace, resolved.Classification);
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(missingTarget, "child.txt")),
+                resolved.CanonicalPath,
+                ignoreCase: true,
+                ignoreWhiteSpaceDifferences: false);
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+            {
+                Directory.Delete(link, recursive: false);
+            }
+        }
+    }
+
+    [Fact]
+    public void Broken_link_pointing_inside_the_workspace_stays_inside()
+    {
+        var insideTarget = Path.Combine(_root, "missingdir");
+        var link = Path.Combine(_root, "broken-inside");
+        var created = TryCreateJunction(link, insideTarget);
+        if (!created)
+        {
+            return;
+        }
+
+        try
+        {
+            var resolved = _resolver.Resolve(@"broken-inside\child.txt");
+
+            Assert.Equal(PathClassification.InsideWorkspace, resolved.Classification);
+            Assert.Equal(
+                Path.GetFullPath(Path.Combine(insideTarget, "child.txt")),
+                resolved.CanonicalPath,
+                ignoreCase: true,
+                ignoreWhiteSpaceDifferences: false);
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+            {
+                Directory.Delete(link, recursive: false);
+            }
+        }
+    }
+
+    [Fact]
+    public void Broken_file_link_is_classified_by_its_target_not_its_location()
+    {
+        var missingTarget = Path.Combine(Path.GetTempPath(), "ru-broken-file-target-" + Guid.NewGuid().ToString("N"));
+        var link = Path.Combine(_root, "broken-file.txt");
+        var created = TryCreateFileLink(link, missingTarget);
+        if (!created)
+        {
+            return;
+        }
+
+        try
+        {
+            var resolved = _resolver.Resolve(@"broken-file.txt");
+
+            Assert.NotEqual(PathClassification.InsideWorkspace, resolved.Classification);
+            Assert.Equal(
+                Path.GetFullPath(missingTarget),
+                resolved.CanonicalPath,
+                ignoreCase: true,
+                ignoreWhiteSpaceDifferences: false);
+        }
+        finally
+        {
+            if (File.Exists(link) || Directory.Exists(link))
+            {
+                File.Delete(link);
+            }
+        }
+    }
+
+    [Fact]
+    public void Circular_links_are_rejected()
+    {
+        var cycleA = Path.Combine(_root, "cycle-a");
+        var cycleB = Path.Combine(_root, "cycle-b");
+        var createdA = TryCreateJunction(cycleA, cycleB);
+        var createdB = TryCreateJunction(cycleB, cycleA);
+        if (!createdA || !createdB)
+        {
+            TryDeleteLink(cycleA);
+            TryDeleteLink(cycleB);
+            return;
+        }
+
+        try
+        {
+            Assert.ThrowsAny<ArgumentException>(() => _resolver.Resolve(@"cycle-a\file.txt"));
+        }
+        finally
+        {
+            TryDeleteLink(cycleA);
+            TryDeleteLink(cycleB);
+        }
+    }
+
+    private static void TryDeleteLink(string link)
+    {
+        try
+        {
+            if (Directory.Exists(link) || File.Exists(link))
+            {
+                Directory.Delete(link, recursive: false);
+            }
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     private static bool TryCreateJunction(string junctionPath, string targetPath)
     {
         try
@@ -244,6 +376,34 @@ public sealed class CanonicalPathResolverTests : IDisposable
             using var process = System.Diagnostics.Process.Start(info);
             process?.WaitForExit(5_000);
             return Directory.Exists(junctionPath);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryCreateFileLink(string linkPath, string targetPath)
+    {
+        try
+        {
+            if (File.Exists(linkPath))
+            {
+                return true;
+            }
+
+            var info = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink \"{linkPath}\" \"{targetPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var process = System.Diagnostics.Process.Start(info);
+            process?.WaitForExit(5_000);
+            return File.Exists(linkPath);
         }
         catch
         {

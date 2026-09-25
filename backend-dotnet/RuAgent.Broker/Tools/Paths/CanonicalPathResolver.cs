@@ -96,220 +96,109 @@ public sealed class CanonicalPathResolver
                || previous.Classification != current.Classification;
     }
 
+    private const int MaxLinkHops = 32;
+
     private string ResolveFinalPath(string path)
     {
-        // If path exists, try to get final path directly.
-        if (File.Exists(path) || Directory.Exists(path))
+        // Fast path: the OS final-path API resolves existing links authoritatively.
+        var final = TryGetFinalPath(path);
+        if (!string.IsNullOrWhiteSpace(final))
         {
-            var final = TryGetFinalPath(path);
-            if (!string.IsNullOrWhiteSpace(final))
-            {
-                return Path.GetFullPath(final);
-            }
+            return Path.GetFullPath(final);
+        }
 
-            // Fallback: try to resolve via link target traversal
-            var linkResolved = TryResolveLinkTarget(path);
-            if (!string.IsNullOrWhiteSpace(linkResolved))
-            {
-                return Path.GetFullPath(linkResolved);
-            }
+        // Managed fallback: walk every segment so links are resolved from their
+        // declared targets (including broken links, which File.Exists reports as
+        // missing). Anything that cannot be proven is rejected: classification
+        // must never run on an unresolved logical name.
+        return ResolveByLinkWalk(path, MaxLinkHops);
+    }
 
+    private static string ResolveByLinkWalk(string path, int hopsLeft)
+    {
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrWhiteSpace(root))
+        {
             return Path.GetFullPath(path);
         }
 
-        // Missing target: find longest existing ancestor, resolve its final, then append suffix.
-        var existingAncestor = FindExistingAncestor(path);
-        if (existingAncestor is null)
+        var relative = Path.GetRelativePath(root, path);
+        if (relative == ".")
         {
-            // No ancestor exists, just normalize logically
-            var fallback = TryGetFinalPath(Path.GetPathRoot(path) ?? string.Empty);
-            if (!string.IsNullOrWhiteSpace(fallback))
+            return Path.GetFullPath(root);
+        }
+
+        var current = root;
+        var segments = relative.Split(
+            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+            StringSplitOptions.RemoveEmptyEntries);
+
+        for (var index = 0; index < segments.Length; index++)
+        {
+            var probe = Path.Combine(current, segments[index]);
+            FileAttributes attributes;
+            try
             {
-                // fallback to root final
+                attributes = File.GetAttributes(probe);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                // Nothing exists from here on, so no link can hide below: the
+                // remaining segments are plain names under the resolved parent.
+                return Path.GetFullPath(Path.Combine(probe, CombineRemaining(segments, index + 1)));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                throw new ArgumentException("Path could not be canonicalized.", ex);
             }
 
-            return Path.GetFullPath(path);
-        }
-
-        var finalAncestor = TryGetFinalPath(existingAncestor);
-        if (string.IsNullOrWhiteSpace(finalAncestor))
-        {
-            finalAncestor = TryResolveLinkTarget(existingAncestor);
-        }
-
-        if (string.IsNullOrWhiteSpace(finalAncestor))
-        {
-            finalAncestor = Path.GetFullPath(existingAncestor);
-        }
-        else
-        {
-            finalAncestor = Path.GetFullPath(finalAncestor);
-        }
-
-        string suffix;
-        try
-        {
-            suffix = Path.GetRelativePath(existingAncestor, path);
-            if (suffix == "." )
+            if ((attributes & FileAttributes.ReparsePoint) == 0)
             {
-                return finalAncestor;
+                current = probe;
+                continue;
             }
 
-            if (suffix.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
-                suffix.Equals("..", StringComparison.Ordinal) ||
-                suffix.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                // GetRelativePath fell back to outside; compute suffix via substring
-                suffix = path.Substring(existingAncestor.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-        }
-        catch
-        {
-            suffix = path.Substring(existingAncestor.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            current = ResolveLinkSegment(probe, attributes, hopsLeft);
         }
 
-        if (string.IsNullOrEmpty(suffix))
-        {
-            return finalAncestor;
-        }
-
-        var combined = Path.Combine(finalAncestor, suffix);
-        // Walk suffix segments for symlink inside suffix? But suffix does not exist, so no symlink.
-        // However intermediate ancestors inside suffix may have been missed if we only resolved top ancestor.
-        // To handle nested junctions inside suffix that don't exist as ancestor (should not happen because we found longest existing ancestor)
-        // suffix is missing, so no further symlink to resolve.
-        return Path.GetFullPath(combined);
+        return Path.GetFullPath(current);
     }
 
-    private static string? FindExistingAncestor(string path)
+    private static string ResolveLinkSegment(string linkPath, FileAttributes attributes, int hopsLeft)
     {
-        var current = path;
-        while (!string.IsNullOrWhiteSpace(current))
+        if (hopsLeft <= 0)
         {
-            var parent = Path.GetDirectoryName(current);
-            if (string.IsNullOrWhiteSpace(parent))
-            {
-                // Check root
-                var root = Path.GetPathRoot(current);
-                if (!string.IsNullOrWhiteSpace(root) && Directory.Exists(root))
-                {
-                    return root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                }
-
-                return null;
-            }
-
-            if (Directory.Exists(parent) || File.Exists(parent))
-            {
-                return Path.GetFullPath(parent);
-            }
-
-            if (Directory.Exists(current) || File.Exists(current))
-            {
-                return Path.GetFullPath(current);
-            }
-
-            current = parent;
+            throw new ArgumentException("Path has too many symbolic links to canonicalize.");
         }
 
-        return null;
-    }
-
-    private static string? TryResolveLinkTarget(string path)
-    {
+        string rawTarget;
         try
         {
-            FileSystemInfo info = Directory.Exists(path) ? new DirectoryInfo(path) : new FileInfo(path);
-            if (info.LinkTarget is null)
-            {
-                // Check parent segments for links via walk
-                return WalkAndResolveLinks(path);
-            }
-
-            var target = info.ResolveLinkTarget(true);
-            if (target is not null)
-            {
-                // Recursively resolve if target itself is link
-                return target.FullName;
-            }
-
-            return null;
+            FileSystemInfo info = (attributes & FileAttributes.Directory) != 0
+                ? new DirectoryInfo(linkPath)
+                : new FileInfo(linkPath);
+            rawTarget = info.LinkTarget
+                ?? throw new ArgumentException("Path link target could not be read.");
         }
-        catch
+        catch (ArgumentException)
         {
-            return null;
+            throw;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            throw new ArgumentException("Path could not be canonicalized.", ex);
+        }
+
+        var absoluteTarget = Path.IsPathRooted(rawTarget)
+            ? Path.GetFullPath(rawTarget)
+            : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(linkPath) ?? string.Empty, rawTarget));
+
+        return ResolveByLinkWalk(absoluteTarget, hopsLeft - 1);
     }
 
-    private static string? WalkAndResolveLinks(string path)
+    private static string CombineRemaining(string[] segments, int start)
     {
-        try
-        {
-            // Walk each segment from root to leaf to find any link
-            var root = Path.GetPathRoot(path);
-            if (string.IsNullOrWhiteSpace(root))
-            {
-                return null;
-            }
-
-            var relative = Path.GetRelativePath(root, path);
-            if (relative == "." || string.IsNullOrWhiteSpace(relative))
-            {
-                return null;
-            }
-
-            var segments = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
-            var current = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (string.IsNullOrEmpty(current))
-            {
-                current = root;
-            }
-
-            for (var index = 0; index < segments.Length; index++)
-            {
-                var segment = segments[index];
-                current = Path.Combine(current, segment);
-                FileSystemInfo info;
-                if (Directory.Exists(current))
-                {
-                    info = new DirectoryInfo(current);
-                }
-                else if (File.Exists(current))
-                {
-                    info = new FileInfo(current);
-                }
-                else
-                {
-                    // Missing segment, stop walk
-                    break;
-                }
-
-                if (info.LinkTarget is not null)
-                {
-                    var resolved = info.ResolveLinkTarget(true)?.FullName;
-                    if (!string.IsNullOrWhiteSpace(resolved))
-                    {
-                        // Need to append remaining segments after this link.
-                        var remaining = index + 1 < segments.Length
-                            ? Path.Combine(segments[(index + 1)..])
-                            : string.Empty;
-                        if (string.IsNullOrEmpty(remaining))
-                        {
-                            return resolved;
-                        }
-
-                        // If resolved is outside root, keep outside
-                        return Path.Combine(resolved, remaining);
-                    }
-                }
-            }
-
-            return null;
-        }
-        catch
-        {
-            return null;
-        }
+        return start >= segments.Length ? string.Empty : string.Join(Path.DirectorySeparatorChar, segments[start..]);
     }
 
     private static string? TryGetFinalPath(string path)
@@ -318,13 +207,7 @@ public sealed class CanonicalPathResolver
         {
             if (!OperatingSystem.IsWindows())
             {
-                // On non-Windows, try link target resolution then GetFullPath
-                var linkResolved = TryResolveLinkTarget(path);
-                if (!string.IsNullOrWhiteSpace(linkResolved))
-                {
-                    return linkResolved;
-                }
-
+                // Non-Windows resolution is handled by the managed link walk.
                 return null;
             }
 

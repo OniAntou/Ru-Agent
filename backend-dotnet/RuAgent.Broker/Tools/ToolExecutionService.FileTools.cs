@@ -232,7 +232,6 @@ public sealed partial class ToolExecutionService
                 MutationResolver = new CanonicalPathResolver(canonicalRoot),
                 Terminal = new TerminalAdapter(
                     new WorkspacePathGuard(canonicalRoot),
-                    new ShellRuntimeResolver(),
                     approvalTokens),
                 CanonicalRoot = canonicalRoot,
             };

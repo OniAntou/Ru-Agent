@@ -75,7 +75,6 @@ public sealed partial class ToolExecutionService
         _approvalTokens = approvalTokens ?? new ApprovalTokenService();
         _terminal = new TerminalAdapter(
             _workspace,
-            new ShellRuntimeResolver(),
             _approvalTokens);
         _defaultTools = new RootToolSet
         {

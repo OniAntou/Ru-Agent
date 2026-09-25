@@ -35,7 +35,6 @@ public static class TerminalAutoPolicy
 public sealed class TerminalAdapter
 {
     private readonly WorkspacePathGuard _workspace;
-    private readonly ShellRuntimeResolver _shells;
     private readonly ApprovalTokenService? _approvalTokens;
     private readonly AgentCommandEnvironment _environment;
     private readonly StreamingProcessRunner _runner;
@@ -47,7 +46,6 @@ public sealed class TerminalAdapter
 
     public TerminalAdapter(
         WorkspacePathGuard workspace,
-        ShellRuntimeResolver shells,
         ApprovalTokenService? approvalTokens = null,
         AgentCommandEnvironment? commandEnvironment = null,
         StreamingProcessRunner? runner = null,
@@ -57,7 +55,6 @@ public sealed class TerminalAdapter
         IGitCli? gitCli = null)
     {
         _workspace = workspace;
-        _shells = shells;
         _approvalTokens = approvalTokens;
         _environment = commandEnvironment ?? new AgentCommandEnvironment();
         _runner = runner ?? new StreamingProcessRunner(
@@ -105,7 +102,8 @@ public sealed class TerminalAdapter
             return _resolver.ResolveShell(new CanonicalShellRequest(
                 request.Script,
                 request.RelativeWorkingDirectory,
-                request.TimeoutMs));
+                request.TimeoutMs,
+                ShellRuntime: request.Shell));
         }
         catch (CommandIntentException error)
         {
@@ -203,11 +201,12 @@ public sealed class TerminalAdapter
         // defense in depth behind that gate.
         EnsureShellApprovalTokenValid(request);
 
-        var shell = _shells.Resolve(request.Shell);
+        // The intent carries the full approved argv (runtime prefix included),
+        // so execution must run exactly what the approval bound.
         return await _runner.RunAsync(
             new ProcessRunSpec(
                 intent.ResolvedExecutable,
-                shell.PrefixArguments.Concat(intent.Arguments).ToArray(),
+                intent.Arguments,
                 intent.CanonicalWorkingDirectory,
                 _environment.ChildEnvironment,
                 intent.TimeoutMs,

@@ -226,10 +226,37 @@ public sealed class CommandIntentResolverTests
             var resolver = CreateResolver(workspace, ["C:\\Windows\\System32"]);
             var powershellIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date"));
             Assert.Contains("powershell", Path.GetFileName(powershellIntent.ResolvedExecutable), StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(["Get-Date"], powershellIntent.Arguments.ToArray());
+            Assert.Equal(["-NoProfile", "-NonInteractive", "-Command", "Get-Date"], powershellIntent.Arguments.ToArray());
 
             Assert.Equal("unsupported_shell_runtime", Assert.Throws<CommandIntentException>(
                 () => resolver.ResolveShell(new CanonicalShellRequest("dir", ShellRuntime: "cmd"))).Code);
+            Assert.Equal("unsupported_shell_runtime", Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveShell(new CanonicalShellRequest("dir", ShellRuntime: "git-bash"))).Code);
+            Assert.Equal("unsupported_shell_runtime", Assert.Throws<CommandIntentException>(
+                () => resolver.ResolveShell(new CanonicalShellRequest("dir", ShellRuntime: "wsl"))).Code);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Shell_runtime_choice_is_bound_in_the_intent_hash()
+    {
+        var workspace = CreateTemporaryRoot("ru-intent-shell-bind-");
+        try
+        {
+            var bin = Path.Combine(workspace, "bin");
+            Directory.CreateDirectory(bin);
+            File.WriteAllText(Path.Combine(bin, "powershell.exe"), "stub");
+            File.WriteAllText(Path.Combine(bin, "pwsh.exe"), "stub");
+            var resolver = CreateResolver(workspace, [bin]);
+
+            var powershellIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date"));
+            var pwshIntent = resolver.ResolveShell(new CanonicalShellRequest("Get-Date", ShellRuntime: "pwsh"));
+
+            Assert.NotEqual(powershellIntent.IntentHash, pwshIntent.IntentHash);
         }
         finally
         {

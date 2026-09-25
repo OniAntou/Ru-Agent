@@ -103,7 +103,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
                 approvals);
 
             var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
@@ -227,7 +226,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(workspaceRoot),
-                new ShellRuntimeResolver(),
                 approvals);
             var request = Request("git", ["status"], workingDirectory: ".");
             var intent = adapter.CanonicalizeRun(request);
@@ -269,7 +267,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
                 approvals);
             var intent = adapter.CanonicalizeRun(Request("dotnet", ["--version"], network: true));
             var token = approvals.Issue(
@@ -380,7 +377,6 @@ public sealed class TerminalAdapterTests
         {
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
                 runner: new StreamingProcessRunner(outputLimitBytes: 32, headCapacityChars: 64, tailCapacityChars: 64));
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute),
@@ -638,7 +634,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
                 approvals);
             var scriptIntent = adapter.CanonicalizeShell(new TerminalShellRequest(
                 "powershell",
@@ -703,6 +698,67 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
+    public void Unsupported_shell_runtimes_are_rejected_before_execution()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-shell-runtime-bad-");
+        try
+        {
+            var adapter = CreateAdapter(root);
+
+            foreach (var shell in new[] { "git-bash", "wsl", "cmd" })
+            {
+                var error = Assert.Throws<UnauthorizedAccessException>(() =>
+                    adapter.CanonicalizeShell(new TerminalShellRequest(shell, ".", "Get-Date", 1_000, string.Empty)));
+                Assert.Equal("unsupported_shell_runtime", error.Message);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Shell_approval_bound_to_one_runtime_does_not_authorize_another()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-shell-runtime-bind-");
+        try
+        {
+            var bin = Path.Combine(root, "bin");
+            Directory.CreateDirectory(bin);
+            File.WriteAllText(Path.Combine(bin, "powershell.exe"), "stub");
+            File.WriteAllText(Path.Combine(bin, "pwsh.exe"), "stub");
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                approvals,
+                intentResolver: new CommandIntentResolver(root, [bin]));
+
+            var powershellIntent = adapter.CanonicalizeShell(new TerminalShellRequest("powershell", ".", "Get-Date", 1_000, string.Empty));
+            var pwshIntent = adapter.CanonicalizeShell(new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000, string.Empty));
+            Assert.NotEqual(powershellIntent.IntentHash, pwshIntent.IntentHash);
+
+            var token = approvals.Issue(
+                "request-1",
+                "session-1",
+                "terminal.shell",
+                "1.0.0",
+                powershellIntent.IntentHash,
+                TimeSpan.FromSeconds(30));
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunApprovedShellAsync(
+                    new TerminalShellRequest("pwsh", ".", "Get-Date", 1_000, token, "request-1", "session-1"),
+                    confineWorkspace: true,
+                    CancellationToken.None));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Unconfined_shell_still_requires_a_token_and_honors_cwd_denylist()
     {
         var parent = CreateTemporaryRoot("ru-terminal-shell-unconfined-");
@@ -715,7 +771,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(workspaceRoot),
-                new ShellRuntimeResolver(),
                 approvals);
             var request = new Func<string, string, string, TerminalShellRequest>(
                 (workingDirectory, token, requestId) => new(
@@ -767,8 +822,7 @@ public sealed class TerminalAdapterTests
     }
 
     private static TerminalAdapter CreateAdapter(string root) => new(
-        new WorkspacePathGuard(root),
-        new ShellRuntimeResolver());
+        new WorkspacePathGuard(root));
 
     private static PolicyGrant MakeGrantWithScopes(params string[] scopes) => new(
         "session-terminal-" + Guid.NewGuid().ToString("N"),
@@ -847,7 +901,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
                 approvals);
 
             var intent = adapter.CanonicalizeRun(new TerminalRunRequest(
@@ -893,7 +946,6 @@ public sealed class TerminalAdapterTests
             var approvals = new ApprovalTokenService();
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ShellRuntimeResolver(),
                 approvals);
 
             var intent = adapter.CanonicalizeRun(new TerminalRunRequest(

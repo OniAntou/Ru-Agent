@@ -12,7 +12,7 @@ def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
     assert ".[dev,tooling]" in workflow
     assert "dev,server" not in workflow
     assert "python -m pytest -q" in workflow
-    assert 'python-version: ["3.11", "3.13"]' in workflow
+    assert 'python-version: ["3.11", "3.12", "3.13"]' in workflow
     assert "python-version: ${{ matrix.python-version }}" in workflow
     assert "python scripts/check_aspnetcore_route_matrix.py" in workflow
     assert "retired-compat-harness" not in workflow
@@ -33,7 +33,10 @@ def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:
     assert "dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release" in workflow
     assert "dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64 -p:Platform=x64 -p:SelfContained=true" in workflow
     assert "cancel-in-progress: true" in workflow
-    assert "git diff --check" in workflow
+    # git diff --check on a fresh checkout has nothing to compare and can never
+    # fail; git log --check actually inspects the pushed patches for whitespace
+    # errors, which is what this gate exists for.
+    assert "git log --check" in workflow
 
 
 def test_ruff_targets_the_minimum_supported_python() -> None:

@@ -31,6 +31,21 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Publish output must start empty: dotnet publish leaves behind whatever a
+REM previous build put there, and the flatten step would ship those orphans
+REM (replaced dependencies, renamed adapters) into the distributable.
+for %%D in ("%CLI_PUBLISH_DIR%" "%WORKER_PUBLISH_DIR%" "%BROKER_PUBLISH_DIR%" "%BACKEND_PUBLISH_DIR%" "%PUBLISH_DIR%") do (
+    if exist "%%~D" (
+        rmdir /s /q "%%~D"
+        if exist "%%~D" (
+            echo.
+            echo BUILD FAILED: Could not remove stale publish output:
+            echo   "%%~D"
+            exit /b 1
+        )
+    )
+)
+
 echo [2/13] Building RuAgent.Harness.Core (deterministic, BCL-only, no deps)...
 call dotnet build "%HARNESS_CORE_PROJECT%" -c Release --nologo
 if errorlevel 1 (

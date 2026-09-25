@@ -88,24 +88,26 @@ public sealed class NdjsonRendererPrivacyTests
     [Fact]
     public void Ndjson_DoesNotAutoFetchPrivatePayload()
     {
-        // Renderer should never call AgentApiClient.GetPayloadAsync. We verify by ensuring a fake handler receiving payload request would fail if called.
-        var session = CreateSession();
-        var handler = new FakeHandler(req =>
-        {
-            if (req.RequestUri!.ToString().Contains("/payloads/"))
-                throw new InvalidOperationException("Private payload auto-fetch must not happen in tracer.");
-            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("{}") };
-        });
-        var http = new HttpClient(handler);
-        // The renderer itself doesn't need HTTP, but we ensure commands don't auto-fetch during SSE rendering
+        // The renderer keeps payload_ref an opaque pointer: it emits the ref and
+        // nothing that could resolve it.
         var env = MakeEnvelope();
         var sw = new StringWriter();
         NdjsonEventRenderer.Render(env, sw);
         var json = sw.ToString();
-        // Even though envelope has payload_ref, renderer must not fetch it automatically - payload_ref is opaque pointer only
         Assert.Contains("payload_", json);
-        // No HTTP call should have been made - handler would have thrown if any payload fetch was attempted
-        Assert.True(true);
+
+        // And it cannot resolve one: no entry point takes an HTTP client or an
+        // API client, so no code path inside the renderer can fetch a payload.
+        var renderMethods = typeof(NdjsonEventRenderer)
+            .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(method => method.Name.StartsWith("Render", StringComparison.Ordinal))
+            .ToArray();
+        Assert.NotEmpty(renderMethods);
+        Assert.All(renderMethods, method =>
+            Assert.DoesNotContain(
+                method.GetParameters(),
+                parameter => parameter.ParameterType == typeof(HttpClient)
+                    || parameter.ParameterType == typeof(AgentApiClient)));
     }
 
     [Fact]
@@ -255,19 +257,5 @@ public sealed class NdjsonRendererPrivacyTests
         // payload_ref is allowed as opaque, but content field is not
         Assert.Contains("payload_ref", json);
         Assert.DoesNotContain("\"content\"", json.ToLowerInvariant());
-    }
-
-    private static PublicHostSession CreateSession()
-    {
-        var proc = System.Diagnostics.Process.GetCurrentProcess();
-        var desc = new RuAgent.Protocol.Harness.RuntimeDescriptor(1, "http://127.0.0.1:8000/", new string('x', 64), proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));
-        return PublicHostSession.FromDescriptor(desc);
-    }
-
-    private sealed class FakeHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
     }
 }

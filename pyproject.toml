@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ru-runtime"
 version = "0.1.0"
 description = "Repository tooling for the Ru Agent workspace."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<3.14"
 dependencies = []
 
 [project.optional-dependencies]
@@ -26,7 +26,6 @@ packages = []
 pythonpath = ["scripts", "."]
 testpaths = ["tests"]
 norecursedirs = [".venv", ".venv311", "omnivoice_env", "models", ".tmp", ".worktrees", "pip-cache", ".pytest_cache", ".minigpt", "gui-winui3", "backend-dotnet", "logs", "artifacts", "data"]
-addopts = "-p no:warnings"
 
 [tool.ruff]
 line-length = 100

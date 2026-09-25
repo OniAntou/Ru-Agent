@@ -307,6 +307,23 @@ def test_start_dev_passes_uncorrupted_working_directory_to_launcher(tmp_path: Pa
     )
     worker.mkdir(parents=True)
     (worker / "RuAgent.Runtime.Worker.exe").write_text("worker placeholder\n", encoding="utf-8")
+    for project, executable in (
+        ("RuBackend", "RuBackend.exe"),
+        ("RuAgent.Broker", "RuAgent.Broker.exe"),
+        ("RuAgent.Cli", "RuAgent.Cli.exe"),
+    ):
+        service = (
+            tmp_path
+            / "backend-dotnet"
+            / project
+            / "bin"
+            / "Release"
+            / "net10.0"
+            / "win-x64"
+            / "publish"
+        )
+        service.mkdir(parents=True)
+        (service / executable).write_text("service placeholder\n", encoding="utf-8")
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "launch_gui.ps1").write_text(

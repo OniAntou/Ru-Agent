@@ -16,6 +16,24 @@ if not exist "%WORKER_EXE%" (
     endlocal
     exit /b 1
 )
+if not exist "%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe" (
+    echo Backend publish output not found. Run build.bat and wait for [13/13] Build complete.
+    echo Expected: "%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe"
+    endlocal
+    exit /b 1
+)
+if not exist "%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish\RuAgent.Broker.exe" (
+    echo Broker publish output not found. Run build.bat and wait for [13/13] Build complete.
+    echo Expected: "%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish\RuAgent.Broker.exe"
+    endlocal
+    exit /b 1
+)
+if not exist "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0\win-x64\publish\RuAgent.Cli.exe" (
+    echo CLI publish output not found. Run build.bat and wait for [13/13] Build complete.
+    echo Expected: "%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0\win-x64\publish\RuAgent.Cli.exe"
+    endlocal
+    exit /b 1
+)
 if not exist "%LAUNCHER%" (
     echo GUI launcher helper not found. Expected: "%LAUNCHER%"
     endlocal
@@ -27,7 +45,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%LAUNCHER%" -ExecutablePath
 if errorlevel 1 (
     echo.
     echo RuApp failed during startup. Check the Windows Application event log or rebuild with build.bat.
-    pause
+    rem Bounded wait: an open-ended pause hangs non-interactive callers.
+    ping 127.0.0.1 -n 6 >nul 2>&1
     endlocal
     exit /b 1
 )

@@ -27,10 +27,11 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-14 entries intentionally have empty `winui_callers`: the additive
-`POST|GET|PUT|DELETE /agent/v1/*` run, policy, session-run, and workspace
-surface, which is driven through the Agent harness flow rather than direct WinUI
-callers.
+16 entries intentionally have empty `winui_callers`: the two session
+interchange routes (`GET /sessions/{sessionId}/export` and `POST /sessions/import`),
+which the CLI and session flows drive, plus the additive `POST|GET|PUT|DELETE
+/agent/v1/*` run, policy, session-run, and workspace surface, which is driven
+through the Agent harness flow rather than direct WinUI callers.
 
 Empty `winui_callers` is therefore expected for these reserved lifecycle routes and is not a dead-route signal.
 

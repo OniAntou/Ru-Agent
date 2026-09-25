@@ -1,6 +1,0 @@
-{
-  "routes": [
-    {"method": "GET", "path": "/status", "group": "status"},
-    {"method": "GET", "path": "/models", "group": "status"}
-  ]
-}

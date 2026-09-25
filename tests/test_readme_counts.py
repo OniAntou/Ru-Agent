@@ -72,3 +72,24 @@ def test_readme_test_project_count_matches_the_matrix_roots() -> None:
     assert f"runs the {roots} test projects" in text, (
         f"README CI note does not say {roots} test projects"
     )
+
+
+def test_readme_test_count_matches_the_recorded_full_run() -> None:
+    """The badge claimed 3,730 passing while the recorded run said 3,664; nothing
+    compared them. The README number must equal the run recorded in
+    verification.md, so the badge cannot say whatever it likes."""
+    verification = (ROOT / "docs" / "operations" / "verification.md").read_text(
+        encoding="utf-8"
+    )
+    recorded = re.search(r"\*\*([\d,]+) passed / 0 failed / 0 skipped\*\*", verification)
+    assert recorded is not None, "verification.md must record the last full run"
+    expected = recorded.group(1)
+    badge = expected.replace(",", "%2C")
+
+    text = _readme()
+    assert f"tests-{badge}%20passing" in text, (
+        f"README test badge does not say {expected} passing"
+    )
+    assert f"projects, {expected} tests" in text, (
+        f"README testing line does not say {expected} tests"
+    )

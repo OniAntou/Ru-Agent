@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from check_aspnetcore_route_matrix import load_route_contract, validate_route_contract
@@ -68,6 +69,18 @@ def test_public_route_contract_matches_the_final_surface() -> None:
         for entry in contract
         if entry["transport"] == "websocket"
     } == EXPECTED_WEBSOCKET_ROUTES
+
+
+def test_route_matrix_doc_reports_the_real_reserved_count() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    contract = load_route_contract(repo_root)
+    doc = (repo_root / "docs" / "aspnetcore-route-matrix.md").read_text(encoding="utf-8")
+
+    documented = re.search(r"(\d+) entries intentionally have empty `winui_callers`", doc)
+    assert documented is not None, "the reserved-routes count must stay stated in the doc"
+    actual = sum(1 for entry in contract if not entry["winui_callers"])
+
+    assert int(documented.group(1)) == actual
 
 
 def test_every_public_route_is_served_directly_by_aspnet() -> None:

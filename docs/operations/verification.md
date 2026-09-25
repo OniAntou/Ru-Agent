@@ -6,8 +6,8 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 21 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **13-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 12 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **3,664 passed / 0 failed / 0 skipped**. Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
-| Python suite | **134 passed**, 0 failed. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
+| .NET tests | Full **13-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 12 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **4,226 passed / 0 failed / 0 skipped**. Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| Python suite | **140 passed**, 0 failed. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` runs **13/13** stages and publishes self-contained output: `RuApp.exe`, `RuBackend.exe`, the managed Worker (one listener), the Broker, and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | A published build starts under isolated `RU_DATA_ROOT`/`RU_LOG_ROOT`, answers `/status` 200 to the correct bearer, opens all listeners, and closes the process tree on `POST /host/shutdown` with no surviving children. Re-run it against the current build before a release; the last dated run stays below. |
 | Plugins | No media plugin remains in the repo: voice/STT, VTube Studio, screen observation and the native overlay are removed, and `RU_MEDIA_SURFACES` is no longer read. See `docs/architecture.md`, "Coding core and plugins". |
@@ -676,16 +676,21 @@ the published `RuApp.exe` directly to avoid opening a console window;
 `start_dev.bat` remains the manual diagnostic launcher for visible artifact and
 early-startup checks.
 
-Phase 2 parity is deterministic and status-only. The shared fixture
-`tests/fixtures/python-csharp-phase2-device-baseline.json` is exercised by
-`RuAgent.Runtime.Worker.Tests/Phase2ManagedDeviceParityTests.cs`; these tests
-cover v1 types/sequences, settings shape, voice control ordering, stable
+Phase 2 parity was deterministic and status-only. The shared fixture
+`tests/fixtures/python-csharp-phase2-device-baseline.json` was exercised by
+`RuAgent.Runtime.Worker.Tests/Phase2ManagedDeviceParityTests.cs`; those tests
+covered v1 types/sequences, settings shape, voice control ordering, stable
 errors, STT normalization, VTS code sets, observation bounds, cancellation,
-and forbidden-value redaction without starting a provider or device.
+and forbidden-value redaction without starting a provider or device. The
+fixture and its tests were removed with the media/voice/VTS subsystems on
+2026-09-13; this passage is kept as record only.
 
-Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
-findings with permanent ignores or `continue-on-error`. Live microphone,
-speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
+Ruff and `pip check` are required dependency/tooling gates; do not hide
+findings with permanent ignores or `continue-on-error`. (Mypy was retired
+from CI together with the Python runtime; `test_ci_contract.py` asserts it
+stays out of the workflow.) Live microphone, speaker, volume, and VTube
+Studio acceptance were the explicit user-run checks of the removed media
+surfaces.
 
 ### Phase 2 entry evidence before Python retirement (2026-08-30)
 

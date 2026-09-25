@@ -25,9 +25,9 @@ __pycache__/
 .ruff_cache/
 
 # Data/cache (large or generated)
-.tmp/
-.worktrees/
-pip-cache/
+/.tmp/
+/.worktrees/
+/pip-cache/
 data/processed/
 data/conversations/
 data/gui_settings.json
@@ -38,34 +38,35 @@ data/memory.db
 data/memory.db-wal
 data/memory.db-shm
 /models/
-eval_results/
-VBCABLE_Setup/
-logs/
+/eval_results/
+/VBCABLE_Setup/
+/logs/
 vts_token.txt
-.minigpt/
-pytest_v.log
-f5.log
+/.minigpt/
+/pytest_v.log
+/f5.log
 
 # Misc
 rustup-init.exe
 *.wav
 
-# Scratch/verification artifacts
-artifacts/
+# Scratch/verification artifacts (root-only: a same-named source file deeper in
+# the tree must never be silently untracked)
+/artifacts/
 data/evaluations/
 *.db
-resources.pri.xml
+/resources.pri.xml
 *.lnk
-test_settings.json
+/test_settings.json
 
 # Local experiment scratch (untracked by design)
-scythe_*.png
+/scythe_*.png
 
 # Superpowers agent state (local brainstorm/sdd scratch, never committed)
 .superpowers/
-candidate_logos.png
-render_candidates.py
-test_concepts.py
+/candidate_logos.png
+/render_candidates.py
+/test_concepts.py
 
 # Impeccable design-review scratch (local critique notes, never committed)
 .impeccable/

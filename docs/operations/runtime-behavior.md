@@ -327,9 +327,9 @@ The twelve Worker v2 tools above are the model surface. `read`, `list`, `grep`,
 `glob`, and `help` are separate definitions; `write`, `edit`, and `bash` expose
 their own schemas, alongside `todo_write`, `skill`, `web_search`, and
 `web_fetch`. Managed startup constructs an enabled WebOptions instance with
-Google HTML primary `https://www.google.com/search` and automatic DuckDuckGo
-HTML fallback `https://html.duckduckgo.com/html/`; their bounded responses
-carry an explicit `untrusted` marker and never become instructions. `grep`
+Google HTML as the single search engine `https://www.google.com/search` and no
+fallback engine; the bounded responses carry an explicit `untrusted` marker and
+never become instructions. `grep`
 searches the workspace, `web_search` searches the public web, and `help`
 searches only bundled Ru documentation. Unbound connectors and `app.open`
 remain outside the model-visible catalog.
@@ -337,8 +337,8 @@ The managed Git commit workflow is shipped inside terminal execution, using a
 temporary index and refusing dirty user index state. Other Git commands remain
 ordinary terminal requests governed by Broker policy. The
 GUI renders the actual `agent.session` grant received from the Host. Managed
-startup enables the bounded WebOptions instance with Google primary and DuckDuckGo
-fallback, so standalone `web_search` and `web_fetch` are advertised as
+startup enables the bounded WebOptions instance with Google HTML as its only
+search engine, so standalone `web_search` and `web_fetch` are advertised as
 read-only managed capabilities without a settings flag or separate deployment
 switch; Broker
 policy remains authoritative for each call. The tested MCP bridge and the
@@ -361,9 +361,9 @@ defaults.
 
 ### Web access
 
-The managed Agent constructs an enabled WebOptions object with Google HTML
-primary `https://www.google.com/search` and DuckDuckGo HTML automatic fallback
-`https://html.duckduckgo.com/html/`. It
+The managed Agent constructs an enabled WebOptions object with Google HTML as
+the single search engine `https://www.google.com/search` and no fallback engine.
+It
 maps standalone `web_search` to `network.search` and standalone
 `web_fetch` to `network.fetch`;
 the canonical Broker policy remains authoritative for each read-only call:

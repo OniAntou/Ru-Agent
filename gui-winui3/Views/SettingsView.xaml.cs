@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -27,7 +30,7 @@ namespace RuApp.Views
 
         private string _themeChoice = "dark";
         private string _presetChoice = "standard";
-        private string _providerChoice = "openai";
+        private string _providerChoice = string.Empty;
 
         /// <summary>
         /// The stored conversation text size, read once at construction so the picker
@@ -37,29 +40,31 @@ namespace RuApp.Views
 
         private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
 
-        private const double ProviderRowDotSize = 6;
-        private const double ProviderRowGap = 8;
         private const double ProviderRowLabelFontSize = 12.5;
-        private const double ProviderRowCheckFontSize = 12;
+        private const double ProviderFlyoutMinHeight = 320;
+        private const double ProviderFlyoutBottomMargin = 24;
+        // Room kept below the list for the A-Z strip, which sits beside it. Without it a
+        // full-height list would push the strip past the flyout.
+        private const double ProviderLetterStripReserve = 40;
+        private const double ProviderLetterButtonSize = 15;
+        private const double ProviderLetterFontSize = 9.5;
+        private const double ProviderLetterDisabledOpacity = 0.28;
 
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
-        private IReadOnlyList<DropdownOption>? _providerOptions;
 
         /// <summary>
-        /// Models.dev rows appended to the provider dropdown at runtime, plus
-        /// their display names by lowercase id.
+        /// The provider picker's rows, in display order. One entry per offerable
+        /// provider: the custom endpoint plus the whole Models.dev catalog.
         /// </summary>
-        private readonly List<DropdownOption> _modelsDevOptions = new();
+        private readonly ObservableCollection<ProviderRow> _providerRows = new();
+
+        /// <summary>
+        /// Models.dev display names by lowercase id, for naming the trigger before the
+        /// rows exist and for resolving a stored choice to its label.
+        /// </summary>
         private readonly Dictionary<string, string> _modelsDevNames = new(StringComparer.Ordinal);
 
-        /// <summary>
-        /// Signed-in duplicates pinned above the groups, plus the choice
-        /// values with a stored key and the last settings/keys snapshots
-        /// they were built from.
-        /// </summary>
-        private readonly List<DropdownOption> _signedInOptions = new();
-        private readonly HashSet<string> _signedInValues = new(StringComparer.OrdinalIgnoreCase);
         private AppSettingsDto? _lastSettings;
         private IReadOnlyList<string> _modelsDevKeyIds = [];
         private bool _modelsDevLoadFailed;
@@ -83,7 +88,15 @@ namespace RuApp.Views
 
         public void SetCurrentProvider(string backendChoice)
         {
-            _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(backendChoice);
+            // The stored choice may be unset or name a provider the app no longer
+            // offers. Resolving that to a real provider needs the catalog, which is
+            // fetched after settings; RebuildModelsDevOptions finishes the job once
+            // it arrives. Until then this keeps the trigger label honest.
+            _providerChoice = _modelsDevNames.Count > 0
+                ? ProviderSetupGuidance.ResolveUnsetChoice(
+                    backendChoice,
+                    _modelsDevNames.Select(pair => (pair.Key, pair.Value)))
+                : ProviderSetupGuidance.NormalizeProviderChoice(backendChoice);
             RefreshProviderUI();
         }
 
@@ -101,18 +114,27 @@ namespace RuApp.Views
 
         private void RefreshProviderUI()
         {
-            if (_providerOptions == null || ProviderButtonLabel == null) return;
-            RefreshDropdownUI(
-                _providerOptions.Concat(_modelsDevOptions).Concat(_signedInOptions).ToArray(),
-                _providerChoice,
-                ProviderButtonLabel);
-            RefreshSignedInDots();
+            if (ProviderButtonLabel == null) return;
+
+            foreach (var row in _providerRows)
+            {
+                row.IsSelected = string.Equals(row.Value, _providerChoice, StringComparison.OrdinalIgnoreCase);
+                if (row.IsSelected)
+                {
+                    ProviderButtonLabel.Text = row.DisplayName;
+                }
+            }
+
             if (ProviderSetupGuidance.IsModelsDevChoice(_providerChoice))
             {
                 // Before the runtime rows load there is nothing to match, so
                 // name the trigger from the fetched list (or the raw id).
                 var id = _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..];
                 ProviderButtonLabel.Text = _modelsDevNames.TryGetValue(id, out var name) ? name : id;
+            }
+            else if (_providerChoice == ProviderSetupGuidance.UnsetChoice)
+            {
+                ProviderButtonLabel.Text = "No provider";
             }
         }
 
@@ -152,15 +174,12 @@ namespace RuApp.Views
                 new DropdownOption(PresetStandardOption, PresetStandardText, PresetStandardCheck, "standard"),
                 new DropdownOption(PresetFullAccessOption, PresetFullAccessText, PresetFullAccessCheck, "full_access"),
             };
-            _providerOptions = new[]
+            if (ProviderListView is not null)
             {
-                new DropdownOption(ProviderOpenaiOption, ProviderOpenaiText, ProviderOpenaiCheck, "openai", ProviderOpenaiDot),
-                new DropdownOption(ProviderAnthropicOption, ProviderAnthropicText, ProviderAnthropicCheck, "anthropic", ProviderAnthropicDot),
-                new DropdownOption(ProviderCustomOption, ProviderCustomText, ProviderCustomCheck, "custom", ProviderCustomDot),
-            };
-            // Row hover is owned by RuDropdownItemButtonStyle (VisualStates), so
-            // every row — including runtime-built Models.dev rows — reacts
-            // alike with no per-row handlers.
+                ProviderListView.ItemsSource = _providerRows;
+            }
+            // Row hover is owned by the item template's own visuals, so every row --
+            // the fixed custom endpoint and the whole catalog -- reacts alike.
             RefreshThemeUI();
             RefreshPresetUI();
             RefreshProviderUI();
@@ -295,6 +314,59 @@ namespace RuApp.Views
             InitDropdownOptions();
             InitTranscriptSizeOptions();
             InitializeSettingsHoverEffects();
+            if (ProviderButton?.Flyout is Flyout providerFlyout)
+            {
+                providerFlyout.Opening += OnProviderFlyoutOpening;
+            }
+        }
+
+        /// <summary>
+        /// Gives the provider dropdown the whole height the window can spare.
+        /// </summary>
+        /// <remarks>
+        /// The catalog is ~190 rows, so the picker is meant to be scrolled and searched;
+        /// what it must never do is stop short. A cap of my own is what made the list read
+        /// as truncated: at 560px it showed about eighteen rows and the rest were one
+        /// slightly-off scrollbar away. The declared height in the markup is only the
+        /// floor used when the window cannot be measured.
+        /// </remarks>
+        private void OnProviderFlyoutOpening(object? sender, object e)
+        {
+            if (ProviderButton is null || ProviderListView is null)
+            {
+                return;
+            }
+
+            double available = double.PositiveInfinity;
+            if (ProviderButton.XamlRoot?.Size is { Height: > 0 } root)
+            {
+                try
+                {
+                    var origin = ProviderButton.TransformToVisual(null)
+                        .TransformPoint(new Windows.Foundation.Point(0, ProviderButton.ActualHeight));
+                    available = root.Height - origin.Y;
+                }
+                catch (Exception ex)
+                {
+                    // The trigger can be detached mid-layout; keep the declared height.
+                    System.Diagnostics.Debug.WriteLine($"[Settings] Provider flyout sizing skipped: {ex.Message}");
+                }
+            }
+
+            // No upper cap of our own: the window is the only real limit, so a tall
+            // window shows more rows and the list is never cut short by a constant.
+            //
+            // Height, not just MaxHeight: the picker's content lives in a StackPanel,
+            // which measures its children with unbounded height. A ListView measured that
+            // way realizes every item and lays none of them out. A concrete height is what
+            // makes it virtualize and paint.
+            double height = double.IsFinite(available)
+                ? Math.Max(
+                    available - ProviderFlyoutBottomMargin - ProviderLetterStripReserve,
+                    ProviderFlyoutMinHeight)
+                : ProviderFlyoutMinHeight;
+            ProviderListView.MaxHeight = height;
+            ProviderListView.Height = height;
         }
 
         public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
@@ -316,8 +388,6 @@ namespace RuApp.Views
             };
             _autoSaveTimer.Tick += OnAutoSaveTimerTick;
 
-            OpenAiApiKeyBox.PasswordChanged += AutoSaveHandler;
-            AnthropicApiKeyBox.PasswordChanged += AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
             CloudflareAccountIdBox.TextChanged += AutoSaveTextHandler;
@@ -348,14 +418,6 @@ namespace RuApp.Views
                 settings ??= new AppSettingsDto();
                 _lastSettings = settings;
 
-                OpenAiApiKeyBox.Password = string.Empty;
-                OpenAiApiKeyBox.PlaceholderText = settings.HasOpenAiKey
-                    ? "Saved (leave blank to keep unchanged)"
-                    : "sk-...";
-                AnthropicApiKeyBox.Password = string.Empty;
-                AnthropicApiKeyBox.PlaceholderText = settings.HasAnthropicKey
-                    ? "Saved (leave blank to keep unchanged)"
-                    : "sk-ant-...";
                 CustomEndpointUrlBox.Text = settings.CustomUrl;
                 CustomApiKeyBox.Password = string.Empty;
                 CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
@@ -366,10 +428,7 @@ namespace RuApp.Views
                 // Providers first: the current choice can only be named once
                 // the runtime rows exist.
                 await RefreshModelsDevProvidersAsync();
-                SetCurrentProvider(settings.BackendChoice ?? "openai");
-
-                {
-                }
+                SetCurrentProvider(settings.BackendChoice ?? string.Empty);
 
                 UpdateVisibilityForBackend(_providerChoice);
                 _providerCatalogController?.SetBackend(_providerChoice);
@@ -391,208 +450,89 @@ namespace RuApp.Views
                 _modelsDevLoadFailed = providers.Count == 0;
                 RebuildModelsDevOptions(providers);
                 _modelsDevKeyIds = await _apiService.GetModelsDevKeysAsync();
-                RebuildSignedInOptions(providers);
+                ApplyProviderKeys();
             }
             catch (Exception ex)
             {
                 _modelsDevLoadFailed = true;
                 System.Diagnostics.Debug.WriteLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
+                // The failure mode this replaced was silent: a partially built list with
+                // no error anywhere. The stage and the row count make it visible next time.
+                GuiDiagnosticWriter.AppendTraceLine(
+                    $"[provider-list] load-failed: type={ex.GetType().Name} "
+                    + $"hresult=0x{ex.HResult:X8} rows={_providerRows.Count}");
                 ApplyProviderFilter(ProviderSearchBox?.Text);
             }
         }
 
         /// <summary>
-        /// Builds one dropdown row: status dot, name label, check mark.
-        /// Shared by the Models.dev group and the signed-in duplicates so
-        /// both instances of a provider look and behave identically.
+        /// Lights the key dot on every row whose provider has a stored key.
         /// </summary>
-        private DropdownOption BuildProviderRowButton(string value, string name, bool showDot)
+        private void ApplyProviderKeys()
         {
-            var uiFont = Application.Current.Resources["RuUiFontFamily"];
-            var ink = Application.Current.Resources["RuInkBrush"];
-            var accent = Application.Current.Resources["RuAccentBrush"];
-            var success = Application.Current.Resources["RuSuccessBrush"];
-            var itemStyle = (Style)Application.Current.Resources["RuDropdownItemButtonStyle"];
-
-            var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
+            var keys = new HashSet<string>(_modelsDevKeyIds, StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _providerRows)
             {
-                Width = ProviderRowDotSize,
-                Height = ProviderRowDotSize,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, ProviderRowGap, 0),
-                Visibility = showDot ? Visibility.Visible : Visibility.Collapsed,
-            };
-            if (success is Microsoft.UI.Xaml.Media.Brush successBrush)
-            {
-                dot.Fill = successBrush;
+                row.HasKey = row.Value == "custom"
+                    ? _lastSettings?.HasCustomKey == true
+                    : keys.Contains(row.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]);
             }
-
-            var label = new TextBlock
-            {
-                Text = name,
-                FontFamily = uiFont as Microsoft.UI.Xaml.Media.FontFamily,
-                FontSize = ProviderRowLabelFontSize,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-            if (ink is Microsoft.UI.Xaml.Media.Brush inkBrush)
-            {
-                label.Foreground = inkBrush;
-            }
-
-            var check = new FontIcon
-            {
-                Glyph = "\uE73E",
-                FontSize = ProviderRowCheckFontSize,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(ProviderRowGap, 0, 0, 0),
-                Visibility = Visibility.Collapsed,
-            };
-            if (accent is Microsoft.UI.Xaml.Media.Brush accentBrush)
-            {
-                check.Foreground = accentBrush;
-            }
-
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.Children.Add(dot);
-            grid.Children.Add(label);
-            grid.Children.Add(check);
-            Grid.SetColumn(label, 1);
-            Grid.SetColumn(check, 2);
-
-            var button = new Button
-            {
-                Tag = value,
-                Style = itemStyle,
-                Content = grid,
-            };
-            AutomationProperties.SetName(button, $"{name} provider");
-            button.Click += OnProviderOptionClick;
-            return new DropdownOption(button, label, check, value, dot);
         }
 
         /// <summary>
-        /// Appends one dropdown row per Models.dev provider, then merges the
-        /// three fixed rows into the same panel so the whole list sorts A-Z.
+        /// Replaces the picker's rows with the custom endpoint plus the whole
+        /// Models.dev catalog, in A-Z order.
         /// </summary>
+        /// <remarks>
+        /// One collection drives the ListView, so the catalog's size costs nothing at
+        /// build time: the list materializes rows as they scroll into view. The custom
+        /// endpoint stays first-class because it is the only provider the catalog cannot
+        /// describe -- a server on this machine, or a gateway with its own base URL.
+        /// </remarks>
         private void RebuildModelsDevOptions(IReadOnlyList<ModelsDevEntryDto> providers)
         {
             _modelsDevNames.Clear();
-            if (ModelsDevOptionsPanel is not null)
+            foreach (var (id, name) in ProviderSetupGuidance.OrderModelsDevOptions(
+                         providers.Select(entry => (entry.Id, entry.Name))))
             {
-                foreach (var old in _modelsDevOptions)
-                {
-                    ModelsDevOptionsPanel.Children.Remove(old.Button);
-                }
+                _modelsDevNames[id] = name;
             }
 
-            _modelsDevOptions.Clear();
-            if (ModelsDevOptionsPanel is not null && providers.Count > 0)
+            var rows = new List<ProviderRow>(_modelsDevNames.Count + 1)
             {
-                var ordered = ProviderSetupGuidance.OrderModelsDevOptions(
-                    providers.Select(entry => (entry.Id, entry.Name)));
-                foreach (var (id, name) in ordered)
-                {
-                    _modelsDevNames[id] = name;
-                    var value = ProviderSetupGuidance.ModelsDevPrefix + id;
-                    var option = BuildProviderRowButton(value, name, showDot: false);
-                    ModelsDevOptionsPanel.Children.Add(option.Button);
-                    _modelsDevOptions.Add(option);
-                }
+                new("custom", CustomProviderDisplayName),
+            };
+            foreach (var id in _modelsDevNames.Keys)
+            {
+                rows.Add(new ProviderRow(ProviderSetupGuidance.ModelsDevPrefix + id, _modelsDevNames[id]));
             }
 
-            MergeAndSortProviderRows();
+            rows.Sort(static (left, right) =>
+            {
+                int byName = string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+                return byName != 0
+                    ? byName
+                    : string.Compare(left.Value, right.Value, StringComparison.OrdinalIgnoreCase);
+            });
+
+            _providerRows.Clear();
+            foreach (var row in rows)
+            {
+                _providerRows.Add(row);
+            }
+
+            _providerChoice = ProviderSetupGuidance.ResolveUnsetChoice(
+                _providerChoice,
+                providers.Select(entry => (entry.Id, entry.Name)));
             ApplyProviderFilter(ProviderSearchBox?.Text);
+            LogProviderListState("rebuild");
         }
 
         /// <summary>
-        /// Pulls the fixed rows into the shared panel and sorts every row
-        /// A-Z by display name, so built-in and Models.dev providers read as
-        /// one list. Runs on every rebuild; moving an already-moved button
-        /// is a no-op and the sort keeps the order stable.
+        /// The custom endpoint's label. Declared once so the picker and the key row
+        /// cannot drift apart.
         /// </summary>
-        private void MergeAndSortProviderRows()
-        {
-            if (ModelsDevOptionsPanel is null || _providerOptions is null) return;
-            var panel = ModelsDevOptionsPanel;
-            foreach (var option in _providerOptions)
-            {
-                if (option.Button.Parent is Panel oldParent && !ReferenceEquals(oldParent, panel))
-                {
-                    oldParent.Children.Remove(option.Button);
-                    panel.Children.Add(option.Button);
-                }
-            }
-
-            var sorted = _providerOptions.Concat(_modelsDevOptions)
-                .OrderBy(option => option.Label.Text, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(option => option.Value, StringComparer.OrdinalIgnoreCase)
-                .Select(option => option.Button)
-                .ToList();
-            panel.Children.Clear();
-            foreach (var button in sorted)
-            {
-                panel.Children.Add(button);
-            }
-        }
-
-        /// <summary>
-        /// Pins one duplicate row per signed-in provider above the groups.
-        /// Dots everywhere reflect the same key set, refreshed here.
-        /// </summary>
-        private void RebuildSignedInOptions(IReadOnlyList<ModelsDevEntryDto> providers)
-        {
-            _signedInOptions.Clear();
-            _signedInValues.Clear();
-            if (SignedInOptionsPanel is not null)
-            {
-                SignedInOptionsPanel.Children.Clear();
-            }
-
-            if (SignedInOptionsPanel is not null)
-            {
-                var fixedRows = new (string Value, string Name, bool HasKey)[]
-                {
-                    ("openai", ProviderOpenaiText?.Text ?? "OpenAI", _lastSettings?.HasOpenAiKey == true),
-                    ("anthropic", ProviderAnthropicText?.Text ?? "Anthropic", _lastSettings?.HasAnthropicKey == true),
-                    ("custom", ProviderCustomText?.Text ?? "Custom", _lastSettings?.HasCustomKey == true),
-                };
-                var ordered = ProviderSetupGuidance.OrderSignedInOptions(
-                    fixedRows,
-                    providers.Select(entry => (entry.Id, entry.Name)),
-                    _modelsDevKeyIds);
-                foreach (var (value, name) in ordered)
-                {
-                    _signedInValues.Add(value);
-                    var option = BuildProviderRowButton(value, name, showDot: true);
-                    SignedInOptionsPanel.Children.Add(option.Button);
-                    _signedInOptions.Add(option);
-                }
-            }
-
-            RefreshSignedInDots();
-            ApplyProviderFilter(ProviderSearchBox?.Text);
-        }
-
-        /// <summary>
-        /// Lights the key dot on every row whose provider has a stored key.
-        /// </summary>
-        private void RefreshSignedInDots()
-        {
-            if (_providerOptions is null) return;
-            foreach (var option in _providerOptions.Concat(_modelsDevOptions).Concat(_signedInOptions))
-            {
-                if (option.KeyDot is not null)
-                {
-                    option.KeyDot.Visibility = _signedInValues.Contains(option.Value)
-                        ? Visibility.Visible
-                        : Visibility.Collapsed;
-                }
-            }
-        }
+        private const string CustomProviderDisplayName = "Custom OpenAI Server";
 
         /// <summary>
         /// Filters all three provider groups by the search text and hides a
@@ -605,65 +545,145 @@ namespace RuApp.Views
 
         private void ApplyProviderFilter(string? filter)
         {
-            bool anyFixed = false;
-            if (_providerOptions is not null)
+            int matching = 0;
+            foreach (var row in _providerRows)
             {
-                foreach (var option in _providerOptions)
+                var id = ProviderSetupGuidance.IsModelsDevChoice(row.Value)
+                    ? row.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]
+                    : row.Value;
+                bool show = ProviderSetupGuidance.MatchesProviderFilter(row.DisplayName, id, filter);
+                row.IsVisible = show;
+                if (show)
                 {
-                    bool show = ProviderSetupGuidance.MatchesProviderFilter(option.Label.Text, option.Value, filter);
-                    option.Button.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-                    anyFixed |= show;
+                    matching++;
                 }
-            }
-
-            bool anyDev = false;
-            foreach (var option in _modelsDevOptions)
-            {
-                var id = option.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..];
-                bool show = ProviderSetupGuidance.MatchesProviderFilter(option.Label.Text, id, filter);
-                option.Button.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-                anyDev |= show;
-            }
-
-            bool anySignedIn = false;
-            foreach (var option in _signedInOptions)
-            {
-                var id = ProviderSetupGuidance.IsModelsDevChoice(option.Value)
-                    ? option.Value[ProviderSetupGuidance.ModelsDevPrefix.Length..]
-                    : option.Value;
-                bool show = ProviderSetupGuidance.MatchesProviderFilter(option.Label.Text, id, filter);
-                option.Button.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-                anySignedIn |= show;
-            }
-
-            var signedInVisibility = _signedInOptions.Count > 0 && anySignedIn ? Visibility.Visible : Visibility.Collapsed;
-            if (SignedInOptionsHeader is not null)
-            {
-                SignedInOptionsHeader.Visibility = signedInVisibility;
             }
 
             if (FixedProvidersHeader is not null)
             {
-                FixedProvidersHeader.Visibility = (anyFixed || anyDev) ? Visibility.Visible : Visibility.Collapsed;
-                int totalProviders = (_providerOptions?.Count ?? 0) + _modelsDevOptions.Count;
-                FixedProvidersHeader.Text = _modelsDevLoadFailed && _modelsDevOptions.Count == 0
-                    ? $"PROVIDERS ({totalProviders}) — Models.dev list unavailable"
-                    : $"PROVIDERS ({totalProviders})";
-            }
-
-            if (ProviderNoMatchText is not null)
-            {
-                bool noMatch = !anyFixed && !anyDev && !anySignedIn;
-                ProviderNoMatchText.Visibility = noMatch ? Visibility.Visible : Visibility.Collapsed;
-                if (noMatch)
-                {
-                    ProviderNoMatchText.Text = _modelsDevLoadFailed && _modelsDevOptions.Count == 0
-                        ? "Could not load the Models.dev list. Check the backend connection, then reopen Settings."
-                        : "No provider matches.";
-                }
+                int total = _providerRows.Count;
+                FixedProvidersHeader.Visibility = matching > 0 ? Visibility.Visible : Visibility.Collapsed;
+                // The count is always shown: the catalog is ~190 rows, so "191" is what
+                // tells the user this is a search box, not a short list still loading.
+                FixedProvidersHeader.Text = _modelsDevLoadFailed && total <= 1
+                    ? $"PROVIDERS ({total}) - Models.dev list unavailable"
+                    : matching < total
+                        ? $"PROVIDERS ({matching} of {total})"
+                        : $"PROVIDERS ({total})";
             }
 
             RefreshProviderUI();
+            RebuildProviderLetterStrip();
+            LogProviderListState("filter");
+        }
+
+        /// <summary>
+        /// Records how many provider rows the picker holds and how many it shows.
+        /// </summary>
+        /// <remarks>
+        /// The catalog is ~190 rows. A short read here is what identified the real fault
+        /// behind the picker stopping in the C's: building one Button per provider threw
+        /// 0x800F1000 partway through, so the list was truncated at the point of failure
+        /// while every layer above it was returning the full catalog.
+        /// </remarks>
+        private void LogProviderListState(string stage)
+        {
+            try
+            {
+                var visible = _providerRows.Where(row => row.IsVisible).ToArray();
+                var letters = string.Concat(
+                    ProviderSetupGuidance.JumpTargets(visible.Select(row => row.DisplayName))
+                        .Where(target => target.Index is not null)
+                        .Select(target => target.Letter));
+
+                GuiDiagnosticWriter.AppendTraceLine(
+                    $"[provider-list] {stage}: rows={_providerRows.Count} "
+                    + $"visible={visible.Length} letters={letters} "
+                    + $"filter='{ProviderSearchBox?.Text}' "
+                    + $"loadFailed={_modelsDevLoadFailed}");
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[provider-list] {stage}: logging failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Builds the A-Z strip beside the provider list and marks which letters have a
+        /// visible provider under the current filter.
+        /// </summary>
+        /// <remarks>
+        /// The strip is derived from the visible rows, in their order, so it can never
+        /// point at a letter the list does not actually show. Jumping scrolls the
+        /// ListView itself, which is why the strip is an index over the list rather than
+        /// a second copy of it.
+        /// </remarks>
+        private void RebuildProviderLetterStrip()
+        {
+            if (ProviderLetterJumpStrip is null)
+            {
+                return;
+            }
+
+            ProviderLetterJumpStrip.Items.Clear();
+            var visible = _providerRows.Where(row => row.IsVisible).ToArray();
+            foreach (var (letter, index) in ProviderSetupGuidance.JumpTargets(
+                         visible.Select(row => row.DisplayName)))
+            {
+                ProviderLetterJumpStrip.Items.Add(BuildProviderLetterButton(letter, index));
+            }
+        }
+
+        private Button BuildProviderLetterButton(char letter, int? index)
+        {
+            // Plain text, not RuDropdownItemButtonStyle: this is an index glyph, so it
+            // carries no button chrome, no hover fill, and no padding of its own.
+            var label = new TextBlock
+            {
+                Text = letter.ToString(),
+                FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                FontSize = ProviderLetterFontSize,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
+                Opacity = index is not null ? 1.0 : ProviderLetterDisabledOpacity,
+            };
+
+            var button = new Button
+            {
+                Tag = letter,
+                Content = label,
+                Width = ProviderLetterButtonSize,
+                Height = ProviderLetterButtonSize,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                BorderThickness = new Thickness(0),
+                IsEnabled = index is not null,
+            };
+            AutomationProperties.SetName(button, $"Jump to providers starting with {letter}");
+            button.Click += OnProviderLetterClick;
+            return button;
+        }
+
+        private void OnProviderLetterClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button { Tag: char letter } || ProviderListView is null)
+            {
+                return;
+            }
+
+            var visible = _providerRows.Where(row => row.IsVisible).ToList();
+            ProviderRow? target = visible.FirstOrDefault(
+                row => ProviderSetupGuidance.JumpLetterFor(row.DisplayName) == letter);
+            if (target is null)
+            {
+                return;
+            }
+
+            ProviderListView.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
+            ProviderListView.Focus(FocusState.Programmatic);
         }
 
         private async void OnSaveModelsDevKeyClick(object sender, RoutedEventArgs e)
@@ -699,8 +719,6 @@ namespace RuApp.Views
         private void UpdateVisibilityForBackend(string choice)
         {
             bool isModelsDev = ProviderSetupGuidance.IsModelsDevChoice(choice);
-            OpenAiApiRow.Visibility = (!isModelsDev && choice == "openai") ? Visibility.Visible : Visibility.Collapsed;
-            AnthropicApiRow.Visibility = (!isModelsDev && choice == "anthropic") ? Visibility.Visible : Visibility.Collapsed;
             CustomEndpointRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
             CustomApiKeyRow.Visibility = (!isModelsDev && choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
             if (ModelsDevApiKeyRow is not null)
@@ -720,12 +738,16 @@ namespace RuApp.Views
                 "models.dev:cloudflare-workers-ai",
                 StringComparison.OrdinalIgnoreCase);
 
-        private void OnProviderOptionClick(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Commits the clicked row as the active provider and closes the picker.
+        /// </summary>
+        private void OnProviderRowClicked(object sender, ItemClickEventArgs e)
         {
             if (_loading) return;
-            if (sender is not Button button || button.Tag is not string choice) return;
-            if (!ProviderSetupGuidance.IsSelectableProvider(choice)) return;
-            _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(choice);
+            if (e.ClickedItem is not ProviderRow row) return;
+            if (!ProviderSetupGuidance.IsSelectableProvider(row.Value)) return;
+
+            _providerChoice = ProviderSetupGuidance.NormalizeProviderChoice(row.Value);
             if (ProviderSearchBox is not null)
             {
                 ProviderSearchBox.Text = string.Empty;
@@ -765,8 +787,6 @@ namespace RuApp.Views
                 var dto = new ProviderSettingsUpdateDto
                 {
                     BackendChoice = backend,
-                    OpenAiApiKey = OpenAiApiKeyBox.Password,
-                    AnthropicApiKey = AnthropicApiKeyBox.Password,
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
                     CloudflareAccountId = CloudflareAccountIdBox.Text?.Trim() ?? string.Empty,
@@ -832,12 +852,6 @@ namespace RuApp.Views
         {
             switch (alias)
             {
-                case "openai":
-                    OpenAiApiKeyBox.Password = string.Empty;
-                    break;
-                case "anthropic":
-                    AnthropicApiKeyBox.Password = string.Empty;
-                    break;
                 case "custom":
                     CustomApiKeyBox.Password = string.Empty;
                     break;
@@ -869,11 +883,13 @@ namespace RuApp.Views
 
         private void DisposeEventHandlers()
         {
-            OpenAiApiKeyBox.PasswordChanged -= AutoSaveHandler;
-            AnthropicApiKeyBox.PasswordChanged -= AutoSaveHandler;
             CustomEndpointUrlBox.TextChanged -= AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged -= AutoSaveHandler;
             CloudflareAccountIdBox.TextChanged -= AutoSaveTextHandler;
+            if (ProviderButton?.Flyout is Flyout providerFlyout)
+            {
+                providerFlyout.Opening -= OnProviderFlyoutOpening;
+            }
             if (_providerCatalogController is not null)
             {
                 _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;

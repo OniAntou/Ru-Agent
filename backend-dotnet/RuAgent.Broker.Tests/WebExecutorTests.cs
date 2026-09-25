@@ -81,7 +81,7 @@ public sealed class WebExecutorTests
     }
 
     [Fact]
-    public async Task Service_falls_back_to_duckduckgo_when_google_parse_fails()
+    public async Task Service_asks_for_approval_on_the_configured_engine_alone()
     {
         using var fixture = SessionFixture.Create();
         fixture.Session.Open(
@@ -93,8 +93,7 @@ public sealed class WebExecutorTests
             fixture.Root,
             webOptions: new WebOptions(
                 true,
-                new Uri("https://93.184.216.34/google"),
-                new Uri("https://93.184.216.34/duckduckgo")),
+                new Uri("https://93.184.216.34/google")),
             webHttpClient: http);
 
         var pending = await service.ExecuteAsync(

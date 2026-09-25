@@ -91,7 +91,7 @@ bounded `truncated`),
 `recovery_too_large` beyond 1 MiB,
 `recovery_consumed` on replay), and `bash` with `mode=run|shell`, plus standalone
 `web_search` (`query`, optional `max_results` 1–10) and `web_fetch` (`url`) backed by
-Google HTML with DuckDuckGo fallback. Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` allows
+one configured Google HTML engine with no fallback. Agent runs use the immutable `RuAgent.Protocol` profile catalog. `plan` allows
 workspace read and Web while denying terminal and mutation. `standard`
 auto-allows bounded-local in-workspace mutation and asks for external/escape or
 risky terminal intent. `full_access` auto-allows external structured files and

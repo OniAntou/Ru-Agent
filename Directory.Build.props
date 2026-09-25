@@ -1,0 +1,33 @@
+<Project>
+
+  <!--
+    Repository-wide build baseline.
+
+    The product builds warning-free today (0 warnings in Debug across every project),
+    but nothing enforced that: 23 platform-compatibility warnings had accumulated in
+    RuAgent.Hosting before this file existed, and each .editorconfig style rule needs
+    EnforceCodeStyleInBuild to reach the compiler at all.
+
+    TreatWarningsAsErrors is deliberately scoped to backend-dotnet. The three WinUI
+    projects (gui-winui3, gui-winui3.Harness, gui-winui3.Tests) opt out below: the XAML
+    compiler emits warnings that vary by Windows App SDK or SDK patch version, and a
+    baseline that fails on an unrelated toolchain update teaches people to ignore it.
+  -->
+  <PropertyGroup>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+  </PropertyGroup>
+
+  <!--
+    TreatWarningsAsErrors applies to product projects only. Test projects are excluded:
+    they pull in the xUnit analyzers, whose style rules (xUnit2012 and friends) are
+    advisory and would turn an unrelated analyzer suggestion into a broken build.
+    The WinUI projects are excluded for the same reason plus their XAML compiler
+    warnings vary by Windows App SDK patch version.
+  -->
+  <PropertyGroup Condition="!$(MSBuildProjectName.EndsWith('Tests')) AND !$([System.String]::Copy('$(MSBuildProjectDirectory)').Replace('\','/').Contains('/gui-winui3'))">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

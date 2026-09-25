@@ -190,6 +190,39 @@ public sealed class GuiDiagnosticWriter : IDisposable
         }
     }
 
+    /// <summary>
+    /// Appends one bounded, pre-formatted diagnostic line to <c>gui-trace.jsonl</c>.
+    /// </summary>
+    /// <remarks>
+    /// For measurements that need to be read off the machine where a problem reproduces
+    /// but that do not belong in the event stream. The caller formats the line, so this
+    /// never inspects the objects it describes and never serializes them.
+    /// </remarks>
+    public static bool AppendTraceLine(string line, string? logRoot = null)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        try
+        {
+            string bounded = line.Length > MaxTraceLineChars ? line[..MaxTraceLineChars] : line;
+            string path = Path.Combine(ResolveLogRoot(logRoot), TraceFileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, bounded + Environment.NewLine);
+            return true;
+        }
+        catch
+        {
+            // A measurement is never worth failing a user action over.
+            return false;
+        }
+    }
+
+    private const int MaxTraceLineChars = 2_000;
+    private const string TraceFileName = "gui-trace.jsonl";
+
     public void Dispose()
     {
         lock (_gate)

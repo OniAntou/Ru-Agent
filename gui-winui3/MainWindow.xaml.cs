@@ -453,7 +453,7 @@ namespace RuApp
             {
                 var settings = await _apiService.GetSettingsAsync();
                 if (settings is null) return;
-                string backend = settings.BackendChoice ?? "openai";
+                string backend = settings.BackendChoice ?? string.Empty;
                 string model = Models.ProviderModelSelection.GetSelectedModel(settings, backend);
                 _groupedCatalogs?.SetSelection(backend, model);
             }

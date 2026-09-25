@@ -10,11 +10,15 @@ public sealed record ModelsDevEntry(string Id, string Name);
 
 public static class ProviderGroupDefinitions
 {
+    /// <summary>
+    /// The fixed groups the picker always shows. Only the custom endpoint is fixed:
+    /// it is the escape hatch for a server Models.dev cannot list. Every other
+    /// provider comes from the catalog, so OpenAI and Anthropic are no longer
+    /// declared here -- they arrive as catalog entries like any other provider.
+    /// </summary>
     public static IReadOnlyList<ProviderGroupDefinition> All { get; } =
     [
-        new("OpenAI", "openai", "OpenAI", 0),
-        new("Anthropic", "anthropic", "Anthropic", 1),
-        new("Custom OpenAI", "custom", "Custom", 2),
+        new("Custom OpenAI", "custom", "Custom", 0),
     ];
 
     public static IReadOnlyDictionary<string, ProviderGroupDefinition> ByAlias { get; } =
@@ -24,7 +28,7 @@ public static class ProviderGroupDefinitions
         All.ToDictionary(definition => definition.Backend, StringComparer.Ordinal);
 
     /// <summary>
-    /// The fixed three plus one group per Models.dev provider, in stable order.
+    /// The fixed group plus one group per Models.dev provider, in stable order.
     /// Unknown entries are skipped; the fixed set never moves.
     /// </summary>
     public static IReadOnlyList<ProviderGroupDefinition> WithModelsDev(IEnumerable<ModelsDevEntry>? entries)

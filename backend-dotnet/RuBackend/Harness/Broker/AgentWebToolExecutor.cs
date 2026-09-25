@@ -40,8 +40,7 @@ public sealed class AgentWebToolExecutor
                 policy,
                 sanitizer,
                 _options.SearchEndpoint,
-                _options.MaxResponseBytes,
-                _options.FallbackSearchEndpoint);
+                _options.MaxResponseBytes);
         }
     }
 

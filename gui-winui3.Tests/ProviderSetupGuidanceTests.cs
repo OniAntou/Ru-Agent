@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Xml.Linq;
 using RuApp.Models;
 using RuApp.Services;
 using Xunit;
@@ -32,10 +34,15 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void An_absent_alias_falls_back_to_the_default_provider()
+    public void An_absent_alias_names_no_provider_rather_than_inventing_one()
     {
-        Assert.Equal("OpenAI", ProviderSetupGuidance.DisplayName(null));
-        Assert.Equal("OpenAI", ProviderSetupGuidance.DisplayName("   "));
+        // Provider choice is Models.dev's catalog plus the custom endpoint. An
+        // absent alias has no provider behind it yet -- naming one here would put a
+        // provider in the trigger that the user never selected. The catalog, not
+        // this table, decides. See ResolveUnsetChoice.
+        Assert.Equal("No provider", ProviderSetupGuidance.DisplayName(null));
+        Assert.Equal("No provider", ProviderSetupGuidance.DisplayName("   "));
+        Assert.Equal(ProviderSetupGuidance.UnsetChoice, ProviderSetupGuidance.NormalizeProviderChoice(null));
     }
 
     [Fact]
@@ -180,39 +187,25 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void The_provider_table_covers_every_option_the_picker_renders()
+    public void The_picker_offers_exactly_the_fixed_aliases_it_declares()
     {
-        // Read from the markup, which is the picker's real list, rather than from a
-        // third copy of the aliases. An earlier version of this test compared the
-        // table against a hardcoded array while the view kept its own set beside it,
-        // so three lists had to agree and the test checked only two of them.
-        var document = GuiSource.Xml("Views", "SettingsView.xaml");
+        // The fixed rows are no longer markup: the custom endpoint is built as a row by
+        // the code, so the declared list and the code that uses it must agree.
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+        string body = GuiSource.MethodBody(code, "RebuildModelsDevOptions");
 
-        var pickerAliases = document.Descendants()
-            .Where(element => GuiSource.AttributeValue(element, "Click") == "OnProviderOptionClick")
-            .Select(element => GuiSource.AttributeValue(element, "Tag") ?? string.Empty)
-            .Where(tag => tag.Length > 0)
-            .OrderBy(tag => tag, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.NotEmpty(pickerAliases);
-
-        var tableAliases = ProviderSetupGuidance.All
-            .Select(provider => provider.Alias)
-            .OrderBy(alias => alias, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(pickerAliases, tableAliases);
+        Assert.Contains("new(\"custom\", CustomProviderDisplayName)", body, StringComparison.Ordinal);
+        Assert.Equal(["custom"], ProviderSetupGuidance.PickerAliases);
     }
 
     [Fact]
-    public void Every_picker_option_is_a_provider_the_app_knows()
+    public void Every_picker_row_is_a_provider_the_app_still_knows()
     {
         // The view asks this instead of keeping its own set, so an alias present in
         // the markup but missing from the table would be shown yet unrecognised.
-        foreach (string alias in ProviderSetupGuidance.All.Select(provider => provider.Alias))
+        foreach (string alias in ProviderSetupGuidance.PickerAliases)
         {
-            Assert.True(ProviderSetupGuidance.IsKnown(alias), alias + " is in the table but not known");
+            Assert.True(ProviderSetupGuidance.IsKnown(alias), alias + " is in the picker but not known");
         }
 
         Assert.False(ProviderSetupGuidance.IsKnown("not-a-provider"));
@@ -221,40 +214,96 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void An_empty_alias_is_not_known_even_though_Find_defaults_it()
+    public void An_empty_alias_has_no_provider_behind_it()
     {
-        // Two different questions. Find answers "which provider should this be", so an
-        // empty alias becomes the default and the app still has something to show.
-        // IsKnown answers "is this a recognised alias", and a caller uses it to reject
-        // input. Collapsing them would make the picker accept an empty choice.
-        Assert.NotNull(ProviderSetupGuidance.Find(null));
+        // Two different questions. Find answers "which provider is this", and an empty
+        // alias is no provider at all, so the app shows nothing rather than naming one
+        // the user never picked. IsKnown answers "is this a recognised alias", and a
+        // caller uses it to reject input.
+        Assert.Null(ProviderSetupGuidance.Find(null));
         Assert.False(ProviderSetupGuidance.IsKnown(null));
     }
 
     [Fact]
     public void ModelsDev_choices_are_selectable_without_joining_the_fixed_table()
     {
-        // The generic providers arrive over the network, so the fixed table can
-        // never list them. The dropdown accepts them through the union check.
+        // The catalog providers arrive over the network, so no fixed table can list
+        // them. The dropdown accepts them through the union check.
         Assert.True(ProviderSetupGuidance.IsModelsDevChoice("models.dev:openrouter"));
         Assert.True(ProviderSetupGuidance.IsModelsDevChoice("Models.Dev:OpenRouter"));
         Assert.False(ProviderSetupGuidance.IsModelsDevChoice("models.dev:"));
-        Assert.False(ProviderSetupGuidance.IsModelsDevChoice("openai"));
+        Assert.False(ProviderSetupGuidance.IsModelsDevChoice("custom"));
         Assert.False(ProviderSetupGuidance.IsModelsDevChoice(null));
 
-        Assert.True(ProviderSetupGuidance.IsSelectableProvider("openai"));
+        Assert.True(ProviderSetupGuidance.IsSelectableProvider("custom"));
         Assert.True(ProviderSetupGuidance.IsSelectableProvider("models.dev:openrouter"));
         Assert.False(ProviderSetupGuidance.IsSelectableProvider("not-a-provider"));
         Assert.False(ProviderSetupGuidance.IsSelectableProvider(null));
     }
 
     [Fact]
+    public void The_picker_offers_only_the_custom_row_beside_the_catalog()
+    {
+        // OpenAI and Anthropic are retired from selection: provider choice is the
+        // Models.dev catalog plus the custom endpoint, which exists for a server the
+        // catalog cannot list. Their aliases stay in All so a stored choice is still
+        // named and still reports a missing key.
+        Assert.Equal(["custom"], ProviderSetupGuidance.PickerAliases);
+
+        Assert.True(ProviderSetupGuidance.IsPickerFixed("custom"));
+        Assert.False(ProviderSetupGuidance.IsPickerFixed("openai"));
+        Assert.False(ProviderSetupGuidance.IsPickerFixed("anthropic"));
+        Assert.False(ProviderSetupGuidance.IsPickerFixed(null));
+    }
+
+    [Fact]
     public void NormalizeProviderChoice_lowercases_models_dev_ids()
     {
         Assert.Equal("models.dev:openrouter", ProviderSetupGuidance.NormalizeProviderChoice("Models.Dev:OpenRouter"));
-        Assert.Equal("openai", ProviderSetupGuidance.NormalizeProviderChoice("openai"));
-        Assert.Equal("openai", ProviderSetupGuidance.NormalizeProviderChoice("not-a-provider"));
-        Assert.Equal("openai", ProviderSetupGuidance.NormalizeProviderChoice(null));
+        Assert.Equal("custom", ProviderSetupGuidance.NormalizeProviderChoice("custom"));
+
+        // Nothing to resolve yet: an unknown or absent choice stays unset so the
+        // catalog can pick the first provider once it has been fetched.
+        Assert.Equal(ProviderSetupGuidance.UnsetChoice, ProviderSetupGuidance.NormalizeProviderChoice("not-a-provider"));
+        Assert.Equal(ProviderSetupGuidance.UnsetChoice, ProviderSetupGuidance.NormalizeProviderChoice(null));
+    }
+
+    [Fact]
+    public void An_unset_choice_resolves_to_the_first_catalog_provider_alphabetically()
+    {
+        (string, string)[] catalog =
+        [
+            ("zhipuai", "Zhipu AI"),
+            ("abacus", "Abacus"),
+            ("openrouter", "OpenRouter"),
+        ];
+
+        Assert.Equal(
+            "models.dev:abacus",
+            ProviderSetupGuidance.ResolveUnsetChoice(null, catalog));
+        Assert.Equal(
+            "models.dev:abacus",
+            ProviderSetupGuidance.ResolveUnsetChoice("not-a-provider", catalog));
+    }
+
+    [Fact]
+    public void A_chosen_provider_survives_resolution_untouched()
+    {
+        (string, string)[] catalog = [("abacus", "Abacus"), ("openrouter", "OpenRouter")];
+
+        Assert.Equal(
+            "models.dev:openrouter",
+            ProviderSetupGuidance.ResolveUnsetChoice("models.dev:openrouter", catalog));
+        Assert.Equal("custom", ProviderSetupGuidance.ResolveUnsetChoice("custom", catalog));
+    }
+
+    [Fact]
+    public void An_empty_catalog_never_invents_a_provider()
+    {
+        // The list is fetched. While it is unavailable there is no provider to select,
+        // and guessing one would point the run at a service the user never configured.
+        Assert.Equal(ProviderSetupGuidance.UnsetChoice, ProviderSetupGuidance.ResolveUnsetChoice(null, null));
+        Assert.Equal(ProviderSetupGuidance.UnsetChoice, ProviderSetupGuidance.ResolveUnsetChoice(null, []));
     }
 
     [Fact]
@@ -325,4 +374,218 @@ public sealed class ProviderSetupGuidanceTests
 
         Assert.Equal(["openai"], ordered.Select(entry => entry.Value).ToArray());
     }
+
+    /// <summary>
+    /// The catalog is ~190 rows, so the picker is a virtualized list, not a panel of
+    /// hand-built rows.
+    /// </summary>
+    /// <remarks>
+    /// This is the shape that fixed the picker. Building one Button per provider in a
+    /// StackPanel threw 0x800F1000 partway through the catalog, so the list silently
+    /// ended in the C's while every layer above it returned all 190 providers. A
+    /// ListView materializes only the visible rows, and these assertions keep the list
+    /// on that path: virtualized, bound by compiled bindings, and sized by the window.
+    /// </remarks>
+    [Fact]
+    public void The_provider_picker_is_a_virtualized_list()
+    {
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var list = GuiSource.Require(settings, "ProviderListView");
+
+        Assert.Equal("ListView", list.Name.LocalName);
+        Assert.Equal("True", GuiSource.AttributeValue(list, "IsItemClickEnabled"));
+
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+        Assert.Contains("ProviderListView.ItemsSource = _providerRows", code, StringComparison.Ordinal);
+
+        // The old shape must not come back: a row panel with one Button per provider is
+        // what hit the element ceiling.
+        Assert.Null(settings.Descendants()
+            .FirstOrDefault(element => GuiSource.AttributeValue(element, "Name") == "ModelsDevOptionsPanel"));
+        Assert.DoesNotContain("BuildProviderRowButton", code, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The list must be given a concrete height, not just a maximum.
+    /// </summary>
+    /// <remarks>
+    /// The picker's content sits in a StackPanel, which measures its children with
+    /// unbounded height. A ListView measured that way realizes every item and lays out
+    /// none of them: the rows existed, had correct bounds, and painted nothing.
+    /// </remarks>
+    [Fact]
+    public void The_provider_list_is_given_a_concrete_height()
+    {
+        string body = GuiSource.MethodBody(
+            GuiSource.Text("Views", "SettingsView.xaml.cs"),
+            "OnProviderFlyoutOpening");
+
+        Assert.Contains("ProviderListView.Height", body, StringComparison.Ordinal);
+        Assert.Contains("ProviderListView.MaxHeight", body, StringComparison.Ordinal);
+        // The window is the bound, not a constant of our own.
+        Assert.Contains("XamlRoot", body, StringComparison.Ordinal);
+        Assert.Contains("Math.Max", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Math.Clamp", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The item template binds with x:Bind, which is compiled.
+    /// </summary>
+    /// <remarks>
+    /// It used to bind with {Binding}. That resolves by reflection at runtime, and it
+    /// silently produced blank rows -- correct bounds, no text, no error.
+    /// </remarks>
+    [Fact]
+    public void The_provider_row_template_binds_compiled()
+    {
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var template = settings.Descendants()
+            .First(element => element.Name.LocalName == "DataTemplate");
+
+        // x:DataType is namespaced, so it is read from the namespace-qualified name.
+        var dataType = template.Attributes()
+            .FirstOrDefault(attribute => attribute.Name.LocalName == "DataType");
+        Assert.NotNull(dataType);
+        Assert.Contains("ProviderRow", dataType!.Value, StringComparison.Ordinal);
+
+        string markup = template.ToString();
+        Assert.Contains("x:Bind", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("{Binding ", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The row model is public and top-level in the Models namespace.
+    /// </summary>
+    /// <remarks>
+    /// x:Bind resolves the DataType by name at compile time, so a nested or namespaced
+    /// mismatch fails the build; a model that lands in the wrong namespace has to be
+    /// caught by the namespace mapping the markup declares.
+    /// </remarks>
+    [Fact]
+    public void The_provider_row_model_is_addressable_from_the_markup()
+    {
+        string model = GuiSource.Text("Models", "ProviderRow.cs");
+
+        Assert.Contains("namespace RuApp.Models;", model, StringComparison.Ordinal);
+        Assert.Contains("public sealed class ProviderRow", model, StringComparison.Ordinal);
+
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        string namespaces = string.Join(
+            " ",
+            settings.Root!.Attributes()
+                .Where(attribute => attribute.IsNamespaceDeclaration)
+                .Select(attribute => $"{attribute.Name.LocalName}={attribute.Value}"));
+        Assert.Contains("models=using:RuApp.Models", namespaces, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_letter_strip_overlays_the_list_rather_than_being_a_second_column()
+    {
+        // An adjacent column put the index outside the flyout, where it read as a stray
+        // panel hanging off the dropdown. It shares the list's cell and aligns right
+        // instead, so it costs no layout width and cannot drift out of the flyout.
+        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
+        var strip = GuiSource.Require(settings, "ProviderLetterJumpStrip");
+        var list = GuiSource.Require(settings, "ProviderListView");
+
+        Assert.False(GuiSource.IsDescendantOf(strip, list));
+        Assert.Equal(list.Parent, strip.Parent);
+        Assert.Equal("Right", GuiSource.AttributeValue(strip, "HorizontalAlignment"));
+    }
+
+    [Fact]
+    public void The_provider_flyout_resizes_only_through_the_lifecycle_it_owns()
+    {
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+
+        // Subscribed on construction and released on dispose: the handler must not
+        // outlive the view, or a closed Settings modal keeps resizing a dead visual tree.
+        Assert.Contains("providerFlyout.Opening += OnProviderFlyoutOpening", code, StringComparison.Ordinal);
+        Assert.Contains("providerFlyout.Opening -= OnProviderFlyoutOpening", code, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Abacus", 'A')]
+    [InlineData("  zhipuai ", 'Z')]
+    [InlineData("ai&", 'A')]
+    [InlineData("302.AI", null)]
+    [InlineData("Nous Research", 'N')]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData(null, null)]
+    public void A_provider_files_under_a_letter_only_when_it_starts_with_one(
+        string? name,
+        char? expected)
+    {
+        Assert.Equal(expected, ProviderSetupGuidance.JumpLetterFor(name));
+    }
+
+    [Fact]
+    public void The_jump_strip_is_always_the_whole_alphabet()
+    {
+        var targets = ProviderSetupGuidance.JumpTargets(["Abacus", "Zhipu AI"]);
+
+        Assert.Equal(26, targets.Count);
+        Assert.Equal(Enumerable.Range('A', 26).Select(code => (char)code), targets.Select(t => t.Letter));
+    }
+
+    [Fact]
+    public void A_jump_target_is_the_first_visible_provider_under_that_letter()
+    {
+        string?[] names = ["302.AI", "Abacus", "Aixy", "Zhipu AI"];
+
+        var targets = ProviderSetupGuidance.JumpTargets(names).ToDictionary(t => t.Letter, t => t.Index);
+
+        // Index counts rows, so "A" points at the second row, not at the first A-name
+        // in some filtered view of the list.
+        Assert.Equal(1, targets['A']);
+        Assert.Equal(3, targets['Z']);
+        Assert.Null(targets['B']);
+    }
+
+    [Fact]
+    public void A_letter_with_no_matching_row_is_disabled_rather_than_hidden()
+    {
+        string?[] names = ["Abacus", "Aixy", "Zhipu AI"];
+        // Only the Z row survives the filter: the strip keeps every letter so it never
+        // changes shape while the user types, but A points at nothing and is disabled.
+        bool[] visible = [false, false, true];
+
+        var targets = ProviderSetupGuidance.JumpTargets(names, index => visible[index])
+            .ToDictionary(t => t.Letter, t => t.Index);
+
+        Assert.Null(targets['A']);
+        Assert.Equal(2, targets['Z']);
+    }
+
+    [Fact]
+    public void The_jump_strip_tolerates_an_empty_catalog()
+    {
+        var targets = ProviderSetupGuidance.JumpTargets([]);
+
+        Assert.Equal(26, targets.Count);
+        Assert.All(targets, target => Assert.Null(target.Index));
+    }
+
+    [Fact]
+    public void The_letter_strip_is_rebuilt_wherever_the_visible_rows_change()
+    {
+        // The strip indexes rendered rows, so it goes stale the moment the filter or the
+        // rebuild moves them. Both call the rebuild; without that it silently points at
+        // the wrong rows.
+        string body = GuiSource.MethodBody(
+            GuiSource.Text("Views", "SettingsView.xaml.cs"),
+            "ApplyProviderFilter");
+
+        Assert.Contains("RebuildProviderLetterStrip()", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <see cref="GuiSource.AttributeValue"/> matches a local name, which does not
+    /// resolve the namespaced <c>x:Key</c> that identifies a style.
+    /// </summary>
+    private static string? Attribute(XElement element, string localName) =>
+        element.Attributes()
+            .FirstOrDefault(attribute => attribute.Name.LocalName == localName)
+            ?.Value;
 }

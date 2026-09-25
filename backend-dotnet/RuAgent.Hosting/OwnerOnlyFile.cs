@@ -78,6 +78,7 @@ internal static class OwnerOnlyFile
         EnsureOwnerOnly(path);
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static FileStream CreateOwnerOnly(string path)
     {
         var identity = WindowsIdentity.GetCurrent().User
@@ -132,6 +133,7 @@ internal static class OwnerOnlyFile
     /// and rule shape are checked rather than assumed, because a silently ignored
     /// ACL call is exactly the failure this helper exists to prevent.
     /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void EnsureOwnerOnly(string path)
     {
         var security = new FileInfo(path).GetAccessControl();

@@ -1,0 +1,131 @@
+# Repository code style. Without this file the C# compiler has no baseline for the
+# style diagnostics the projects enable, so nothing enforced the conventions the
+# working rules describe (boolean prefixes, shallow nesting, no magic numbers).
+# The rules here are the ones the existing code already satisfies; they are a floor,
+# not a reformatting mandate.
+#
+# Line endings are deliberately NOT declared: the checkout has mixed history and
+# git is configured with core.autocrlf=true, so declaring an EOL here would show up
+# as a repo-wide rewrite rather than a style fix.
+
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{xaml,xml,csproj,props,targets,json,yml,yaml}]
+indent_size = 2
+
+[*.{md,markdown}]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[*.cs]
+# --- using directives ---
+dotnet_sort_system_directives_first = true
+# 66 existing files declare usings inside the namespace. Recorded as guidance, not a
+# warning: converting them is a reformatting pass, and the working rules say not to
+# reformat code a change is not already touching.
+csharp_using_directive_placement = outside_namespace:silent
+
+# --- language style ---
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+# 668 existing single-statement blocks omit braces. Guidance for new code rather than
+# a warning, for the same reason: it would be a repo-wide reformat, and it would bury
+# any behavioral change in the same diff.
+csharp_prefer_braces = true:silent
+csharp_prefer_simple_using_statement = true:suggestion
+# The codebase declares block-scoped namespaces throughout. Guidance rather than a
+# warning: converting them is a reformatting pass, not a fix.
+csharp_style_namespace_declarations = file_scoped:silent
+csharp_style_throw_expression = true:suggestion
+csharp_style_conditional_delegate_call = true:suggestion
+
+# --- null checking ---
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:warning
+
+# --- member design ---
+# Explicit accessibility is the dominant local style but not universal, so it stays
+# guidance rather than a warning for the same no-reformat reason as above.
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:silent
+dotnet_style_readonly_field = true:suggestion
+dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_prefer_compound_assignment = true:suggestion
+dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
+dotnet_style_prefer_simplified_interpolation = true:suggestion
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+
+# --- modern language features the codebase already uses ---
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+csharp_style_prefer_extended_property_pattern = true:suggestion
+csharp_style_implicit_object_creation_when_type_is_apparent = true:suggestion
+csharp_style_prefer_index_operator = true:suggestion
+csharp_style_prefer_range_operator = true:suggestion
+csharp_style_prefer_local_over_anonymous_function = true:suggestion
+csharp_style_deconstructed_variable_declaration = true:suggestion
+csharp_style_inlined_variable_declaration = true:suggestion
+csharp_style_unused_value_assignment_preference = discard_variable:suggestion
+csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
+
+# --- naming: an interface is I-prefixed, a private field is _camelCase ---
+dotnet_naming_rule.interfaces_start_with_i.severity = warning
+dotnet_naming_rule.interfaces_start_with_i.symbols = interfaces
+dotnet_naming_rule.interfaces_start_with_i.style = i_prefixed
+
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+
+dotnet_naming_style.i_prefixed.required_prefix = I
+dotnet_naming_style.i_prefixed.capitalization = pascal_case
+
+dotnet_naming_rule.private_fields_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# --- analyzers that would fight the shapes this codebase chose deliberately ---
+# CA2007: awaits cross ConfigureAwait boundaries on purpose.
+dotnet_diagnostic.CA2007.severity = none
+# CA1848: the logging overloads in use are the intended ones.
+dotnet_diagnostic.CA1848.severity = none
+# CA1031: a bounded catch-and-report is the documented fail-closed shape here.
+dotnet_diagnostic.CA1031.severity = none
+# CA1303: literal strings are the product's user-facing text.
+dotnet_diagnostic.CA1303.severity = none
+# CA1819 / CA2227: DTO shapes mirror the wire contract.
+dotnet_diagnostic.CA1819.severity = none
+dotnet_diagnostic.CA2227.severity = none
+# CA1051: internal test seams are fields on purpose.
+dotnet_diagnostic.CA1051.severity = none
+# CA1707: test method names use underscores.
+dotnet_diagnostic.CA1707.severity = none
+# CA5394: no security-relevant randomness outside the crypto paths.
+dotnet_diagnostic.CA5394.severity = none
+# CA1002 / CA1003: collection and delegate shapes follow the existing contracts.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA1003.severity = none
+# CA1062: null validation is explicit at the boundaries that need it.
+dotnet_diagnostic.CA1062.severity = none
+
+[**/obj/**]
+generated_code = true
+
+[**/*.g.cs]
+generated_code = true
+
+[**/*.Designer.cs]
+generated_code = true

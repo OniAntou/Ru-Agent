@@ -5,6 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:views="using:RuApp.Views"
+    xmlns:models="using:RuApp.Models"
     mc:Ignorable="d">
 
     <UserControl.Resources>
@@ -417,7 +418,7 @@
                                         AutomationProperties.Name="Active provider">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock x:Name="ProviderButtonLabel"
-                                                   Text="OpenAI (Official API)"
+                                                   Text="No provider"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="13"
                                                    FontWeight="Medium"
@@ -434,10 +435,10 @@
                                     <Button.Flyout>
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
                                             <StackPanel Spacing="0">
-                                                <Grid ColumnDefinitions="Auto,*" Margin="6,4,6,0">
+                                                <Grid ColumnDefinitions="Auto,*" Margin="6,6,6,8">
                                                     <FontIcon Glyph="&#xE721;"
-                                                              FontSize="12"
-                                                              Foreground="{StaticResource RuMutedBrush}"
+                                                              FontSize="13"
+                                                              Foreground="{StaticResource RuAccentBrush}"
                                                               VerticalAlignment="Center"
                                                               Margin="0,0,8,0" />
                                                     <TextBox x:Name="ProviderSearchBox"
@@ -472,139 +473,101 @@
                                                         </TextBox.Resources>
                                                     </TextBox>
                                                 </Grid>
-                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="8,6,8,2" />
-                                                <ScrollViewer MaxHeight="420"
-                                                              VerticalScrollBarVisibility="Visible"
-                                                              HorizontalScrollBarVisibility="Disabled"
-                                                              HorizontalScrollMode="Disabled"
-                                                              Padding="0,0,6,4">
-                                                    <ScrollViewer.Resources>
-                                                        <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
-                                                        <SolidColorBrush x:Key="ScrollBarForeground" Color="Transparent" />
-                                                        <SolidColorBrush x:Key="ScrollBarThumbFill" Color="{ThemeResource RuLineColor}" />
-                                                        <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{ThemeResource RuMutedColor}" />
-                                                        <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{ThemeResource RuAccentColor}" />
-                                                        <SolidColorBrush x:Key="ScrollBarThumbFillDisabled" Color="Transparent" />
-                                                        <SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent" />
-                                                        <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent" />
-                                                        <SolidColorBrush x:Key="ScrollBarTrackFillDisabled" Color="Transparent" />
-                                                        <x:Double x:Key="ScrollBarSize">8</x:Double>
-                                                    </ScrollViewer.Resources>
-                                                    <StackPanel Spacing="2">
-                                                <TextBlock x:Name="SignedInOptionsHeader"
-                                                           Text="SIGNED IN"
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="10.5"
-                                                           Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="6,2,0,2"
-                                                           Visibility="Collapsed" />
-                                                <StackPanel x:Name="SignedInOptionsPanel" Spacing="2" />
+                                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="8,0,8,0" />
                                                 <TextBlock x:Name="FixedProvidersHeader"
                                                            Text="PROVIDERS"
                                                            FontFamily="{StaticResource RuUiFontFamily}"
                                                            FontSize="10.5"
                                                            Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="6,2,0,2" />
-                                                <Button x:Name="ProviderOpenaiOption"
-                                                        Tag="openai"
-                                                        Click="OnProviderOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="OpenAI provider">
-                                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                                        <Ellipse x:Name="ProviderOpenaiDot"
-                                                                 Width="6"
-                                                                 Height="6"
-                                                                 Fill="{StaticResource RuSuccessBrush}"
-                                                                 VerticalAlignment="Center"
-                                                                 Margin="0,0,8,0"
-                                                                 Visibility="Collapsed" />
-                                                        <TextBlock x:Name="ProviderOpenaiText"
-                                                                   Grid.Column="1"
-                                                                   Text="OpenAI (Official API)"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ProviderOpenaiCheck"
-                                                                  Grid.Column="2"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="12"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="ProviderAnthropicOption"
-                                                        Tag="anthropic"
-                                                        Click="OnProviderOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Anthropic provider">
-                                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                                        <Ellipse x:Name="ProviderAnthropicDot"
-                                                                 Width="6"
-                                                                 Height="6"
-                                                                 Fill="{StaticResource RuSuccessBrush}"
-                                                                 VerticalAlignment="Center"
-                                                                 Margin="0,0,8,0"
-                                                                 Visibility="Collapsed" />
-                                                        <TextBlock x:Name="ProviderAnthropicText"
-                                                                   Grid.Column="1"
-                                                                   Text="Anthropic Claude (Official API)"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ProviderAnthropicCheck"
-                                                                  Grid.Column="2"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="12"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <Button x:Name="ProviderCustomOption"
-                                                        Tag="custom"
-                                                        Click="OnProviderOptionClick"
-                                                        Style="{StaticResource RuDropdownItemButtonStyle}"
-                                                        AutomationProperties.Name="Custom server provider">
-                                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                                        <Ellipse x:Name="ProviderCustomDot"
-                                                                 Width="6"
-                                                                 Height="6"
-                                                                 Fill="{StaticResource RuSuccessBrush}"
-                                                                 VerticalAlignment="Center"
-                                                                 Margin="0,0,8,0"
-                                                                 Visibility="Collapsed" />
-                                                        <TextBlock x:Name="ProviderCustomText"
-                                                                   Grid.Column="1"
-                                                                   Text="Custom OpenAI Server"
-                                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                                   FontSize="12.5"
-                                                                   Foreground="{StaticResource RuInkBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis" />
-                                                        <FontIcon x:Name="ProviderCustomCheck"
-                                                                  Grid.Column="2"
-                                                                  Glyph="&#xE73E;"
-                                                                  FontSize="12"
-                                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                                  VerticalAlignment="Center"
-                                                                  Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <StackPanel x:Name="ModelsDevOptionsPanel" Spacing="2" />
-                                                <TextBlock x:Name="ProviderNoMatchText"
-                                                           Text="No provider matches."
-                                                           FontFamily="{StaticResource RuUiFontFamily}"
-                                                           FontSize="12"
-                                                           Foreground="{StaticResource RuMutedBrush}"
-                                                           Margin="6,6,0,2"
-                                                           Visibility="Collapsed" />
-                                                    </StackPanel>
-                                                </ScrollViewer>
+                                                           Margin="6,6,6,2" />
+                                                <!--
+                                                  The catalog is ~190 rows, so the list gets an
+                                                  A-Z index. It overlays the right edge of the
+                                                  viewport (same grid cell, right aligned) so it
+                                                  costs no layout width and cannot drift outside
+                                                  the flyout the way a second column did.
+                                                -->
+                                                <Grid>
+                                                    <!--
+                                                      The catalog is ~190 rows. They go through a
+                                                      ListView so the list is virtualized: only the
+                                                      visible rows become UI elements. Building a
+                                                      Button per provider in a StackPanel threw
+                                                      0x800F1000 partway through the catalog and the
+                                                      picker silently stopped in the C's.
+                                                      VerticalAlignment is Top and the height comes
+                                                      from the code-behind: a ListView measured by an
+                                                      unbounded parent never virtualizes.
+                                                    -->
+                                                    <ListView x:Name="ProviderListView"
+                                                              VerticalAlignment="Top"
+                                                              MaxHeight="560"
+                                                              SelectionMode="Single"
+                                                              IsItemClickEnabled="True"
+                                                              ItemClick="OnProviderRowClicked"
+                                                              Padding="0,0,22,4"
+                                                              ScrollViewer.HorizontalScrollMode="Disabled"
+                                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                                        <ListView.Resources>
+                                                            <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="ScrollBarForeground" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="ScrollBarThumbFill" Color="{ThemeResource RuLineColor}" />
+                                                            <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{ThemeResource RuMutedColor}" />
+                                                            <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{ThemeResource RuAccentColor}" />
+                                                            <SolidColorBrush x:Key="ScrollBarThumbFillDisabled" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent" />
+                                                            <SolidColorBrush x:Key="ScrollBarTrackFillDisabled" Color="Transparent" />
+                                                            <x:Double x:Key="ScrollBarSize">8</x:Double>
+                                                        </ListView.Resources>
+                                                        <ListView.ItemContainerStyle>
+                                                            <Style TargetType="ListViewItem">
+                                                                <Setter Property="Padding" Value="0" />
+                                                                <Setter Property="Margin" Value="0" />
+                                                                <Setter Property="MinHeight" Value="0" />
+                                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                            </Style>
+                                                        </ListView.ItemContainerStyle>
+                                                        <ListView.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:ProviderRow">
+                                                                <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="26" Padding="8,3,8,3">
+                                                                    <Ellipse Width="6" Height="6"
+                                                                             VerticalAlignment="Center"
+                                                                             Margin="0,0,8,0"
+                                                                             Fill="{StaticResource RuSuccessBrush}"
+                                                                             Visibility="{x:Bind KeyDotVisibility, Mode=OneWay}" />
+                                                                    <TextBlock Grid.Column="1"
+                                                                               Text="{x:Bind DisplayName}"
+                                                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                                                               FontSize="12.5"
+                                                                               Foreground="{StaticResource RuInkBrush}"
+                                                                               FontWeight="{x:Bind NameWeight, Mode=OneWay}"
+                                                                               Opacity="{x:Bind NameOpacity, Mode=OneWay}"
+                                                                               VerticalAlignment="Center"
+                                                                               TextTrimming="CharacterEllipsis" />
+                                                                    <FontIcon Grid.Column="2"
+                                                                              Glyph="&#xE73E;"
+                                                                              FontSize="12"
+                                                                              Foreground="{StaticResource RuAccentBrush}"
+                                                                              VerticalAlignment="Center"
+                                                                              Margin="8,0,0,0"
+                                                                              Visibility="{x:Bind CheckVisibility, Mode=OneWay}" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ListView.ItemTemplate>
+                                                    </ListView>
+                                                 <ItemsControl x:Name="ProviderLetterJumpStrip"
+                                                               HorizontalAlignment="Right"
+                                                               VerticalAlignment="Top"
+                                                               Margin="0,2,4,0"
+                                                               AutomationProperties.Name="Jump to provider letter">
+                                                     <ItemsControl.ItemsPanel>
+                                                         <ItemsPanelTemplate>
+                                                             <StackPanel Spacing="0" />
+                                                         </ItemsPanelTemplate>
+                                                     </ItemsControl.ItemsPanel>
+                                                 </ItemsControl>
+                                                </Grid>
                                             </StackPanel>
                                         </Flyout>
                                     </Button.Flyout>
@@ -636,60 +599,6 @@
                                         AutomationProperties.Name="Test provider connection"
                                         Click="OnProviderTestClick" />
                             </Grid>
-
-                            <!-- OpenAI API Key Row -->
-                            <StackPanel x:Name="OpenAiApiRow" Spacing="16" Visibility="Collapsed">
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock x:Name="OpenAiApiKeyLabel" Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                        <PasswordBox x:Name="OpenAiApiKeyBox"
-                                                     AutomationProperties.LabeledBy="{Binding ElementName=OpenAiApiKeyLabel}"
-                                                     PlaceholderText="sk-&#x2026;"
-                                                     Width="260"
-                                                     Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                        <Button x:Name="OpenAiSignOutButton"
-                                                Content="Đăng xuất"
-                                                Tag="openai"
-                                                Click="OnRemoveProviderClick"
-                                                Height="36"
-                                                MinWidth="96"
-                                                AutomationProperties.AutomationId="SignOutProviderOpenAi"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-
-                            <!-- Anthropic API Key Row -->
-                            <StackPanel x:Name="AnthropicApiRow" Spacing="16" Visibility="Collapsed">
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock x:Name="AnthropicApiKeyLabel" Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="API key stored securely in Credential Manager" Style="{StaticResource SettingDescStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                        <PasswordBox x:Name="AnthropicApiKeyBox"
-                                                     AutomationProperties.LabeledBy="{Binding ElementName=AnthropicApiKeyLabel}"
-                                                     PlaceholderText="sk-ant-&#x2026;"
-                                                     Width="260"
-                                                     Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                        <Button x:Name="AnthropicSignOutButton"
-                                                Content="Đăng xuất"
-                                                Tag="anthropic"
-                                                Click="OnRemoveProviderClick"
-                                                Height="36"
-                                                MinWidth="96"
-                                                AutomationProperties.AutomationId="SignOutProviderAnthropic"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
 
                             <!-- Custom Endpoint URL Row -->
                             <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">

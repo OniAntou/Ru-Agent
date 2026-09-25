@@ -58,25 +58,29 @@ public sealed class WebAdapterTests
     }
 
     [Fact]
-    public async Task Search_falls_back_to_duckduckgo_when_google_layout_is_unknown()
+    public async Task Search_does_not_query_a_second_engine_when_the_layout_is_unknown()
     {
-        using var http = new HttpClient(new GoogleThenDuckHandler());
+        // One engine, no fallback. A page this parser cannot read yields no results
+        // for this call; retrying it against another service would send the query
+        // somewhere the user never configured and outside the approval the call was
+        // granted under. The engine is contacted exactly once either way.
+        var handler = new GoogleThenDuckHandler();
+        using var http = new HttpClient(handler);
         var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var adapter = new WebSearchAdapter(
             http,
             policy,
             new WebContentSanitizer(),
-            new Uri("https://93.184.216.34/google"),
-            fallbackEndpoint: new Uri("https://93.184.216.34/duckduckgo"));
+            new Uri("https://93.184.216.34/google"));
 
-        var result = Assert.Single(await adapter.SearchAsync("dotnet docs", CancellationToken.None));
+        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
 
-        Assert.Equal("https://93.184.216.34/result", result.Url.AbsoluteUri);
-        Assert.Equal("Duck result", result.Title);
+        Assert.Empty(result);
+        Assert.Equal(1, handler.RequestCount);
     }
 
     [Fact]
-    public async Task Search_returns_empty_when_no_engine_has_anchors()
+    public async Task Search_returns_empty_when_the_only_engine_has_no_anchors()
     {
         using var http = new HttpClient(new FakeHandler("text/html", "<html><body><p>consent</p></body></html>"));
         var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
@@ -84,8 +88,7 @@ public sealed class WebAdapterTests
             http,
             policy,
             new WebContentSanitizer(),
-            new Uri("https://93.184.216.34/google"),
-            fallbackEndpoint: new Uri("https://93.184.216.34/duckduckgo"));
+            new Uri("https://93.184.216.34/google"));
 
         var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
 
@@ -93,25 +96,29 @@ public sealed class WebAdapterTests
     }
 
     [Fact]
-    public async Task Search_falls_back_when_google_has_anchors_but_no_usable_target()
+    public async Task Search_fails_closed_when_the_only_engine_has_anchors_but_no_usable_target()
     {
+        // Anchors were present but none resolved to a usable target. With no second
+        // engine to try, this is a parse failure rather than a silent empty answer.
         const string html = """
             <html><body>
-              <a href="/url?q=javascript:alert(1)&amp;sa=U">malformed result</a>
+              <a class="result__a" href="javascript:alert(1)">malformed result</a>
             </body></html>
             """;
-        using var http = new HttpClient(new GoogleThenDuckHandler(html));
+        var handler = new FakeHandler("text/html", html);
+        using var http = new HttpClient(handler);
         var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var adapter = new WebSearchAdapter(
             http,
             policy,
             new WebContentSanitizer(),
-            new Uri("https://93.184.216.34/google"),
-            fallbackEndpoint: new Uri("https://93.184.216.34/duckduckgo"));
+            new Uri("https://html.duckduckgo.com/html/"));
 
-        var result = Assert.Single(await adapter.SearchAsync("broken", CancellationToken.None));
+        var error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => adapter.SearchAsync("broken", CancellationToken.None));
 
-        Assert.Equal("https://93.184.216.34/result", result.Url.AbsoluteUri);
+        Assert.Equal("web_search_parse_failed", error.Message);
+        Assert.Equal(1, handler.RequestCount);
     }
 
     [Fact]
@@ -210,8 +217,11 @@ public sealed class WebAdapterTests
             _body = body;
         }
 
+        public int RequestCount { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestCount++;
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_body),
@@ -230,8 +240,11 @@ public sealed class WebAdapterTests
             _googleBody = googleBody;
         }
 
+        public int RequestCount { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestCount++;
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
             var body = path.Contains("duckduckgo", StringComparison.Ordinal)
                 ? "<a class=\"result__a\" href=\"https://93.184.216.34/result\">Duck result</a>"

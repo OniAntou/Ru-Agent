@@ -124,11 +124,11 @@ public sealed class RuntimeDescriptorWriter
         if (uri.Port is < 1024 or > 65535) throw new ArgumentException("base_url port invalid");
         if (string.IsNullOrWhiteSpace(descriptor.BearerToken)) throw new ArgumentException("bearer_token required");
         if (descriptor.ProcessId <= 0) throw new ArgumentException("pid invalid");
-        if (string.IsNullOrWhiteSpace(descriptor.ProcessStartTime) || !DateTimeOffset.TryParse(descriptor.ProcessStartTime, out _))
+        if (string.IsNullOrWhiteSpace(descriptor.ProcessStartTime) || !RuntimeDescriptorValidator.TryParseRoundtrip(descriptor.ProcessStartTime, out _))
             throw new ArgumentException("process_start_time invalid");
         if (string.IsNullOrWhiteSpace(descriptor.InstanceNonce) || descriptor.InstanceNonce.Length != 32)
             throw new ArgumentException("instance_nonce invalid");
-        if (string.IsNullOrWhiteSpace(descriptor.CreatedAt) || !DateTimeOffset.TryParse(descriptor.CreatedAt, out _))
+        if (string.IsNullOrWhiteSpace(descriptor.CreatedAt) || !RuntimeDescriptorValidator.TryParseRoundtrip(descriptor.CreatedAt, out _))
             throw new ArgumentException("created_at invalid");
     }
 
@@ -157,7 +157,7 @@ public sealed class RuntimeDescriptorWriter
         {
             using var process = Process.GetProcessById(descriptor.ProcessId);
             // Compare start time with tolerance: descriptor's start time is ISO string; process.StartTime is local.
-            if (!DateTimeOffset.TryParse(descriptor.ProcessStartTime, out var descriptorStart))
+            if (!RuntimeDescriptorValidator.TryParseRoundtrip(descriptor.ProcessStartTime, out var descriptorStart))
                 return false;
             var processStart = process.StartTime.ToUniversalTime();
             var descStartUtc = descriptorStart.ToUniversalTime();
@@ -181,6 +181,22 @@ public sealed class RuntimeDescriptorWriter
 
 public static class RuntimeDescriptorValidator
 {
+    /// <summary>
+    /// Parses one of a descriptor's ISO-8601 round-trip timestamps.
+    /// </summary>
+    /// <remarks>
+    /// The culture is pinned to the invariant one on purpose. These values are written
+    /// with <c>ToString("O")</c>, but a culture-sensitive parse reads those digits in
+    /// the current culture's calendar, so on a non-Gregorian locale the process-bound
+    /// comparison never matched and a live host was reported as <c>stale_pid</c>.
+    /// </remarks>
+    internal static bool TryParseRoundtrip(string value, out DateTimeOffset parsed) =>
+        DateTimeOffset.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out parsed);
+
     public static RuntimeDescriptor ParseStrict(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -230,7 +246,7 @@ public static class RuntimeDescriptorValidator
         if (!root.TryGetProperty("process_start_time", out var startProp) || startProp.ValueKind != JsonValueKind.String)
             throw new ArgumentException("process_start_time invalid");
         var startTime = startProp.GetString()!;
-        if (!DateTimeOffset.TryParse(startTime, out _))
+        if (!TryParseRoundtrip(startTime, out _))
             throw new ArgumentException("process_start_time invalid");
 
         if (!root.TryGetProperty("instance_nonce", out var nonceProp) || nonceProp.ValueKind != JsonValueKind.String)
@@ -242,7 +258,7 @@ public static class RuntimeDescriptorValidator
         if (!root.TryGetProperty("created_at", out var createdProp) || createdProp.ValueKind != JsonValueKind.String)
             throw new ArgumentException("created_at invalid");
         var created = createdProp.GetString()!;
-        if (!DateTimeOffset.TryParse(created, out _))
+        if (!TryParseRoundtrip(created, out _))
             throw new ArgumentException("created_at invalid");
 
         return new RuntimeDescriptor(version, baseUrl, bearer, pid, startTime, nonce, created);

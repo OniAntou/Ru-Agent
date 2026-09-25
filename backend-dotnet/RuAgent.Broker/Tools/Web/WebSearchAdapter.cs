@@ -24,7 +24,6 @@ public sealed class WebSearchAdapter
     private readonly HttpClient _http;
     private readonly WebPolicy _policy;
     private readonly Uri _endpoint;
-    private readonly Uri? _fallbackEndpoint;
     private readonly int _maxResponseBytes;
 
     public WebSearchAdapter(
@@ -32,14 +31,12 @@ public sealed class WebSearchAdapter
         WebPolicy policy,
         WebContentSanitizer sanitizer,
         Uri endpoint,
-        int maxResponseBytes = WebOptions.DefaultMaxResponseBytes,
-        Uri? fallbackEndpoint = null)
+        int maxResponseBytes = WebOptions.DefaultMaxResponseBytes)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         ArgumentNullException.ThrowIfNull(sanitizer);
         _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
-        _fallbackEndpoint = fallbackEndpoint;
         if (maxResponseBytes is < 1 or > WebOptions.MaxConfiguredResponseBytes)
         {
             throw new ArgumentOutOfRangeException(nameof(maxResponseBytes));
@@ -59,41 +56,10 @@ public sealed class WebSearchAdapter
         }
 
         maxResults = Math.Clamp(maxResults, 1, 10);
-        Exception? primaryError = null;
-        IReadOnlyList<SourceCitation>? primary = null;
-        try
-        {
-            primary = await SearchEngineAsync(_endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
-            if (primary.Count > 0)
-            {
-                return primary;
-            }
-        }
-        catch (Exception error) when (error is not OperationCanceledException)
-        {
-            if (_fallbackEndpoint is null || _fallbackEndpoint == _endpoint)
-            {
-                throw;
-            }
-
-            primaryError = error;
-        }
-
-        if (_fallbackEndpoint is not null && _fallbackEndpoint != _endpoint)
-        {
-            var fallback = await SearchEngineAsync(_fallbackEndpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
-            if (fallback.Count > 0)
-            {
-                return fallback;
-            }
-
-            if (primaryError is not null)
-            {
-                throw primaryError;
-            }
-        }
-
-        return Array.Empty<SourceCitation>();
+        // One engine, no fallback. A failure or an unparsable layout surfaces as its
+        // own bounded code instead of being retried against a service the user never
+        // configured.
+        return await SearchEngineAsync(_endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<SourceCitation>> SearchEngineAsync(

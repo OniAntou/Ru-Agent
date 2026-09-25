@@ -195,9 +195,12 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             {
                 throw;
             }
-            catch
+            catch (Exception error) when (error is not OutOfMemoryException)
             {
-                // Fallback gracefully if image loading fails
+                // Attached images are part of the user's turn. Continuing without them
+                // would let the model answer a question it never saw, and the user would
+                // have no way to tell. Fail the step instead of silently dropping them.
+                throw new WorkerProtocolException("image_payload_unavailable");
             }
         }
 
@@ -273,13 +276,23 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            // A step the Worker accepts and then never answers would park the run
+            // forever, so the wait is bounded. The bound is per frame, not per step:
+            // deltas arrive continuously during a generation, and a legitimate long
+            // answer must not be cut off by a total-step deadline.
+            //
+            // The timer drives the wait only. It is deliberately NOT linked to this
+            // method's token: the receive below must stay pending so that cancellation
+            // can still write agent.step.cancel on a live socket. Cancelling the receive
+            // aborts the connection and the Worker never learns the step was cancelled.
+            using var receiveTimer = new CancellationTokenSource(_receiveTimeout);
             WorkerV2Envelope reply;
-            // Use Task.WhenAny to avoid aborting the socket on cancellation
             var receiveTask = ReceiveAsync(socket, CancellationToken.None);
-            var cancelTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var reg = cancellationToken.Register(() => cancelTcs.TrySetResult(true));
-            var completed = await Task.WhenAny(receiveTask, cancelTcs.Task).ConfigureAwait(false);
-            if (completed == cancelTcs.Task)
+            var waitOver = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var cancelReg = cancellationToken.Register(() => waitOver.TrySetResult(true));
+            using var timerReg = receiveTimer.Token.Register(() => waitOver.TrySetResult(true));
+            var completed = await Task.WhenAny(receiveTask, waitOver.Task).ConfigureAwait(false);
+            if (completed == waitOver.Task)
             {
                 // The receive stays pending on purpose: cancelling it would
                 // abort the shared socket. Observe its eventual fault here,
@@ -307,7 +320,13 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 {
                 }
 
-                throw new OperationCanceledException(cancellationToken);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                throw new WorkerUnavailableException(new TimeoutException(
+                    $"worker_silent:{_receiveTimeout.TotalSeconds:0}s"));
             }
 
             try

@@ -15,6 +15,9 @@ def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
     assert 'python-version: ["3.11", "3.12", "3.13"]' in workflow
     assert "python-version: ${{ matrix.python-version }}" in workflow
     assert "python scripts/check_aspnetcore_route_matrix.py" in workflow
+    # The interpreter boundary is enforced, not just inventoried: the product is .NET
+    # only, so the check fails when an interpreter file appears under a product root.
+    assert "python scripts/check_python_runtime_boundary.py" in workflow
     assert "retired-compat-harness" not in workflow
     assert "ru-harness-vnext.json" not in workflow
     assert "python -m ruff check tests scripts tools" in workflow

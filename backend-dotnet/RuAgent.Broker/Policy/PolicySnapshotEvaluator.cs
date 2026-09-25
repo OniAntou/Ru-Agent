@@ -183,6 +183,16 @@ public sealed class PolicySnapshotEvaluator
             };
         }
 
+        // Above the standard window the protocol requires an explicit approval before
+        // execution. It is a profile-level gate, so it is applied after the ordered
+        // rules: an explicit allow or deny the user wrote still decides, and the hard
+        // maximum and the protected-path deny have already been enforced above.
+        if (IsTerminal(context)
+            && (context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs) > TerminalLimits.StandardApprovalThresholdMs)
+        {
+            return Ask("terminal_timeout_requires_approval");
+        }
+
         return ProfileFallback(snapshot, context);
     }
 

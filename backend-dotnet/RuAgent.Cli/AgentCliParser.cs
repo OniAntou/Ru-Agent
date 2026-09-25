@@ -527,6 +527,12 @@ public static class AgentCliParser
         if (preset == "full_access" && !confirmFullAccess)
             return Fail("full_access_confirmation_required", "--confirm-full-access is required with --preset full_access.");
 
+        // --json is the non-interactive rendering. It is only accepted alongside the
+        // explicit trust/full-access flags, so a scripted run cannot silently take the
+        // authority those flags exist to confirm.
+        if (json && !trustWorkspace && !confirmFullAccess)
+            return Fail("json_requires_explicit_flags", "--json requires --trust-workspace or --confirm-full-access.");
+
         return Success(new RunCommand(workspace, prompt, sessionId, preset, json, trustWorkspace, confirmFullAccess));
     }
 
@@ -1085,6 +1091,11 @@ public static class AgentCliParser
 
         if (preset == "full_access" && !confirmFullAccess)
             return Fail("full_access_confirmation_required", "--confirm-full-access is required with --preset full_access.");
+
+        // Same contract as `agent run`: --json is only accepted alongside the explicit
+        // trust/full-access flags.
+        if (json && !trustWorkspace && !confirmFullAccess)
+            return Fail("json_requires_explicit_flags", "--json requires --trust-workspace or --confirm-full-access.");
 
         return Success(new ChatCommand(workspace ?? Environment.CurrentDirectory, sessionId, preset, json, classic, trustWorkspace, confirmFullAccess));
     }

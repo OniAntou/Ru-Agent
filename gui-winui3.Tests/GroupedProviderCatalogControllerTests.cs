@@ -6,6 +6,38 @@ namespace RuApp.Tests;
 
 public sealed class GroupedProviderCatalogControllerTests
 {
+    /// <summary>
+    /// The two sample providers these tests group by. They are catalog aliases, not
+    /// fixed rows: only the custom endpoint is fixed now, so a test that expects a
+    /// group for one of them has to register it the way the catalog does.
+    /// </summary>
+    private const string OpenAiAlias = "models.dev:openai";
+
+    private const string AnthropicAlias = "models.dev:anthropic";
+
+    private static ModelsDevEntry[] ProviderEntries() =>
+    [
+        new("openai", "OpenAI"),
+        new("anthropic", "Anthropic"),
+    ];
+
+    /// <summary>
+    /// Registers the two sample providers as dynamic children and gives the fake
+    /// service a source for each, which is what the controller will poll.
+    /// </summary>
+    private static async Task<GroupedProviderCatalogController> CreateControllerAsync(
+        ControlledCatalogs controlled,
+        IProviderCatalogClock? clock = null)
+    {
+        controlled.EnsureSource(OpenAiAlias);
+        controlled.EnsureSource(AnthropicAlias);
+        var controller = new GroupedProviderCatalogController(
+            controlled.CreateService(),
+            clock);
+        await controller.SetModelsDevProvidersAsync(ProviderEntries());
+        return controller;
+    }
+
     private static ProviderCatalogSnapshot Snapshot(string alias, params string[] models) => new()
     {
         Status = "ok",
@@ -85,20 +117,20 @@ public sealed class GroupedProviderCatalogControllerTests
     public async Task Publishes_each_successful_provider_independently()
     {
         var controlled = new ControlledCatalogs();
-        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
+        await using var controller = await CreateControllerAsync(controlled);
         var kiloApplied = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         controller.StateChanged += (_, state) =>
         {
-            if (state.Catalogs.TryGetValue("openai", out var kilo) && kilo.IsSuccess)
+            if (state.Catalogs.TryGetValue(OpenAiAlias, out var kilo) && kilo.IsSuccess)
             {
                 kiloApplied.TrySetResult(true);
             }
         };
 
         var refresh = controller.RefreshAsync(force: true);
-        controlled.Complete("openai", Snapshot("openai", "gpt-4o"));
+        controlled.Complete(OpenAiAlias, Snapshot(OpenAiAlias, "gpt-4o"));
         Assert.True(await kiloApplied.Task.WaitAsync(TimeSpan.FromSeconds(5)));
-        Assert.False(controller.State.Catalogs.TryGetValue("anthropic", out var openCode) && openCode.IsSuccess);
+        Assert.False(controller.State.Catalogs.TryGetValue(AnthropicAlias, out var openCode) && openCode.IsSuccess);
 
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
@@ -109,7 +141,7 @@ public sealed class GroupedProviderCatalogControllerTests
     {
         var controlled = new ControlledCatalogs();
         var clock = new TestClock(DateTimeOffset.UtcNow);
-        await using var controller = new GroupedProviderCatalogController(controlled.CreateService(), clock);
+        await using var controller = await CreateControllerAsync(controlled, clock);
 
         var first = controller.RefreshAsync(force: true);
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
@@ -118,17 +150,17 @@ public sealed class GroupedProviderCatalogControllerTests
         controlled.ReArmAll();
         clock.Advance(TimeSpan.FromSeconds(31));
         var second = controller.RefreshAsync(force: true);
-        controlled.Complete("openai", SameIdentityFailure("openai"));
-        controlled.Complete("anthropic", DifferentIdentityFailure("anthropic"));
-        controlled.CompleteAll(alias => alias is "openai" or "anthropic"
+        controlled.Complete(OpenAiAlias, SameIdentityFailure(OpenAiAlias));
+        controlled.Complete(AnthropicAlias, DifferentIdentityFailure(AnthropicAlias));
+        controlled.CompleteAll(alias => alias is OpenAiAlias or AnthropicAlias
             ? null
             : DifferentIdentityFailure(alias));
         Assert.True(await second);
 
-        var kilo = controller.State.Catalogs["openai"];
+        var kilo = controller.State.Catalogs[OpenAiAlias];
         Assert.True(kilo.Stale);
         Assert.True(kilo.Models.Count > 0);
-        var openCode = controller.State.Catalogs["anthropic"];
+        var openCode = controller.State.Catalogs[AnthropicAlias];
         Assert.False(openCode.IsSuccess);
         Assert.Empty(openCode.Models);
         Assert.False(openCode.Stale);
@@ -171,7 +203,7 @@ public sealed class GroupedProviderCatalogControllerTests
     {
         var controlled = new ControlledCatalogs();
         var clock = new TestClock(DateTimeOffset.UtcNow);
-        await using var controller = new GroupedProviderCatalogController(controlled.CreateService(), clock);
+        await using var controller = await CreateControllerAsync(controlled, clock);
         var successfulEvents = 0;
         controller.StateChanged += (_, state) =>
         {
@@ -191,7 +223,7 @@ public sealed class GroupedProviderCatalogControllerTests
         var second = controller.RefreshAsync(force: true);
         controlled.CompleteAll(alias => Snapshot(alias, "fresh-model"));
         Assert.True(await second);
-        Assert.Equal("fresh-model", controller.State.Catalogs["openai"].Models.Single());
+        Assert.Equal("fresh-model", controller.State.Catalogs[OpenAiAlias].Models.Single());
         Assert.Equal(3, successfulEvents);
     }
 
@@ -200,14 +232,15 @@ public sealed class GroupedProviderCatalogControllerTests
     {
         var controlled = new ControlledCatalogs();
         var clock = new TestClock(DateTimeOffset.UtcNow);
-        await using var controller = new GroupedProviderCatalogController(controlled.CreateService(), clock);
+        await using var controller = await CreateControllerAsync(controlled, clock);
+        var children = controller.CurrentDefinitions.Count;
 
         Assert.False(await controller.RefreshIfDueAsync());
         Assert.Empty(controlled.StartedAliases());
 
         controller.SetPollingActive(true);
         var refresh = controller.RefreshIfDueAsync();
-        await WaitForAsync(() => controlled.StartedAliases().Count == 3, "all children to poll");
+        await WaitForAsync(() => controlled.StartedAliases().Count == children, "all children to poll");
         controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
         Assert.True(await refresh);
 
@@ -216,7 +249,7 @@ public sealed class GroupedProviderCatalogControllerTests
         controller.SetPollingActive(false);
         clock.Advance(TimeSpan.FromMinutes(6));
         Assert.False(await controller.RefreshIfDueAsync());
-        Assert.True(controlled.StartedAliases().Count == 3);
+        Assert.True(controlled.StartedAliases().Count == children);
     }
 
     [Fact]

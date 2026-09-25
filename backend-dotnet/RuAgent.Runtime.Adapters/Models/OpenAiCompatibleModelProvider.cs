@@ -155,6 +155,16 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
 
                 if (!sawData)
                     throw new ModelProviderException("malformed_payload", retryable: false);
+                if (!completionSeen)
+                {
+                    // The stream ended without the terminal marker this protocol uses:
+                    // either a chunk carrying finish_reason or `data: [DONE]`. A cut
+                    // connection looks exactly like this, and accepting it would deliver
+                    // a half-written answer that the caller has no way to recognize as
+                    // incomplete. The Anthropic and Responses adapters already fail closed
+                    // here; this one used to accept "some data arrived" as completion.
+                    throw new ModelProviderException("malformed_payload", retryable: false);
+                }
             }
         }
     }

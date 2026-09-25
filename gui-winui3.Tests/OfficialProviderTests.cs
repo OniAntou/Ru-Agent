@@ -107,16 +107,27 @@ public sealed class OfficialProviderTests
     }
 
     [Fact]
-    public void ComboBox_contains_official_provider_items()
+    public void ComboBox_offers_the_custom_row_and_no_retired_official_provider()
     {
         string xaml = File.ReadAllText(FindViewSource("SettingsView.xaml"));
+        string code = File.ReadAllText(FindViewSource("SettingsView.xaml.cs"));
 
-        Assert.Contains("Text=\"OpenAI (Official API)\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Tag=\"openai\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Anthropic Claude (Official API)\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Tag=\"anthropic\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"OpenAiApiRow\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AnthropicApiRow\"", xaml, StringComparison.Ordinal);
+        // Provider choice is the Models.dev catalog plus the custom endpoint. The two
+        // official providers are retired from selection, so neither their rows nor
+        // their key rows may come back into the picker.
+        //
+        // The custom row is data now, not markup: the picker's rows come from
+        // RebuildModelsDevOptions, so its label lives beside that code.
+        Assert.Contains("x:Name=\"CustomEndpointRow\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("CustomProviderDisplayName", code, StringComparison.Ordinal);
+        Assert.Contains("Custom OpenAI Server", code, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("Text=\"OpenAI (Official API)\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tag=\"openai\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"Anthropic Claude (Official API)\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tag=\"anthropic\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"OpenAiApiRow\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"AnthropicApiRow\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]

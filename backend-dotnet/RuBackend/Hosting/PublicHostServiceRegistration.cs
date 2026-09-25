@@ -83,8 +83,7 @@ internal static class PublicHostServiceRegistration
             new AgentWebToolExecutor(
                 new WebOptions(
                     enabled: true,
-                    searchEndpoint: new Uri(ManagedRuntimeBootstrapper.BrokerWebSearchEndpoint),
-                    fallbackSearchEndpoint: new Uri(ManagedRuntimeBootstrapper.BrokerWebFallbackEndpoint)),
+                    searchEndpoint: new Uri(ManagedRuntimeBootstrapper.BrokerWebSearchEndpoint)),
                 services.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(AgentWebToolExecutor))));
         services.AddSingleton<AgentReplyPolicy>();
         services.AddSingleton<IAgentReplyPolicy>(services =>

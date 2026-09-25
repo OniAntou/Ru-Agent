@@ -135,9 +135,19 @@ public sealed class CommandIntentResolver
             networkIntent,
             timeoutMs,
             TerminalOperationClass.Unknown,
-            TerminalTimeoutClass.StandardWindow,
+            TimeoutClassFor(timeoutMs),
             hash);
     }
+
+    /// <summary>
+    /// The timeout class the protocol defines: at or below the standard approval
+    /// threshold the command decision stands, above it an explicit approval is
+    /// required before execution. The hard maximum is absolute and rejects earlier.
+    /// </summary>
+    private static TerminalTimeoutClass TimeoutClassFor(int timeoutMs) =>
+        timeoutMs > TerminalLimits.StandardApprovalThresholdMs
+            ? TerminalTimeoutClass.ApprovalRequired
+            : TerminalTimeoutClass.StandardWindow;
 
     private static void ValidateExecutableText(string executable)
     {

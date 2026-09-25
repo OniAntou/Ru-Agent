@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -45,6 +46,31 @@ public sealed class RuntimeDescriptorTests : IDisposable
         Assert.DoesNotContain("broker", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("executable", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("OPENAI", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DescriptorTimestampsParseUnderANonGregorianCulture()
+    {
+        // The descriptor's timestamps are written with ToString("O"). A culture-sensitive
+        // parse reads those digits in the current culture's calendar, so on a locale like
+        // th-TH the process-bound comparison never matched and a live host was reported as
+        // stale_pid. A round-trip parse must survive whatever culture the machine runs.
+        var desc = CreateValidDescriptor();
+        var json = JsonSerializer.Serialize(desc, RuntimeDescriptor.JsonOptions);
+
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("th-TH");
+            var parsed = RuntimeDescriptorValidator.ParseStrict(json);
+
+            Assert.Equal(desc.ProcessStartTime, parsed.ProcessStartTime);
+            Assert.Equal(desc.CreatedAt, parsed.CreatedAt);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]
@@ -221,6 +247,7 @@ public sealed class RuntimeDescriptorTests : IDisposable
         Assert.Equal("{\"auth_token\":\"secret\"}", File.ReadAllText(path));
     }
 
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void AssertOwnerOnly(string path)
     {
         var security = new FileInfo(path).GetAccessControl();

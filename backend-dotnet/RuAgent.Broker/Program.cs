@@ -33,17 +33,6 @@ static WebOptions? BuildWebOptions()
         }
     }
 
-    Uri? fallbackEndpoint = null;
-    var fallbackRaw = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_FALLBACK_ENDPOINT");
-    if (!string.IsNullOrWhiteSpace(fallbackRaw))
-    {
-        if (!Uri.TryCreate(fallbackRaw, UriKind.Absolute, out fallbackEndpoint))
-        {
-            Console.Error.WriteLine("broker web disabled: fallback endpoint invalid");
-            return null;
-        }
-    }
-
     var maxResponseBytes = WebOptions.DefaultMaxResponseBytes;
     var maxRaw = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_WEB_MAX_RESPONSE_BYTES");
     if (!string.IsNullOrWhiteSpace(maxRaw))
@@ -63,7 +52,6 @@ static WebOptions? BuildWebOptions()
         return new WebOptions(
             enabled: true,
             searchEndpoint: searchEndpoint,
-            fallbackSearchEndpoint: fallbackEndpoint,
             maxResponseBytes: maxResponseBytes);
     }
     catch (ArgumentException error)

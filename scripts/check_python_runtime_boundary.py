@@ -9,14 +9,19 @@ from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-_SCAN_ROOTS = ("scripts", "tools", "tests", "backend-dotnet")
-_IGNORED_PARTS = {"__pycache__", ".pytest_cache", "bin", "obj", ".git"}
+_SCAN_ROOTS = ("scripts", "tools", "tests", "backend-dotnet", "gui-winui3", "gui-winui3.Tests", "gui-winui3.Harness")
+_IGNORED_PARTS = {"__pycache__", ".pytest_cache", "bin", "obj", ".git", ".venv", "node_modules"}
 _MAX_HASH_BYTES = 64 * 1024
 _MAX_FILES = 20_000
 _C_SHARP_STARTUP_FILES = (
     "backend-dotnet/RuBackend/Program.cs",
     "backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs",
 )
+# The product is .NET only: no Python, Node, or other interpreter ships or runs inside
+# it. These roots are the product trees; `scripts`, `tools`, and `tests` are repository
+# tooling and are expected to hold Python.
+_PRODUCT_ROOTS = ("backend-dotnet/", "gui-winui3/", "gui-winui3.Tests/", "gui-winui3.Harness/")
+_INTERPRETER_SUFFIXES = (".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".lua")
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,10 @@ def _relative_files(root: Path) -> tuple[Path, ...]:
                 continue
             if path.suffix.lower() in {
                 ".py", ".cs", ".csproj", ".json", ".md", ".bat", ".ps1", ".toml", ".txt",
+                # Interpreter files are inventoried so the product-tree boundary can be
+                # checked: a `.js` under backend-dotnet is the regression, and a scanner
+                # that never looks at the suffix cannot see it.
+                *_INTERPRETER_SUFFIXES,
             }:
                 candidates.append(path)
     return tuple(sorted(candidates, key=lambda item: item.relative_to(root).as_posix()))[:_MAX_FILES]
@@ -85,6 +94,21 @@ def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
     return tuple(records)
 
 
+def interpreter_files_in_product(records: Iterable[RuntimeBoundaryRecord]) -> list[str]:
+    """Product-tree files that hand work to an interpreter.
+
+    The repository rule is that Python, Node, and every other interpreter are tooling
+    only: they may live under `scripts`, `tools`, and `tests`, and never inside the
+    shipped product. This is the check that fails when one appears there.
+    """
+    return sorted(
+        record.path
+        for record in records
+        if record.path.startswith(_PRODUCT_ROOTS)
+        and record.path.lower().endswith(_INTERPRETER_SUFFIXES)
+    )
+
+
 def _summary(records: Iterable[RuntimeBoundaryRecord]) -> dict[str, object]:
     records = tuple(records)
     counts: dict[str, int] = {}
@@ -95,6 +119,7 @@ def _summary(records: Iterable[RuntimeBoundaryRecord]) -> dict[str, object]:
         "file_count": len(records),
         "known_managed_startup_count": sum(item.is_known_managed_startup for item in records),
         "classification_counts": dict(sorted(counts.items())),
+        "interpreter_files_in_product_count": len(interpreter_files_in_product(records)),
     }
 
 
@@ -106,17 +131,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="append",
         default=[],
         help="Fail (exit 1) when any file has one of these classifications. "
-        "Repeatable. Default: never fail; print the summary and exit 0.",
+        "Repeatable.",
     )
     args = parser.parse_args(argv)
     records = scan_runtime_boundary(args.root)
     print(json.dumps(_summary(records), sort_keys=True))
+    failed = False
+    # The interpreter boundary is always enforced: it is the one property of this
+    # inventory that must hold, and a check nobody runs is not a check.
+    interpreters = interpreter_files_in_product(records)
+    if interpreters:
+        print(json.dumps(
+            {"interpreter_files_in_product": interpreters[:50], "hit_count": len(interpreters)},
+            sort_keys=True,
+        ))
+        failed = True
     if args.fail_on:
         hits = sorted({r.path for r in records if r.classification in args.fail_on})
         if hits:
             print(json.dumps({"fail_on": sorted(args.fail_on), "hits": hits[:50], "hit_count": len(hits)}, sort_keys=True))
-            return 1
-    return 0
+            failed = True
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

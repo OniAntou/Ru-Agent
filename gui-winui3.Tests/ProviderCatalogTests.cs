@@ -439,7 +439,7 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
-    public void SettingsView_exposes_a_sign_out_button_for_every_key_provider()
+    public void SettingsView_exposes_a_sign_out_button_for_every_picker_row_it_renders()
     {
         var settingsXamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml");
         var settingsCodePath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "SettingsView.xaml.cs");
@@ -449,14 +449,15 @@ public sealed class ProviderCatalogTests
         }
 
         var settingsXaml = File.ReadAllText(settingsXamlPath);
-        foreach (var buttonName in new[]
-                 {
-                     "OpenAiSignOutButton",
-                     "AnthropicSignOutButton",
-                     "CustomSignOutButton",
-                 })
+
+        // Only the custom endpoint is a fixed row now, so it carries the only fixed
+        // sign-out control. Catalog providers are removed through the models.dev key
+        // list instead of a per-row button.
+        Assert.Contains("x:Name=\"CustomSignOutButton\"", settingsXaml, StringComparison.Ordinal);
+
+        foreach (string retired in new[] { "OpenAiSignOutButton", "AnthropicSignOutButton" })
         {
-            Assert.Contains($"x:Name=\"{buttonName}\"", settingsXaml, StringComparison.Ordinal);
+            Assert.DoesNotContain($"x:Name=\"{retired}\"", settingsXaml, StringComparison.Ordinal);
         }
 
         Assert.Contains("OnRemoveProviderClick", settingsXaml, StringComparison.Ordinal);

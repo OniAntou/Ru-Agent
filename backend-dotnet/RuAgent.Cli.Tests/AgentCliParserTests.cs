@@ -26,14 +26,27 @@ public sealed class AgentCliParserTests
     public void ParseRun_SucceedsWithOptionalPresetAndJsonAndSession()
     {
         var sessionId = new string('c', 32); // 32 hex lower, valid loose
-        var args = new[] { "agent", "run", "--preset", "standard", "--workspace", ValidWorkspace, "--session", sessionId, "--json", "my prompt with spaces" };
+        var args = new[] { "agent", "run", "--preset", "standard", "--workspace", ValidWorkspace, "--session", sessionId, "--trust-workspace", "--json", "my prompt with spaces" };
         var res = AgentCliParser.Parse(args);
         Assert.True(res.Success);
         var cmd = Assert.IsType<RunCommand>(res.Command);
         Assert.Equal("standard", cmd.Preset);
         Assert.True(cmd.Json);
+        Assert.True(cmd.TrustWorkspace);
         Assert.Equal(sessionId, cmd.SessionId);
         Assert.Equal("my prompt with spaces", cmd.Prompt);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsJsonWithoutTheExplicitTrustOrFullAccessFlag()
+    {
+        // --json is the non-interactive rendering, so it is only accepted alongside the
+        // flags that confirm authority up front.
+        var args = new[] { "agent", "run", "--preset", "standard", "--workspace", ValidWorkspace, "--json", "my prompt" };
+        var res = AgentCliParser.Parse(args);
+
+        Assert.False(res.Success);
+        Assert.Equal("json_requires_explicit_flags", res.ErrorCode);
     }
 
     [Fact]

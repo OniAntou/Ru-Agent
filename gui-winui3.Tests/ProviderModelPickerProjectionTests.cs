@@ -40,15 +40,44 @@ public sealed class ProviderModelPickerProjectionTests
         };
     }
 
+    /// <summary>
+    /// Definitions for the sample providers these tests project, in the order given.
+    /// Only the custom endpoint is a fixed group now; every other provider reaches
+    /// the picker as a catalog entry, so a test that groups by <c>openai</c> or
+    /// <c>anthropic</c> has to declare it the same way the catalog does.
+    /// </summary>
+    private static IReadOnlyList<ProviderGroupDefinition> DefinitionsOf(
+        params ProviderCatalogState[] states) =>
+        states.Select((state, index) => ProviderGroupDefinitions.ByAlias.TryGetValue(
+                state.Backend,
+                out var definition)
+            ? definition with { Order = index }
+            : new ProviderGroupDefinition(
+                state.Backend,
+                state.Backend,
+                DisplayNameOf(state.Backend),
+                index))
+            .ToArray();
+
+    /// <summary>
+    /// The name a catalog provider shows in the picker. Production takes this from the
+    /// Models.dev entry; these fixtures use the bare alias, so title-case it the way a
+    /// real catalog name reads.
+    /// </summary>
+    private static string DisplayNameOf(string alias) =>
+        alias.Length == 0
+            ? alias
+            : char.ToUpperInvariant(alias[0]) + alias[1..];
+
     [Fact]
     public void Dynamic_models_dev_definitions_render_after_the_fixed_groups()
     {
         var generic = State("models.dev:openrouter", catalog: [CatalogModel("m1")]);
-        var anthropic = State("anthropic", catalog: [CatalogModel("claude-4-sonnet")]);
+        var custom = State("custom", catalog: [CatalogModel("local-model")]);
         var definitions = ProviderGroupDefinitions.WithModelsDev([new ModelsDevEntry("openrouter", "OpenRouter")]);
 
         var projection = ProviderModelPickerProjection.Create(
-            groups: [generic, anthropic],
+            groups: [generic, custom],
             selectedBackend: "models.dev:openrouter",
             selectedModel: "m1",
             searchText: string.Empty,
@@ -56,7 +85,7 @@ public sealed class ProviderModelPickerProjectionTests
 
         Assert.Collection(
             projection.Groups,
-            group => Assert.Equal("anthropic", group.Provider.Alias),
+            group => Assert.Equal("custom", group.Provider.Alias),
             group => Assert.Equal("models.dev:openrouter", group.Provider.Alias));
     }
 
@@ -71,7 +100,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [anthropic, openai, custom],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(openai, anthropic, custom));
 
         Assert.Collection(
             projection.Groups,
@@ -91,7 +121,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [custom, openai, emptyAnthropic],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(custom, openai, emptyAnthropic));
 
         Assert.Empty(projection.Groups);
         Assert.Equal(ProviderModelPickerProjection.NoUsableModelsText, projection.EmptyStateText);
@@ -111,7 +142,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(kilo));
 
         var group = Assert.Single(projection.Groups);
         Assert.True(group.IsStale);
@@ -134,7 +166,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [openai, anthropic, emptyCustom],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: "Anthropic");
+            searchText: "Anthropic",
+            definitions: DefinitionsOf(openai, anthropic, emptyCustom));
 
         var group = Assert.Single(projection.Groups);
         Assert.Equal("Anthropic", group.Provider.DisplayName);
@@ -151,7 +184,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [openCode, kilo],
             selectedBackend: "openai",
             selectedModel: "gpt-4o-mini",
-            searchText: "mini");
+            searchText: "mini",
+            definitions: DefinitionsOf(openCode, kilo));
 
         var group = Assert.Single(projection.Groups);
         Assert.Equal("openai", group.Provider.Alias);
@@ -169,7 +203,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo, openCode],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: "ANTHROPIC");
+            searchText: "ANTHROPIC",
+            definitions: DefinitionsOf(kilo, openCode));
 
         var group = Assert.Single(projection.Groups);
         Assert.Equal("anthropic", group.Provider.Alias);
@@ -186,7 +221,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "gpt-4o-mini",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(kilo));
 
         var group = Assert.Single(projection.Groups);
         var selected = Assert.Single(group.Rows, row => row.IsSelected);
@@ -202,7 +238,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "retired-model",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(kilo));
 
         var group = Assert.Single(projection.Groups);
         Assert.Equal(kilo.Models.Count + 1, group.Rows.Count);
@@ -226,7 +263,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "retired-model",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(kilo));
 
         var group = Assert.Single(projection.Groups);
         Assert.DoesNotContain(group.Rows, row =>
@@ -246,7 +284,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(kilo));
 
         var group = Assert.Single(projection.Groups);
         var row = Assert.Single(group.Rows);
@@ -263,7 +302,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: string.Empty);
+            searchText: string.Empty,
+            definitions: DefinitionsOf(kilo));
 
         Assert.Empty(projection.Groups);
         Assert.Equal(ProviderModelPickerProjection.NoUsableModelsText, projection.EmptyStateText);
@@ -278,7 +318,8 @@ public sealed class ProviderModelPickerProjectionTests
             groups: [kilo],
             selectedBackend: "openai",
             selectedModel: "gpt-4o",
-            searchText: "zzz");
+            searchText: "zzz",
+            definitions: DefinitionsOf(kilo));
 
         Assert.Empty(projection.Groups);
         Assert.Equal(ProviderModelPickerProjection.NoUsableModelsText, projection.EmptyStateText);
@@ -324,12 +365,12 @@ public sealed class ProviderModelPickerProjectionTests
     [Fact]
     public void Provider_group_definitions_are_presentation_only()
     {
-        Assert.Equal(3, ProviderGroupDefinitions.All.Count);
+        Assert.Equal(1, ProviderGroupDefinitions.All.Count);
         Assert.Equal(
-            new[] { 0, 1, 2 },
+            new[] { 0 },
             ProviderGroupDefinitions.All.Select(definition => definition.Order));
-        Assert.Equal("openai", ProviderGroupDefinitions.ByAlias["openai"].Alias);
-        Assert.Equal("OpenAI", ProviderGroupDefinitions.ByBackend["OpenAI"].Backend);
+        Assert.Equal("custom", ProviderGroupDefinitions.ByAlias["custom"].Alias);
+        Assert.Equal("Custom OpenAI", ProviderGroupDefinitions.ByBackend["Custom OpenAI"].Backend);
         Assert.All(ProviderGroupDefinitions.All, definition =>
         {
             Assert.DoesNotContain("://", definition.Backend, StringComparison.Ordinal);

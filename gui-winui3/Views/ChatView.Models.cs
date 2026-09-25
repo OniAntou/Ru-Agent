@@ -40,7 +40,7 @@ namespace RuApp.Views
                 // Kept so a failed send can name the provider that has no key
                 // without asking the backend again while reporting a failure.
                 _currentSettings = settings;
-                string backend = settings.BackendChoice ?? "openai";
+                string backend = settings.BackendChoice ?? string.Empty;
                 string currentModel = ProviderModelSelection.GetSelectedModel(settings, backend);
 
                 _selectedModel = currentModel;

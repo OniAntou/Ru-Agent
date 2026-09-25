@@ -287,7 +287,7 @@ public sealed partial class AgentV1Service
                 bridged = false;
             }
 
-            if (!bridged)
+            if (!bridged || string.IsNullOrWhiteSpace(brokerAuthorizationToken))
             {
                 HostApprovalLedger.TryRemove(key, out _);
                 return BoundedError(
@@ -295,6 +295,18 @@ public sealed partial class AgentV1Service
                     "approval_stale",
                     "Approval could not be authorized by the execution authority.");
             }
+        }
+        else
+        {
+            // An approval is a request for the execution authority to permit a call.
+            // With no authority to ask, there is nothing to authorize and the call
+            // cannot run, so the Host must say so. Answering "authorized" with a token
+            // it invented would report a permission that nothing issued.
+            HostApprovalLedger.TryRemove(key, out _);
+            return BoundedError(
+                503,
+                "broker_gateway_unavailable",
+                "Approval requires the execution authority, which is not configured.");
         }
 
         // Pi-style: approvals never create reusable rules. The Broker grant or
@@ -345,8 +357,7 @@ public sealed partial class AgentV1Service
         {
             approval_id = approvalIdRaw,
             status = "authorized",
-            authorization_token = brokerAuthorizationToken
-                ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+            authorization_token = brokerAuthorizationToken,
             expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
             matcher_preview = matcherPreview,
             rule_saved = false,

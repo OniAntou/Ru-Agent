@@ -782,7 +782,14 @@ public sealed class PolicyEvaluationTests
 
         var extended = standard.Evaluate(
             standardLease.Snapshot, Terminal(standardFactory, "dotnet", "test", 1_200_000), valid, Now);
-        Assert.Equal("allow", extended.Decision);
+        // Above the standard window the protocol requires an explicit approval, so an
+        // otherwise-allowed bounded command is not silently granted a 20-minute run.
+        Assert.Equal("ask", extended.Decision);
+        Assert.Equal("terminal_timeout_requires_approval", extended.ReasonCode);
+
+        var atThreshold = standard.Evaluate(
+            standardLease.Snapshot, Terminal(standardFactory, "dotnet", "test", TerminalLimits.StandardApprovalThresholdMs), valid, Now);
+        Assert.Equal("allow", atThreshold.Decision);
 
         var overCap = standard.Evaluate(
             standardLease.Snapshot, Terminal(standardFactory, "dotnet", "test", 1_900_000), valid, Now);
@@ -795,7 +802,10 @@ public sealed class PolicyEvaluationTests
         var extendedShell = standard.Evaluate(
             standardLease.Snapshot, Shell(standardFactory, "Get-Date", 1_200_000), valid, Now);
         Assert.Equal("ask", extendedShell.Decision);
-        Assert.Equal("terminal_unknown_executable", extendedShell.ReasonCode);
+        // The timeout gate is decided before the terminal classifier runs, because it
+        // applies to every terminal call above the standard window, not only the ones
+        // the classifier would have asked about anyway.
+        Assert.Equal("terminal_timeout_requires_approval", extendedShell.ReasonCode);
 
         var (fullLease, fullFactory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
         var full = new PolicySnapshotEvaluator();
@@ -807,8 +817,10 @@ public sealed class PolicyEvaluationTests
 
         var fullExtended = full.Evaluate(
             fullLease.Snapshot, Terminal(fullFactory, "dotnet", "test", 1_200_000), valid, Now);
-        Assert.Equal("allow", fullExtended.Decision);
-        Assert.Equal("full_access_allow", fullExtended.ReasonCode);
+        // The standard-window gate is profile-independent: it sits above the profile
+        // matrix, so even full_access asks before granting a run longer than 15 minutes.
+        Assert.Equal("ask", fullExtended.Decision);
+        Assert.Equal("terminal_timeout_requires_approval", fullExtended.ReasonCode);
 
         var fullOverCap = full.Evaluate(
             fullLease.Snapshot, Terminal(fullFactory, "dotnet", "test", 1_900_000), valid, Now);

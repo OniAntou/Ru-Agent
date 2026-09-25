@@ -18,9 +18,6 @@ namespace RuApp.Services;
 /// </remarks>
 internal static class ProviderSetupGuidance
 {
-    /// <summary>The provider the app uses when the user has never chosen one.</summary>
-    internal const string DefaultBackendChoice = "openai";
-
     /// <summary>Prefix for a Models.dev generic provider choice, e.g. "models.dev:openrouter".</summary>
     internal const string ModelsDevPrefix = "models.dev:";
 
@@ -32,7 +29,8 @@ internal static class ProviderSetupGuidance
         bool KeyIsOptional = false);
 
     /// <summary>
-    /// Every provider the picker offers, with the hint shown beside its key input.
+    /// Every alias the app still knows how to name and check a key for, with the
+    /// hint shown beside its key input.
     /// </summary>
     /// <remarks>
     /// The hint is plain text naming where a key is created. There is deliberately no
@@ -41,6 +39,11 @@ internal static class ProviderSetupGuidance
     ///
     /// The custom provider's key is optional because only its endpoint can say
     /// whether one is wanted; see IsMissingKey.
+    ///
+    /// This table is not the picker. OpenAI and Anthropic remain here so a stored
+    /// choice is still named and still reports a missing key, but neither is offered
+    /// for new selection: provider choice is Models.dev's catalog plus the custom
+    /// endpoint. See <see cref="PickerAliases"/>.
     /// </remarks>
     internal static readonly IReadOnlyList<ProviderInfo> All =
     [
@@ -61,6 +64,27 @@ internal static class ProviderSetupGuidance
             "Paste the key this endpoint expects. Leave it empty if your base URL does not need one.",
             KeyIsOptional: true),
     ];
+
+    /// <summary>
+    /// The aliases the picker offers as fixed rows, in declaration order. Only the
+    /// custom endpoint is fixed: it is the escape hatch for a server Models.dev cannot
+    /// list, such as one on this machine. Everything else is selected from the catalog.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> PickerAliases = ["custom"];
+
+    /// <summary>
+    /// Whether the alias is one the picker renders as a fixed row.
+    /// </summary>
+    internal static bool IsPickerFixed(string? backendChoice)
+    {
+        if (string.IsNullOrWhiteSpace(backendChoice))
+        {
+            return false;
+        }
+
+        string trimmed = backendChoice.Trim();
+        return PickerAliases.Contains(trimmed, StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Finds a provider by the alias the backend stores, or null when unknown.
@@ -134,10 +158,103 @@ internal static class ProviderSetupGuidance
         if (IsModelsDevChoice(backendChoice))
         {
             string id = backendChoice!.Trim()[ModelsDevPrefix.Length..].Trim().ToLowerInvariant();
-            return id.Length == 0 ? DefaultBackendChoice : ModelsDevPrefix + id;
+            return id.Length == 0 ? UnsetChoice : ModelsDevPrefix + id;
         }
 
-        return IsKnown(backendChoice) ? Normalize(backendChoice) : DefaultBackendChoice;
+        return IsKnown(backendChoice) ? Normalize(backendChoice) : UnsetChoice;
+    }
+
+    /// <summary>
+    /// The stored choice when the user has not picked one, or picked one the app no
+    /// longer offers. It is never a provider alias: resolving it to a real provider
+    /// needs the Models.dev catalog, which arrives after settings are read, so the
+    /// caller that holds the catalog does the resolution. See
+    /// <see cref="ResolveUnsetChoice"/>.
+    /// </summary>
+    internal const string UnsetChoice = "";
+
+    /// <summary>
+    /// Resolves an <see cref="UnsetChoice"/> to the first provider the catalog offers,
+    /// A-Z. Returns the choice unchanged when it already names a provider, and
+    /// <see cref="UnsetChoice"/> when the catalog is empty -- an unavailable list is
+    /// not a reason to invent a provider the user never configured.
+    /// </summary>
+    internal static string ResolveUnsetChoice(
+        string? backendChoice,
+        IEnumerable<(string Id, string Name)>? catalog)
+    {
+        string choice = NormalizeProviderChoice(backendChoice);
+        if (choice.Length > 0)
+        {
+            return choice;
+        }
+
+        if (catalog is null)
+        {
+            return UnsetChoice;
+        }
+
+        foreach (var (id, _) in OrderModelsDevOptions(catalog))
+        {
+            return ModelsDevPrefix + id;
+        }
+
+        return UnsetChoice;
+    }
+
+    /// <summary>
+    /// The letter a provider is filed under, or null when it files under none.
+    /// </summary>
+    /// <remarks>
+    /// The index is deliberately narrow: A-Z only. A digit or symbol heading is not a
+    /// useful jump target in a provider list, and a strip that showed one per symbol
+    /// would be longer than the list it indexes. Non-Latin names file under none and
+    /// stay reachable by scrolling and by search.
+    /// </remarks>
+    internal static char? JumpLetterFor(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        char first = char.ToUpperInvariant(name.Trim()[0]);
+        return first is >= 'A' and <= 'Z' ? first : null;
+    }
+
+    /// <summary>
+    /// The jump targets for a list of providers, in A-Z order.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="matching"/> tells which entries the current filter shows: a letter
+    /// with no visible provider is returned with a null index so the strip can show it
+    /// disabled rather than offering a jump that would do nothing.
+    /// </remarks>
+    internal static IReadOnlyList<(char Letter, int? Index)> JumpTargets(
+        IEnumerable<string?> names,
+        Func<int, bool>? matching = null)
+    {
+        var firstByLetter = new Dictionary<char, int>();
+        int index = 0;
+        foreach (var name in names)
+        {
+            if (JumpLetterFor(name) is { } letter
+                && (matching is null || matching(index))
+                && !firstByLetter.ContainsKey(letter))
+            {
+                firstByLetter[letter] = index;
+            }
+
+            index++;
+        }
+
+        var targets = new List<(char, int?)>(26);
+        for (char letter = 'A'; letter <= 'Z'; letter++)
+        {
+            targets.Add((letter, firstByLetter.TryGetValue(letter, out var at) ? at : null));
+        }
+
+        return targets;
     }
 
     /// <summary>
@@ -317,6 +434,6 @@ internal static class ProviderSetupGuidance
 
     private static string Normalize(string? backendChoice) =>
         string.IsNullOrWhiteSpace(backendChoice)
-            ? DefaultBackendChoice
+            ? UnsetChoice
             : backendChoice.Trim();
 }

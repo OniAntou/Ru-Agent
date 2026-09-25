@@ -27,6 +27,7 @@ jobs:
       - run: git log --check --format= -n 50
       - run: python -m pytest -q
       - run: python scripts/check_aspnetcore_route_matrix.py
+      - run: python scripts/check_python_runtime_boundary.py
       - run: python -m ruff check tests scripts tools
       - run: pip check
 

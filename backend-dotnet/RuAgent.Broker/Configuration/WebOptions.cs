@@ -9,12 +9,10 @@ public sealed record WebOptions
     public const int MaxConfiguredResponseBytes = 4 * 1024 * 1024;
 
     public static readonly Uri DefaultGoogleEndpoint = new("https://www.google.com/search");
-    public static readonly Uri DefaultFallbackEndpoint = new("https://html.duckduckgo.com/html/");
 
     public WebOptions(
         bool enabled = false,
         Uri? searchEndpoint = null,
-        Uri? fallbackSearchEndpoint = null,
         int maxResponseBytes = DefaultMaxResponseBytes)
     {
         if (maxResponseBytes is < 1 or > MaxConfiguredResponseBytes)
@@ -27,20 +25,18 @@ public sealed record WebOptions
             ValidatePublicEndpoint(searchEndpoint, nameof(searchEndpoint));
         }
 
-        if (fallbackSearchEndpoint is not null)
-        {
-            ValidatePublicEndpoint(fallbackSearchEndpoint, nameof(fallbackSearchEndpoint));
-        }
-
         Enabled = enabled;
+        // Exactly one search engine, whatever it is configured to be. A second
+        // engine would be a provider fallback: the query would reach a service the
+        // user never configured, and the destination would sit outside the approval
+        // the call was granted under. A primary engine that fails or returns nothing
+        // fails closed with its own bounded code.
         SearchEndpoint = searchEndpoint ?? (enabled ? DefaultGoogleEndpoint : null);
-        FallbackSearchEndpoint = fallbackSearchEndpoint ?? (enabled ? DefaultFallbackEndpoint : null);
         MaxResponseBytes = maxResponseBytes;
     }
 
     public bool Enabled { get; }
     public Uri? SearchEndpoint { get; }
-    public Uri? FallbackSearchEndpoint { get; }
     public int MaxResponseBytes { get; }
 
     public bool FetchEnabled => Enabled;

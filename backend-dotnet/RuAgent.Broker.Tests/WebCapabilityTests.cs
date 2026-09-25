@@ -51,16 +51,15 @@ public sealed class WebCapabilityTests
         Assert.Throws<ArgumentException>(() => new WebOptions(true, new Uri("http://127.0.0.1/search")));
         Assert.Throws<ArgumentException>(() => new WebOptions(true, new Uri("http://[::ffff:127.0.0.1]/search")));
         Assert.Throws<ArgumentException>(() => new WebOptions(true, new Uri("https://user:password@example.com/search")));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new WebOptions(true, null, null, WebOptions.MaxConfiguredResponseBytes + 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new WebOptions(true, null, WebOptions.MaxConfiguredResponseBytes + 1));
     }
 
     [Fact]
-    public void Web_options_default_to_google_primary_with_duckduckgo_fallback()
+    public void Web_options_name_exactly_one_search_engine()
     {
         var options = new WebOptions(enabled: true);
 
         Assert.Equal("https://www.google.com/search", options.SearchEndpoint?.AbsoluteUri.TrimEnd('/'));
-        Assert.NotNull(options.FallbackSearchEndpoint);
         Assert.True(options.SearchEnabled);
         Assert.True(options.FetchEnabled);
     }

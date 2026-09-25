@@ -3,7 +3,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from scripts.check_python_runtime_boundary import _summary, scan_runtime_boundary
+from scripts.check_python_runtime_boundary import (
+    _summary,
+    interpreter_files_in_product,
+    scan_runtime_boundary,
+)
 
 
 def test_inventory_identifies_known_entrypoints_without_claiming_reachability(tmp_path: Path) -> None:
@@ -44,3 +48,45 @@ def test_inventory_skips_generated_files_and_bounds_hash_input(tmp_path: Path) -
     assert records[0].path == "scripts/large.py"
     assert records[0].size_bytes == 70_000
     assert records[0].sha256 == hashlib.sha256(b"x" * 65_536).hexdigest()
+
+
+def test_the_product_tree_ships_no_interpreter(tmp_path: Path) -> None:
+    """The rule this inventory exists to enforce: an interpreter is repository tooling.
+
+    `scripts`, `tools`, and `tests` may hold Python. A `.py` (or Node, or any other
+    interpreter file) under a product root is the regression this fails on.
+    """
+    files = [
+        "backend-dotnet/RuBackend/Program.cs",
+        "gui-winui3/Views/ChatView.xaml.cs",
+        "scripts/check_something.py",
+        "tools/probe.py",
+        "tests/test_thing.py",
+    ]
+    for relative in files:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("pass", encoding="utf-8")
+
+    records = scan_runtime_boundary(tmp_path)
+
+    assert interpreter_files_in_product(records) == []
+    assert _summary(records)["interpreter_files_in_product_count"] == 0
+
+
+def test_a_python_file_inside_a_product_root_is_reported(tmp_path: Path) -> None:
+    for relative in (
+        "backend-dotnet/RuBackend/helper.py",
+        "gui-winui3/Services/bridge.js",
+        "scripts/tooling.py",
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("pass", encoding="utf-8")
+
+    records = scan_runtime_boundary(tmp_path)
+
+    assert interpreter_files_in_product(records) == [
+        "backend-dotnet/RuBackend/helper.py",
+        "gui-winui3/Services/bridge.js",
+    ]

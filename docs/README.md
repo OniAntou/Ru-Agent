@@ -13,6 +13,7 @@ completed plans must be removed from the checkout rather than archived here.
 - [Architecture](architecture.md)
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
+- [TUI known limitations and debugging](operations/tui-known-limitations.md)
 - [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)

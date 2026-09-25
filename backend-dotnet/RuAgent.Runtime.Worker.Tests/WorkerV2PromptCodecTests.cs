@@ -18,8 +18,7 @@ public sealed class WorkerV2PromptCodecTests
             "Read a bounded file",
             "workspace.read",
             schema,
-            RuAgent.Protocol.AgentToolDefinitionCatalog.ComputeSchemaDigest(
-                System.Text.Json.Nodes.JsonNode.Parse(schema)!.AsObject()),
+            SchemaDigestFor(schema),
             "{\"path\":\"README.md\"}",
             "enabled"));
 
@@ -47,7 +46,7 @@ public sealed class WorkerV2PromptCodecTests
             "Read a bounded file",
             "workspace.read",
             schema,
-            PromptHashForTest.Sha256(schema),
+            SchemaDigestFor(schema),
             null,
             "enabled"), "full_access");
 
@@ -80,7 +79,7 @@ public sealed class WorkerV2PromptCodecTests
             "Read",
             "workspace.read",
             schema,
-            PromptHashForTest.Sha256(schema),
+            SchemaDigestFor(schema),
             null,
             "enabled"));
         var payload = WorkerV2PromptCodec.WriteContext(context);
@@ -110,7 +109,7 @@ public sealed class WorkerV2PromptCodecTests
             "Read",
             "workspace.read",
             schema,
-            PromptHashForTest.Sha256(schema),
+            SchemaDigestFor(schema),
             null,
             "enabled"));
         var payload = WorkerV2PromptCodec.WriteContext(context);
@@ -201,7 +200,7 @@ public sealed class WorkerV2PromptCodecTests
         var schema = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}";
         var context = PromptFixture.Create(new PromptCapability(
             "files.read", "1.0.0", "Read", "workspace.read", schema,
-            PromptHashForTest.Sha256(schema), null, "enabled"));
+            SchemaDigestFor(schema), null, "enabled"));
         var payload = WorkerV2PromptCodec.WriteContext(context);
         payload["capabilities"]!.AsArray()[0]!["input_schema_digest"] = new string('0', 64);
 
@@ -444,6 +443,19 @@ public sealed class WorkerV2PromptCodecTests
             new[] { capability },
             new PromptRuntimeContext(null, null, Array.Empty<PromptReference>()));
     }
+
+    /// <summary>
+    /// The digest a capability must carry for its <c>input_schema_json</c>.
+    /// </summary>
+    /// <remarks>
+    /// This is the composer's own digest, not a raw hash of the JSON. The validator
+    /// compares against the canonical (recursively key-sorted) form, so a fixture built
+    /// with an unsorted hash describes a capability the product never emits, and the
+    /// round-trip fails with invalid_request before it reaches what the test is about.
+    /// </remarks>
+    private static string SchemaDigestFor(string schemaJson) =>
+        RuAgent.Protocol.AgentToolDefinitionCatalog.ComputeSchemaDigest(
+            JsonNode.Parse(schemaJson)!.AsObject());
 
     private static class PromptHashForTest
     {

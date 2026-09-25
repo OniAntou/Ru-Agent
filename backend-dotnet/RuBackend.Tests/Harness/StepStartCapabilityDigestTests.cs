@@ -72,12 +72,14 @@ public sealed class StepStartCapabilityDigestTests
             definition.ToolVersion,
             definition.Description,
             definition.Scope,
-            definition.InputSchema.ToJsonString(options),
+            // The one wire form: CanonicalSchemaJson is what every capability serializes
+            // through, so the string and its digest describe the same bytes.
+            AgentToolDefinitionCatalog.CanonicalSchemaJson(definition.InputSchema),
             AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
             definition.ExampleArguments?.ToJsonString(options),
             "enabled")).ToArray();
         var context = new SystemPromptContext(
-            1, "ru-agent", "standard",
+            SystemPromptContext.PromptContextSchemaVersion, "ru-agent", "standard",
             new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
             Array.Empty<PromptInstructionBlock>(),
             capabilities,

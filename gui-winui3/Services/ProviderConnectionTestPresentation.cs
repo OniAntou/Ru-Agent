@@ -30,7 +30,7 @@ internal sealed record ProviderConnectionTest(string Tone, string Message)
 /// </remarks>
 internal static class ProviderConnectionTestPresentation
 {
-    internal const string ButtonLabel = "Test connection";
+    internal const string ButtonLabel = "Fetch models";
     internal const string TestingMessage = "Testing…";
 
     /// <summary>The message shown while the request is in flight.</summary>

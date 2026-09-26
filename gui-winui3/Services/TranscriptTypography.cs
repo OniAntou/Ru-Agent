@@ -3,7 +3,7 @@ using System.ComponentModel;
 namespace RuApp.Services;
 
 /// <summary>Shared, bindable conversation typography: message size 14-17 (default 14),
-/// activity line always one step smaller. XAML binds via the registered instance.</summary>
+/// activity line always two steps smaller. XAML binds via the registered instance.</summary>
 public sealed class TranscriptTypography : INotifyPropertyChanged
 {
     public static TranscriptTypography Instance { get; } = new();
@@ -35,7 +35,7 @@ public sealed class TranscriptTypography : INotifyPropertyChanged
         }
     }
 
-    public double ActivityFontSize => _messageFontSize - 1;
+    public double ActivityFontSize => _messageFontSize - 2;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

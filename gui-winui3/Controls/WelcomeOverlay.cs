@@ -1,41 +1,40 @@
 using System;
 using System.Threading.Tasks;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI;
+using XamlPath = Microsoft.UI.Xaml.Shapes.Path;
 
 namespace RuApp.Controls;
 
-/// <summary>
-/// Native WinUI 3 1:1 pixel-level reproduction of BackgroundPaths hero screen.
-/// Displays bold typography ("Ru Agent"), radiant sweeping Bézier streams,
-/// and a high-end pill capsule button ("Discover Excellence →") revealed once ready.
-/// </summary>
+// THESIS: a boot screen that reads as a local runtime console, not a SaaS hero.
+// It refuses the centered gradient hero every generator ships.
+// OWN-WORLD: slate tokens only; hairline frame with corner ticks; one cropped
+// giant glyph with a hard offset echo; Consolas micro-readouts; a single exit
+// transition and no looping motion anywhere.
+// STORY: the visitor sees the machine waking up, reads the live boot status,
+// and is carried into the app automatically when the backend is up.
+// FIRST VIEWPORT: bottom-left block (kicker, 56pt wordmark, live mono status,
+// hairline progress) over a giant cropped "Ru"; hairline frame insets the edge.
+// FORM: committed replacement of the centered overlay; entrance is static, the
+// exit slide-and-fade is the one authored moment.
 public sealed class WelcomeOverlay : Grid, IDisposable
 {
-    private readonly BackgroundPathsControl _backgroundPaths;
-    private readonly StackPanel _titleContainer;
-    private readonly TextBlock _titleText;
-    private readonly TranslateTransform _titleTransform = new();
-
-    private readonly Border _loadingBadge;
+    private readonly Border _frame;
+    private readonly XamlPath[] _cornerTicks = new XamlPath[4];
+    private readonly TextBlock _giantEcho;
+    private readonly TextBlock _giantGlyph;
+    private readonly StackPanel _content;
+    private readonly TranslateTransform _contentTransform = new();
     private readonly TextBlock _statusLabel;
-    private readonly Storyboard _loadingPulseStoryboard;
-
-    private readonly Border _buttonContainer;
-    private readonly TranslateTransform _buttonTransform = new();
-    private readonly ScaleTransform _buttonScale = new();
-    private readonly Button _enterButton;
-    private readonly TextBlock _buttonLabel;
-    private readonly TextBlock _arrowGlyph;
-    private Storyboard? _arrowNudgeStoryboard;
+    private readonly ProgressBar _bootProgress;
 
     private bool _isDismissed;
     private bool _isReady;
+    private bool _exitStarted;
 
     public event EventHandler? Dismissed;
 
@@ -49,221 +48,155 @@ public sealed class WelcomeOverlay : Grid, IDisposable
 
         ApplyThemeBackground();
 
-        // 1. Background layer: 72 sweeping Bézier paths
-        _backgroundPaths = new BackgroundPathsControl();
-        Children.Add(_backgroundPaths);
-
-        // 2. Center container matching React preview
-        var centerContainer = new StackPanel
+        // Hairline frame insetting the viewport edge.
+        _frame = new Border
         {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = 800
+            Margin = new Thickness(24),
+            BorderThickness = new Thickness(1),
+            IsHitTestVisible = false
+        };
+        Children.Add(_frame);
+
+        // Corner ticks registering the frame like a console bezel.
+        var tickAlignments = new (HorizontalAlignment, VerticalAlignment)[]
+        {
+            (HorizontalAlignment.Left, VerticalAlignment.Top),
+            (HorizontalAlignment.Right, VerticalAlignment.Top),
+            (HorizontalAlignment.Left, VerticalAlignment.Bottom),
+            (HorizontalAlignment.Right, VerticalAlignment.Bottom),
+        };
+        for (int i = 0; i < _cornerTicks.Length; i++)
+        {
+            var figure = new PathFigure
+            {
+                StartPoint = new Windows.Foundation.Point(0, 14),
+                IsClosed = false,
+                IsFilled = false
+            };
+            figure.Segments.Add(new LineSegment { Point = new Windows.Foundation.Point(0, 0) });
+            figure.Segments.Add(new LineSegment { Point = new Windows.Foundation.Point(14, 0) });
+            var tickGeometry = new PathGeometry();
+            tickGeometry.Figures.Add(figure);
+
+            var tick = new XamlPath
+            {
+                Data = tickGeometry,
+                StrokeThickness = 2,
+                Width = 14,
+                Height = 14,
+                HorizontalAlignment = tickAlignments[i].Item1,
+                VerticalAlignment = tickAlignments[i].Item2,
+                Margin = new Thickness(24),
+                IsHitTestVisible = false
+            };
+            _cornerTicks[i] = tick;
+            Children.Add(tick);
+        }
+
+        // Cropped giant glyph with a hard offset echo behind the content.
+        _giantEcho = new TextBlock
+        {
+            Text = "Ru",
+            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+            FontSize = 200,
+            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+            CharacterSpacing = -60,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(-24, 0, 0, -62),
+            IsHitTestVisible = false
+        };
+        _giantGlyph = new TextBlock
+        {
+            Text = "Ru",
+            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+            FontSize = 200,
+            FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+            CharacterSpacing = -60,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(-30, 0, 0, -56),
+            IsHitTestVisible = false
+        };
+        Children.Add(_giantEcho);
+        Children.Add(_giantGlyph);
+
+        // Bottom-left console block.
+        _content = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            MaxWidth = 640,
+            Margin = new Thickness(64, 0, 64, 88),
+            RenderTransform = _contentTransform
         };
 
-        // 3. Grand Title: "Ru Agent"
-        _titleContainer = new StackPanel
+        var kicker = new TextBlock
         {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            RenderTransform = _titleTransform,
-            Margin = new Thickness(0, 0, 0, 26),
-            Opacity = 0.0
+            Text = "LOCAL RUNTIME",
+            FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            CharacterSpacing = 240,
+            Margin = new Thickness(0, 0, 0, 14)
         };
+        kicker.Foreground = new SolidColorBrush(ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184)));
+        _content.Children.Add(kicker);
 
-        _titleText = new TextBlock
+        var title = new TextBlock
         {
             Text = "Ru Agent",
             FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-            FontSize = 90,
+            FontSize = 56,
             FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-            CharacterSpacing = -45,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
+            CharacterSpacing = -28,
+            Margin = new Thickness(0, 0, 0, 12)
         };
-
-        ApplyTitleBrush();
-        _titleContainer.Children.Add(_titleText);
-        centerContainer.Children.Add(_titleContainer);
-
-        // 4. Subtle Loading Status Pill (Active during backend boot)
-        _loadingBadge = new Border
-        {
-            CornerRadius = new CornerRadius(18),
-            Height = 36,
-            Padding = new Thickness(20, 0, 20, 0),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 10, 0, 0),
-            BorderThickness = new Thickness(1)
-        };
-
-        var loadingContent = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 8
-        };
+        title.Foreground = new SolidColorBrush(ThemeColor("RuInkBrush", Color.FromArgb(255, 241, 245, 249)));
+        _content.Children.Add(title);
 
         _statusLabel = new TextBlock
         {
             Text = "Starting system...",
-            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-            FontSize = 13.5,
+            FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
+            FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.Medium,
-            VerticalAlignment = VerticalAlignment.Center
+            Margin = new Thickness(0, 0, 0, 16)
         };
+        _statusLabel.Foreground = new SolidColorBrush(ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184)));
+        _content.Children.Add(_statusLabel);
 
-        loadingContent.Children.Add(_statusLabel);
-        _loadingBadge.Child = loadingContent;
-
-        // Subtle breathing animation during startup phase
-        var pulseAnim = new DoubleAnimation
+        _bootProgress = new ProgressBar
         {
-            From = 0.50,
-            To = 1.0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(850)),
-            AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever,
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+            IsIndeterminate = true,
+            Width = 240,
+            Height = 3,
+            HorizontalAlignment = HorizontalAlignment.Left
         };
-        Storyboard.SetTarget(pulseAnim, _loadingBadge);
-        Storyboard.SetTargetProperty(pulseAnim, "Opacity");
-        _loadingPulseStoryboard = new Storyboard();
-        _loadingPulseStoryboard.Children.Add(pulseAnim);
+        ApplyProgressTheme();
+        _content.Children.Add(_bootProgress);
 
-        centerContainer.Children.Add(_loadingBadge);
+        Children.Add(_content);
 
-        // 5. Pill Capsule Button: "Discover Excellence →" (Hidden initially, blossoms on ready)
-        var buttonTransformGroup = new TransformGroup();
-        _buttonScale.CenterX = 110;
-        _buttonScale.CenterY = 24;
-        buttonTransformGroup.Children.Add(_buttonScale);
-        buttonTransformGroup.Children.Add(_buttonTransform);
-
-        _buttonContainer = new Border
-        {
-            CornerRadius = new CornerRadius(24),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            RenderTransform = buttonTransformGroup,
-            Margin = new Thickness(0, 10, 0, 0),
-            Opacity = 0.0,
-            Visibility = Visibility.Collapsed
-        };
-
-        _enterButton = new Button
-        {
-            CornerRadius = new CornerRadius(24),
-            Padding = new Thickness(32, 12, 32, 12),
-            Height = 48,
-            BorderThickness = new Thickness(1)
-        };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_enterButton, "Discover Excellence");
-
-        var buttonContent = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 10
-        };
-
-        _buttonLabel = new TextBlock
-        {
-            Text = "Discover Excellence",
-            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-            FontSize = 15.5,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        _arrowGlyph = new TextBlock
-        {
-            Text = "→",
-            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
-            FontSize = 17,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        buttonContent.Children.Add(_buttonLabel);
-        buttonContent.Children.Add(_arrowGlyph);
-        _enterButton.Content = buttonContent;
-        _buttonContainer.Child = _enterButton;
-
-        ApplyButtonTheme();
-
-        _enterButton.Click += async (_, _) => await DismissAsync();
-        _enterButton.PointerEntered += OnButtonPointerEntered;
-        _enterButton.PointerExited += OnButtonPointerExited;
-
-        centerContainer.Children.Add(_buttonContainer);
-
-        Children.Add(centerContainer);
-
-        Loaded += (_, _) =>
-        {
-            if (RuApp.Services.UiTiming.AnimationsEnabled)
-            {
-                _backgroundPaths.StartAnimations();
-                _loadingPulseStoryboard.Begin();
-                PlayTitleEntrance();
-            }
-            else
-            {
-                _titleContainer.Opacity = 1.0;
-            }
-        };
-
-        Unloaded += (_, _) =>
-        {
-            _backgroundPaths.StopAnimations();
-            _loadingPulseStoryboard.Stop();
-            _arrowNudgeStoryboard?.Stop();
-        };
+        ApplyFrameTheme();
+        ApplyGiantTheme();
 
         ActualThemeChanged += (_, _) =>
         {
             ApplyThemeBackground();
-            ApplyTitleBrush();
-            ApplyButtonTheme();
+            ApplyFrameTheme();
+            ApplyGiantTheme();
+            ApplyProgressTheme();
         };
 
-        KeyDown += async (_, e) =>
+        KeyDown += (_, e) =>
         {
-            if (_isReady && !_isDismissed && (e.Key == Windows.System.VirtualKey.Enter || e.Key == Windows.System.VirtualKey.Space))
+            if (_isReady && !_isDismissed
+                && (e.Key == Windows.System.VirtualKey.Enter || e.Key == Windows.System.VirtualKey.Space))
             {
-                await DismissAsync();
+                _ = PlayExitAsync();
             }
         };
-    }
-
-    private void PlayTitleEntrance()
-    {
-        var titleFade = new DoubleAnimation
-        {
-            From = 0.0,
-            To = 1.0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(850)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(titleFade, _titleContainer);
-        Storyboard.SetTargetProperty(titleFade, "Opacity");
-
-        var titleSlide = new DoubleAnimation
-        {
-            From = 36.0,
-            To = 0.0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(950)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(titleSlide, _titleTransform);
-        Storyboard.SetTargetProperty(titleSlide, "Y");
-
-        var sb = new Storyboard();
-        sb.Children.Add(titleFade);
-        sb.Children.Add(titleSlide);
-        sb.Begin();
     }
 
     private bool IsDarkTheme() =>
@@ -275,72 +208,33 @@ public sealed class WelcomeOverlay : Grid, IDisposable
 
     private void ApplyThemeBackground()
     {
-        // Match the app canvas so the overlay melts into the GUI theme.
         Background = new SolidColorBrush(ThemeColor("RuCanvasBrush", Color.FromArgb(255, 22, 24, 29)));
     }
 
-    private void ApplyTitleBrush()
+    private void ApplyFrameTheme()
     {
-        Color ink = ThemeColor("RuInkBrush", Color.FromArgb(255, 241, 245, 249));
-        Color muted = ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184));
-
-        var gradient = new LinearGradientBrush
+        _frame.BorderBrush = new SolidColorBrush(ThemeColor("RuLineBrush", Color.FromArgb(255, 51, 65, 85)));
+        var tickBrush = new SolidColorBrush(ThemeColor("RuAccentBrush", Color.FromArgb(255, 226, 232, 240)));
+        foreach (var tick in _cornerTicks)
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(0.8, 1.0)
-        };
-
-        gradient.GradientStops.Add(new GradientStop { Color = ink, Offset = 0.0 });
-        var tail = muted;
-        tail.A = 225;
-        gradient.GradientStops.Add(new GradientStop { Color = tail, Offset = 1.0 });
-
-        _titleText.Foreground = gradient;
+            tick.Stroke = tickBrush;
+        }
     }
 
-    private void ApplyButtonTheme()
+    private void ApplyGiantTheme()
     {
-        bool isDark = IsDarkTheme();
-        Color surface = ThemeColor("RuSurfaceBrush", Color.FromArgb(255, 32, 35, 42));
-        Color line = ThemeColor("RuLineBrush", Color.FromArgb(255, 51, 65, 85));
-        Color muted = ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184));
-        Color accent = ThemeColor("RuAccentBrush", Color.FromArgb(255, 226, 232, 240));
-        Color canvas = ThemeColor("RuCanvasBrush", Color.FromArgb(255, 22, 24, 29));
-
-        _loadingBadge.Background = new SolidColorBrush(Color.FromArgb(isDark ? (byte)170 : (byte)180, surface.R, surface.G, surface.B));
-        _loadingBadge.BorderBrush = new SolidColorBrush(Color.FromArgb(40, line.R, line.G, line.B));
-        _statusLabel.Foreground = new SolidColorBrush(Color.FromArgb(210, muted.R, muted.G, muted.B));
-
-        _enterButton.Background = new SolidColorBrush(accent);
-        _enterButton.Foreground = isDark
-            ? new SolidColorBrush(canvas)
-            : new SolidColorBrush(Color.FromArgb(255, 255, 255, 255));
-        _enterButton.BorderBrush = new SolidColorBrush(Color.FromArgb(45, line.R, line.G, line.B));
+        var echo = ThemeColor("RuAccentSoftBrush", Color.FromArgb(150, 40, 45, 55));
+        _giantEcho.Foreground = new SolidColorBrush(echo);
+        _giantEcho.Opacity = 0.55;
+        var ink = ThemeColor("RuInkBrush", Color.FromArgb(255, 241, 245, 249));
+        _giantGlyph.Foreground = new SolidColorBrush(ink);
+        _giantGlyph.Opacity = 0.14;
     }
 
-    private void OnButtonPointerEntered(object sender, PointerRoutedEventArgs e)
+    private void ApplyProgressTheme()
     {
-        _arrowNudgeStoryboard?.Stop();
-        _arrowGlyph.Translation = new System.Numerics.Vector3(4, 0, 0);
-        _arrowGlyph.Opacity = 1.0;
-
-        bool isDark = IsDarkTheme();
-
-        Color soft = ThemeColor("RuAccentSoftBrush", Color.FromArgb(255, 40, 45, 55));
-        Color line = ThemeColor("RuLineBrush", Color.FromArgb(255, 51, 65, 85));
-        Color ink = ThemeColor("RuInkBrush", Color.FromArgb(255, 241, 245, 249));
-        Color canvas = ThemeColor("RuCanvasBrush", Color.FromArgb(255, 22, 24, 29));
-        _enterButton.Background = new SolidColorBrush(soft);
-        _enterButton.Foreground = new SolidColorBrush(isDark ? canvas : ink);
-        _enterButton.BorderBrush = new SolidColorBrush(Color.FromArgb(isDark ? (byte)80 : (byte)70, line.R, line.G, line.B));
-    }
-
-    private void OnButtonPointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        _arrowGlyph.Translation = new System.Numerics.Vector3(0, 0, 0);
-        _arrowGlyph.Opacity = 0.85;
-        ApplyButtonTheme();
-        _arrowNudgeStoryboard?.Begin();
+        _bootProgress.Background = new SolidColorBrush(ThemeColor("RuSurfaceBrush", Color.FromArgb(255, 32, 35, 42)));
+        _bootProgress.Foreground = new SolidColorBrush(ThemeColor("RuAccentBrush", Color.FromArgb(255, 226, 232, 240)));
     }
 
     /// <summary>
@@ -361,178 +255,89 @@ public sealed class WelcomeOverlay : Grid, IDisposable
     }
 
     /// <summary>
-    /// Called when backend finishes loading: blossoms the pill button into "Discover Excellence →".
+    /// Called when backend finishes loading: the overlay carries itself into
+    /// the app with one exit transition instead of waiting for a button.
     /// </summary>
     public void NotifyReady(string? message = null, bool isError = false)
     {
         if (_isDismissed || _isReady) return;
         _isReady = true;
 
-        _loadingPulseStoryboard.Stop();
+        _statusLabel.Text = string.IsNullOrWhiteSpace(message)
+            ? (isError ? "Offline. Entering application..." : "Ready. Entering application...")
+            : message;
+        _bootProgress.Visibility = Visibility.Collapsed;
 
-        // 1. Fade out the loading badge smoothly
-        var fadeOutLoading = new DoubleAnimation
-        {
-            From = _loadingBadge.Opacity,
-            To = 0.0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(160)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-        Storyboard.SetTarget(fadeOutLoading, _loadingBadge);
-        Storyboard.SetTargetProperty(fadeOutLoading, "Opacity");
-
-        var sbLoading = new Storyboard();
-        sbLoading.Children.Add(fadeOutLoading);
-        sbLoading.Completed += (_, _) =>
-        {
-            _loadingBadge.Visibility = Visibility.Collapsed;
-
-            // 2. Prepare button
-            _buttonLabel.Text = isError ? "Enter Application (Offline)" : "Discover Excellence";
-            _buttonContainer.Visibility = Visibility.Visible;
-            _buttonContainer.Opacity = 0.0;
-            _buttonScale.ScaleX = 0.82;
-            _buttonScale.ScaleY = 0.82;
-            _buttonTransform.Y = 14.0;
-
-            if (!RuApp.Services.UiTiming.AnimationsEnabled)
-            {
-                _buttonContainer.Opacity = 1.0;
-                _buttonScale.ScaleX = 1.0;
-                _buttonScale.ScaleY = 1.0;
-                _buttonTransform.Y = 0.0;
-                _enterButton.Focus(FocusState.Programmatic);
-                return;
-            }
-
-            // 3. Blossom spring entrance animation
-            var buttonFade = new DoubleAnimation
-            {
-                From = 0.0,
-                To = 1.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(350)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(buttonFade, _buttonContainer);
-            Storyboard.SetTargetProperty(buttonFade, "Opacity");
-
-            var buttonSlide = new DoubleAnimation
-            {
-                From = 14.0,
-                To = 0.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(500)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(buttonSlide, _buttonTransform);
-            Storyboard.SetTargetProperty(buttonSlide, "Y");
-
-            var buttonScaleX = new DoubleAnimation
-            {
-                From = 0.82,
-                To = 1.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(550)),
-                EasingFunction = new BackEase { Amplitude = 0.30, EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(buttonScaleX, _buttonScale);
-            Storyboard.SetTargetProperty(buttonScaleX, "ScaleX");
-
-            var buttonScaleY = new DoubleAnimation
-            {
-                From = 0.82,
-                To = 1.0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(550)),
-                EasingFunction = new BackEase { Amplitude = 0.30, EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(buttonScaleY, _buttonScale);
-            Storyboard.SetTargetProperty(buttonScaleY, "ScaleY");
-
-            var sbButton = new Storyboard();
-            sbButton.Children.Add(buttonFade);
-            sbButton.Children.Add(buttonSlide);
-            sbButton.Children.Add(buttonScaleX);
-            sbButton.Children.Add(buttonScaleY);
-            sbButton.Completed += (_, _) =>
-            {
-                _enterButton.Focus(FocusState.Programmatic);
-                StartArrowNudge();
-            };
-            sbButton.Begin();
-        };
-        sbLoading.Begin();
-    }
-
-    private void StartArrowNudge()
-    {
-        if (_isDismissed) return;
-        if (!RuApp.Services.UiTiming.AnimationsEnabled) return;
-
-        var nudgeAnim = new DoubleAnimation
-        {
-            From = 0.70,
-            To = 1.0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(850)),
-            AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever,
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-        };
-        Storyboard.SetTarget(nudgeAnim, _arrowGlyph);
-        Storyboard.SetTargetProperty(nudgeAnim, "Opacity");
-
-        _arrowNudgeStoryboard = new Storyboard();
-        _arrowNudgeStoryboard.Children.Add(nudgeAnim);
-        _arrowNudgeStoryboard.Begin();
+        _ = PlayExitAsync();
     }
 
     /// <summary>
-    /// Dismisses the welcome screen with a smooth fade-out.
+    /// Dismisses the welcome screen, playing the exit transition first.
     /// </summary>
-    public async Task DismissAsync()
+    public Task DismissAsync() => PlayExitAsync();
+
+    private Task PlayExitAsync()
     {
-        if (_isDismissed) return;
+        if (_isDismissed) return Task.CompletedTask;
+        if (_exitStarted) return Task.CompletedTask;
+        _exitStarted = true;
         _isDismissed = true;
 
         if (!RuApp.Services.UiTiming.AnimationsEnabled)
         {
             Visibility = Visibility.Collapsed;
-            _backgroundPaths.Dispose();
-            _loadingPulseStoryboard.Stop();
-            _arrowNudgeStoryboard?.Stop();
             Dismissed?.Invoke(this, EventArgs.Empty);
-            return;
+            return Task.CompletedTask;
         }
 
-        var fadeOut = new DoubleAnimation
+        var contentFade = new DoubleAnimation
         {
             From = 1.0,
             To = 0.0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(420)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+            Duration = new Duration(TimeSpan.FromMilliseconds(450)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
-        Storyboard.SetTarget(fadeOut, this);
-        Storyboard.SetTargetProperty(fadeOut, "Opacity");
+        Storyboard.SetTarget(contentFade, _content);
+        Storyboard.SetTargetProperty(contentFade, "Opacity");
+
+        var contentRise = new DoubleAnimation
+        {
+            From = 0.0,
+            To = -28.0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(550)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        Storyboard.SetTarget(contentRise, _contentTransform);
+        Storyboard.SetTargetProperty(contentRise, "Y");
+
+        var overlayFade = new DoubleAnimation
+        {
+            From = 1.0,
+            To = 0.0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(600)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        Storyboard.SetTarget(overlayFade, this);
+        Storyboard.SetTargetProperty(overlayFade, "Opacity");
 
         var sb = new Storyboard();
-        sb.Children.Add(fadeOut);
+        sb.Children.Add(contentFade);
+        sb.Children.Add(contentRise);
+        sb.Children.Add(overlayFade);
 
         var tcs = new TaskCompletionSource<bool>();
         sb.Completed += (_, _) =>
         {
             Visibility = Visibility.Collapsed;
-            _backgroundPaths.Dispose();
-            _loadingPulseStoryboard.Stop();
-            _arrowNudgeStoryboard?.Stop();
             Dismissed?.Invoke(this, EventArgs.Empty);
             tcs.TrySetResult(true);
         };
         sb.Begin();
 
-        await tcs.Task;
+        return tcs.Task;
     }
 
     public void Dispose()
     {
-        _backgroundPaths.Dispose();
-        _loadingPulseStoryboard.Stop();
-        _arrowNudgeStoryboard?.Stop();
     }
 }

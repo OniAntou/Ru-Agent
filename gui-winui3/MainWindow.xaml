@@ -556,7 +556,7 @@
             </Border>
         </Grid>
 
-        <!-- Welcome & Loading Overlay (BackgroundPaths animation while backend initializes) -->
+        <!-- Welcome & Loading Overlay (static art while backend initializes) -->
         <controls:WelcomeOverlay x:Name="WelcomeOverlay"
                                  Grid.Row="0"
                                  Grid.RowSpan="2"

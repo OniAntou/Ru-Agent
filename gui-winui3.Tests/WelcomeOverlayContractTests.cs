@@ -47,21 +47,15 @@ public sealed class WelcomeOverlayContractTests
     }
 
     [Fact]
-    public void Background_paths_control_exposes_its_canvas_geometry()
+    public void WelcomeOverlay_runs_no_looping_animation()
     {
-        // The control scales its curves against these numbers, so they are part of
-        // the render contract rather than a private implementation detail.
-        Assert.Equal(36, BackgroundPathsControl.PathCount);
-        Assert.Equal(696.0, BackgroundPathsControl.CanvasWidth);
-        Assert.Equal(316.0, BackgroundPathsControl.CanvasHeight);
-    }
+        // The animated background was replaced by static art: no render loop,
+        // no repeating storyboard may come back.
+        var source = GuiSource.Text("Controls", "WelcomeOverlay.cs");
 
-    [Fact]
-    public void Background_paths_control_is_disposable_for_its_animation_timer()
-    {
-        Assert.True(
-            typeof(IDisposable).IsAssignableFrom(typeof(BackgroundPathsControl)),
-            "The control owns a timer and must be disposable.");
+        Assert.DoesNotContain("BackgroundPaths", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("RepeatBehavior.Forever", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CompositionTarget.Rendering", source, StringComparison.Ordinal);
     }
 
     private static int CanvasZIndex(XElement element) =>

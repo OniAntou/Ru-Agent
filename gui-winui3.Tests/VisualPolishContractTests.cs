@@ -258,7 +258,6 @@ public sealed class VisualPolishContractTests
     public void Welcome_overlay_paints_only_from_theme_tokens()
     {
         var overlay = GuiSource.Text("Controls", "WelcomeOverlay.cs");
-        var paths = GuiSource.Text("Controls", "BackgroundPathsControl.cs");
 
         foreach (var token in new[]
                  {
@@ -268,11 +267,6 @@ public sealed class VisualPolishContractTests
         {
             Assert.Contains(token, overlay, StringComparison.Ordinal);
         }
-
-        // One deliberate literal: the welcome path stroke is pure white on the dark
-        // canvas and theme ink on light, where white would vanish.
-        Assert.Contains("Color.FromArgb(255, 255, 255, 255)", paths, StringComparison.Ordinal);
-        Assert.Contains("RuInkBrush", paths, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -302,7 +296,7 @@ public sealed class VisualPolishContractTests
         // accessibility setting rather than always running, and must ask the shared gate
         // rather than reading the OS setting themselves — a second reader is how the
         // loops come to disagree about the setting.
-        foreach (var control in new[] { "WelcomeOverlay.cs", "BackgroundPathsControl.cs", "MeteorShowerField.cs" })
+        foreach (var control in new[] { "WelcomeOverlay.cs", "MeteorShowerField.cs" })
         {
             var source = GuiSource.Text("Controls", control);
 

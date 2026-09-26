@@ -125,17 +125,17 @@ public sealed class TodoChecklistTests
     }
 
     [Fact]
-    public void The_panel_is_fused_with_the_composer_into_one_block()
+    public void The_panel_is_its_own_card_above_the_composer()
     {
-        // One block, not two cards: no outline ring (depth comes from shadow,
-        // per the app card style), a count pill, a progress hairline, and the
-        // input's own top edge joining underneath.
+        // Its own card, not fused with the composer: fully rounded corners, a
+        // gap underneath, no outline ring (depth comes from shadow, per the
+        // app card style), a count pill and a progress hairline inside.
         var document = GuiSource.Xml("Views", "ChatView.xaml");
         var panel = GuiSource.Require(document, "TodoPanel");
 
-        Assert.Equal("8,0,8,0", GuiSource.AttributeValue(panel, "Margin"));
+        Assert.Equal("8,0,8,8", GuiSource.AttributeValue(panel, "Margin"));
         Assert.Equal("0", GuiSource.AttributeValue(panel, "BorderThickness"));
-        Assert.Equal("4,4,0,0", GuiSource.AttributeValue(panel, "CornerRadius"));
+        Assert.Contains("AppCardCornerRadius", GuiSource.AttributeValue(panel, "CornerRadius"), StringComparison.Ordinal);
         Assert.Contains("RuRestShadow", GuiSource.AttributeValue(panel, "Shadow"), StringComparison.Ordinal);
 
         GuiSource.Require(document, "TodoPanelCount");

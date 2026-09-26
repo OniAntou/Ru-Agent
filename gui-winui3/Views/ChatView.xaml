@@ -686,20 +686,20 @@
                                         Grid.Row="0" />
 
             <!--
-              The agent's standing task list. Fused with the composer into one
-              block with no outline ring: depth comes from shadow, per the app
-              card style. A count pill, the current task, and a progress
-              hairline lead; expanded adds the full read-only list, collapsed
-              keeps the header only. Hidden until the first todo write, cleared
-              on session switch.
+              The agent's standing task list. Its own card above the composer,
+              never fused with it: a gap separates the two, depth comes from
+              shadow, per the app card style. A count pill, the current task,
+              and a progress hairline lead; expanded adds the full read-only
+              list, collapsed keeps the header only. Hidden until the first
+              todo write, cleared on session switch.
             -->
             <Border x:Name="TodoPanel"
                     Grid.Row="1"
                     Visibility="Collapsed"
-                    Margin="8,0,8,0"
+                    Margin="8,0,8,8"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderThickness="0"
-                    CornerRadius="4,4,0,0"
+                    CornerRadius="{StaticResource AppCardCornerRadius}"
                     Translation="0,0,4"
                     Shadow="{StaticResource RuRestShadow}"
                     AutomationProperties.Name="Agent task list">
@@ -746,8 +746,7 @@
                         </Setter>
                     </Style>
                 </Border.Resources>
-                <Grid RowDefinitions="Auto,Auto">
-                    <StackPanel Grid.Row="0" Spacing="6" Padding="12,10,12,8">
+                <StackPanel Spacing="6" Padding="12,10,12,10">
                         <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -792,12 +791,7 @@
                         </ProgressBar>
                         <controls:TodoChecklistControl x:Name="TodoPanelList"
                                                        HorizontalAlignment="Stretch" />
-                    </StackPanel>
-                    <Border Grid.Row="1"
-                            Height="1"
-                            Background="{StaticResource RuLineBrush}"
-                            Opacity="0.6" />
-                </Grid>
+                </StackPanel>
             </Border>
 
             <StackPanel x:Name="AgentInlinePanel"

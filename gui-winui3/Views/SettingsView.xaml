@@ -619,6 +619,7 @@
                                                      Width="260"
                                                      Height="36"
                                                      CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                     PasswordRevealMode="Hidden"
                                                      PasswordChanged="OnModelsDevKeyPasswordChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -642,11 +643,11 @@
                                         Grid.Column="1"
                                         Width="260"
                                         MinHeight="36"
-                                        Content="Test connection"
+                                        Content="Fetch models"
                                         HorizontalAlignment="Stretch"
                                         HorizontalContentAlignment="Center"
                                         Style="{StaticResource RuDropdownButtonStyle}"
-                                        AutomationProperties.Name="Test provider connection"
+                                        AutomationProperties.Name="Fetch provider models"
                                         Click="OnProviderTestClick" />
                             </Grid>
 
@@ -682,7 +683,8 @@
                                                      PlaceholderText="sk-&#x2026;"
                                                      Width="260"
                                                      Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                     PasswordRevealMode="Hidden" />
                                         <Button x:Name="CustomSignOutButton"
                                                 Content="Đăng xuất"
                                                 Tag="custom"

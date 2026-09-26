@@ -513,6 +513,19 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
+    public void Api_key_boxes_never_offer_a_reveal_button()
+    {
+        // A key on screen is a key photographed: both boxes stay masked with
+        // no peek control, always.
+        string markup = GuiSource.Text("Views", "SettingsView.xaml");
+
+        Assert.Contains("x:Name=\"ModelsDevApiKeyBox\"", markup, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"CustomApiKeyBox\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("PasswordRevealMode=\"Peek\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("PasswordRevealMode=\"Visible\"", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ModelsDev_key_probe_sends_the_canonical_form_and_drops_bad_keys()
     {
         // The backend only accepts "models.dev:id": a stripped bare id is

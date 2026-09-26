@@ -45,6 +45,7 @@ public sealed class WelcomeOverlay : Grid, IDisposable
     {
         HorizontalAlignment = HorizontalAlignment.Stretch;
         VerticalAlignment = VerticalAlignment.Stretch;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(this, "Welcome");
 
         ApplyThemeBackground();
 
@@ -161,8 +162,10 @@ public sealed class WelcomeOverlay : Grid, IDisposable
             FontFamily = (FontFamily)Application.Current.Resources["RuMonoFontFamily"],
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+            TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16)
         };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_statusLabel, "Startup status");
         _statusLabel.Foreground = new SolidColorBrush(ThemeColor("RuMutedBrush", Color.FromArgb(255, 148, 163, 184)));
         _content.Children.Add(_statusLabel);
 
@@ -180,6 +183,8 @@ public sealed class WelcomeOverlay : Grid, IDisposable
 
         ApplyFrameTheme();
         ApplyGiantTheme();
+        ApplyResponsiveScale();
+        SizeChanged += (_, _) => ApplyResponsiveScale();
 
         ActualThemeChanged += (_, _) =>
         {
@@ -235,6 +240,25 @@ public sealed class WelcomeOverlay : Grid, IDisposable
     {
         _bootProgress.Background = new SolidColorBrush(ThemeColor("RuSurfaceBrush", Color.FromArgb(255, 32, 35, 42)));
         _bootProgress.Foreground = new SolidColorBrush(ThemeColor("RuAccentBrush", Color.FromArgb(255, 226, 232, 240)));
+    }
+
+    private void ApplyResponsiveScale()
+    {
+        // Narrow windows keep the console block clear of the cropped glyph.
+        bool compact = ActualWidth > 0 && ActualWidth < 640;
+        double giantSize = compact ? 140 : 200;
+        _giantEcho.FontSize = giantSize;
+        _giantGlyph.FontSize = giantSize;
+        _giantEcho.CharacterSpacing = _giantGlyph.CharacterSpacing = (int)(giantSize * -0.3);
+        _giantEcho.Margin = compact
+            ? new Thickness(-17, 0, 0, -43)
+            : new Thickness(-24, 0, 0, -62);
+        _giantGlyph.Margin = compact
+            ? new Thickness(-21, 0, 0, -39)
+            : new Thickness(-30, 0, 0, -56);
+        _content.Margin = compact
+            ? new Thickness(32, 0, 32, 64)
+            : new Thickness(64, 0, 64, 88);
     }
 
     /// <summary>

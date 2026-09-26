@@ -37,7 +37,11 @@ public sealed class ProviderCatalogEndpointTests
         var body = JsonNode.Parse(await client.GetStringAsync("/models?backend=openai"))!;
 
         Assert.Equal("ok", body["status"]!.GetValue<string>());
-        Assert.Equal("openai", body["backend"]!.GetValue<string>());
+        // The canonical backend, not the alias that happened to be requested: clients key
+        // their own state by the value they asked for, and "openai" is the alias of
+        // "OpenAI". Reporting the alias made a Models.dev response look like it belonged
+        // to some other provider, and the desktop picker discarded every one of them.
+        Assert.Equal("OpenAI", body["backend"]!.GetValue<string>());
         Assert.Equal("gpt-5.6-sol", body["models"]![0]!.GetValue<string>());
     }
 

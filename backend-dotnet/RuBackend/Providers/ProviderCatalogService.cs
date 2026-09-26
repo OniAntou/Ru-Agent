@@ -578,8 +578,13 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     {
         var now = clock.GetUtcNow();
         var supportedIds = entry.Models.Where(m => m.Supported).Select(m => m.Id).ToArray();
+        // The canonical Backend, not the Alias: callers key their own grouped state by the
+        // value they asked for, and for a Models.dev provider that is "models.dev:<id>"
+        // while the alias is the bare id. Reporting the alias made every such response
+        // look like it answered for a different provider, so the client discarded it and
+        // the picker stayed empty while the fetch itself succeeded.
         return new(entry.Error is null && entry.Success.HasValue ? "ok" : "error",
-            selection.Alias, entry.Identity, selection.Model, ProviderReasoningPreferences.Read(settings, selection),
+            selection.Backend, entry.Identity, selection.Model, ProviderReasoningPreferences.Read(settings, selection),
             supportedIds, entry.Models,
             entry.Success.HasValue && (entry.Error is not null || now - entry.Success.Value >= TimeSpan.FromMinutes(5)),
             entry.Error ?? (entry.Success.HasValue ? null : "catalog_unavailable"), entry.Success)

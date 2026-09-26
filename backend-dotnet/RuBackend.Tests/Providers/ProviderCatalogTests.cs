@@ -32,6 +32,28 @@ public sealed class ProviderCatalogTests : IDisposable
         return "{" + string.Join(",", entries) + "}";
     }
 
+    /// <summary>
+    /// The same payload as <see cref="ManyProviderJson"/> plus one named provider, so a
+    /// test can fetch a catalog for a specific Models.dev backend.
+    /// </summary>
+    private static string ManyProviderJsonWith(int count, string id, string api)
+    {
+        var entries = Enumerable.Range(0, count)
+            .Select(i => $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}")
+            .Prepend($"\"{id}\":{{\"api\":\"{api}\"}}");
+        return "{" + string.Join(",", entries) + "}";
+    }
+
+    /// <summary>Writes a Models.dev cache the service will trust on read.</summary>
+    private async Task<string> WriteModelsDevCacheAsync(string providersJson)
+    {
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        Directory.CreateDirectory(_root);
+        await File.WriteAllTextAsync(cacheFile,
+            $"{{\"fetched_at\":\"2099-01-01T00:00:00+00:00\",\"payload\":{providersJson}}}");
+        return cacheFile;
+    }
+
     [Fact]
     public async Task ModelsDev_catalog_rejects_plain_http_api_urls()
     {
@@ -213,6 +235,33 @@ public sealed class ProviderCatalogTests : IDisposable
         var providers = await service.GetModelsDevAsync(CancellationToken.None);
         Assert.Equal(60, providers.Count);
         Assert.Equal(1, _handler.Count);
+    }
+
+    /// <summary>
+    /// A catalog response names the provider in the canonical form the caller asked for.
+    /// </summary>
+    /// <remarks>
+    /// It answered with the bare Models.dev id while callers group by "models.dev:&lt;id&gt;",
+    /// so every response looked like it belonged to a different provider and the desktop
+    /// picker threw it away: the fetch succeeded with 458 models and the list still read
+    /// "No available models". Only the custom endpoint survived, because there the id and
+    /// the requested value are the same string.
+    /// </remarks>
+    [Fact]
+    public async Task Generic_backend_snapshot_reports_the_backend_the_caller_asked_for()
+    {
+        // A cache is trusted on read only above MinimumModelsDevProviders, so a
+        // one-provider fixture would be deleted as corrupt before it is ever used.
+        var cacheFile = await WriteModelsDevCacheAsync(
+            ManyProviderJsonWith(60, "openrouter", "https://openrouter.ai/api/v1"));
+        _handler.Json = "{\"data\":[{\"id\":\"model-a\"}]}";
+        var service = new ProviderCatalogService(new HttpClient(_handler), _credentials, _clock, cacheFile);
+        var settings = (await SettingsAsync()) with { Backend = "models.dev:openrouter", Model = "model-a" };
+
+        var snapshot = await service.GetAsync(settings, false, CancellationToken.None);
+
+        Assert.Equal("ok", snapshot.Status);
+        Assert.Equal("models.dev:openrouter", snapshot.Backend);
     }
 
     [Fact]

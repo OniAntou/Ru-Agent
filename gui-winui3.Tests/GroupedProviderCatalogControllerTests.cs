@@ -132,6 +132,64 @@ public sealed class GroupedProviderCatalogControllerTests
         Assert.True(controller.State.Catalogs.ContainsKey("models.dev:openrouter"));
     }
 
+    /// <summary>
+    /// A response whose backend names the catalog provider is accepted, not discarded.
+    /// </summary>
+    /// <remarks>
+    /// The controller keys grouped state by the alias the picker groups on
+    /// ("models.dev:openrouter"), so a response that reports the bare provider id looks
+    /// like it answered for somebody else and gets dropped — which is what happened:
+    /// the fetch succeeded with 458 models and the picker still read "No available
+    /// models". Only the fixed group survived, because there the id and the alias are
+    /// the same string.
+    /// </remarks>
+    [Fact]
+    public async Task A_response_naming_the_catalog_provider_is_published()
+    {
+        var controlled = new ControlledCatalogs();
+        controlled.EnsureSource("models.dev:openrouter");
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
+        await controller.SetModelsDevProvidersAsync([new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        var refresh = controller.RefreshAsync(force: true);
+        // What the backend actually answers for a Models.dev provider.
+        controlled.Complete("models.dev:openrouter", Snapshot("models.dev:openrouter", "m1"));
+        controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
+        Assert.True(await refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        Assert.True(controller.State.Catalogs.ContainsKey("models.dev:openrouter"));
+        Assert.True(controller.State.Catalogs["models.dev:openrouter"].IsSuccess);
+    }
+
+    /// <summary>
+    /// A response that names some other provider is discarded rather than merged.
+    /// </summary>
+    /// <remarks>
+    /// This is the guard that caught the old backend: it answered a Models.dev request
+    /// with the bare provider id, the controller asked for "models.dev:openrouter", and
+    /// the mismatch dropped every response. The guard is correct — keep it — and the
+    /// backend now reports the canonical form. Pinned so a future backend change that
+    /// reintroduces the bare id fails here instead of silently emptying the picker.
+    /// </remarks>
+    [Fact]
+    public async Task A_response_for_a_different_provider_is_discarded()
+    {
+        var controlled = new ControlledCatalogs();
+        controlled.EnsureSource("models.dev:openrouter");
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
+        await controller.SetModelsDevProvidersAsync([new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        var refresh = controller.RefreshAsync(force: true);
+        // The bare id, as the backend used to answer.
+        controlled.Complete("models.dev:openrouter", Snapshot("openrouter", "m1"));
+        controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.DoesNotContain("openrouter", controller.State.Catalogs.Keys);
+        Assert.False(controller.State.Catalogs.TryGetValue("models.dev:openrouter", out var openrouter)
+            && openrouter.IsSuccess);
+    }
+
     /// <summary>A provider registered while polling is off stays off until it is switched on.</summary>
     [Fact]
     public async Task A_provider_registered_while_polling_is_off_is_not_polled()

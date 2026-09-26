@@ -7,6 +7,58 @@ public sealed class ProviderModelPickerProjectionTests
 {
     private const string ChatCompletions = "chat_completions";
 
+    /// <summary>
+    /// A Models.dev provider keeps its model in the backend's generic <c>model</c> field.
+    /// </summary>
+    /// <remarks>
+    /// The selector had no arm for those providers, so it answered empty and the picker
+    /// trigger fell back to its placeholder while a model was configured and the catalog
+    /// listed it. The response's <c>model</c> was also missing from the settings DTO, so
+    /// the value never even arrived.
+    /// </remarks>
+    [Theory]
+    [InlineData("models.dev:openrouter", "cohere/north-mini-code:free")]
+    [InlineData("models.dev:groq", "llama-3.3-70b")]
+    public void A_models_dev_backend_reports_the_generic_model_field(string backend, string model)
+    {
+        var settings = new AppSettingsDto { BackendChoice = backend, Model = model };
+
+        Assert.Equal(model, ProviderModelSelection.GetSelectedModel(settings, backend));
+    }
+
+    [Fact]
+    public void The_generic_model_field_deserializes_from_the_settings_response()
+    {
+        // The backend's own JSON shape, as /settings returns it.
+        const string json = """
+            {"backend":"models.dev:openrouter","backend_choice":"models.dev:openrouter","model":"cohere/north-mini-code:free","custom_model":"default","openai_model":"","anthropic_model":""}
+            """;
+
+        var settings = System.Text.Json.JsonSerializer.Deserialize<AppSettingsDto>(json);
+
+        Assert.NotNull(settings);
+        Assert.Equal("cohere/north-mini-code:free", settings!.Model);
+        Assert.Equal(
+            "cohere/north-mini-code:free",
+            ProviderModelSelection.GetSelectedModel(settings, settings.BackendChoice));
+    }
+
+    [Theory]
+    [InlineData("openai", "gpt-4o", "gpt-4o")]
+    [InlineData("custom", "local", "local")]
+    public void A_fixed_backend_still_reports_its_own_field(string backend, string value, string expected)
+    {
+        var settings = new AppSettingsDto
+        {
+            BackendChoice = backend,
+            OpenAiModel = value,
+            CustomModel = value,
+            Model = "should-not-be-read",
+        };
+
+        Assert.Equal(expected, ProviderModelSelection.GetSelectedModel(settings, backend));
+    }
+
     private static ProviderCatalogModel CatalogModel(
         string id,
         bool supported = true,

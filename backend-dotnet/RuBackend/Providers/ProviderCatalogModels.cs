@@ -17,6 +17,18 @@ public sealed record ProviderCatalogSnapshot(
     string? ErrorCode, DateTimeOffset? LastSuccessUtc)
 {
     [JsonIgnore] public string CredentialRevision { get; init; } = "";
+
+    /// <summary>
+    /// When <see cref="ErrorCode"/> was recorded, or null when there is no error.
+    /// </summary>
+    /// <remarks>
+    /// A failed read stays reported for as long as the retry throttle holds, during
+    /// which the provider may already be healthy again. Without this timestamp a
+    /// fifteen-second-old rejection reads exactly like one happening now, which sends
+    /// the user to re-enter a key that was never the problem.
+    /// </remarks>
+    public DateTimeOffset? ErrorAtUtc { get; init; }
+
     public JsonObject ToJson() => new()
     {
         ["status"] = Status, ["backend"] = Backend, ["identity"] = Identity,
@@ -43,6 +55,7 @@ public sealed record ProviderCatalogSnapshot(
         }).ToArray()),
         ["stale"] = Stale, ["error_code"] = ErrorCode,
         ["last_success_utc"] = LastSuccessUtc?.ToString("O"),
+        ["error_at_utc"] = ErrorAtUtc?.ToString("O"),
     };
 }
 

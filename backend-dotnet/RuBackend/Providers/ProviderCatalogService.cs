@@ -40,6 +40,9 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         public DateTimeOffset Attempt { get; set; } = DateTimeOffset.MinValue;
         public DateTimeOffset RetryAfter { get; set; } = DateTimeOffset.MinValue;
         public string? Error { get; set; }
+
+        /// <summary>When <see cref="Error"/> was recorded, so a cached failure can say so.</summary>
+        public DateTimeOffset? ErrorAt { get; set; }
     }
 
     public async Task<ProviderCatalogSnapshot> GetAsync(SettingsSnapshot settings, bool refresh, CancellationToken ct)
@@ -362,6 +365,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             try
             {
                 entry.Error = "catalog_unauthorized";
+                entry.ErrorAt = clock.GetUtcNow();
                 return BuildSnapshot(selection, settings, entry, revision);
             }
             finally { _gate.Release(); }
@@ -463,6 +467,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                         entry.Models = models;
                         entry.Success = clock.GetUtcNow();
                         entry.Error = null;
+                        entry.ErrorAt = null;
                         entry.RetryAfter = DateTimeOffset.MinValue;
                     }
                 }
@@ -491,6 +496,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                             entry.RetryAfter = retryAfter.Value;
                         entry.Error = error is ProviderCatalogException known ? known.Code
                             : error is OperationCanceledException ? "catalog_timeout" : "catalog_unavailable";
+                        entry.ErrorAt = clock.GetUtcNow();
                     }
                 }
                 finally { _gate.Release(); }
@@ -536,6 +542,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 entry.Models = models;
                 entry.Success = clock.GetUtcNow();
                 entry.Error = null;
+                entry.ErrorAt = null;
                 entry.RetryAfter = DateTimeOffset.MinValue;
             }
         }
@@ -576,6 +583,6 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             supportedIds, entry.Models,
             entry.Success.HasValue && (entry.Error is not null || now - entry.Success.Value >= TimeSpan.FromMinutes(5)),
             entry.Error ?? (entry.Success.HasValue ? null : "catalog_unavailable"), entry.Success)
-            { CredentialRevision = credentialRevision };
+            { CredentialRevision = credentialRevision, ErrorAtUtc = entry.ErrorAt };
     }
 }

@@ -37,31 +37,42 @@ public static class TuiFailureCatalog
         var key = (code ?? string.Empty).Trim();
         info = key switch
         {
-            "provider_rate_limited" or "rate_limited" or "catalog_rate_limited" => new(
+            "provider_rate_limited" or "rate_limited" => new(
                 key,
                 "Rate limited",
                 "the provider returned HTTP 429 for this turn",
                 "provider returned HTTP 429 · retry in a moment or switch model with /model"),
+            // A 429 on the catalog read is about listing models, not about this turn,
+            // so it points at the model list rather than at the request that just ran.
+            "catalog_rate_limited" => new(
+                key,
+                "Model list rate limited",
+                "the provider returned HTTP 429 while listing models",
+                "the provider limited how often its model list may be read · retry in a moment"),
             "provider_auth_failed" or "auth_failed" or "unauthorized" => new(
                 key,
                 "Provider rejected the credentials",
                 "the provider refused the API key",
-                "provider rejected the credentials · verify the API key, then retry"),
+                "provider rejected the credentials · verify the API key with /key, then retry"),
+            // The catalog read answers 401/403 both when the key is wrong and when the
+            // provider declines that one request, and a failed read stays reported while
+            // the retry throttle holds. So this code is not proof the key is bad, and
+            // saying it is sends the user to replace a key that was never the problem.
             "catalog_unauthorized" => new(
                 key,
-                "Provider key rejected",
-                "the API key is missing or was rejected",
-                "provider key rejected or missing · re-enter the key in GUI Settings → Models, then retry"),
+                "Provider refused the model list",
+                "the key is missing, or the provider declined this one request for the model list",
+                "check the key with /key; if it is set, the provider refused a single model-list read · retry in a moment"),
             "provider_not_active" => new(
                 key,
                 "No provider credential",
                 "this provider has no API key saved",
-                "provider has no credential · sign in via GUI Settings → Models, then retry"),
+                "provider has no credential · sign in with /key <provider>, then retry"),
             "provider_configuration_changed" => new(
                 key,
                 "Provider credentials changed",
                 "the saved credential no longer matches",
-                "provider credentials changed · re-enter the key in GUI Settings → Models, then retry"),
+                "provider credentials changed · re-enter the key with /key <provider>, then retry"),
             "forbidden" => new(
                 key,
                 "Provider refused the request",
@@ -82,11 +93,19 @@ public static class TuiFailureCatalog
                 "Provider rejected the request",
                 "the provider answered 4xx: unknown model, no access, or bad parameters",
                 "check the model with /model, verify the key with /key, then retry"),
-            "catalog_unavailable" or "catalog_http_error" => new(
+            // Distinct from catalog_http_error: nothing was reached, so the network is the
+            // suspect. Merging the two told users to check connectivity for a provider
+            // that had answered, just not with a model list.
+            "catalog_unavailable" => new(
                 key,
                 "Model catalog unavailable",
-                "the model list could not be reached",
-                "provider catalog unavailable · check the network, then retry"),
+                "the provider's model list could not be reached",
+                "check the network or the provider's base URL, then retry"),
+            "catalog_http_error" => new(
+                key,
+                "Model list failed",
+                "the provider answered an error while listing models",
+                "the provider failed to list its models · retry in a moment"),
             "catalog_malformed" or "catalog_too_large" or "catalog_configuration_error" => new(
                 key,
                 "Model catalog misconfigured",
@@ -125,8 +144,8 @@ public static class TuiFailureCatalog
             "model_unavailable" => new(
                 key,
                 "Model unavailable",
-                "the selected model is not in the provider catalog",
-                "pick an available model with /model"),
+                "the provider does not serve this model id",
+                "the provider 404s this model · pick another with /model (a ':free' suffix only exists where the provider lists it)"),
             "worker_unavailable" or "worker_failed" => new(
                 key,
                 "Model worker unreachable",

@@ -87,6 +87,86 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
     }
 
+    /// <summary>
+    /// A catalog that cannot be read is reported as itself, never as a missing model.
+    /// </summary>
+    /// <remarks>
+    /// The model check reads the catalog, so the two failures sit on one path and it
+    /// would be easy to collapse them. They need different codes because they need
+    /// different fixes: a rejected key, a rate limit and a server error are not solved by
+    /// changing the model, and a model that really is absent is not solved by retrying.
+    /// This pins the separation rather than a past defect.
+    /// </remarks>
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, "catalog_unauthorized")]
+    [InlineData(HttpStatusCode.TooManyRequests, "catalog_rate_limited")]
+    [InlineData(HttpStatusCode.InternalServerError, "catalog_http_error")]
+    public async Task An_unreadable_catalog_reports_its_own_failure_not_a_missing_model(
+        HttpStatusCode status, string expectedCode)
+    {
+        // The catalog endpoint comes from the models.dev entry, so the handler can
+        // answer for it. A key is present, so the credential check does not fire first
+        // and the failure genuinely originates in the catalog read.
+        var cacheFile = await WriteModelsDevCacheAsync();
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "models.dev:openrouter", Model = "stepfun/step-3.7-flash:free" }, default);
+        var credentials = new KeyedCredentials();
+        var catalog = new ProviderCatalogService(
+            new HttpClient(new FailingCatalogHandler(status)), credentials, TimeProvider.System, cacheFile);
+        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
+
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        Assert.Equal(expectedCode, error.Code);
+        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
+    }
+
+    /// <summary>
+    /// A model the provider's catalog does not list is reported as a missing model, not
+    /// as whatever else went wrong.
+    /// </summary>
+    /// <remarks>
+    /// The model check reads the catalog, so the two failures are adjacent: a catalog
+    /// that could not be read at all must report its own code (covered above), and only a
+    /// catalog that was read successfully may accuse the model.
+    /// </remarks>
+    [Fact]
+    public async Task A_model_absent_from_a_healthy_catalog_reports_a_missing_model()
+    {
+        var cacheFile = await WriteModelsDevCacheAsync();
+        var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
+        await store.SaveAsync((await store.ReadAsync(default)) with
+        { Backend = "models.dev:openrouter", Model = "stepfun/step-3.7-flash:free" }, default);
+        var credentials = new KeyedCredentials();
+        var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System, cacheFile);
+        using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
+
+        var error = await Assert.ThrowsAsync<ProviderCatalogException>(() => factory.CreateAsync(Request("run-a"), default));
+        Assert.Equal("model_unavailable", error.Code);
+        Assert.Empty(Directory.GetFiles(_root, "provider-bootstrap-*.bin"));
+    }
+
+    /// <summary>A model the catalog does list still dispatches, so the check cannot false-block.</summary>
+    private async Task<string> WriteModelsDevCacheAsync()
+    {
+        Directory.CreateDirectory(_root);
+        var entries = Enumerable.Range(0, 60)
+            .Select(i => $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}");
+        var providers = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"},"
+            + string.Join(",", entries) + "}";
+        var cacheFile = Path.Combine(_root, "models-dev.json");
+        await File.WriteAllTextAsync(cacheFile,
+            $$"""{"fetched_at":"2099-01-01T00:00:00+00:00","payload":{{providers}}}""");
+        return cacheFile;
+    }
+
+    /// <summary>A catalog endpoint that answers with a status the service has codes for.</summary>
+    private sealed class FailingCatalogHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status));
+    }
+
     private async Task<ProviderBootstrapData> ReadAsync(AgentProviderSnapshotFactory factory, string run)
     {
         var path = await factory.CreateAsync(Request(run), default);

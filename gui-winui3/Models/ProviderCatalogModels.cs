@@ -90,6 +90,17 @@ public sealed class ProviderCatalogSnapshot
     [JsonPropertyName("last_success_utc")]
     public DateTimeOffset? LastSuccessUtc { get; init; }
 
+    /// <summary>
+    /// When <see cref="ErrorCode"/> was recorded, or null when there is no error.
+    /// </summary>
+    /// <remarks>
+    /// A failed read stays reported while the backend's retry throttle holds, during
+    /// which the provider may already be healthy. An error with an old timestamp is a
+    /// stale report, not a live one.
+    /// </remarks>
+    [JsonPropertyName("error_at_utc")]
+    public DateTimeOffset? ErrorAtUtc { get; init; }
+
     public bool IsSuccess => string.Equals(Status, "ok", StringComparison.Ordinal);
     public bool IsValidEmpty => IsSuccess && Models.Count == 0;
 
@@ -126,6 +137,10 @@ public sealed record ProviderCatalogState
     public bool Stale { get; init; }
     public string? ErrorCode { get; init; }
     public DateTimeOffset? LastSuccessUtc { get; init; }
+
+    /// <summary>When <see cref="ErrorCode"/> was recorded; an old date means a stale report.</summary>
+    public DateTimeOffset? ErrorAtUtc { get; init; }
+
     public string SearchText { get; init; } = string.Empty;
 
     public bool IsSuccess => string.Equals(Status, "ok", StringComparison.Ordinal);
@@ -149,6 +164,7 @@ public sealed record ProviderCatalogState
         Stale = snapshot.Stale,
         ErrorCode = snapshot.ErrorCode,
         LastSuccessUtc = snapshot.LastSuccessUtc,
+        ErrorAtUtc = snapshot.ErrorAtUtc,
         SearchText = searchText,
     };
 }

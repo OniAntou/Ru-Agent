@@ -22,6 +22,8 @@ namespace RuApp.Views
         private bool _ownsProviderCatalogController;
         private bool _loading = false;
         private DispatcherTimer? _autoSaveTimer;
+        private DispatcherTimer? _modelsDevKeyTimer;
+        private bool _modelsDevKeyProbeRunning;
         private bool _saveInProgress;
         private bool _saveRequestedDuringSave;
 
@@ -248,6 +250,7 @@ namespace RuApp.Views
             }
 
             _autoSaveTimer?.Stop();
+            _modelsDevKeyTimer?.Stop();
             ProviderTestButton.IsEnabled = false;
             ShowProviderTestResult(ProviderConnectionTestPresentation.Testing());
 
@@ -398,9 +401,18 @@ namespace RuApp.Views
             };
             _autoSaveTimer.Tick += OnAutoSaveTimerTick;
 
+            // The key box probes itself: a quiet box is saved and tested
+            // without any button, one second after the last keystroke.
+            _modelsDevKeyTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _modelsDevKeyTimer.Tick += OnModelsDevKeyTimerTick;
+
             CustomEndpointUrlBox.TextChanged += AutoSaveTextHandler;
             CustomApiKeyBox.PasswordChanged += AutoSaveHandler;
             CloudflareAccountIdBox.TextChanged += AutoSaveTextHandler;
+            ModelsDevApiKeyBox.PasswordChanged += OnModelsDevKeyPasswordChanged;
         }
 
         private async void OnAutoSaveTimerTick(object? sender, object e)
@@ -619,47 +631,100 @@ namespace RuApp.Views
             }
         }
 
-        private async void OnSaveModelsDevKeyClick(object sender, RoutedEventArgs e)
+        private void OnModelsDevKeyPasswordChanged(object sender, RoutedEventArgs e)
         {
-            if (_apiService is null) return;
-            // The backend only accepts the canonical "models.dev:id" form, so the
-            // bare id must never be sent: it is rejected as an invalid payload.
-            var providerId = ProviderSetupGuidance.IsModelsDevChoice(_providerChoice)
-                ? ProviderSetupGuidance.NormalizeProviderChoice(_providerChoice)
-                : string.Empty;
-            var apiKey = ModelsDevApiKeyBox.Password;
-            if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(apiKey))
+            if (_loading) return;
+            _modelsDevKeyTimer?.Stop();
+            if (string.IsNullOrEmpty(ModelsDevApiKeyBox.Password))
             {
-                ModelsDevKeyStatus.Text = "Dán key trước khi lưu.";
+                ModelsDevKeyStatus.Text = string.Empty;
                 return;
             }
 
+            // Typing restarts the verdict below; only a quiet box gets probed.
+            ModelsDevKeyStatus.Text = string.Empty;
+            _modelsDevKeyTimer?.Start();
+        }
+
+        private async void OnModelsDevKeyTimerTick(object? sender, object e)
+        {
+            _modelsDevKeyTimer?.Stop();
+            await ProbeAndSaveModelsDevKeyAsync();
+        }
+
+        /// <summary>
+        /// Saves the typed key only after it proves itself: the key is stored,
+        /// probed with a forced catalog refresh, and removed again when the
+        /// provider answers "unauthorized". Transport failures keep the key and
+        /// say so, because a dead network is not a wrong key.
+        /// </summary>
+        private async Task ProbeAndSaveModelsDevKeyAsync()
+        {
+            if (_loading || _modelsDevKeyProbeRunning) return;
+            if (_apiService is null || _providerCatalogController is null) return;
+            if (!ProviderSetupGuidance.IsModelsDevChoice(_providerChoice)) return;
+            string apiKey = ModelsDevApiKeyBox.Password;
+            if (string.IsNullOrWhiteSpace(apiKey)) return;
+
+            // The backend only accepts the canonical "models.dev:id" form, so the
+            // bare id must never be sent: it is rejected as an invalid payload.
+            string providerId = ProviderSetupGuidance.NormalizeProviderChoice(_providerChoice);
             string displayId = providerId.StartsWith(
                 ProviderSetupGuidance.ModelsDevPrefix,
                 StringComparison.OrdinalIgnoreCase)
                 ? providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..]
                 : providerId;
-            ModelsDevSaveButton.IsEnabled = false;
+            _modelsDevKeyProbeRunning = true;
             try
             {
-                bool ok = await _apiService.SaveModelsDevKeyAsync(providerId, apiKey);
-                if (ok)
+                SetModelsDevKeyStatus("Đang kiểm tra key…", "info");
+                bool saved = await _apiService.SaveModelsDevKeyAsync(providerId, apiKey);
+                if (!saved)
+                {
+                    SetModelsDevKeyStatus("Lưu thất bại, thử lại.", ProviderConnectionTest.ErrorTone);
+                    return;
+                }
+
+                await _providerCatalogController.RefreshAsync(force: true);
+                var state = _providerCatalogController.State;
+                var outcome = ProviderConnectionTestPresentation.Project(state);
+                if (outcome.Tone == ProviderConnectionTest.SuccessTone)
                 {
                     ModelsDevApiKeyBox.Password = string.Empty;
                     await LoadSettingsAsync();
                     // LoadSettingsAsync clears the status line, so the success
                     // message must land after the reload, not before it.
-                    ModelsDevKeyStatus.Text = $"Đã lưu key cho {displayId}.";
+                    SetModelsDevKeyStatus($"Đã lưu key cho {displayId}.", ProviderConnectionTest.SuccessTone);
+                }
+                else if (string.Equals(state?.ErrorCode, "catalog_unauthorized", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _apiService.RemoveProviderAsync(providerId);
+                    SetModelsDevKeyStatus("Key không hợp lệ, chưa lưu.", ProviderConnectionTest.ErrorTone);
                 }
                 else
                 {
-                    ModelsDevKeyStatus.Text = "Lưu thất bại, thử lại.";
+                    string code = state?.ErrorCode?.Trim() ?? "unknown";
+                    SetModelsDevKeyStatus(
+                        $"Không kiểm tra được kết nối [{code}], đã giữ key.",
+                        "info");
                 }
             }
             finally
             {
-                ModelsDevSaveButton.IsEnabled = true;
+                _modelsDevKeyProbeRunning = false;
             }
+        }
+
+        private void SetModelsDevKeyStatus(string message, string tone)
+        {
+            ModelsDevKeyStatus.Text = message;
+            ModelsDevKeyStatus.Foreground = (Brush)Application.Current.Resources[
+                tone switch
+                {
+                    ProviderConnectionTest.SuccessTone => "AppSuccessBrush",
+                    ProviderConnectionTest.ErrorTone => "AppDangerBrush",
+                    _ => "RuMutedBrush",
+                }];
         }
 
         private void UpdateVisibilityForBackend(string choice)
@@ -845,6 +910,13 @@ namespace RuApp.Views
                 _autoSaveTimer.Tick -= OnAutoSaveTimerTick;
                 _autoSaveTimer.Stop();
                 _autoSaveTimer = null;
+            }
+            ModelsDevApiKeyBox.PasswordChanged -= OnModelsDevKeyPasswordChanged;
+            if (_modelsDevKeyTimer != null)
+            {
+                _modelsDevKeyTimer.Tick -= OnModelsDevKeyTimerTick;
+                _modelsDevKeyTimer.Stop();
+                _modelsDevKeyTimer = null;
             }
         }
 

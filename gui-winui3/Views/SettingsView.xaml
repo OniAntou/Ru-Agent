@@ -597,7 +597,7 @@
                                 <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                         <TextBlock x:Name="ModelsDevApiKeyLabel" Text="Models.dev API Key" Style="{StaticResource SettingLabelStyle}" />
-                                        <TextBlock Text="Paste the key for the active provider, save" Style="{StaticResource SettingDescStyle}" />
+                                        <TextBlock Text="Paste the key for the active provider, it saves itself" Style="{StaticResource SettingDescStyle}" />
                                         <TextBlock x:Name="ModelsDevKeyStatus"
                                                    FontFamily="{StaticResource RuUiFontFamily}"
                                                    FontSize="12"
@@ -616,16 +616,10 @@
                                         <PasswordBox x:Name="ModelsDevApiKeyBox"
                                                      AutomationProperties.LabeledBy="{Binding ElementName=ModelsDevApiKeyLabel}"
                                                      PlaceholderText="sk-&#x2026;"
-                                                     Width="180"
+                                                     Width="260"
                                                      Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}" />
-                                        <Button x:Name="ModelsDevSaveButton"
-                                                Content="Lưu"
-                                                Click="OnSaveModelsDevKeyClick"
-                                                Height="36"
-                                                MinWidth="72"
-                                                AutomationProperties.AutomationId="SaveModelsDevKey"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                                     CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                     PasswordChanged="OnModelsDevKeyPasswordChanged" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>

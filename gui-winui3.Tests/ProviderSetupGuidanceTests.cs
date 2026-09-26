@@ -502,19 +502,34 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void ModelsDev_key_save_sends_the_canonical_backend_form()
+    public void ModelsDev_key_box_saves_itself_without_a_button()
+    {
+        // No save button: a quiet key box probes and stores itself, so the
+        // markup must wire the keystroke handler and drop the old button.
+        string markup = GuiSource.Text("Views", "SettingsView.xaml");
+
+        Assert.Contains("PasswordChanged=\"OnModelsDevKeyPasswordChanged\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ModelsDevSaveButton", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ModelsDev_key_probe_sends_the_canonical_form_and_drops_bad_keys()
     {
         // The backend only accepts "models.dev:id": a stripped bare id is
-        // rejected as an invalid payload and the key is never stored.
+        // rejected as an invalid payload and the key is never stored. A key
+        // the provider calls unauthorized must be removed again, so only a
+        // proven key survives.
         string body = GuiSource.MethodBody(
             GuiSource.Text("Views", "SettingsView.xaml.cs"),
-            "OnSaveModelsDevKeyClick");
+            "ProbeAndSaveModelsDevKeyAsync");
 
         Assert.Contains("NormalizeProviderChoice", body, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "_providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..]",
             body,
             StringComparison.Ordinal);
+        Assert.Contains("catalog_unauthorized", body, StringComparison.Ordinal);
+        Assert.Contains("RemoveProviderAsync", body, StringComparison.Ordinal);
     }
 
     [Fact]

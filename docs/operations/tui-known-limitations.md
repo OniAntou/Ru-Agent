@@ -61,13 +61,11 @@ $env:RU_TUI_COLOR=truecolor   # truecolor | 256 | 16 | none
 
 ## Open limitations
 
-### A free-tier model can chat but never calls a tool
+### Free-tier models are unreliable, and it is the model's choice whether to act
 
-Verified, not assumed. Across 31 runs read from the session database there were
-**0 tool activity records and 0 `model_tool_call_invalid` events**: the model
-answers in prose and never emits a tool call at all.
-
-Eliminated as causes:
+This started as "a free model can chat but never calls a tool": across 31 runs read
+from the session database there were **0 tool activity records and 0
+`model_tool_call_invalid` events**. Eliminated as causes at the time:
 
 - **Not a missing tool.** Every step sends the full manifest
   (`read`/`list`/`grep`/`glob`/`write`/`edit`/`bash`, …).
@@ -75,15 +73,31 @@ Eliminated as causes:
   workspace are auto-allowed by `PolicySnapshotEvaluator`'s effective fallback,
   so a `read` would not have been blocked.
 
-So the failure is upstream of the policy layer: the provider returns no tool
-call. **Still unproven:** that the tool pipeline executes end-to-end against a
-real provider. Until a run is observed doing a real read, treat "the agent can
-act on your repository" as verified against the scripted model only.
+**Resolved: the tool pipeline does execute end to end against a real provider.**
+`cohere/north-mini-code:free` asked to list the workspace produced
+`tool.proposed` → `tool.execution_requested (read_only)` →
+`tool.execution_completed (ok)` → `run.state_changed (completed)`. So the earlier
+zero-tool runs were the model choosing to answer in prose, not a broken pipeline.
 
-Contributing: OpenRouter's free tier is genuinely unreliable — 429s,
-`empty_model_reply`, and 404s when capacity runs out. `z-ai/glm-5.2:free`
-advertises `tool_call=False`, so it can never run an agent loop; the picker
-marks such rows as unsupported for that reason.
+What remains is model selection, not a defect in Ru. Measured on OpenRouter's free
+tier in one sitting:
+
+| Model | Result |
+|---|---|
+| `cohere/north-mini-code:free` | works, calls tools |
+| `nvidia/nemotron-3-super-120b-a12b:free` | works |
+| `stealth/space-bunny-alpha` | works |
+| `qwen/qwen3.8-27b:free` | `provider_rate_limited` |
+| `google/gemma-4-31b-it:free` | `provider_rate_limited` |
+
+Roughly a third of the free list answered 429 on the first attempt. Capacity comes
+and goes, so a `provider_rate_limited` on a free model means retry or switch, not
+that the setup is wrong. Other free-tier failure modes seen: `empty_model_reply`,
+and 404s when capacity runs out. `z-ai/glm-5.2:free` advertises `tool_call=False`,
+so it can never run an agent loop; the picker marks such rows as unsupported for
+that reason.
+
+### The models.dev cache on a developer machine can be stale
 
 ### The models.dev cache on a developer machine can be stale
 

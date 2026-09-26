@@ -203,61 +203,6 @@ internal static class ProviderSetupGuidance
     }
 
     /// <summary>
-    /// The letter a provider is filed under, or null when it files under none.
-    /// </summary>
-    /// <remarks>
-    /// The index is deliberately narrow: A-Z only. A digit or symbol heading is not a
-    /// useful jump target in a provider list, and a strip that showed one per symbol
-    /// would be longer than the list it indexes. Non-Latin names file under none and
-    /// stay reachable by scrolling and by search.
-    /// </remarks>
-    internal static char? JumpLetterFor(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        char first = char.ToUpperInvariant(name.Trim()[0]);
-        return first is >= 'A' and <= 'Z' ? first : null;
-    }
-
-    /// <summary>
-    /// The jump targets for a list of providers, in A-Z order.
-    /// </summary>
-    /// <remarks>
-    /// <paramref name="matching"/> tells which entries the current filter shows: a letter
-    /// with no visible provider is returned with a null index so the strip can show it
-    /// disabled rather than offering a jump that would do nothing.
-    /// </remarks>
-    internal static IReadOnlyList<(char Letter, int? Index)> JumpTargets(
-        IEnumerable<string?> names,
-        Func<int, bool>? matching = null)
-    {
-        var firstByLetter = new Dictionary<char, int>();
-        int index = 0;
-        foreach (var name in names)
-        {
-            if (JumpLetterFor(name) is { } letter
-                && (matching is null || matching(index))
-                && !firstByLetter.ContainsKey(letter))
-            {
-                firstByLetter[letter] = index;
-            }
-
-            index++;
-        }
-
-        var targets = new List<(char, int?)>(26);
-        for (char letter = 'A'; letter <= 'Z'; letter++)
-        {
-            targets.Add((letter, firstByLetter.TryGetValue(letter, out var at) ? at : null));
-        }
-
-        return targets;
-    }
-
-    /// <summary>
     /// Sorts Models.dev dropdown rows by display name (A-Z, case-insensitive),
     /// falling back to the id when the name is blank. Duplicates collapse to
     /// the first occurrence so one provider never takes two rows.

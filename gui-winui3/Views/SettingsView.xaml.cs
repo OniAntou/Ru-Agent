@@ -41,12 +41,10 @@ namespace RuApp.Views
         private sealed record DropdownOption(Button Button, TextBlock Label, FontIcon Check, string Value, FrameworkElement? KeyDot = null);
 
         private const double ProviderRowLabelFontSize = 13;
-        private const double ProviderFlyoutMinHeight = 320;
         private const double ProviderFlyoutBottomMargin = 24;
-        // Room kept under the list for the A-Z strip, which overlays its right edge.
-        private const double ProviderLetterStripReserve = 36;
-        private const double ProviderLetterButtonSize = 16;
-        private const double ProviderLetterFontSize = 10;
+        // Six 32px rows: the list stays scannable without eating the settings form.
+        private const double ProviderFlyoutMaxHeight = 200;
+        private const double ProviderFlyoutAbsoluteMinHeight = 96;
 
         private IReadOnlyList<DropdownOption>? _themeOptions;
         private IReadOnlyList<DropdownOption>? _presetOptions;
@@ -359,10 +357,12 @@ namespace RuApp.Views
             // way realizes every item and lays none of them out. A concrete height is what
             // makes it virtualize and paint.
             double height = double.IsFinite(available)
-                ? Math.Max(
-                    available - ProviderFlyoutBottomMargin - ProviderLetterStripReserve,
-                    ProviderFlyoutMinHeight)
-                : ProviderFlyoutMinHeight;
+                ? Math.Min(
+                    Math.Max(
+                        available - ProviderFlyoutBottomMargin,
+                        ProviderFlyoutAbsoluteMinHeight),
+                    ProviderFlyoutMaxHeight)
+                : ProviderFlyoutMaxHeight;
             ProviderListView.MaxHeight = height;
             ProviderListView.Height = height;
         }
@@ -577,7 +577,6 @@ namespace RuApp.Views
             }
 
             RefreshProviderUI();
-            RebuildProviderLetterStrip();
             LogProviderListState("filter");
         }
 
@@ -594,15 +593,11 @@ namespace RuApp.Views
         {
             try
             {
-                var visible = _providerRows.Where(row => row.IsVisible).ToArray();
-                var letters = string.Concat(
-                    ProviderSetupGuidance.JumpTargets(visible.Select(row => row.DisplayName))
-                        .Where(target => target.Index is not null)
-                        .Select(target => target.Letter));
+                int visible = _providerRows.Count(row => row.IsVisible);
 
                 GuiDiagnosticWriter.AppendTraceLine(
                     $"[provider-list] {stage}: rows={_providerRows.Count} "
-                    + $"visible={visible.Length} letters={letters} "
+                    + $"visible={visible} "
                     + $"filter='{ProviderSearchBox?.Text}' "
                     + $"loadFailed={_modelsDevLoadFailed}");
             }
@@ -610,103 +605,6 @@ namespace RuApp.Views
             {
                 GuiDiagnosticWriter.AppendTraceLine($"[provider-list] {stage}: logging failed: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Builds the A-Z strip beside the provider list and marks which letters have a
-        /// visible provider under the current filter.
-        /// </summary>
-        /// <remarks>
-        /// The strip is derived from the visible rows, in their order, so it can never
-        /// point at a letter the list does not actually show. Jumping scrolls the
-        /// ListView itself, which is why the strip is an index over the list rather than
-        /// a second copy of it.
-        /// </remarks>
-        private void RebuildProviderLetterStrip()
-        {
-            if (ProviderLetterJumpStrip is null)
-            {
-                return;
-            }
-
-            ProviderLetterJumpStrip.Items.Clear();
-            var visible = _providerRows.Where(row => row.IsVisible).ToArray();
-            foreach (var (letter, index) in ProviderSetupGuidance.JumpTargets(
-                         visible.Select(row => row.DisplayName)))
-            {
-                ProviderLetterJumpStrip.Items.Add(BuildProviderLetterButton(letter, index));
-            }
-        }
-
-        private Button BuildProviderLetterButton(char letter, int? index)
-        {
-            // Plain text, not RuDropdownItemButtonStyle: this is an index glyph, so it
-            // carries no button chrome and no padding of its own.
-            //
-            // Live and dead letters are separated by COLOUR, not by alpha. Dimming text
-            // to mark it unavailable put ~88% of the index below the contrast floor --
-            // muted at 22% over the surface measured about 1.5:1, so the letters that
-            // could not be reached were also unreadable, and the strip read as broken
-            // rather than as an index. Muted passes at 7:1 on dark and 5.6:1 on light;
-            // ink marks the letters that lead somewhere.
-            var label = new TextBlock
-            {
-                Text = letter.ToString(),
-                FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                FontSize = ProviderLetterFontSize,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                Width = ProviderLetterButtonSize,
-                Foreground = index is not null
-                    ? (Brush)Application.Current.Resources["RuInkBrush"]
-                    : (Brush)Application.Current.Resources["RuMutedBrush"],
-                FontWeight = index is not null
-                    ? Microsoft.UI.Text.FontWeights.SemiBold
-                    : Microsoft.UI.Text.FontWeights.Normal,
-            };
-
-            var button = new Button
-            {
-                Tag = letter,
-                Content = label,
-                Width = ProviderLetterButtonSize,
-                Height = ProviderLetterButtonSize,
-                MinWidth = 0,
-                MinHeight = 0,
-                Padding = new Thickness(0),
-                Margin = new Thickness(0),
-                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                BorderThickness = new Thickness(0),
-                // A transparent button still paints Fluent's hover and pressed fills, which
-                // at this size read as noise. The index answers to the glyph, not to a slab.
-                IsEnabled = index is not null,
-            };
-            button.Resources["ButtonBackgroundPointerOver"] =
-                new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            button.Resources["ButtonBackgroundPressed"] =
-                new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            AutomationProperties.SetName(button, $"Jump to providers starting with {letter}");
-            button.Click += OnProviderLetterClick;
-            return button;
-        }
-
-        private void OnProviderLetterClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is not Button { Tag: char letter } || ProviderListView is null)
-            {
-                return;
-            }
-
-            var visible = _providerRows.Where(row => row.IsVisible).ToList();
-            ProviderRow? target = visible.FirstOrDefault(
-                row => ProviderSetupGuidance.JumpLetterFor(row.DisplayName) == letter);
-            if (target is null)
-            {
-                return;
-            }
-
-            ProviderListView.ScrollIntoView(target, ScrollIntoViewAlignment.Leading);
-            ProviderListView.Focus(FocusState.Programmatic);
         }
 
         private async void OnSaveModelsDevKeyClick(object sender, RoutedEventArgs e)

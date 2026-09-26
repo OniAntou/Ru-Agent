@@ -479,18 +479,26 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
-    public void The_letter_strip_overlays_the_list_rather_than_being_a_second_column()
+    public void The_provider_dropdown_has_no_letter_strip()
     {
-        // An adjacent column put the index outside the flyout, where it read as a stray
-        // panel hanging off the dropdown. It shares the list's cell and aligns right
-        // instead, so it costs no layout width and cannot drift out of the flyout.
-        var settings = GuiSource.Xml("Views", "SettingsView.xaml");
-        var strip = GuiSource.Require(settings, "ProviderLetterJumpStrip");
-        var list = GuiSource.Require(settings, "ProviderListView");
+        // Search plus scroll is the whole way through the catalog: the A-Z
+        // jump strip competed with search instead of helping it.
+        var markup = GuiSource.Text("Views", "SettingsView.xaml");
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
 
-        Assert.False(GuiSource.IsDescendantOf(strip, list));
-        Assert.Equal(list.Parent, strip.Parent);
-        Assert.Equal("Right", GuiSource.AttributeValue(strip, "HorizontalAlignment"));
+        Assert.DoesNotContain("ProviderLetterJumpStrip", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("RebuildProviderLetterStrip", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("JumpTargets", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Provider_rows_collapse_with_the_filter()
+    {
+        // The filter flips IsVisible on the rows; the template must collapse
+        // them or typing narrows nothing but the header count.
+        var markup = GuiSource.Text("Views", "SettingsView.xaml");
+
+        Assert.Contains("Visibility=\"{x:Bind RowVisibility, Mode=OneWay}\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -502,117 +510,6 @@ public sealed class ProviderSetupGuidanceTests
         // outlive the view, or a closed Settings modal keeps resizing a dead visual tree.
         Assert.Contains("providerFlyout.Opening += OnProviderFlyoutOpening", code, StringComparison.Ordinal);
         Assert.Contains("providerFlyout.Opening -= OnProviderFlyoutOpening", code, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("Abacus", 'A')]
-    [InlineData("  zhipuai ", 'Z')]
-    [InlineData("ai&", 'A')]
-    [InlineData("302.AI", null)]
-    [InlineData("Nous Research", 'N')]
-    [InlineData("", null)]
-    [InlineData("   ", null)]
-    [InlineData(null, null)]
-    public void A_provider_files_under_a_letter_only_when_it_starts_with_one(
-        string? name,
-        char? expected)
-    {
-        Assert.Equal(expected, ProviderSetupGuidance.JumpLetterFor(name));
-    }
-
-    [Fact]
-    public void The_jump_strip_is_always_the_whole_alphabet()
-    {
-        var targets = ProviderSetupGuidance.JumpTargets(["Abacus", "Zhipu AI"]);
-
-        Assert.Equal(26, targets.Count);
-        Assert.Equal(Enumerable.Range('A', 26).Select(code => (char)code), targets.Select(t => t.Letter));
-    }
-
-    [Fact]
-    public void A_jump_target_is_the_first_visible_provider_under_that_letter()
-    {
-        string?[] names = ["302.AI", "Abacus", "Aixy", "Zhipu AI"];
-
-        var targets = ProviderSetupGuidance.JumpTargets(names).ToDictionary(t => t.Letter, t => t.Index);
-
-        // Index counts rows, so "A" points at the second row, not at the first A-name
-        // in some filtered view of the list.
-        Assert.Equal(1, targets['A']);
-        Assert.Equal(3, targets['Z']);
-        Assert.Null(targets['B']);
-    }
-
-    [Fact]
-    public void A_letter_with_no_matching_row_is_disabled_rather_than_hidden()
-    {
-        string?[] names = ["Abacus", "Aixy", "Zhipu AI"];
-        // Only the Z row survives the filter: the strip keeps every letter so it never
-        // changes shape while the user types, but A points at nothing and is disabled.
-        bool[] visible = [false, false, true];
-
-        var targets = ProviderSetupGuidance.JumpTargets(names, index => visible[index])
-            .ToDictionary(t => t.Letter, t => t.Index);
-
-        Assert.Null(targets['A']);
-        Assert.Equal(2, targets['Z']);
-    }
-
-    [Fact]
-    public void The_jump_strip_tolerates_an_empty_catalog()
-    {
-        var targets = ProviderSetupGuidance.JumpTargets([]);
-
-        Assert.Equal(26, targets.Count);
-        Assert.All(targets, target => Assert.Null(target.Index));
-    }
-
-    [Fact]
-    public void The_letter_strip_is_rebuilt_wherever_the_visible_rows_change()
-    {
-        // The strip indexes rendered rows, so it goes stale the moment the filter or the
-        // rebuild moves them. Both call the rebuild; without that it silently points at
-        // the wrong rows.
-        string body = GuiSource.MethodBody(
-            GuiSource.Text("Views", "SettingsView.xaml.cs"),
-            "ApplyProviderFilter");
-
-        Assert.Contains("RebuildProviderLetterStrip()", body, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// The index separates reachable letters from unreachable ones by colour, never by
-    /// opacity.
-    /// </summary>
-    /// <remarks>
-    /// Dimming the dead letters looked right in isolation and measured about 1.5:1
-    /// against the surface, so the ~88% of the index that could not be reached was also
-    /// unreadable and the strip read as broken rather than as an index. Muted passes at
-    /// 7:1 on dark and 5.6:1 on light; ink marks the letters that lead somewhere.
-    /// </remarks>
-    [Fact]
-    public void The_index_marks_dead_letters_with_colour_not_transparency()
-    {
-        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
-        string body = GuiSource.MethodBody(code, "BuildProviderLetterButton");
-
-        Assert.Contains("RuInkBrush", body, StringComparison.Ordinal);
-        Assert.Contains("RuMutedBrush", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("Opacity", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("ProviderLetterDisabledOpacity", code, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_index_glyphs_share_one_character_cell()
-    {
-        // A narrow I and a wide A centred in their own boxes make the strip read as
-        // ragged. One centred cell per letter keeps the column straight.
-        string body = GuiSource.MethodBody(
-            GuiSource.Text("Views", "SettingsView.xaml.cs"),
-            "BuildProviderLetterButton");
-
-        Assert.Contains("TextAlignment.Center", body, StringComparison.Ordinal);
-        Assert.Contains("Width = ProviderLetterButtonSize", body, StringComparison.Ordinal);
     }
 
     /// <summary>

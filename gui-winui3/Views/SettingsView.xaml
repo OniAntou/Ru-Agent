@@ -436,11 +436,9 @@
                                         <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
                                             <StackPanel Spacing="0">
                                                 <!--
-                                                  Search is the primary way through a ~190-row
+                                                  Search is the way through a ~190-row
                                                   catalog, so it carries the weight: full-width,
-                                                  accent icon, hairline under it. The trailing
-                                                  letter index is deliberately quiet so the eye
-                                                  lands on search first.
+                                                  accent icon, hairline under it.
                                                 -->
                                                 <Grid ColumnDefinitions="Auto,*" Margin="12,12,12,8">
                                                     <FontIcon Glyph="&#xE721;"
@@ -496,13 +494,6 @@
                                                            CharacterSpacing="80"
                                                            Foreground="{StaticResource RuMutedBrush}"
                                                            Margin="12,8,12,4" />
-                                                <!--
-                                                  The catalog is ~190 rows, so the list gets an
-                                                  A-Z index. It overlays the right edge of the
-                                                  viewport (same grid cell, right aligned) so it
-                                                  costs no layout width and cannot drift outside
-                                                  the flyout the way a second column did.
-                                                -->
                                                 <Grid>
                                                     <!--
                                                       The catalog is ~190 rows. They go through a
@@ -517,11 +508,11 @@
                                                     -->
                                                     <ListView x:Name="ProviderListView"
                                                               VerticalAlignment="Top"
-                                                              MaxHeight="560"
+                                                              MaxHeight="200"
                                                               SelectionMode="None"
                                                               IsItemClickEnabled="True"
                                                               ItemClick="OnProviderRowClicked"
-                                                              Padding="0,0,28,6"
+                                                              Padding="0,0,0,6"
                                                               ScrollViewer.HorizontalScrollMode="Disabled"
                                                               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                                         <ListView.Resources>
@@ -559,8 +550,9 @@
                                                                 -->
                                                                 <Grid ColumnDefinitions="*,Auto"
                                                                       MinHeight="32"
-                                                                      Padding="12,0,8,0">
-                                                                    <TextBlock Text="{x:Bind DisplayName}"
+                                                                      Padding="12,0,8,0"
+                                                                      Visibility="{x:Bind RowVisibility, Mode=OneWay}">
+                                                                     <TextBlock Text="{x:Bind DisplayName}"
                                                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                                                FontSize="13"
                                                                                Foreground="{StaticResource RuInkBrush}"
@@ -585,25 +577,14 @@
                                                             </DataTemplate>
                                                         </ListView.ItemTemplate>
                                                     </ListView>
-                                                    <TextBlock x:Name="ProviderNoMatchText"
+                                                     <TextBlock x:Name="ProviderNoMatchText"
                                                                Text="No provider matches"
                                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                                FontSize="12"
                                                                Foreground="{StaticResource RuMutedBrush}"
                                                                Margin="12,8,12,12"
                                                                Visibility="Collapsed" />
-                                                 <ItemsControl x:Name="ProviderLetterJumpStrip"
-                                                               HorizontalAlignment="Right"
-                                                               VerticalAlignment="Top"
-                                                               Margin="0,6,8,0"
-                                                               AutomationProperties.Name="Jump to provider letter">
-                                                     <ItemsControl.ItemsPanel>
-                                                         <ItemsPanelTemplate>
-                                                             <StackPanel Spacing="0" />
-                                                         </ItemsPanelTemplate>
-                                                     </ItemsControl.ItemsPanel>
-                                                 </ItemsControl>
-                                                </Grid>
+                                                 </Grid>
                                             </StackPanel>
                                         </Flyout>
                                     </Button.Flyout>

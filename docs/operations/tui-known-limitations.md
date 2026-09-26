@@ -4,6 +4,44 @@ What the terminal UI (`agent chat`) still cannot do, and the tooling for
 investigating it. Everything here was measured on a real run; nothing is
 inferred from reading the code.
 
+## Telling a bad key apart from a bad model
+
+Both surface to the user as "it does not work", and they are different faults
+with different fixes. Two checks separate them in under a minute.
+
+**Is the key valid?** Ask the provider directly:
+
+```powershell
+# read the stored key, then probe it (the key itself is never printed)
+Invoke-WebRequest https://openrouter.ai/api/v1/key -Headers @{ Authorization = "Bearer $key" }
+```
+
+`200` means the credential is fine and the fault is elsewhere. Do this before
+reading any application code: a valid key rules out the entire auth story.
+
+**Does the model exist?** A model id the provider does not serve returns **404**
+on the completion, and the adapters map that to `model_unavailable`
+(`OpenAiCompatibleModelProvider`, `OpenAiResponsesModelProvider`,
+`AnthropicMessagesModelProvider`). So `model_unavailable` usually means the id is
+wrong, not that the provider is down.
+
+```
+stepfun/step-3.7-flash:free   -> 404   (no such model)
+stepfun/step-3.7-flash        -> 200
+```
+
+Two traps that cost real time here:
+
+- **`catalog_unauthorized` is not always about the key.** It is thrown both when
+  the credential is empty *and* when the provider answers 401/403, and the
+  catalog keeps a failed attempt cached for 30 seconds
+  (`ProviderCatalogService.RefreshIfNeededAsync`). Two runs inside that window
+  both report the first failure, which makes a transient fault look permanent.
+  Wait out the window, or restart, before concluding anything.
+- **A models.dev model is not validated against the catalog.** The snapshot
+  factory checks the model only for `openai`/`anthropic`, so a models.dev id that
+  does not exist travels all the way to the provider and comes back as a 404.
+
 ## Colour output
 
 `TuiPalette` resolves a colour depth once, in this order: `RU_TUI_COLOR`, then

@@ -79,6 +79,19 @@ public sealed class ProviderConnectionTestUiSourceContractTests
     }
 
     [Fact]
+    public void A_failed_test_records_its_catalog_code()
+    {
+        // The message alone cannot tell a blocked network apart from a bad key
+        // the next time someone reads a report, so the code must reach both the
+        // status line and the local diagnostic log.
+        string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
+        string body = GuiSource.MethodBody(code, "OnProviderTestClick");
+
+        Assert.Contains("WriteGuiError", body, StringComparison.Ordinal);
+        Assert.Contains("ErrorCode", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_background_success_never_overwrites_the_status_line()
     {
         // The catalog also refreshes on a timer. A result appearing without the button

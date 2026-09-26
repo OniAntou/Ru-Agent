@@ -257,8 +257,16 @@ namespace RuApp.Views
 
                 // A forced refresh is what actually re-queries the provider.
                 await _providerCatalogController.RefreshAsync(force: true);
-                ShowProviderTestResult(ProviderConnectionTestPresentation.Project(
-                    _providerCatalogController.State));
+                var state = _providerCatalogController.State;
+                var outcome = ProviderConnectionTestPresentation.Project(state);
+                if (outcome.Tone == ProviderConnectionTest.ErrorTone)
+                {
+                    // The message alone cannot tell a blocked network apart from
+                    // a bad key next time: record the catalog code locally.
+                    GuiDiagnosticWriter.WriteGuiError("provider_test", state?.ErrorCode ?? "unknown");
+                }
+
+                ShowProviderTestResult(outcome, state?.ErrorCode);
             }
             catch (Exception ex)
             {
@@ -273,14 +281,18 @@ namespace RuApp.Views
             }
         }
 
-        private void ShowProviderTestResult(ProviderConnectionTest result)
+        private void ShowProviderTestResult(ProviderConnectionTest result, string? errorCode = null)
         {
             if (ProviderTestStatusText is null)
             {
                 return;
             }
 
-            ProviderTestStatusText.Text = result.Message;
+            string code = errorCode?.Trim() ?? string.Empty;
+            ProviderTestStatusText.Text =
+                result.Tone == ProviderConnectionTest.ErrorTone && code.Length > 0 && code.Length <= 64
+                    ? $"{result.Message} [{code}]"
+                    : result.Message;
             ProviderTestStatusText.Foreground = (Brush)Application.Current.Resources[
                 result.Tone switch
                 {
@@ -610,8 +622,10 @@ namespace RuApp.Views
         private async void OnSaveModelsDevKeyClick(object sender, RoutedEventArgs e)
         {
             if (_apiService is null) return;
+            // The backend only accepts the canonical "models.dev:id" form, so the
+            // bare id must never be sent: it is rejected as an invalid payload.
             var providerId = ProviderSetupGuidance.IsModelsDevChoice(_providerChoice)
-                ? _providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..].Trim().ToLowerInvariant()
+                ? ProviderSetupGuidance.NormalizeProviderChoice(_providerChoice)
                 : string.Empty;
             var apiKey = ModelsDevApiKeyBox.Password;
             if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(apiKey))
@@ -620,15 +634,26 @@ namespace RuApp.Views
                 return;
             }
 
+            string displayId = providerId.StartsWith(
+                ProviderSetupGuidance.ModelsDevPrefix,
+                StringComparison.OrdinalIgnoreCase)
+                ? providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..]
+                : providerId;
             ModelsDevSaveButton.IsEnabled = false;
             try
             {
                 bool ok = await _apiService.SaveModelsDevKeyAsync(providerId, apiKey);
-                ModelsDevKeyStatus.Text = ok ? $"Đã lưu key cho {providerId}." : "Lưu thất bại, thử lại.";
                 if (ok)
                 {
                     ModelsDevApiKeyBox.Password = string.Empty;
                     await LoadSettingsAsync();
+                    // LoadSettingsAsync clears the status line, so the success
+                    // message must land after the reload, not before it.
+                    ModelsDevKeyStatus.Text = $"Đã lưu key cho {displayId}.";
+                }
+                else
+                {
+                    ModelsDevKeyStatus.Text = "Lưu thất bại, thử lại.";
                 }
             }
             finally

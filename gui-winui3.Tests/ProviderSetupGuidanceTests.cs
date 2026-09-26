@@ -502,6 +502,22 @@ public sealed class ProviderSetupGuidanceTests
     }
 
     [Fact]
+    public void ModelsDev_key_save_sends_the_canonical_backend_form()
+    {
+        // The backend only accepts "models.dev:id": a stripped bare id is
+        // rejected as an invalid payload and the key is never stored.
+        string body = GuiSource.MethodBody(
+            GuiSource.Text("Views", "SettingsView.xaml.cs"),
+            "OnSaveModelsDevKeyClick");
+
+        Assert.Contains("NormalizeProviderChoice", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "_providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..]",
+            body,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_provider_flyout_resizes_only_through_the_lifecycle_it_owns()
     {
         string code = GuiSource.Text("Views", "SettingsView.xaml.cs");

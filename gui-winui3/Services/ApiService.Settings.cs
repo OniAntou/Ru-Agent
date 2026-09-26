@@ -2,6 +2,7 @@ using System;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
+using RuAgent.Client;
 using RuApp.Models;
 
 namespace RuApp.Services
@@ -80,22 +81,43 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<bool> SaveModelsDevKeyAsync(string providerId, string apiKey)
+        /// <summary>
+        /// Stores a key for a fixed provider or a Models.dev catalog provider.
+        /// </summary>
+        /// <remarks>
+        /// The payload comes from <see cref="ProviderCredential.KeyPayload"/> so this path
+        /// and the terminal's /key cannot disagree about what the backend accepts. They
+        /// did: this method used to send a bare Models.dev id, which the backend rejects
+        /// as an invalid payload, so every catalog key silently failed to save.
+        /// </remarks>
+        public async Task<bool> SaveProviderKeyAsync(string backendChoice, string apiKey)
         {
+            var target = ProviderCredential.Resolve(backendChoice);
+            if (target is null)
+            {
+                LogApiError("SaveProviderKeyAsync", new ArgumentException(
+                    $"'{backendChoice}' is not a provider the app can store a key for."));
+                return false;
+            }
+
             try
             {
-                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings",
-                    new { models_dev_provider_id = providerId, models_dev_api_key = apiKey });
+                using var response = await _httpClient.PostAsJsonAsync(
+                    $"{_baseUrl}/settings",
+                    ProviderCredential.KeyPayload(target, apiKey));
                 bool ok = await HasOkEnvelopeAsync(response);
                 if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
                 return ok;
             }
             catch (Exception ex)
             {
-                LogApiError("SaveModelsDevKeyAsync", ex);
+                LogApiError("SaveProviderKeyAsync", ex);
                 return false;
             }
         }
+
+        public async Task<bool> SaveModelsDevKeyAsync(string providerId, string apiKey) =>
+            await SaveProviderKeyAsync(providerId, apiKey).ConfigureAwait(true);
 
         public async Task<bool> RemoveProviderAsync(string backendChoice)
         {

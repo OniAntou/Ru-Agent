@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **feat(gui)**: **Dropdown Provider có chỉ mục A–Z, ô search nổi bật và bộ đếm.** Catalog Models.dev ~190 dòng nên picker nay có dải chữ cái A–Z ở mép phải (bấm để cuộn tới provider đầu tiên của chữ đó), header hiện `PROVIDERS (n)` / `PROVIDERS (n of total)`, và ô search lọc theo cả tên lẫn id. Dải nằm **trong** flyout, cùng ô Grid với list và canh phải, nên không trôi ra ngoài như cột thứ hai trước đó.
+- **feat(client)**: **Một bảng duy nhất quyết định provider nào dùng field key nào.** GUI và TUI mỗi bên tự nuôi một bản sao của cùng phép ánh xạ, và chúng đã lệch nhau thật: GUI cắt tiền tố `models.dev:` trước khi gửi nên backend từ chối **mọi** key Models.dev với `Invalid settings payload`, trong khi TUI gửi dạng canonical và chạy được. Nay `ProviderCredential` (trong `RuAgent.Client`, nơi cả hai đều tham chiếu) là nguồn duy nhất: `Resolve` nhận alias cố định, tên người dùng hay gõ (`custom openai`, `claude`, `openrouter`), id trần hoặc dạng canonical; `KeyPayload` dựng đúng body — provider cố định dùng field riêng, provider catalog dùng cặp `models_dev_provider_id` + `models_dev_api_key` với **tiền tố giữ nguyên**. Tên provider không nhận ra thì trả null thay vì đoán, vì id còn dùng để sinh tên account credential trên Host.
 
 ### Removed
 

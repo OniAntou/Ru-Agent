@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using RuAgent.Client;
 using RuAgent.Harness.Core;
 using RuApp.Models;
 using RuApp.Services;
@@ -725,14 +726,14 @@ namespace RuApp.Views
             string apiKey = ModelsDevApiKeyBox.Password;
             if (string.IsNullOrWhiteSpace(apiKey)) return;
 
-            // The backend only accepts the canonical "models.dev:id" form, so the
-            // bare id must never be sent: it is rejected as an invalid payload.
-            string providerId = ProviderSetupGuidance.NormalizeProviderChoice(_providerChoice);
-            string displayId = providerId.StartsWith(
-                ProviderSetupGuidance.ModelsDevPrefix,
-                StringComparison.OrdinalIgnoreCase)
-                ? providerId[ProviderSetupGuidance.ModelsDevPrefix.Length..]
-                : providerId;
+            // One shared table decides the provider's canonical form and key field, so
+            // this path and the terminal's /key cannot disagree about what the backend
+            // accepts. They did once: the bare id was sent and every catalog key was
+            // rejected as an invalid payload.
+            var target = ProviderCredential.Resolve(_providerChoice);
+            if (target is null || !target.IsModelsDev) return;
+            string providerId = target.Choice;
+            string displayId = target.DisplayName;
             _modelsDevKeyProbeRunning = true;
             try
             {

@@ -519,7 +519,9 @@ public sealed class AgentSlashCommandSurfaceTests
         Assert.Contains("sk-panel-key", body, StringComparison.Ordinal);
         Assert.DoesNotContain("sk-bare", body, StringComparison.Ordinal);
         Assert.Equal(0, prompts);
-        Assert.Contains("Signed in to models.dev:openrouter", output.ToString(), StringComparison.Ordinal);
+        // The confirmation names the provider the way the user typed it; the canonical
+        // models.dev: form travels in the payload, which the assertions above cover.
+        Assert.Contains("Signed in to openrouter", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

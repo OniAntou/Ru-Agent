@@ -401,48 +401,11 @@ public sealed class AgentSlashCommands
         await SaveKeyAsync(parts[0], cancellationToken).ConfigureAwait(false);
     }
 
-    private sealed record KeyProvider(string Backend, string Display, string? ModelsDevId);
-
-    private static KeyProvider? NormalizeKeyProvider(string input)
-    {
-        var trimmed = input.Trim();
-        var canonical = trimmed.ToLowerInvariant() switch
-        {
-            "openai" or "openai api" => "OpenAI",
-            "anthropic" or "anthropic claude" or "claude" => "Anthropic",
-            "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
-            "openrouter" => "models.dev:openrouter",
-            _ when trimmed.StartsWith("models.dev:", StringComparison.OrdinalIgnoreCase)
-                => "models.dev:" + trimmed["models.dev:".Length..].Trim().ToLowerInvariant(),
-            _ => null,
-        };
-
-        if (canonical is null)
-        {
-            return null;
-        }
-
-        if (canonical.StartsWith("models.dev:", StringComparison.Ordinal))
-        {
-            var id = canonical["models.dev:".Length..];
-            if (id.Length == 0 || id.Length > 64
-                || id.Any(c => !(char.IsLetterOrDigit(c) || c is '-' or '_')))
-            {
-                return null;
-            }
-
-            return new KeyProvider(canonical, canonical, id);
-        }
-
-        return new KeyProvider(canonical, canonical, null);
-    }
-
-    private static string? KeyFieldFor(KeyProvider provider) =>
-        KnownBackends.FirstOrDefault(b => string.Equals(b.Backend, provider.Backend, StringComparison.OrdinalIgnoreCase)).HasKeyField;
-
     private async Task SaveKeyAsync(string providerArg, CancellationToken cancellationToken)
     {
-        var provider = NormalizeKeyProvider(providerArg);
+        // Provider names and key fields live in one table shared with the desktop app;
+        // see ProviderCredential for why a second copy is not allowed.
+        var provider = ProviderCredential.Resolve(providerArg);
         if (provider is null)
         {
             await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider. Use openai, anthropic, custom, or models.dev:<id>.").ConfigureAwait(false);
@@ -459,8 +422,8 @@ public sealed class AgentSlashCommands
         try
         {
             secret = SecretPanelPrompt is not null
-                ? await SecretPanelPrompt(provider.Display, cancellationToken).ConfigureAwait(false)
-                : await SecretPrompt!($"API key for {provider.Display} (ctrl+v to paste, esc to cancel): ", cancellationToken).ConfigureAwait(false);
+                ? await SecretPanelPrompt(provider.DisplayName, cancellationToken).ConfigureAwait(false)
+                : await SecretPrompt!($"API key for {provider.DisplayName} (ctrl+v to paste, esc to cancel): ", cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -482,22 +445,14 @@ public sealed class AgentSlashCommands
 
         try
         {
-            var keyField = KeyFieldFor(provider);
-            if (string.IsNullOrEmpty(keyField) && provider.ModelsDevId is null)
+            JsonObject body = new();
+            foreach (var (field, value) in ProviderCredential.KeyPayload(provider, secret))
             {
-                await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider.").ConfigureAwait(false);
-                return;
+                body[field] = value;
             }
 
-            JsonObject body = provider.ModelsDevId is not null
-                ? new JsonObject
-                {
-                    ["models_dev_provider_id"] = provider.Backend,
-                    ["models_dev_api_key"] = secret,
-                }
-                : new JsonObject { [keyField!] = secret };
             await _settingsClient.UpdateAsync(body, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Signed in to {provider.Display}")).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Signed in to {provider.DisplayName}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)
         {
@@ -513,7 +468,7 @@ public sealed class AgentSlashCommands
 
     private async Task RemoveKeyAsync(string providerArg, CancellationToken cancellationToken)
     {
-        var provider = NormalizeKeyProvider(providerArg);
+        var provider = ProviderCredential.Resolve(providerArg);
         if (provider is null)
         {
             await _err.WriteLineAsync($"unknown_provider: '{providerArg.Trim()}' is not a provider. Use openai, anthropic, custom, or models.dev:<id>.").ConfigureAwait(false);
@@ -522,7 +477,7 @@ public sealed class AgentSlashCommands
 
         try
         {
-            var message = await _settingsClient.RemoveProviderAsync(provider.Backend, cancellationToken).ConfigureAwait(false);
+            var message = await _settingsClient.RemoveProviderAsync(provider.Choice, cancellationToken).ConfigureAwait(false);
             await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ {message}")).ConfigureAwait(false);
         }
         catch (AgentApiException ex)

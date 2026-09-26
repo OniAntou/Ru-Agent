@@ -536,7 +536,9 @@ public sealed class ProviderSetupGuidanceTests
             GuiSource.Text("Views", "SettingsView.xaml.cs"),
             "ProbeAndSaveModelsDevKeyAsync");
 
-        Assert.Contains("NormalizeProviderChoice", body, StringComparison.Ordinal);
+        // The canonical form now comes from the table shared with the terminal client,
+        // so neither surface can drift on what the backend accepts.
+        Assert.Contains("ProviderCredential.Resolve", body, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "_providerChoice[ProviderSetupGuidance.ModelsDevPrefix.Length..]",
             body,

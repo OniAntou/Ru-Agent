@@ -98,6 +98,54 @@ public sealed class GroupedProviderCatalogControllerTests
         Assert.True(controller.State.Catalogs.ContainsKey("models.dev:openrouter"));
     }
 
+    /// <summary>
+    /// A provider registered after polling was switched on polls like the fixed ones.
+    /// </summary>
+    /// <remarks>
+    /// The window enables polling once, then registers Models.dev providers as they
+    /// arrive. A child built after that starts with polling off, and the due-check
+    /// answers "not due" for a child that is not polling — so every Models.dev provider
+    /// silently never fetched its models. The picker showed only the fixed group and
+    /// read "No available models" while the provider's own catalog was fine.
+    ///
+    /// The existing registration test cannot catch this: it refreshes with force, which
+    /// bypasses the polling flag entirely. This one uses the due path the window uses.
+    /// </remarks>
+    [Fact]
+    public async Task A_provider_registered_after_polling_started_is_polled()
+    {
+        var controlled = new ControlledCatalogs();
+        var clock = new TestClock(DateTimeOffset.UtcNow);
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService(), clock);
+        controller.SetPollingActive(true);
+
+        controlled.EnsureSource("models.dev:openrouter");
+        await controller.SetModelsDevProvidersAsync([new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        var refresh = controller.RefreshIfDueAsync();
+        await WaitForAsync(
+            () => controlled.StartedAliases().Contains("models.dev:openrouter"),
+            "the late provider to poll");
+        controlled.Complete("models.dev:openrouter", Snapshot("models.dev:openrouter", "m1"));
+        controlled.CompleteAll(alias => Snapshot(alias, "model-" + alias));
+        Assert.True(await refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(controller.State.Catalogs.ContainsKey("models.dev:openrouter"));
+    }
+
+    /// <summary>A provider registered while polling is off stays off until it is switched on.</summary>
+    [Fact]
+    public async Task A_provider_registered_while_polling_is_off_is_not_polled()
+    {
+        var controlled = new ControlledCatalogs();
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
+
+        controlled.EnsureSource("models.dev:openrouter");
+        await controller.SetModelsDevProvidersAsync([new ModelsDevEntry("openrouter", "OpenRouter")]);
+
+        Assert.False(await controller.RefreshIfDueAsync());
+        Assert.DoesNotContain("models.dev:openrouter", controlled.StartedAliases());
+    }
+
     [Fact]
     public async Task SetModelsDevProviders_removes_retired_dynamic_children()
     {

@@ -75,7 +75,16 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
                 {
                     var child = new ProviderCatalogController(_service, clock: _clock);
                     child.SetBackend(definition.Alias);
+                    // Subscribe before switching polling on: a child that is already polling
+                    // can publish the moment it is told to, and a publication that arrives
+                    // before the handler is attached is lost.
                     child.StateChanged += OnChildStateChanged;
+                    // A child built after the window enabled polling starts switched off, and
+                    // the due-check answers "not due" for a child that is not polling. Without
+                    // this, every Models.dev provider added here never fetched: the picker
+                    // showed only the fixed group and read "No available models" while the
+                    // provider's own catalog was fine.
+                    child.SetPollingActive(_pollingActive);
                     _children[definition.Alias] = child;
                 }
             }

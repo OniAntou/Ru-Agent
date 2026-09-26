@@ -193,42 +193,101 @@ namespace RuApp.Views
         /// </remarks>
         private void InitTranscriptSizeOptions()
         {
-            if (TranscriptSizeOptionsPanel == null || TranscriptSizeButtonLabel == null)
+            if (TranscriptSizeOptionsPanel == null)
             {
                 return;
             }
 
+            var uiFont = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"];
+            var muted = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+            var ink = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+            var itemStyle = (Style)Application.Current.Resources["RuDropdownItemButtonStyle"];
             TranscriptSizeOptionsPanel.Children.Clear();
-            foreach (var size in TranscriptSizePickerProjection.Sizes())
+            var sizes = TranscriptSizePickerProjection.Sizes();
+            for (int index = 0; index < sizes.Count; index++)
             {
-                var row = new RadioButton
+                var size = sizes[index];
+                // A live specimen: the "Aa" is set in the size itself, so the
+                // choice is seen rather than read. The caption names the
+                // activity size that comes with it.
+                // Bottom-aligned: the captions share one baseline while the
+                // larger specimens rise above, like a type specimen sheet.
+                var specimen = new StackPanel
                 {
-                    Content = TranscriptSizePickerProjection.LabelWithActivity(size),
+                    Spacing = 0,
+                    MinWidth = 72,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                };
+                specimen.Children.Add(new TextBlock
+                {
+                    Text = "Aa",
+                    FontFamily = uiFont,
+                    FontSize = size,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = ink,
+                });
+                specimen.Children.Add(new TextBlock
+                {
+                    Text = TranscriptSizePickerProjection.LabelWithActivity(size),
+                    FontFamily = uiFont,
+                    FontSize = 11,
+                    Foreground = muted,
+                });
+                var option = new Button
+                {
+                    Content = specimen,
                     Tag = size,
-                    GroupName = "TranscriptFontSize",
-                    MinHeight = 32,
-                    IsChecked = Math.Abs(size - _transcriptSize) < 0.001,
+                    Style = itemStyle,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Center,
                 };
                 AutomationProperties.SetAutomationId(
-                    row,
+                    option,
                     TranscriptSizePickerProjection.OptionAutomationId(size));
-                row.Checked += OnTranscriptSizeOptionChecked;
-                TranscriptSizeOptionsPanel.Children.Add(row);
+                option.Click += OnTranscriptSizeOptionClick;
+                Grid.SetColumn(option, index);
+                TranscriptSizeOptionsPanel.Children.Add(option);
             }
 
-            TranscriptSizeButtonLabel.Text = TranscriptSizePickerProjection.Label(_transcriptSize);
+            RefreshTranscriptSizeSpecimens();
         }
 
-        private void OnTranscriptSizeOptionChecked(object sender, RoutedEventArgs e)
+        private void OnTranscriptSizeOptionClick(object sender, RoutedEventArgs e)
         {
-            if (sender is not RadioButton { Tag: double size })
+            if (sender is not Button { Tag: double size })
             {
                 return;
             }
 
             TranscriptTypography.Instance.MessageFontSize = size;
             _transcriptSize = TranscriptTypography.Instance.MessageFontSize;
-            TranscriptSizeButtonLabel.Text = TranscriptSizePickerProjection.Label(_transcriptSize);
+            RefreshTranscriptSizeSpecimens();
+        }
+
+        /// <summary>
+        /// Marks the chosen specimen: an accent wash behind it and the "Aa"
+        /// in accent, the rest at rest. Same selected language the dropdown
+        /// options speak, so the tab reads as one system.
+        /// </summary>
+        private void RefreshTranscriptSizeSpecimens()
+        {
+            if (TranscriptSizeOptionsPanel == null) return;
+            var selectedBrush = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            var accent = (Brush)Application.Current.Resources["RuAccentBrush"];
+            var ink = (Brush)Application.Current.Resources["RuInkBrush"];
+            foreach (var child in TranscriptSizeOptionsPanel.Children)
+            {
+                if (child is not Button { Tag: double size } option) continue;
+                bool selected = Math.Abs(size - _transcriptSize) < 0.001;
+                option.Background = selected ? selectedBrush : transparent;
+                if (option.Content is StackPanel specimen
+                    && specimen.Children.Count > 0
+                    && specimen.Children[0] is TextBlock glyph)
+                {
+                    glyph.Foreground = selected ? accent : ink;
+                }
+            }
         }
 
         /// <summary>

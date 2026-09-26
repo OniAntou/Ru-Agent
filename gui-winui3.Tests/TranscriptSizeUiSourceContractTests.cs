@@ -84,21 +84,22 @@ public sealed class TranscriptSizeUiSourceContractTests
     }
 
     [Fact]
-    public void The_picker_row_host_exists_in_settings()
+    public void The_specimen_strip_lives_inline_in_settings()
     {
         var document = GuiSource.Xml("Views", "SettingsView.xaml");
 
+        // No dropdown, no flyout, no button label: the sizes sit in the open as
+        // four equal columns stretching the full width.
         var panel = GuiSource.Require(document, "TranscriptSizeOptionsPanel");
-        var label = GuiSource.Require(document, "TranscriptSizeButtonLabel");
 
-        // Rows are added to this panel at runtime, so an empty panel is the failure
-        // mode: the menu opens with nothing in it.
-        Assert.Equal("StackPanel", panel.Name.LocalName);
-        Assert.Equal("TextBlock", label.Name.LocalName);
+        Assert.Equal("Grid", panel.Name.LocalName);
+        Assert.Equal("*,*,*,*", GuiSource.AttributeValue(panel, "ColumnDefinitions"));
+        Assert.Throws<Xunit.Sdk.XunitException>(
+            () => GuiSource.Require(document, "TranscriptSizeButtonLabel"));
     }
 
     [Fact]
-    public void The_settings_view_builds_the_rows_and_reads_the_stored_size()
+    public void The_settings_view_builds_the_specimens_and_reads_the_stored_size()
     {
         string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
 
@@ -110,13 +111,23 @@ public sealed class TranscriptSizeUiSourceContractTests
         string init = GuiSource.MethodBody(code, "InitTranscriptSizeOptions");
         Assert.Contains("TranscriptSizePickerProjection.Sizes", init, StringComparison.Ordinal);
         Assert.Contains("TranscriptSizeOptionsPanel.Children.Add", init, StringComparison.Ordinal);
+        Assert.Contains("LabelWithActivity", init, StringComparison.Ordinal);
+
+        // No radio bullets: each specimen is a plain button, and the choice
+        // reads through the accent wash applied after every build and click.
+        Assert.Contains("new Button", init, StringComparison.Ordinal);
+        Assert.DoesNotContain("RadioButton", init, StringComparison.Ordinal);
+        Assert.Contains("RefreshTranscriptSizeSpecimens", init, StringComparison.Ordinal);
+
+        string click = GuiSource.MethodBody(code, "OnTranscriptSizeOptionClick");
+        Assert.Contains("RefreshTranscriptSizeSpecimens", click, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Choosing_a_size_updates_the_shared_typography()
     {
         string code = GuiSource.Text("Views", "SettingsView.xaml.cs");
-        string body = GuiSource.MethodBody(code, "OnTranscriptSizeOptionChecked");
+        string body = GuiSource.MethodBody(code, "OnTranscriptSizeOptionClick");
 
         // Writing the store directly would leave the open transcript at the old size
         // until the app restarted.

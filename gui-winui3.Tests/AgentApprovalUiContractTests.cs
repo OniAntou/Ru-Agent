@@ -225,12 +225,17 @@ public sealed class AgentApprovalUiContractTests
         var description = permissionPanel!.Elements()
             .Single(element => element.Name.LocalName == "TextBlock"
                 && !ReferenceEquals(element, permissionLabel));
-        var copy = GuiSource.AttributeValue(description, "Text");
+        // One line per preset: the copy lives in Runs, not in a Text attribute.
+        var copy = GuiSource.AttributeValue(description, "Text")
+            ?? string.Concat(description.Descendants()
+                .Where(element => element.Name.LocalName == "Run")
+                .Select(element => element.Attributes()
+                    .FirstOrDefault(attribute => attribute.Name.LocalName == "Text")?.Value
+                    ?? string.Empty));
         Assert.NotNull(copy);
 
-        Assert.Contains("Plan: read + Web auto", copy, StringComparison.Ordinal);
-        Assert.Contains("Standard: in-workspace bounded local mutation auto", copy, StringComparison.Ordinal);
-        Assert.Contains("Full Access: external structured files and arbitrary terminal auto", copy, StringComparison.Ordinal);
-        Assert.Contains("structured protected paths deny", copy, StringComparison.Ordinal);
+        Assert.Contains("Plan: read + Web auto; terminal and edits ask.", copy, StringComparison.Ordinal);
+        Assert.Contains("Standard: workspace edits auto; outside asks.", copy, StringComparison.Ordinal);
+        Assert.Contains("Full Access: edits and terminal auto; protected paths deny", copy, StringComparison.Ordinal);
     }
 }

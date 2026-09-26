@@ -239,44 +239,23 @@
                         </StackPanel>
                     </Border>
 
-                  <!-- Conversation Typography Card -->
+                  <!--
+                    Conversation Typography Card. No dropdown here: the four
+                    sizes sit in the open as live specimens, each set in its
+                    own size, so the choice is seen rather than read.
+                  -->
                   <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
-                      <StackPanel Spacing="16">
-                          <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                              <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                  <TextBlock Text="Message text size" Style="{StaticResource SettingLabelStyle}" />
-                                  <TextBlock Text="Conversation text size; activity lines stay one step smaller"
-                                             Style="{StaticResource SettingDescStyle}" />
-                              </StackPanel>
-                              <Button x:Name="TranscriptSizeButton"
-                                      Grid.Column="1"
-                                      Width="260"
-                                      MinHeight="36"
-                                      Style="{StaticResource RuDropdownButtonStyle}"
-                                      AutomationProperties.Name="Message text size">
-                                  <Grid ColumnDefinitions="*,Auto">
-                                      <TextBlock x:Name="TranscriptSizeButtonLabel"
-                                                 Text="14"
-                                                 FontFamily="{StaticResource RuUiFontFamily}"
-                                                 FontSize="13"
-                                                 FontWeight="Medium"
-                                                 Foreground="{StaticResource RuInkBrush}"
-                                                 VerticalAlignment="Center"
-                                                 TextTrimming="CharacterEllipsis" />
-                                      <FontIcon Grid.Column="1"
-                                                Glyph="&#xE70D;"
-                                                FontSize="9"
-                                                Foreground="{StaticResource RuMutedBrush}"
-                                                VerticalAlignment="Center"
-                                                Margin="8,0,0,0" />
-                                  </Grid>
-                                  <Button.Flyout>
-                                      <Flyout Placement="Bottom" FlyoutPresenterStyle="{StaticResource RuDropdownFlyoutStyle}">
-                                          <StackPanel x:Name="TranscriptSizeOptionsPanel" Width="260" Spacing="2" />
-                                      </Flyout>
-                                  </Button.Flyout>
-                              </Button>
-                          </Grid>
+                      <StackPanel Spacing="12">
+                          <StackPanel Spacing="2">
+                              <TextBlock Text="Message text size" Style="{StaticResource SettingLabelStyle}" />
+                              <TextBlock Text="Conversation text size; activity lines stay two steps smaller"
+                                         Style="{StaticResource SettingDescStyle}" />
+                          </StackPanel>
+                          <!-- Four equal columns: the specimens stretch the full
+                            width instead of huddling left. -->
+                          <Grid x:Name="TranscriptSizeOptionsPanel"
+                                ColumnDefinitions="*,*,*,*"
+                                ColumnSpacing="8" />
                         </StackPanel>
                     </Border>
 
@@ -286,7 +265,13 @@
                             <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                     <TextBlock Text="Permission Preset" Style="{StaticResource SettingLabelStyle}" />
-                                    <TextBlock Text="Plan: read + Web auto; terminal and mutation deny. Standard: in-workspace bounded local mutation auto; external/escape ask. Full Access: external structured files and arbitrary terminal auto; structured protected paths deny" Style="{StaticResource SettingDescStyle}" />
+                                    <TextBlock Style="{StaticResource SettingDescStyle}">
+                                        <Run Text="Plan: read + Web auto; terminal and edits ask." />
+                                        <LineBreak />
+                                        <Run Text="Standard: workspace edits auto; outside asks." />
+                                        <LineBreak />
+                                        <Run Text="Full Access: edits and terminal auto; protected paths deny" />
+                                    </TextBlock>
                                 </StackPanel>
                                 <Button x:Name="PresetButton"
                                         Grid.Column="1"

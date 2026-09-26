@@ -52,10 +52,10 @@ public sealed class TranscriptSizePickerProjectionTests
     [Fact]
     public void A_label_states_what_the_activity_line_will_be()
     {
-        // The activity line is always one step smaller, and the picker is the only
+        // The activity line is always two steps smaller, and the picker is the only
         // place a user could learn that before seeing it.
-        Assert.Equal("14 (activity 13)", TranscriptSizePickerProjection.LabelWithActivity(14));
-        Assert.Equal("17 (activity 16)", TranscriptSizePickerProjection.LabelWithActivity(17));
+        Assert.Equal("14 · activity 12", TranscriptSizePickerProjection.LabelWithActivity(14));
+        Assert.Equal("17 · activity 15", TranscriptSizePickerProjection.LabelWithActivity(17));
     }
 
     [Fact]

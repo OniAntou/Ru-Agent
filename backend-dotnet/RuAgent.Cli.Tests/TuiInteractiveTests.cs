@@ -516,6 +516,7 @@ public sealed class TuiInteractiveTests
         var calls = new List<string>();
         long requestVersion = -1;
         bool trustCalled = false;
+        bool cancelCalled = false;
         bool restoreCalled = false;
 
         var handler = new FakeHandler(req =>
@@ -524,6 +525,11 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs/") && uri.EndsWith("/cancel"))
+            {
+                cancelCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/sessions/new"))
             {
@@ -540,7 +546,7 @@ public sealed class TuiInteractiveTests
                 }
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             }
-            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust") && !uri.EndsWith("/cancel"))
             {
                 calls.Add("run");
                 using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
@@ -598,6 +604,7 @@ public sealed class TuiInteractiveTests
         Assert.Equal(0, exit);
         Assert.True(trustCalled);
         Assert.False(restoreCalled);
+        Assert.False(cancelCalled, "granting trust must let the run proceed, not cancel it");
         Assert.Equal(new[] { "preset", "run" }, calls);
         Assert.Equal(1, requestVersion);
         var outStr = outWriter.ToString();
@@ -820,6 +827,7 @@ public sealed class TuiInteractiveTests
         var calls = new List<string>();
         long requestVersion = -1;
         bool trustCalled = false;
+        bool cancelCalled = false;
         bool restoreCalled = false;
 
         var handler = new FakeHandler(req =>
@@ -828,6 +836,11 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs/") && uri.EndsWith("/cancel"))
+            {
+                cancelCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains("/sessions/new"))
             {
@@ -844,7 +857,7 @@ public sealed class TuiInteractiveTests
                 }
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
             }
-            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust") && !uri.EndsWith("/cancel"))
             {
                 calls.Add("run");
                 using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
@@ -894,12 +907,15 @@ public sealed class TuiInteractiveTests
 
         var exit = await commands.ChatAsync(cmd, CancellationToken.None);
 
-        Assert.Equal(1, exit);
+        // The session survives an untrusted run: the run is deliberately left waiting for
+        // the operator's grant, so the turn resumes when they give it.
+        Assert.Equal(0, exit);
         Assert.False(trustCalled);
-        Assert.True(restoreCalled);
+        Assert.False(cancelCalled);
+        Assert.False(restoreCalled);
         var outStr = outWriter.ToString();
         Assert.Contains("workspace_trust_required", outStr);
-        Assert.DoesNotContain("Trust this workspace?", outStr);
+        Assert.Contains($"ru agent trust {runId} --approve", outStr);
     }
 
     [Fact]
@@ -911,11 +927,17 @@ public sealed class TuiInteractiveTests
         var runId = "run_" + new string('a', 32);
         var trustReqId = "tr_" + new string('b', 32);
         var state = "plan";
+        var cancelCalled = false;
         var restoreCalled = false;
         var eventsCalled = false;
         var handler = new FakeHandler(req =>
         {
             var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs/") && uri.EndsWith("/cancel"))
+            {
+                cancelCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
+            }
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
@@ -931,7 +953,7 @@ public sealed class TuiInteractiveTests
                 state = "full_access";
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "full_access", version = 1 }), Encoding.UTF8, "application/json") };
             }
-            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust") && !uri.EndsWith("/cancel"))
             {
                 var runJson = JsonSerializer.Serialize(new
                 {
@@ -965,11 +987,15 @@ public sealed class TuiInteractiveTests
             new ChatCommand("C:\\untrusted\\workspace", "sess_123", "full_access", true, TrustWorkspace: false, ConfirmFullAccess: true),
             CancellationToken.None);
 
-        Assert.Equal(1, exit);
-        Assert.True(restoreCalled);
-        Assert.Equal("plan", state);
-        Assert.Equal(1, reader.ReadCount);
-        Assert.False(eventsCalled);
+        // Redirected input has no composer, so the trust ask cannot be shown and the run is
+        // never granted. The turn ends on the bounded code instead of parking on the run:
+        // attaching left the status row spinning "Thinking" over a run that could not reply.
+        Assert.Equal(0, exit);
+        Assert.False(restoreCalled);
+        Assert.False(cancelCalled);
+        Assert.Equal("full_access", state);
+        Assert.True(reader.ReadCount > 1, "the chat session must survive an untrusted run");
+        Assert.False(eventsCalled, "a run still waiting on trust must not be streamed");
     }
 
     [Theory]
@@ -983,6 +1009,7 @@ public sealed class TuiInteractiveTests
         var runId = "run_" + new string('a', 32);
         var state = "plan";
         var restoreCalled = false;
+        var cancelCalled = false;
         var eventsCalled = false;
         var handler = new FakeHandler(req =>
         {
@@ -1002,7 +1029,7 @@ public sealed class TuiInteractiveTests
                 state = "full_access";
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "full_access", version = 1 }), Encoding.UTF8, "application/json") };
             }
-            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust") && !uri.EndsWith("/cancel"))
             {
                 var runJson = JsonSerializer.Serialize(new
                 {
@@ -1021,6 +1048,11 @@ public sealed class TuiInteractiveTests
                     display_identity_hash = new string('e', 64)
                 });
                 return new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent(runJson, Encoding.UTF8, "application/json") };
+            }
+            if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs/") && uri.EndsWith("/cancel"))
+            {
+                cancelCalled = true;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"cancelled\"}", Encoding.UTF8, "application/json") };
             }
             if (req.Method == HttpMethod.Post && uri.Contains($"/agent/v1/runs/{runId}/trust"))
             {
@@ -1042,11 +1074,12 @@ public sealed class TuiInteractiveTests
             new ChatCommand("C:\\untrusted\\workspace", "sess_123", "full_access", true, TrustWorkspace: true, ConfirmFullAccess: true),
             CancellationToken.None);
 
-        Assert.Equal(1, exit);
-        Assert.True(restoreCalled);
-        Assert.Equal("plan", state);
-        Assert.Equal(1, reader.ReadCount);
-        Assert.False(eventsCalled);
+        Assert.Equal(0, exit);
+        Assert.False(restoreCalled);
+        Assert.False(cancelCalled);
+        Assert.Equal("full_access", state);
+        Assert.True(reader.ReadCount > 1, "the chat session must survive an untrusted run");
+        Assert.False(eventsCalled, "a run whose trust grant failed must not be streamed");
     }
 
     [Fact]

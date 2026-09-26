@@ -503,6 +503,16 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 return;
             }
 
+            if (HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(run, DateTimeOffset.UtcNow))
+            {
+                // The trust challenge is past its lifetime, so no client can resolve it
+                // any more. The startup sweep used to be the only path that noticed, which
+                // left the run parked — and its workspace's active-run lock held — for as
+                // long as the host stayed up.
+                await ReleaseExpiredWorkspaceTrustAsync(runIdValue, run, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
             if (HarnessRecoveryScanner.IsExpiredApprovalWait(run, DateTimeOffset.UtcNow))
             {
                 // The durable approval is past its lifetime, so no client can
@@ -536,6 +546,40 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _roots.Remove(runId);
         _brokerGateways?.CloseRun(runId.Value);
         _coordinatorFactory.DropRetainedApproval(runId);
+    }
+
+    /// <summary>
+    /// Cancels a run whose workspace-trust challenge has expired and drops its
+    /// registration. Internal so the recovery tests can drive the loop's own sweep
+    /// without standing up the background service.
+    /// </summary>
+    internal async Task ReleaseExpiredWorkspaceTrustAsync(
+        string runIdValue,
+        AgentRun waitingRun,
+        CancellationToken cancellationToken)
+    {
+        var runId = new RunId(runIdValue);
+        RecoveredRunSummary? released;
+        try
+        {
+            released = await _recoveryScanner
+                .CancelExpiredWorkspaceTrustAsync(waitingRun, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning(error, "failed to release expired workspace trust of run {RunId}", runIdValue);
+            return;
+        }
+
+        if (released is null)
+        {
+            return;
+        }
+
+        _logger.LogWarning("run {RunId} cancelled because its workspace trust challenge expired", runIdValue);
+        await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+        RemoveRunRegistration(runId);
     }
 
     private async Task ReleaseExpiredApprovalAsync(

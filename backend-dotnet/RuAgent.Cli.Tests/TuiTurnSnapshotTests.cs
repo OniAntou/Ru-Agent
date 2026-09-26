@@ -132,18 +132,18 @@ public sealed class TuiTurnSnapshotTests
         var (output, _) = PlayTurn();
 
         var toolRows = Rows(output)
-            .Where(row => row.Contains('✓') && (row.Contains("view", StringComparison.Ordinal) || row.Contains("edit", StringComparison.Ordinal)))
+            .Where(row => row.Contains('✓') && (row.Contains("read", StringComparison.Ordinal) || row.Contains("edited", StringComparison.Ordinal)))
             .ToList();
 
         Assert.Equal(2, toolRows.Count);
 
         var readRow = toolRows[0];
-        Assert.Contains("✓ view", readRow, StringComparison.Ordinal);
+        Assert.Contains("✓ read", readRow, StringComparison.Ordinal);
         Assert.Contains("TuiEventRenderer.cs", readRow, StringComparison.Ordinal);
         Assert.Contains("12ms", readRow, StringComparison.Ordinal);
 
         var editRow = toolRows[1];
-        Assert.Contains("✓ edit", editRow, StringComparison.Ordinal);
+        Assert.Contains("✓ edited", editRow, StringComparison.Ordinal);
         Assert.Contains("AgentCommands.cs:12-40", editRow, StringComparison.Ordinal);
         Assert.Contains("+12 -4", editRow, StringComparison.Ordinal);
         Assert.Contains("340ms", editRow, StringComparison.Ordinal);
@@ -155,8 +155,8 @@ public sealed class TuiTurnSnapshotTests
         var (output, _) = PlayTurn();
 
         var rows = Rows(output);
-        Assert.Single(rows, row => row.Contains("view", StringComparison.Ordinal) && row.Contains("TuiEventRenderer.cs", StringComparison.Ordinal));
-        Assert.Single(rows, row => row.Contains("edit", StringComparison.Ordinal) && row.Contains("AgentCommands.cs", StringComparison.Ordinal));
+        Assert.Single(rows, row => row.Contains("read", StringComparison.Ordinal) && row.Contains("TuiEventRenderer.cs", StringComparison.Ordinal));
+        Assert.Single(rows, row => row.Contains("edited", StringComparison.Ordinal) && row.Contains("AgentCommands.cs", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -168,8 +168,8 @@ public sealed class TuiTurnSnapshotTests
         var indexOf = new Func<string, int>(needle => rows.ToList().FindIndex(row => row.Contains(needle, StringComparison.Ordinal)));
 
         var prose = indexOf("Để em xem renderer trước nhé.");
-        var read = indexOf("✓ view");
-        var edit = indexOf("✓ edit");
+        var read = indexOf("✓ read");
+        var edit = indexOf("✓ edited");
         var footer = rows.ToList().FindLastIndex(row => row.Contains("✓", StringComparison.Ordinal) && row.Contains("2 tools", StringComparison.Ordinal));
 
         Assert.Equal(0, indexOf("◆ Ru"));
@@ -227,6 +227,10 @@ public sealed class TuiTurnSnapshotTests
         renderer.RenderFrame(Durable("tool.execution_completed", "failed", "exit_1", 2));
         renderer.EndTurn();
 
-        Assert.Contains(Rows(output), row => row.Contains("✗ terminal", StringComparison.Ordinal));
+        // The verb sits in a fixed column, so the row reads "✗ ran<pad>dotnet".
+        Assert.Contains(Rows(output), row =>
+            row.Contains('✗')
+            && row.Contains("ran", StringComparison.Ordinal)
+            && row.Contains("dotnet", StringComparison.Ordinal));
     }
 }

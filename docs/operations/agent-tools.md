@@ -206,8 +206,11 @@ continues to reject concurrent owners with `session_conflict`.
 The desktop session switch also waits for the previous Harness run's
 cancellation commit before creating a run for the replacement session. A
 workspace-trust run that was abandoned past its ten-minute trust window is
-cancelled during startup recovery, so an interrupted prompt cannot keep the
-workspace's active-run lock indefinitely. The same rule covers approvals: a run
+cancelled (startup recovery and the running host's drive loop, safe code
+`workspace_trust_expired`), so an interrupted prompt cannot keep the
+workspace's active-run lock indefinitely. The drive loop covers the long-lived
+desktop host, where no restart would otherwise arrive to notice the expired
+challenge. The same rule covers approvals: a run
 still parked in `WaitingApproval` past the 30-minute approval lifetime fails as
 `approval_expired` (startup recovery and the running host's drive loop), because
 no client can resolve an older approval — the endpoint refuses it as

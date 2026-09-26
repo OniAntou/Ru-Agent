@@ -33,6 +33,7 @@ public sealed class TuiTranscript
 
     private readonly TuiSurface _surface;
     private readonly TuiStatusLine _status;
+    private readonly TuiMarkdown _markdown = new();
     private readonly List<ToolDetail> _pendingTools = [];
     private readonly List<string> _retained = [];
     private readonly Stopwatch _turnWatch = new();
@@ -41,6 +42,7 @@ public sealed class TuiTranscript
     private string _lineBuffer = string.Empty;
     private bool _inToolBlock;
     private bool _atLineStart = true;
+    private bool _proseContinuesWord;
     private int _toolsSettled;
     private string? _terminalCode;
     private string? _summaryDetail;
@@ -75,11 +77,13 @@ public sealed class TuiTranscript
         _lineBuffer = string.Empty;
         _inToolBlock = false;
         _atLineStart = true;
+        _proseContinuesWord = false;
         _terminalCode = null;
         _summaryDetail = null;
         _sawCompletion = false;
         _pendingTools.Clear();
         _retained.Clear();
+        _markdown.Reset();
         _turnWatch.Restart();
 
         _surface.Line();
@@ -109,7 +113,9 @@ public sealed class TuiTranscript
         }
 
         _lineBuffer += text;
-        var hold = PartialMarkerSuffixLength(_lineBuffer);
+        // Both marker families are held back: a tool-call wrapper and a markdown emphasis
+        // can each be cut in half by a delta boundary.
+        var hold = Math.Max(PartialMarkerSuffixLength(_lineBuffer), TuiMarkdown.Holdback(_lineBuffer));
         var emitLength = _lineBuffer.Length - hold;
         if (emitLength <= 0)
         {
@@ -204,6 +210,10 @@ public sealed class TuiTranscript
                 _atLineStart = true;
             }
 
+            // Prose on both sides of a tool block is independent text: a fence open when the
+            // tool call started cannot survive it.
+            _markdown.Reset();
+            _proseContinuesWord = false;
             _inToolBlock = isOpen;
             rest = rest[(markerIndex + (isOpen ? ToolCallOpen.Length : ToolCallClose.Length))..];
         }
@@ -218,8 +228,7 @@ public sealed class TuiTranscript
 
         if (!_inToolBlock)
         {
-            _surface.Write(text);
-            _atLineStart = text.EndsWith('\n');
+            WriteProse(text);
             return;
         }
 
@@ -254,6 +263,68 @@ public sealed class TuiTranscript
         }
     }
 
+    /// <summary>
+    /// Prose leaves the surface through the markdown renderer. A completed line goes
+    /// through <see cref="TuiMarkdown.RenderLine"/> so block forms (fence, bullet, heading)
+    /// are decided; the unfinished tail of a line is rendered inline, which is what keeps
+    /// a streamed answer visible while its last line is still arriving.
+    /// </summary>
+    private void WriteProse(string text)
+    {
+        var start = 0;
+        while (true)
+        {
+            var newline = text.IndexOf('\n', start);
+            if (newline < 0)
+            {
+                if (start < text.Length)
+                {
+                    WriteInlineFragment(text[start..]);
+                    _atLineStart = false;
+                }
+
+                return;
+            }
+
+            WriteCompleteLine(text[start..newline]);
+            start = newline + 1;
+            if (start >= text.Length)
+            {
+                _atLineStart = true;
+                return;
+            }
+        }
+    }
+
+    private void WriteInlineFragment(string fragment)
+    {
+        var rendered = TuiMarkdown.RenderInline(fragment, Width, _proseContinuesWord);
+        _proseContinuesWord = EndsWithWordCharacter(rendered);
+        _surface.Write(rendered);
+    }
+
+    private void WriteCompleteLine(string line)
+    {
+        foreach (var row in _markdown.RenderLine(line, Width))
+        {
+            _surface.Write(row);
+            _surface.Line();
+        }
+
+        if (_markdown.InFence)
+        {
+            return;
+        }
+
+        _proseContinuesWord = false;
+    }
+
+    private static bool EndsWithWordCharacter(string rendered)
+    {
+        var last = rendered.Length == 0 ? '\0' : rendered[^1];
+        return char.IsLetterOrDigit(last);
+    }
+
     // ------------------------------------------------------------------
     // Activity frames: detail for the live row and for the settled tool line.
     // ------------------------------------------------------------------
@@ -271,7 +342,7 @@ public sealed class TuiTranscript
                 }
                 else if (!string.IsNullOrWhiteSpace(activity.Detail))
                 {
-                    Notice(activity.Detail, TuiToken.Meta);
+                    RetainThinking(activity.Detail);
                 }
 
                 return;
@@ -326,9 +397,7 @@ public sealed class TuiTranscript
 
     private void ApplyToolActivity(AgentActivityModel activity)
     {
-        var verb = string.IsNullOrWhiteSpace(activity.ToolDisplay)
-            ? "tool"
-            : activity.ToolDisplay!.ToLowerInvariant();
+        var verb = TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay);
 
         switch (activity.State)
         {
@@ -342,7 +411,7 @@ public sealed class TuiTranscript
                     Failed: false));
                 TrimPending();
                 _status.SetState(TuiRunState.Tool);
-                _status.SetActivity(BuildActivityLabel(verb, activity));
+                _status.SetActivity(BuildActivityLabel(TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay), activity));
                 return;
 
             case AgentActivityState.Completed:
@@ -595,6 +664,29 @@ public sealed class TuiTranscript
 
     /// <summary>An operator-facing one-liner (approval outcomes, reconciliation prompts).</summary>
     public void Note(string text, TuiToken token) => Notice(text, token);
+
+    /// <summary>
+    /// The model's own deliberation is kept out of the transcript and behind <c>ctrl+o</c>.
+    /// The prompt contract calls private reasoning something never to surface in chat, and
+    /// the WinUI surface keeps the same block closed by default; printing it inline buried
+    /// the answer the operator actually came to read.
+    /// </summary>
+    private void RetainThinking(string detail)
+    {
+        var flat = Escape(detail);
+        if (flat.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var line in flat.Split('\n'))
+        {
+            _retained.Add("    " + TuiPalette.DimPaint(line));
+        }
+
+        TrimRetained();
+        Notice("thought · ctrl+o", TuiToken.Line);
+    }
 
     private void Notice(string text, TuiToken token)
     {

@@ -267,7 +267,7 @@ public sealed class TuiTranscriptTests
         transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Failed, durationMs: 2300, toolDisplay: "Terminal"));
         transcript.ApplyDurable(Durable("tool.execution_completed", "failed", "exit_1"));
 
-        Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("terminal", StringComparison.Ordinal));
+        Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("ran", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -362,7 +362,76 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void AssistantText_StreamsVerbatimAndSwallowsToolMarkers()
+    public void StreamedMarkdownReachesTheSurfaceStyled()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("Fix applied:\n\n- first **bold** item\n- `second` item\n");
+            transcript.Flush();
+
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.DoesNotContain("**", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("`second`", text, StringComparison.Ordinal);
+            Assert.Contains("•  first bold item", text, StringComparison.Ordinal);
+            Assert.Contains("•  second item", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AFencedCodeBlockReachesTheSurfaceWithAGutterAndVerbatimContent()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("Here:\n```csharp\nvar x = 1; // **not** bold\n```\nafter\n");
+            transcript.Flush();
+
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.Contains("var x = 1; // **not** bold", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("```", text, StringComparison.Ordinal);
+            Assert.Contains("after", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AMarkerSplitAcrossDeltasNeverLosesOrDuplicatesText()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("see **x");
+            transcript.AppendAssistant("** and more");
+            transcript.Flush();
+
+            // Emphasis is best effort across a delta boundary, but the characters are not:
+            // whatever the model said reaches the surface exactly once, in order.
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.Contains("see **x** and more", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AWellFormedRunInOneDeltaIsRenderedNotPrinted()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("a **bold** word\n");
+            transcript.Flush();
+
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.Contains("a bold word", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("**", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AssistantText_StreamsAndSwallowsToolMarkers()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
@@ -400,7 +469,7 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void ThinkingCompleted_WithDetail_EmitsNotice()
+    public void ThinkingCompleted_StaysOutOfTheTranscriptUntilExpanded()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
@@ -422,6 +491,14 @@ public sealed class TuiTranscriptTests
             TransientSequence: null,
             Detail: "considering folder scope",
             Todos: null));
+
+        // The deliberation itself is never in the transcript; the row only says it is there.
+        Assert.DoesNotContain(
+            Rows(output),
+            row => row.Contains("considering folder scope", StringComparison.Ordinal));
+        Assert.Contains(Rows(output), row => row.Contains("ctrl+o", StringComparison.Ordinal));
+
+        transcript.ToggleExpand();
 
         Assert.Contains(
             Rows(output),

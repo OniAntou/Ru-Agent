@@ -323,6 +323,22 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             "completed";
     }
 
+    /// <summary>
+    /// Checks that a create response is really bound to this session and preset before
+    /// anything acts on it. Shared by the non-interactive trust path and the interactive
+    /// prompt, so the interactive path cannot skip the binding check to reach the prompt.
+    /// </summary>
+    private static bool IsCreateResponseBound(
+        CreateAgentRunResponse response,
+        string expectedSessionId,
+        string expectedPreset) =>
+        !string.IsNullOrWhiteSpace(response.RunId)
+        && !string.IsNullOrWhiteSpace(response.SessionId)
+        && !string.IsNullOrWhiteSpace(response.WorkspaceId)
+        && string.Equals(response.SessionId, expectedSessionId, StringComparison.Ordinal)
+        && string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
+        && IsKnownCreateStatus(response.Status);
+
     private async Task<bool> HandleWorkspaceTrustAsync(
         CreateAgentRunResponse response,
         string expectedSessionId,
@@ -330,12 +346,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         bool trustWorkspace,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(response.RunId)
-            || string.IsNullOrWhiteSpace(response.SessionId)
-            || string.IsNullOrWhiteSpace(response.WorkspaceId)
-            || !string.Equals(response.SessionId, expectedSessionId, StringComparison.Ordinal)
-            || !string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
-            || !IsKnownCreateStatus(response.Status))
+        if (!IsCreateResponseBound(response, expectedSessionId, expectedPreset))
         {
             await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
             return false;
@@ -1694,10 +1705,160 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 : Tui.ApprovalPrompt.Deny;
         }
 
+        /// <summary>
+        /// Asks the operator to trust the workspace, in the composer, while the run holds
+        /// the challenge open. No work is in flight at this point, so the type-ahead loop
+        /// can hand the keyboard to the choice list — the same handoff a tool approval uses.
+        /// Returning without a decision is a cancel, never a silent grant.
+        /// </summary>
+        async Task<string?> PromptWorkspaceTrustAsync(
+            Tui.ApprovalPrompt prompt,
+            CancellationToken trustToken)
+        {
+            if (!typeAheadLive || !sticky.Active)
+            {
+                return null;
+            }
+
+            using var registration = trustToken.Register(() => prompt.Decision.TrySetCanceled(trustToken));
+            typeAhead.Approval = prompt;
+            sessionRenderer.Status.SetState(Tui.TuiRunState.WaitingTrust);
+            sessionRenderer.Status.SetDetail(prompt.Summary);
+            ApplyFooterLayout(repaint: false);
+            PaintStickyFooter();
+            try
+            {
+                return await prompt.Decision.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                typeAhead.Approval = null;
+                sessionRenderer.Status.SetDetail(null);
+                // The turn either continues into the run or is about to be wound down;
+                // either way the row must stop claiming it is waiting on trust.
+                sessionRenderer.Status.SetState(Tui.TuiRunState.Thinking);
+                ApplyFooterLayout(repaint: false);
+                PaintStickyFooter();
+            }
+        }
+
+        async Task<bool> PostTrustDecisionAsync(
+            string runId,
+            string trustRequestId,
+            string displayHash,
+            CancellationToken trustToken)
+        {
+            try
+            {
+                var trustResponse = await _agentClient.TrustAsync(
+                        runId,
+                        new TrustAgentRunRequest(trustRequestId, displayHash, "approve"),
+                        trustToken)
+                    .ConfigureAwait(false);
+                if (string.Equals(trustResponse.RunId, runId, StringComparison.Ordinal)
+                    && string.Equals(trustResponse.TrustRequestId, trustRequestId, StringComparison.Ordinal)
+                    && IsAcceptedTrustStatus(trustResponse.Status))
+                {
+                    return true;
+                }
+
+                await _err.WriteLineAsync("workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (AgentApiException ex)
+            {
+                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Releases a run the operator declined to trust. The challenge cannot be answered
+        /// later — it is single-use and the workspace is not on the allow list — so leaving
+        /// the run parked would hold the workspace's active-run lock for the whole sweep
+        /// interval. Trust is a pre-execution gate, so cancelling rolls back no tool effect.
+        /// </summary>
+        async Task CancelUntrustedRunAsync(string runId, CancellationToken trustToken)
+        {
+            try
+            {
+                await _agentClient.CancelAsync(runId, trustToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"run_cancel_failed: {ex.Message}").ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Runs the in-composer workspace-trust ask end to end: validate the binding, prompt,
+        /// then post the server-issued challenge. A decline cancels the run, because the
+        /// challenge is single-use and the run would otherwise sit on the workspace's
+        /// active-run lock until the host swept it.
+        /// </summary>
+        async Task<(bool Trusted, bool Declined)> ResolveWorkspaceTrustInPlaceAsync(
+            CreateAgentRunResponse response,
+            string expectedSessionId,
+            string expectedPreset,
+            string workspacePath,
+            CancellationToken trustToken)
+        {
+            if (!IsCreateResponseBound(response, expectedSessionId, expectedPreset))
+            {
+                await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
+                return (false, false);
+            }
+
+            var trustRequestId = response.TrustRequestId;
+            var displayHash = response.DisplayIdentityHash;
+            if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+            {
+                await _err.WriteLineAsync("workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
+                return (false, false);
+            }
+
+            var decision = await PromptWorkspaceTrustAsync(
+                    Tui.ApprovalPrompt.ForWorkspaceTrust(workspacePath),
+                    trustToken)
+                .ConfigureAwait(false);
+
+            if (decision is null)
+            {
+                // No composer to ask in, so there is no frame to protect and the bounded
+                // code keeps its established stream. Never read stdin here: the type-ahead
+                // loop may already own it, which is how the old prompt hung forever.
+                await _out.WriteLineAsync(
+                        $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.")
+                    .ConfigureAwait(false);
+                return (false, false);
+            }
+
+            if (!string.Equals(decision, Tui.ApprovalPrompt.TrustApprove, StringComparison.Ordinal))
+            {
+                await CancelUntrustedRunAsync(response.RunId, trustToken).ConfigureAwait(false);
+                return (false, true);
+            }
+
+            var granted = await PostTrustDecisionAsync(response.RunId, trustRequestId, displayHash, trustToken)
+                .ConfigureAwait(false);
+            return (granted, false);
+        }
+
         async Task FinishTurnAsync()
         {
-            // Stop capturing keystrokes first, then drain the queue so a prompt typed during
-            // this turn becomes the next turn's input.
             await StopTypeAheadAsync().ConfigureAwait(false);
             queuedLine ??= pendingPrompt.Take();
             Tui.TuiDebug.Log("layout", $"finish turn rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
@@ -1916,12 +2077,57 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
-                if (!await HandleWorkspaceTrustAsync(
-                        resp,
-                        sessionId,
-                        cmd.Preset,
-                        cmd.TrustWorkspace,
-                        turnCts.Token).ConfigureAwait(false))
+                var isTrustWait = string.Equals(
+                    resp.Status,
+                    "waiting_workspace_trust",
+                    StringComparison.OrdinalIgnoreCase);
+
+                // The composer can ask, so ask here rather than parking the run. The old
+                // path wrote the instruction into the transcript and left the turn live,
+                // where the status row kept spinning "Thinking" and the sticky footer
+                // repainted the line away: the operator saw a slow model and a frozen
+                // prompt. Nothing is executing while the challenge is open, so answering it
+                // in place costs nothing and keeps trust an explicit human decision.
+                var trustDeclined = false;
+                var trusted = isTrustWait && !cmd.TrustWorkspace
+                    ? await ResolveTrust().ConfigureAwait(false)
+                    : await HandleWorkspaceTrustAsync(
+                            resp,
+                            sessionId,
+                            cmd.Preset,
+                            cmd.TrustWorkspace,
+                            turnCts.Token)
+                        .ConfigureAwait(false);
+
+                async Task<bool> ResolveTrust()
+                {
+                    var outcome = await ResolveWorkspaceTrustInPlaceAsync(
+                            resp,
+                            sessionId,
+                            cmd.Preset,
+                            canonicalWorkspace,
+                            turnCts.Token)
+                        .ConfigureAwait(false);
+                    trustDeclined = outcome.Declined;
+                    return outcome.Trusted;
+                }
+
+                if (!trusted && isTrustWait)
+                {
+                    // Either the operator declined — the run is cancelled — or there was no
+                    // composer to ask in and the bounded code was already reported. Both end
+                    // this turn: nothing is executing, and the live row must not keep spinning
+                    // over a run that is not going to produce a reply.
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    if (trustDeclined)
+                    {
+                        sessionRenderer.Note("workspace not trusted · this run was cancelled", Tui.TuiToken.Err);
+                    }
+
+                    continue;
+                }
+
+                if (!trusted)
                 {
                     if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                     {
@@ -1930,8 +2136,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
 
                     await FinishTurnAsync().ConfigureAwait(false);
-                    return 1;
+                    continue;
                 }
+
                 presetCommitted = true;
 
                 async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)

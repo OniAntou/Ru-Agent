@@ -323,6 +323,73 @@ public sealed class TuiSurfacesPickerTests
         Assert.Contains("no key", items[1].Detail, StringComparison.Ordinal);
         Assert.Equal("claude-sonnet-4-5", items[1].Value);
     }
+
+    [Fact]
+    public void BackendChoices_OrdersBaseThenCurrentThenSignedInThenTheRest()
+    {
+        var items = TuiSurfaces.BackendChoices(
+            "models.dev:mid",
+            new Dictionary<string, bool> { ["models.dev:mid"] = true, ["models.dev:aaa"] = true },
+            [("mid", "Mid"), ("zzz", "Zzz"), ("aaa", "Aaa"), ("mmm", "Mmm")]);
+
+        Assert.Equal(
+            ["openai", "anthropic", "custom", "models.dev:mid", "models.dev:aaa", "models.dev:mmm", "models.dev:zzz"],
+            items.Select(i => i.Value));
+        Assert.Contains("current", items[3].Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(items.Take(3), i => i.Detail.Contains("no key", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BackendChoices_ListsEveryLiveProviderExactlyOnceAndKeepsTheBaseRows()
+    {
+        var items = TuiSurfaces.BackendChoices(
+            "openai",
+            null,
+            [("groq", "Groq"), ("openrouter", "OpenRouter"), ("groq", "Groq again")]);
+
+        var values = items.Select(i => i.Value).ToList();
+        Assert.Equal(values.Count, values.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(["openai", "anthropic", "custom"], values.Take(3));
+        Assert.Contains("models.dev:groq", values);
+        Assert.Contains("models.dev:openrouter", values);
+        Assert.Equal(5, values.Count);
+    }
+
+    [Fact]
+    public void BackendChoices_FallsBackToTheKnownProvidersWhenTheCatalogIsMissing()
+    {
+        var items = TuiSurfaces.BackendChoices("openai", null, []);
+
+        Assert.Equal(7, items.Count);
+        Assert.Contains(items, i => i.Value == "models.dev:openrouter");
+        Assert.Contains(items, i => i.Value == "models.dev:kilo");
+    }
+
+    [Fact]
+    public void ReasoningChoices_LeadsWithDefaultThenTheRealLevels()
+    {
+        var items = TuiSurfaces.ReasoningChoices("high", ["low", "high", "low", "  "]);
+
+        Assert.Equal(["default", "low", "high"], items.Select(i => i.Value));
+        Assert.Equal("current", items[2].Detail);
+        Assert.Equal(string.Empty, items[0].Detail);
+    }
+
+    [Fact]
+    public void ReasoningChoices_WithoutLevelsIsEmptySoTheCallerExplains()
+    {
+        Assert.Empty(TuiSurfaces.ReasoningChoices("default", []));
+        Assert.Empty(TuiSurfaces.ReasoningChoices("default", ["default"]));
+    }
+
+    [Fact]
+    public void ReasoningChoices_TreatsAnUnsetEffortAsDefault()
+    {
+        var items = TuiSurfaces.ReasoningChoices(null, ["enabled", "disabled"]);
+
+        Assert.Equal(["default", "enabled", "disabled"], items.Select(i => i.Value));
+        Assert.Equal("current", items[0].Detail);
+    }
 }
 
 public sealed class ChoiceListTests
@@ -427,5 +494,172 @@ public sealed class ChoiceListTests
 
         Assert.Contains("❯", rows.First(r => r.Contains("b", StringComparison.Ordinal)), StringComparison.Ordinal);
         Assert.DoesNotContain("❯", rows.First(r => r.Contains("  a", StringComparison.Ordinal)), StringComparison.Ordinal);
+    }
+
+    private static ChoiceList Providers() => new("backend", [
+        new ChoiceItem("models.dev:groq", "Models.dev: Groq", "models.dev:groq"),
+        new ChoiceItem("models.dev:openrouter", "Models.dev: OpenRouter", "models.dev:openrouter"),
+        new ChoiceItem("models.dev:llama", "Models.dev: Llama Network", "models.dev:llama"),
+    ]);
+
+    [Fact]
+    public void Filter_NarrowsBySubstringAcrossLabelDetailAndValue()
+    {
+        var list = Providers();
+
+        foreach (var key in "groq")
+        {
+            Assert.True(list.TryAppendFilter(key));
+        }
+
+        Assert.Equal("groq", list.Filter);
+        Assert.Equal(1, list.MatchedCount);
+        Assert.Equal(3, list.TotalCount);
+        Assert.Equal("models.dev:groq", list.Current.Value);
+    }
+
+    [Fact]
+    public void Filter_MatchesTheDisplayNameWhenNeitherIdNorLabelCarriesTheQuery()
+    {
+        var list = Providers();
+
+        foreach (var key in "network")
+        {
+            Assert.True(list.TryAppendFilter(key));
+        }
+
+        Assert.Equal("models.dev:llama", Assert.Single(list.Items).Value);
+    }
+
+    [Fact]
+    public void Filter_IsCaseInsensitiveAndCoversTheDetail()
+    {
+        var list = Providers();
+
+        foreach (var key in "NETWORK")
+        {
+            Assert.True(list.TryAppendFilter(key));
+        }
+
+        Assert.Equal("models.dev:llama", Assert.Single(list.Items).Value);
+    }
+
+    [Fact]
+    public void Filter_LeavesDigitsToTheNumberedPickShortcut()
+    {
+        var list = Providers();
+
+        Assert.False(list.TryAppendFilter('3'));
+        Assert.Equal(string.Empty, list.Filter);
+        Assert.Equal(3, list.Items.Count);
+        Assert.True(list.TrySelectDigit('3'));
+        Assert.Equal("models.dev:llama", list.Current.Value);
+    }
+
+    [Fact]
+    public void Filter_RefusesControlCharactersAndSpaces()
+    {
+        var list = Providers();
+
+        Assert.False(list.TryAppendFilter(' '));
+        Assert.False(list.TryAppendFilter('\t'));
+        Assert.False(list.TryAppendFilter('!'));
+        Assert.Equal(string.Empty, list.Filter);
+    }
+
+    [Fact]
+    public void Filter_AcceptsTheIdSeparators()
+    {
+        var list = Providers();
+
+        Assert.True(list.TryAppendFilter('-'));
+        Assert.True(list.TryAppendFilter('_'));
+        Assert.True(list.TryAppendFilter('.'));
+        Assert.Equal("-_.", list.Filter);
+    }
+
+    [Fact]
+    public void TrimFilter_RestoresTheWholeList()
+    {
+        var list = Providers();
+        list.TryAppendFilter('o');
+        list.TryAppendFilter('g');
+
+        Assert.True(list.TryTrimFilter());
+        Assert.True(list.TryTrimFilter());
+        Assert.Equal(string.Empty, list.Filter);
+        Assert.Equal(3, list.MatchedCount);
+        Assert.Equal(3, list.Items.Count);
+        Assert.False(list.TryTrimFilter());
+    }
+
+    [Fact]
+    public void Filter_WithoutAMatchShowsOneDisabledRowThatCannotBePicked()
+    {
+        var list = Providers();
+        list.TryAppendFilter('z');
+        list.TryAppendFilter('z');
+        list.TryAppendFilter('z');
+
+        Assert.Equal(0, list.MatchedCount);
+        var only = Assert.Single(list.Items);
+        Assert.False(only.Enabled);
+        Assert.Contains("no match", only.Label, StringComparison.Ordinal);
+        Assert.Equal(ChoiceOutcome.None, list.HandleKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false)));
+    }
+
+    [Fact]
+    public void Filter_KeepsTheCursorOnAnEnabledRowWhenTheListShrinks()
+    {
+        var list = Providers();
+        list.Selected = 2;
+        Assert.Equal("models.dev:llama", list.Current.Value);
+
+        foreach (var key in "groq")
+        {
+            list.TryAppendFilter(key);
+        }
+
+        Assert.True(list.Current.Enabled);
+        Assert.Equal("models.dev:groq", list.Current.Value);
+    }
+
+    [Fact]
+    public void Filter_NeverLetsTheCursorFallOffTheEnd()
+    {
+        var list = Providers();
+        list.Selected = 2;
+        list.TryAppendFilter('o');
+
+        list.Move(5);
+        Assert.InRange(list.Selected, 0, list.Items.Count - 1);
+        Assert.Equal(list.Current, list.Items[list.Selected]);
+    }
+
+    [Fact]
+    public void Render_ReportsTheMatchRatioOnlyWhileFiltering()
+    {
+        var unfiltered = Providers();
+        Assert.DoesNotContain(unfiltered.Render(70).Select(TuiText.Strip), r => r.Contains("filter:", StringComparison.Ordinal));
+
+        var list = Providers();
+        list.TryAppendFilter('g');
+        var footer = list.Render(70).Select(TuiText.Strip).First(r => r.Contains("filter:", StringComparison.Ordinal));
+
+        Assert.Contains("filter: g", footer, StringComparison.Ordinal);
+        Assert.Contains("1/3", footer, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Filter_IsCappedSoALongTypingRunCannotGrowTheQueryForever()
+    {
+        var list = Providers();
+
+        for (var i = 0; i < 100; i++)
+        {
+            list.TryAppendFilter('g');
+        }
+
+        Assert.Equal(64, list.Filter.Length);
     }
 }

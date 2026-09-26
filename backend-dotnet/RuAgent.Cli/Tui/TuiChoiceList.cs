@@ -22,7 +22,10 @@ public enum ChoiceOutcome
 /// </summary>
 public sealed class ChoiceList
 {
-    private readonly List<ChoiceItem> _items;
+    private const int MaxFilterLength = 64;
+    private readonly List<ChoiceItem> _all;
+    private List<ChoiceItem> _items;
+    private int _matchedCount;
 
     public ChoiceList(string title, IReadOnlyList<ChoiceItem> items, int selected = 0, string? footer = null)
     {
@@ -33,14 +36,10 @@ public sealed class ChoiceList
         }
 
         Title = string.IsNullOrWhiteSpace(title) ? "select" : title.Trim();
+        _all = [.. items];
         _items = [.. items];
-        var clamped = Math.Clamp(selected, 0, _items.Count - 1);
-        if (!_items[clamped].Enabled)
-        {
-            var firstEnabled = _items.FindIndex(i => i.Enabled);
-            clamped = firstEnabled >= 0 ? firstEnabled : clamped;
-        }
-        Selected = clamped;
+        _matchedCount = _items.Count;
+        Selected = FirstEnabled(Math.Clamp(selected, 0, _items.Count - 1));
         Footer = footer;
     }
 
@@ -50,7 +49,84 @@ public sealed class ChoiceList
 
     public string? Footer { get; }
 
+    /// <summary>The substring typed so far; empty until the operator starts filtering.</summary>
+    public string Filter { get; private set; } = string.Empty;
+
+    /// <summary>How many rows exist before filtering, so the footer can report the ratio.</summary>
+    public int TotalCount => _all.Count;
+
+    /// <summary>How many rows the current filter matches. Zero renders one disabled notice row.</summary>
+    public int MatchedCount => _matchedCount;
+
     public int Selected { get; set; }
+
+    private int FirstEnabled(int index)
+    {
+        if (index >= 0 && index < _items.Count && _items[index].Enabled)
+        {
+            return index;
+        }
+
+        var first = _items.FindIndex(i => i.Enabled);
+        return first >= 0 ? first : Math.Clamp(index, 0, _items.Count - 1);
+    }
+
+    /// <summary>
+    /// Narrows the list to the rows whose label, detail or value contains <paramref name="value"/>.
+    /// Only letters and the id separators filter: digits stay the numbered-pick shortcut.
+    /// </summary>
+    public bool TryAppendFilter(char value)
+    {
+        if (!char.IsLetter(value) && value is not ('-' or '_' or '.'))
+        {
+            return false;
+        }
+
+        if (Filter.Length >= MaxFilterLength)
+        {
+            return false;
+        }
+
+        ApplyFilter(Filter + value);
+        return true;
+    }
+
+    /// <summary>Drops the last filter character. False when there is nothing to drop.</summary>
+    public bool TryTrimFilter()
+    {
+        if (Filter.Length == 0)
+        {
+            return false;
+        }
+
+        ApplyFilter(Filter[..^1]);
+        return true;
+    }
+
+    private void ApplyFilter(string query)
+    {
+        Filter = query;
+        _matchedCount = query.Length == 0
+            ? _all.Count
+            : _all.Count(item => Matches(item, query));
+        _items = query.Length == 0
+            ? [.. _all]
+            : [.. _all.Where(item => Matches(item, query))];
+
+        if (_items.Count == 0)
+        {
+            _items = [new ChoiceItem($"no match for '{query}'", string.Empty, string.Empty, Enabled: false)];
+            Selected = 0;
+            return;
+        }
+
+        Selected = FirstEnabled(0);
+    }
+
+    private static bool Matches(ChoiceItem item, string query) =>
+        item.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || item.Detail.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || item.Value.Contains(query, StringComparison.OrdinalIgnoreCase);
 
     public ChoiceItem Current => _items[Math.Clamp(Selected, 0, _items.Count - 1)];
 
@@ -151,6 +227,9 @@ public sealed class ChoiceList
             .Select(item => new DropdownItem(item.Label, item.Detail, null, item.Enabled))
             .ToList();
 
-        return SlashDropdown.Compose(width, Title, items, Selected, maxVisible, Footer ?? "↑↓ · enter");
+        var footer = Filter.Length > 0
+            ? $"filter: {Filter} · {MatchedCount}/{TotalCount}"
+            : Footer ?? "↑↓ · enter";
+        return SlashDropdown.Compose(width, Title, items, Selected, maxVisible, footer);
     }
 }

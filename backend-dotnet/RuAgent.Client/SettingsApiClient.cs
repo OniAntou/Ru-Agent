@@ -7,11 +7,25 @@ using System.Text.Json.Nodes;
 namespace RuAgent.Client;
 
 /// <summary>
+/// What the active model says about reasoning effort, plus the identity a settings write
+/// has to echo back so the host applies the save to the snapshot the operator saw.
+/// </summary>
+public sealed record ModelReasoningSnapshot(
+    string Identity,
+    string? SelectedModel,
+    string SelectedEffort,
+    string State,
+    IReadOnlyList<string> Options);
+
+/// <summary>
 /// Authenticated settings API with bounded reads and envelope validation.
 /// POST /settings returns {status: success|error}, GET /settings returns {status: ok}.
 /// </summary>
 public sealed class SettingsApiClient
 {
+    private const int MaximumModelsDevProviders = 1000;
+    private const int MaximumReasoningOptions = 16;
+
     private readonly HttpClient _httpClient;
     private readonly PublicHostSession _session;
 
@@ -143,6 +157,72 @@ public sealed class SettingsApiClient
     }
 
     /// <summary>
+    /// Every provider published by models.dev (<c>GET /models-dev</c>). The id is what a
+    /// later settings write puts in <c>backend_choice</c>, so only ids the host already
+    /// accepted are kept; a malformed entry is dropped rather than failing the list.
+    /// </summary>
+    public async Task<IReadOnlyList<(string Id, string Name)>> GetModelsDevAsync(CancellationToken cancellationToken = default)
+    {
+        var url = new Uri(_session.BaseUri, "models-dev");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("models_dev_read_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("status", out var statusProp)
+                || !string.Equals(statusProp.GetString(), "ok", StringComparison.Ordinal)
+                || !root.TryGetProperty("providers", out var providers)
+                || providers.ValueKind != JsonValueKind.Array)
+            {
+                throw new AgentApiException("invalid_response", "Missing models-dev provider list.");
+            }
+
+            var result = new List<(string Id, string Name)>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in providers.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object
+                    || !entry.TryGetProperty("id", out var idProp)
+                    || idProp.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var id = idProp.GetString()!.Trim();
+                if (id.Length is 0 or > 64 || id.Any(char.IsControl) || !seen.Add(id))
+                {
+                    continue;
+                }
+
+                var name = entry.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                    ? nameProp.GetString()!.Trim()
+                    : string.Empty;
+                result.Add((id, name.Length is 0 or > 128 ? id : name));
+                if (result.Count >= MaximumModelsDevProviders)
+                {
+                    break;
+                }
+            }
+
+            return result;
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("invalid_response", ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Live model catalog for one backend (<c>GET /models?backend=</c>).
     /// Returns id/support pairs, bounded and tolerant: an error envelope or an
     /// unparsable body throws so callers fall back to configured models.
@@ -200,6 +280,104 @@ public sealed class SettingsApiClient
             throw new AgentApiException("catalog_malformed", ex.Message);
         }
     }
+
+    /// <summary>
+    /// The reasoning surface of the active model: the snapshot identity a save must echo
+    /// back, the model the effort belongs to, and the levels the catalog actually offers.
+    /// The selected model is looked up in <c>catalog</c> then <c>models</c> because the
+    /// host has been observed listing it in only one of the two.
+    /// </summary>
+    public async Task<ModelReasoningSnapshot> GetReasoningAsync(string? backend, CancellationToken cancellationToken = default)
+    {
+        var url = string.IsNullOrWhiteSpace(backend)
+            ? new Uri(_session.BaseUri, "models")
+            : new Uri(_session.BaseUri, "models?backend=" + Uri.EscapeDataString(backend.Trim()));
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        var content = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("catalog_http_error", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new AgentApiException("catalog_malformed", "Missing model catalog.");
+            }
+
+            var identity = ReadString(root, "identity") ?? string.Empty;
+            var selectedModel = ReadString(root, "selected_model");
+            var selectedEffort = ReadString(root, "selected_effort") ?? "default";
+            var state = "unknown";
+            var options = Array.Empty<string>();
+
+            foreach (var arrayName in new[] { "catalog", "models" })
+            {
+                if (!root.TryGetProperty(arrayName, out var array) || array.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                foreach (var entry in array.EnumerateArray())
+                {
+                    if (entry.ValueKind != JsonValueKind.Object
+                        || !string.Equals(ReadString(entry, "id"), selectedModel, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    if (entry.TryGetProperty("reasoning", out var reasoning) && reasoning.ValueKind == JsonValueKind.Object)
+                    {
+                        state = ReadString(reasoning, "state") ?? "unknown";
+                        if (reasoning.TryGetProperty("options", out var levels) && levels.ValueKind == JsonValueKind.Array)
+                        {
+                            var parsed = new List<string>();
+                            foreach (var level in levels.EnumerateArray())
+                            {
+                                if (level.ValueKind == JsonValueKind.String
+                                    && !string.IsNullOrWhiteSpace(level.GetString())
+                                    && level.GetString()!.Length <= 32)
+                                {
+                                    parsed.Add(level.GetString()!);
+                                }
+
+                                if (parsed.Count >= MaximumReasoningOptions)
+                                {
+                                    break;
+                                }
+                            }
+
+                            options = [.. parsed];
+                        }
+                    }
+
+                    break;
+                }
+
+                if (options.Length > 0 || state is not "unknown")
+                {
+                    break;
+                }
+            }
+
+            return new ModelReasoningSnapshot(identity, selectedModel, selectedEffort, state, options);
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("catalog_malformed", ex.Message);
+        }
+    }
+
+    private static string? ReadString(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     public async Task<string> RemoveProviderAsync(string backendChoice, CancellationToken cancellationToken = default)
     {

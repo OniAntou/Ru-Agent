@@ -365,7 +365,7 @@ public sealed class ProviderModelPickerProjectionTests
     [Fact]
     public void Provider_group_definitions_are_presentation_only()
     {
-        Assert.Equal(1, ProviderGroupDefinitions.All.Count);
+        Assert.Single(ProviderGroupDefinitions.All);
         Assert.Equal(
             new[] { 0 },
             ProviderGroupDefinitions.All.Select(definition => definition.Order));

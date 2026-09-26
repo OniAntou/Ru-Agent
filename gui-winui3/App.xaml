@@ -593,6 +593,21 @@
                 </Setter>
             </Style>
 
+            <Style x:Key="RuNavLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="13.5" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="RuViewHeaderStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource RuDisplayFontFamily}" />
+                <Setter Property="FontSize" Value="22" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Foreground" Value="{StaticResource AppTextPrimaryBrush}" />
+            </Style>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

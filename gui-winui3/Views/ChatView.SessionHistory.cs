@@ -729,12 +729,27 @@ namespace RuApp.Views
 
         private async void OnApprovalDecisionRequested(object? sender, Controls.AgentApprovalDecidedEventArgs e)
         {
+            // One branch per decision: approval picks the session or the single
+            // action, denial declines. A nested ternary hid that shape.
+            Func<Task> action = () => Task.CompletedTask;
+            if (_agentController is not null)
+            {
+                if (!e.Approved)
+                {
+                    action = () => _agentController.DenyAsync();
+                }
+                else if (string.Equals(e.Scope, "session", StringComparison.Ordinal))
+                {
+                    action = () => _agentController.ApproveSessionDirectoryAsync();
+                }
+                else
+                {
+                    action = () => _agentController.ApproveAsync();
+                }
+            }
+
             await RunAgentActionAsync(
-                () => e.Approved
-                    ? string.Equals(e.Scope, "session", StringComparison.Ordinal)
-                        ? _agentController?.ApproveSessionDirectoryAsync() ?? Task.CompletedTask
-                        : _agentController?.ApproveAsync() ?? Task.CompletedTask
-                    : _agentController?.DenyAsync() ?? Task.CompletedTask,
+                action,
                 e.Approved ? "Submitting approval…" : "Denying approval…");
         }
 

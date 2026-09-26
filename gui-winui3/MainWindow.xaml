@@ -284,7 +284,7 @@
                                     AutomationProperties.Name="New Chat">
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconNewChat" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="LabelNewChat" Text="New Chat" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LabelNewChat" Text="New Chat" Style="{StaticResource RuNavLabelStyle}"/>
                                 </StackPanel>
                             </Button>
 

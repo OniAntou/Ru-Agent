@@ -23,6 +23,9 @@ namespace RuApp.Views
         private static readonly TimeZoneInfo VietnamZone =
             TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
 
+        /// <summary>How many recent events one refresh pulls for the grid.</summary>
+        private const int LogFetchLimit = 200;
+
         public LogView()
         {
             this.InitializeComponent();
@@ -77,19 +80,30 @@ namespace RuApp.Views
             await RefreshAsync();
         }
 
+        private string? _lastRefreshErrorType;
+
         private async Task RefreshAsync()
         {
             if (_apiService == null) return;
             try
             {
-                var events = await _apiService.GetActivityLogAsync(200);
+                var events = await _apiService.GetActivityLogAsync(LogFetchLimit);
                 if (events == null) return;
                 _allEvents = events;
                 ApplyFilter();
+                _lastRefreshErrorType = null;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[LogView] Refresh failed: {ex.GetType().Name}: {ex.Message}");
+                // The poll runs every few seconds: record a failure only when
+                // its shape changes instead of spamming the diagnostic log
+                // with the same outage.
+                string errorType = ex.GetType().Name;
+                if (!string.Equals(errorType, _lastRefreshErrorType, StringComparison.Ordinal))
+                {
+                    _lastRefreshErrorType = errorType;
+                    GuiDiagnosticWriter.WriteCrashEvent(ex);
+                }
             }
         }
 
@@ -204,11 +218,11 @@ namespace RuApp.Views
         {
             try
             {
-                string role = data.TryGetProperty("role", out var r) ? (r.GetString() ?? "") : "";
-                string preview = data.TryGetProperty("preview", out var p) ? (p.GetString() ?? "") : "";
-                if (string.IsNullOrEmpty(preview) && data.TryGetProperty("content", out var c))
+                string role = data.TryGetProperty("role", out var roleElement) ? (roleElement.GetString() ?? "") : "";
+                string preview = data.TryGetProperty("preview", out var previewElement) ? (previewElement.GetString() ?? "") : "";
+                if (string.IsNullOrEmpty(preview) && data.TryGetProperty("content", out var contentElement))
                 {
-                    preview = c.GetString() ?? "";
+                    preview = contentElement.GetString() ?? "";
                 }
                 return role == "user" ? $"You: {preview}" : $"Ru: {preview}";
             }
@@ -222,7 +236,7 @@ namespace RuApp.Views
         {
             try
             {
-                string emotion = data.TryGetProperty("emotion", out var em) ? (em.GetString() ?? "unknown") : "unknown";
+                string emotion = data.TryGetProperty("emotion", out var emotionElement) ? (emotionElement.GetString() ?? "unknown") : "unknown";
                 return $"Emotion: {emotion}";
             }
             catch
@@ -235,8 +249,8 @@ namespace RuApp.Views
         {
             try
             {
-                string category = data.TryGetProperty("category", out var cat) ? (cat.GetString() ?? "") : "";
-                string status = data.TryGetProperty("status", out var st) ? (st.GetString() ?? "") : "";
+                string category = data.TryGetProperty("category", out var categoryElement) ? (categoryElement.GetString() ?? "") : "";
+                string status = data.TryGetProperty("status", out var statusElement) ? (statusElement.GetString() ?? "") : "";
 
                 if (!string.IsNullOrEmpty(category))
                     return $"VTS: {category} ({status})";
@@ -313,8 +327,8 @@ namespace RuApp.Views
                 return;
             }
 
-            bool ok = await _apiService.ClearActivityLogAsync();
-            if (ok)
+            bool cleared = await _apiService.ClearActivityLogAsync();
+            if (cleared)
             {
                 _allEvents = new List<ActivityLogEventDto>();
                 ApplyFilter(isUserAction: true);

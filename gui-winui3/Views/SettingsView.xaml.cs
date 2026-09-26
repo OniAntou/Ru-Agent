@@ -862,15 +862,15 @@ namespace RuApp.Views
                     CloudflareAccountId = CloudflareAccountIdBox.Text?.Trim() ?? string.Empty,
                 };
 
-                bool ok = await _apiService.SaveProviderSettingsAsync(dto);
-                if (!ok)
+                bool saved = await _apiService.SaveProviderSettingsAsync(dto);
+                if (!saved)
                 {
-                    System.Diagnostics.Debug.WriteLine("[Settings] Auto-save failed");
+                    GuiDiagnosticWriter.WriteGuiError("settings_autosave", "save_failed");
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] Auto-save error: {ex.Message}");
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
             }
             finally
             {
@@ -901,8 +901,8 @@ namespace RuApp.Views
             button.IsEnabled = false;
             try
             {
-                bool ok = await _apiService.RemoveProviderAsync(alias);
-                if (ok)
+                bool removed = await _apiService.RemoveProviderAsync(alias);
+                if (removed)
                 {
                     ClearProviderKeyInput(alias);
                     await LoadSettingsAsync();
@@ -910,7 +910,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Settings] Sign out error: {ex.Message}");
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
             }
             finally
             {

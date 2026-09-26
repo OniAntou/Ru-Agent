@@ -26,6 +26,12 @@ public sealed record AgentPolicyModel
     public long Version { get; }
     public JsonElement Matcher { get; }
 
+    private static readonly JsonElement EmptyMatcherElement =
+        JsonDocument.Parse("{}").RootElement.Clone();
+
+    /// <summary>An empty matcher object (the API's wildcard rule).</summary>
+    internal static JsonElement EmptyMatcher() => EmptyMatcherElement.Clone();
+
     public AgentPolicyModel(string id, string scope, string kind, string description, bool enabled, long version)
         : this(
             id,
@@ -34,7 +40,7 @@ public sealed record AgentPolicyModel
             description,
             enabled,
             version,
-            JsonDocument.Parse("{}").RootElement.Clone())
+            EmptyMatcher())
     {
     }
 

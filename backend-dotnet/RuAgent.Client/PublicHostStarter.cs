@@ -17,6 +17,9 @@ public sealed class PublicHostStarter : IDisposable
     private Process? _startedProcess;
     private bool _disposed;
 
+    /// <summary>How long a killed host process gets to exit before its handle is released.</summary>
+    private const int KillWaitTimeoutMilliseconds = 5000;
+
     public PublicHostStarter(
         PublicHostLocator? locator = null,
         Func<string, CancellationToken, Task<bool>>? healthProbe = null,
@@ -114,7 +117,7 @@ public sealed class PublicHostStarter : IDisposable
                 if (!_startedProcess.HasExited)
                 {
                     _startedProcess.Kill(entireProcessTree: true);
-                    _startedProcess.WaitForExit(5000);
+                    _startedProcess.WaitForExit(KillWaitTimeoutMilliseconds);
                 }
             }
             catch (Exception)

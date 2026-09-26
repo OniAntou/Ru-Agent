@@ -530,7 +530,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in OnSendClick: {ex.Message}");
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
                 ShowAgentError(ex);
             }
         }

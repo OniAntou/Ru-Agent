@@ -345,8 +345,8 @@ namespace RuApp.Views
                 identity = catalogState.Identity;
             }
 
-            bool ok = await _apiService.SaveReasoningSettingsAsync(effort, model, identity);
-            if (!ok)
+            bool saved = await _apiService.SaveReasoningSettingsAsync(effort, model, identity);
+            if (!saved)
             {
                 _selectedReasoningEffort = previousEffort;
                 ChatReasoningLabel.Text = previousEffort;

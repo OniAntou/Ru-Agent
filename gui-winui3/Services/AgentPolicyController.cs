@@ -102,7 +102,7 @@ public sealed class AgentPolicyController : INotifyPropertyChanged, IDisposable
             // wildcard rule); never send the obsolete legacy fields.
             matcher = string.IsNullOrWhiteSpace(model.Description)
                 || !model.Description.Contains('.', StringComparison.Ordinal)
-                ? JsonDocument.Parse("{}").RootElement.Clone()
+                ? AgentPolicyModel.EmptyMatcher()
                 : JsonDocument.Parse(JsonSerializer.Serialize(new { tool_id = model.Description })).RootElement.Clone();
         }
 

@@ -19,8 +19,25 @@ namespace RuApp.Services
     /// </summary>
     public partial class ApiService
     {
-        /// <summary>A session run in transcript order, oldest-first.</summary>
-        public sealed record SessionRunRef(string RunId, bool IsTerminal);
+        /// <summary>
+        /// A session run in transcript order, oldest-first.
+        /// </summary>
+        /// <param name="RunId">The run's id.</param>
+        /// <param name="IsTerminal">Whether the run has ended.</param>
+        /// <param name="Status">The wire status, verbatim: succeeded, failed, interrupted, cancelled, running.</param>
+        /// <param name="CreatedAt">When the run started, or null when the host did not say.</param>
+        /// <param name="TerminalAt">When the run ended, or null while it is still live.</param>
+        /// <remarks>
+        /// Status and the two timestamps are already on the wire - the report read them
+        /// away and then had to describe a run that failed as "no provider report",
+        /// which is true of every run that failed and says nothing about which.
+        /// </remarks>
+        public sealed record SessionRunRef(
+            string RunId,
+            bool IsTerminal,
+            string Status,
+            DateTimeOffset? CreatedAt,
+            DateTimeOffset? TerminalAt);
 
         public async Task<IReadOnlyList<SessionRunRef>?> ListSessionRunIdsAsync(string sessionId, CancellationToken cancellationToken)
         {
@@ -52,7 +69,12 @@ namespace RuApp.Services
                             && statusElement.ValueKind == JsonValueKind.String
                             ? statusElement.GetString() ?? string.Empty
                             : string.Empty;
-                        runs.Add(new SessionRunRef(runId.GetString()!, IsRunTerminal(status)));
+                        runs.Add(new SessionRunRef(
+                            runId.GetString()!,
+                            IsRunTerminal(status),
+                            status,
+                            ReadTimestamp(item, "created_at"),
+                            ReadTimestamp(item, "terminal_at")));
                     }
                 }
 
@@ -67,6 +89,23 @@ namespace RuApp.Services
 
             return null;
         }
+
+        /// <summary>
+        /// Reads one ISO-8601 timestamp off a wire object, or null when the field is
+        /// absent, null, or not a timestamp. A malformed value is a missing value: a
+        /// run with an unreadable start time still has a real duration to report.
+        /// </summary>
+        private static DateTimeOffset? ReadTimestamp(JsonElement item, string name) =>
+            item.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(
+                value.GetString(),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal
+                    | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var parsed)
+                ? parsed
+                : null;
 
         /// <summary>
         /// The newest provider usage report for a session, oldest runs first on
@@ -154,7 +193,13 @@ namespace RuApp.Services
                         }
                     }
 
-                    rows.Add(new SessionUsageRow(run.RunId, run.IsTerminal, usage));
+                    rows.Add(new SessionUsageRow(
+                        run.RunId,
+                        run.IsTerminal,
+                        run.Status,
+                        run.CreatedAt,
+                        run.TerminalAt,
+                        usage));
                 }
 
                 return rows;

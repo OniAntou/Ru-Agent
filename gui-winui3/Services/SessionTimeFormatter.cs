@@ -23,4 +23,33 @@ public static class SessionTimeFormatter
             ? local.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture)
             : local.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
     }
+
+    /// <summary>
+    /// How long a run took, at the precision the number actually carries: seconds under
+    /// a minute, then minutes, then hours and minutes.
+    /// </summary>
+    /// <param name="duration">The measured span, or null when it was never measured.</param>
+    /// <returns>
+    /// A compact duration, or an empty string. An unreported duration is not zero
+    /// seconds and must not be rendered as one.
+    /// </returns>
+    public static string FormatDuration(TimeSpan? duration)
+    {
+        if (duration is not { } span || span < TimeSpan.Zero)
+        {
+            return string.Empty;
+        }
+
+        if (span.TotalSeconds < 60)
+        {
+            return $"{(int)span.TotalSeconds}s";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"{(int)span.TotalMinutes}m";
+        }
+
+        return $"{(int)span.TotalHours}h {span.Minutes}m";
+    }
 }

@@ -14,196 +14,248 @@
       cost", which the meter cannot know. Everything here is measured against the
       session's own largest step: the panel has no idea which model each run used, and
       a share of a limit it guessed would be a number nobody could act on.
+
+      A ledger, not a dashboard. Three bands separated by hairlines: what the session
+      cost, where the tokens went, and the runs themselves. The two figures carry no
+      box of their own — a card around each made two numbers look like two products,
+      and the card inside the card put a second outline and a second background behind
+      a single figure. One vertical rule is enough to say "these are different numbers".
+
+      Every bar is square. A rounded end reads as a lozenge and says "on/off" where
+      the bar is carrying a measured proportion, and the legend dots that used to name
+      the split were the same shape at 8px, doing a job the numbers beside them
+      already do.
+
+      Nothing here explains itself. An earlier pass carried a kicker, a caption on each
+      figure, a note on what the meters were scaled against, and a footer about how
+      many requests the panel costs — four sentences about how to read the panel while
+      the panel was trying to report a session. Every line is now a measurement, and
+      the one thing the panel cannot answer is stated as a fact rather than an excuse.
     -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Padding="24,22,80,16" Spacing="4">
-            <TextBlock Text="SESSION USAGE"
-                       FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="10.5"
-                       FontWeight="SemiBold"
-                       Foreground="{StaticResource RuMutedBrush}" />
-            <TextBlock x:Name="SessionTitleText"
-                       FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       Foreground="{StaticResource RuInkBrush}"
-                       TextTrimming="CharacterEllipsis"
-                       MaxLines="1" />
-            <TextBlock x:Name="CoverageText"
-                       FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="12"
-                       Foreground="{StaticResource RuMutedBrush}"
-                       TextWrapping="Wrap"
-                       AutomationProperties.LiveSetting="Polite" />
-        </StackPanel>
+        <!-- The session this is about, and how much of it the numbers below cover.
+             The count is a fact about the data, not a caveat about the reading. -->
+        <Grid Padding="24,20,60,14" ColumnSpacing="16" ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="2">
+                <TextBlock x:Name="SessionTitleText"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="19"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource RuInkBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxLines="1" />
+                <TextBlock x:Name="CoverageText"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="12"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxLines="1"
+                           AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+
+            <!-- Wall time for the runs that ended. Not a caption: it is the one figure
+                 the token counts cannot give, and a session that took four minutes is
+                 not the same session as one that took four seconds. -->
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Bottom">
+                <TextBlock Text="Elapsed"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="11"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           HorizontalAlignment="Right" />
+                <TextBlock x:Name="ElapsedValueText"
+                           Text="—"
+                           FontFamily="{StaticResource RuMonoFontFamily}"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource RuInkBrush}"
+                           HorizontalAlignment="Right" />
+            </StackPanel>
+        </Grid>
 
         <Border Grid.Row="1" Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" />
 
         <ScrollViewer Grid.Row="2"
-                      Padding="24,20,24,20"
+                      Padding="24,18,24,18"
+                      MaxHeight="440"
                       HorizontalScrollBarVisibility="Disabled"
                       HorizontalScrollMode="Disabled"
                       VerticalScrollBarVisibility="Auto"
                       VerticalScrollMode="Auto">
-            <StackPanel Spacing="24">
-                <!-- Two headline figures. Each is a nested enclosure: the shell is the
-                     well, the core is the card that holds the number. -->
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                    <Border Grid.Column="0"
-                            Background="{StaticResource RuCanvasBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource AppCardCornerRadius}"
-                            Padding="4">
-                        <StackPanel Background="{StaticResource RuSurfaceBrush}"
-                                    CornerRadius="{StaticResource AppInsetCornerRadius}"
-                                    Padding="12"
-                                    Spacing="2">
-                            <TextBlock Text="Billed"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource RuMutedBrush}" />
-                            <TextBlock x:Name="BilledValueText"
-                                       Text="0"
-                                       FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="26"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                            <TextBlock Text="Input plus output, over every step that reported"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
+            <StackPanel x:Name="BodyPanel" Spacing="20">
+
+                <!-- Billed is the number the panel exists to answer, so it leads and
+                     carries the size. Peak context is a qualifier on it, so it sits on
+                     the right at a smaller size. -->
+                <Grid ColumnSpacing="20" ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Top">
+                        <TextBlock Text="Billed tokens"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource RuMutedBrush}" />
+                        <TextBlock x:Name="BilledValueText"
+                                   Text="0"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="30"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuInkBrush}" />
+                    </StackPanel>
 
                     <Border Grid.Column="1"
-                            Background="{StaticResource RuCanvasBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource AppCardCornerRadius}"
-                            Padding="4">
-                        <StackPanel Background="{StaticResource RuSurfaceBrush}"
-                                    CornerRadius="{StaticResource AppInsetCornerRadius}"
-                                    Padding="12"
-                                    Spacing="2">
-                            <TextBlock Text="Peak context"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource RuMutedBrush}" />
-                            <TextBlock x:Name="PeakValueText"
-                                       Text="0"
-                                       FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="26"
-                                       FontWeight="SemiBold"
-                                       Foreground="{StaticResource RuInkBrush}" />
-                            <TextBlock x:Name="PeakCaptionText"
-                                       Text="Largest single step"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
+                            Width="1"
+                            Background="{StaticResource RuLineBrush}"
+                            Margin="0,2"
+                            Opacity="0.7" />
+
+                    <StackPanel Grid.Column="2" Spacing="3" Width="150" VerticalAlignment="Top">
+                        <TextBlock Text="Peak context"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource RuMutedBrush}" />
+                        <TextBlock x:Name="PeakValueText"
+                                   Text="0"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="17"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuInkBrush}" />
+                        <TextBlock x:Name="PeakCaptionText"
+                                   Text="Largest single step"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
                 </Grid>
 
-                <!-- Where the measured tokens went. The legend names every part, so the
-                     bar is never the only channel carrying the split. -->
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Split of measured tokens"
+                <!-- Where the measured tokens went. Four parts, not three: the cache
+                     line used to add reads and writes into one number, which is the
+                     only way to hide that a session was mostly reading a warm cache.
+                     Each part carries its own figure and its own bar on one shared
+                     scale, so the split needs no key and the four bars sum to the
+                     width of the section. -->
+                <StackPanel Spacing="9">
+                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="0,2,0,4" />
+                    <TextBlock Text="Where the tokens went"
                                FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="11"
+                               FontSize="11.5"
                                FontWeight="SemiBold"
-                               Foreground="{StaticResource RuMutedBrush}" />
-                    <Border Height="8"
-                            CornerRadius="{StaticResource AppPillCornerRadius}"
-                            Background="{StaticResource RuCanvasBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1">
-                        <Grid x:Name="ShareBarGrid" ColumnSpacing="2" />
-                    </Border>
-                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                            <Border Width="8" Height="8" CornerRadius="{StaticResource AppPillCornerRadius}"
-                                    Background="{StaticResource RuAccentBrush}" VerticalAlignment="Center" />
+                               Foreground="{StaticResource RuInkBrush}" />
+
+                    <Grid x:Name="ShareBarGrid" ColumnSpacing="12" ColumnDefinitions="*,*,*,*">
+                        <StackPanel Grid.Column="0" Spacing="6">
                             <TextBlock Text="Input"
                                        FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11.5"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       VerticalAlignment="Center" />
+                                       FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" />
                             <TextBlock x:Name="InputValueText"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="11.5"
-                                       Foreground="{StaticResource RuInkBrush}"
-                                       VerticalAlignment="Center" />
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}" />
+                            <Grid x:Name="InputShareBar"
+                                  Height="5"
+                                  Background="{StaticResource RuCanvasBrush}" />
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                            <Border Width="8" Height="8" CornerRadius="{StaticResource AppPillCornerRadius}"
-                                    Background="{StaticResource RuVioletBrush}" VerticalAlignment="Center" />
+
+                        <StackPanel Grid.Column="1" Spacing="6">
                             <TextBlock Text="Output"
                                        FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11.5"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       VerticalAlignment="Center" />
+                                       FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" />
                             <TextBlock x:Name="OutputValueText"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="11.5"
-                                       Foreground="{StaticResource RuInkBrush}"
-                                       VerticalAlignment="Center" />
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}" />
+                            <Grid x:Name="OutputShareBar"
+                                  Height="5"
+                                  Background="{StaticResource RuCanvasBrush}" />
                         </StackPanel>
-                        <StackPanel x:Name="CacheLegendRow" Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                            <Border Width="8" Height="8" CornerRadius="{StaticResource AppPillCornerRadius}"
-                                    Background="{StaticResource RuInfoBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Cache"
+
+                        <StackPanel Grid.Column="2" Spacing="6">
+                            <TextBlock Text="Cache read"
                                        FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11.5"
-                                       Foreground="{StaticResource RuMutedBrush}"
-                                       VerticalAlignment="Center" />
-                            <TextBlock x:Name="CacheValueText"
+                                       FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <TextBlock x:Name="CacheReadValueText"
                                        FontFamily="{StaticResource RuMonoFontFamily}"
-                                       FontSize="11.5"
-                                       Foreground="{StaticResource RuInkBrush}"
-                                       VerticalAlignment="Center" />
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}" />
+                            <Grid x:Name="CacheReadShareBar"
+                                  Height="5"
+                                  Background="{StaticResource RuCanvasBrush}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="3" Spacing="6">
+                            <TextBlock Text="Cache write"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <TextBlock x:Name="CacheWriteValueText"
+                                       FontFamily="{StaticResource RuMonoFontFamily}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource RuInkBrush}" />
+                            <Grid x:Name="CacheWriteShareBar"
+                                  Height="5"
+                                  Background="{StaticResource RuCanvasBrush}" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>
 
-                <StackPanel Spacing="8">
-                    <TextBlock x:Name="RunsHeaderText"
-                               Text="Runs"
-                               FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource RuMutedBrush}" />
-                    <StackPanel x:Name="RowsPanel" Spacing="2" />
+                <!-- The runs, newest first. Each row carries its own rule so the list
+                     reads as one table instead of separate floating lines. The meter is
+                     sized against the session's largest step — the one comparison the
+                     panel can make honestly — and the header names that, because a bar
+                     of the same height on two different scales reads as one scale. -->
+                <StackPanel Spacing="0">
+                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="0,2,0,10" />
+                    <Grid ColumnSpacing="12" Margin="0,0,0,2" ColumnDefinitions="*,Auto">
+                        <TextBlock x:Name="RunsHeaderText"
+                                   Grid.Column="0"
+                                   Text="Runs"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11.5"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuInkBrush}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="newest first · bar against the largest"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="10.5"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   HorizontalAlignment="Right" />
+                    </Grid>
+                    <StackPanel x:Name="RowsPanel" />
+                    <!-- No placeholder: Render always fills this, and a stale default
+                         left in the markup is a sentence nobody chose to show. -->
                     <TextBlock x:Name="EmptyText"
-                               Text="No provider report yet."
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="12"
                                Foreground="{StaticResource RuMutedBrush}"
                                TextWrapping="Wrap"
+                               Margin="0,8,0,2"
                                Visibility="Collapsed" />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
 
+        <!-- The bound the panel reads to. A limitation stated as a number is useful;
+             the same limitation explained as a sentence about request counts was not. -->
         <Border Grid.Row="3"
                 Background="{StaticResource RuCanvasBrush}"
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="0,1,0,0"
-                Padding="24,12">
+                Padding="24,10">
             <TextBlock x:Name="FooterText"
                        FontFamily="{StaticResource RuUiFontFamily}"
-                       FontSize="11"
+                       FontSize="10.5"
                        Foreground="{StaticResource RuMutedBrush}"
                        TextWrapping="Wrap" />
         </Border>

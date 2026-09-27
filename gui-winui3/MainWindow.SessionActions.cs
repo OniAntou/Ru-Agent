@@ -353,10 +353,16 @@ namespace RuApp
         }
 
         /// <summary>
-        /// A fixed card keeps the panel from jittering as rows arrive; it shrinks with
-        /// the window instead of overflowing it, with a floor below which the rows
-        /// would have no room to render.
+        /// The card follows the window's width and stops growing once it would
+        /// overflow the window's height.
         /// </summary>
+        /// <remarks>
+        /// The height is deliberately not set here. A card pinned to a fixed height
+        /// that its content does not fill leaves a band of bare surface below the
+        /// footer, which reads as a rendering fault rather than as space. The panel
+        /// is read in one await and rendered in one pass, so letting the height
+        /// follow the content does not make the card jitter while rows arrive.
+        /// </remarks>
         private void ApplySessionUsageCardSize()
         {
             if (SessionUsageOverlay.ActualWidth <= 0 || SessionUsageOverlay.ActualHeight <= 0)
@@ -365,7 +371,7 @@ namespace RuApp
             }
 
             SessionUsageCard.Width = Math.Min(560, Math.Max(360, SessionUsageOverlay.ActualWidth - 48));
-            SessionUsageCard.Height = Math.Min(560, Math.Max(320, SessionUsageOverlay.ActualHeight - 40));
+            SessionUsageCard.MaxHeight = Math.Max(320, SessionUsageOverlay.ActualHeight - 40);
         }
 
         private void OnCloseSessionUsageClick(object sender, RoutedEventArgs e) => CloseSessionUsage();

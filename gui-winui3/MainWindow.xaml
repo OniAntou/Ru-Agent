@@ -517,11 +517,11 @@
                     Opacity="0.75"
                     PointerPressed="OnSessionUsageBackdropPointerPressed" />
 
-            <!-- Dialog Card Container (Fixed stable dimension avoids jitter/shifting) -->
+            <!-- Dialog Card Container: the height follows the panel, the code only
+                 caps it at the window's height. -->
             <Border x:Name="SessionUsageCard"
                     Width="560"
-                    Height="560"
-                    MaxWidth="720"
+                    MinHeight="300"
                     MaxHeight="780"
                     Margin="24,20"
                     HorizontalAlignment="Center"

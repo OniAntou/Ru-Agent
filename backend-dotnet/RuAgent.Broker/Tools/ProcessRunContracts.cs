@@ -11,17 +11,3 @@ public sealed record ProcessRunSpec(
     IReadOnlyDictionary<string, string> Environment,
     int TimeoutMs,
     int OutputLimitBytes);
-
-/// <summary>
-/// The receipt of one child process. <c>Status</c> is a bounded stable code
-/// (<c>succeeded</c>, <c>failed</c>, <c>timed_out</c>, <c>cancelled</c>); a non-zero
-/// exit is never promoted to success and a start failure never reports an exit code.
-/// </summary>
-public sealed record ProcessRunResult(
-    string Status,
-    int? ExitCode,
-    int DurationMs,
-    string Stdout,
-    string Stderr,
-    bool OutputTruncated,
-    string WorkingDirectory);

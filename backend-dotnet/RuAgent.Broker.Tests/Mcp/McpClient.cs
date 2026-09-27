@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace RuAgent.Broker.Mcp;
+namespace RuAgent.Broker.Tests.Mcp;
 
 public sealed class McpClient : IAsyncDisposable, IDisposable
 {

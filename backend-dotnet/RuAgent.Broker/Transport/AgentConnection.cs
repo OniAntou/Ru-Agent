@@ -433,6 +433,9 @@ public sealed partial class AgentConnection
         var value = payload["profile"];
         if (value is null)
         {
+            // Chat is the narrower tier (no workspace write, no terminal), so an
+            // absent field fails closed rather than granting capabilities. The
+            // Host always sends the field explicitly.
             return CapabilityProfile.Chat;
         }
 
@@ -450,8 +453,6 @@ public sealed partial class AgentConnection
         {
             "chat" => CapabilityProfile.Chat,
             "agent" => CapabilityProfile.Agent,
-            // Legacy "full" maps to the single Agent policy: no second tier.
-            "full" => CapabilityProfile.Agent,
             _ => throw new AgentProtocolException("invalid_profile"),
         };
     }

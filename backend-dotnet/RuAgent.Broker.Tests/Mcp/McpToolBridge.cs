@@ -3,8 +3,13 @@ using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
 
-namespace RuAgent.Broker.Mcp;
+namespace RuAgent.Broker.Tests.Mcp;
 
+// Test-only scaffolding, deliberately outside the Broker assembly. This bridge
+// mints tool IDs from a template and marks them ModelEnabled, which CONTEXT.md
+// forbids ("dynamically constructed tool ID"): the model-visible set is the
+// twelve immutable Protocol definitions. Do not move this back into
+// RuAgent.Broker or compose it into ToolBindingRegistry.
 public static class McpToolBridge
 {
     public static async Task<IReadOnlyList<ToolBinding>> DiscoverToolsAsync(

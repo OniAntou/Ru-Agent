@@ -28,17 +28,6 @@ public sealed class PolicySnapshotLoader
         _keyStore = keyStore;
     }
 
-    public PolicySnapshotLoader(HarnessSqliteOptions options, HarnessPayloadCryptography cryptography)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(cryptography);
-        _options = options;
-        // For compatibility, we need keyStore – store the cryptography to extract key via reflection would be hack.
-        // Use a wrapper that delegates to cryptography's DecryptAsync via RunId dummy.
-        // Simpler: require IHarnessKeyStore, this overload not used in tests.
-        throw new NotSupportedException("Use IHarnessKeyStore overload for policy loader.");
-    }
-
     public async Task<PolicySnapshot> LoadAsync(
         WorkspaceIdentity workspace,
         AgentPermissionPreset preset,

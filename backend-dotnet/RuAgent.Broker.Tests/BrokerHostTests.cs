@@ -87,8 +87,10 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        // help and read are system.read; list is workspace.read. All three are
-        // read-only, so the chat profile advertises them alongside grep, glob and skill.
+        // An absent profile falls back to chat, the narrower tier, so the default
+        // never grants write or terminal. help and read are system.read; list is
+        // workspace.read. All three are read-only, so the chat profile advertises
+        // them alongside grep, glob and skill.
         Assert.Equal(new[] { "glob", "grep", "help", "list", "read", "skill", "todo_write" }, ids);
         Assert.Null(hello.Payload["skills"]);
     }
@@ -132,8 +134,10 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task Hello_with_full_profile_maps_to_single_agent_policy()
+    public async Task Hello_with_the_retired_full_profile_is_rejected()
     {
+        // "full" was a compatibility alias for the single Agent tier. Keeping it
+        // accepted is a fallback path, so the wire now has exactly two profiles.
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
@@ -153,12 +157,12 @@ public sealed class BrokerHostTests
                 10_000,
                 new System.Text.Json.Nodes.JsonObject { ["profile"] = "full" }),
             cancellation.Token);
-        var hello = await ReceiveAsync(socket, cancellation.Token);
+        var reply = await ReceiveAsync(socket, cancellation.Token);
 
-        var ids = hello.Payload["tools"]!.AsArray()
-            .Select(node => node!["tool_id"]!.GetValue<string>())
-            .ToArray();
-        Assert.Contains("bash", ids);
+        Assert.Equal(AgentMessageTypes.ToolResult, reply.MessageType);
+        Assert.Equal("hello-full", reply.RequestId);
+        Assert.Equal(ToolResultStatuses.Failed, reply.Payload["status"]!.GetValue<string>());
+        Assert.Equal("invalid_profile", reply.Payload["error_code"]!.GetValue<string>());
     }
 
     [Fact]
@@ -723,7 +727,7 @@ public sealed class BrokerHostTests
 
         await SendAsync(
             socket,
-            new AgentEnvelope(2, "hello-after-tamper", AgentMessageTypes.Hello, "session-tamper", null, 10_000, new System.Text.Json.Nodes.JsonObject { ["profile"] = "full" }),
+            new AgentEnvelope(2, "hello-after-tamper", AgentMessageTypes.Hello, "session-tamper", null, 10_000, new System.Text.Json.Nodes.JsonObject { ["profile"] = "agent" }),
             cts.Token);
         var helloReply = await ReceiveAsync(socket, cts.Token);
         var ids = helloReply.Payload["tools"]!.AsArray()

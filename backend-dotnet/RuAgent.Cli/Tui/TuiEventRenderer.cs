@@ -16,7 +16,6 @@ public sealed class TuiSessionRenderer
     private readonly TuiStatusLine _status;
     private readonly TuiTranscript _transcript;
     private CancellationTokenSource? _liveCancellation;
-    private Task? _liveTask;
     private Stopwatch? _liveWatch;
 
     public TuiSessionRenderer(TextWriter writer)
@@ -198,7 +197,10 @@ public sealed class TuiSessionRenderer
         _liveCancellation = new CancellationTokenSource();
         var token = _liveCancellation.Token;
 
-        _liveTask = Task.Run(async () =>
+        // Fire-and-forget: the loop is cancellation-cooperative (token checked
+        // every iteration, all throws caught inside), so no join is needed and
+        // none is wanted on the render thread. See StopLiveRow.
+        _ = Task.Run(async () =>
         {
             try
             {
@@ -237,15 +239,18 @@ public sealed class TuiSessionRenderer
         }
 
         var cts = _liveCancellation;
-        var task = _liveTask;
         _liveCancellation = null;
-        _liveTask = null;
         _liveWatch = null;
 
         try
         {
+            // Never block here: the loop checks the token every iteration and
+            // exits on its own within one tick, while Wait(200) froze the TUI
+            // on the render thread at every turn end. Faults cannot escape to
+            // UnobservedTaskException: the loop body swallows OperationCanceled
+            // and Exception alike, and this CTS is fresh so the task cannot be
+            // born canceled.
             cts.Cancel();
-            task?.Wait(200);
         }
         catch (Exception)
         {

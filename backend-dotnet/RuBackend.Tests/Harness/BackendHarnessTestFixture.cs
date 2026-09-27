@@ -98,15 +98,9 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = Options.DatabasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true,
-        }.ToString()))
-        {
-            SqliteConnection.ClearPool(pool);
-        }
+        // All pools, not one string: pools are keyed by the full connection
+        // string, and the backend opens this file through several option sets.
+        SqliteConnection.ClearAllPools();
 
         await Task.Yield();
         if (Directory.Exists(RootPath))

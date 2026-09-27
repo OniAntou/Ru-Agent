@@ -129,15 +129,10 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = Options.DatabasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true,
-        }.ToString()))
-        {
-            SqliteConnection.ClearPool(pool);
-        }
+        // Clear every pool, not one connection string: pools are keyed by the
+        // full string, so clearing a single string misses every pool opened
+        // with different options and leaves its file lock behind.
+        SqliteConnection.ClearAllPools();
 
         await Task.Yield();
         if (Directory.Exists(RootPath))

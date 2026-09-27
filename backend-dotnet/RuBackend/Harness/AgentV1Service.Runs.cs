@@ -911,24 +911,11 @@ public sealed partial class AgentV1Service
         };
     }
 
-    private async Task<SqliteConnection> OpenHarnessConnectionAsync(CancellationToken cancellationToken)
-    {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = _options.DatabasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true,
-        }.ToString();
-        var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using (var cmd = connection.CreateCommand())
-        {
-            cmd.CommandText = $"PRAGMA foreign_keys = ON; PRAGMA busy_timeout = {_options.BusyTimeoutMilliseconds};";
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        return connection;
-    }
+    private Task<SqliteConnection> OpenHarnessConnectionAsync(CancellationToken cancellationToken) =>
+        // Single construction path: HarnessSqliteOptions owns the string, the
+        // private-cache mode and the dispose-on-open-failure guarantee, so this
+        // copy cannot drift from it again.
+        _options.OpenConnectionAsync(cancellationToken);
 
     private static AgentRun ReadAgentRun(SqliteDataReader reader, int startIndex = 0) =>
         RuAgent.Harness.Persistence.HarnessSqliteMapper.ReadRun(reader, startIndex);

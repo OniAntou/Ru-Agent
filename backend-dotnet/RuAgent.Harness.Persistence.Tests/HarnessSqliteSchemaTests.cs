@@ -850,15 +850,10 @@ public sealed class HarnessSqliteSchemaTests
         }
         finally
         {
-            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Pooling = true,
-            }.ToString()))
-            {
-                SqliteConnection.ClearPool(pool);
-            }
+            // All pools, not one string: pools are keyed by the full connection
+            // string, and these tests open the same file through several
+            // different option sets.
+            SqliteConnection.ClearAllPools();
 
             Directory.Delete(root, recursive: true);
         }
@@ -915,15 +910,10 @@ public sealed class HarnessSqliteSchemaTests
         }
         finally
         {
-            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Pooling = true,
-            }.ToString()))
-            {
-                SqliteConnection.ClearPool(pool);
-            }
+            // All pools, not one string: pools are keyed by the full connection
+            // string, and these tests open the same file through several
+            // different option sets.
+            SqliteConnection.ClearAllPools();
 
             if (Directory.Exists(root))
             {
@@ -1012,15 +1002,10 @@ public sealed class HarnessSqliteSchemaTests
         }
         finally
         {
-            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Pooling = true,
-            }.ToString()))
-            {
-                SqliteConnection.ClearPool(pool);
-            }
+            // All pools, not one string: pools are keyed by the full connection
+            // string, and these tests open the same file through several
+            // different option sets.
+            SqliteConnection.ClearAllPools();
 
             if (Directory.Exists(root))
             {
@@ -1114,15 +1099,10 @@ public sealed class HarnessSqliteSchemaTests
         }
         finally
         {
-            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Pooling = true,
-            }.ToString()))
-            {
-                SqliteConnection.ClearPool(pool);
-            }
+            // All pools, not one string: pools are keyed by the full connection
+            // string, and these tests open the same file through several
+            // different option sets.
+            SqliteConnection.ClearAllPools();
 
             if (Directory.Exists(root))
             {

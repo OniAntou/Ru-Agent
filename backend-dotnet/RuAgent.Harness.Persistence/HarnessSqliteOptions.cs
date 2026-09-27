@@ -24,7 +24,7 @@ public sealed record HarnessSqliteOptions
 
     public int BusyTimeoutMilliseconds { get; }
 
-    internal async Task<SqliteConnection> OpenConnectionAsync(
+    public async Task<SqliteConnection> OpenConnectionAsync(
         CancellationToken cancellationToken,
         SqliteOpenMode mode = SqliteOpenMode.ReadWriteCreate)
     {
@@ -37,6 +37,7 @@ public sealed record HarnessSqliteOptions
             DataSource = DatabasePath,
             Mode = mode,
             Pooling = true,
+            Cache = SqliteCacheMode.Private,
         }.ToString();
         var connection = new SqliteConnection(connectionString);
         try

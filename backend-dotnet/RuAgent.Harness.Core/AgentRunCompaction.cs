@@ -90,7 +90,27 @@ internal sealed class AgentRunCompaction
         }
         finally
         {
-            gate.Release();
+            ReleaseGate(runId.Value, gate);
+        }
+    }
+
+    /// <summary>
+    /// Releases a per-run gate and drops it when idle, so finished runs stop
+    /// accumulating one semaphore each over weeks of use.
+    /// </summary>
+    /// <remarks>
+    /// Removal is best-effort and instance-checked: a waiter that already holds
+    /// this gate keeps working on it (its own release becomes a no-op remove),
+    /// while a newcomer gets a fresh gate. The resulting overlap window can only
+    /// surface as a versioned commit conflict, which both callers already handle
+    /// as <c>commit_conflict</c> instead of corrupting state.
+    /// </remarks>
+    private void ReleaseGate(string key, SemaphoreSlim gate)
+    {
+        gate.Release();
+        if (gate.CurrentCount == 1)
+        {
+            _gates.TryRemove(new KeyValuePair<string, SemaphoreSlim>(key, gate));
         }
     }
 
@@ -154,7 +174,7 @@ internal sealed class AgentRunCompaction
         }
         finally
         {
-            gate.Release();
+            ReleaseGate(run.RunId.Value, gate);
         }
     }
 

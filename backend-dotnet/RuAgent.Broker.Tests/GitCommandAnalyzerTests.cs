@@ -1,4 +1,5 @@
 using RuAgent.Broker.Policy.Commands;
+using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
 using Xunit;
 
@@ -68,6 +69,29 @@ public sealed class GitCommandAnalyzerTests
 
         Assert.Equal(TerminalOperationClass.GitMutation, analysis.OperationClass);
         Assert.Equal("none", analysis.NetworkIntent);
+    }
+
+    [Theory]
+    [InlineData("grep", "--open-files-in-pager=calc.exe")]
+    [InlineData("grep", "-Ocalc.exe")]
+    [InlineData("grep", "--paginate")]
+    [InlineData("log", "--paginate")]
+    [InlineData("diff", "--ext-diff")]
+    [InlineData("diff", "--ext-diff=diff.cmd")]
+    [InlineData("log", "--textconv")]
+    [InlineData("show", "--textconv=cat.exe")]
+    public void Options_that_make_git_execute_another_program_never_stay_read_only(
+        string verb,
+        string option)
+    {
+        // git grep -O spawns the named program, --ext-diff and --textconv run
+        // repository-configured helpers, and --paginate forces the pager. None of
+        // them may keep the auto-executable ReadOnly verdict, or a model could run
+        // an arbitrary program with no approval.
+        var analysis = _analyzer.Analyze(@"C:\tools\git.exe", [verb, option, "secret"]);
+
+        Assert.NotEqual(TerminalOperationClass.ReadOnly, analysis.OperationClass);
+        Assert.False(TerminalAutoPolicy.IsAutoExecutable(analysis.OperationClass));
     }
 
     [Fact]

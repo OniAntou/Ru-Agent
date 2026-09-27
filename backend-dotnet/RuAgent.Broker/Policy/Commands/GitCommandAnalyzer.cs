@@ -26,6 +26,19 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
             "core.abbrev",
         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    // Options that make git hand control to another program: `grep -O` spawns the
+    // named command, --paginate forces the pager, and --ext-diff/--textconv run a
+    // helper named by repository configuration. A ReadOnly verdict is
+    // auto-executable, so any of these fails closed to an approval ask.
+    private static readonly string[] ProgramSelectingOptionPrefixes =
+    [
+        "--open-files-in-pager",
+        "--ext-diff",
+        "--textconv",
+        "--paginate",
+        "-O",
+    ];
+
     public CommandAnalysis Analyze(string resolvedExecutable, IReadOnlyList<string> argv)
     {
         if (!IsGitExecutable(resolvedExecutable))
@@ -85,6 +98,11 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
             return new(AnalyzerVersion, TerminalOperationClass.GitMutation, "none", "git_output_redirect");
         }
 
+        if (rest.Any(SelectsAnotherProgram))
+        {
+            return Unknown("git_program_selecting_option_requires_approval");
+        }
+
         switch (verb)
         {
             case "status":
@@ -132,6 +150,9 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
 
     private static bool IsBranchShowCurrentFlag(string argument) =>
         string.Equals(argument, "--show-current", StringComparison.Ordinal);
+
+    private static bool SelectsAnotherProgram(string argument) =>
+        ProgramSelectingOptionPrefixes.Any(prefix => argument.StartsWith(prefix, StringComparison.Ordinal));
 
     private static bool IsKnownLocalMutation(string verb) => verb switch
     {

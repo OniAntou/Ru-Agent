@@ -212,6 +212,61 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void Completed_turn_with_no_text_and_no_tools_says_so_instead_of_ending_silent()
+    {
+        // A finished run that delivered nothing used to leave only "✓ idle · 10.6s",
+        // which reads exactly like a very short answer. The operator has to be told.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var rows = Rows(output);
+        Assert.Contains(rows, row => row.Contains("no text arrived from the model"));
+        Assert.Contains(rows, row => row.Contains("/model"));
+    }
+
+    [Fact]
+    public void Completed_turn_that_streamed_text_adds_no_note()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("PONG");
+        output.Clear();
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        Assert.DoesNotContain(Rows(output), row => row.Contains("no text arrived"));
+    }
+
+    [Fact]
+    public void Completed_turn_with_only_tool_rows_adds_no_note()
+    {
+        // Work that did run is visible as tool rows, so silence there is not a blank turn.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "read_only"));
+        output.Clear();
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        Assert.DoesNotContain(Rows(output), row => row.Contains("no text arrived"));
+    }
+
+    [Fact]
+    public void Failed_turn_keeps_its_failure_card_and_adds_no_note()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+
+        transcript.EndTurn(TuiTurnOutcome.Failed, "empty_model_reply");
+
+        var rows = Rows(output);
+        Assert.Contains(rows, row => row.Contains("Empty model reply"));
+        Assert.DoesNotContain(rows, row => row.Contains("no text arrived"));
+    }
+
+    [Fact]
     public void BuildFooter_JoinsFactsWithTheSummaryDetail()    {
         var footer = TuiTranscript.BuildFooter(18.4, 4, "3 files changed · verified");
 

@@ -869,6 +869,7 @@ public sealed class TuiTranscript
     public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
     {
         Flush();
+        var streamedText = _hasStreamedDelta;
         if (_hasStreamedDelta)
         {
             if (!_atLineStart)
@@ -895,6 +896,16 @@ public sealed class TuiTranscript
         {
             case TuiTurnOutcome.Completed:
                 WriteLines(BuildFooter(seconds, _toolsSettled, _summaryDetail));
+                if (!streamedText && _toolsSettled == 0)
+                {
+                    // A run that completed with no assistant text and no tool row used to
+                    // end in total silence: just a "✓ idle · 10.6s" row, which is
+                    // indistinguishable from a healthy short answer. The reply text is
+                    // persisted even when its delta never reaches this client, so say so
+                    // rather than leaving the operator to guess.
+                    WriteLines(ComposeNoTextArrived());
+                }
+
                 break;
             case TuiTurnOutcome.Cancelled:
                 WriteLines(
@@ -913,6 +924,18 @@ public sealed class TuiTranscript
         _summaryDetail = null;
         _pendingTools.Clear();
     }
+
+    /// <summary>
+    /// Bounded operator note for a turn that finished successfully but delivered no
+    /// assistant text and no tool row. Names the observation and the next step instead
+    /// of leaving an empty turn that looks like a very short answer.
+    /// </summary>
+    public static string ComposeNoTextArrived() =>
+        TuiPalette.Paint("  ▲ ", TuiToken.Warn)
+        + TuiPalette.Paint("no text arrived from the model", TuiToken.Warn)
+        + TuiPalette.Paint(
+            " · the run completed but its reply never reached this terminal · retry, or switch model with /model",
+            TuiToken.Line);
 
     public static string BuildFooter(double seconds, int tools, string? detail)
     {

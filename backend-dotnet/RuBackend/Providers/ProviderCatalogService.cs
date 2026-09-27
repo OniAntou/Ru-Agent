@@ -48,6 +48,15 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ru", "models-dev.json");
     private readonly SemaphoreSlim _modelsDevGate = new(1, 1);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    // Parsed Models.dev list, keyed by the cache file's size + mtime. The file
+    // is megabytes; without this every /models for a models.dev backend reads
+    // and re-parses it twice (once to resolve the selection, once to fill
+    // reasoning levels), so a poll fan-out parses gigabytes a day for data
+    // that changes at most daily.
+    private readonly object _modelsDevParseLock = new();
+    private string? _modelsDevParsedKey;
+    private IReadOnlyList<ModelsDevProvider>? _modelsDevParsed;
+    private DateTimeOffset _modelsDevParsedAt;
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _credentialRevisions = new(StringComparer.Ordinal);
 
@@ -108,11 +117,25 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     /// </summary>
     public async Task<IReadOnlyList<ModelsDevProvider>> GetModelsDevAsync(CancellationToken ct)
     {
+        // Fast path: a fresh cache file is served from the parsed in-memory
+        // copy with no gate and no file read. Only the fresh case shortcuts;
+        // a stale or missing file still goes through the gate so refresh,
+        // stale-fallback and fail-closed semantics stay exactly as before.
+        if (TryReadModelsDevCache(out var cached, out var fresh) && fresh)
+        {
+            return cached;
+        }
+
         // Single-flight: concurrent callers share one fetch instead of
         // hammering models.dev once each.
         await _modelsDevGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (TryReadModelsDevCache(out cached, out fresh) && fresh)
+            {
+                return cached;
+            }
+
             return await GetModelsDevCoreAsync(ct).ConfigureAwait(false);
         }
         finally
@@ -440,14 +463,35 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     {
         providers = [];
         fresh = false;
-        string text;
+        string key;
         try
         {
-            if (!File.Exists(_modelsDevCacheFile))
+            var info = new FileInfo(_modelsDevCacheFile);
+            if (!info.Exists)
             {
                 return false;
             }
 
+            key = info.Length + ":" + info.LastWriteTimeUtc.Ticks;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            return false;
+        }
+
+        lock (_modelsDevParseLock)
+        {
+            if (_modelsDevParsed is not null && string.Equals(_modelsDevParsedKey, key, StringComparison.Ordinal))
+            {
+                providers = _modelsDevParsed;
+                fresh = clock.GetUtcNow() - _modelsDevParsedAt < ModelsDevCacheTtl;
+                return true;
+            }
+        }
+
+        string text;
+        try
+        {
             text = File.ReadAllText(_modelsDevCacheFile);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
@@ -482,6 +526,13 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             }
 
             fresh = clock.GetUtcNow() - fetched < ModelsDevCacheTtl;
+            lock (_modelsDevParseLock)
+            {
+                _modelsDevParsedKey = key;
+                _modelsDevParsed = providers;
+                _modelsDevParsedAt = fetched;
+            }
+
             return true;
         }
         catch (JsonException)

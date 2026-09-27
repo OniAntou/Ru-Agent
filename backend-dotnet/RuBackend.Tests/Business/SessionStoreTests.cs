@@ -134,6 +134,26 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
+    public async Task List_skips_a_torn_session_file_instead_of_failing()
+    {
+        // Previously ListAsync held the exclusive gate while loading every
+        // file, so one torn write failed the whole sidebar poll. Writes are
+        // atomic (temp + move) and reads no longer take the gate; a file that
+        // cannot be parsed is skipped and picked up on the next poll.
+        var (store, paths) = CreateStore();
+        var good = (await store.CreateAsync(CancellationToken.None))!;
+        Directory.CreateDirectory(paths.SessionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(paths.SessionDirectory, "22222222222222222222222222222222.json"),
+            "{ torn json,");
+
+        var listed = await store.ListAsync(CancellationToken.None);
+
+        var single = Assert.Single(listed);
+        Assert.Equal(good, single.Id);
+    }
+
+    [Fact]
     public async Task Legacy_json_without_source_metadata_still_loads()
     {
         var (store, paths) = CreateStore();

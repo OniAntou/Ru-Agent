@@ -33,7 +33,12 @@ public sealed partial class SessionStore : ISessionStore
     public async Task<IReadOnlyList<SessionSummary>> ListAsync(
         CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // No gate: this runs on every 3s sidebar poll, and holding the exclusive
+        // lock while loading every session file stalled chat sends behind it.
+        // Writes are atomic (temp file + move), so a concurrent read sees the
+        // old or the new file, never a torn one; a file that vanishes or fails
+        // to parse mid-listing is skipped and picked up on the next poll,
+        // exactly like a corrupt file was before.
         try
         {
             if (!Directory.Exists(_sessionDirectory))
@@ -45,9 +50,18 @@ public sealed partial class SessionStore : ISessionStore
             foreach (var path in Directory.EnumerateFiles(_sessionDirectory, "*.json"))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var document = await LoadUnlockedAsync(
-                    Path.GetFileNameWithoutExtension(path),
-                    cancellationToken).ConfigureAwait(false);
+                SessionDocument? document;
+                try
+                {
+                    document = await LoadUnlockedAsync(
+                        Path.GetFileNameWithoutExtension(path),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+                {
+                    continue;
+                }
+
                 if (document is null)
                 {
                     continue;
@@ -75,10 +89,6 @@ public sealed partial class SessionStore : ISessionStore
         catch (UnauthorizedAccessException)
         {
             return [];
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 

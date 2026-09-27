@@ -19,6 +19,42 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Read_picks_up_an_external_rewrite_without_a_save()
+    {
+        // Only clean reads are cached, keyed by size+mtime: a hand edit or a
+        // CLI write in another process must show up on the next read. The two
+        // payloads differ in length so the key change does not depend on
+        // timestamp granularity.
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """{"backend":"openai","model":"a"}""");
+
+        Assert.Equal("a", (await store.ReadAsync(CancellationToken.None)).Model);
+
+        await File.WriteAllTextAsync(paths.SettingsFile, """{"backend":"openai","model":"bb"}""");
+
+        Assert.Equal("bb", (await store.ReadAsync(CancellationToken.None)).Model);
+    }
+
+    [Fact]
+    public async Task Read_recovers_after_a_corrupt_file_is_rewritten()
+    {
+        // A corrupt file falls back to defaults but must never poison the
+        // cache: once rewritten, the new content has to win.
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, "{corrupt");
+
+        Assert.Equal("OpenAI", (await store.ReadAsync(CancellationToken.None)).Backend);
+
+        await File.WriteAllTextAsync(paths.SettingsFile, """{"backend":"openai","model":"recovered-model"}""");
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("OpenAI", snapshot.Backend);
+        Assert.Equal("recovered-model", snapshot.Model);
+    }
+
+    [Fact]
     public async Task Read_ignores_retired_generation_fields_and_normalizes_other_settings()
     {
         var (store, paths) = CreateStore();

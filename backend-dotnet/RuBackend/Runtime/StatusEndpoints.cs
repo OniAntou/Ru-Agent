@@ -18,13 +18,21 @@ public static class StatusEndpoints
         ISettingsStore settings,
         CancellationToken cancellationToken)
     {
-        var current = await settings.ReadAsync(cancellationToken);
-        return Results.Json(new
+        try
         {
-            status = "ok",
-            message = "Backend is running and ready for the WinUI3 UI.",
-            backend = current.Backend,
-        });
+            var current = await settings.ReadAsync(cancellationToken);
+            return Results.Json(new
+            {
+                status = "ok",
+                message = "Backend is running and ready for the WinUI3 UI.",
+                backend = current.Backend,
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            return Results.Json(new { status = "error", error_code = "status_unavailable", backend = "" });
+        }
     }
 
     private static async Task<IResult> ModelsAsync(HttpContext context, ISettingsStore settings,
@@ -48,21 +56,35 @@ public static class StatusEndpoints
         {
             return Results.Json(new { status = "error", error_code = "catalog_configuration_error", models = Array.Empty<string>() });
         }
+        catch (Exception)
+        {
+            // Fail closed as an envelope, never an HTML 500: the picker reads
+            // error_code, and an unparsable page looks like a dead backend.
+            return Results.Json(new { status = "error", error_code = "catalog_unavailable", models = Array.Empty<string>() });
+        }
     }
 
     private static async Task<IResult> ModelsDevAsync(ProviderCatalogService catalog, CancellationToken cancellationToken)
     {
-        var providers = await catalog.GetModelsDevAsync(cancellationToken);
-        return Results.Json(new
+        try
         {
-            status = "ok",
-            providers = providers.Select(provider => new
+            var providers = await catalog.GetModelsDevAsync(cancellationToken);
+            return Results.Json(new
             {
-                id = provider.Id,
-                name = provider.Name,
-                base_url = provider.BaseUrl,
-            }).ToArray(),
-        });
+                status = "ok",
+                providers = providers.Select(provider => new
+                {
+                    id = provider.Id,
+                    name = provider.Name,
+                    base_url = provider.BaseUrl,
+                }).ToArray(),
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            return Results.Json(new { status = "error", error_code = "catalog_unavailable", providers = Array.Empty<object>() });
+        }
     }
 
     private static IResult ShutdownAsync(IHostApplicationLifetime lifetime)

@@ -101,6 +101,28 @@ static bool IsLoopbackBindUrl(string value)
 
 var app = builder.Build();
 
+// Never HTML: without this any unhandled exception becomes a 500 text/html
+// page, which the GUI and TUI cannot parse. Every failure below this point
+// is a JSON envelope instead, and the throw is still logged with its route.
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var error = context.Features
+        .Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    app.Logger.LogError(
+        error,
+        "Unhandled request exception for {Method} {Path}.",
+        context.Request.Method,
+        context.Request.Path);
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsJsonAsync(new
+    {
+        status = "error",
+        error_code = "internal_error",
+        message = "The request could not be completed.",
+    });
+}));
+
 // Hook shutdown cleanup for managed runtime: descriptor cleanup, job shutdown
 if (isManagedRuntime)
 {

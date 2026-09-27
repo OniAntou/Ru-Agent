@@ -254,6 +254,41 @@ public sealed class ModelsDevReasoningCatalogTests : IDisposable
         Assert.Equal("reasoning_unsupported", error.Code);
     }
 
+    [Fact]
+    public async Task A_rewritten_cache_file_is_picked_up_without_a_restart()
+    {
+        // The parsed list is held in memory keyed by size+mtime; a rewrite must
+        // invalidate it, or republished levels never appear until restart. The
+        // two payloads differ in length so the key change is deterministic,
+        // not dependent on timestamp granularity. GetModelsDevAsync has no
+        // fetch throttle, so this exercises the invalidation directly.
+        await WriteModelsDevCacheAsync(ModelsDevPayload(("vendor/model-a",
+            "{\"reasoning_options\":[{\"type\":\"effort\",\"values\":[\"low\"]}]}")));
+        var service = new ProviderCatalogService(
+            new HttpClient(_handler),
+            _credentials,
+            _clock,
+            Path.Combine(_root, "models-dev.json"));
+
+        var first = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(["low"], LevelsOf(first, "vendor/model-a"));
+
+        await WriteModelsDevCacheAsync(ModelsDevPayload(("vendor/model-a",
+            "{\"reasoning_options\":[{\"type\":\"effort\",\"values\":[\"low\",\"high\"]}]}")));
+        var second = await service.GetModelsDevAsync(CancellationToken.None);
+        Assert.Equal(["low", "high"], LevelsOf(second, "vendor/model-a"));
+    }
+
+    private static IReadOnlyList<string> LevelsOf(
+        IReadOnlyList<ModelsDevProvider> providers,
+        string id)
+    {
+        var provider = Assert.Single(providers, item => item.Id == "openrouter");
+        Assert.NotNull(provider.Reasoning);
+        Assert.True(provider.Reasoning.TryGetValue(id, out var published));
+        return published.Options;
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))

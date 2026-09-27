@@ -62,6 +62,16 @@ public sealed class SettingsStore : ISettingsStore
 
     private readonly string _settingsFile;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    // Last cleanly parsed snapshot, keyed by the file's size + mtime. Every
+    // /models took the exclusive gate and re-read + re-parsed this file, so a
+    // poll fan-out serialized two hundred parses behind one lock. Only clean
+    // reads are cached: a transient lock or a corrupt file must keep falling
+    // through to a fresh read instead of poisoning defaults until the next
+    // write. External writers (hand edits, the CLI) are picked up through the
+    // key, and every return is a clone, matching the fresh-parse semantics.
+    private readonly object _snapshotLock = new();
+    private string? _snapshotKey;
+    private SettingsSnapshot? _snapshotCache;
 
     public SettingsStore(DataPaths paths)
     {
@@ -71,10 +81,27 @@ public sealed class SettingsStore : ISettingsStore
 
     public async Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken)
     {
+        if (TryGetCachedSnapshot(out var cached))
+        {
+            return cached;
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await ReadUnlockedAsync(cancellationToken).ConfigureAwait(false);
+            if (TryGetCachedSnapshot(out cached))
+            {
+                return cached;
+            }
+
+            var key = SnapshotKeyFor(_settingsFile);
+            var (snapshot, clean) = await ReadUnlockedAsync(cancellationToken).ConfigureAwait(false);
+            if (clean && key is not null && SnapshotKeyFor(_settingsFile) == key)
+            {
+                StoreCachedSnapshot(key, snapshot);
+            }
+
+            return snapshot;
         }
         finally
         {
@@ -141,6 +168,15 @@ public sealed class SettingsStore : ISettingsStore
             persisted["cloudflare_account_id"] = candidate.CloudflareAccountId;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
+            // The write just replaced the file: refresh the cache from disk so
+            // it reflects exactly what a read would return, instead of waiting
+            // for the next read to notice the new mtime.
+            var key = SnapshotKeyFor(_settingsFile);
+            var (snapshot, clean) = await ReadUnlockedAsync(cancellationToken).ConfigureAwait(false);
+            if (clean && key is not null && SnapshotKeyFor(_settingsFile) == key)
+            {
+                StoreCachedSnapshot(key, snapshot);
+            }
         }
         finally
         {
@@ -148,10 +184,59 @@ public sealed class SettingsStore : ISettingsStore
         }
     }
 
-    private async Task<SettingsSnapshot> ReadUnlockedAsync(CancellationToken cancellationToken)
+    private bool TryGetCachedSnapshot(out SettingsSnapshot snapshot)
+    {
+        snapshot = null!;
+        var key = SnapshotKeyFor(_settingsFile);
+        if (key is null)
+        {
+            return false;
+        }
+
+        lock (_snapshotLock)
+        {
+            if (_snapshotCache is not null && string.Equals(_snapshotKey, key, StringComparison.Ordinal))
+            {
+                snapshot = _snapshotCache with { Raw = (JsonObject)_snapshotCache.Raw.DeepClone() };
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void StoreCachedSnapshot(string key, SettingsSnapshot snapshot)
+    {
+        lock (_snapshotLock)
+        {
+            _snapshotKey = key;
+            _snapshotCache = snapshot with { Raw = (JsonObject)snapshot.Raw.DeepClone() };
+        }
+    }
+
+    private static string? SnapshotKeyFor(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                return "missing";
+            }
+
+            return "f:" + info.Length + ":" + info.LastWriteTimeUtc.Ticks;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or PathTooLongException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<(SettingsSnapshot Snapshot, bool Clean)> ReadUnlockedAsync(CancellationToken cancellationToken)
     {
         JsonObject raw = [];
-        if (File.Exists(_settingsFile))
+        bool clean = File.Exists(_settingsFile);
+        if (clean)
         {
             try
             {
@@ -161,22 +246,30 @@ public sealed class SettingsStore : ISettingsStore
                         .ConfigureAwait(false);
                     raw = JsonNode.Parse(bytes) as JsonObject ?? [];
                 }
+                else
+                {
+                    clean = false;
+                }
             }
             catch (JsonException)
             {
                 raw = [];
+                clean = false;
             }
             catch (IOException)
             {
                 raw = [];
+                clean = false;
             }
             catch (UnauthorizedAccessException)
             {
                 raw = [];
+                clean = false;
             }
             catch (InvalidDataException)
             {
                 raw = [];
+                clean = false;
             }
         }
 
@@ -213,7 +306,7 @@ public sealed class SettingsStore : ISettingsStore
 
         var (compactionTriggerRatio, compactionTargetRatio) = ReadCompactionRatios(raw);
 
-        return new SettingsSnapshot(
+        return (new SettingsSnapshot(
             raw.DeepClone().AsObject(),
             backend,
             model,
@@ -224,7 +317,7 @@ public sealed class SettingsStore : ISettingsStore
             compactionTriggerRatio,
             compactionTargetRatio,
             ReadString(raw, "provider_id", string.Empty),
-            ReadString(raw, "cloudflare_account_id", string.Empty));
+            ReadString(raw, "cloudflare_account_id", string.Empty)), clean);
     }
 
     private async Task WriteAtomicAsync(

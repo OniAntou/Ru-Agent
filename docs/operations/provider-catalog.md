@@ -137,6 +137,15 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
 - The desktop picker never erases a stored effort because a catalog has not loaded
   yet. `ProviderReasoningOptions.Clamp` only falls back to `default` once the
   catalog for the selected backend has actually arrived and is not stale.
+- The composer reads that catalog through `ProviderSelectedCatalog.TryResolve`,
+  not from the grouped controller. The grouped controller holds two hundred
+  children behind polling and a fan-out fetch, so it is empty at startup; worse,
+  the save identity was read from it, and an empty lookup fell back to sending
+  the backend string, which the endpoint rejects because the identity must be
+  the credential hash. The single controller is pointed at the selected backend
+  and refreshed on load and on every model switch, so it is preferred, the
+  grouped entry is the fallback, and the view re-syncs on the single
+  controller's `StateChanged`.
 - Bare model IDs and generic reasoning flags do not verify adjustable levels.
   Unknown IDs are retained as unsupported (`Supported=false`) and omitted from
   selectable `Models`; they are never called to discover capability.

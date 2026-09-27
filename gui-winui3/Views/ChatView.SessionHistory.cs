@@ -1167,6 +1167,7 @@ namespace RuApp.Views
             {
                 var catalog = _providerCatalogController;
                 bool owns = _ownsProviderCatalogController;
+                catalog.StateChanged -= OnProviderCatalogStateChanged;
                 _providerCatalogController = null;
                 if (owns)
                 {

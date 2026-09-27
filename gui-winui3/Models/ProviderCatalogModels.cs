@@ -238,6 +238,54 @@ public static class ProviderReasoningOptions
     }
 }
 
+/// <summary>
+/// Picks the catalog that describes the selected backend, if one has arrived.
+/// </summary>
+/// <remarks>
+/// The composer reads the single selected-backend controller first: the view
+/// points it at the selected backend and refreshes it on load and on every
+/// model switch, so it carries SelectedEffort, Identity and reasoning levels
+/// without waiting for the grouped controller's two hundred children. The
+/// grouped entry is the fallback for the window between a switch and the
+/// single refresh landing, or when Settings repointed the shared controller.
+/// A catalog that is missing, failed or stale says nothing: the caller keeps
+/// whatever it had instead of concluding the effort is "default".
+/// </remarks>
+public static class ProviderSelectedCatalog
+{
+    public static bool TryResolve(
+        ProviderCatalogState? single,
+        IReadOnlyDictionary<string, ProviderCatalogState>? grouped,
+        string? backend,
+        out ProviderCatalogState? catalog)
+    {
+        if (!string.IsNullOrWhiteSpace(backend))
+        {
+            if (single is not null &&
+                string.Equals(single.Backend, backend, StringComparison.Ordinal) &&
+                single.IsSuccess &&
+                !single.Stale)
+            {
+                catalog = single;
+                return true;
+            }
+
+            if (grouped is not null &&
+                grouped.TryGetValue(backend, out var entry) &&
+                entry is not null &&
+                entry.IsSuccess &&
+                !entry.Stale)
+            {
+                catalog = entry;
+                return true;
+            }
+        }
+
+        catalog = null;
+        return false;
+    }
+}
+
 public sealed class ProviderSettingsUpdateDto
 {
     [JsonPropertyName("backend_choice")]

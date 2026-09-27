@@ -567,6 +567,73 @@ public sealed class ProviderCatalogTests
         Assert.Equal("default", ProviderReasoningOptions.Clamp("xhigh", loaded, isCatalogReady: true));
     }
 
+    private static ProviderCatalogState CatalogState(
+        string backend,
+        string status = "ok",
+        bool stale = false,
+        string effort = "high") => new()
+        {
+            Status = status,
+            Backend = backend,
+            Identity = "identity",
+            SelectedEffort = effort,
+            Stale = stale,
+        };
+
+    [Fact]
+    public void SelectedCatalog_prefers_the_single_controller_for_the_selected_backend()
+    {
+        // The single controller is pointed at the selected backend and refreshed
+        // on load; the grouped entry for the same backend may be older.
+        var single = CatalogState("models.dev:openrouter", effort: "high");
+        var grouped = new Dictionary<string, ProviderCatalogState>(StringComparer.Ordinal)
+        {
+            ["models.dev:openrouter"] = CatalogState("models.dev:openrouter", effort: "low"),
+        };
+
+        Assert.True(ProviderSelectedCatalog.TryResolve(
+            single, grouped, "models.dev:openrouter", out var resolved));
+        Assert.Equal("high", resolved!.SelectedEffort);
+    }
+
+    [Fact]
+    public void SelectedCatalog_falls_back_to_the_grouped_entry()
+    {
+        // Right after a model switch the single refresh has not landed yet, or
+        // Settings repointed the shared controller elsewhere: the grouped child
+        // still describes the selected backend.
+        var single = CatalogState("openai");
+        var grouped = new Dictionary<string, ProviderCatalogState>(StringComparer.Ordinal)
+        {
+            ["models.dev:openrouter"] = CatalogState("models.dev:openrouter", effort: "medium"),
+        };
+
+        Assert.True(ProviderSelectedCatalog.TryResolve(
+            single, grouped, "models.dev:openrouter", out var resolved));
+        Assert.Equal("medium", resolved!.SelectedEffort);
+    }
+
+    [Fact]
+    public void SelectedCatalog_says_nothing_without_a_usable_catalog()
+    {
+        // No catalog, a failed one, or a stale one must not validate anything:
+        // the caller keeps its effort instead of concluding "default".
+        var grouped = new Dictionary<string, ProviderCatalogState>(StringComparer.Ordinal)
+        {
+            ["models.dev:openrouter"] = CatalogState("models.dev:openrouter", status: "error"),
+            ["openai"] = CatalogState("openai", stale: true),
+        };
+
+        Assert.False(ProviderSelectedCatalog.TryResolve(null, null, "models.dev:openrouter", out _));
+        Assert.False(ProviderSelectedCatalog.TryResolve(null, grouped, " ", out _));
+        Assert.False(ProviderSelectedCatalog.TryResolve(
+            CatalogState("models.dev:openrouter", status: "error"), grouped, "models.dev:openrouter", out _));
+        Assert.False(ProviderSelectedCatalog.TryResolve(
+            CatalogState("models.dev:openrouter", stale: true), null, "models.dev:openrouter", out _));
+        Assert.False(ProviderSelectedCatalog.TryResolve(
+            CatalogState("other"), null, "models.dev:openrouter", out _));
+    }
+
     [Fact]
     public void ProviderReasoningOptions_uses_override_model_and_ignores_case()
     {

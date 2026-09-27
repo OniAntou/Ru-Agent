@@ -309,6 +309,7 @@ namespace RuApp.Views
             _ownsProviderCatalogController = providerCatalogController == null;
             _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsGroupedCatalogs = groupedProviderCatalogs == null;
+            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
             _groupedCatalogs.StateChanged += OnGroupedStateChanged;
             _agentController?.PropertyChanged += OnAgentControllerChanged;
             _agentController?.ActivityReceived += OnAgentActivityReceived;
@@ -335,6 +336,10 @@ namespace RuApp.Views
             GroupedProviderCatalogController? groupedProviderCatalogs)
         {
             _apiService = apiService;
+            if (_providerCatalogController != null)
+            {
+                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
+            }
             if (_groupedCatalogs != null)
             {
                 _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
@@ -354,6 +359,7 @@ namespace RuApp.Views
             _ownsProviderCatalogController = providerCatalogController == null;
             _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsGroupedCatalogs = groupedProviderCatalogs == null;
+            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
             _groupedCatalogs.StateChanged += OnGroupedStateChanged;
 
             if (_agentController != null)

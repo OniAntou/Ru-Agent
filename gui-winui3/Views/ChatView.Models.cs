@@ -146,6 +146,26 @@ namespace RuApp.Views
             }
         }
 
+        /// <summary>
+        /// The single controller lands after the grouped one is still empty (it is
+        /// refreshed for the selected backend on load and on every model switch).
+        /// When it does, the stored effort and the level list may have arrived, so
+        /// recompute the button. Anything for another backend is ignored: the
+        /// shared controller is repointed by Settings too.
+        /// </summary>
+        private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
+        {
+            string backend = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedBackend)
+                ? _groupedCatalogs.State.SelectedBackend
+                : _selectedBackend;
+            if (!string.Equals(state.Backend, backend, StringComparison.Ordinal)) return;
+
+            if (!DispatcherQueue.TryEnqueue(UpdateReasoningEffortUi))
+            {
+                return;
+            }
+        }
+
         private void ApplyGroupedState(GroupedProviderCatalogState state)
         {
             if (!string.IsNullOrWhiteSpace(state.SelectedModel))
@@ -231,43 +251,37 @@ namespace RuApp.Views
         /// Until it does, the option list is just "default" and nothing can be
         /// concluded from it, so the effort is left alone.
         /// </remarks>
-        private bool IsCatalogReadyForSelection()
+        private bool IsCatalogReadyForSelection() =>
+            TryGetSelectedCatalog(out _);
+
+        /// <summary>
+        /// The catalog for the selected backend, preferring the single controller
+        /// this view points at it. The grouped controller holds two hundred
+        /// children behind polling and a fan-out fetch, so it is empty at startup
+        /// and long after; the single refresh in LoadChatModelsAsync is what has
+        /// SelectedEffort, Identity and reasoning levels when the composer needs
+        /// them.
+        /// </summary>
+        private bool TryGetSelectedCatalog(out ProviderCatalogState? catalog)
         {
-            if (_groupedCatalogs is null) return false;
-
-            var groupedState = _groupedCatalogs.State;
-            string backend = !string.IsNullOrWhiteSpace(groupedState.SelectedBackend)
-                ? groupedState.SelectedBackend
+            string backend = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedBackend)
+                ? _groupedCatalogs.State.SelectedBackend
                 : _selectedBackend;
-            if (string.IsNullOrWhiteSpace(backend)) return false;
-
-            return groupedState.Catalogs.TryGetValue(backend, out var catalogState)
-                && catalogState.IsSuccess
-                && !catalogState.Stale;
+            return ProviderSelectedCatalog.TryResolve(
+                _providerCatalogController?.State,
+                _groupedCatalogs?.State.Catalogs,
+                backend,
+                out catalog);
         }
 
         private IReadOnlyList<ProviderReasoningOption> GetCurrentReasoningOptions()
         {
-            if (_groupedCatalogs is null)
+            if (TryGetSelectedCatalog(out var catalog) && catalog is not null)
             {
-                return [new ProviderReasoningOption("default", "default")];
-            }
-
-            var groupedState = _groupedCatalogs.State;
-            string backend = !string.IsNullOrWhiteSpace(groupedState.SelectedBackend)
-                ? groupedState.SelectedBackend
-                : _selectedBackend;
-            if (string.IsNullOrWhiteSpace(backend))
-            {
-                return [new ProviderReasoningOption("default", "default")];
-            }
-
-            if (groupedState.Catalogs.TryGetValue(backend, out var catalogState))
-            {
-                string effectiveModel = !string.IsNullOrWhiteSpace(groupedState.SelectedModel)
-                    ? groupedState.SelectedModel
+                string effectiveModel = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedModel)
+                    ? _groupedCatalogs.State.SelectedModel
                     : _selectedModel;
-                return ProviderReasoningOptions.For(catalogState, effectiveModel);
+                return ProviderReasoningOptions.For(catalog, effectiveModel);
             }
 
             return [new ProviderReasoningOption("default", "default")];
@@ -275,18 +289,13 @@ namespace RuApp.Views
 
         private void SyncEffortFromCatalog(bool force = false)
         {
-            if (_groupedCatalogs is null) return;
-
-            var groupedState = _groupedCatalogs.State;
-            if (string.IsNullOrWhiteSpace(groupedState.SelectedBackend)) return;
-
-            if (groupedState.Catalogs.TryGetValue(groupedState.SelectedBackend, out var catalogState))
+            if (TryGetSelectedCatalog(out var catalog) && catalog is not null)
             {
-                if (!string.IsNullOrWhiteSpace(catalogState.SelectedEffort) &&
+                if (!string.IsNullOrWhiteSpace(catalog.SelectedEffort) &&
                     (force ||
                     string.Equals(_selectedReasoningEffort, "default", StringComparison.OrdinalIgnoreCase)))
                 {
-                    _selectedReasoningEffort = catalogState.SelectedEffort;
+                    _selectedReasoningEffort = catalog.SelectedEffort;
                 }
             }
         }
@@ -373,13 +382,19 @@ namespace RuApp.Views
 
             if (_apiService is null) return;
 
-            string backend = _groupedCatalogs?.State.SelectedBackend ?? string.Empty;
+            string backend = !string.IsNullOrWhiteSpace(_groupedCatalogs?.State.SelectedBackend)
+                ? _groupedCatalogs.State.SelectedBackend
+                : _selectedBackend;
             string model = _selectedModel ?? string.Empty;
             if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(backend)) return;
 
+            // The save is selection-bound: the backend compares this against the
+            // snapshot identity (a credential hash), so the backend string itself
+            // is never a valid substitute. The single controller refreshed at load
+            // carries the real one; without any catalog the save is honestly
+            // rejected and the label below reports it.
             string identity = backend;
-            if (_groupedCatalogs != null &&
-                _groupedCatalogs.State.Catalogs.TryGetValue(backend, out var catalogState) &&
+            if (TryGetSelectedCatalog(out var catalogState) && catalogState is not null &&
                 !string.IsNullOrWhiteSpace(catalogState.Identity))
             {
                 identity = catalogState.Identity;

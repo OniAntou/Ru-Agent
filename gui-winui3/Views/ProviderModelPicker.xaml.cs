@@ -68,11 +68,6 @@ namespace RuApp.Views
                     PickerListContainer.Children.Add(CreateRowButton(row));
                 }
             }
-
-            if (!string.IsNullOrEmpty(projection.TruncationNotice))
-            {
-                PickerListContainer.Children.Add(CreateTruncationNotice(projection.TruncationNotice));
-            }
         }
 
         public void FocusSearch() => PickerSearchBox.Focus(FocusState.Programmatic);
@@ -144,17 +139,6 @@ namespace RuApp.Views
             Foreground = _brushes.Muted,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 16, 0, 16),
-        };
-
-        private TextBlock CreateTruncationNotice(string text) => new()
-        {
-            Text = text,
-            FontFamily = _brushes.FontFamily,
-            FontSize = 11,
-            Foreground = _brushes.Muted,
-            Opacity = 0.8,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 8, 0, 6),
         };
 
         private Border CreateGroupDivider() => new()

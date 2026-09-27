@@ -30,24 +30,12 @@ public sealed record ProviderModelPickerGroup(
 
 public sealed record ProviderModelPickerProjection(
     IReadOnlyList<ProviderModelPickerGroup> Groups,
-    string EmptyStateText,
-    int TruncatedRowCount = 0,
-    string TruncationNotice = "")
+    string EmptyStateText)
 {
     public const string StaleAnnotation = "Stale data";
     public const string UnavailableAnnotation = "Unavailable";
     public const string NoUsableModelsText = "No available models";
     public const string TriggerPlaceholderText = "Model...";
-
-    /// <summary>
-    /// How many rows the view may realize. A models.dev-shaped catalog carries
-    /// thousands of models, and the picker builds a Button per row with its own
-    /// badge and pointer handlers, so an uncapped list costs tens of thousands of
-    /// controls on the UI thread every time the search text or a poll changes.
-    /// Bounded like every other listing; the search box is how a user reaches past
-    /// it, and the selected model is never the row that gets dropped.
-    /// </summary>
-    public const int MaxRows = 200;
 
     public static string RowAutomationText(ProviderModelPickerRow row)
     {
@@ -101,96 +89,9 @@ public sealed record ProviderModelPickerProjection(
             }
         }
 
-        return Bounded(visible, visible.Count == 0 ? NoUsableModelsText : string.Empty);
-    }
-
-    /// <summary>
-    /// Trims the projection to <see cref="MaxRows"/> rows, keeping the group order and
-    /// the selected row. One slot is reserved for the selection up front so it still
-    /// fits when its provider sorts after everything the budget was spent on, and
-    /// groups emptied by the trim are dropped so the view never renders a heading
-    /// with nothing under it.
-    /// </summary>
-    private static ProviderModelPickerProjection Bounded(
-        List<ProviderModelPickerGroup> groups,
-        string emptyStateText)
-    {
-        int total = 0;
-        foreach (var group in groups)
-        {
-            total += group.Rows.Count;
-        }
-
-        if (total <= MaxRows)
-        {
-            return new ProviderModelPickerProjection(groups, emptyStateText);
-        }
-
-        var selected = FindSelectedRow(groups);
-        var selectedRows = selected?.Rows;
-        var selectedRow = selected?.Row;
-        int budget = MaxRows - (selectedRow is null ? 0 : 1);
-        var kept = new List<ProviderModelPickerGroup>(groups.Count);
-
-        foreach (var group in groups)
-        {
-            bool holdsSelection = ReferenceEquals(group.Rows, selectedRows);
-
-            // Skip, never break: a zero budget must not stop the walk before the
-            // group that carries the selection, which is exactly the case the
-            // reserved slot was taken out for.
-            if (budget <= 0 && !(holdsSelection && selectedRow is not null))
-            {
-                continue;
-            }
-
-            var candidates = holdsSelection
-                ? group.Rows.Where(row => !row.IsSelected).ToArray()
-                : group.Rows;
-            var taken = candidates.Take(budget).ToList();
-
-            if (holdsSelection && selectedRow is not null)
-            {
-                taken.Add(selectedRow);
-                budget -= taken.Count - 1;
-            }
-            else
-            {
-                budget -= taken.Count;
-            }
-
-            kept.Add(group with { Rows = taken });
-        }
-
-        int keptRows = 0;
-        foreach (var group in kept)
-        {
-            keptRows += group.Rows.Count;
-        }
-
-        int truncated = total - keptRows;
         return new ProviderModelPickerProjection(
-            kept,
-            emptyStateText,
-            truncated,
-            $"Showing {keptRows} of {total} \u2014 refine your search.");
-    }
-
-    private static (IReadOnlyList<ProviderModelPickerRow> Rows, ProviderModelPickerRow Row)? FindSelectedRow(
-        List<ProviderModelPickerGroup> groups)
-    {
-        foreach (var group in groups)
-        {
-            foreach (var row in group.Rows)
-            {
-                if (row.IsSelected)
-                {
-                    return (group.Rows, row);
-                }
-            }
-        }
-
-        return null;
+            visible,
+            visible.Count == 0 ? NoUsableModelsText : string.Empty);
     }
 
     /// <summary>
@@ -207,8 +108,6 @@ public sealed record ProviderModelPickerProjection(
     {
         if (other is null ||
             EmptyStateText != other.EmptyStateText ||
-            TruncatedRowCount != other.TruncatedRowCount ||
-            TruncationNotice != other.TruncationNotice ||
             Groups.Count != other.Groups.Count)
         {
             return false;

@@ -47,6 +47,60 @@ public sealed class TuiSurface
     public bool SuppressRepaints { get; set; }
 
     /// <summary>
+    /// Replaces the last <paramref name="count"/> recorded lines with
+    /// <paramref name="replacement"/>, so a rebuilt screen reprints the corrected rows
+    /// instead of what was streamed. The in-progress line is kept: a repaint happens between
+    /// writes, never mid-line. Returns false when the recorded history is shorter than the
+    /// request, which means the rows have already scrolled out of the rebuildable window and
+    /// pretending to repair them would corrupt the transcript.
+    /// </summary>
+    public bool ReplaceRecordedTail(int count, IReadOnlyList<string> replacement)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        lock (Gate)
+        {
+            if (_history.Count < count)
+            {
+                return false;
+            }
+
+            var kept = new List<string>(_history.Count - count);
+            var index = 0;
+            foreach (var line in _history)
+            {
+                if (index++ >= _history.Count - count)
+                {
+                    break;
+                }
+
+                kept.Add(line);
+            }
+
+            _history.Clear();
+            foreach (var line in kept)
+            {
+                _history.Enqueue(line);
+            }
+
+            foreach (var line in replacement)
+            {
+                _history.Enqueue(line);
+                while (_history.Count > HistoryCapacity)
+                {
+                    _history.Dequeue();
+                }
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The last <paramref name="maxLines"/> finished lines, oldest first, each clipped to
     /// <paramref name="width"/>. This is what a rebuilt screen reprints so a resize does not
     /// blank the transcript.

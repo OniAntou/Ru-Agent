@@ -64,6 +64,65 @@ public sealed class TuiTranscript
     /// </summary>
     public string StreamedAssistantText => _streamedAssistant.ToString();
 
+    /// <summary>
+    /// The rows a rebuilt screen would print right now. Exposed so a repaint can be asserted
+    /// on the surface's recorded lines rather than on escape sequences.
+    /// </summary>
+    public IReadOnlyList<string> RepaintPreview(int maxLines = 200) =>
+        _surface.SnapshotTail(maxLines, Width);
+
+    /// <summary>Recorded-line index where this turn's assistant output began, or -1.</summary>
+    private int _assistantBlockStartRow = -1;
+
+    /// <summary>
+    /// Rewrites this turn's assistant block with the run's complete text.
+    ///
+    /// A terminal cannot unprint, so a reply whose head never arrived cannot be repaired by
+    /// appending: the head would land after the tail and the answer would read as garbage.
+    /// The block is instead replaced in the surface's recorded history and the caller
+    /// rebuilds the screen from it, which is the same path a resize already uses.
+    ///
+    /// Returns false when nothing was streamed this turn, or when the rows have already
+    /// scrolled out of the rebuildable window -- in both cases the answer is not lost but
+    /// cannot be placed correctly, and the caller should say so rather than guess.
+    /// </summary>
+    public bool RepaintAssistantText(string fullText)
+    {
+        if (string.IsNullOrEmpty(fullText) || _assistantBlockStartRow < 0)
+        {
+            return false;
+        }
+
+        var width = Width;
+        var rendered = new List<string>();
+        var markdown = new TuiMarkdown();
+        foreach (var raw in fullText.Replace("\r", string.Empty).Split('\n'))
+        {
+            rendered.AddRange(markdown.RenderLine(raw, width));
+        }
+
+        if (rendered.Count == 0)
+        {
+            return false;
+        }
+
+        // The in-progress line has not been recorded yet, so it is not part of the block.
+        var recorded = _surface.HistoryCount - _assistantBlockStartRow;
+        if (recorded <= 0)
+        {
+            return false;
+        }
+
+        if (!_surface.ReplaceRecordedTail(recorded, rendered))
+        {
+            return false;
+        }
+
+        _streamedAssistant.Clear();
+        _streamedAssistant.Append(fullText);
+        return true;
+    }
+
     public TuiTranscript(TuiSurface surface, TuiStatusLine status)
     {
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -102,6 +161,7 @@ public sealed class TuiTranscript
         _markdown.Reset();
         _turnWatch.Restart();
         _streamedAssistant.Clear();
+        _assistantBlockStartRow = -1;
 
         _surface.Line();
     }
@@ -115,6 +175,11 @@ public sealed class TuiTranscript
         if (string.IsNullOrEmpty(text))
         {
             return;
+        }
+
+        if (_assistantBlockStartRow < 0)
+        {
+            _assistantBlockStartRow = _surface.HistoryCount;
         }
 
         if (_streamedAssistant.Length < MaxRetainedAssistantCharacters)

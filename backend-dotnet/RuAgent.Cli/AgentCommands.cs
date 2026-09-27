@@ -1932,6 +1932,16 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
             if (decision == Tui.AssistantTextRecovery.ReportTruncation)
             {
+                // A terminal cannot unprint, so the head cannot be appended after the tail.
+                // Rewrite the turn's block from the run's own text and rebuild the screen
+                // from the surface history, which is the path a resize already uses.
+                if (sessionRenderer.Transcript.RepaintAssistantText(full))
+                {
+                    RedrawScreenForResize();
+                    Tui.TuiDebug.Log("recover", $"repainted turn from durable text ({full.Length} chars)");
+                    return;
+                }
+
                 await _err.WriteLineAsync(
                         $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
                     .ConfigureAwait(false);

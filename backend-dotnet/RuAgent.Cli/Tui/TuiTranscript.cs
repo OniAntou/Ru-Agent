@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
@@ -31,11 +32,18 @@ public sealed class TuiTranscript
     private const string ToolCallOpen = "<tool_call>";
     private const string ToolCallClose = "</tool_call>";
 
+    /// <summary>
+    /// Cap on the raw assistant text retained per turn for gap detection against the run's
+    /// durable assistant payload. Matches the worker's own per-step text cap.
+    /// </summary>
+    private const int MaxRetainedAssistantCharacters = 1_000_000;
+
     private readonly TuiSurface _surface;
     private readonly TuiStatusLine _status;
     private readonly TuiMarkdown _markdown = new();
     private readonly List<ToolDetail> _pendingTools = [];
     private readonly List<string> _retained = [];
+    private readonly StringBuilder _streamedAssistant = new();
     private readonly Stopwatch _turnWatch = new();
 
     private bool _hasStreamedDelta;
@@ -47,6 +55,14 @@ public sealed class TuiTranscript
     private string? _terminalCode;
     private string? _summaryDetail;
     private bool _sawCompletion;
+
+    /// <summary>
+    /// The raw assistant text this turn actually received as deltas, before markdown
+    /// rendering. Deltas published before the client subscribes are gone for good -- the
+    /// live hub has no replay buffer -- so this is what a gap check compares the run's
+    /// durable assistant payload against.
+    /// </summary>
+    public string StreamedAssistantText => _streamedAssistant.ToString();
 
     public TuiTranscript(TuiSurface surface, TuiStatusLine status)
     {
@@ -85,6 +101,7 @@ public sealed class TuiTranscript
         _retained.Clear();
         _markdown.Reset();
         _turnWatch.Restart();
+        _streamedAssistant.Clear();
 
         _surface.Line();
     }
@@ -98,6 +115,11 @@ public sealed class TuiTranscript
         if (string.IsNullOrEmpty(text))
         {
             return;
+        }
+
+        if (_streamedAssistant.Length < MaxRetainedAssistantCharacters)
+        {
+            _streamedAssistant.Append(text);
         }
 
         if (!_hasStreamedDelta)

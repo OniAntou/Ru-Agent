@@ -1857,6 +1857,104 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             return (granted, false);
         }
 
+        /// <summary>
+        /// Reprints the part of the answer the deltas never carried.
+        ///
+        /// The live event hub has no replay buffer: a delta published while the client is
+        /// still subscribing is dropped, and because deltas are ordered what is lost is the
+        /// head of the reply. The run's own durable <c>assistanttext</c> payload is complete,
+        /// so the gap is recoverable rather than lost. This mirrors what the WinUI surface
+        /// already does by reloading session history when a run ends.
+        ///
+        /// Only a suffix is reprinted, and only when the streamed text is a true prefix of
+        /// the payload. Anything else -- a shorter payload, a rewritten answer, a payload
+        /// that is not assistant text -- is left alone rather than guessed at, because a
+        /// terminal cannot unprint.
+        /// </summary>
+        async Task RecoverMissingAssistantTextAsync(
+            string runId,
+            List<string> payloadRefs,
+            CancellationToken recoveryToken)
+        {
+            if (payloadRefs.Count == 0)
+            {
+                return;
+            }
+
+            var expected = new StringBuilder();
+            try
+            {
+                foreach (var payloadRef in payloadRefs)
+                {
+                    var raw = await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false);
+                    if (string.IsNullOrWhiteSpace(raw))
+                    {
+                        continue;
+                    }
+
+                    using var document = JsonDocument.Parse(raw);
+                    var payload = document.RootElement;
+                    if (payload.ValueKind != JsonValueKind.Object
+                        || !payload.TryGetProperty("kind", out var kind)
+                        || !string.Equals(kind.GetString(), "assistanttext", StringComparison.Ordinal)
+                        || !payload.TryGetProperty("content", out var content)
+                        || content.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    expected.Append(content.GetString());
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
+                return;
+            }
+
+            if (expected.Length == 0)
+            {
+                return;
+            }
+
+            var full = expected.ToString();
+            var streamed = sessionRenderer.Transcript.StreamedAssistantText;
+            var decision = Tui.AssistantTextReconciler.Decide(streamed, full);
+            if (decision == Tui.AssistantTextRecovery.Complete
+                || decision == Tui.AssistantTextRecovery.None)
+            {
+                return;
+            }
+
+            if (decision == Tui.AssistantTextRecovery.ReportTruncation)
+            {
+                await _err.WriteLineAsync(
+                        $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
+                    .ConfigureAwait(false);
+                Tui.TuiDebug.Log("recover", $"head missing: {streamed.Length} of {full.Length}");
+                return;
+            }
+
+            var missing = Tui.AssistantTextReconciler.SuffixFor(decision, streamed, full);
+            if (missing.Length == 0)
+            {
+                return;
+            }
+
+            if (sticky.Active)
+            {
+                sticky.RestoreTranscriptCursor();
+            }
+
+            sessionRenderer.Transcript.AppendAssistant(missing);
+            sessionRenderer.Flush();
+            Tui.TuiDebug.Log("recover", $"reprinted {missing.Length} chars of {full.Length}");
+        }
+
         async Task FinishTurnAsync()
         {
             await StopTypeAheadAsync().ConfigureAwait(false);
@@ -2058,6 +2156,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 presetUpdate.Version,
                 idempotencyKey);
             var presetCommitted = false;
+            var assistantPayloadRefs = new List<string>();
 
             try
             {
@@ -2196,6 +2295,26 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                             }
                         }
 
+                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"model.step_completed\"", StringComparison.Ordinal))
+                        {
+                            // Remember every step's durable assistant payload so a lost
+                            // delta tail can be recovered once the run finishes.
+                            try
+                            {
+                                var stepEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                                if (stepEnvelope is { EventType: "model.step_completed" }
+                                    && !string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
+                                {
+                                    assistantPayloadRefs.Add(stepEnvelope.PayloadRef);
+                                }
+                            }
+                            catch (System.Text.Json.JsonException)
+                            {
+                                // Non-conforming frame payload; the recovery falls back to
+                                // whatever steps were already recorded.
+                            }
+                        }
+
                         if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"total_tokens\"", StringComparison.Ordinal))
                         {
                             try
@@ -2217,6 +2336,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 }
                 await StreamRunEventsResumedAsync(resp.RunId, OnFrameAsync, turnCts.Token).ConfigureAwait(false);
                 sessionRenderer.Flush();
+                await RecoverMissingAssistantTextAsync(resp.RunId, assistantPayloadRefs, turnCts.Token).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
             }

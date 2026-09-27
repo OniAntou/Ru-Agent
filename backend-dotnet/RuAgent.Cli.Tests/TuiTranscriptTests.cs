@@ -212,6 +212,32 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void Streamed_assistant_text_records_the_raw_deltas_for_gap_detection()
+    {
+        // The live hub has no replay buffer, so deltas published before the client
+        // subscribes are gone. The raw text actually received is what a gap check has to
+        // compare the run's durable assistant payload against.
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("or the web, and more");
+
+        Assert.Equal("or the web, and more", transcript.StreamedAssistantText);
+    }
+
+    [Fact]
+    public void Streamed_assistant_text_starts_empty_and_resets_each_turn()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("first turn");
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        transcript.BeginTurn();
+
+        Assert.Equal(string.Empty, transcript.StreamedAssistantText);
+    }
+
+    [Fact]
     public void Real_short_reply_from_the_host_renders_completely()
     {
         // The exact 162-character answer the host persisted, em dash and all. Three or four

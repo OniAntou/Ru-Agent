@@ -212,6 +212,42 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void Real_short_reply_from_the_host_renders_completely()
+    {
+        // The exact 162-character answer the host persisted, em dash and all. Three or four
+        // wrapped lines cannot overflow a transcript area, so a turn that renders nothing at
+        // all is not the lost-head scroll bug. If this passes, the loss is downstream of the
+        // transcript: the pinned-footer paint, which a StringWriter cannot show because it
+        // has no screen, no scrollback and no cursor.
+        const string answer =
+            "Hi! I'm ready to help you with your workspace — reading and editing files, "
+            + "running commands, searching the web, or planning out a task. What would you "
+            + "like to do?";
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+
+        foreach (var piece in Chunk(answer, 11))
+        {
+            transcript.AppendAssistant(piece);
+        }
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var text = TuiText.Strip(string.Join(" ", Rows(output)));
+        Assert.Contains("Hi! I'm ready to help you with your workspace", text, StringComparison.Ordinal);
+        Assert.Contains("What would you like to do?", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("no text arrived", text, StringComparison.Ordinal);
+    }
+
+    private static IEnumerable<string> Chunk(string text, int size)
+    {
+        for (var offset = 0; offset < text.Length; offset += size)
+        {
+            yield return text.Substring(offset, Math.Min(size, text.Length - offset));
+        }
+    }
+
+    [Fact]
     public void Completed_turn_with_no_text_and_no_tools_says_so_instead_of_ending_silent()
     {
         // A finished run that delivered nothing used to leave only "✓ idle · 10.6s",

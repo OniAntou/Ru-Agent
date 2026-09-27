@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using RuApp.Models;
+using RuApp.Services;
 using Windows.UI;
 
 namespace RuApp.Controls
@@ -95,7 +96,7 @@ namespace RuApp.Controls
 
             var rootBorder = new Border
             {
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = UiCornerRadius.Card,
                 BorderThickness = new Thickness(1),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Background = GetThemeBrush("RuSurfaceBrush", FallbackSurfaceBrush),

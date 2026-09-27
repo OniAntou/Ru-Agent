@@ -60,10 +60,10 @@
                             Background="{StaticResource RuCanvasBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
                             BorderThickness="1"
-                            CornerRadius="12"
+                            CornerRadius="{StaticResource AppCardCornerRadius}"
                             Padding="4">
                         <StackPanel Background="{StaticResource RuSurfaceBrush}"
-                                    CornerRadius="8"
+                                    CornerRadius="{StaticResource AppInsetCornerRadius}"
                                     Padding="12"
                                     Spacing="2">
                             <TextBlock Text="Billed"
@@ -89,10 +89,10 @@
                             Background="{StaticResource RuCanvasBrush}"
                             BorderBrush="{StaticResource RuLineBrush}"
                             BorderThickness="1"
-                            CornerRadius="12"
+                            CornerRadius="{StaticResource AppCardCornerRadius}"
                             Padding="4">
                         <StackPanel Background="{StaticResource RuSurfaceBrush}"
-                                    CornerRadius="8"
+                                    CornerRadius="{StaticResource AppInsetCornerRadius}"
                                     Padding="12"
                                     Spacing="2">
                             <TextBlock Text="Peak context"

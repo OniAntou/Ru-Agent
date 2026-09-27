@@ -139,7 +139,7 @@ namespace RuApp.Controls
                 var segment = new Border
                 {
                     Background = ThemeBrush(brushKey),
-                    CornerRadius = new CornerRadius(3),
+                    CornerRadius = UiCornerRadius.MicroPill,
                 };
                 Grid.SetColumn(segment, ShareBarGrid.ColumnDefinitions.Count - 1);
                 ShareBarGrid.Children.Add(segment);
@@ -175,7 +175,7 @@ namespace RuApp.Controls
             var track = new Border
             {
                 Height = 6,
-                CornerRadius = new CornerRadius(3),
+                CornerRadius = UiCornerRadius.MicroPill,
                 Background = ThemeBrush("RuCanvasBrush"),
                 BorderBrush = ThemeBrush("RuLineBrush"),
                 BorderThickness = new Thickness(1),
@@ -188,7 +188,7 @@ namespace RuApp.Controls
                         {
                             HorizontalAlignment = HorizontalAlignment.Left,
                             Background = ThemeBrush("RuAccentBrush"),
-                            CornerRadius = new CornerRadius(3),
+                            CornerRadius = UiCornerRadius.MicroPill,
                             Width = TrackInnerWidth * SessionUsagePolicy.ShareOfPeak(
                                 row.Usage?.ResolvedTotal ?? 0, peak) / 100.0,
                         },

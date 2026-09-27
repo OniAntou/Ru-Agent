@@ -242,7 +242,6 @@
             <FontFamily x:Key="RuUiFontFamily">Segoe UI Variable</FontFamily>
             <FontFamily x:Key="RuDisplayFontFamily">Segoe UI Variable</FontFamily>
             <FontFamily x:Key="RuMonoFontFamily">Consolas</FontFamily>
-            <CornerRadius x:Key="RuControlCornerRadius">6</CornerRadius>
 
             <!-- Legacy resource names remain available to untouched views. -->
             <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="{ThemeResource RuSurfaceColor}" />
@@ -262,9 +261,19 @@
             <SolidColorBrush x:Key="AppDangerBrush" Color="{ThemeResource RuDangerColor}" />
             <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
 
-            <!-- CornerRadius Design Tokens: control 6, card 12, flyout/modal 14-16, pill 999 -->
-            <CornerRadius x:Key="AppCardCornerRadius">12</CornerRadius>
+            <!-- CornerRadius scale. One value per step, so two panels of the
+                 same kind never end up with different roundness:
+                   micro 3  - bars 6px tall, so 3 is a fully rounded end
+                   6        - controls, inputs, badges, chips
+                   inset 8  - a card nested one level inside another surface
+                   card 12  - standalone panels and cards
+                   flyout 14, modal 16 - the two floating layers
+                   pill 999 - anything that must read as a lozenge -->
+            <CornerRadius x:Key="AppMicroPillCornerRadius">3</CornerRadius>
             <CornerRadius x:Key="AppControlCornerRadius">6</CornerRadius>
+            <CornerRadius x:Key="AppInsetCornerRadius">8</CornerRadius>
+            <CornerRadius x:Key="AppCardCornerRadius">12</CornerRadius>
+            <CornerRadius x:Key="AppModalCornerRadius">16</CornerRadius>
             <CornerRadius x:Key="AppPillCornerRadius">999</CornerRadius>
             <CornerRadius x:Key="AppFlyoutCornerRadius">14</CornerRadius>
 
@@ -440,7 +449,7 @@
                 <Setter Property="FontWeight" Value="Medium" />
                 <Setter Property="Padding" Value="12,0" />
                 <Setter Property="MinHeight" Value="36" />
-                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
                 <Setter Property="Template">
@@ -512,7 +521,7 @@
                 <Setter Property="MinHeight" Value="26" />
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">

@@ -73,7 +73,9 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Navigation Sidebar -->
+            <!-- Navigation Sidebar. Asymmetric on purpose: the left edge is the
+                 window edge, so only the two corners that meet the content get
+                 the control radius. -->
             <Border Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0" CornerRadius="0,6,6,0">
                 <Border.Resources>
         <DataTemplate x:Key="WorkspaceSessionTemplate" x:DataType="models:SessionInfo">
@@ -148,7 +150,7 @@
                              not the one on screen. -->
                         <Button x:Name="SessionUsageButton" HorizontalAlignment="Right"
                                  Background="Transparent" BorderThickness="0" Padding="0"
-                                 Width="22" Height="22" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnSessionUsageClick"
+                                 Width="22" Height="22" CornerRadius="{StaticResource AppControlCornerRadius}" Click="OnSessionUsageClick"
                                  Tag="{x:Bind Id, Mode=OneTime}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
                                  ToolTipService.ToolTip="Session usage"
                                  AutomationProperties.Name="Session usage">
@@ -157,7 +159,7 @@
                         </Button>
                         <Button x:Name="SessionDeleteButton" HorizontalAlignment="Right"
                                  Background="Transparent" BorderThickness="0" Padding="0"
-                                 Width="22" Height="22" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
+                                 Width="22" Height="22" CornerRadius="{StaticResource AppControlCornerRadius}" Click="OnDeleteSessionClick"
                                  Tag="{x:Bind Id}" Opacity="0" IsHitTestVisible="False" IsTabStop="False"
                                  ToolTipService.ToolTip="Delete session"
                                  AutomationProperties.Name="Delete session">
@@ -278,7 +280,7 @@
                             <!-- New Chat Button -->
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
                                     Padding="10,8"
-                                    CornerRadius="{StaticResource RuControlCornerRadius}" HorizontalContentAlignment="Stretch"
+                                    CornerRadius="{StaticResource AppControlCornerRadius}" HorizontalContentAlignment="Stretch"
                                     Style="{StaticResource RuSecondaryButtonStyle}"
                                     AutomationProperties.AutomationId="NewSessionButton"
                                     AutomationProperties.Name="New Chat">
@@ -291,7 +293,7 @@
                             <!-- Navigation Tabs -->
                             <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch" Visibility="Collapsed"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                    Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                    Padding="10,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
                                     AutomationProperties.Name="Chat">
                                 <StackPanel x:Name="ContentChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconChat" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
@@ -340,7 +342,7 @@
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="MinHeight" Value="34" />
                                     <Setter Property="Padding" Value="0" />
-                                    <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                                    <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
                                     <Setter Property="Margin" Value="0,1" />
                                 </Style>
                             </ListView.ItemContainerStyle>
@@ -376,7 +378,7 @@
                                 Background="Transparent"
                                 Foreground="{StaticResource RuMutedBrush}"
                                 Padding="10,8"
-                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                CornerRadius="{StaticResource AppControlCornerRadius}"
                                 BorderBrush="Transparent"
                                 BorderThickness="0"
                                 HorizontalContentAlignment="Stretch"
@@ -398,7 +400,7 @@
 
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
                                 Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                Padding="10,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
                                 AutomationProperties.Name="Settings">
                             <StackPanel x:Name="ContentSettings" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                 <FontIcon x:Name="IconSettings" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
@@ -464,7 +466,7 @@
                     VerticalAlignment="Center"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderThickness="0"
-                    CornerRadius="16"
+                    CornerRadius="{StaticResource AppModalCornerRadius}"
                     Translation="0,0,16"
                     Shadow="{StaticResource RuRaisedShadow}"
                     PointerPressed="OnSettingsCardPointerPressed">
@@ -487,7 +489,7 @@
                             Padding="4"
                             Width="32"
                             Height="32"
-                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
                             AutomationProperties.Name="Close settings"
                             ToolTipService.ToolTip="Close (Esc)">
                         <FontIcon Glyph="&#xE711;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />
@@ -526,7 +528,7 @@
                     VerticalAlignment="Center"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderThickness="0"
-                    CornerRadius="16"
+                    CornerRadius="{StaticResource AppModalCornerRadius}"
                     Translation="0,0,16"
                     Shadow="{StaticResource RuRaisedShadow}"
                     PointerPressed="OnSessionUsageCardPointerPressed">
@@ -547,7 +549,7 @@
                             Padding="4"
                             Width="32"
                             Height="32"
-                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                            CornerRadius="{StaticResource AppControlCornerRadius}"
                             AutomationProperties.Name="Close session usage"
                             ToolTipService.ToolTip="Close (Esc)">
                         <FontIcon Glyph="&#xE711;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" />

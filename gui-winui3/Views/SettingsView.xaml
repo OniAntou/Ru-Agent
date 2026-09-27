@@ -596,14 +596,14 @@
                                                  ToolTipService.ToolTip="Cloudflare dashboard → Account ID (Workers AI)."
                                                  Width="150"
                                                  Height="36"
-                                                 CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                 CornerRadius="{StaticResource AppControlCornerRadius}"
                                                  Visibility="Collapsed" />
                                         <PasswordBox x:Name="ModelsDevApiKeyBox"
                                                      AutomationProperties.LabeledBy="{Binding ElementName=ModelsDevApiKeyLabel}"
                                                      PlaceholderText="sk-&#x2026;"
                                                      Width="260"
                                                      Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                                      PasswordRevealMode="Hidden"
                                                      PasswordChanged="OnModelsDevKeyPasswordChanged" />
                                     </StackPanel>
@@ -650,7 +650,7 @@
                                              PlaceholderText="http://localhost:8000/v1"
                                              Width="260"
                                              Height="36"
-                                             CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                             CornerRadius="{StaticResource AppControlCornerRadius}" />
                                 </Grid>
                             </StackPanel>
 
@@ -668,7 +668,7 @@
                                                      PlaceholderText="sk-&#x2026;"
                                                      Width="260"
                                                      Height="36"
-                                                     CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                     CornerRadius="{StaticResource AppControlCornerRadius}"
                                                      PasswordRevealMode="Hidden" />
                                         <Button x:Name="CustomSignOutButton"
                                                 Content="Đăng xuất"
@@ -677,7 +677,7 @@
                                                 Height="36"
                                                 MinWidth="96"
                                                 AutomationProperties.AutomationId="SignOutProviderCustom"
-                                                CornerRadius="{StaticResource RuControlCornerRadius}" />
+                                                CornerRadius="{StaticResource AppControlCornerRadius}" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>

@@ -42,7 +42,7 @@
         <Border Background="{StaticResource RuCanvasBrush}"
                 BorderBrush="{StaticResource RuLineBrush}"
                 BorderThickness="1"
-                CornerRadius="6"
+                CornerRadius="{StaticResource AppControlCornerRadius}"
                 Padding="10,6"
                 Margin="4,4,4,6">
             <Grid ColumnDefinitions="Auto,*">

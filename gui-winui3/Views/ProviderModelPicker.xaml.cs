@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using RuApp.Models;
+using RuApp.Services;
 
 namespace RuApp.Views
 {
@@ -251,7 +252,7 @@ namespace RuApp.Views
                     Background = _brushes.Surface,
                     BorderBrush = _brushes.Line,
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(3.5),
+                    CornerRadius = UiCornerRadius.MicroPill,
                     Padding = new Thickness(4.5, 1, 4.5, 1),
                     Margin = new Thickness(6, 0, row.IsSelected ? 5 : 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,

@@ -411,6 +411,7 @@ namespace RuApp
             var ink = (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
             var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
             var line = (SolidColorBrush)Application.Current.Resources["RuLineBrush"];
+            var navCorner = UiCornerRadius.Control;
 
             foreach (var button in new[] { NavChat, NavSettings })
             {
@@ -418,14 +419,14 @@ namespace RuApp
                 button.Foreground = muted;
                 button.BorderBrush = transparent;
                 button.BorderThickness = new Thickness(0);
-                button.CornerRadius = new CornerRadius(6);
+                button.CornerRadius = navCorner;
             }
 
             activeBtn.Background = surface;
             activeBtn.Foreground = ink;
             activeBtn.BorderBrush = line;
             activeBtn.BorderThickness = new Thickness(1);
-            activeBtn.CornerRadius = new CornerRadius(6);
+            activeBtn.CornerRadius = navCorner;
         }
 
         private void OnChatSessionOpened(object? sender, SessionOpenedEventArgs e)
@@ -1337,6 +1338,13 @@ namespace RuApp
             }
         }
 
+        /// <summary>
+        /// Collapsed-rail nav item: the icon alone, centred in a square tap target.
+        /// </summary>
+        /// <remarks>
+        /// Same corner as the expanded form. The two layouts are the same button at
+        /// two widths, so a rail item that rounded differently read as a second style.
+        /// </remarks>
         private static void ConfigureMiniButton(Button? btn, StackPanel? content, FontIcon? icon)
         {
             if (btn == null) return;
@@ -1346,7 +1354,7 @@ namespace RuApp
             btn.HorizontalAlignment = HorizontalAlignment.Center;
             btn.HorizontalContentAlignment = HorizontalAlignment.Center;
             btn.VerticalContentAlignment = VerticalAlignment.Center;
-            btn.CornerRadius = new CornerRadius(8);
+            btn.CornerRadius = UiCornerRadius.Control;
             if (content != null)
             {
                 content.HorizontalAlignment = HorizontalAlignment.Center;
@@ -1369,7 +1377,7 @@ namespace RuApp
             btn.HorizontalAlignment = HorizontalAlignment.Stretch;
             btn.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             btn.VerticalContentAlignment = VerticalAlignment.Center;
-            btn.CornerRadius = new CornerRadius(6);
+            btn.CornerRadius = UiCornerRadius.Control;
             if (content != null)
             {
                 content.HorizontalAlignment = HorizontalAlignment.Left;

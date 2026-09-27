@@ -904,7 +904,8 @@ namespace RuApp.Views
                 return;
             }
 
-            InputBorder.CornerRadius = new CornerRadius(0, 0, 12, 12);
+            var card = UiCornerRadius.Card;
+            InputBorder.CornerRadius = new CornerRadius(0, 0, card.BottomRight, card.BottomRight);
         }
 
         /// <summary>
@@ -918,11 +919,7 @@ namespace RuApp.Views
             }
 
             InputBorder.BorderThickness = new Thickness(0);
-            if (Application.Current?.Resources.TryGetValue("AppCardCornerRadius", out var radius) == true
-                && radius is CornerRadius cornerRadius)
-            {
-                InputBorder.CornerRadius = cornerRadius;
-            }
+            InputBorder.CornerRadius = UiCornerRadius.Card;
         }
 
         /// <summary>

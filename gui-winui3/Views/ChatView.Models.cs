@@ -368,7 +368,7 @@ namespace RuApp.Views
             var ink = (Brush)resources["RuInkBrush"];
             var accent = (Brush)resources["RuAccentBrush"];
             var canvas = (Brush)resources["RuCanvasBrush"];
-            var corner = (CornerRadius)resources["RuControlCornerRadius"];
+            var corner = (CornerRadius)resources["AppControlCornerRadius"];
 
             foreach (var option in options)
             {

@@ -588,6 +588,90 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Explicit_deny_rule_denies_an_external_file_under_full_access()
+    {
+        // A user-authored deny over a path outside the workspace must be honoured.
+        // full_access allows external structured files by default, so evaluating
+        // the profile before the ordered rules turned this deny into an allow.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessWith(
+            PolicyEvalSnapshots.Rule(
+                "r-deny-client-secrets",
+                "deny",
+                PolicyEvalSnapshots.Matcher(toolId: "read", pathPattern: @"C:\ClientSecrets\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\ClientSecrets\layout.docx" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("rule_denied", evaluation.ReasonCode);
+        Assert.Equal("r-deny-client-secrets", evaluation.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Explicit_deny_rule_downgrades_the_external_file_ask_under_standard()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-deny-client-secrets",
+                "deny",
+                PolicyEvalSnapshots.Matcher(toolId: "read", pathPattern: @"C:\ClientSecrets\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\ClientSecrets\layout.docx" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("rule_denied", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Explicit_allow_rule_does_not_bypass_the_external_directory_ask()
+    {
+        // The counterweight to the two tests above: hoisting the rule loop must not
+        // let an allow rule grant external access the profile would have asked for.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-allow-reads",
+                "allow",
+                PolicyEvalSnapshots.Matcher(toolId: "read", pathPattern: @"C:\ClientSecrets\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\ClientSecrets\layout.docx" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal("external_directory_required", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void The_last_matching_rule_still_decides_an_external_file()
+    {
+        // Last-match-wins is the snapshot contract. Hoisting the deny check must
+        // not turn a later allow into a deny.
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-deny-client-secrets",
+                "deny",
+                PolicyEvalSnapshots.Matcher(toolId: "read", pathPattern: @"C:\ClientSecrets\**")),
+            PolicyEvalSnapshots.Rule(
+                "r-allow-client-secrets",
+                "allow",
+                PolicyEvalSnapshots.Matcher(toolId: "read", pathPattern: @"C:\ClientSecrets\**"))));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("read", "1.0.0", new JsonObject { ["path"] = @"C:\ClientSecrets\layout.docx" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal("external_directory_required", evaluation.ReasonCode);
+    }
+
+    [Fact]
     public void Malformed_calls_carry_a_repair_hint()
     {
         var (_, factory) = Bind(PolicyEvalSnapshots.Empty());
@@ -1356,6 +1440,9 @@ internal static class PolicyEvalSnapshots
     public static BrokerPolicySnapshotWire Empty(string preset = "standard") => Snapshot(1, preset, []);
 
     public static BrokerPolicySnapshotWire FullAccessEmpty(long version = 1) => Snapshot(version, "full_access", []);
+
+    public static BrokerPolicySnapshotWire FullAccessWith(params BrokerPolicyRuleWire[] rules) =>
+        Snapshot(1, "full_access", rules);
 
     public static BrokerPolicySnapshotWire SnapshotWith(params BrokerPolicyRuleWire[] rules) =>
         Snapshot(1, "standard", rules);

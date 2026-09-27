@@ -135,6 +135,26 @@ public sealed class PolicySnapshotEvaluator
             return Deny("protected_path");
         }
 
+        // The ordered rules are resolved before the external-directory gate so a
+        // user-authored deny wins on every target, including one outside the
+        // workspace. Only the deny verdict is taken from them here: an allow or
+        // ask rule still cannot grant the external access the profile asks for.
+        string? matchedDecision = null;
+        string? matchedRuleId = null;
+        foreach (var rule in snapshot.OrderedRules)
+        {
+            if (PolicyRuleMatcher.Matches(rule, context, now))
+            {
+                matchedDecision = rule.Decision;
+                matchedRuleId = rule.RuleId;
+            }
+        }
+
+        if (string.Equals(matchedDecision, "deny", StringComparison.Ordinal))
+        {
+            return Deny("rule_denied", matchedRuleId);
+        }
+
         if (structuredTarget is { IsOutsideWorkspace: true })
         {
             var external = ProfileDecision(
@@ -150,26 +170,8 @@ public sealed class PolicySnapshotEvaluator
             return external;
         }
 
-        string? matchedDecision = null;
-        string? matchedRuleId = null;
-        foreach (var rule in snapshot.OrderedRules)
-        {
-            if (PolicyRuleMatcher.Matches(rule, context, now))
-            {
-                matchedDecision = rule.Decision;
-                matchedRuleId = rule.RuleId;
-            }
-        }
-
         if (matchedDecision is not null)
         {
-            // Explicit deny wins on every preset, including plan: the plan
-            // gate below only downgrades allows to asks, never denies.
-            if (string.Equals(matchedDecision, "deny", StringComparison.Ordinal))
-            {
-                return Deny("rule_denied", matchedRuleId);
-            }
-
             // plan is a read-only gate: every mutation asks, nothing auto-allows.
             if (IsPlanPreset(snapshot) && IsPlanGatedCall(context))
             {

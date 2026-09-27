@@ -1,3 +1,7 @@
+---
+status: pending
+---
+
 # Plan: gửi ảnh từ GUI qua TUI (`/attach` + paste)
 
 Ngày: 2026-09-24. Baseline: `35668884` (62 commit sau `d3c6cce0`).

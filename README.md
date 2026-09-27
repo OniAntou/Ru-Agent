@@ -10,7 +10,7 @@ Manager and your project never leaves your disk.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-4%2C4472%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-4%2C481%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -57,6 +57,13 @@ Selecting `full_access` never implies workspace trust.
 Full Access also requires an explicit gate. The GUI keeps its confirmation
 dialog; CLI `run` and `chat` require `--confirm-full-access` before changing
 session state. `--json` is accepted only with that explicit CLI confirmation.
+
+Be precise about what that gate is. The Host enforces it from the
+`X-Interactive-Confirmed` request header, so it is a **guardrail against
+accidental escalation**, not a security boundary against code already running as
+your user: anything that can read `%LOCALAPPDATA%\Ru\runtime_descriptor.json`
+can set that header. The actual boundary is the bearer token in an owner-only
+descriptor. Every preset change is recorded in the activity log.
 
 Approvals remain exact-intent and single-use. The current reasons include
 `external_directory_required`, `terminal_delete_requires_approval`,
@@ -116,7 +123,7 @@ model, open a project folder, and start chatting.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,472 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,481 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

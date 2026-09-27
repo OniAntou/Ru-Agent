@@ -4,9 +4,11 @@ This directory contains only current operating documentation and accepted
 architecture decisions. Completed implementation plans and design drafts are
 kept in Git history instead of the working tree.
 
-`docs/superpowers/plans/` and `docs/superpowers/specs/` are kept empty by the
-`test_completed_implementation_archives_are_not_kept_in_the_checkout` guard:
-completed plans must be removed from the checkout rather than archived here.
+A plan may sit in the working tree only while it is still open, and it must say
+so with a `status: pending` marker. `test_completed_implementation_archives_are_
+not_kept_in_the_checkout` enforces that for `docs/superpowers/plans/`,
+`docs/superpowers/specs/` and `docs/plans/`, so an unlabelled draft cannot sit
+in the checkout indefinitely.
 
 ## Current system
 
@@ -43,6 +45,10 @@ completed plans must be removed from the checkout rather than archived here.
 - [Model autonomy and workspace trust boundary](adr/0011-model-autonomy-and-workspace-trust-boundary.md)
 
 Git history is the recovery source for removed dated plans and specifications.
+
+## Open plans
+
+- [TUI image attachments](plans/tui-image-attachments.md) — `status: pending`
 
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles from `RuAgent.Protocol`: `plan` allows workspace read and

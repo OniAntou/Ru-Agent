@@ -30,6 +30,14 @@ __pycache__/
 /pip-cache/
 data/processed/
 data/conversations/
+
+# Local residue from the 2026-09-13 media/local-model teardown. The code, routes
+# and packages are gone, but these paths still exist on developer machines, so the
+# rules are still load-bearing. Delete the residue and the rules together.
+/models/
+/eval_results/
+/logs/
+*.db
 data/gui_settings.json
 data/voices/
 data/gui_diagnose_*/
@@ -37,14 +45,12 @@ data/gwen/
 data/memory.db
 data/memory.db-wal
 data/memory.db-shm
-/models/
-/eval_results/
+data/evaluations/
 /VBCABLE_Setup/
-/logs/
-vts_token.txt
 /.minigpt/
 /pytest_v.log
 /f5.log
+vts_token.txt
 
 # Misc
 rustup-init.exe
@@ -53,8 +59,6 @@ rustup-init.exe
 # Scratch/verification artifacts (root-only: a same-named source file deeper in
 # the tree must never be silently untracked)
 /artifacts/
-data/evaluations/
-*.db
 /resources.pri.xml
 *.lnk
 /test_settings.json

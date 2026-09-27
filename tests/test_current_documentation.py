@@ -94,6 +94,16 @@ def test_adrs_have_status_date_and_a_title_without_freezing_their_count() -> Non
 def test_completed_implementation_archives_are_not_kept_in_the_checkout() -> None:
     assert not tuple((ROOT / "docs/superpowers/plans").glob("*.md"))
     assert not tuple((ROOT / "docs/superpowers/specs").glob("*.md"))
+    # A plan may sit in the working tree only while it is still open, and it has to
+    # say so: an unlabelled plan is indistinguishable from a finished one, which is
+    # how a stale 40-commit-old draft survives in the checkout forever.
+    for plan in (ROOT / "docs/plans").glob("*.md"):
+        text = plan.read_text(encoding="utf-8")
+        status = re.search(r"(?m)^status:\s*(\S+)", text)
+        assert status, f"{plan.name} has no status: marker"
+        assert status[1] not in {"completed", "complete", "done"}, (
+            f"{plan.name} is {status[1]}; completed plans belong in Git history"
+        )
 
 
 def test_current_docs_describe_session_scoped_agent_permissions() -> None:

@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **fix(backend,providers)**: **Reasoning effort chọn được trong picker thay vì chỉ có `default`.** `ProviderCatalogParser` chỉ bật reasoning khi provider tự trả `supported_parameters` + `reasoning_efforts`; OpenRouter trả bare ids, nên cả **458/458 model** rơi về `unknown` và dropdown chỉ còn một mục — không chọn được gì. Models.dev vẫn publish `reasoning_options` cho phần lớn model (264/384 của openrouter), nên parse bỏ rơi đúng phần dữ liệu đó.
+
+  Host giờ đọc `reasoning_options` từ catalog models.dev và điền vào **những model mà provider để ở `unknown`**. Đo trên app thật (`models.dev:openrouter`): `unknown=458, levels=0` → `unknown=322, levels=136`.
+
+  **Không suy diễn**: đây là declaration của chính provider, không phải giá trị đoán từ tên model. Chỉ nhận `effort` list tường minh — toggle-only, `reasoning_options: []` (models.dev publish vậy cho `deepseek-r1`) và thiếu field đều giữ `unknown` không có option. Values lọc qua đúng 7 giá trị `ProviderRequestOptionsValidator` chấp nhận nên picker không thể hiện effort mà runtime sẽ từ chối. Level provider tự khai không bị ghi đè, backend không phải models.dev thì không đụng.
+
+  Contract docs `operations/provider-catalog.md` cập nhật tương ứng, nói rõ điều gì đổi. Model không có level khai báo vẫn chỉ hiện `default` — đó là đúng, không phải hỏng.
+
+  **Rủi ro còn lại, nói thẳng**: models.dev là registry khai báo, không bảo chứng API thật chấp nhận đúng mọi level. Nếu người dùng chọn effort provider từ chối thì lỗi runtime; chưa có bắt lỗi nào map riêng cho trường hợp đó.
+
+
 - **fix(gui)**: **Sửa lỗi làm trống toàn bộ vùng chat — lỗi do đợt sửa trước gây ra.** `PickerItemButtonStyle` được khai báo trong `ProviderModelPicker.xaml` `<UserControl.Resources>`, **không** có trong `App.xaml`. Đợt tối ưu trước gom palette vào record `PickerBrushes` và tra key này từ `Application.Current.Resources`, đặt luôn làm field initializer, nên lúc construct control là `KeyNotFoundException` → `ChatView` fail load → vùng chat trống trong khi sidebar vẫn render (sidebar thuộc `MainWindow`, không thuộc `ChatView`).
 
   `PickerBrushes.Resolve` nay nhận `ResourceDictionary` của control và đọc style từ đó; palette vẫn tra ở `Application.Current` vì các key `Ru*` thật sự nằm ở `App.xaml`. Khởi tạo sau `InitializeComponent()`.

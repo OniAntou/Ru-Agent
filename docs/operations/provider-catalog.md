@@ -113,6 +113,16 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   `thinking: {type:adaptive, display:omitted}` + `output_config: {effort}`.
 - An explicit `reasoning_efforts` enum plus a declared `reasoning_effort`
   supported parameter enables that Chat Completions mapping.
+- A provider's own `/models` frequently publishes no reasoning metadata at all
+  (OpenRouter returns bare ids). For a `models.dev:<id>` backend the Host then
+  fills the levels from `reasoning_options` in the Models.dev catalog, which is
+  the provider's own published declaration, not a value inferred from a model
+  name. Only an explicit effort list is taken: a toggle-only entry, an empty
+  list (Models.dev publishes that for `deepseek-r1`) and a missing field all
+  stay `unknown` with no options, and published levels are filtered to the seven
+  values `ProviderRequestOptionsValidator` accepts so the picker cannot offer an
+  effort the runtime would reject. A level the provider declared itself is never
+  overwritten, and a non-Models.dev backend is never given these levels.
 - Bare model IDs and generic reasoning flags do not verify adjustable levels.
   Unknown IDs are retained as unsupported (`Supported=false`) and omitted from
   selectable `Models`; they are never called to discover capability.

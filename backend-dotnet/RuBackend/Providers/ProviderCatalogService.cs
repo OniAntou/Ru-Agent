@@ -8,7 +8,12 @@ using RuBackend.Business.Settings;
 namespace RuBackend.Providers;
 
 /// <summary>One Models.dev provider entry: generic chat_completions base URL.</summary>
-public sealed record ModelsDevProvider(string Id, string Name, string BaseUrl, IReadOnlyList<string> Models);
+public sealed record ModelsDevProvider(
+    string Id,
+    string Name,
+    string BaseUrl,
+    IReadOnlyList<string> Models,
+    IReadOnlyDictionary<string, CatalogReasoning>? Reasoning = null);
 
 /// <summary>Bounded Host-owned catalog cache. No provider/key/protocol fallback.</summary>
 public sealed class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
@@ -24,6 +29,20 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     // always be produced by a proxy that whitelists exactly what the caller asks
     // for, so it must never overwrite 24h of good data.
     private const int MinimumModelsDevProviders = 50;
+
+    /// <summary>The only reasoning states the picker knows how to present.</summary>
+    private static class CatalogReasoningStates
+    {
+        public const string Levels = "levels";
+        public const string Unknown = "unknown";
+    }
+
+    /// <summary>
+    /// The same seven values ProviderRequestOptionsValidator accepts, so a level
+    /// that reaches the picker can also be sent to the provider.
+    /// </summary>
+    private static readonly HashSet<string> AllowedEffortLevels =
+        new(["none", "minimal", "low", "medium", "high", "xhigh", "max"], StringComparer.Ordinal);
     private readonly string _modelsDevCacheFile = modelsDevCacheFile
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ru", "models-dev.json");
     private readonly SemaphoreSlim _modelsDevGate = new(1, 1);
@@ -209,7 +228,12 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 // to it, so authority-only would 404 most providers.
                 // The models map is kept for override providers whose own
                 // list endpoint is not OpenAI-shaped (Cloudflare answers 405).
-                result.Add(new ModelsDevProvider(property.Name, name, uri.AbsoluteUri.TrimEnd('/'), ReadModelIds(property.Value)));
+                result.Add(new ModelsDevProvider(
+                    property.Name,
+                    name,
+                    uri.AbsoluteUri.TrimEnd('/'),
+                    ReadModelIds(property.Value),
+                    ReadModelReasoning(property.Value)));
             }
         }
 
@@ -241,8 +265,144 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         return ids;
     }
 
-    private bool TryReadModelsDevCache(out IReadOnlyList<ModelsDevProvider> providers, out bool fresh)
+    /// <summary>
+    /// Reasoning effort levels a Models.dev provider published for its own models.
+    /// </summary>
+    /// <remarks>
+    /// A provider's own <c>GET {base}/models</c> often carries no reasoning metadata at
+    /// all: OpenRouter returns bare ids, so the picker collapsed to a single
+    /// "default" entry and nothing was selectable. Models.dev does publish it, as
+    /// reasoning_options, and that is the provider's own declaration rather than
+    /// anything inferred from a model name.
+    ///
+    /// Only an explicit effort list is taken. A toggle-only entry, an empty list
+    /// (models.dev publishes that for deepseek-r1) and a missing field all leave the
+    /// model at "unknown" with no options, so nothing is offered that was never
+    /// declared. Values are filtered to the same seven the Worker accepts, so the
+    /// picker cannot offer an effort the runtime would reject.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, CatalogReasoning> ReadModelReasoning(JsonElement entry)
     {
+        var reasoning = new Dictionary<string, CatalogReasoning>(StringComparer.OrdinalIgnoreCase);
+
+        if (entry.ValueKind != JsonValueKind.Object
+            || !entry.TryGetProperty("models", out var models)
+            || models.ValueKind != JsonValueKind.Object)
+        {
+            return reasoning;
+        }
+
+        foreach (var model in models.EnumerateObject())
+        {
+            var id = model.Name?.Trim() ?? string.Empty;
+            if (id.Length is 0 or > 256 || id.Any(char.IsControl)) continue;
+
+            var options = ReadEffortLevels(model.Value);
+            reasoning[id] = options.Count > 0
+                ? new CatalogReasoning(CatalogReasoningStates.Levels, options)
+                : new CatalogReasoning(CatalogReasoningStates.Unknown, []);
+
+            if (reasoning.Count >= 5000) break;
+        }
+
+        return reasoning;
+    }
+
+    private static IReadOnlyList<string> ReadEffortLevels(JsonElement model)
+    {
+        if (model.ValueKind != JsonValueKind.Object
+            || !model.TryGetProperty("reasoning_options", out var declared)
+            || declared.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var levels = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var option in declared.EnumerateArray())
+        {
+            if (option.ValueKind != JsonValueKind.Object
+                || !option.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String
+                || !string.Equals(type.GetString(), "effort", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!option.TryGetProperty("values", out var values) || values.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var value in values.EnumerateArray())
+            {
+                if (value.ValueKind != JsonValueKind.String || value.GetString() is not { } effort) continue;
+                if (effort.Length is 0 or > 32 || effort.Any(char.IsControl)) continue;
+                if (!AllowedEffortLevels.Contains(effort)) continue;
+                if (seen.Add(effort)) levels.Add(effort);
+                if (levels.Count >= 16) return levels;
+            }
+        }
+
+        return levels;
+    }
+
+    /// <summary>
+    /// Fills in reasoning levels a Models.dev provider published but its own
+    /// <c>/models</c> response did not carry.
+    /// </summary>
+    /// <remarks>
+    /// Only models the provider left at "unknown" are touched. A level the provider
+    /// declared itself wins outright, and a model with no published levels keeps
+    /// "unknown" so the picker offers nothing for it.
+    ///
+    /// A Models.dev catalog that cannot be read leaves the models exactly as
+    /// parsed: the levels are an addition, never a requirement, and there is no
+    /// fallback that would invent them.
+    /// </remarks>
+    private async Task<IReadOnlyList<CatalogModel>> ApplyModelsDevReasoningAsync(
+        ProviderSelection selection,
+        IReadOnlyList<CatalogModel> models,
+        CancellationToken ct)
+    {
+        if (!selection.IsModelsDev || selection.Backend.Length <= "models.dev:".Length) return models;
+
+        string providerId = selection.Backend["models.dev:".Length..];
+        IReadOnlyList<ModelsDevProvider> providers;
+        try
+        {
+            providers = await GetModelsDevAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is ProviderCatalogException or HttpRequestException
+            or OperationCanceledException or IOException)
+        {
+            return models;
+        }
+
+        var reasoning = providers
+            .FirstOrDefault(provider => string.Equals(provider.Id, providerId, StringComparison.OrdinalIgnoreCase))
+            ?.Reasoning;
+        if (reasoning is null || reasoning.Count == 0) return models;
+
+        var rewritten = new List<CatalogModel>(models.Count);
+        for (int i = 0; i < models.Count; i++)
+        {
+            var model = models[i];
+            if (string.Equals(model.Reasoning.State, CatalogReasoningStates.Unknown, StringComparison.Ordinal)
+                && reasoning.TryGetValue(model.Id, out var published)
+                && published.Options.Count > 0)
+            {
+                model = model with { Reasoning = published };
+            }
+
+            rewritten.Add(model);
+        }
+
+        return rewritten;
+    }
+
+    private bool TryReadModelsDevCache(out IReadOnlyList<ModelsDevProvider> providers, out bool fresh)    {
         providers = [];
         fresh = false;
         string text;
@@ -458,6 +618,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 }
 
                 var models = ProviderCatalogParser.Parse(selection.Backend, new UTF8Encoding(false, true).GetString(memory.ToArray()));
+                models = await ApplyModelsDevReasoningAsync(selection, models, ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 await _gate.WaitAsync(ct).ConfigureAwait(false);
                 try

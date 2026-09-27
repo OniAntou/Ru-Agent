@@ -1303,7 +1303,10 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             }
         }
 
-        string backendName = "OpenAI";
+        // The TUI header reports the provider the run is using. When settings cannot
+        // be read the header says so rather than naming a provider the run never
+        // picked: a substituted value here is indistinguishable from a real one.
+        string? backendName = null;
         string activeModel = string.Empty;
         string reasoningEffort = string.Empty;
         try
@@ -1322,8 +1325,8 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         {
             var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
             backendName = settings.TryGetProperty("backend", out var b) && !string.IsNullOrWhiteSpace(b.GetString())
-                ? b.GetString()!
-                : backendName;
+                ? b.GetString()
+                : null;
             activeModel = backendName switch
             {
                 "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
@@ -1334,8 +1337,10 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (Exception)
         {
-            // Settings backend unreachable; header falls back to startup values below.
+            // Settings backend unreachable; the header reports it as unknown.
         }
+
+        backendName ??= "(provider unknown)";
 
         if (_out == Console.Out && !Console.IsOutputRedirected)
         {

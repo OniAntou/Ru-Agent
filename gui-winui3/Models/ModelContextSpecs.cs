@@ -58,17 +58,26 @@ namespace RuApp.Models
             return (131_072, "128K");
         }
 
+        /// <summary>Rough characters-per-token ratio used for the context meter.</summary>
+        private const double CharsPerToken = 3.5;
+
+        /// <summary>
+        /// Flat token charge per attached image. An estimate, not a measurement: the
+        /// meter exists to warn before a request is rejected, not to bill exactly.
+        /// </summary>
+        private const int TokensPerImage = 1000;
+
         public static int EstimateTokens(string? text)
         {
             if (string.IsNullOrEmpty(text)) return 0;
-            return Math.Max(1, (int)Math.Ceiling(text.Length / 3.5));
+            return Math.Max(1, (int)Math.Ceiling(text.Length / CharsPerToken));
         }
 
         public static int EstimateTokens(int charCount, int imageCount = 0)
         {
             if (charCount <= 0 && imageCount <= 0) return 0;
-            int textTokens = charCount > 0 ? Math.Max(1, (int)Math.Ceiling(charCount / 3.5)) : 0;
-            return textTokens + (imageCount * 1000);
+            int textTokens = charCount > 0 ? Math.Max(1, (int)Math.Ceiling(charCount / CharsPerToken)) : 0;
+            return textTokens + (imageCount * TokensPerImage);
         }
 
         public static string FormatTokens(int tokens)

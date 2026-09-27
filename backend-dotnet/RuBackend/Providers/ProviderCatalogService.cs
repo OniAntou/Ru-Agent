@@ -14,7 +14,8 @@ public sealed record ModelsDevProvider(
     string Name,
     string BaseUrl,
     IReadOnlyList<string> Models,
-    IReadOnlyDictionary<string, CatalogReasoning>? Reasoning = null);
+    IReadOnlyDictionary<string, CatalogReasoning>? Reasoning = null,
+    IReadOnlyDictionary<string, CatalogCost>? Costs = null);
 
 /// <summary>Bounded Host-owned catalog cache. No provider/key/protocol fallback.</summary>
 public sealed class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
@@ -257,7 +258,8 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                     name,
                     uri.AbsoluteUri.TrimEnd('/'),
                     ReadModelIds(property.Value),
-                    ReadModelReasoning(property.Value)));
+                    ReadModelReasoning(property.Value),
+                    ReadModelCosts(property.Value)));
             }
         }
 
@@ -288,6 +290,81 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
 
         return ids;
     }
+
+    /// <summary>
+    /// Published prices for a Models.dev provider's own models, keyed by model id.
+    /// </summary>
+    /// <remarks>
+    /// Models.dev quotes US dollars per million tokens, flat. Two published fields are
+    /// deliberately ignored: <c>tiers</c> and <c>context_over_200k</c> both raise the
+    /// price once a request passes a context threshold, and this service has no way to
+    /// know which side of that threshold a run fell on. Reading the base rate and
+    /// labelling it as the cost would understate a long request by a factor the caller
+    /// cannot see, so the base rate is what ships and the tiers stay unread.
+    ///
+    /// A model with no <c>cost</c> object is absent rather than zero: models.dev
+    /// publishes <c>{input:0, output:0}</c> for a model that is genuinely free, and a
+    /// free model must not read as an unknown one. A negative, non-finite or
+    /// non-numeric rate is dropped for the same reason a bad id is.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, CatalogCost> ReadModelCosts(JsonElement entry)
+    {
+        var costs = new Dictionary<string, CatalogCost>(StringComparer.OrdinalIgnoreCase);
+
+        if (entry.ValueKind != JsonValueKind.Object
+            || !entry.TryGetProperty("models", out var models)
+            || models.ValueKind != JsonValueKind.Object)
+        {
+            return costs;
+        }
+
+        foreach (var model in models.EnumerateObject())
+        {
+            var id = model.Name?.Trim() ?? string.Empty;
+            if (id.Length is 0 or > 256 || id.Any(char.IsControl)) continue;
+
+            if (ReadCost(model.Value) is { } cost)
+            {
+                costs[id] = cost;
+            }
+
+            if (costs.Count >= 5000) break;
+        }
+
+        return costs;
+    }
+
+    private static CatalogCost? ReadCost(JsonElement model)
+    {
+        if (model.ValueKind != JsonValueKind.Object
+            || !model.TryGetProperty("cost", out var node)
+            || node.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        // Both of the main rates are required: a partial quote cannot be turned into a
+        // total, and inventing the missing half would be a number nobody can audit.
+        if (Rate(node, "input") is not { } input || Rate(node, "output") is not { } output)
+        {
+            return null;
+        }
+
+        return new CatalogCost(input, output, Rate(node, "cache_read"), Rate(node, "cache_write"));
+    }
+
+    /// <summary>
+    /// One published rate, or null when it is absent or not a usable price. Zero is a
+    /// usable price and comes back as zero.
+    /// </summary>
+    private static double? Rate(JsonElement node, string name) =>
+        node.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.Number
+        && value.TryGetDouble(out var rate)
+        && double.IsFinite(rate)
+        && rate >= 0
+            ? rate
+            : null;
 
     /// <summary>
     /// Reasoning effort levels a Models.dev provider published for its own models.
@@ -390,10 +467,10 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     /// "Invalid settings payload" and the button snapped back to "default".
     ///
     /// A Models.dev catalog that cannot be read leaves the models exactly as
-    /// parsed: the levels are an addition, never a requirement, and there is no
-    /// fallback that would invent them.
+    /// parsed: the levels and the prices are additions, never requirements, and there
+    /// is no fallback that would invent them.
     /// </remarks>
-    private async Task<IReadOnlyList<CatalogModel>> ApplyModelsDevReasoningAsync(
+    private async Task<IReadOnlyList<CatalogModel>> ApplyModelsDevMetadataAsync(
         ProviderSelection selection,
         IReadOnlyList<CatalogModel> models,
         CancellationToken ct)
@@ -412,10 +489,16 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             return models;
         }
 
-        var reasoning = providers
-            .FirstOrDefault(provider => string.Equals(provider.Id, providerId, StringComparison.OrdinalIgnoreCase))
-            ?.Reasoning;
-        if (reasoning is null || reasoning.Count == 0) return models;
+        var provider = providers
+            .FirstOrDefault(entry => string.Equals(entry.Id, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null) return models;
+
+        var reasoning = provider.Reasoning;
+        var costs = provider.Costs;
+        if ((reasoning is null || reasoning.Count == 0) && (costs is null || costs.Count == 0))
+        {
+            return models;
+        }
 
         var rewritten = new List<CatalogModel>(models.Count);
         for (int i = 0; i < models.Count; i++)
@@ -423,6 +506,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
             var model = models[i];
             if (string.Equals(model.Reasoning.State, CatalogReasoningStates.Unknown, StringComparison.Ordinal)
                 && model.Supported
+                && reasoning is not null
                 && reasoning.TryGetValue(model.Id, out var published)
                 && published.Options.Count > 0)
             {
@@ -431,6 +515,15 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                     Reasoning = published,
                     WireOptions = BuildWireOptions(published.Options),
                 };
+            }
+
+            // The price is attached whatever the model is supported for. A model the
+            // host cannot call is never billed, and a price attached only to the
+            // supported ones would make the missing case indistinguishable from a model
+            // nobody has heard of.
+            if (model.Cost is null && costs is not null && costs.TryGetValue(model.Id, out var cost))
+            {
+                model = model with { Cost = cost };
             }
 
             rewritten.Add(model);
@@ -704,7 +797,7 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                 }
 
                 var models = ProviderCatalogParser.Parse(selection.Backend, new UTF8Encoding(false, true).GetString(memory.ToArray()));
-                models = await ApplyModelsDevReasoningAsync(selection, models, ct).ConfigureAwait(false);
+                models = await ApplyModelsDevMetadataAsync(selection, models, ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 await _gate.WaitAsync(ct).ConfigureAwait(false);
                 try

@@ -6,6 +6,12 @@ namespace RuAgent.Harness.Core;
 /// Provider-reported token counts for one model request. Null means that the
 /// provider did not report that field; numeric zero remains an exact value.
 /// </summary>
+/// <remarks>
+/// The model id travels with the counts because a session can switch models between
+/// runs, and a token count is only worth anything next to what that model charges.
+/// It is optional and written last so a payload recorded before this field existed
+/// still reads back, as a run whose price nobody can name.
+/// </remarks>
 public sealed record ModelUsage
 {
     public ModelUsage(
@@ -13,7 +19,8 @@ public sealed record ModelUsage
         int? outputTokens,
         int? totalTokens,
         int? cacheReadInputTokens,
-        int? cacheWriteInputTokens)
+        int? cacheWriteInputTokens,
+        string? model = null)
     {
         Validate(inputTokens, nameof(inputTokens));
         Validate(outputTokens, nameof(outputTokens));
@@ -34,6 +41,23 @@ public sealed record ModelUsage
         TotalTokens = totalTokens;
         CacheReadInputTokens = cacheReadInputTokens;
         CacheWriteInputTokens = cacheWriteInputTokens;
+        Model = Clean(model);
+    }
+
+    /// <summary>
+    /// A usable model name, or null. Bounded and control-char free so the field can be
+    /// written into a stored payload and looked up in a price table without either
+    /// side having to defend itself again.
+    /// </summary>
+    private static string? Clean(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
+        var trimmed = model.Trim();
+        return trimmed.Length <= 256 && !trimmed.Any(char.IsControl) ? trimmed : null;
     }
 
     public int? InputTokens { get; }
@@ -46,6 +70,12 @@ public sealed record ModelUsage
 
     public int? CacheWriteInputTokens { get; }
 
+    /// <summary>
+    /// The model this request billed, as the adapter sent it. Null when the run
+    /// predates this field or the adapter did not name a model.
+    /// </summary>
+    public string? Model { get; }
+
     public void WriteTo(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();
@@ -54,6 +84,11 @@ public sealed record ModelUsage
         WriteOptional(writer, "total_tokens", TotalTokens);
         WriteOptional(writer, "cache_read_input_tokens", CacheReadInputTokens);
         WriteOptional(writer, "cache_write_input_tokens", CacheWriteInputTokens);
+        if (Model is not null)
+        {
+            writer.WriteString("model", Model);
+        }
+
         writer.WriteEndObject();
     }
 
@@ -74,7 +109,8 @@ public sealed record ModelUsage
             ReadOptional(element, "output_tokens"),
             ReadOptional(element, "total_tokens"),
             ReadOptional(element, "cache_read_input_tokens"),
-            ReadOptional(element, "cache_write_input_tokens"));
+            ReadOptional(element, "cache_write_input_tokens"),
+            ReadModel(element));
         return usage;
     }
 
@@ -107,5 +143,21 @@ public sealed record ModelUsage
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Reads the model id. Anything that is not a short clean string is treated as
+    /// absent: a model name is never worth failing a usage payload over, and a name
+    /// the price table cannot match is the same as no name.
+    /// </summary>
+    private static string? ReadModel(JsonElement element)
+    {
+        if (!element.TryGetProperty("model", out var value) || value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var model = value.GetString()?.Trim();
+        return model is { Length: > 0 and <= 256 } && !model.Any(char.IsControl) ? model : null;
     }
 }

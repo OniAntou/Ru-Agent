@@ -37,6 +37,18 @@ public sealed class ProviderCatalogModel
     [JsonPropertyName("context_length")]
     public int? ContextLength { get; init; }
 
+    /// <summary>
+    /// What the provider publishes for a million tokens, in US dollars.
+    /// </summary>
+    /// <remarks>
+    /// Null means nobody published a price, which is not the same as a price of zero:
+    /// a free model publishes <c>{input: 0, output: 0}</c> and must read as free.
+    /// Only Models.dev publishes one, so a session's older runs on another backend
+    /// will often have no price to look up.
+    /// </remarks>
+    [JsonPropertyName("cost")]
+    public ProviderCatalogCost? Cost { get; init; }
+
     private ProviderReasoningCapabilities? _reasoning;
 
     [JsonPropertyName("reasoning")]
@@ -45,6 +57,29 @@ public sealed class ProviderCatalogModel
         get => _reasoning ?? new ProviderReasoningCapabilities();
         init => _reasoning = value;
     }
+}
+
+/// <summary>
+/// Published rates in US dollars per million tokens.
+/// </summary>
+/// <remarks>
+/// The two cache rates are nullable because a provider may price input and output
+/// while publishing nothing for cache at all. That is a different statement from
+/// publishing a cache rate of zero, so the two cannot collapse into one value.
+/// </remarks>
+public sealed class ProviderCatalogCost
+{
+    [JsonPropertyName("input")]
+    public double Input { get; init; }
+
+    [JsonPropertyName("output")]
+    public double Output { get; init; }
+
+    [JsonPropertyName("cache_read")]
+    public double? CacheRead { get; init; }
+
+    [JsonPropertyName("cache_write")]
+    public double? CacheWrite { get; init; }
 }
 
 public sealed class ProviderCatalogSnapshot

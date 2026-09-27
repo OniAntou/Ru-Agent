@@ -73,7 +73,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                                 ?? throw new ModelProviderException("malformed_payload", false);
                             var model = ReadString(messageData["model"]);
                             if (model is null || model != request.Model) throw new ModelProviderException("malformed_payload", false);
-                            usage = ReadUsage(messageData["usage"]);
+                            usage = ReadUsage(messageData["usage"], request.Model);
                             var content = ReadArray(messageData["content"]);
                             if (content is not null)
                                 foreach (var block in content)
@@ -156,7 +156,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
                             if (reason is null) throw new ModelProviderException("malformed_payload", false);
                             if (reason == "tool_use") throw new ModelProviderException("malformed_payload", false);
                             if (reason is not ("end_turn" or "stop_sequence" or "max_tokens")) throw new ModelProviderException("malformed_payload", false);
-                            usage = MergeUsage(usage, ReadUsage(data["usage"]));
+                            usage = MergeUsage(usage, ReadUsage(data["usage"], request.Model));
                             stopReason = reason == "max_tokens" ? "length" : "stop";
                             phase = Phase.GotDelta;
                             break;
@@ -202,7 +202,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
         throw new ModelProviderException("malformed_payload", false);
     }
 
-    private static ModelUsage? ReadUsage(JsonNode? node)
+    private static ModelUsage? ReadUsage(JsonNode? node, string? model)
     {
         if (node is null || node.GetValueKind() == JsonValueKind.Null)
             return null;
@@ -215,7 +215,7 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
         var cacheWrite = ReadOptionalInt(usage["cache_creation_input_tokens"]);
         if (input is null && output is null && cacheRead is null && cacheWrite is null)
             return null;
-        return new ModelUsage(input, output, null, cacheRead, cacheWrite);
+        return new ModelUsage(input, output, null, cacheRead, cacheWrite, model);
     }
 
     private static int? ReadOptionalInt(JsonNode? node)
@@ -236,7 +236,11 @@ public sealed class AnthropicMessagesModelProvider : IModelProvider
             second.OutputTokens ?? first.OutputTokens,
             second.TotalTokens ?? first.TotalTokens,
             second.CacheReadInputTokens ?? first.CacheReadInputTokens,
-            second.CacheWriteInputTokens ?? first.CacheWriteInputTokens);
+            second.CacheWriteInputTokens ?? first.CacheWriteInputTokens,
+            // A streamed request reports usage twice for one model, so both halves
+            // name the same one. Keeping the first that named it means a later chunk
+            // without the field cannot erase it.
+            first.Model ?? second.Model);
     }
 
     private static JsonObject? ReadObject(JsonNode? node)

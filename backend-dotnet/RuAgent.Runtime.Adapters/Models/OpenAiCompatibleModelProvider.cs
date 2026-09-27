@@ -94,7 +94,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                         throw new ModelProviderException("malformed_payload", retryable: false, error);
                     }
 
-                    var usage = ReadUsage(data["usage"]);
+                    var usage = ReadUsage(data["usage"], request.Model);
                     if (data["choices"] is not JsonArray choices)
                     {
                         throw new ModelProviderException("malformed_payload", retryable: false);
@@ -388,7 +388,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
     private static bool ReasoningRequested(JsonObject settings) =>
         settings.ContainsKey("reasoning_effort") || settings.ContainsKey("reasoning");
 
-    private static ModelUsage? ReadUsage(JsonNode? node)
+    private static ModelUsage? ReadUsage(JsonNode? node, string? model)
     {
         if (node is null || node.GetValueKind() == JsonValueKind.Null)
             return null;
@@ -406,7 +406,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                 : throw new ModelProviderException("malformed_payload", retryable: false);
         if (input is null && output is null && total is null && cached is null)
             return null;
-        return new ModelUsage(input, output, total, cached, null);
+        return new ModelUsage(input, output, total, cached, null, model);
     }
 
     private static int? ReadOptionalInt(JsonNode? node)

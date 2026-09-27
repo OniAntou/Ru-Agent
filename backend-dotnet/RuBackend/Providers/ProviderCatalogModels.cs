@@ -4,11 +4,34 @@ using System.Text.Json.Serialization;
 namespace RuBackend.Providers;
 
 public sealed record CatalogReasoning(string State, IReadOnlyList<string> Options);
+
+/// <summary>
+/// What a provider publishes for one million tokens, in US dollars.
+/// </summary>
+/// <remarks>
+/// A zero here is a real price — models.dev publishes <c>{input:0, output:0}</c> for
+/// a free model — so absent and zero are different answers and must not collapse into
+/// each other. <see cref="CacheRead"/> and <see cref="CacheWrite"/> are null when the
+/// provider publishes no rate for them at all, which is different again from publishing
+/// a rate of zero.
+/// </remarks>
+public sealed record CatalogCost(
+    double Input,
+    double Output,
+    double? CacheRead = null,
+    double? CacheWrite = null);
+
 public sealed record CatalogModel(string Id, bool Supported, string Protocol, CatalogReasoning Reasoning)
 {
     [JsonIgnore] public IReadOnlyDictionary<string, JsonObject> WireOptions { get; init; }
         = new Dictionary<string, JsonObject>();
     public int? ContextLength { get; init; }
+
+    /// <summary>
+    /// The published price, or null when nothing published one. Only Models.dev
+    /// supplies this; a provider's own <c>/models</c> list does not.
+    /// </summary>
+    public CatalogCost? Cost { get; init; }
 }
 
 public sealed record ProviderCatalogSnapshot(
@@ -50,6 +73,21 @@ public sealed record ProviderCatalogSnapshot(
             if (model.ContextLength.HasValue)
             {
                 node["context_length"] = model.ContextLength.Value;
+            }
+            if (model.Cost is { } cost)
+            {
+                // Written whole, including a rate of zero: a free model that published
+                // zero must read as free, not as unpublished. A null cache rate is left
+                // out, so "this provider prices cache reads" and "it does not" stay
+                // distinguishable on the wire.
+                var costNode = new JsonObject
+                {
+                    ["input"] = cost.Input,
+                    ["output"] = cost.Output,
+                };
+                if (cost.CacheRead is { } cacheRead) costNode["cache_read"] = cacheRead;
+                if (cost.CacheWrite is { } cacheWrite) costNode["cache_write"] = cacheWrite;
+                node["cost"] = costNode;
             }
             return (JsonNode?)node;
         }).ToArray()),

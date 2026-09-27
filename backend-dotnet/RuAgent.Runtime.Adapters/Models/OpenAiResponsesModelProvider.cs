@@ -76,7 +76,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                         if (model is null || model != request.Model) throw new ModelProviderException("malformed_payload", false);
                         var status = ReadString(responseData["status"]);
                         if (status is null) throw new ModelProviderException("malformed_payload", false);
-                        var usage = ReadUsage(responseData["usage"]);
+                        var usage = ReadUsage(responseData["usage"], request.Model);
                         if (status == "completed")
                         {
                             terminal = new ModelDelta(null, [], true, "stop", usage);
@@ -214,7 +214,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
         throw new ModelProviderException("malformed_payload", false);
     }
 
-    private static ModelUsage? ReadUsage(JsonNode? node)
+    private static ModelUsage? ReadUsage(JsonNode? node, string? model)
     {
         if (node is null || node.GetValueKind() == JsonValueKind.Null)
             return null;
@@ -232,7 +232,7 @@ public sealed class OpenAiResponsesModelProvider : IModelProvider
                 : throw new ModelProviderException("malformed_payload", false);
         if (input is null && output is null && total is null && cached is null)
             return null;
-        return new ModelUsage(input, output, total, cached, null);
+        return new ModelUsage(input, output, total, cached, null, model);
     }
 
     private static int? ReadOptionalInt(JsonNode? node)

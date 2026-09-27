@@ -203,6 +203,28 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_names_the_model_on_the_usage_it_reports()
+    {
+        // A token count is only worth anything next to what that model charges, and the
+        // adapter is the only place the model is known. Without this the report arrives
+        // with counts and no way to price them, which is the whole reason the field
+        // exists.
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":5,\"total_tokens\":17}}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        Assert.Equal("test-model", deltas[0].Usage!.Model);
+    }
+
+    [Fact]
     public async Task GenerateAsync_keeps_the_usage_tail_sent_after_the_finish_reason_chunk()
     {
         // include_usage places the usage report in a `choices: []` chunk that

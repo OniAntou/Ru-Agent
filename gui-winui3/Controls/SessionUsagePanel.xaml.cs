@@ -47,7 +47,19 @@ namespace RuApp.Controls
         /// just watched finishes. The read itself is bounded by
         /// <see cref="SessionUsagePolicy.MaxReportedRuns"/> runs.
         /// </summary>
-        public async Task LoadAsync(ApiService api, string sessionId, string? sessionTitle)
+        /// <param name="api">The session read.</param>
+        /// <param name="sessionId">Which session's runs to read.</param>
+        /// <param name="sessionTitle">Its name, for the heading.</param>
+        /// <param name="catalog">
+        /// The catalog whose published rates price the runs, or null when none is
+        /// loaded. Null is not "everything is free": it means no run carries a figure
+        /// and the panel says so.
+        /// </param>
+        public async Task LoadAsync(
+            ApiService api,
+            string sessionId,
+            string? sessionTitle,
+            ProviderCatalogState? catalog)
         {
             ArgumentNullException.ThrowIfNull(api);
             ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
@@ -63,6 +75,9 @@ namespace RuApp.Controls
             // under "reading…" states a number that belongs to a different session, and
             // a re-open is exactly when nobody is looking.
             BilledValueText.Text = "—";
+            CostValueText.Text = "—";
+            CostCoverageText.Text = string.Empty;
+            CostCoverageText.Visibility = Visibility.Collapsed;
             PeakValueText.Text = "—";
             InputValueText.Text = "—";
             OutputValueText.Text = "—";
@@ -84,12 +99,13 @@ namespace RuApp.Controls
                 rows = null;
             }
 
-            Render(rows);
+            Render(rows, SessionUsagePricing.RatesFrom(catalog));
         }
 
-        private void Render(IReadOnlyList<SessionUsageRow>? rows)
+        private void Render(IReadOnlyList<SessionUsageRow>? rows, IReadOnlyDictionary<string, ProviderCatalogCost> rates)
         {
-            var summary = SessionUsagePolicy.Summarize(rows ?? Array.Empty<SessionUsageRow>());
+            var all = rows ?? Array.Empty<SessionUsageRow>();
+            var summary = SessionUsagePolicy.Summarize(all);
             int count = rows?.Count ?? 0;
 
             CoverageText.Text = rows is null
@@ -101,6 +117,9 @@ namespace RuApp.Controls
             BilledValueText.Text = ModelContextSpecs.FormatTokens(summary.BilledTokens);
             PeakValueText.Text = ModelContextSpecs.FormatTokens(summary.PeakTotal);
             ElapsedValueText.Text = FormatElapsed(rows);
+
+            var prices = SessionUsagePricing.PriceRuns(all, rates);
+            PaintCost(prices.Values, count, rates.Count);
 
             InputValueText.Text = ModelContextSpecs.FormatTokens(summary.TotalInput);
             OutputValueText.Text = ModelContextSpecs.FormatTokens(summary.TotalOutput);
@@ -138,7 +157,9 @@ namespace RuApp.Controls
             // panel for, and counting down from it is how a log reads.
             for (int index = count - 1; index >= 0; index--)
             {
-                RowsPanel.Children.Add(BuildRow(count - index, rows![index], summary));
+                var row = rows![index];
+                prices.TryGetValue(row.RunId, out var price);
+                RowsPanel.Children.Add(BuildRow(count - index, row, summary, price));
             }
 
             EmptyText.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -153,6 +174,61 @@ namespace RuApp.Controls
                 : $"Newest {SessionUsagePolicy.MaxReportedRuns} runs";
 
             PlayArrival();
+        }
+
+        /// <summary>
+        /// What the priced runs came to, and which runs that figure does not cover.
+        /// </summary>
+        /// <remarks>
+        /// The count of unpriced runs is stated whenever there is one, because a total
+        /// that quietly covers four of five runs reads as the cost of five. When no run
+        /// could be priced at all the figure is absent rather than zero: a catalog that
+        /// publishes no rates says the price is unknown, not that the session was free.
+        /// </remarks>
+        private void PaintCost(
+            IEnumerable<SessionRunPrice> prices,
+            int runCount,
+            int rateCount)
+        {
+            var all = prices as IReadOnlyCollection<SessionRunPrice> ?? prices.ToList();
+
+            // The two blockers are different facts. "no model" means the run predates
+            // the field and will never be priceable; "no rate" means the catalog is
+            // silent about a model it does list, which a later refresh could answer.
+            // Merging them into one number would hide which kind of gap this is.
+            int noModel = all.Count(price => price.Blocker == "no model");
+            int noRate = all.Count(price => price.Blocker == "no rate");
+
+            var total = SessionUsagePricing.Total(all);
+            CostValueText.Text = SessionUsagePricing.FormatDollars(total);
+            CostValueText.Foreground = ThemeBrush(total is null ? "RuMutedBrush" : "RuAccentBrush");
+
+            if (all.Count == 0)
+            {
+                CostCoverageText.Text = rateCount == 0 ? "no published rates" : string.Empty;
+            }
+            else if (noModel > 0 && noRate > 0)
+            {
+                CostCoverageText.Text = $"{noModel} no model, {noRate} no rate";
+            }
+            else if (noModel > 0)
+            {
+                CostCoverageText.Text = noModel == 1
+                    ? "1 run names no model"
+                    : $"{noModel} runs name no model";
+            }
+            else if (noRate > 0)
+            {
+                CostCoverageText.Text = noRate == 1 ? "1 run has no rate" : $"{noRate} runs have no rate";
+            }
+            else
+            {
+                CostCoverageText.Text = string.Empty;
+            }
+
+            CostCoverageText.Visibility = CostCoverageText.Text.Length > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         /// <summary>
@@ -243,7 +319,11 @@ namespace RuApp.Controls
         /// entry announces the whole thing, so a screen reader does not have to stitch
         /// the lines together.
         /// </remarks>
-        private static FrameworkElement BuildRow(int position, SessionUsageRow row, SessionUsageSummary summary)
+        private static FrameworkElement BuildRow(
+            int position,
+            SessionUsageRow row,
+            SessionUsageSummary summary,
+            SessionRunPrice? price)
         {
             var ink = ThemeBrush("RuInkBrush");
             var muted = ThemeBrush("RuMutedBrush");
@@ -289,6 +369,16 @@ namespace RuApp.Controls
             if (took.Length > 0)
             {
                 facts.Children.Add(Fact(took, mono, muted));
+            }
+
+            // The run's own cost, when it could be worked out. An unpriced run says
+            // nothing here rather than showing a dash: a dash in a facts row reads as a
+            // measurement that came back empty, and the reason is already counted in
+            // the summary above.
+            if (price is { IsPriced: true })
+            {
+                facts.Children.Add(Fact(
+                    SessionUsagePricing.FormatDollars(price.Dollars), mono, ThemeBrush("RuAccentBrush")));
             }
 
             if (facts.Children.Count > 0)
@@ -382,6 +472,7 @@ namespace RuApp.Controls
                 + (row.CreatedAt is { } at ? $", started {at.ToLocalTime():HH:mm}" : string.Empty)
                 + (row.Duration is { } duration ? $", took {SessionTimeFormatter.FormatDuration(duration)}" : string.Empty)
                 + (row.HasUsage ? $", {row.Detail}" : string.Empty)
+                + (price is { IsPriced: true } ? $", cost {SessionUsagePricing.FormatDollars(price.Dollars)}" : string.Empty)
                 + (shareText.Length > 0 ? $", {shareText} of the session" : string.Empty));
             return line;
         }

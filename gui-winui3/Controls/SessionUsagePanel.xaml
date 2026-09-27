@@ -105,6 +105,22 @@
                                    FontSize="30"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource RuInkBrush}" />
+                        <!-- What those tokens cost. Not a second headline: the tokens
+                             are the fact and the money is what they add up to, so it
+                             sits under them at a size that reads as a footnote on a
+                             number rather than as a rival to it. -->
+                        <TextBlock x:Name="CostValueText"
+                                   Text="—"
+                                   FontFamily="{StaticResource RuMonoFontFamily}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuAccentBrush}"
+                                   Margin="0,2,0,0" />
+                        <TextBlock x:Name="CostCoverageText"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="10.5"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   TextWrapping="Wrap" />
                     </StackPanel>
 
                     <Border Grid.Column="1"

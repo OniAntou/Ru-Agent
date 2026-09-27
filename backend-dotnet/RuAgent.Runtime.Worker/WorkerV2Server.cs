@@ -388,6 +388,10 @@ public sealed class WorkerV2Server
         if (usage.TotalTokens is { } total) json["total_tokens"] = total;
         if (usage.CacheReadInputTokens is { } read) json["cache_read_input_tokens"] = read;
         if (usage.CacheWriteInputTokens is { } write) json["cache_write_input_tokens"] = write;
+        // The model the request billed, so the counts it arrives with can be priced.
+        // Omitted when the adapter named none, which the receiver reads as a run whose
+        // price nobody can look up rather than as a malformed report.
+        if (usage.Model is { } model) json["model"] = model;
         return json;
     }
 

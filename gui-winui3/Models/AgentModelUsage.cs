@@ -11,12 +11,22 @@ namespace RuApp.Models;
 /// Provider-reported counts for one assistant model request.
 /// Null means the provider did not report that field; zero remains exact.
 /// </summary>
+/// <param name="InputTokens">Prompt tokens billed.</param>
+/// <param name="OutputTokens">Completion tokens billed.</param>
+/// <param name="TotalTokens">The provider's own total, when it published one.</param>
+/// <param name="CacheReadInputTokens">Prompt tokens served from a warm cache.</param>
+/// <param name="CacheWriteInputTokens">Prompt tokens written into the cache.</param>
+/// <param name="Model">
+/// The model this request billed, as the adapter sent it. Null for a run recorded
+/// before the field existed, which is a run nobody can price rather than a broken one.
+/// </param>
 public sealed record AgentModelUsage(
     int? InputTokens,
     int? OutputTokens,
     int? TotalTokens,
     int? CacheReadInputTokens,
-    int? CacheWriteInputTokens)
+    int? CacheWriteInputTokens,
+    string? Model = null)
 {
     public bool HasAny => InputTokens is not null
         || OutputTokens is not null
@@ -83,7 +93,11 @@ public sealed record AgentModelUsage(
                 ReadOptional(document.RootElement, "output_tokens"),
                 ReadOptional(document.RootElement, "total_tokens"),
                 ReadOptional(document.RootElement, "cache_read_input_tokens"),
-                ReadOptional(document.RootElement, "cache_write_input_tokens"));
+                ReadOptional(document.RootElement, "cache_write_input_tokens"),
+                // The model is a name rather than a count, so it cannot go through
+                // ReadOptional: a report recorded before the field existed has none and
+                // must still parse, as a run whose price nobody can look up.
+                ReadModel(document.RootElement));
             return usage.HasAny ? usage : null;
         }
         catch (JsonException exception)
@@ -114,6 +128,28 @@ public sealed record AgentModelUsage(
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// The model a report names, or null when it names none.
+    /// </summary>
+    /// <remarks>
+    /// Lenient in the same way as the counts: a name that is not a usable identifier is
+    /// a run that cannot be priced, which is a fact the panel states rather than a
+    /// reason to drop the report entirely.
+    /// </remarks>
+    private static string? ReadModel(JsonElement root)
+    {
+        if (!root.TryGetProperty("model", out var value)
+            || value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var model = value.GetString()?.Trim();
+        return model is { Length: > 0 and <= 256 } && !model.Any(char.IsControl)
+            ? model
+            : null;
     }
 
     private static void Add(List<string> parts, int? value, string label)

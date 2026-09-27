@@ -323,7 +323,16 @@ namespace RuApp
             _sessionUsagePreviousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement();
             CloseSessionUsageButton?.Focus(FocusState.Programmatic);
 
-            await SessionUsagePanelControl.LoadAsync(_apiService, sessionId, sessionTitle);
+            // The catalog prices the runs. It is read here rather than fetched by the
+            // panel: the panel is not the picker, and a second catalog read would be a
+            // second request for a list the app already holds. A catalog that is
+            // missing, failed or stale prices nothing, and the panel says so rather
+            // than reporting the session as free.
+            await SessionUsagePanelControl.LoadAsync(
+                _apiService,
+                sessionId,
+                sessionTitle,
+                _chatView?.ProviderCatalogState);
         }
 
         private void CloseSessionUsage()

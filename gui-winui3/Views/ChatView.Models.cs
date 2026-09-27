@@ -331,6 +331,18 @@ namespace RuApp.Views
                 out catalog);
         }
 
+        /// <summary>
+        /// The catalog for the selected backend, or null when none has arrived.
+        /// </summary>
+        /// <remarks>
+        /// The session usage panel prices a session's runs from this. It is exposed as
+        /// null rather than as a placeholder catalog because "no rates to price with"
+        /// and "priced against nothing" have to stay the same answer: a panel handed an
+        /// empty catalog would report every run as free.
+        /// </remarks>
+        public ProviderCatalogState? ProviderCatalogState =>
+            TryGetSelectedCatalog(out var catalog) ? catalog : null;
+
         private IReadOnlyList<ProviderReasoningOption> GetCurrentReasoningOptions()
         {
             if (TryGetSelectedCatalog(out var catalog) && catalog is not null)

@@ -1044,13 +1044,17 @@ public static class WorkerV2Contracts
         }
     }
 
-    private static readonly FrozenSet<string> AllowedUsageKeys = FrozenSet.ToFrozenSet(
+    private static readonly FrozenSet<string> AllowedUsageCountKeys = FrozenSet.ToFrozenSet(
         ["input_tokens", "output_tokens", "total_tokens", "cache_read_input_tokens", "cache_write_input_tokens"],
+        StringComparer.Ordinal);
+
+    private static readonly FrozenSet<string> AllowedUsageKeys = FrozenSet.ToFrozenSet(
+        ["input_tokens", "output_tokens", "total_tokens", "cache_read_input_tokens", "cache_write_input_tokens", "model"],
         StringComparer.Ordinal);
 
     private static void ValidateUsage(JsonNode? usageNode)
     {
-        if (usageNode is not JsonObject usage || usage.Count is < 1 or > 5)
+        if (usageNode is not JsonObject usage || usage.Count is < 1 or > 6)
         {
             throw new AgentProtocolException("invalid_step");
         }
@@ -1062,7 +1066,23 @@ public static class WorkerV2Contracts
                 throw new AgentProtocolException("invalid_step");
             }
 
-            if (pair.Value is not JsonValue number || !number.TryGetValue<int>(out var count) || count < 0)
+            if (AllowedUsageCountKeys.Contains(pair.Key))
+            {
+                if (pair.Value is not JsonValue number || !number.TryGetValue<int>(out var count) || count < 0)
+                {
+                    throw new AgentProtocolException("invalid_step");
+                }
+
+                continue;
+            }
+
+            // The model id is a name rather than a figure, and it is bounded and
+            // control-char free for the same reason the counts are non-negative: it is
+            // written into a stored payload and then looked up in a price table.
+            if (pair.Value is not JsonValue text
+                || !text.TryGetValue<string>(out var model)
+                || model.Length is 0 or > 256
+                || model.Any(char.IsControl))
             {
                 throw new AgentProtocolException("invalid_step");
             }

@@ -25,6 +25,12 @@ public sealed record SessionUsageRow(
     public bool HasUsage => Usage?.HasAny == true;
 
     /// <summary>
+    /// The model this run billed, as the adapter sent it, or null when the run predates
+    /// the field or named no model.
+    /// </summary>
+    public string? ModelId => Usage?.Model;
+
+    /// <summary>
     /// How long the run took, when the host reported both ends of it.
     /// </summary>
     /// <remarks>

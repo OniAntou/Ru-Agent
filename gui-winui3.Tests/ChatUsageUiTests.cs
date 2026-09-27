@@ -53,6 +53,48 @@ public sealed class ChatUsageUiTests
     }
 
     [Fact]
+    public void Usage_parser_keeps_the_model_the_report_names()
+    {
+        // This parser is hand-written and reads each field by name, so a field added to
+        // the wire has to be added here too. It was not, for one commit: every count
+        // arrived, the model did not, and the panel reported a priced session as one
+        // whose cost nobody could name. Found by opening a real session, not by a test
+        // on the record — the record's own round trip was covered and passed.
+        var usage = AgentModelUsage.Parse(
+            "{\"input_tokens\":4012,\"output_tokens\":17,\"cache_read_input_tokens\":3584,"
+            + "\"model\":\"dots-studio/dots-3-note-preview:free\"}");
+
+        Assert.NotNull(usage);
+        Assert.Equal("dots-studio/dots-3-note-preview:free", usage!.Model);
+        Assert.Equal(4012, usage.InputTokens);
+        Assert.Equal(3584, usage.CacheReadInputTokens);
+    }
+
+    [Fact]
+    public void Usage_parser_leaves_the_model_absent_for_a_report_that_names_none()
+    {
+        // A run recorded before the field existed still has to parse, as a run nobody
+        // can price rather than a report that failed.
+        Assert.Null(AgentModelUsage.Parse("{\"input_tokens\":12}")!.Model);
+    }
+
+    [Theory]
+    [InlineData("12")]
+    [InlineData("\"\"")]
+    [InlineData("\"  \"")]
+    [InlineData("\"bad\\nmodel\"")]
+    public void Usage_parser_drops_a_model_that_is_not_a_usable_name(string model)
+    {
+        // Same bounds the host applies when it writes the field, so the two ends agree
+        // on what a name is and neither has to defend itself again.
+        var usage = AgentModelUsage.Parse($"{{\"input_tokens\":12,\"model\":{model}}}");
+
+        Assert.NotNull(usage);
+        Assert.Equal(12, usage!.InputTokens);
+        Assert.Null(usage.Model);
+    }
+
+    [Fact]
     public void Chat_message_notifies_usage_bindings_when_usage_arrives_late()
     {
         var message = new ChatMessageItem { Role = "assistant", Content = "done" };

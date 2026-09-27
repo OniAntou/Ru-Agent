@@ -19,7 +19,7 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
         var initial = (await store.ReadAsync(default)) with
         { Backend = "Custom OpenAI", CustomModel = "a", CustomUrl = "https://provider.invalid/v1" };
-        await store.SaveAsync(ProviderReasoningPreferences.Save(initial, "high"), default);
+        await store.SaveAsync(ProviderReasoningPreferences.Save(initial, "high", ProviderSelection.From(initial)), default);
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
         using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));
@@ -50,7 +50,7 @@ public sealed class AgentProviderSnapshotTests : IDisposable
         var store = new SettingsStore(DataPaths.Resolve(_root, _root, _root, _root));
         var settings = (await store.ReadAsync(default)) with
         { Backend = "Custom OpenAI", CustomModel = model, CustomUrl = "https://provider.invalid/v1" };
-        await store.SaveAsync(ProviderReasoningPreferences.Save(settings, effort), default);
+        await store.SaveAsync(ProviderReasoningPreferences.Save(settings, effort, ProviderSelection.From(settings)), default);
         var credentials = new Credentials();
         var catalog = new ProviderCatalogService(new HttpClient(new Handler()), credentials, TimeProvider.System);
         using var factory = new AgentProviderSnapshotFactory(store, credentials, catalog, _root, (_, _) => Task.FromResult(false));

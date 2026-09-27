@@ -217,14 +217,33 @@ namespace RuApp.Views
         {
             SyncEffortFromCatalog();
             var options = GetCurrentReasoningOptions();
-
-            if (!options.Any(o => string.Equals(o.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase)))
-            {
-                _selectedReasoningEffort = "default";
-            }
+            _selectedReasoningEffort = ProviderReasoningOptions.Clamp(
+                _selectedReasoningEffort, options, IsCatalogReadyForSelection());
 
             ChatReasoningLabel.Text = _selectedReasoningEffort;
             AutomationProperties.SetName(ChatReasoningButton, $"Reasoning effort: {_selectedReasoningEffort}");
+        }
+
+        /// <summary>
+        /// Whether the catalog that would validate the current effort has arrived.
+        /// </summary>
+        /// <remarks>
+        /// Until it does, the option list is just "default" and nothing can be
+        /// concluded from it, so the effort is left alone.
+        /// </remarks>
+        private bool IsCatalogReadyForSelection()
+        {
+            if (_groupedCatalogs is null) return false;
+
+            var groupedState = _groupedCatalogs.State;
+            string backend = !string.IsNullOrWhiteSpace(groupedState.SelectedBackend)
+                ? groupedState.SelectedBackend
+                : _selectedBackend;
+            if (string.IsNullOrWhiteSpace(backend)) return false;
+
+            return groupedState.Catalogs.TryGetValue(backend, out var catalogState)
+                && catalogState.IsSuccess
+                && !catalogState.Stale;
         }
 
         private IReadOnlyList<ProviderReasoningOption> GetCurrentReasoningOptions()

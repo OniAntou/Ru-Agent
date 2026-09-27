@@ -520,7 +520,7 @@ public sealed class ProviderCatalogTests : IDisposable
     public async Task Preferences_are_per_model_and_default_omits_options()
     {
         var settings = (await SettingsAsync()) with { OpenAiModel = "a" };
-        var saved = ProviderReasoningPreferences.Save(settings, "high");
+        var saved = ProviderReasoningPreferences.Save(settings, "high", ProviderSelection.From(settings));
         Assert.Equal("high", ProviderReasoningPreferences.Read(saved));
         Assert.Equal("default", ProviderReasoningPreferences.Read(saved with { OpenAiModel = "b" }));
         var entry = new CatalogModel("a", true, "chat_completions", new("unknown", []));

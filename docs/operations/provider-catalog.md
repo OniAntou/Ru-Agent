@@ -123,6 +123,20 @@ A run against a signed-out provider fails closed with `catalog_unauthorized`.
   values `ProviderRequestOptionsValidator` accepts so the picker cannot offer an
   effort the runtime would reject. A level the provider declared itself is never
   overwritten, and a non-Models.dev backend is never given these levels.
+- A level must be **storable** as well as visible, so a Models.dev level fills both
+  halves of a catalog entry: `Reasoning`, which the picker reads, and
+  `WireOptions`, which `ProviderReasoningPreferences.Resolve` requires before it
+  stores a choice and `AgentProviderSnapshotFactory` requires before it sends one.
+  Filling only the first left every level visible and rejected on click.
+- Storing a choice is keyed by `ProviderSelection.PreferenceKey`, which hashes the
+  backend's base URL. A models.dev backend has one only after its catalog is
+  fetched, so `ProviderReasoningPreferences.Save` takes the resolved selection as
+  a parameter instead of deriving it from settings. Deriving it threw
+  `Unknown models.dev provider` for every models.dev provider, so no effort could
+  be stored for any of them.
+- The desktop picker never erases a stored effort because a catalog has not loaded
+  yet. `ProviderReasoningOptions.Clamp` only falls back to `default` once the
+  catalog for the selected backend has actually arrived and is not stale.
 - Bare model IDs and generic reasoning flags do not verify adjustable levels.
   Unknown IDs are retained as unsupported (`Supported=false`) and omitted from
   selectable `Models`; they are never called to discover capability.

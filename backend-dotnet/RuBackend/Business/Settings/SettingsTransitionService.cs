@@ -67,7 +67,11 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
                     var snapshot = await _catalog.GetAsync(previous, false, cancellationToken).ConfigureAwait(false);
                     if (snapshot.Identity != identity || snapshot.SelectedModel != model) throw new SettingsPayloadException();
                     if (effort != "default") ProviderReasoningPreferences.Resolve(snapshot, model, effort);
-                    candidate = ProviderReasoningPreferences.Save(candidate, effort);
+                    // The catalog, not the bare settings, is what gives a models.dev
+                    // backend a base URL to key the stored choice against.
+                    var selection = await _catalog.ResolveSelectionAsync(candidate, cancellationToken)
+                        .ConfigureAwait(false);
+                    candidate = ProviderReasoningPreferences.Save(candidate, effort, selection);
                 }
             }
             catch (Exception error) when (error is SettingsPayloadException or ProviderCatalogException or ArgumentException)

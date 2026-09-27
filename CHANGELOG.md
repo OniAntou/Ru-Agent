@@ -35,6 +35,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **fix(backend,providers, gui)**: **Chọn reasoning effort không còn bị văng về `default`.** Lần trước mới chỉ sửa nửa vấn đề: `ApplyModelsDevReasoning` điền `CatalogModel.Reasoning` (phía picker đọc) nhưng bỏ trống `CatalogModel.WireOptions` (phía lưu). Mức hiện trong dropdown rồi bị từ chối ngay khi bấm, nên nút quay lại `default`. Nay điền cả hai, cùng hình dạng `ProviderCatalogParser` tạo ra từ `reasoning_efforts` của provider.
+
+  Nhưng đó vẫn chưa phải nguyên nhân gốc. **`ProviderReasoningPreferences.Save` hỏng với toàn bộ provider `models.dev:*`** — lỗi có sẵn từ trước, không liên quan tới thay đổi trên. Nó tự suy ra `ProviderSelection` từ settings qua `From(settings)`, mà `Describe` cần catalog models.dev để lấy `BaseUri`; không có catalog thì ném `ArgumentException("Unknown models.dev provider.")`. Key lưu trữ là `PreferenceKey` = SHA256 của `Backend \n BaseUri \n Model`, nên không có cách nào lấy nó cho backend models.dev.
+
+  `Save` nay nhận `ProviderSelection` đã resolve làm tham số, và `SettingsTransitionService` lấy nó từ `ProviderCatalogService.ResolveSelectionAsync`. Việc này làm tham số bắt buộc: không còn cách gọi `Save` mà âm thầm hỏng với models.dev.
+
+  Phía GUI: `UpdateReasoningEffortUi` trước đây luôn clamp effort về `default` khi danh sách option không chứa nó. Trước khi catalog tới, danh sách đó chỉ có `default`, nên một lựa chọn đã lưu thành công vẫn bị xoá ở lần cập nhật UI kế tiếp. `ProviderReasoningOptions.Clamp` nay chỉ clamp khi catalog của backend đang chọn thực sự đã tới và không stale.
+
+  Đo trên app thật (`models.dev:openrouter`, `stealth/space-bunny-alpha`): `POST /settings` trả `{"status":"success"}`, `selected_effort` đọc lại đúng mức vừa chọn, và giữ nguyên sau khi restart app. Trước đó mọi lần chọn đều trả `Invalid settings payload`.
+
+  **Còn lại, nói thẳng**: sau khi restart, nút vẫn hiện `default` thay vì mức đã lưu, vì `_groupedCatalogs.State.Catalogs` rỗng lúc `SyncEffortFromCatalog` chạy (đã trace: `catalogCount=0`) — grouped controller chưa nạp catalog của backend models.dev. Lựa chọn không mất, chỉ là composer chưa hiện lại cho tới khi catalog nạp xong. Chưa sửa; cần đào tiếp nhánh polling của `GroupedProviderCatalogController`.
+
+
 - **fix(backend,providers)**: **Reasoning effort chọn được trong picker thay vì chỉ có `default`.** `ProviderCatalogParser` chỉ bật reasoning khi provider tự trả `supported_parameters` + `reasoning_efforts`; OpenRouter trả bare ids, nên cả **458/458 model** rơi về `unknown` và dropdown chỉ còn một mục — không chọn được gì. Models.dev vẫn publish `reasoning_options` cho phần lớn model (264/384 của openrouter), nên parse bỏ rơi đúng phần dữ liệu đó.
 
   Host giờ đọc `reasoning_options` từ catalog models.dev và điền vào **những model mà provider để ở `unknown`**. Đo trên app thật (`models.dev:openrouter`): `unknown=458, levels=0` → `unknown=322, levels=136`.

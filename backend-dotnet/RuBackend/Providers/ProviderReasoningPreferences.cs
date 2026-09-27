@@ -35,13 +35,24 @@ public static class ProviderReasoningPreferences
         return "default";
     }
 
-    public static SettingsSnapshot Save(SettingsSnapshot settings, string effort)
+    /// <summary>
+    /// Stores a choice under the selection's preference key.
+    /// </summary>
+    /// <remarks>
+    /// The selection is a parameter rather than re-derived from
+    /// <paramref name="settings"/> because the key hashes the backend's base URL,
+    /// and a models.dev backend only has one once its catalog has been fetched.
+    /// Deriving it here threw for every models.dev provider, so no effort could be
+    /// stored for any of them: the picker offered levels, the save answered
+    /// "Invalid settings payload", and the button snapped back to "default".
+    /// </remarks>
+    public static SettingsSnapshot Save(SettingsSnapshot settings, string effort, ProviderSelection selection)
     {
         var raw = settings.Raw.DeepClone().AsObject();
         var choices = raw[Field] as JsonObject ?? new JsonObject();
-        if (choices.Count >= 256 && !choices.ContainsKey(ProviderSelection.From(settings).PreferenceKey))
+        if (choices.Count >= 256 && !choices.ContainsKey(selection.PreferenceKey))
             throw new ProviderCatalogException("reasoning_preferences_full");
-        choices[ProviderSelection.From(settings).PreferenceKey] = effort;
+        choices[selection.PreferenceKey] = effort;
         raw[Field] = choices.DeepClone();
         return settings with { Raw = raw };
     }

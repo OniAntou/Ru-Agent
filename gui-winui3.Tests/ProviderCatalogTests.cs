@@ -541,6 +541,33 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
+    public void Clamp_keeps_a_stored_effort_until_the_catalog_can_judge_it()
+    {
+        // What the view sees before the catalog lands: one "default" option and
+        // nothing to validate against. Clamping here erased a choice the backend
+        // had stored, so a selection that saved correctly still snapped the button
+        // back to "default" on the next UI update.
+        var notLoaded = new List<ProviderReasoningOption> { new("default", "default") };
+
+        Assert.Equal("high", ProviderReasoningOptions.Clamp("high", notLoaded, isCatalogReady: false));
+        Assert.Equal("high", ProviderReasoningOptions.Clamp("high", notLoaded, isCatalogReady: false));
+    }
+
+    [Fact]
+    public void Clamp_drops_an_effort_the_loaded_catalog_does_not_offer()
+    {
+        // Once the catalog is there the original behaviour stands: a model with
+        // no such level genuinely falls back to "default".
+        var loaded = new List<ProviderReasoningOption>
+        {
+            new("default", "default"), new("low", "low"), new("high", "high"),
+        };
+
+        Assert.Equal("high", ProviderReasoningOptions.Clamp("high", loaded, isCatalogReady: true));
+        Assert.Equal("default", ProviderReasoningOptions.Clamp("xhigh", loaded, isCatalogReady: true));
+    }
+
+    [Fact]
     public void ProviderReasoningOptions_uses_override_model_and_ignores_case()
     {
         var state = new ProviderCatalogState

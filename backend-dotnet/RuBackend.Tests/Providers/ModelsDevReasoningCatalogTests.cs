@@ -64,6 +64,18 @@ public sealed class ModelsDevReasoningCatalogTests : IDisposable
         string providerModelsJson,
         string modelsDevPayload)
     {
+        var snapshot = await SnapshotForAsync(providerModelsJson, modelsDevPayload);
+        return snapshot.Catalog;
+    }
+
+    /// <summary>
+    /// The whole snapshot, for the tests that need Identity or SelectedModel to
+    /// match what the save path compares against.
+    /// </summary>
+    private async Task<ProviderCatalogSnapshot> SnapshotForAsync(
+        string providerModelsJson,
+        string modelsDevPayload)
+    {
         await WriteModelsDevCacheAsync(modelsDevPayload);
         _handler.Json = providerModelsJson;
 
@@ -80,7 +92,7 @@ public sealed class ModelsDevReasoningCatalogTests : IDisposable
             CancellationToken.None);
 
         Assert.True(snapshot.Status == "ok", $"status={snapshot.Status} error={snapshot.ErrorCode}");
-        return snapshot.Catalog;
+        return snapshot;
     }
 
     [Fact]
@@ -206,6 +218,40 @@ public sealed class ModelsDevReasoningCatalogTests : IDisposable
 
         var entry = Assert.Single(snapshot.Catalog, item => item.Id == "vendor/model-a");
         Assert.Equal("unknown", entry.Reasoning.State);
+    }
+
+    [Fact]
+    public async Task A_published_level_is_accepted_by_the_save_path()
+    {
+        // The dropdown renders from CatalogModel.Reasoning, but the store and the
+        // bootstrap snapshot both go through ProviderReasoningPreferences.Resolve,
+        // which reads CatalogModel.WireOptions. Filling only Reasoning made the level
+        // visible and then rejected the moment it was picked: the save answered
+        // "Invalid settings payload" and the button snapped back to "default".
+        var snapshot = await SnapshotForAsync(
+            "{\"data\":[{\"id\":\"vendor/model-a\"}]}",
+            ModelsDevPayload(("vendor/model-a",
+                "{\"reasoning_options\":[{\"type\":\"effort\",\"values\":[\"low\",\"high\"]}]}")));
+
+        var wire = ProviderReasoningPreferences.Resolve(snapshot, "vendor/model-a", "high");
+        Assert.Equal("high", wire["reasoning_effort"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_published_level_that_was_never_declared_is_still_rejected()
+    {
+        // Resolve stays a closed gate: only the levels the provider published are
+        // accepted, so a stale or hand-written settings payload cannot smuggle in a
+        // level the runtime would reject.
+        var snapshot = await SnapshotForAsync(
+            "{\"data\":[{\"id\":\"vendor/model-a\"}]}",
+            ModelsDevPayload(("vendor/model-a",
+                "{\"reasoning_options\":[{\"type\":\"effort\",\"values\":[\"high\"]}]}")));
+
+        var error = Assert.Throws<ProviderCatalogException>(() =>
+            ProviderReasoningPreferences.Resolve(snapshot, "vendor/model-a", "low"));
+
+        Assert.Equal("reasoning_unsupported", error.Code);
     }
 
     public void Dispose()

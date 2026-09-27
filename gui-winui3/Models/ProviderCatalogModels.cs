@@ -180,6 +180,28 @@ public static class ProviderReasoningOptions
     public static IReadOnlyList<ProviderReasoningOption> For(ProviderCatalogState state) =>
         For(state, selectedModelOverride: null);
 
+    /// <summary>
+    /// Drops a stored effort the catalog does not offer, but only once the
+    /// catalog is actually there.
+    /// </summary>
+    /// <remarks>
+    /// A catalog that has not loaded yet yields a "default"-only option list.
+    /// Clamping against that erased a choice the backend had stored, so a
+    /// selection that saved correctly still snapped the button back to "default"
+    /// on the next UI update. When the catalog is ready the clamp is unchanged:
+    /// a model that genuinely has no such level falls back to "default".
+    /// </remarks>
+    public static string Clamp(
+        string current,
+        IReadOnlyList<ProviderReasoningOption> options,
+        bool isCatalogReady)
+    {
+        if (!isCatalogReady) return current;
+        return options.Any(option => string.Equals(option.Value, current, StringComparison.OrdinalIgnoreCase))
+            ? current
+            : "default";
+    }
+
     public static IReadOnlyList<ProviderReasoningOption> For(ProviderCatalogState state, string? selectedModelOverride)
     {
         var options = new List<ProviderReasoningOption>

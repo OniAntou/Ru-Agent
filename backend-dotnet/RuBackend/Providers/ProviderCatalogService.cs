@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuBackend.Business.Settings;
 
 namespace RuBackend.Providers;
@@ -357,6 +358,14 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
     /// declared itself wins outright, and a model with no published levels keeps
     /// "unknown" so the picker offers nothing for it.
     ///
+    /// Both halves of a model are filled together: <see cref="CatalogModel.Reasoning"/>,
+    /// which the picker reads, and <see cref="CatalogModel.WireOptions"/>, which
+    /// <see cref="ProviderReasoningPreferences.Resolve"/> requires before it will store
+    /// a choice and <see cref="AgentProviderSnapshotFactory"/> requires before it will
+    /// send one. Filling only the first leaves the level visible in the dropdown and
+    /// rejected the moment it is picked, which is what happened: the save came back
+    /// "Invalid settings payload" and the button snapped back to "default".
+    ///
     /// A Models.dev catalog that cannot be read leaves the models exactly as
     /// parsed: the levels are an addition, never a requirement, and there is no
     /// fallback that would invent them.
@@ -390,10 +399,15 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         {
             var model = models[i];
             if (string.Equals(model.Reasoning.State, CatalogReasoningStates.Unknown, StringComparison.Ordinal)
+                && model.Supported
                 && reasoning.TryGetValue(model.Id, out var published)
                 && published.Options.Count > 0)
             {
-                model = model with { Reasoning = published };
+                model = model with
+                {
+                    Reasoning = published,
+                    WireOptions = BuildWireOptions(published.Options),
+                };
             }
 
             rewritten.Add(model);
@@ -402,7 +416,28 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         return rewritten;
     }
 
-    private bool TryReadModelsDevCache(out IReadOnlyList<ModelsDevProvider> providers, out bool fresh)    {
+    /// <summary>
+    /// The Chat Completions body each published level maps to.
+    /// </summary>
+    /// <remarks>
+    /// Same shape ProviderCatalogParser produces from a provider's own
+    /// <c>reasoning_efforts</c>, so Resolve and the bootstrap snapshot treat a
+    /// Models.dev level exactly like a provider-declared one. Ordinal keys, matching
+    /// the parser, so the level stored in settings is the key that is looked up.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, JsonObject> BuildWireOptions(IReadOnlyList<string> levels)
+    {
+        var options = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        foreach (var level in levels)
+        {
+            options[level] = new JsonObject { ["reasoning_effort"] = level };
+        }
+
+        return options;
+    }
+
+    private bool TryReadModelsDevCache(out IReadOnlyList<ModelsDevProvider> providers, out bool fresh)
+    {
         providers = [];
         fresh = false;
         string text;

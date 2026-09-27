@@ -342,7 +342,7 @@ public sealed class FilePatchAdapter
                 throw new UnauthorizedAccessException("outside_workspace");
             }
 
-            var rel = ToRelative(resolved.CanonicalPath);
+            var rel = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath);
             if (!canonicalSeen.Add(resolved.CanonicalPath))
             {
                 throw new ArgumentException("patch_duplicate_path");
@@ -459,10 +459,4 @@ public sealed class FilePatchAdapter
         return result;
     }
 
-    private string ToRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".") return ".";
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
-    }
 }

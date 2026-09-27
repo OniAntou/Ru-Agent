@@ -155,7 +155,7 @@ public sealed class FileGlobAdapter
                     continue;
                 }
 
-                var relative = GetRelative(entryResolved.CanonicalPath);
+                var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, entryResolved.CanonicalPath);
                 // For glob matching, we match relative path normalized with '/' against pattern
                 // If pattern does not contain '/', we also match file name only
                 bool matches = false;
@@ -265,17 +265,6 @@ public sealed class FileGlobAdapter
         {
             throw new ArgumentException("invalid_path", ex);
         }
-    }
-
-    private string GetRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".")
-        {
-            return ".";
-        }
-
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
     private static Regex GlobToRegex(string pattern)

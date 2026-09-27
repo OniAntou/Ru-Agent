@@ -49,6 +49,22 @@ public sealed class WorkspacePathGuard
         return Path.GetRelativePath(Root, resolved);
     }
 
+    /// <summary>
+    /// The one workspace-relative form every file adapter reports to the model.
+    /// Separators are normalized to <c>/</c> and the root itself renders as
+    /// <c>.</c>, so the same path reads identically whichever tool touched it.
+    /// </summary>
+    public static string ToWorkspaceRelative(string canonicalRoot, string canonicalPath)
+    {
+        var relative = Path.GetRelativePath(canonicalRoot, canonicalPath);
+        if (relative == ".")
+        {
+            return ".";
+        }
+
+        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+    }
+
     private bool IsWithinRoot(string candidate)
     {
         var rootWithSeparator = Root.EndsWith(Path.DirectorySeparatorChar)

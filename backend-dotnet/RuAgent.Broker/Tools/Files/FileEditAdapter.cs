@@ -59,7 +59,7 @@ public sealed class FileEditAdapter
 
         return new JsonObject
         {
-            ["path"] = ToRelative(resolved.CanonicalPath),
+            ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath),
             ["before_sha256"] = beforeHash,
             ["after_sha256"] = afterHash,
             ["replacements"] = count,
@@ -153,7 +153,7 @@ public sealed class FileEditAdapter
 
         return new JsonObject
         {
-            ["path"] = ToRelative(reResolved.CanonicalPath),
+            ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, reResolved.CanonicalPath),
             ["before_sha256"] = beforeHash,
             ["after_sha256"] = afterHash,
             ["replacements"] = count,
@@ -373,13 +373,6 @@ public sealed class FileEditAdapter
     {
         if (s.Length <= max) return s;
         return s.Substring(0, max) + "...";
-    }
-
-    private string ToRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".") return ".";
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
     private static string GetRequiredString(JsonObject obj, string key)

@@ -171,7 +171,7 @@ public sealed class FileReadAdapter
             truncated = true;
         }
 
-        var relative = GetRelative(canonical);
+        var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, canonical);
         return new JsonObject
         {
             ["path"] = relative,
@@ -206,17 +206,6 @@ public sealed class FileReadAdapter
         {
             throw new ArgumentException("invalid_path", ex);
         }
-    }
-
-    private string GetRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".")
-        {
-            return ".";
-        }
-
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
     private static int GetValidUtf8Length(byte[] buffer, int length)

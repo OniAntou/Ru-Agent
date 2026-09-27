@@ -105,7 +105,7 @@ public sealed class FileListAdapter
                     continue;
                 }
 
-                var relative = GetRelative(entryResolved.CanonicalPath);
+                var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, entryResolved.CanonicalPath);
                 bool isDir = Directory.Exists(entryResolved.CanonicalPath);
                 long size = 0;
                 if (!isDir)
@@ -210,17 +210,6 @@ public sealed class FileListAdapter
         {
             throw new ArgumentException("invalid_path", ex);
         }
-    }
-
-    private string GetRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".")
-        {
-            return ".";
-        }
-
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
     private static string? GetOptionalString(JsonObject obj, string key) =>

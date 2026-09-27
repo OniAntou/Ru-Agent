@@ -25,4 +25,20 @@ public sealed class WorkspacePathGuardTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void Workspace_relative_form_normalizes_separators_and_renders_the_root_as_dot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-workspace-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "src", "deep"));
+        try
+        {
+            Assert.Equal(".", WorkspacePathGuard.ToWorkspaceRelative(root, root));
+            Assert.Equal("src/deep/main.cs", WorkspacePathGuard.ToWorkspaceRelative(root, Path.Combine(root, "src", "deep", "main.cs")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

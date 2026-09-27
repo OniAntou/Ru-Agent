@@ -75,7 +75,7 @@ public sealed class FileSearchAdapter
                 try { resolved = _resolver.Resolve(entry); } catch { continue; }
                 if (resolved.IsProtected || resolved.IsOutsideWorkspace) continue;
                 if (Directory.Exists(resolved.CanonicalPath)) { stack.Push(resolved.CanonicalPath); continue; }
-                var relative = GetRelative(resolved.CanonicalPath);
+                var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath);
                 if (fileGlobRegex is not null && !fileGlobRegex.IsMatch(relative) && !fileGlobRegex.IsMatch(Path.GetFileName(relative))) continue;
                 try
                 {
@@ -170,17 +170,6 @@ public sealed class FileSearchAdapter
         {
             throw new ArgumentException("invalid_path", ex);
         }
-    }
-
-    private string GetRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".")
-        {
-            return ".";
-        }
-
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
     internal static string? ReadSearchText(Stream stream, int maximumBytes, int binaryProbeBytes, CancellationToken cancellationToken)

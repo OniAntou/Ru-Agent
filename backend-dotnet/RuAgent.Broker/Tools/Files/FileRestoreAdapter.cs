@@ -136,7 +136,7 @@ public sealed class FileRestoreAdapter
         var safe = new JsonObject
         {
             ["recovery_id"] = recoveryId,
-            ["path"] = ToRelative(resolved.CanonicalPath),
+            ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath),
             ["bytes"] = record.Content.Length,
             ["sha256"] = record.Sha256,
         };
@@ -193,7 +193,7 @@ public sealed class FileRestoreAdapter
             return new JsonObject
             {
                 ["recovery_id"] = recoveryId,
-                ["path"] = ToRelative(resolved.CanonicalPath),
+                ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath),
                 ["bytes"] = restoredBytes.Length,
                 ["restored_sha256"] = restoredHash,
             };
@@ -283,7 +283,7 @@ public sealed class FileRestoreAdapter
             return new JsonObject
             {
                 ["recovery_id"] = recoveryId,
-                ["path"] = ToRelative(resolved.CanonicalPath),
+                ["path"] = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, resolved.CanonicalPath),
                 ["bytes"] = payload.Length,
                 ["restored_sha256"] = restoredHash,
             };
@@ -462,17 +462,6 @@ public sealed class FileRestoreAdapter
         }
 
         return output.ToArray();
-    }
-
-    private string ToRelative(string canonicalPath)
-    {
-        var relative = Path.GetRelativePath(_resolver.CanonicalRoot, canonicalPath);
-        if (relative == ".")
-        {
-            return ".";
-        }
-
-        return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
     private static string GetRequiredString(JsonObject obj, string key)

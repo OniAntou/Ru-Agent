@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **fix(gui)**: **Sửa lỗi làm trống toàn bộ vùng chat — lỗi do đợt sửa trước gây ra.** `PickerItemButtonStyle` được khai báo trong `ProviderModelPicker.xaml` `<UserControl.Resources>`, **không** có trong `App.xaml`. Đợt tối ưu trước gom palette vào record `PickerBrushes` và tra key này từ `Application.Current.Resources`, đặt luôn làm field initializer, nên lúc construct control là `KeyNotFoundException` → `ChatView` fail load → vùng chat trống trong khi sidebar vẫn render (sidebar thuộc `MainWindow`, không thuộc `ChatView`).
+
+  `PickerBrushes.Resolve` nay nhận `ResourceDictionary` của control và đọc style từ đó; palette vẫn tra ở `Application.Current` vì các key `Ru*` thật sự nằm ở `App.xaml`. Khởi tạo sau `InitializeComponent()`.
+
+  **4.483 test vẫn xanh trong khi app chết** — test project chỉ exercise projection, không instantiate control. Đã xác minh bằng cách chạy app thật: `RuApp.exe` sống 35s, `gui-2026-09-27.jsonl` giữ nguyên 512 byte, **không** ghi `gui_crash` nào (trước đó hôm nay có 2 critical). Thêm `GuiResourceKeyTests`: một test quét mọi `Application.Current.Resources["Key"]` trong `gui-winui3` và assert key có trong `App.xaml`; một test pin style của picker phải là view-scoped. Cả hai đã mutation-test — test thứ hai bắt đúng lỗi gốc, test thứ **không** bắt được vì mutation dùng biến alias `resources` thay vì literal nên regex không thấy. Ghi rõ giới hạn đó thay vì tuyên bố chung chung.
+
+
 - **perf(gui)**: **Model picker không còn dựng lại toàn bộ danh sách mỗi phím gõ.** Picker realize mỗi dòng thành một `Button` kèm `Grid`, badge context và **4** closure pointer handler, rồi `Children.Clear()` dựng lại tất cả — và `SetSearchText` được gọi thẳng từ `TextChanged`, nên **mỗi ký tự gõ** trả giá đó trên UI thread. Với setup một provider (`models.dev:openrouter`, 384 model) đó là ~1.900 control mỗi lần rebuild. Bốn sửa, tất cả đều giữ nguyên hành vi hiển thị:
   - **Debounce 180 ms** cho ô tìm kiếm (`UiTiming.ModelSearchDebounce`, `DispatcherQueueTimer` restart-on-tick — đúng pattern timer sẵn có của repo). Một cụm gõ tốn 1 rebuild thay vì N.
   - **1 handler dùng chung** cho cả 4 event pointer, đọc row qua `Tag`, thay vì 4 closure cấp phát cho mỗi dòng mỗi lần rebuild.

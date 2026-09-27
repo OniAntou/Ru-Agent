@@ -25,6 +25,7 @@ namespace RuApp.Views
         public ProviderModelPicker()
         {
             this.InitializeComponent();
+            _brushes = PickerBrushes.Resolve(this.Resources);
         }
 
         public event EventHandler<string>? SearchTextChanged;
@@ -32,7 +33,7 @@ namespace RuApp.Views
         public event EventHandler<ProviderModelSelectionEventArgs>? ModelSelected;
 
         private ProviderModelPickerProjection? _lastProjection;
-        private PickerBrushes _brushes = PickerBrushes.Resolve();
+        private readonly PickerBrushes _brushes;
 
         public string SearchText => PickerSearchBox.Text;
 
@@ -98,6 +99,13 @@ namespace RuApp.Views
         /// Application.Current resources inside every row builder, which is five
         /// dictionary lookups for every control on every rebuild.
         /// </summary>
+        /// <param name="appResources">The application palette.</param>
+        /// <param name="controlResources">
+        /// The control's own dictionary. PickerItemButtonStyle is declared in this
+        /// control's XAML, not in App.xaml, so reading it from
+        /// Application.Current.Resources throws KeyNotFoundException and takes the
+        /// whole view down with it.
+        /// </param>
         private sealed record PickerBrushes(
             FontFamily FontFamily,
             Brush Ink,
@@ -112,7 +120,7 @@ namespace RuApp.Views
             Brush SelectedHover,
             Style ItemStyle)
         {
-            public static PickerBrushes Resolve()
+            public static PickerBrushes Resolve(ResourceDictionary controlResources)
             {
                 var resources = Application.Current.Resources;
                 return new PickerBrushes(
@@ -127,7 +135,7 @@ namespace RuApp.Views
                     (Brush)resources["RuCanvasBrush"],
                     (Brush)resources["RuAccentSoftBrush"],
                     (Brush)resources["RuLineBrush"],
-                    (Style)resources["PickerItemButtonStyle"]);
+                    (Style)controlResources["PickerItemButtonStyle"]);
             }
         }
 

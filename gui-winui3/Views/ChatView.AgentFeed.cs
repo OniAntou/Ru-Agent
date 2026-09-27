@@ -692,6 +692,23 @@ namespace RuApp.Views
             DetachActivityItem(grid);
         }
 
+        /// <summary>
+        /// The template element carrying the row's label, by row shape.
+        /// </summary>
+        /// <remarks>
+        /// The sweep and the running-to-settled style updates target this one
+        /// element. It used to be found by grid column, which broke silently
+        /// when the header was restructured (waiting pill removed, labels moved
+        /// into toggles): no column held a label anymore, the lookup returned
+        /// null, and every Thinking row went static with no error anywhere.
+        /// Names are pinned by contract test, so the template and this lookup
+        /// cannot drift apart again without a test going red.
+        /// </remarks>
+        internal static string ActivityLabelElementName(AgentActivityItem item) =>
+            item.HasThinkingDetail ? "ThinkingLabel"
+            : item.ShowRowDetailToggle ? "EditPreviewLabel"
+            : "AgentActivityText";
+
         private void AttachActivityItem(Grid grid)
         {
             DetachActivityItem(grid, clearEntrance: false);
@@ -731,29 +748,7 @@ namespace RuApp.Views
                 entranceSb.Begin();
             }
 
-            TextBlock? displayText = null;
-            foreach (var child in grid.Children)
-            {
-                if (child is Grid header)
-                {
-                    foreach (var headerChild in header.Children)
-                    {
-                        // The activity row is flat: column 0 is the waiting
-                        // pill, column 1 the display label, column 2 the
-                        // metadata line. Sweep the label.
-                        if (headerChild is TextBlock tb && Grid.GetColumn(tb) == 1)
-                        {
-                            displayText = tb;
-                            break;
-                        }
-                    }
-                }
-
-                if (displayText != null)
-                {
-                    break;
-                }
-            }
+            TextBlock? displayText = grid.FindName(ActivityLabelElementName(item)) as TextBlock;
             if (displayText == null) return;
 
             ApplyActivityTextStyle(displayText, item);

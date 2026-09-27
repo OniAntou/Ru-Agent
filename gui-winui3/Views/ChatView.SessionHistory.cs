@@ -240,7 +240,9 @@ namespace RuApp.Views
                         .ToList();
 
                     DetachAgentActivitiesFromMessages();
-                    Messages.Clear();
+                    // Bulk load: one reset notification for the whole transcript
+                    // instead of one add notification per row.
+                    var restored = new List<ChatMessageItem>(projectedHistory.Count);
                     int assistantCount = 0;
                     // Live rows belong to the turn that just ended. They may only
                     // ride on history's last assistant when it is the final
@@ -321,7 +323,7 @@ namespace RuApp.Views
                             ActivitySplitOffsets = splitOffsets,
                         };
                         RebuildMessageSegments(restoredMessage);
-                        Messages.Add(restoredMessage);
+                        restored.Add(restoredMessage);
                     }
 
                     if (Services.ReloadActivitiesPolicy.AppendOrphanedActivities(AgentActivities.Count, liveAttached))
@@ -338,8 +340,10 @@ namespace RuApp.Views
                             ActivitySplitOffsets = TakeSplitOffsetSnapshot(AgentActivities),
                         };
                         RebuildMessageSegments(orphan);
-                        Messages.Add(orphan);
+                        restored.Add(orphan);
                     }
+
+                    Messages.ReplaceAll(restored);
 
                     if (history.Count > 0)
                     {
@@ -821,7 +825,9 @@ namespace RuApp.Views
                 }
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 DetachAgentActivitiesFromMessages();
-                Messages.Clear();
+                // Bulk load: one reset notification for the whole transcript
+                // instead of one add notification per row.
+                var opened = new List<ChatMessageItem>();
                 // Every await below is a chance for another switch to take over. Opening a
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
@@ -883,8 +889,10 @@ namespace RuApp.Views
                             }
                         }
 
-                        Messages.Add(item);
+                        opened.Add(item);
                     }
+
+                    Messages.ReplaceAll(opened);
 
                     if (history.Count > 0)
                     {
@@ -1150,6 +1158,13 @@ namespace RuApp.Views
                 _modelSearchDebounce.Stop();
                 _modelSearchDebounce = null;
             }
+            if (_groupedPublishCoalesceTimer is not null)
+            {
+                _groupedPublishCoalesceTimer.Tick -= OnGroupedPublishCoalesceTick;
+                _groupedPublishCoalesceTimer.Stop();
+                _groupedPublishCoalesceTimer = null;
+            }
+            _pendingGroupedState = null;
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
             _queuedTurns.Items.CollectionChanged -= OnQueuedTurnsChanged;

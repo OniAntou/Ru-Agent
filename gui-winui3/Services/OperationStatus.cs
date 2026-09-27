@@ -96,12 +96,6 @@ public sealed class OperationStatus : INotifyPropertyChanged
         }
     }
 
-    /// <summary>
-    /// Sets the status without running an operation. For a controller that reports
-    /// state it learns from elsewhere, such as a streamed summary.
-    /// </summary>
-    public void Report(string statusText) => SetStatus(statusText);
-
     /// <summary>Assigns the status line. Marshals onto the UI thread.</summary>
     public void SetStatus(string? statusText) =>
         _runOnUi(() => StatusText = statusText ?? string.Empty);

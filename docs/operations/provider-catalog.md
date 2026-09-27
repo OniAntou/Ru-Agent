@@ -19,7 +19,10 @@ The GUI refreshes on startup, successful provider/model/key settings changes,
 opening the model selector and every five minutes while Chat is active. It
 stops polling when Chat is inactive or the window closes. Repeated manual
 opens are throttled for 30 seconds; in-flight requests are coalesced and old
-selection generations are discarded.
+selection generations are discarded. Selector opens and post-switch syncs
+refresh due catalogs instead of forcing all two hundred providers at once;
+the remaining fan-out is capped at eight concurrent fetches, and a poll burst
+publishes once per provider but re-projects the picker a single trailing time.
 
 The Host caches at most 16 provider/endpoint identities, invalidating the
 entry when its canonical credential changes. Each fetch has a 15-second

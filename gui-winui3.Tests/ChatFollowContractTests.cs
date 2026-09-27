@@ -46,11 +46,12 @@ public sealed class ChatFollowContractTests
         // A poll faster than this would spin the backend; slower would read as broken.
         var polls = new[]
         {
-            UiTiming.TypingDebounce,
             UiTiming.SessionsPoll,
             UiTiming.ReconnectPoll,
             UiTiming.ModelSaveFailure,
             UiTiming.ContextMeterDebounce,
+            UiTiming.GroupedPublishCoalesce,
+            UiTiming.DiagnosticFilterDebounce,
         };
 
         Assert.All(polls, poll =>

@@ -68,7 +68,12 @@ namespace RuApp.Views
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
             ModelPicker.FocusSearch();
-            _ = RefreshGroupedCatalogsAsync(force: true);
+            // Due-based, not forced: opening the picker fanned out one forced
+            // refresh per child (two hundred concurrent GET /models), which is
+            // what made the dropdown lag on open. The selected backend is always
+            // refreshed through the single controller; the rest only refetch
+            // when their poll interval lapsed.
+            _ = RefreshGroupedCatalogsAsync(force: false);
         }
 
         private async Task RefreshGroupedCatalogsAsync(bool force)
@@ -99,6 +104,8 @@ namespace RuApp.Views
 
         private DispatcherQueueTimer? _modelSearchDebounce;
         private string _pendingModelSearch = string.Empty;
+        private DispatcherQueueTimer? _groupedPublishCoalesceTimer;
+        private GroupedProviderCatalogState? _pendingGroupedState;
 
         private void OnModelPickerSearchTextChanged(object? sender, string searchText)
         {
@@ -131,19 +138,35 @@ namespace RuApp.Views
 
         private void OnGroupedStateChanged(object? sender, GroupedProviderCatalogState state)
         {
-            if (!DispatcherQueue.TryEnqueue(() =>
+            // A poll publishes once per provider; applying each one re-projects
+            // all groups on the UI thread. Collapse the burst into one trailing
+            // apply of the newest state instead.
+            _pendingGroupedState = state;
+            if (_groupedPublishCoalesceTimer is null)
             {
-                if (_groupedCatalogs is null ||
-                    !ReferenceEquals(_groupedCatalogs.State, state))
-                {
-                    return;
-                }
+                _groupedPublishCoalesceTimer = DispatcherQueue.CreateTimer();
+                _groupedPublishCoalesceTimer.Interval = UiTiming.GroupedPublishCoalesce;
+                _groupedPublishCoalesceTimer.Tick += OnGroupedPublishCoalesceTick;
+            }
 
-                ApplyGroupedState(state);
-            }))
+            _groupedPublishCoalesceTimer.Stop();
+            _groupedPublishCoalesceTimer.Start();
+        }
+
+        private void OnGroupedPublishCoalesceTick(object? sender, object e)
+        {
+            _groupedPublishCoalesceTimer?.Stop();
+            var state = _pendingGroupedState;
+            _pendingGroupedState = null;
+            if (state is null) return;
+
+            if (_groupedCatalogs is null ||
+                !ReferenceEquals(_groupedCatalogs.State, state))
             {
                 return;
             }
+
+            ApplyGroupedState(state);
         }
 
         /// <summary>
@@ -218,7 +241,9 @@ namespace RuApp.Views
                     }
                     // Refresh grouped catalogs in background to sync SelectedEffort;
                     // picker itself uses local _selectedModel instantly (no restart).
-                    _ = _groupedCatalogs?.RefreshAsync(force: true);
+                    // Due-based: a forced refresh fanned out one GET /models per
+                    // child, stalling the next picker open on two hundred requests.
+                    _ = _groupedCatalogs?.RefreshAsync(force: false);
                     UpdateReasoningEffortUi();
                 }
                 else

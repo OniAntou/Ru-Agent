@@ -25,21 +25,6 @@ public sealed class AgentComposerPresentationTests
         Assert.NotEqual(AgentComposerPresentation.SendName, AgentComposerPresentation.StopName);
     }
 
-    [Theory]
-    [InlineData(true, "Stop Coding Agent")]
-    [InlineData(false, "Send message")]
-    public void The_announced_name_follows_the_face(bool isStopFace, string expected)
-    {
-        Assert.Equal(expected, AgentComposerPresentation.NameFor(isStopFace));
-    }
-
-    [Fact]
-    public void The_glyph_follows_the_face()
-    {
-        Assert.Equal(AgentComposerPresentation.StopGlyph, AgentComposerPresentation.GlyphFor(isStopFace: true));
-        Assert.Equal(AgentComposerPresentation.SendGlyph, AgentComposerPresentation.GlyphFor(isStopFace: false));
-    }
-
     [Fact]
     public void Every_announced_name_is_usable_as_an_accessible_name()
     {

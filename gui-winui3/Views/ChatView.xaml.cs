@@ -116,7 +116,12 @@ namespace RuApp.Views
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
         private readonly AgentTurnQueue _queuedTurns = new();
-        public ObservableCollection<ChatMessageItem> Messages { get; } = new();
+        /// <summary>
+        /// The transcript, bound to the chat list. A batch collection so the two
+        /// bulk loads (session open, end-of-turn reload) replace hundreds of rows
+        /// with one reset notification instead of one notification per row.
+        /// </summary>
+        public BatchObservableCollection<ChatMessageItem> Messages { get; } = new();
         public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);

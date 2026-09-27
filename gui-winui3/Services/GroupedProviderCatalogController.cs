@@ -197,28 +197,59 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Caps how many child catalogs fetch at once. A full refresh fans out one
+    /// GET /models per provider (two hundred with Models.dev); unbounded, the
+    /// burst queues inside the backend and no child publishes for a long time.
+    /// Well above the handful of children unit tests register, so their
+    /// start-everything-before-completing expectations still hold.
+    /// </summary>
+    private static readonly SemaphoreSlim FlightGate = new(8, 8);
+
     private Task<bool> StartFlightLocked(bool force)
     {
         var children = _children.Values.ToArray();
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var childTasks = new List<Task<bool>>(children.Length);
-        foreach (var child in children)
-        {
-            childTasks.Add(force ? child.RefreshAsync(force: true) : child.RefreshIfDueAsync());
-        }
-
         _flight = completion.Task;
-        _ = RunAsync(childTasks, completion);
+        _ = RunAsync(children, force, completion);
         return completion.Task;
     }
 
+    private static async Task<bool> RunChildAsync(
+        ProviderCatalogController child,
+        bool force,
+        SemaphoreSlim gate)
+    {
+        // The slot is only held while waiting to start and while the child's own
+        // fetch runs; a child that shares an in-flight refresh never blocks the
+        // gate on another child's network call, so this cannot deadlock.
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            return force
+                ? await child.RefreshAsync(force: true).ConfigureAwait(false)
+                : await child.RefreshIfDueAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     private async Task RunAsync(
-        IReadOnlyList<Task<bool>> childTasks,
+        ProviderCatalogController[] children,
+        bool force,
         TaskCompletionSource<bool> completion)
     {
         bool applied = false;
         try
         {
+            var childTasks = new List<Task<bool>>(children.Length);
+            foreach (var child in children)
+            {
+                childTasks.Add(RunChildAsync(child, force, FlightGate));
+            }
+
             var results = await Task.WhenAll(childTasks).ConfigureAwait(false);
             applied = results.Any(success => success);
         }

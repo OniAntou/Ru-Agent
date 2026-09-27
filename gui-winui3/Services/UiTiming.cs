@@ -7,9 +7,7 @@ namespace RuApp.Services;
 /// </summary>
 public static class UiTiming
 {
-    public static readonly TimeSpan TypingDebounce = TimeSpan.FromSeconds(1.5);
     public static readonly TimeSpan SessionsPoll = TimeSpan.FromSeconds(3);
-    public static readonly TimeSpan ObservationPoll = TimeSpan.FromSeconds(1);
     public static readonly TimeSpan ReconnectPoll = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan ModelSaveFailure = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan AgentRetryDelay = TimeSpan.FromSeconds(1);
@@ -39,11 +37,37 @@ public static class UiTiming
     /// </summary>
     public static readonly TimeSpan ModelSearchDebounce = TimeSpan.FromMilliseconds(180);
 
+    /// <summary>
+    /// Coalescing window for grouped catalog publishes.
+    ///
+    /// One poll cycle publishes once per provider (two hundred with Models.dev),
+    /// and every publish re-projected all groups and rebuilt the picker diff on
+    /// the UI thread. Collapsing the burst into one trailing apply keeps a poll
+    /// at a single projection instead of hundreds.
+    /// </summary>
+    /// <summary>
+    /// Coalescing window for grouped catalog publishes.
+    ///
+    /// One poll cycle publishes once per provider (two hundred with Models.dev),
+    /// and every publish re-projected all groups and rebuilt the picker diff on
+    /// the UI thread. Collapsing the burst into one trailing apply keeps a poll
+    /// at a single projection instead of hundreds.
+    /// </summary>
+    public static readonly TimeSpan GroupedPublishCoalesce = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>
+    /// Coalescing window for the diagnostics filter boxes.
+    ///
+    /// Every keystroke re-scanned up to a thousand events and re-serialized
+    /// each visible one for its detail pane. A fast typist's whole word
+    /// collapses into one apply.
+    /// </summary>
+    public static readonly TimeSpan DiagnosticFilterDebounce = TimeSpan.FromMilliseconds(250);
+
     public static readonly TimeSpan ChatFlash = TimeSpan.FromMilliseconds(120);
     public const double ActivityWavePeriodSeconds = 0.65;
     public const double ChatFollowThresholdPx = 100.0;
 
-    public const double StaleReactionSeconds = 15.0;
     public const double ResizerActiveOpacity = 0.85;
 
     /// <summary>

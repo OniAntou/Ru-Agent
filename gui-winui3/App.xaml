@@ -220,7 +220,6 @@
             <!-- Converters -->
             <converters:ErrorColorConverter x:Key="ErrorColorConverter" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-            <converters:SessionTimeConverter x:Key="SessionTimeConverter" />
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
             <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
@@ -428,42 +427,6 @@
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
-            </Style>
-
-            <!-- Smooth Action Button Style -->
-            <Style x:Key="ActionCardButtonStyle" TargetType="Button">
-                <Setter Property="Background" Value="{StaticResource AppCardBackgroundBrush}" />
-                <Setter Property="BorderBrush" Value="{StaticResource AppCardBorderBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
-                <Setter Property="Padding" Value="16,12" />
-            </Style>
-
-            <!-- Ru ComboBox Item: matches FluentCard typography + rounded hover -->
-            <Style x:Key="RuComboBoxItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource DefaultComboBoxItemStyle}">
-                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="Padding" Value="12,8" />
-                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
-                <Setter Property="BorderThickness" Value="0" />
-            </Style>
-
-            <!-- Ru ComboBox: Canvas input-well, Line border, Ink text -->
-            <Style x:Key="RuComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
-                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="FontWeight" Value="Medium" />
-                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
-                <Setter Property="Background" Value="{StaticResource RuCanvasBrush}" />
-                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                <Setter Property="Padding" Value="12,0,0,0" />
-                <Setter Property="MinHeight" Value="36" />
-                <Setter Property="VerticalContentAlignment" Value="Center" />
-                <Setter Property="ItemContainerStyle" Value="{StaticResource RuComboBoxItemStyle}" />
             </Style>
 
             <!-- Ru Dropdown Button: input-well trigger mirroring the prompt ModelPicker trigger -->

@@ -80,7 +80,7 @@ namespace RuApp.Views
             UpdateAgentInlineState();
         }
 
-        private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs e)
+        private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs _)
         {
             if (_isSendingUserTurn)
             {

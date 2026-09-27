@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
+using RuApp.Views;
 using Xunit;
 
 namespace RuApp.Tests;
@@ -107,6 +108,41 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.True(Binds(template, "TerminalPanelText"));
         Assert.True(Binds(template, "ShowTerminalOutput"));
         Assert.True(Binds(template, "ShowRowDetailToggle"));
+    }
+
+    [Fact]
+    public void The_sweep_lookup_names_the_visible_header()
+    {
+        // The wave animation and the running-to-settled style updates target one
+        // label per row shape. The mapping lives in code so it is unit-testable;
+        // the names it returns are pinned to the template by the test below.
+        Assert.Equal(
+            "ThinkingLabel",
+            ChatView.ActivityLabelElementName(
+                Item(AgentActivityState.Started, kind: AgentActivityKind.Thinking, detail: "deliberation")));
+        Assert.Equal(
+            "EditPreviewLabel",
+            ChatView.ActivityLabelElementName(
+                Item(AgentActivityState.Started, kind: AgentActivityKind.Edit, detail: "@@ old ==> new")));
+        Assert.Equal(
+            "AgentActivityText",
+            ChatView.ActivityLabelElementName(Item(AgentActivityState.Started)));
+    }
+
+    [Fact]
+    public void The_activity_template_names_the_labels_the_sweep_lookup_needs()
+    {
+        // AttachActivityItem finds the running row's label by name. It used to
+        // search by grid column, which broke silently when the header was
+        // restructured and every Thinking row went static with no error.
+        var template = ActivityTemplate();
+        foreach (var name in new[] { "AgentActivityText", "ThinkingLabel", "EditPreviewLabel" })
+        {
+            Assert.Contains(
+                template.Descendants(),
+                element => element.Name.LocalName == "TextBlock"
+                    && element.Attribute(GuiSource.Xaml + "Name")?.Value == name);
+        }
     }
 
     [Fact]

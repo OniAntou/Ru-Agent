@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Dispatching;
 using RuApp.Models;
 using RuApp.Services;
 
@@ -17,14 +18,20 @@ namespace RuApp.Views
     {
         private ApiService? _apiService;
         private DispatcherTimer? _refreshTimer;
+        private DispatcherQueueTimer? _filterDebounceTimer;
         private RefreshController<(DiagnosticStatusDto? Status, DiagnosticLogResultDto? Logs)>? _refreshController;
         private readonly List<DiagnosticEventDto> _allEvents = new();
         private readonly HashSet<string> _seenEventIds = new(StringComparer.Ordinal);
+        private readonly Dictionary<DiagnosticEventDto, DiagnosticRow> _rowCache = new();
         private IReadOnlyList<DiagnosticEventDto>? _lastVisibleEvents;
         private string? _cursor;
         private bool _isPaused;
         private bool _isActive;
         private ResponsiveLayoutTier? _statusMetricsTier;
+
+        // One shared instance: ToRow allocated a new options object per event,
+        // per keystroke, for nothing but WriteIndented.
+        private static readonly JsonSerializerOptions DiagnosticDetailOptions = new() { WriteIndented = true };
 
         public BatchObservableCollection<DiagnosticRow> Rows { get; } = new();
 
@@ -210,6 +217,7 @@ namespace RuApp.Views
                         {
                             _seenEventIds.Remove(_allEvents[i].EventId);
                         }
+                        _rowCache.Remove(_allEvents[i]);
                     }
                     _allEvents.RemoveRange(0, removeCount);
                 }
@@ -348,7 +356,9 @@ namespace RuApp.Views
             }
 
             _lastVisibleEvents = visibleEvents;
-            var rows = visibleEvents.Select(ToRow).ToList();
+            // Events are stable instances: only rows for newly seen events pay
+            // for serialization, the rest are reused across keystrokes.
+            var rows = visibleEvents.Select(GetCachedRow).ToList();
             if (rows.Count == 0)
             {
                 rows.Add(new DiagnosticRow(
@@ -411,6 +421,14 @@ namespace RuApp.Views
             return null;
         }
 
+        private DiagnosticRow GetCachedRow(DiagnosticEventDto e)
+        {
+            if (_rowCache.TryGetValue(e, out var row)) return row;
+            row = ToRow(e);
+            _rowCache[e] = row;
+            return row;
+        }
+
         private static DiagnosticRow ToRow(DiagnosticEventDto e)
         {
             string time;
@@ -436,7 +454,7 @@ namespace RuApp.Views
             string detail;
             try
             {
-                detail = JsonSerializer.Serialize(e, new JsonSerializerOptions { WriteIndented = true });
+                detail = JsonSerializer.Serialize(e, DiagnosticDetailOptions);
             }
             catch
             {
@@ -460,21 +478,44 @@ namespace RuApp.Views
 
         private void OnComponentFilterChanged(object sender, TextChangedEventArgs e)
         {
-            ApplyFilter();
+            ScheduleFilter();
         }
 
         private void OnEventCodeFilterChanged(object sender, TextChangedEventArgs e)
         {
-            ApplyFilter();
+            ScheduleFilter();
         }
 
         private void OnLevelSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            ApplyFilter();
+            ScheduleFilter();
         }
 
         private void OnCorrelationFilterChanged(object sender, TextChangedEventArgs e)
         {
+            ScheduleFilter();
+        }
+
+        /// <summary>
+        /// Coalesces a burst of filter keystrokes into one trailing apply: every
+        /// keystroke re-scanned the events and re-serialized each visible row.
+        /// </summary>
+        private void ScheduleFilter()
+        {
+            if (_filterDebounceTimer is null)
+            {
+                _filterDebounceTimer = DispatcherQueue.CreateTimer();
+                _filterDebounceTimer.Interval = UiTiming.DiagnosticFilterDebounce;
+                _filterDebounceTimer.Tick += OnFilterDebounceTick;
+            }
+
+            _filterDebounceTimer.Stop();
+            _filterDebounceTimer.Start();
+        }
+
+        private void OnFilterDebounceTick(object? sender, object e)
+        {
+            _filterDebounceTimer?.Stop();
             ApplyFilter();
         }
 
@@ -561,6 +602,12 @@ namespace RuApp.Views
                 _refreshTimer.Tick -= OnRefreshTimerTick;
                 _refreshTimer.Stop();
                 _refreshTimer = null;
+            }
+            if (_filterDebounceTimer != null)
+            {
+                _filterDebounceTimer.Tick -= OnFilterDebounceTick;
+                _filterDebounceTimer.Stop();
+                _filterDebounceTimer = null;
             }
 
             _refreshController?.SetActive(false);

@@ -35,15 +35,6 @@ public static class AgentComposerPresentation
     /// <summary>Glyph of the Agent mode chip.</summary>
     public static string AgentModeGlyph => "\uEC25";
 
-    /// <summary>
-    /// The arrow points left when stopping and right when sending, so the control reads
-    /// as its action rather than as a fixed icon that changes colour.
-    /// </summary>
-    public static string GlyphFor(bool isStopFace) => isStopFace ? StopGlyph : SendGlyph;
-
-    /// <summary>The name a screen reader announces for the current face.</summary>
-    public static string NameFor(bool isStopFace) => isStopFace ? StopName : SendName;
-
     /// <summary>Composer hint while nothing is running: the text becomes a turn.</summary>
     public static string MessagePlaceholder => "Message Ru…";
 

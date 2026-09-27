@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **feat(gui)**: **Panel reasoning effort gọn tối thiểu: mỗi mức một dòng, tick luôn giữ chỗ nên label không giật khi chọn.** Bản đầu có caption + diễn giải hai dòng đã lược bỏ theo yêu cầu minimal; giữ lại phần ngầm: resource resolve một lần ngoài loop, một Click handler chung qua Tag, automation name rõ ràng. Verify trên app thật bằng screenshot + bấm chọn `low` giữ được.
+
+- **fix(gui)**: **Dropdown model hết đơ rebuild nền theo từng publish.** Mỗi publish của grouped controller (hai trăm lần mỗi chu kỳ poll) dựng lại toàn bộ cây hàng trăm Button trên UI thread, kể cả khi flyout đang đóng không ai nhìn — đó là cơn lag vài giây khi mở picker trúng poll. Nay chỉ build khi flyout mở, đóng thì đánh dấu dirty và vẽ một lần lúc mở; label, meter và effort vẫn sống. Đo trên app thật: 458 dòng hiện trong 800ms sau khi mở (gồm animation + layout), data sẵn trong ~150ms.
+
 - **fix(backend)**: **Compaction hết rò semaphore theo từng run.** `AgentRunCompaction` giữ một gate cho mỗi runId và không bao giờ gỡ — chạy càng lâu map càng phình. Nay release xong thì gỡ gate khi đang rảnh (so khớp instance); chồng lấn còn lại chỉ có thể thành version conflict mà cả hai đường gọi đều đã xử lý.
 - **fix(cli)**: **TUI hết khựng 200ms mỗi cuối turn.** `StopLiveRow` block chờ task ticker qua `Wait(200)` trên render thread; vòng loop vốn đã check token mỗi vòng và tự thoát trong một tick nên chỉ cần Cancel, không cần join. Xoá luôn field `_liveTask` thành write-only.
 - **fix(backend)**: **SQLite dùng private cache và dọn pool đúng.** `HarnessSqliteOptions` ép `Cache=Private` đúng như comment trong code vẫn đòi (shared cache bỏ qua busy_timeout bằng `SQLITE_LOCKED`), `AgentV1Service` thôi dựng connection string riêng mà dùng chung một chỗ. Kèm sửa hệ quả: pool key theo nguyên connection string nên các fixture cleanup phải `ClearAllPools()` thay vì clear một string cũ — không thì file db bị khoá, xoá temp dir thất bại.

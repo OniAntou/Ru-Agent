@@ -68,6 +68,14 @@ namespace RuApp.Views
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
             ModelPicker.FocusSearch();
+            // The tree is only built while the flyout is open (see
+            // ApplyGroupedState), so paint the newest state now if background
+            // publishes marked it dirty: they skip the rebuild while closed.
+            if (_modelPickerDirty && _groupedCatalogs != null)
+            {
+                ApplyPickerProjection(_groupedCatalogs.State);
+            }
+
             // Due-based, not forced: opening the picker fanned out one forced
             // refresh per child (two hundred concurrent GET /models), which is
             // what made the dropdown lag on open. The selected backend is always
@@ -106,6 +114,7 @@ namespace RuApp.Views
         private string _pendingModelSearch = string.Empty;
         private DispatcherQueueTimer? _groupedPublishCoalesceTimer;
         private GroupedProviderCatalogState? _pendingGroupedState;
+        private bool _modelPickerDirty = true;
 
         private void OnModelPickerSearchTextChanged(object? sender, string searchText)
         {
@@ -201,14 +210,37 @@ namespace RuApp.Views
             }
             ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(
                 state.SelectedBackend, state.SelectedModel);
+            // The dropdown tree costs a full rebuild per publish; with two
+            // hundred providers one poll cycle is hundreds of publishes. While
+            // the flyout is closed nobody sees the tree, so skip the build and
+            // repaint once on open instead of janking the UI thread in
+            // the background. Label, meter and effort below stay live.
+            if (ChatModelFlyout.IsOpen)
+            {
+                ApplyPickerProjection(state);
+            }
+            else
+            {
+                _modelPickerDirty = true;
+            }
+
+            UpdateContextUsage();
+            UpdateReasoningEffortUi();
+        }
+
+        /// <summary>
+        /// Rebuilds the model dropdown from grouped state. Skipped by the view
+        /// itself when the content is unchanged.
+        /// </summary>
+        private void ApplyPickerProjection(GroupedProviderCatalogState state)
+        {
             ModelPicker.Apply(ProviderModelPickerProjection.Create(
                 state.Catalogs.Values,
                 state.SelectedBackend,
                 state.SelectedModel,
                 state.SearchText,
                 _groupedCatalogs?.CurrentDefinitions));
-            UpdateContextUsage();
-            UpdateReasoningEffortUi();
+            _modelPickerDirty = false;
         }
 
         private async Task SelectChatModelAsync(string model, string backend)
@@ -331,9 +363,17 @@ namespace RuApp.Views
             SyncEffortFromCatalog();
             var options = GetCurrentReasoningOptions();
 
+            var resources = Application.Current.Resources;
+            var font = (FontFamily)resources["RuUiFontFamily"];
+            var ink = (Brush)resources["RuInkBrush"];
+            var accent = (Brush)resources["RuAccentBrush"];
+            var canvas = (Brush)resources["RuCanvasBrush"];
+            var corner = (CornerRadius)resources["RuControlCornerRadius"];
+
             foreach (var option in options)
             {
                 bool isSelected = string.Equals(option.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase);
+                string label = option.Label ?? option.Value;
 
                 var btn = new Button
                 {
@@ -342,13 +382,15 @@ namespace RuApp.Views
                     Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                     BorderThickness = new Thickness(0),
                     Padding = new Thickness(10, 6, 10, 6),
-                    CornerRadius = new CornerRadius(5),
-                    MinHeight = 30
+                    CornerRadius = corner,
+                    MinHeight = 30,
+                    Tag = option.Value,
                 };
-                btn.Resources["ButtonBackgroundPointerOver"] = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
-                btn.Resources["ButtonBackgroundPressed"] = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+                btn.Resources["ButtonBackgroundPointerOver"] = canvas;
+                btn.Resources["ButtonBackgroundPressed"] = canvas;
                 btn.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                 btn.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                AutomationProperties.SetName(btn, $"Reasoning effort: {label}");
 
                 var grid = new Grid();
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -356,45 +398,50 @@ namespace RuApp.Views
 
                 var titleBlock = new TextBlock
                 {
-                    Text = option.Label ?? option.Value,
-                    FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    Text = label,
+                    FontFamily = font,
                     FontSize = 12,
-                    Foreground = (Brush)Application.Current.Resources["RuInkBrush"],
-                    VerticalAlignment = VerticalAlignment.Center
+                    Foreground = ink,
+                    VerticalAlignment = VerticalAlignment.Center,
                 };
                 Grid.SetColumn(titleBlock, 0);
                 grid.Children.Add(titleBlock);
 
-                if (isSelected)
+                // Always present, toggled: the label must not shift sideways
+                // when the check appears.
+                var checkIcon = new FontIcon
                 {
-                    var checkIcon = new FontIcon
-                    {
-                        Glyph = "\uE73E",
-                        FontSize = 12,
-                        Foreground = (Brush)Application.Current.Resources["RuAccentBrush"],
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(16, 0, 2, 0)
-                    };
-                    Grid.SetColumn(checkIcon, 1);
-                    grid.Children.Add(checkIcon);
-                }
+                    Glyph = "\uE73E",
+                    FontSize = 12,
+                    Foreground = accent,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(16, 0, 2, 0),
+                    Visibility = isSelected ? Visibility.Visible : Visibility.Collapsed,
+                };
+                Grid.SetColumn(checkIcon, 1);
+                grid.Children.Add(checkIcon);
 
                 btn.Content = grid;
-                string effort = option.Value;
-                btn.Click += async (s, args) =>
-                {
-                    try
-                    {
-                        ChatReasoningFlyout.Hide();
-                        await ApplyReasoningEffortAsync(effort);
-                    }
-                    catch (Exception ex)
-                    {
-                        GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Reasoning effort selection failed: {ex.Message}");
-                    }
-                };
-
+                btn.Click += OnReasoningOptionClicked;
                 ReasoningOptionsContainer.Children.Add(btn);
+            }
+        }
+
+        private async void OnReasoningOptionClicked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is not Button { Tag: string effort })
+                {
+                    return;
+                }
+
+                ChatReasoningFlyout.Hide();
+                await ApplyReasoningEffortAsync(effort);
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Reasoning effort selection failed: {ex.Message}");
             }
         }
 

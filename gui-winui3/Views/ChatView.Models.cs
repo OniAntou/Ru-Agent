@@ -97,9 +97,30 @@ namespace RuApp.Views
             }
         }
 
+        private DispatcherQueueTimer? _modelSearchDebounce;
+        private string _pendingModelSearch = string.Empty;
+
         private void OnModelPickerSearchTextChanged(object? sender, string searchText)
         {
-            _groupedCatalogs?.SetSearchText(searchText);
+            // Restarting the timer coalesces a burst of typing into one rebuild. The
+            // previous shape called SetSearchText per keystroke, and every one of those
+            // re-projected the catalog and rebuilt the whole dropdown on the UI thread.
+            if (_modelSearchDebounce is null)
+            {
+                _modelSearchDebounce = DispatcherQueue.CreateTimer();
+                _modelSearchDebounce.Interval = UiTiming.ModelSearchDebounce;
+                _modelSearchDebounce.Tick += OnModelSearchDebounceTick;
+            }
+
+            _pendingModelSearch = searchText;
+            _modelSearchDebounce.Stop();
+            _modelSearchDebounce.Start();
+        }
+
+        private void OnModelSearchDebounceTick(object? sender, object e)
+        {
+            _modelSearchDebounce?.Stop();
+            _groupedCatalogs?.SetSearchText(_pendingModelSearch);
         }
 
         private void OnModelPickerModelSelected(object? sender, ProviderModelSelectionEventArgs e)

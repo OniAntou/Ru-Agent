@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using RuApp.Models;
 
@@ -30,10 +31,22 @@ namespace RuApp.Views
 
         public event EventHandler<ProviderModelSelectionEventArgs>? ModelSelected;
 
+        private ProviderModelPickerProjection? _lastProjection;
+        private PickerBrushes _brushes = PickerBrushes.Resolve();
+
         public string SearchText => PickerSearchBox.Text;
 
         public void Apply(ProviderModelPickerProjection projection)
         {
+            // A poll can hand back exactly what the last one returned, and the picker
+            // is rebuilt on every publish. Rebuilding an identical tree costs the UI
+            // thread a thousand control constructions for nothing.
+            if (projection.HasSameContentAs(_lastProjection))
+            {
+                return;
+            }
+
+            _lastProjection = projection;
             PickerListContainer.Children.Clear();
             if (projection.Groups.Count == 0)
             {
@@ -55,6 +68,11 @@ namespace RuApp.Views
                     PickerListContainer.Children.Add(CreateRowButton(row));
                 }
             }
+
+            if (!string.IsNullOrEmpty(projection.TruncationNotice))
+            {
+                PickerListContainer.Children.Add(CreateTruncationNotice(projection.TruncationNotice));
+            }
         }
 
         public void FocusSearch() => PickerSearchBox.Focus(FocusState.Programmatic);
@@ -62,20 +80,87 @@ namespace RuApp.Views
         private void OnPickerSearchTextChanged(object sender, TextChangedEventArgs e) =>
             SearchTextChanged?.Invoke(this, PickerSearchBox.Text);
 
+        // One shared delegate per event instead of four closures allocated for every
+        // row on every rebuild. The row travels on Tag.
+        private void OnRowPointerEntered(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is ProviderModelPickerRow row)
+            {
+                button.Background = row.IsSelected ? _brushes.SelectedHover : _brushes.Hover;
+            }
+        }
+
+        private void OnRowPointerLeft(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is ProviderModelPickerRow row)
+            {
+                button.Background = row.IsSelected ? _brushes.Selected : _brushes.Rest;
+            }
+        }
+
+        /// <summary>
+        /// Resolved once instead of per row. The previous shape read these from
+        /// Application.Current resources inside every row builder, which is five
+        /// dictionary lookups for every control on every rebuild.
+        /// </summary>
+        private sealed record PickerBrushes(
+            FontFamily FontFamily,
+            Brush Ink,
+            Brush Muted,
+            Brush Line,
+            Brush Surface,
+            Brush Accent,
+            Brush Warning,
+            Brush Rest,
+            Brush Hover,
+            Brush Selected,
+            Brush SelectedHover,
+            Style ItemStyle)
+        {
+            public static PickerBrushes Resolve()
+            {
+                var resources = Application.Current.Resources;
+                return new PickerBrushes(
+                    (FontFamily)resources["RuUiFontFamily"],
+                    (Brush)resources["RuInkBrush"],
+                    (Brush)resources["RuMutedBrush"],
+                    (Brush)resources["RuLineBrush"],
+                    (Brush)resources["RuSurfaceBrush"],
+                    (Brush)resources["RuAccentBrush"],
+                    (Brush)resources["RuWarningBrush"],
+                    new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    (Brush)resources["RuCanvasBrush"],
+                    (Brush)resources["RuAccentSoftBrush"],
+                    (Brush)resources["RuLineBrush"],
+                    (Style)resources["PickerItemButtonStyle"]);
+            }
+        }
+
         private TextBlock CreateEmptyStateText(string text) => new()
         {
             Text = text,
-            FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+            FontFamily = _brushes.FontFamily,
             FontSize = 12,
-            Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
+            Foreground = _brushes.Muted,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 16, 0, 16),
+        };
+
+        private TextBlock CreateTruncationNotice(string text) => new()
+        {
+            Text = text,
+            FontFamily = _brushes.FontFamily,
+            FontSize = 11,
+            Foreground = _brushes.Muted,
+            Opacity = 0.8,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 6),
         };
 
         private Border CreateGroupDivider() => new()
         {
             Height = 1,
-            Background = (Brush)Application.Current.Resources["RuLineBrush"],
+            Background = _brushes.Line,
             Opacity = 0.35,
             Margin = new Thickness(6, 6, 6, 3),
         };
@@ -89,10 +174,10 @@ namespace RuApp.Views
             var name = new TextBlock
             {
                 Text = group.Provider.DisplayName,
-                FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                FontFamily = _brushes.FontFamily,
                 FontSize = 10.5,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
+                Foreground = _brushes.Muted,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -104,9 +189,9 @@ namespace RuApp.Views
                 var stale = new TextBlock
                 {
                     Text = ProviderModelPickerProjection.StaleAnnotation,
-                    FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    FontFamily = _brushes.FontFamily,
                     FontSize = 9.5,
-                    Foreground = (Brush)Application.Current.Resources["RuWarningBrush"],
+                    Foreground = _brushes.Warning,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 4, 0),
                 };
@@ -124,25 +209,18 @@ namespace RuApp.Views
 
         private Button CreateRowButton(ProviderModelPickerRow row)
         {
-            var defaultBrush = row.IsSelected
-                ? (Brush)Application.Current.Resources["RuAccentSoftBrush"]
-                : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            var hoverBrush = row.IsSelected
-                ? (Brush)Application.Current.Resources["RuLineBrush"]
-                : (Brush)Application.Current.Resources["RuCanvasBrush"];
-
             var itemButton = new Button
             {
-                Style = (Style)Resources["PickerItemButtonStyle"],
-                Background = defaultBrush,
+                Style = _brushes.ItemStyle,
+                Background = row.IsSelected ? _brushes.Selected : _brushes.Rest,
                 IsEnabled = row.IsEnabled,
+                Tag = row,
             };
 
-            // Flicker-free pointer state handlers
-            itemButton.PointerEntered += (s, e) => itemButton.Background = hoverBrush;
-            itemButton.PointerExited += (s, e) => itemButton.Background = defaultBrush;
-            itemButton.PointerCanceled += (s, e) => itemButton.Background = defaultBrush;
-            itemButton.PointerCaptureLost += (s, e) => itemButton.Background = defaultBrush;
+            itemButton.PointerEntered += OnRowPointerEntered;
+            itemButton.PointerExited += OnRowPointerLeft;
+            itemButton.PointerCanceled += OnRowPointerLeft;
+            itemButton.PointerCaptureLost += OnRowPointerLeft;
 
             var itemGrid = new Grid
             {
@@ -160,9 +238,9 @@ namespace RuApp.Views
                 Text = string.IsNullOrWhiteSpace(row.Annotation)
                     ? row.ModelId
                     : $"{row.ModelId} · {row.Annotation}",
-                FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                FontFamily = _brushes.FontFamily,
                 FontSize = 12.5,
-                Foreground = (Brush)Application.Current.Resources["RuInkBrush"],
+                Foreground = _brushes.Ink,
                 FontWeight = row.IsSelected
                     ? Microsoft.UI.Text.FontWeights.SemiBold
                     : Microsoft.UI.Text.FontWeights.Normal,
@@ -178,8 +256,8 @@ namespace RuApp.Views
             {
                 var specBadge = new Border
                 {
-                    Background = (Brush)Application.Current.Resources["RuSurfaceBrush"],
-                    BorderBrush = (Brush)Application.Current.Resources["RuLineBrush"],
+                    Background = _brushes.Surface,
+                    BorderBrush = _brushes.Line,
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(3.5),
                     Padding = new Thickness(4.5, 1, 4.5, 1),
@@ -189,10 +267,10 @@ namespace RuApp.Views
                 specBadge.Child = new TextBlock
                 {
                     Text = specDisplay,
-                    FontFamily = (FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    FontFamily = _brushes.FontFamily,
                     FontSize = 9.5,
                     FontWeight = Microsoft.UI.Text.FontWeights.Medium,
-                    Foreground = (Brush)Application.Current.Resources["RuMutedBrush"],
+                    Foreground = _brushes.Muted,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 Grid.SetColumn(specBadge, 1);
@@ -206,7 +284,7 @@ namespace RuApp.Views
                     Glyph = "\uE73E",
                     FontSize = 11,
                     FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                    Foreground = (Brush)Application.Current.Resources["RuAccentBrush"],
+                    Foreground = _brushes.Accent,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(4, 0, 0, 0),
                 };

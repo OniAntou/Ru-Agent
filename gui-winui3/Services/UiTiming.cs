@@ -28,6 +28,17 @@ public static class UiTiming
     public static readonly TimeSpan ActivityFlushBatch = TimeSpan.FromMilliseconds(24);
 
     public static readonly TimeSpan ContextMeterDebounce = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Coalescing window for typing in the model picker.
+    ///
+    /// Each keystroke re-projected the catalog and rebuilt every row of the dropdown
+    /// on the UI thread, so a burst of typing paid that cost once per character. Long
+    /// enough to swallow a fast typist's whole word, short enough that the list still
+    /// feels like it answered.
+    /// </summary>
+    public static readonly TimeSpan ModelSearchDebounce = TimeSpan.FromMilliseconds(180);
+
     public static readonly TimeSpan ChatFlash = TimeSpan.FromMilliseconds(120);
     public const double ActivityWavePeriodSeconds = 0.65;
     public const double ChatFollowThresholdPx = 100.0;

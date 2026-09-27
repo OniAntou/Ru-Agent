@@ -1144,6 +1144,12 @@ namespace RuApp.Views
                 _contextMeterTimer.Stop();
                 _contextMeterTimer = null;
             }
+            if (_modelSearchDebounce is not null)
+            {
+                _modelSearchDebounce.Tick -= OnModelSearchDebounceTick;
+                _modelSearchDebounce.Stop();
+                _modelSearchDebounce = null;
+            }
             _contextMeterScheduled = false;
             TranscriptTypography.Instance.PropertyChanged -= OnTranscriptTypographyChanged;
             _queuedTurns.Items.CollectionChanged -= OnQueuedTurnsChanged;

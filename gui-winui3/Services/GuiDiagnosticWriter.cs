@@ -194,9 +194,13 @@ public sealed class GuiDiagnosticWriter : IDisposable
     /// Appends one bounded, pre-formatted diagnostic line to <c>gui-trace.jsonl</c>.
     /// </summary>
     /// <remarks>
-    /// For measurements that need to be read off the machine where a problem reproduces
-    /// but that do not belong in the event stream. The caller formats the line, so this
-    /// never inspects the objects it describes and never serializes them.
+    /// Two callers: measurements that need to be read off the machine where a problem
+    /// reproduces but do not belong in the event stream, and the error trace lines for
+    /// failures a control-flow path swallows (a rejected dispatcher enqueue, a failed
+    /// catalog refresh, a clipboard paste). <c>Debug.WriteLine</c> is not a substitute:
+    /// it is compiled out of Release, so those failures were invisible in a shipped
+    /// build. The caller formats the line, so this never inspects the objects it
+    /// describes and never serializes them.
     /// </remarks>
     public static bool AppendTraceLine(string line, string? logRoot = null)
     {

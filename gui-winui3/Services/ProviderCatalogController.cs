@@ -1,5 +1,7 @@
 using RuApp.Models;
 
+using RuApp.Services;
+
 namespace RuApp.Services;
 
 public interface IProviderCatalogClock
@@ -144,7 +146,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
         try { await previous.ConfigureAwait(false); }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ProviderCatalog] Cancel wait failed: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[ProviderCatalog] Cancel wait failed: {ex.Message}");
         }
         lock (_gate)
         {
@@ -250,7 +252,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ProviderCatalogController] Refresh failed: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[ProviderCatalogController] Refresh failed: {ex.Message}");
         }
         finally
         {
@@ -300,7 +302,7 @@ public sealed class ProviderCatalogController : IAsyncDisposable
             try { await flight.ConfigureAwait(false); }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ProviderCatalog] Dispose wait failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ProviderCatalog] Dispose wait failed: {ex.Message}");
             }
         }
     }

@@ -61,7 +61,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             // A missing typography resource costs the font-size preference, not the app.
-            System.Diagnostics.Debug.WriteLine($"[App] Transcript typography registration failed: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[App] Transcript typography registration failed: {ex.Message}");
         }
     }
 
@@ -112,7 +112,7 @@ public partial class App : Application
             try { _singleInstanceMutex?.ReleaseMutex(); }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[App] Mutex release failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[App] Mutex release failed: {ex.Message}");
             }
             _singleInstanceMutex?.Dispose();
             _singleInstanceMutex = null;
@@ -173,7 +173,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[App] Activate existing instance failed: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[App] Activate existing instance failed: {ex.Message}");
         }
     }
 

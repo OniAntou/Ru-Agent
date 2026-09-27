@@ -5,6 +5,8 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using RuApp.Services;
+
 namespace RuApp.Services
 {
     public sealed record ApiErrorSnapshot(
@@ -83,11 +85,11 @@ namespace RuApp.Services
             var status = statusCode.HasValue
                 ? $" status={statusCode.Value} "
                 : string.Empty;
-            Debug.WriteLine(
+            GuiDiagnosticWriter.AppendTraceLine(
                 $"[ApiService] {method} failed: {ex.GetType().Name}{status}: {ex.Message}");
             if (ex.InnerException != null)
             {
-                Debug.WriteLine($"[ApiService] {method} inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ApiService] {method} inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
             }
 
             try

@@ -8,6 +8,8 @@ using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
 
+using RuApp.Services;
+
 namespace RuApp.Services;
 
 public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
@@ -550,7 +552,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 // Usage is observational. A payload fetch failure must not stop the
                 // durable run stream or alter the assistant reply. Log the failure
                 // type only (no identifiers or payload content) for diagnostics.
-                System.Diagnostics.Debug.WriteLine(
+                GuiDiagnosticWriter.AppendTraceLine(
                     $"Agent usage payload fetch failed: {exception.GetType().Name}");
             }
         }

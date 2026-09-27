@@ -4,6 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using RuAgent.Client;
 
+using RuApp.Services;
+
 namespace RuApp.Services;
 
 public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
@@ -70,7 +72,7 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"[ManagedRuBackendSessionProvider] Could not hook process {hostSession.Descriptor.ProcessId}: {ex.Message}");
+                        GuiDiagnosticWriter.AppendTraceLine($"[ManagedRuBackendSessionProvider] Could not hook process {hostSession.Descriptor.ProcessId}: {ex.Message}");
                     }
                 }
 
@@ -81,7 +83,7 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
         }
         catch (AgentApiException ex) when (ex.ErrorCode == "public_host_port_conflict")
         {
-            Debug.WriteLine($"[ManagedRuBackendSessionProvider] Port conflict: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[ManagedRuBackendSessionProvider] Port conflict: {ex.Message}");
             return null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -90,7 +92,7 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ManagedRuBackendSessionProvider] Start failed: {ex.GetType().Name}: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[ManagedRuBackendSessionProvider] Start failed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }

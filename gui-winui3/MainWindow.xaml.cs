@@ -80,7 +80,7 @@ namespace RuApp
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MainWindow] TitleBar setup failed: {ex.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] TitleBar setup failed: {ex.Message}");
                 }
 
                 ApplyTheme(_themePreferenceStore.Load());
@@ -220,7 +220,7 @@ namespace RuApp
                 _apiService.RequestFailed += (_, args) =>
                 {
                     var err = args.Error;
-                    System.Diagnostics.Debug.WriteLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
                     GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
                 };
                 var catalogService = new ProviderCatalogService(_apiService);
@@ -331,12 +331,12 @@ namespace RuApp
                         try { await UpdateHealthStatusAsync(); }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[MainWindow] Health poll failed: {ex.Message}");
+                            GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Health poll failed: {ex.Message}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Sessions poll failed: {ex.Message}");
+                        GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Sessions poll failed: {ex.Message}");
                     }
                     finally
                     {
@@ -459,7 +459,7 @@ namespace RuApp
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] Reload provider selection failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Reload provider selection failed: {ex.Message}");
             }
         }
 
@@ -657,7 +657,7 @@ namespace RuApp
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] Reconnect attempt failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Reconnect attempt failed: {ex.Message}");
             }
             finally
             {
@@ -681,7 +681,7 @@ namespace RuApp
             _apiService.RequestFailed += (_, args) =>
             {
                 var err = args.Error;
-                System.Diagnostics.Debug.WriteLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ApiService.RequestFailed] {err.Method} status={err.StatusCode} {err.ErrorType}: {err.Message}");
                 GuiDiagnosticWriter.WriteApiError(err.Method, err.ErrorType, err.StatusCode);
             };
             _apiService.SettingsSaved += OnSettingsSaved;
@@ -784,7 +784,7 @@ namespace RuApp
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Host shutdown failed: {ex.Message}");
+                        GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Host shutdown failed: {ex.Message}");
                     }
                     await DisposeWindowResourcesAsync();
                 });
@@ -849,7 +849,7 @@ namespace RuApp
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MainWindow] Shutdown error: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Shutdown error: {ex.Message}");
             }
         }
 

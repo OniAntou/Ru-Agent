@@ -420,7 +420,7 @@ namespace RuApp.Views
                 catch (Exception ex)
                 {
                     // The trigger can be detached mid-layout; keep the declared height.
-                    System.Diagnostics.Debug.WriteLine($"[Settings] Provider flyout sizing skipped: {ex.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[Settings] Provider flyout sizing skipped: {ex.Message}");
                 }
             }
 
@@ -537,7 +537,7 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 _modelsDevLoadFailed = true;
-                System.Diagnostics.Debug.WriteLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[Settings] Error loading Models.dev providers: {ex.Message}");
                 // The failure mode this replaced was silent: a partially built list with
                 // no error anywhere. The stage and the row count make it visible next time.
                 GuiDiagnosticWriter.AppendTraceLine(
@@ -940,7 +940,7 @@ namespace RuApp.Views
                     // not block the UI thread's Dispose.
                     var controller = _providerCatalogController;
                     _ = controller.DisposeAsync().AsTask().ContinueWith(
-                        static faulted => System.Diagnostics.Debug.WriteLine(
+                        static faulted => GuiDiagnosticWriter.AppendTraceLine(
                             $"[SettingsView] Catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
                         CancellationToken.None,
                         TaskContinuationOptions.OnlyOnFaulted,

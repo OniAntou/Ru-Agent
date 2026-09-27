@@ -108,7 +108,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error adding attachment: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error adding attachment: {ex.Message}");
             }
         }
 
@@ -164,7 +164,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Clipboard image paste error: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Clipboard image paste error: {ex.Message}");
             }
         }
 
@@ -194,7 +194,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error picking files: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error picking files: {ex.Message}");
             }
         }
 
@@ -220,7 +220,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error dropping files: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error dropping files: {ex.Message}");
             }
         }
     }

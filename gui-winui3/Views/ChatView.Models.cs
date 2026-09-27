@@ -61,7 +61,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error loading models: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error loading models: {ex.Message}");
             }
         }
 
@@ -93,7 +93,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error loading Models.dev providers: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error loading Models.dev providers: {ex.Message}");
             }
         }
 
@@ -187,7 +187,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ChatView] Error saving model: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error saving model: {ex.Message}");
                 ShowModelSaveFailure();
             }
         }
@@ -316,7 +316,7 @@ namespace RuApp.Views
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[ChatView] Reasoning effort selection failed: {ex.Message}");
+                        GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Reasoning effort selection failed: {ex.Message}");
                     }
                 };
 

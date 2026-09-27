@@ -306,7 +306,7 @@ namespace RuApp.Views
             {
                 WarningBanner.Visibility = Visibility.Visible;
                 WarningBannerText.Text = "Could not connect to backend diagnostics service.";
-                System.Diagnostics.Debug.WriteLine($"[DiagnosticsView] Refresh failed: {ex.GetType().Name}: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[DiagnosticsView] Refresh failed: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -525,7 +525,7 @@ namespace RuApp.Views
             {
                 WarningBanner.Visibility = Visibility.Visible;
                 WarningBannerText.Text = "Exporting diagnostic logs failed.";
-                System.Diagnostics.Debug.WriteLine($"[DiagnosticsView] Export failed: {ex.GetType().Name}: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[DiagnosticsView] Export failed: {ex.GetType().Name}: {ex.Message}");
             }
             finally
             {
@@ -572,7 +572,7 @@ namespace RuApp.Views
                 // here froze the UI thread whenever the in-flight refresh
                 // arrived after this call began.
                 _ = controller.DisposeAsync().AsTask().ContinueWith(
-                    static faulted => System.Diagnostics.Debug.WriteLine(
+                    static faulted => GuiDiagnosticWriter.AppendTraceLine(
                         $"[DiagnosticsView] Refresh dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
                     CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted,

@@ -57,7 +57,7 @@ namespace RuApp.Controls
             }
             catch (Exception exception)
             {
-                Debug.WriteLine($"Session usage read failed: {exception.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"Session usage read failed: {exception.Message}");
                 rows = null;
             }
 

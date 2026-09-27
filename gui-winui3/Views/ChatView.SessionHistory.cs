@@ -525,7 +525,7 @@ namespace RuApp.Views
                     // WinUI throws when a dialog opens while another one is
                     // still up; an async void handler would take the dispatcher
                     // down with it.
-                    System.Diagnostics.Debug.WriteLine($"[ChatView] Image preview dialog failed: {ex.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Image preview dialog failed: {ex.Message}");
                     ShowAgentInlineStatus("Could not open the image preview.");
                 }
             }
@@ -919,7 +919,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in OpenSessionAsync: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"Error in OpenSessionAsync: {ex.Message}");
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "assistant",
@@ -1071,7 +1071,7 @@ namespace RuApp.Views
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error copying content: {ex.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error copying content: {ex.Message}");
                 }
             }
         }
@@ -1096,7 +1096,7 @@ namespace RuApp.Views
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error forking session: {ex.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error forking session: {ex.Message}");
                     ShowAgentInlineStatus($"Could not fork the session: {ex.Message}");
                 }
             }
@@ -1124,7 +1124,7 @@ namespace RuApp.Views
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ChatView] Error rewinding session: {ex.Message}");
+                    GuiDiagnosticWriter.AppendTraceLine($"[ChatView] Error rewinding session: {ex.Message}");
                     ShowAgentInlineStatus($"Could not rewind the session: {ex.Message}");
                 }
             }
@@ -1168,7 +1168,7 @@ namespace RuApp.Views
                     // inside the controller uses ConfigureAwait(false), so the
                     // task completes independently and a fault is only logged.
                     _ = catalog.DisposeAsync().AsTask().ContinueWith(
-                        static faulted => System.Diagnostics.Debug.WriteLine(
+                        static faulted => GuiDiagnosticWriter.AppendTraceLine(
                             $"[ChatView] Catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
                         CancellationToken.None,
                         TaskContinuationOptions.OnlyOnFaulted,
@@ -1184,7 +1184,7 @@ namespace RuApp.Views
                 if (ownsGrouped)
                 {
                     _ = grouped.DisposeAsync().AsTask().ContinueWith(
-                        static faulted => System.Diagnostics.Debug.WriteLine(
+                        static faulted => GuiDiagnosticWriter.AppendTraceLine(
                             $"[ChatView] Grouped catalog dispose failed: {faulted!.Exception!.GetBaseException().Message}"),
                         CancellationToken.None,
                         TaskContinuationOptions.OnlyOnFaulted,

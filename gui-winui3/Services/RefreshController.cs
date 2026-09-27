@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+using RuApp.Services;
+
 namespace RuApp.Services;
 
 public sealed class RefreshController<T> : IAsyncDisposable
@@ -278,7 +280,7 @@ public sealed class RefreshController<T> : IAsyncDisposable
             try { await operation.ConfigureAwait(false); }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[RefreshController] Cancel wait failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[RefreshController] Cancel wait failed: {ex.Message}");
             }
         }
 

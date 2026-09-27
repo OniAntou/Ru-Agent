@@ -1,5 +1,7 @@
 using RuApp.Models;
 
+using RuApp.Services;
+
 namespace RuApp.Services;
 
 public sealed record GroupedProviderCatalogState
@@ -223,7 +225,7 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
         catch (Exception ex)
         {
             // One child failure must not throw away another child result.
-            System.Diagnostics.Debug.WriteLine($"[GroupedCatalog] Child refresh failed: {ex.Message}");
+            GuiDiagnosticWriter.AppendTraceLine($"[GroupedCatalog] Child refresh failed: {ex.Message}");
         }
         finally
         {
@@ -291,7 +293,7 @@ public sealed class GroupedProviderCatalogController : IAsyncDisposable
             try { await flight.ConfigureAwait(false); }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[GroupedCatalog] Dispose wait failed: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[GroupedCatalog] Dispose wait failed: {ex.Message}");
             }
         }
     }

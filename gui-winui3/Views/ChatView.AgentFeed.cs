@@ -54,7 +54,7 @@ namespace RuApp.Views
 
             if (!DispatcherQueue.TryEnqueue(() => EnqueueAgentActivity(activity)))
             {
-                System.Diagnostics.Debug.WriteLine("[ChatView] Dropped activity frame: dispatcher queue rejected enqueue.");
+                GuiDiagnosticWriter.AppendTraceLine("[ChatView] Dropped activity frame: dispatcher queue rejected enqueue.");
             }
         }
 

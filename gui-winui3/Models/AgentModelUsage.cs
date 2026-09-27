@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
 
+using RuApp.Services;
+
 namespace RuApp.Models;
 
 /// <summary>
@@ -71,7 +73,7 @@ public sealed record AgentModelUsage(
             {
                 // Display path stays lenient, but record the shape mismatch so a
                 // missing footer is traceable (field names/kinds only, no values).
-                Debug.WriteLine(
+                GuiDiagnosticWriter.AppendTraceLine(
                     $"Agent usage payload is not an object: {document.RootElement.ValueKind}");
                 return null;
             }
@@ -86,7 +88,7 @@ public sealed record AgentModelUsage(
         }
         catch (JsonException exception)
         {
-            Debug.WriteLine(
+            GuiDiagnosticWriter.AppendTraceLine(
                 $"Agent usage payload is not valid JSON: {exception.GetType().Name}");
             return null;
         }
@@ -106,7 +108,7 @@ public sealed record AgentModelUsage(
         {
             // Lenient by design (partial footer still renders), but log the
             // skipped field so malformed provider data does not vanish silently.
-            Debug.WriteLine(
+            GuiDiagnosticWriter.AppendTraceLine(
                 $"Agent usage field '{name}' ignored: {value.ValueKind}");
             return null;
         }

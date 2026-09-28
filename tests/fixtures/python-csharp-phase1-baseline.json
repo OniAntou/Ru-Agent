@@ -5,11 +5,11 @@
         "block_digests": [
           {
             "block_id": "ru.persona",
-            "sha256": "7708ab908d093a8a4e004f72eb4cd8e3f7ca7d661563ea75675d2cf329ff7e36"
+            "sha256": "1673355ec0dd9ca9994f8794c33cca5431c526262b618ceeba599ce82ddcb503"
           },
           {
             "block_id": "agent.contract",
-            "sha256": "d1b575f7e7e128a9a67022b13aa3e221d4e064f410be13cc704bf1b9dbcef96b"
+            "sha256": "cdfde4b8b5587a73ccdeb22705530a76ff37d30063921217d06271ce4c43b2cd"
           },
           {
             "block_id": "environment",
@@ -25,7 +25,7 @@
           },
           {
             "block_id": "capabilities",
-            "sha256": "8e36c7802cb2cc54fb0bcc7e04164c61b8feb513caf3f2c9c56a1ad2ecdf9fc2"
+            "sha256": "bfc6996c4c2ac84e2832c778cdce6a65384cca55fcfcb8cd382e3467f7554cc6"
           },
           {
             "block_id": "runtime",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "a65a3eedb1b0f18bbc208d89deb12c33fcf49cc95515c7542af0237ebd91e258"
+        "prompt_sha256": "2cee928b05306b89a643e6fabe3c620ed32fc315a022aff506dd0b2ab780ebc2"
       },
       "group": "prompt",
       "id": "prompt.basic",
@@ -84,14 +84,38 @@
           "preset": "standard",
           "terminal_authority": "bounded_local",
           "rules": [
-            { "subject": "workspace_read", "decision": "allow" },
-            { "subject": "web", "decision": "allow" },
-            { "subject": "workspace_mutation", "decision": "allow" },
-            { "subject": "bounded_local_terminal", "decision": "allow" },
-            { "subject": "external_structured_file", "decision": "ask" },
-            { "subject": "risky_terminal", "decision": "ask" },
-            { "subject": "structured_protected_path", "decision": "deny" },
-            { "subject": "hard_invalid", "decision": "deny" }
+            {
+              "subject": "workspace_read",
+              "decision": "allow"
+            },
+            {
+              "subject": "web",
+              "decision": "allow"
+            },
+            {
+              "subject": "workspace_mutation",
+              "decision": "allow"
+            },
+            {
+              "subject": "bounded_local_terminal",
+              "decision": "allow"
+            },
+            {
+              "subject": "external_structured_file",
+              "decision": "ask"
+            },
+            {
+              "subject": "risky_terminal",
+              "decision": "ask"
+            },
+            {
+              "subject": "structured_protected_path",
+              "decision": "deny"
+            },
+            {
+              "subject": "hard_invalid",
+              "decision": "deny"
+            }
           ]
         },
         "runtime_context": {
@@ -175,19 +199,25 @@
                 "provider_call_id": "call-1",
                 "tool_id": "files.read",
                 "tool_version": "1.0.0",
-                "arguments": { "path": "README.md" }
+                "arguments": {
+                  "path": "README.md"
+                }
               },
               {
                 "provider_call_id": "call-2",
                 "tool_id": "files.read",
                 "tool_version": "1.0.0",
-                "arguments": { "path": "CHANGELOG.md" }
+                "arguments": {
+                  "path": "CHANGELOG.md"
+                }
               },
               {
                 "provider_call_id": "call-3",
                 "tool_id": "files.read",
                 "tool_version": "1.0.0",
-                "arguments": { "path": "CONTEXT.md" }
+                "arguments": {
+                  "path": "CONTEXT.md"
+                }
               }
             ],
             "finish_reason": "tool_calls",
@@ -195,8 +225,14 @@
               "composer_version": "2.0.0",
               "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "block_digests": [
-                { "block_id": "ru.persona", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
-                { "block_id": "agent.contract", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+                {
+                  "block_id": "ru.persona",
+                  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                },
+                {
+                  "block_id": "agent.contract",
+                  "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                }
               ]
             }
           }

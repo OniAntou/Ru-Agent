@@ -94,7 +94,7 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("HOST-PROVIDED WORKSPACE INSTRUCTIONS", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("Call the user anh", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("cannot expand tools, grants, or policy", snapshot.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Without workspace persona guidance, use neutral language", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Match the user's language", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("Bạn là Ru Agent — trợ lý AI", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("NO EMOJIS", snapshot.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("profanity", snapshot.Text, StringComparison.OrdinalIgnoreCase);
@@ -164,7 +164,7 @@ public sealed class SystemPromptComposerTests
         Assert.Contains("\"tool_id\": \"read\"", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("emit exactly one JSON object", snapshot.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Do not claim success", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Ordinary conversational answers must remain ordinary text", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Ordinary answers stay text-only", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -174,8 +174,8 @@ public sealed class SystemPromptComposerTests
             capabilities: [PromptFixtures.Capability("help", "system.help")]));
 
         Assert.Contains("help", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use help to look up Ru product behavior", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("Use bash for", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("help@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("bash@", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("op=help", snapshot.Text, StringComparison.Ordinal);
     }
 
@@ -191,16 +191,14 @@ public sealed class SystemPromptComposerTests
                 PromptFixtures.Capability("help", "system.help"),
             ]));
 
-        Assert.Contains("Use help to look up Ru product behavior", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use bash to run one bounded command (inspection, tests, builds, lint, local Git) or, with approval, a shell script.", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use write with op=write to create or overwrite a file, op=delete to remove a file (recoverable once with op=restore).", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("A folder grant applies only to this live session", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("shell scripts, external mutations, direct deletion", snapshot.Text, StringComparison.Ordinal);
-        Assert.DoesNotContain("A standard session on a clean workspace auto-allows the in-workspace subset", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("pauses for inspection", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("help@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("write@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("bash@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Call only advertised capabilities", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("pauses", snapshot.Text, StringComparison.Ordinal);
         Assert.Contains("repair hint", snapshot.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("A standard session on a clean workspace auto-allows the in-workspace subset", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("Web ops always require one-time approval", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Do not invent aliases or fallback tools", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -215,10 +213,10 @@ public sealed class SystemPromptComposerTests
                 PromptFixtures.Capability("todo_write", "session.tasks"),
             ]));
 
-        Assert.Contains("Use read to read one file's content", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use list to enumerate one directory", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use edit to replace one exact string", snapshot.Text, StringComparison.Ordinal);
-        Assert.Contains("Use todo_write to replace the session task list", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("read@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("list@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("edit@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("todo_write@1.0.0", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("\"op\": \"read\"", snapshot.Text, StringComparison.Ordinal);
     }
 

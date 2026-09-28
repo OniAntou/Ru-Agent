@@ -118,12 +118,6 @@
                                 <FontIcon Glyph="&#xE8E5;" />
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
-                        <MenuFlyoutSeparator />
-                        <MenuFlyoutItem Text="Delete Session" Click="OnDeleteSessionClick" Tag="{x:Bind Id}">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon Glyph="&#xE74D;" Foreground="{StaticResource AppDangerBrush}" />
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
                     </MenuFlyout>
                 </Grid.ContextFlyout>
                 <Grid.ColumnDefinitions>

@@ -202,6 +202,15 @@ artifact was published at
 (162,816 bytes); native overlay build/tests passed 2/2
 (`overlay_options_tests`, `overlay_check_failure`).
 
+A change to a `.xaml` file is not on screen after a Debug build. WinUI
+compiles markup into `.xbf`, and the app loads the copy under
+`bin/Release/.../publish`, so a Debug build leaves the running app showing
+the previous markup. `build.bat` is the only step that refreshes it. Check the
+published `.xbf` rather than the source, and match the string exactly: the
+context menu item is `Delete Session` and the hover button's tooltip is
+`Delete session`, one capital apart, so a case-insensitive search reports one
+hit for a change that removed the other.
+
 The focused documentation integrity check was not fully green: 5/6 tests
 passed, while `test_completed_implementation_archives_are_not_kept_in_the_checkout`
 failed because four dated Markdown plans remain under `docs/superpowers/plans`.

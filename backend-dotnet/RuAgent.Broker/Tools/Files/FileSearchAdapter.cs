@@ -23,8 +23,6 @@ public sealed class FileSearchAdapter
         _maxSearchConcurrency = Math.Clamp(maxSearchConcurrency, 1, MaxSearchConcurrency);
     }
 
-    public JsonObject Execute(JsonObject arguments) => ExecuteAsync(arguments, CancellationToken.None).GetAwaiter().GetResult();
-
     public Task<JsonObject> ExecuteAsync(JsonObject arguments, CancellationToken cancellationToken) =>
         ExecuteConcurrentAsync(arguments, cancellationToken);
 

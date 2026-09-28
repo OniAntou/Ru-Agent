@@ -159,12 +159,13 @@ public sealed partial class ToolExecutionService
                     token).ConfigureAwait(false),
                 ToolVerificationStates.NotRequired,
                 "Workspace search completed."),
-            ["glob"] = (context, arguments, token) => new ValueTask<ToolExecutionOutcome>(
-                ToolExecutionOutcome.Succeeded(
-                    ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(
+            ["glob"] = async (context, arguments, token) => ToolExecutionOutcome.Succeeded(
+                await Task.Run(
+                    () => ResolveTools(context, TargetPathOf(arguments)).Glob.Execute(
                         TranslateGlobArguments(arguments)),
-                    ToolVerificationStates.NotRequired,
-                    "Workspace glob completed.")),
+                    token).ConfigureAwait(false),
+                ToolVerificationStates.NotRequired,
+                "Workspace glob completed."),
             ["write"] = ExecuteWriteOpAsync,
             ["edit"] = (context, arguments, _) => ExecuteFileEdit(context, arguments),
             ["bash"] = ExecuteBashAsync,

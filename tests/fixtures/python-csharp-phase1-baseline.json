@@ -25,7 +25,7 @@
           },
           {
             "block_id": "capabilities",
-            "sha256": "bfc6996c4c2ac84e2832c778cdce6a65384cca55fcfcb8cd382e3467f7554cc6"
+            "sha256": "5d79605054ec453efb816ae60617fbd6a349ad73e8782599b042f0e4f90eb07f"
           },
           {
             "block_id": "runtime",
@@ -34,7 +34,7 @@
         ],
         "composer_version": "2.0.0",
         "private_marker": "PHASE1_PRIVATE_MARKER_SENTINEL",
-        "prompt_sha256": "2cee928b05306b89a643e6fabe3c620ed32fc315a022aff506dd0b2ab780ebc2"
+        "prompt_sha256": "dd662447790c0d2701c096f1a0959c5753dea300a7903d21bd7c6e9bbe796f72"
       },
       "group": "prompt",
       "id": "prompt.basic",

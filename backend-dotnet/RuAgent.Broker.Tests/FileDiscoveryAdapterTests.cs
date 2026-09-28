@@ -62,19 +62,19 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Search_deterministic_ordinal_relative_paths_then_line()
+    public async Task Search_deterministic_ordinal_relative_paths_then_line()
     {
         Directory.CreateDirectory(Path.Combine(_root, "src", "sub"));
         File.WriteAllText(Path.Combine(_root, "src", "a.txt"), "hello\nworld hello\n");
         File.WriteAllText(Path.Combine(_root, "src", "sub", "b.txt"), "hello");
-        var result = _search.Execute(new JsonObject { ["path"] = "src", ["query"] = "hello" });
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = "src", ["query"] = "hello" }, CancellationToken.None);
         var paths = result["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>() + ":" + n!["line"]!.GetValue<int>()).ToArray();
         var sorted = paths.OrderBy(p => p, StringComparer.Ordinal).ToArray();
         Assert.Equal(sorted, paths);
     }
 
     [Fact]
-    public void Search_skips_hard_linked_file_without_exposing_content()
+    public async Task Search_skips_hard_linked_file_without_exposing_content()
     {
         var outside = Path.Combine(Path.GetTempPath(), "ru-search-hardlink-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outside);
@@ -89,7 +89,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
 
         try
         {
-            var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "hard-link-search-marker" });
+            var result = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "hard-link-search-marker" }, CancellationToken.None);
             var paths = result["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
             Assert.DoesNotContain("leak.txt", paths);
             Assert.Equal(0, result["count"]!.GetValue<int>());
@@ -130,12 +130,12 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Search_skips_binary_files()
+    public async Task Search_skips_binary_files()
     {
         var binaryPath = Path.Combine(_root, "binary.bin");
         File.WriteAllBytes(binaryPath, new byte[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0x01, 0x02 });
         File.WriteAllText(Path.Combine(_root, "text.txt"), "hello text");
-        var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "hello" });
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "hello" }, CancellationToken.None);
         var paths = result["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
         Assert.DoesNotContain("binary.bin", paths);
         Assert.Contains("text.txt", paths);
@@ -169,12 +169,12 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Search_skips_inaccessible_locked_file_and_counts_skipped()
+    public async Task Search_skips_inaccessible_locked_file_and_counts_skipped()
     {
         var lockedPath = Path.Combine(_root, "locked.txt");
         File.WriteAllText(lockedPath, "hello locked");
         using var locked = new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None);
-        var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "hello" });
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "hello" }, CancellationToken.None);
         // locked file should be skipped (IOException) or found if share allowed; we at least check no crash and skipped counted if not found
         // If file is locked exclusive, our search should skip it and count skipped
         // We don't assert exact, just that it doesn't throw and returns bounded result
@@ -185,7 +185,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     // ---------- junction / symlink containment ----------
 
     [Fact]
-    public void Junction_escape_is_contained_for_list_and_glob_and_search()
+    public async Task Junction_escape_is_contained_for_list_and_glob_and_search()
     {
         var outside = Path.Combine(Path.GetTempPath(), "ru-junction-outside-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outside);
@@ -212,7 +212,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
             Assert.DoesNotContain("link/secret.txt", globPaths);
 
             // Search should not leak
-            var searchResult = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "outside" });
+            var searchResult = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "outside" }, CancellationToken.None);
             var searchPaths = searchResult["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
             Assert.DoesNotContain("link/secret.txt", searchPaths);
         }
@@ -252,14 +252,14 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Search_respects_max_results_cap_and_truncated()
+    public async Task Search_respects_max_results_cap_and_truncated()
     {
         for (int i = 0; i < 10; i++)
         {
             File.WriteAllText(Path.Combine(_root, $"s{i}.txt"), "needle");
         }
 
-        var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 2 });
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 2 }, CancellationToken.None);
         Assert.Equal(2, result["count"]!.GetValue<int>());
         Assert.True(result["truncated"]!.GetValue<bool>());
     }
@@ -325,7 +325,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Search_drains_truncates_without_unbounded_accumulation_for_large_file()
+    public async Task Search_drains_truncates_without_unbounded_accumulation_for_large_file()
     {
         // Create a file with many matching lines
         var bigPath = Path.Combine(_root, "bigsearch.txt");
@@ -335,7 +335,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         }
 
         var before = GC.GetAllocatedBytesForCurrentThread();
-        var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 64 });
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle", ["max_results"] = 64 }, CancellationToken.None);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal(64, result["count"]!.GetValue<int>());
@@ -345,13 +345,13 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Search_large_sparse_file_does_not_allocate_full_size()
+    public async Task Search_large_sparse_file_does_not_allocate_full_size()
     {
         var sparse = Path.Combine(_root, "sparse_search.txt");
         using (var s = File.Create(sparse)) s.SetLength(15L * 1024 * 1024);
         // Write a small header so file is considered text not binary (no NUL in first 8k maybe? sparse file reads as zeros which contain NUL, so it will be considered binary and skipped, which is correct bounded)
         var before = GC.GetAllocatedBytesForCurrentThread();
-        var result = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "needle" });
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "needle" }, CancellationToken.None);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(allocated < 5 * 1024 * 1024);
         // Should not contain sparse file as binary skipped
@@ -362,7 +362,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     // ---------- truncated metadata bounded ----------
 
     [Fact]
-    public void Truncated_metadata_is_bounded_and_does_not_leak_content()
+    public async Task Truncated_metadata_is_bounded_and_does_not_leak_content()
     {
         File.WriteAllText(Path.Combine(_root, "a.txt"), "hello world");
         var list = _list.Execute(new JsonObject { ["path"] = ".", ["max_entries"] = 1 });
@@ -372,7 +372,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         var entries = list["entries"]!.AsArray();
         foreach (var e in entries) Assert.DoesNotContain("hello", e!["path"]!.GetValue<string>());
 
-        var search = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "hello", ["max_results"] = 1 });
+        var search = await _search.ExecuteAsync(new JsonObject { ["path"] = ".", ["query"] = "hello", ["max_results"] = 1 }, CancellationToken.None);
         // search results contain preview which is file content but it's private payload; safe fields count/truncated are separate
         Assert.True(search["count"]!.GetValue<int>() <= 1);
         // Ensure safe receipt fields count/truncated exist and are bounded

@@ -128,7 +128,14 @@ public sealed partial class AgentV1Service
                     model = settings.Model;
                 }
 
-                if (!_isVisionModel(model))
+                // A provider's own declaration outranks the name check: a gateway model
+                // can carry no vendor token at all, and reading its name as non-vision
+                // rejected a model that had published modalities ["text","image"].
+                bool? declared = DeclaredVision is null
+                    ? null
+                    : await DeclaredVision(model, cancellationToken).ConfigureAwait(false);
+
+                if (!ModelImage.IsVisionModel(model, declared))
                 {
                     return BoundedError(400, "vision_unsupported", $"Model '{model}' does not support vision.");
                 }

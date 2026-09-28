@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http;
 using RuBackend.Agent;
@@ -217,6 +218,12 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<AgentConversationOutboxDispatcher>();
         services.AddHostedService<AgentRuntimeLoopService>();
         services.AddSingleton<AgentV1Service>();
+        // Image-input support follows what the provider's catalog declares for the
+        // selected model. A name check alone read a gateway model carrying no vendor
+        // token as non-vision and rejected its attachments. Wired as a property so
+        // this service keeps the dozen optional collaborators DI already supplies.
+        services.AddSingleton<IPostConfigureOptions<AgentV1Service>, AgentV1CatalogVisionConfigurator>();
+
         // Harness Core adapters: Worker v2 and ToolGateway via factory
         services.AddSingleton<LoopbackModelStepRunner>(services =>
             new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>())
@@ -424,4 +431,34 @@ internal sealed class HarnessStoreHealthWarmupService : IHostedService
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Points <see cref="AgentV1Service"/> at the provider catalog so image-input support
+/// follows what the provider declares for the selected model rather than a guess made
+/// from the model name.
+/// </summary>
+internal sealed class AgentV1CatalogVisionConfigurator(
+    ProviderCatalogService catalog,
+    ISettingsStore? settingsStore) : IPostConfigureOptions<AgentV1Service>
+{
+    public void PostConfigure(string? name, AgentV1Service service)
+    {
+        service.DeclaredVision = async (model, ct) =>
+        {
+            // Absence is not a verdict: no settings store means no selected model to
+            // look up, and a catalog that cannot be read says nothing about the model.
+            // Either way the name check decides rather than this throwing.
+            if (settingsStore is null) return null;
+            var settings = await settingsStore.ReadAsync(ct).ConfigureAwait(false);
+            try
+            {
+                return await catalog.DeclaresVisionAsync(settings.Backend, model, ct).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                return null;
+            }
+        };
+    }
 }

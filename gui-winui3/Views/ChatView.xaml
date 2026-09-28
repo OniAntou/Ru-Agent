@@ -101,7 +101,7 @@
                                 <DataTemplate x:DataType="models:ImageAttachmentItem">
                                     <Grid Margin="0,0,0,4">
                                         <!-- Image Rendering -->
-                                        <Border Visibility="{x:Bind IsImage, Mode=OneWay}"
+                                        <Border Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                                  MaxWidth="240" MaxHeight="180" Width="140" Height="105" CornerRadius="{StaticResource AppCardCornerRadius}"
                                                 Background="{StaticResource RuCanvasBrush}"
                                                 BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
@@ -116,7 +116,7 @@
                                         </Border>
 
                                         <!-- Document / Code File Pill Badge -->
-                                        <Border Visibility="{x:Bind IsDocument, Mode=OneWay}"
+                                        <Border Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                                 CornerRadius="{StaticResource AppControlCornerRadius}"
                                                 Background="{StaticResource RuCanvasBrush}"
                                                 BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"
@@ -919,7 +919,7 @@
                                 <DataTemplate x:DataType="models:ImageAttachmentItem">
                                     <Grid Margin="0,0,4,0">
                                         <!-- Image Thumbnail Box -->
-                                        <Grid Visibility="{x:Bind IsImage, Mode=OneWay}" Width="60" Height="60"
+                                         <Grid Visibility="{x:Bind IsImage, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Width="60" Height="60"
                                               ToolTipService.ToolTip="{x:Bind FormattedSize, Mode=OneWay}">
                                              <Border CornerRadius="{StaticResource AppControlCornerRadius}" Background="{StaticResource RuCanvasBrush}"
                                                      BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1">
@@ -936,7 +936,7 @@
                                         </Grid>
 
                                         <!-- Document / Code File Pill Badge -->
-                                        <Grid Visibility="{x:Bind IsDocument, Mode=OneWay}" Height="34">
+                                         <Grid Visibility="{x:Bind IsDocument, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Height="34">
                                             <Border CornerRadius="{StaticResource AppControlCornerRadius}"
                                                     Background="{StaticResource RuCanvasBrush}"
                                                     BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1"

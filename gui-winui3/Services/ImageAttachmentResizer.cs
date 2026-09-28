@@ -27,8 +27,13 @@ public static class ImageAttachmentResizer
         double scale = Math.Min(1.0, (double)maxDimension / Math.Max(origWidth, origHeight));
         bool needsResize = scale < 0.999;
         bool exceedsBytes = (long)inputStream.Size > maxBytes;
+        // BMP is accepted by the picker but has no wire form: the Host and the
+        // provider adapters accept only png/jpeg/webp. Passing BMP bytes through
+        // unchanged under a different label would hand the model undecodable
+        // bytes, so any non-wire format is re-encoded even when it is small.
+        bool needsReencode = mimeType is not ("image/png" or "image/jpeg" or "image/webp");
 
-        if (!needsResize && !exceedsBytes)
+        if (!needsResize && !exceedsBytes && !needsReencode)
         {
             inputStream.Seek(0);
             using var netStream = inputStream.AsStreamForRead();

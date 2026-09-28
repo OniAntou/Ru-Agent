@@ -32,8 +32,25 @@ namespace RuApp.Views
     {
         private void ShowAgentInlineStatus(string status)
         {
-            AgentStatusText.Text = status;
-            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(status)
+            _localComposerStatus = status;
+            ApplyAgentStatusText();
+        }
+
+        /// <summary>
+        /// A composer-local message (a rejected attachment, a picker failure) has no
+        /// run behind it, so AgentInlinePanelPolicy reports the panel hidden and
+        /// <see cref="UpdateAgentInlineState"/> would erase whatever was just written.
+        /// Holding the text here and re-projecting it is what keeps a rejected file
+        /// from being rejected silently. It is cleared by the next composer action
+        /// that replaces the message, or by a turn that starts.
+        /// </summary>
+        private string _localComposerStatus = string.Empty;
+
+        private void ApplyAgentStatusText()
+        {
+            string text = _localComposerStatus;
+            AgentStatusText.Text = text;
+            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(text)
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         }
@@ -247,10 +264,19 @@ namespace RuApp.Views
 
             AgentInlinePanel.Visibility = state.ShowInlinePanel ? Visibility.Visible : Visibility.Collapsed;
 
-            AgentStatusText.Text = state.ShowInlinePanel ? state.StatusText : string.Empty;
-            AgentStatusText.Visibility = string.IsNullOrWhiteSpace(AgentStatusText.Text)
-                ? Visibility.Collapsed
-                : Visibility.Visible;
+            // A composer-local message outlives the refresh that would otherwise
+            // blank it: the panel policy only knows about runs.
+            if (_localComposerStatus.Length > 0)
+            {
+                ApplyAgentStatusText();
+            }
+            else
+            {
+                AgentStatusText.Text = state.ShowInlinePanel ? state.StatusText : string.Empty;
+                AgentStatusText.Visibility = string.IsNullOrWhiteSpace(AgentStatusText.Text)
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+            }
             AgentStopButton.Visibility = state.ShowStop ? Visibility.Visible : Visibility.Collapsed;
 
             if (state.ShowApproval && controller is not null)
@@ -492,8 +518,8 @@ namespace RuApp.Views
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             ApprovalPanel.Hide();
             AgentStopButton.Visibility = Visibility.Collapsed;
-            AgentStatusText.Text = string.Empty;
-            AgentStatusText.Visibility = Visibility.Collapsed;
+            _localComposerStatus = string.Empty;
+            ApplyAgentStatusText();
             UpdateSendButtonMode(isAgentRunning: false);
         }
 
@@ -714,9 +740,9 @@ namespace RuApp.Views
                     return;
                 }
 
-                _isSendingUserTurn = true;
-                UpdateSendButtonMode(isAgentRunning: true);
-
+                // The limit is checked before the composer enters its sending face:
+                // bailing out after UpdateSendButtonMode(true) leaves the button showing
+                // Stop with no run behind it, and the next send starts from a broken state.
                 int imageCount = attachments.Count(static attachment => attachment.IsImage);
                 if (imageCount > ChatAttachmentPolicy.MaxImageCount)
                 {
@@ -724,11 +750,13 @@ namespace RuApp.Views
                     return;
                 }
 
+                _isSendingUserTurn = true;
+                UpdateSendButtonMode(isAgentRunning: true);
+
                 ChatInputTextBox.Text = string.Empty;
                 PendingAttachments.Clear();
                 AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
                 ClearComposerDraft(_activeSessionId);
-
                 await SendAgentTurnAsync(
                     BuildEffectivePrompt(text, attachments),
                     CancellationToken.None,
@@ -1146,6 +1174,10 @@ namespace RuApp.Views
         private static bool IsImageFile(string name) => Services.ChatAttachmentPolicy.IsImageFile(name);
 
         private static bool IsTextOrCodeFile(string name) => Services.ChatAttachmentPolicy.IsTextOrCodeFile(name);
+
+        private static bool IsOfficeDocumentFile(string name) => Services.ChatAttachmentPolicy.IsOfficeDocumentFile(name);
+
+        private static int MaxOfficeDocumentBytes => Services.ChatAttachmentPolicy.MaxOfficeDocumentBytes;
 
         private void FailActiveAgentReply(Exception exception)
         {

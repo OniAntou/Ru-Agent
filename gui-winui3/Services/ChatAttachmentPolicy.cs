@@ -11,6 +11,12 @@ internal static class ChatAttachmentPolicy
     internal const int MaxImageCount = 4;
 
     /// <summary>
+    /// An office document is read by <see cref="OfficeDocumentText"/> rather than as
+    /// text, but the extracted text still travels in a prompt, so it is capped like one.
+    /// </summary>
+    internal const int MaxOfficeDocumentBytes = 20 * 1024 * 1024;
+
+    /// <summary>
     /// The line shown when a turn carries too many images. Composed from
     /// <see cref="MaxImageCount"/> so the number the user reads cannot disagree with the
     /// number the check uses.
@@ -56,6 +62,13 @@ internal static class ChatAttachmentPolicy
         };
     }
 
+    /// <summary>
+    /// True for a zip-of-XML office document. These are not text files: reading the raw
+    /// bytes as UTF-8 would put binary noise in the prompt, so the text has to be
+    /// extracted from the OOXML parts first.
+    /// </summary>
+    internal static bool IsOfficeDocumentFile(string name) => OfficeDocumentText.IsSupported(name);
+
     internal static string MimeForExtension(string name)
     {
         string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
@@ -64,8 +77,10 @@ internal static class ChatAttachmentPolicy
             ".jpg" or ".jpeg" => "image/jpeg",
             ".png" => "image/png",
             ".webp" => "image/webp",
-            ".bmp" => "image/bmp",
-            _ => "image/png"
+            // BMP has no wire form: the Host and the provider adapters accept only
+            // png/jpeg/webp, so this is the type the bytes are normalized to, not
+            // the type the file carries.
+            _ => "image/jpeg",
         };
     }
 }

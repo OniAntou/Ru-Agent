@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text.Json;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
@@ -357,6 +358,47 @@ public sealed class ChatMessageAttachmentTests
     }
 
     [Fact]
+    public void MimeForExtension_only_ever_returns_a_type_the_Host_accepts()
+    {
+        // The Host and the provider adapters accept exactly png/jpeg/webp. The picker
+        // also offers .bmp, so its mime must be the wire type the bytes get
+        // normalized to -- returning "image/bmp" produced a 400 on every BMP.
+        foreach (var name in new[] { "a.png", "a.jpg", "a.jpeg", "a.webp", "a.bmp" })
+        {
+            var mime = ChatAttachmentPolicy.MimeForExtension(name);
+            Assert.Contains(mime, new[] { "image/png", "image/jpeg", "image/webp" });
+        }
+    }
+
+    [Fact]
+    public void A_composer_local_status_survives_the_inline_state_refresh()
+    {
+        // ShowAgentInlineStatus had no run behind it, so the next
+        // UpdateAgentInlineState painted the panel policy's empty text straight over
+        // it and a rejected attachment was rejected silently. The local status is
+        // the one that must outlive that refresh.
+        var view = GuiSource.ViewText("ChatView");
+        var status = GuiSource.MethodBody(view, "ShowAgentInlineStatus");
+
+        Assert.Contains("_localComposerStatus = status", status, StringComparison.Ordinal);
+        var update = GuiSource.MethodBody(view, "UpdateAgentInlineState");
+        Assert.Contains("_localComposerStatus", update, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_image_count_check_precedes_entering_the_sending_face()
+    {
+        // Bailing out after UpdateSendButtonMode(true) leaves the button showing Stop
+        // with no run behind it. The cap check has to come first.
+        var send = GuiSource.MethodBody(GuiSource.ViewText("ChatView"), "SendCurrentMessageAsync");
+        int cap = send.IndexOf("ChatAttachmentPolicy.MaxImageCount", StringComparison.Ordinal);
+        int sending = send.IndexOf("UpdateSendButtonMode(isAgentRunning: true)", StringComparison.Ordinal);
+
+        Assert.True(cap >= 0 && sending >= 0, "both statements must be present");
+        Assert.True(cap < sending, "the cap check must run before the composer enters its sending face");
+    }
+
+    [Fact]
     public void ChatView_XAML_has_thumbnail_formatted_size_tooltip()
     {
         string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
@@ -369,6 +411,30 @@ public sealed class ChatMessageAttachmentTests
             string xaml = File.ReadAllText(xamlPath);
             Assert.Contains("ToolTipService.ToolTip=\"{x:Bind FormattedSize, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void A_bool_bound_to_Visibility_goes_through_the_converter()
+    {
+        // Visibility is not a bool, so a raw bool binding needs the converter. The
+        // image/document pills were bound without one, which left every non-image
+        // attachment invisible in the composer: the file was attached and sent, the
+        // user just saw nothing. Images looked fine, so the strip looked alive.
+        string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.Combine("Views", "ChatView.xaml");
+        }
+        Assert.True(File.Exists(xamlPath), xamlPath);
+
+        string xaml = File.ReadAllText(xamlPath);
+        var missing = System.Text.RegularExpressions.Regex.Matches(
+                xaml,
+                "Visibility=\"\\{x:Bind (?<flag>[A-Za-z]+), Mode=OneWay\\}\"")
+            .Select(match => match.Groups["flag"].Value)
+            .Where(flag => flag is "IsImage" or "IsDocument")
+            .ToArray();
+        Assert.Empty(missing);
     }
 
     [Fact]

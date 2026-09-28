@@ -8,6 +8,7 @@ using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Models;
 using RuBackend.Business.Settings;
 using RuBackend.Harness;
 using RuBackend.Harness.Workspace;
@@ -390,6 +391,25 @@ public sealed class AgentV1EndpointTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("vision_unsupported", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public void IsVisionModel_prefers_a_provider_declaration_over_the_model_name()
+    {
+        // A gateway model name carries no vendor token, so the name check alone reads
+        // it as non-vision. A provider that publishes ["text","image"] is the
+        // authority, and its declaration must win in both directions.
+        Assert.True(ModelImage.IsVisionModel("dots-studio/dots-3-note-preview:free", declaredVision: true));
+        Assert.False(ModelImage.IsVisionModel("gpt-4o", declaredVision: false));
+    }
+
+    [Fact]
+    public void IsVisionModel_falls_back_to_the_name_when_nothing_is_declared()
+    {
+        // Absent is not a denial: an undeclared model keeps the weaker signal so a
+        // known vision model is not newly rejected.
+        Assert.True(ModelImage.IsVisionModel("gpt-4o", declaredVision: null));
+        Assert.False(ModelImage.IsVisionModel("deepseek-chat", declaredVision: null));
     }
 
     [Fact]

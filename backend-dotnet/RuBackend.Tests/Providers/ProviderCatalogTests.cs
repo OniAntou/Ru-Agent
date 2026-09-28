@@ -72,6 +72,42 @@ public sealed class ProviderCatalogTests : IDisposable
     }
 
     [Fact]
+    public async Task DeclaresVisionAsync_reads_image_input_from_the_provider_declaration()
+    {
+        // Both ways models.dev publishes it count: the explicit flag and the
+        // modalities list. Neither is inferred from the model name. The payload
+        // carries the usual provider count because a short one is never cached.
+        var entries = Enumerable.Range(0, 60)
+            .Select(i => $"\"prov{i:000}\":{{\"api\":\"https://prov{i:000}.example/v1\"}}")
+            .Prepend("""
+                "kilo":{"api":"https://kilo.example/v1","models":{
+                  "dots-studio/dots-3-note-preview:free":{"attachment":true,"modalities":{"input":["text","image"]}},
+                  "vendor/vision-only":{"modalities":{"input":["image"]}},
+                  "vendor/text-only":{"modalities":{"input":["text"]}}
+                }}
+                """);
+        await WriteModelsDevCacheAsync("{" + string.Join(",", entries) + "}");
+        var service = ModelsDevService();
+
+        Assert.True(await service.DeclaresVisionAsync("models.dev:kilo", "dots-studio/dots-3-note-preview:free", CancellationToken.None));
+        Assert.True(await service.DeclaresVisionAsync("models.dev:kilo", "vendor/vision-only", CancellationToken.None));
+        // Undeclared is not a denial: it must stay null so the caller's weaker
+        // signal decides, rather than silently reading as "not vision".
+        Assert.Null(await service.DeclaresVisionAsync("models.dev:kilo", "vendor/text-only", CancellationToken.None));
+        Assert.Null(await service.DeclaresVisionAsync("models.dev:kilo", "unlisted/model", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeclaresVisionAsync_ignores_a_non_models_dev_backend()
+    {
+        await WriteModelsDevCacheAsync(TwoProviderJson);
+        var service = ModelsDevService();
+
+        Assert.Null(await service.DeclaresVisionAsync("OpenAI", "gpt-4o", CancellationToken.None));
+        Assert.Null(await service.DeclaresVisionAsync("models.dev:", "gpt-4o", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ModelsDev_small_payload_is_served_but_never_cached()
     {
         _handler.Json = "{\"openrouter\":{\"api\":\"https://openrouter.ai/api/v1\"}}";

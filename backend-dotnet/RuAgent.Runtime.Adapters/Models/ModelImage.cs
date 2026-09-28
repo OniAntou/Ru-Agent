@@ -19,8 +19,18 @@ public sealed record ModelImage(string MimeType, string Base64Data)
         return true;
     }
 
-    public static bool IsVisionModel(string? model)
+    /// <summary>
+    /// A model name is only a hint. The authoritative answer is what the provider
+    /// declares for the model, so a declared value always wins; the name check is the
+    /// fallback for catalogs that publish no capability metadata at all.
+    /// </summary>
+    public static bool IsVisionModel(string? model, bool? declaredVision = null)
     {
+        if (declaredVision.HasValue)
+        {
+            return declaredVision.Value;
+        }
+
         if (string.IsNullOrWhiteSpace(model))
         {
             return false;

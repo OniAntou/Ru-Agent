@@ -15,7 +15,8 @@ public sealed record ModelsDevProvider(
     string BaseUrl,
     IReadOnlyList<string> Models,
     IReadOnlyDictionary<string, CatalogReasoning>? Reasoning = null,
-    IReadOnlyDictionary<string, CatalogCost>? Costs = null);
+    IReadOnlyDictionary<string, CatalogCost>? Costs = null,
+    IReadOnlyDictionary<string, bool>? Vision = null);
 
 /// <summary>Bounded Host-owned catalog cache. No provider/key/protocol fallback.</summary>
 public sealed class ProviderCatalogService(HttpClient http, ICredentialStore credentials, TimeProvider clock, string? modelsDevCacheFile = null)
@@ -145,6 +146,36 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         }
     }
 
+    /// <summary>
+    /// What the provider's catalog declares about a model's image input, or null when
+    /// the catalog publishes no such declaration for it. A null is not a "no": it means
+    /// the caller should fall back to whatever weaker signal it has, and only an
+    /// explicit false (the provider declared text-only) is a rejection.
+    /// </summary>
+    public async Task<bool?> DeclaresVisionAsync(
+        string backend,
+        string model,
+        CancellationToken ct)
+    {
+        const string prefix = "models.dev:";
+        if (!backend.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || backend.Length <= prefix.Length
+            || string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
+        var providers = await GetModelsDevAsync(ct).ConfigureAwait(false);
+        var provider = providers.FirstOrDefault(p =>
+            string.Equals(p.Id, backend[prefix.Length..], StringComparison.OrdinalIgnoreCase));
+        if (provider?.Vision is null || !provider.Vision.TryGetValue(model, out var declared))
+        {
+            return null;
+        }
+
+        return declared;
+    }
+
     private async Task<IReadOnlyList<ModelsDevProvider>> GetModelsDevCoreAsync(CancellationToken ct)
     {
         var hasCache = TryReadModelsDevCache(out var cachedProviders, out var cacheFresh);
@@ -259,7 +290,8 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
                     uri.AbsoluteUri.TrimEnd('/'),
                     ReadModelIds(property.Value),
                     ReadModelReasoning(property.Value),
-                    ReadModelCosts(property.Value)));
+                    ReadModelCosts(property.Value),
+                    ReadModelVision(property.Value)));
             }
         }
 
@@ -332,6 +364,63 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         }
 
         return costs;
+    }
+
+    /// <summary>
+    /// Whether a Models.dev model declares image input, keyed by model id.
+    /// <para>
+    /// Models.dev publishes this two ways: an explicit <c>attachment: true</c> flag, and
+    /// <c>modalities.input</c> containing <c>image</c>. Either is a declaration by the
+    /// provider, so either is used. Only a model that appears here is treated as vision-
+    /// capable; an undeclared model stays unknown rather than being guessed from its name,
+    /// which is how a gateway model like <c>dots-studio/dots-3-note-preview:free</c> used
+    /// to be rejected as non-vision despite declaring <c>["text","image"]</c>.
+    /// </para>
+    /// </summary>
+    private static IReadOnlyDictionary<string, bool> ReadModelVision(JsonElement entry)
+    {
+        var vision = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        if (entry.ValueKind != JsonValueKind.Object
+            || !entry.TryGetProperty("models", out var models)
+            || models.ValueKind != JsonValueKind.Object)
+        {
+            return vision;
+        }
+
+        foreach (var model in models.EnumerateObject())
+        {
+            var id = model.Name?.Trim() ?? string.Empty;
+            if (id.Length is 0 or > 256 || id.Any(char.IsControl)) continue;
+
+            if (DeclaresImageInput(model.Value))
+            {
+                vision[id] = true;
+            }
+
+            if (vision.Count >= 5000) break;
+        }
+
+        return vision;
+    }
+
+    private static bool DeclaresImageInput(JsonElement model)
+    {
+        if (model.ValueKind != JsonValueKind.Object) return false;
+
+        if (model.TryGetProperty("attachment", out var attachment)
+            && attachment.ValueKind == JsonValueKind.True)
+        {
+            return true;
+        }
+
+        return model.TryGetProperty("modalities", out var modalities)
+            && modalities.ValueKind == JsonValueKind.Object
+            && modalities.TryGetProperty("input", out var input)
+            && input.ValueKind == JsonValueKind.Array
+            && input.EnumerateArray().Any(item =>
+                item.ValueKind == JsonValueKind.String
+                && string.Equals(item.GetString(), "image", StringComparison.OrdinalIgnoreCase));
     }
 
     private static CatalogCost? ReadCost(JsonElement model)

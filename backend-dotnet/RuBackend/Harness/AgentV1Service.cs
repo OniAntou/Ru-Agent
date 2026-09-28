@@ -54,6 +54,19 @@ public sealed partial class AgentV1Service
     private readonly Func<string, bool> _isVisionModel;
 
     /// <summary>
+    /// What the provider's own catalog declares about the selected model's image input,
+    /// or null when the catalog publishes no such declaration. Null is not a denial: it
+    /// means the name-based check decides. Optional because the service is constructed
+    /// directly by tests.
+    /// </summary>
+    /// <remarks>
+    /// Set by the Host through property injection rather than a constructor parameter,
+    /// because this service has a dozen optional collaborators and re-listing them in a
+    /// hand-written DI factory silently dropped the ones the factory forgot.
+    /// </remarks>
+    public Func<string, CancellationToken, Task<bool?>>? DeclaredVision { get; set; }
+
+    /// <summary>
     /// Optional because the service is constructed directly by tests. When present it records
     /// the reason behind a bounded public error, which otherwise leaves nothing to diagnose
     /// with: the caller sees only the code.
@@ -124,7 +137,7 @@ public sealed partial class AgentV1Service
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
         _settingsStore = settingsStore;
-        _isVisionModel = isVisionModel ?? ModelImage.IsVisionModel;
+        _isVisionModel = isVisionModel ?? ((string model) => ModelImage.IsVisionModel(model));
         _logger = logger;
     }
 

@@ -275,7 +275,7 @@
             <CornerRadius x:Key="AppCardCornerRadius">12</CornerRadius>
             <CornerRadius x:Key="AppModalCornerRadius">16</CornerRadius>
             <CornerRadius x:Key="AppPillCornerRadius">999</CornerRadius>
-            <CornerRadius x:Key="AppFlyoutCornerRadius">14</CornerRadius>
+            <CornerRadius x:Key="AppFlyoutCornerRadius">10</CornerRadius>
 
             <!-- Elevation: shared theme shadows; depth comes from shadow, not borders -->
             <ThemeShadow x:Key="RuRestShadow" />

@@ -33,8 +33,13 @@ public sealed class CornerRadiusScaleTests
         ("AppMicroPillCornerRadius", "3"),
         ("AppControlCornerRadius", "6"),
         ("AppInsetCornerRadius", "8"),
+        // Was 14, which is the value WinUI's own menus and tooltips use, and it was the
+        // only step between a card and a modal. On a 336px popup it read soft: a rounded
+        // panel with a rounded border and rounded rows inside it, which is three kinds of
+        // round saying the same thing at three sizes. 10 sits between the inset and the
+        // card steps, so the ladder stays monotonic and nothing collides.
+        ("AppFlyoutCornerRadius", "10"),
         ("AppCardCornerRadius", "12"),
-        ("AppFlyoutCornerRadius", "14"),
         ("AppModalCornerRadius", "16"),
         ("AppPillCornerRadius", "999"),
     };

@@ -1,0 +1,28 @@
+<Solution>
+  <Folder Name="/backend-dotnet/">
+    <Project Path="backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Broker/RuAgent.Broker.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Cli/RuAgent.Cli.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Client.Tests/RuAgent.Client.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Client/RuAgent.Client.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Connectors.Tests/RuAgent.Connectors.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Connectors/RuAgent.Connectors.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Harness.Core/RuAgent.Harness.Core.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Harness.Persistence.Tests/RuAgent.Harness.Persistence.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Harness.Persistence/RuAgent.Harness.Persistence.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Hosting.Tests/RuAgent.Hosting.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Hosting/RuAgent.Hosting.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Protocol.Tests/RuAgent.Protocol.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Protocol/RuAgent.Protocol.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Runtime.Adapters.Tests/RuAgent.Runtime.Adapters.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Runtime.Adapters/RuAgent.Runtime.Adapters.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Runtime.Worker.Tests/RuAgent.Runtime.Worker.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.Runtime.Worker/RuAgent.Runtime.Worker.csproj" />
+    <Project Path="backend-dotnet/RuAgent.SessionInterchange.Tests/RuAgent.SessionInterchange.Tests.csproj" />
+    <Project Path="backend-dotnet/RuAgent.SessionInterchange/RuAgent.SessionInterchange.csproj" />
+    <Project Path="backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj" />
+    <Project Path="backend-dotnet/RuBackend/RuBackend.csproj" />
+  </Folder>
+</Solution>

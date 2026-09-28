@@ -128,7 +128,7 @@ public sealed class WebSearchAdapter
                 ? queryPart
                 : existingQuery + "&" + queryPart,
         }.Uri;
-        for (var redirect = 0; redirect <= 3; redirect++)
+        for (var redirect = 0; redirect <= 5; redirect++)
         {
             await _policy.ValidateAsync(current, cancellationToken).ConfigureAwait(false);
             using var request = new HttpRequestMessage(HttpMethod.Get, current);
@@ -136,7 +136,7 @@ public sealed class WebSearchAdapter
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             if ((int)response.StatusCode is >= 300 and < 400)
             {
-                if (redirect == 3)
+                if (redirect == 5)
                 {
                     throw new InvalidDataException("web_redirect_limit");
                 }

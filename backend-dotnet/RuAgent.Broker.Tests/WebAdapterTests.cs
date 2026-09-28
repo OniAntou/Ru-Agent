@@ -351,6 +351,86 @@ public sealed class WebAdapterTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Fetch_accepts_json_content_as_text()
+    {
+        const string json = """{"name":"ru","version":"1.0.0"}""";
+        using var http = new HttpClient(new FakeHandler("application/json", json));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var result = await new WebFetchAdapter(http, policy, new WebContentSanitizer()).FetchAsync(
+            new Uri("https://example.com/package.json"),
+            CancellationToken.None);
+
+        Assert.Contains("ru", result.SanitizedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Fetch_follows_a_four_hop_redirect_chain()
+    {
+        var handler = new RedirectChainHandler(hops: 4, finalContentType: "text/html", finalBody: "<html><body><p>arrived</p></body></html>");
+        using var http = new HttpClient(handler);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var result = await new WebFetchAdapter(http, policy, new WebContentSanitizer()).FetchAsync(
+            new Uri("https://example.com/start"),
+            CancellationToken.None);
+
+        Assert.Contains("arrived", result.SanitizedText, StringComparison.Ordinal);
+        Assert.Equal(5, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task Fetch_rejects_a_chain_past_the_redirect_limit()
+    {
+        var handler = new RedirectChainHandler(hops: 9, finalContentType: "text/html", finalBody: "<p>never</p>");
+        using var http = new HttpClient(handler);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new WebFetchAdapter(http, policy, new WebContentSanitizer()).FetchAsync(
+                new Uri("https://example.com/start"),
+                CancellationToken.None));
+
+        Assert.Equal("web_redirect_limit", error.Message);
+    }
+
+    private sealed class RedirectChainHandler : HttpMessageHandler
+    {
+        private readonly int _hops;
+        private readonly string _finalContentType;
+        private readonly string _finalBody;
+
+        public RedirectChainHandler(int hops, string finalContentType, string finalBody)
+        {
+            _hops = hops;
+            _finalContentType = finalContentType;
+            _finalBody = finalBody;
+        }
+
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var hop = RequestCount;
+            HttpResponseMessage response;
+            if (hop <= _hops)
+            {
+                response = new HttpResponseMessage(HttpStatusCode.Found);
+                response.Headers.Location = new Uri($"https://example.com/hop{hop}");
+            }
+            else
+            {
+                response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(_finalBody),
+                };
+                response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(_finalContentType);
+            }
+
+            return Task.FromResult(response);
+        }
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly string _contentType;

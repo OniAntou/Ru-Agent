@@ -9,6 +9,7 @@
     xmlns:services="using:RuApp.Services"
     xmlns:views="using:RuApp.Views"
     mc:Ignorable="d"
+    KeyDown="OnChatSurfaceKeyDown"
     HorizontalAlignment="Stretch"
     VerticalAlignment="Stretch">
 

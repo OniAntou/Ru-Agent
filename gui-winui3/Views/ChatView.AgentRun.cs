@@ -264,7 +264,8 @@ namespace RuApp.Views
                 ApprovalPanel.Show(
                     summary,
                     terminalCommand,
-                    AgentApprovalPresentation.CanAllowSessionDirectory(controller.PendingApprovalSummary));
+                    AgentApprovalPresentation.CanAllowSessionDirectory(controller.PendingApprovalSummary),
+                    AgentApprovalPresentation.CanRememberAllowAlways(controller.PendingApprovalSummary));
 
                 // Approval arrives via SSE while the user may be scrolled up; bring
                 // the Approve/Deny prompt into view and put the keyboard on it.
@@ -573,6 +574,35 @@ namespace RuApp.Views
                     }
                 }
 
+                if (e.Key == Windows.System.VirtualKey.Escape)
+                {
+                    // Escape is the one key that belongs to the app rather than to the
+                    // text field, so it is the only way out of a run that needs no mouse.
+                    // The decision is not made here: an open approval outranks the run, and
+                    // that precedence lives in one policy so it can be tested.
+                    var escape = AgentRunKeyboardPolicy.Resolve(
+                        runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
+                        approvalShowing: ApprovalPanel?.IsShown == true);
+
+                    switch (escape)
+                    {
+                        case EscapeOutcome.DenyApproval:
+                            e.Handled = true;
+                            break;
+                        // An approval showing with focus in the composer: the panel cannot
+                        // see the key, so it is swallowed here rather than falling through
+                        // to stop the run. Denying needs the panel's own handler.
+                        case EscapeOutcome.StopRun:
+                            e.Handled = true;
+                            await StopActiveAgentAsync();
+                            return;
+                        default:
+                            // No run, no question: the field keeps Escape, which is what a
+                            // single-line box is for.
+                            break;
+                    }
+                }
+
                 if (e.Key == Windows.System.VirtualKey.Enter)
                 {
                     var shiftDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
@@ -595,6 +625,57 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"Error in OnChatInputPreviewKeyDown: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Escape anywhere in the chat surface that the composer did not already answer.
+        /// </summary>
+        /// <remarks>
+        /// The composer is a Preview handler, so it sees the key first and marks it
+        /// handled; this one only fires when focus is on the transcript, a panel or
+        /// anywhere else in the surface. Both resolve the same policy, so Escape means
+        /// the same thing whichever of them receives it.
+        ///
+        /// An open approval is deliberately not answered from here. The panel's own
+        /// handler owns that decision, and this handler only sees the case where the
+        /// panel is on screen but focus is elsewhere; swallowing the key is the safe
+        /// outcome, because the alternative would be stopping the run over a question the
+        /// user has not been asked yet.
+        /// </remarks>
+        private async void OnChatSurfaceKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            if (e.Key != Windows.System.VirtualKey.Escape)
+            {
+                return;
+            }
+
+            var escape = AgentRunKeyboardPolicy.Resolve(
+                runInHand: _isSendButtonInStopMode || IsActiveAgentRunPending(),
+                approvalShowing: ApprovalPanel?.IsShown == true);
+
+            if (escape == EscapeOutcome.DenyApproval)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (escape != EscapeOutcome.StopRun)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            try
+            {
+                await StopActiveAgentAsync();
+            }
+            catch (Exception ex)
+            {
+                // The composer handler logs its own failures; this one must not throw out
+                // of a key event, or the exception surfaces as an unhandled app crash
+                // rather than as a run that did not stop.
+                GuiDiagnosticWriter.AppendTraceLine($"Escape failed to stop the run: {ex.Message}");
             }
         }
 
@@ -967,7 +1048,6 @@ namespace RuApp.Views
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
             _activeAgentUsage = null;
-            _terminalFailureCardContent = null;
             _agentDeltaKeys.Clear();
             _replyRenderScheduler.Invalidate();
             lock (_accumulatorLock)
@@ -1039,28 +1119,10 @@ namespace RuApp.Views
                 Messages.Remove(placeholder);
             }
 
-            // The failure card is UI-only copy and the reload above rebuilds the
-            // transcript from session history, so a terminal failure without a
-            // rendered reply would otherwise leave no trace. Re-append the
-            // actionable card (or the copy cached from the live summary).
-            if (TerminalFailureCardPolicy.ShouldAppend(
-                    _agentController?.CurrentRun?.Status,
-                    HasRenderedAgentReply(),
-                    Messages.Any(message => message.Role == "assistant" && message.IsError)))
-            {
-                Messages.Add(new ChatMessageItem
-                {
-                    Role = "assistant",
-                    Content = _terminalFailureCardContent
-                        ?? TerminalFailureCardPolicy.Compose(
-                            _agentController is null ? null : ResolveFailureReason(_agentController),
-                            _agentController?.CanContinue == true),
-                    IsError = true,
-                });
-                ScrollChatToBottom();
-            }
-
-            _terminalFailureCardContent = null;
+            // No run-level failure card is re-appended after a reload. The activity
+            // feed is rebuilt from session history, so the settled row that names the
+            // failure comes back with everything else; the card used to arrive a
+            // second time, below the work it explained.
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
             _agentDeltaKeys.Clear();
@@ -1350,7 +1412,6 @@ namespace RuApp.Views
         /// </summary>
         private void ShowProviderSetupCard(string content)
         {
-            _terminalFailureCardContent = content;
             Messages.Add(new ChatMessageItem
             {
                 Role = "assistant",

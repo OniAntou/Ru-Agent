@@ -167,7 +167,20 @@ namespace RuApp.Views
                 var item = new AgentActivityItem(activity);
 
                 _agentActivityById.Add(item.ActivityId, item);
-                InsertActivityInFeedOrder(item);
+                // Arrival order is the harness's order, and the harness emits one
+                // Thinking activity per model step keyed by that step's id, published
+                // when the step starts — before any of the step's tools. So a Thinking
+                // row can only ever arrive after a tool row when it belongs to a *later*
+                // step, and it belongs at the bottom.
+                //
+                // It used to be walked backwards to just below the previous Thinking row
+                // "so a settled Thinking row stays above the tool rows that followed it".
+                // Nothing could benefit from that: the step's own row is always inserted
+                // first, so the walk-back never fired for the case it was written for. It
+                // only fired for a new step, where it put that step's failure above the
+                // previous step's work — a run failing on step 2 read as though it had
+                // failed before the tool it ran.
+                AgentActivities.Add(item);
                 FreezeTextSegmentForActivity(item);
                 TrackTerminalToolState(item);
                 TrackTerminalOutputRow(item);
@@ -208,26 +221,6 @@ namespace RuApp.Views
             {
                 _runningTerminalItem = null;
             }
-        }
-
-        /// <summary>
-        /// Inserts a new activity row so tool progress reads chronologically:
-        /// a settled Thinking row stays above the tool rows that followed it
-        /// instead of sinking below them, matching the Codex/OpenCode feel.
-        /// </summary>
-        private void InsertActivityInFeedOrder(AgentActivityItem item)
-        {
-            int insertAt = AgentActivities.Count;
-            if (item.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Thinking)
-            {
-                while (insertAt > 0
-                    && AgentActivities[insertAt - 1].Kind != RuAgent.Protocol.Harness.AgentActivityKind.Thinking)
-                {
-                    insertAt--;
-                }
-            }
-
-            AgentActivities.Insert(insertAt, item);
         }
 
         /// <summary>
@@ -403,32 +396,18 @@ namespace RuApp.Views
                 return;
             }
 
-            if (!item.IsFailure)
-            {
-                // Success and cancelled runs keep the transcript clean; the
-                // assistant reply itself is the outcome the user reads.
-                return;
-            }
-
-            var content = new System.Text.StringBuilder();
-            content.Append("**").Append(item.DisplayText).Append("**");
-            if (!string.IsNullOrWhiteSpace(item.MetadataText))
-            {
-                content.Append('\n').Append(item.MetadataText);
-            }
-            if (_agentController is { CanContinue: true })
-            {
-                content.Append("\nType **Continue** to resume.");
-            }
-
-            _terminalFailureCardContent = content.ToString();
-            Messages.Add(new ChatMessageItem
-            {
-                Role = "assistant",
-                Content = _terminalFailureCardContent,
-                IsError = true,
-            });
-            ScrollChatToBottom();
+            // The terminal summary adds nothing to the transcript. The feed already
+            // said what happened: a run that fails on a model step leaves a settled
+            // row reading "Failed: <reason>" in the same list as the work that
+            // preceded it. The card repeated that as a separate red block under the
+            // transcript, and repeated it again after a reload.
+            //
+            // Two copies of one fact is worse than one: the second arrives lower on
+            // the screen than the work it explains, so it reads as a new event rather
+            // than as the verdict on the rows above it. Success and cancelled runs
+            // already added nothing here, so a failure no longer needs a card either —
+            // the two outcomes are now treated alike, which they always were in the
+            // run's own accounting.
         }
 
         private void OnAgentAssistantDeltaReceived(object? sender, AgentAssistantDeltaModel delta)

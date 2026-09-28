@@ -134,7 +134,6 @@ namespace RuApp.Views
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
         private AgentModelUsage? _activeAgentUsage;
-        private string? _terminalFailureCardContent;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
         private readonly AgentReplyRenderScheduler _replyRenderScheduler;

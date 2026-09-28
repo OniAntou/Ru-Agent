@@ -61,6 +61,113 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_repairs_tool_arguments_with_an_unescaped_windows_path()
+    {
+        // A provider that streams a Windows path with single backslashes emits bytes that
+        // are not JSON at all (e.g. \U is an invalid escape). Build the corruption
+        // programmatically from valid arguments -- collapsing every double backslash the
+        // way a sloppy emitter does -- so the test cannot silently encode something else.
+        const string validArguments = "{\"path\":\"C:\\\\Users\\\\steal\\\\AGENTS.md\"}";
+        var sloppyArguments = validArguments.Replace(@"\\", @"\");
+        var chunk = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-1\",\"function\":{\"name\":\"files.read\",\"arguments\":\""
+            + sloppyArguments.Replace("\"", "\\\"")
+            + "\"}}]}}]}";
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                chunk + "\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        var fragment = Assert.Single(deltas[0].ToolFragments);
+        Assert.Equal("files.read", fragment.ToolName);
+        Assert.Equal("{\"path\":\"C:\\Users\\steal\\AGENTS.md\"}", fragment.ArgumentsFragment);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_joins_a_chunk_split_mid_string_with_its_continuation()
+    {
+        // The first data line ends inside the arguments string, so it cannot parse on
+        // its own. It is carried, not repaired: repairing a prefix could corrupt whatever
+        // completes it. The split point below lands right after a lone backslash.
+        const string validArguments = "{\"path\":\"C:\\\\Users\\\\steal\"}";
+        var sloppyArguments = validArguments.Replace(@"\\", @"\");
+        var fullData = "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-1\",\"function\":{\"name\":\"files.read\",\"arguments\":\""
+            + sloppyArguments.Replace("\"", "\\\"")
+            + "\"}}]}}]}";
+        var cut = fullData.IndexOf("C:\\", StringComparison.Ordinal) + 4;
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: " + fullData[..cut] + "\n\n" +
+                "data: " + fullData[cut..] + "\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+        var fragment = Assert.Single(deltas[0].ToolFragments);
+        Assert.Equal("files.read", fragment.ToolName);
+        Assert.Equal("{\"path\":\"C:\\Users\\steal\"}", fragment.ArgumentsFragment);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_fails_when_a_truncated_chunk_is_followed_by_an_unrelated_chunk()
+    {
+        // A truncated chunk followed by a chunk that parses cleanly on its own is not a
+        // continuation: the tool content never completed, so the stream fails closed
+        // instead of silently dropping the partial call.
+        const string validArguments = "{\"path\":\"C:\\\\Users\\\\steal\"}";
+        var sloppyArguments = validArguments.Replace(@"\\", @"\");
+        var fullData = "{\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"call-1\",\"function\":{\"name\":\"files.read\",\"arguments\":\""
+            + sloppyArguments.Replace("\"", "\\\"")
+            + "\"}}]}}]}";
+        var cut = fullData.IndexOf("C:\\", StringComparison.Ordinal) + 4;
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: " + fullData[..cut] + "\n\n" +
+                "data: {\"choices\":[]}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync());
+
+        Assert.Equal("malformed_payload", error.Code);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_fails_when_done_arrives_with_a_truncated_chunk_buffered()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"half\"}}\n\n" +
+                "data: [DONE]\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync());
+
+        Assert.Equal("malformed_payload", error.Code);
+    }
+
+    [Fact]
     public async Task GenerateAsync_advertises_model_tools_as_provider_functions()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

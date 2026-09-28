@@ -234,6 +234,86 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_reports_an_empty_tool_calls_finish_without_user_content()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("protocol_failure", error.Code);
+        Assert.False(error.Retryable);
+        Assert.NotNull(error.Trace);
+        Assert.Contains("site=zero_fragments", error.Trace);
+        Assert.Contains("finishIsToolCalls=1", error.Trace);
+    }
+
+    [Fact]
+    public async Task Step_service_reports_chunk_conflicts_without_leaking_arguments()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment("call-1", "files.read", "{\"path\":\"SECRET-marker-CHANG\"}"),
+                    new ModelToolFragment("call-2", "files.read", "{\"path\":\"CHANG"),
+                    new ModelToolFragment(null, string.Empty, "E.md\"}"),
+                },
+                true,
+                "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("protocol_failure", error.Code);
+        Assert.False(error.Retryable);
+        Assert.NotNull(error.Trace);
+        Assert.Contains("site=chunk_conflict", error.Trace);
+        Assert.DoesNotContain("SECRET-marker", error.Trace);
+        Assert.DoesNotContain("CHANGELOG", error.Trace);
+    }
+
+    [Fact]
+    public async Task Step_service_repairs_assembled_arguments_with_an_unescaped_windows_path()
+    {
+        // The adapter hands over the arguments string as the provider chunked it. When a
+        // sloppy emitter used single backslashes, that string is not JSON -- but it has
+        // exactly one sane reading, so it is repaired instead of rejecting the call.
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                null,
+                new[] { new ModelToolFragment("call-1", "files.read", "{\"path\":\"C:\\Users\\steal\\AGENTS.md\"}") },
+                true,
+                "tool_calls"));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None);
+
+        var call = Assert.Single(result.ToolCalls);
+        Assert.Equal(@"C:\Users\steal\AGENTS.md", call.Arguments.GetProperty("path").GetString());
+    }
+
+    [Fact]
+    public async Task Step_service_reports_a_nameless_call_group_as_retryable()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                null,
+                new[] { new ModelToolFragment(null, string.Empty, "{\"a\":1}") },
+                true,
+                "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("protocol_failure", error.Code);
+        Assert.True(error.Retryable);
+        Assert.NotNull(error.Trace);
+        Assert.Contains("site=missing_name", error.Trace);
+    }
+
+    [Fact]
     public async Task Step_service_assigns_request_scoped_ids_to_native_calls_without_provider_ids()
     {
         var provider = new FakeModelProvider(

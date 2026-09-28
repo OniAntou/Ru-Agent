@@ -327,6 +327,36 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void Replayed_turn_keeps_its_head_on_the_visible_screen()
+    {
+        // The exact failing turn, judged the only honest way: drive the real transcript
+        // and surface with erases enabled exactly like a live console, then read the FINAL
+        // SCREEN instead of the byte stream. Byte assertions strip the erase codes and
+        // therefore cannot see this class of loss at all.
+        const string full =
+            "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
+        TuiPalette.Level = TuiColorLevel.None;
+        var writer = new StringWriter();
+        var surface = new TuiSurface(writer) { SuppressRepaints = false };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
+
+        transcript.BeginTurn();
+        foreach (var piece in Chunk(full, 11))
+        {
+            transcript.AppendAssistant(piece);
+        }
+
+        transcript.Flush();
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var screen = new TuiScreenSimulator(rows: 41, cols: 120);
+        screen.Write(writer.ToString());
+        var text = screen.ScreenText();
+        Assert.Contains("ready to help you with your workspace", text, StringComparison.Ordinal);
+        Assert.Contains("running commands, and more", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Real_short_reply_from_the_host_renders_completely()
     {
         // The exact 162-character answer the host persisted, em dash and all. Three or four

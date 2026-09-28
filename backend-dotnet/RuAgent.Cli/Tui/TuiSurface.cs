@@ -179,11 +179,18 @@ public sealed class TuiSurface
         }
     }
 
+    /// <summary>
+    /// Ends the current row and moves down. This never erases: the row holds transcript
+    /// content written without a trailing newline, and clearing it here destroyed every
+    /// body row on a live console while leaving headers, footers and notices (which erase
+    /// before they write, onto rows that are empty at that point) intact. Erasing belongs
+    /// to explicit clears only (<see cref="ClearSingleLine"/>, <see cref="RepaintSingleLine"/>,
+    /// and the documented leading erase in <see cref="WriteBlock"/>).
+    /// </summary>
     public void Line()
     {
         lock (Gate)
         {
-            ClearCurrentRow(Writer);
             Writer.WriteLine();
 
             // Whatever was written without a newline is the row that just ended.

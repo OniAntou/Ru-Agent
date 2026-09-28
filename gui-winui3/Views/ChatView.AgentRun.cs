@@ -1384,7 +1384,7 @@ namespace RuApp.Views
         {
             string status = exception switch
             {
-                AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message),
+                AgentApiException api => AgentFailurePresentation.RenderStartFailure(api.ErrorCode, api.Message, api.BlockingRunId, api.BlockingRunStatus),
                 _ => $"Coding Agent could not start: {exception.Message}"
             };
 

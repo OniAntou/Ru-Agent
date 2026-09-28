@@ -58,12 +58,10 @@ public sealed class WebAdapterTests
     }
 
     [Fact]
-    public async Task Search_does_not_query_a_second_engine_when_the_layout_is_unknown()
+    public async Task Search_does_not_query_a_second_engine_when_no_fallback_is_configured()
     {
-        // One engine, no fallback. A page this parser cannot read yields no results
-        // for this call; retrying it against another service would send the query
-        // somewhere the user never configured and outside the approval the call was
-        // granted under. The engine is contacted exactly once either way.
+        // Without fallbacks the engine is contacted exactly once: a page this
+        // parser cannot read yields no results for this call.
         var handler = new GoogleThenDuckHandler();
         using var http = new HttpClient(handler);
         var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
@@ -141,6 +139,153 @@ public sealed class WebAdapterTests
             () => adapter.SearchAsync("broken", CancellationToken.None));
 
         Assert.Equal("web_search_parse_failed", error.Message);
+    }
+
+    [Fact]
+    public async Task Search_falls_back_to_the_next_engine_when_the_primary_has_no_results()
+    {
+        const string duckHtml = """
+            <html><body>
+              <a class="result__a" href="https://example.com/fallback">Fallback result</a>
+            </body></html>
+            """;
+        var handler = new HostRoutingHandler(new Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)>
+        {
+            ["primary.invalid"] = ("text/html", HttpStatusCode.OK, "<html><body><p>consent page without result anchors</p></body></html>"),
+            ["fallback.invalid"] = ("text/html", HttpStatusCode.OK, duckHtml),
+        });
+        using var http = new HttpClient(handler);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://primary.invalid/search"),
+            fallbackEndpoints: new[] { new Uri("https://fallback.invalid/search") });
+
+        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+
+        var single = Assert.Single(result);
+        Assert.Equal("https://example.com/fallback", single.Url.AbsoluteUri.TrimEnd('/'));
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task Search_falls_back_when_the_primary_errors()
+    {
+        const string duckHtml = """
+            <html><body>
+              <a class="result__a" href="https://example.com/recovered">Recovered result</a>
+            </body></html>
+            """;
+        var handler = new HostRoutingHandler(new Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)>
+        {
+            ["primary.invalid"] = ("text/html", HttpStatusCode.BadGateway, "blocked"),
+            ["fallback.invalid"] = ("text/html", HttpStatusCode.OK, duckHtml),
+        });
+        using var http = new HttpClient(handler);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://primary.invalid/search"),
+            fallbackEndpoints: new[] { new Uri("https://fallback.invalid/search") });
+
+        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task Search_throws_the_primary_error_when_every_engine_fails()
+    {
+        var handler = new HostRoutingHandler(new Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)>
+        {
+            ["primary.invalid"] = ("text/html", HttpStatusCode.BadGateway, "blocked"),
+            ["fallback.invalid"] = ("text/html", HttpStatusCode.ServiceUnavailable, "down"),
+        });
+        using var http = new HttpClient(handler);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://primary.invalid/search"),
+            fallbackEndpoints: new[] { new Uri("https://fallback.invalid/search") });
+
+        var error = await Assert.ThrowsAsync<HttpRequestException>(
+            () => adapter.SearchAsync("dotnet docs", CancellationToken.None));
+
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task Search_parses_bing_result_blocks()
+    {
+        const string html = """
+            <html><body>
+              <li class="b_algo" data-bm="1"><h2><a target="_blank" href="https://learn.microsoft.com/en-us/dotnet">.NET documentation - Microsoft Learn</a></h2><p>Snippet here.</p></li>
+              <li class="b_algo" data-bm="2"><h2><a target="_blank" href="https://dotnet.microsoft.com/download">Download .NET</a></h2></li>
+            </body></html>
+            """;
+        using var http = new HttpClient(new FakeHandler("text/html", html));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://www.bing.com/search"));
+
+        var result = await adapter.SearchAsync("dotnet docs", 2, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("https://learn.microsoft.com/en-us/dotnet", result[0].Url.AbsoluteUri.TrimEnd('/'));
+        Assert.Equal(".NET documentation - Microsoft Learn", result[0].Title);
+    }
+
+    [Fact]
+    public async Task Search_parses_mojeek_titled_results()
+    {
+        const string html = """
+            <html><body>
+              <ul class="results-standard">
+                <li><h2><a class="title" href="https://example.com/mojeek-hit">Mojeek hit</a></h2></li>
+              </ul>
+            </body></html>
+            """;
+        using var http = new HttpClient(new FakeHandler("text/html", html));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://www.mojeek.com/search"));
+
+        var result = await adapter.SearchAsync("mojeek test", CancellationToken.None);
+
+        var single = Assert.Single(result);
+        Assert.Equal("https://example.com/mojeek-hit", single.Url.AbsoluteUri.TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task Search_skips_a_fallback_duplicating_the_primary()
+    {
+        var fake = new FakeHandler("text/html", "<html><body><p>nothing</p></body></html>");
+        using var http = new HttpClient(fake);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://primary.invalid/search"),
+            fallbackEndpoints: new[] { new Uri("https://primary.invalid/search") });
+
+        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+
+        Assert.Empty(result);
+        Assert.Equal(1, fake.RequestCount);
     }
 
     [Fact]
@@ -227,6 +372,32 @@ public sealed class WebAdapterTests
                 Content = new StringContent(_body),
             };
             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(_contentType);
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class HostRoutingHandler : HttpMessageHandler
+    {
+        private readonly Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)> _routes;
+
+        public HostRoutingHandler(Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)> routes) => _routes = routes;
+
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            var host = request.RequestUri?.Host ?? string.Empty;
+            if (!_routes.TryGetValue(host, out var route))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+
+            var response = new HttpResponseMessage(route.Status)
+            {
+                Content = new StringContent(route.Body),
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(route.ContentType);
             return Task.FromResult(response);
         }
     }

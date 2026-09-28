@@ -143,9 +143,12 @@ public static class AgentToolDefinitionCatalog
     private static JsonObject WriteSchema() => ObjectSchema(["op"], WriteSchemaProperties());
     private static JsonObject BashSchema() => ObjectSchema(["mode"], BashSchemaProperties());
     private static JsonObject GrepSchema() => ObjectSchema(["query"], GrepSchemaProperties());
+    // Query bound mirrors FileToolLimits.MaxQueryLength in RuAgent.Broker (the
+    // adapter is the authority; Protocol cannot reference the Broker layer).
+    // A tighter schema here false-rejects queries the adapter accepts.
     private static (string Name, JsonObject Schema)[] GrepSchemaProperties() =>
     [
-        ("query", StringSchema(512)),
+        ("query", StringSchema(1024)),
         ("path", StringSchema()), ("file_glob", StringSchema()),
         ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()),
         ("max_results", IntegerSchema(1, 64)),

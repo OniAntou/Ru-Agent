@@ -106,12 +106,21 @@ internal static class AgentFailurePresentation
     /// The table lives here with the rest of the code-to-copy mapping instead of
     /// inline in the view, so every branch is asserted rather than read.
     /// </summary>
-    internal static string RenderStartFailure(string? errorCode, string? message)
+    internal static string RenderStartFailure(string? errorCode, string? message, string? blockingRunId = null, string? blockingStatus = null)
     {
         string code = errorCode?.Trim() ?? string.Empty;
         if (code.Length == 0)
         {
             return "Coding Agent could not start. Open Tools → Activity Log to check.";
+        }
+
+        if (string.Equals(code, "workspace_busy", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(blockingRunId))
+        {
+            // The server names the blocking run; repeat it so the operator can
+            // answer or cancel exactly that run instead of guessing.
+            var status = string.IsNullOrWhiteSpace(blockingStatus) ? "active" : blockingStatus.Trim();
+            return $"Run {blockingRunId.Trim()} ({status}) still owns this workspace. Answer its pending prompt, or cancel it and try again.";
         }
 
         switch (code)

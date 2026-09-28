@@ -10,6 +10,19 @@ public sealed record WebOptions
 
     public static readonly Uri DefaultGoogleEndpoint = new("https://www.google.com/search");
 
+    /// <summary>
+    /// Free fallback engines tried in order when the configured primary has
+    /// no usable results. Fixed public services (no keys); every request still
+    /// passes WebPolicy, so a fallback never widens the network boundary the
+    /// call was granted under.
+    /// </summary>
+    public static readonly IReadOnlyList<Uri> DefaultFallbackEndpoints = new[]
+    {
+        new Uri("https://html.duckduckgo.com/html/"),
+        new Uri("https://www.bing.com/search"),
+        new Uri("https://www.mojeek.com/search"),
+    };
+
     public WebOptions(
         bool enabled = false,
         Uri? searchEndpoint = null,
@@ -26,11 +39,11 @@ public sealed record WebOptions
         }
 
         Enabled = enabled;
-        // Exactly one search engine, whatever it is configured to be. A second
-        // engine would be a provider fallback: the query would reach a service the
-        // user never configured, and the destination would sit outside the approval
-        // the call was granted under. A primary engine that fails or returns nothing
-        // fails closed with its own bounded code.
+        // The primary engine is whatever is configured (Google by default).
+        // Free fallback engines (DuckDuckGo, Bing, Mojeek) are tried in order
+        // when the primary has no usable results. The set is fixed public
+        // services and every request still passes WebPolicy, so a fallback
+        // never widens the network boundary the call was granted under.
         SearchEndpoint = searchEndpoint ?? (enabled ? DefaultGoogleEndpoint : null);
         MaxResponseBytes = maxResponseBytes;
     }

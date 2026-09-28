@@ -99,7 +99,7 @@ public sealed partial class ToolExecutionService
             _webFetch = new WebFetchAdapter(webClient, webPolicy, sanitizer, _webOptions.MaxResponseBytes);
             if (_webOptions.SearchEndpoint is not null)
             {
-                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes);
+                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes, WebOptions.DefaultFallbackEndpoints);
             }
         }
 

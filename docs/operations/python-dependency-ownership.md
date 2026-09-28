@@ -18,7 +18,7 @@ only Python dependencies left belong to tooling and CI.
 | `keyring` | *Removed from `pyproject.toml`* | None | **Removed**. The Python credential-store mirror was deleted with `src/ru_runtime`; Windows Credential Manager is owned by the C# host. |
 | `mypy` | *Removed from `pyproject.toml`* | None | **Removed**. `src/ru_runtime` was the only mypy target; the gate had nothing left to check. |
 | `SpeechRecognition`, `pyaudio`, `psutil`, `websockets` | *Removed from `pyproject.toml`* | None | **Removed**. The Python speech/voice runtime and its benchmark tooling were deleted. |
-| `ddgs` / `duckduckgo_search` | *Removed from pyproject.toml* | None in Python | **Removed**. Managed web tools (standalone `web_search`/`web_fetch`, Google HTML primary with DuckDuckGo fallback) are implemented in C# (`backend-dotnet/RuAgent.Broker/Tools/Web/`). |
+| `ddgs` / `duckduckgo_search` | *Removed from pyproject.toml* | None in Python | **Removed**. Managed web tools (standalone `web_search`/`web_fetch`, Google HTML primary with fixed free fallbacks DuckDuckGo/Bing/Mojeek) are implemented in C# (`backend-dotnet/RuAgent.Broker/Tools/Web/`). |
 
 ## Verification Policy
 

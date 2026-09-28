@@ -59,8 +59,9 @@ not advertised Agent tools.
 >   untrusted prompt guidance. The `skill` tool lets the model load a body
 >   on demand; neither path grants tools, scopes, paths, or approvals.
 >   Managed startup enables standalone `web_search` and `web_fetch` as
->   approval-gated capabilities backed by one configured Google HTML search
->   engine with no fallback; results are bounded, sanitized, and explicitly
+>   approval-gated capabilities backed by the configured search engine
+>   (Google HTML by default) with fixed free fallbacks (DuckDuckGo, Bing,
+>   Mojeek); results are bounded, sanitized, and explicitly
 >   untrusted.
 >   Workspace coordination is now opt-in per workspace through the authenticated
 >   concurrency/activity/changes endpoints. Shared mode permits disjoint runs;
@@ -352,8 +353,11 @@ adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates
 
-For the managed Agent path, Web tools use exactly one Google HTML search
-engine, `https://www.google.com/search`, with no fallback engine. Canonical
+For the managed Agent path, Web tools use the configured Google HTML search
+engine, `https://www.google.com/search`, with fixed free fallbacks
+(DuckDuckGo HTML, Bing, Mojeek) tried in order when the primary has no
+usable results. Every fallback request still passes redirect and
+private-host validation. Canonical
 `plan`, `standard`, and
 `full_access` all allow Web; an explicit ordered ask rule may still return the
 legacy `web_approval_required` reason. Redirects are validated hop-by-hop and

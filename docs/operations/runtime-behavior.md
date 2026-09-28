@@ -362,8 +362,8 @@ defaults.
 ### Web access
 
 The managed Agent constructs an enabled WebOptions object with Google HTML as
-the single search engine `https://www.google.com/search` and no fallback engine.
-It
+the primary search engine `https://www.google.com/search` and fixed free
+fallbacks (DuckDuckGo HTML, Bing, Mojeek). It
 maps standalone `web_search` to `network.search` and standalone
 `web_fetch` to `network.fetch`;
 the canonical Broker policy remains authoritative for each read-only call:

@@ -6,7 +6,7 @@
 | Surface | Current status |
 | --- | --- |
 | Public route | **42 HTTP + 0 WebSocket** per `backend-dotnet/public-route-contract.json` — 21 additive `/agent/v1/*` plus 21 non-Agent. Every entry is `aspnet-direct`; the media routes are no longer mapped. Guard: `scripts/check_aspnetcore_route_matrix.py`, which `ci.yml` runs on every push. |
-| .NET tests | Full **13-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 12 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **4,623 passed / 0 failed / 0 skipped**. Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
+| .NET tests | Full **13-project** matrix via `scripts/test_dotnet.ps1 -Configuration Debug`: 12 test projects under `backend-dotnet/` plus `gui-winui3.Tests`. Last full run recorded here: **4,629 passed / 0 failed / 0 skipped**. Per-project counts are deliberately not repeated -- they drift with every change, so run the script for the current numbers. |
 | Python suite | **148 passed**, 0 failed. `ruff check tests scripts tools` and `pip check` also run in CI. `src/ru_runtime` is gone, so the `mypy src` gate and the `[voice]` extra are no longer in CI. |
 | Release build | `build.bat` runs **13/13** stages and publishes self-contained output: `RuApp.exe`, `RuBackend.exe`, the managed Worker (one listener), the Broker, and `RuAgent.Cli.exe`, flattened into one directory. |
 | Managed runtime smoke | A published build starts under isolated `RU_DATA_ROOT`/`RU_LOG_ROOT`, answers `/status` 200 to the correct bearer, opens all listeners, and closes the process tree on `POST /host/shutdown` with no surviving children. Re-run it against the current build before a release; the last dated run stays below. |
@@ -644,7 +644,7 @@ notes use `write` with `op=write`.
 Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
 Protocol parser and are covered by CLI/Host tests. Web search/fetch are
 enabled standalone managed capabilities backed by Google HTML primary with
-DuckDuckGo HTML automatic fallback; each call remains bounded, redirect-safe, policy-checked, and marked
+fixed free fallbacks (DuckDuckGo HTML, Bing, Mojeek); each call remains bounded, redirect-safe, policy-checked, and marked
 untrusted. Workspace `SKILL.md` bodies are untrusted prompt guidance only
 (`skill` tool + `/skills` + `/skill <name>`); they never execute tools or
 grant scopes, paths, or approvals. Connectors and `app.open` remain unadvertised.

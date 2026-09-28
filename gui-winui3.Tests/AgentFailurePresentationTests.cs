@@ -153,6 +153,24 @@ public sealed class AgentFailurePresentationTests
     }
 
     [Fact]
+    public void A_busy_workspace_names_the_blocking_run_when_the_server_sends_it()
+    {
+        string rendered = AgentFailurePresentation.RenderStartFailure(
+            "workspace_busy", message: "Workspace busy.", blockingRunId: "run_abc", blockingStatus: "waiting_approval");
+
+        Assert.Contains("run_abc", rendered, StringComparison.Ordinal);
+        Assert.Contains("waiting_approval", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_busy_workspace_without_a_run_id_keeps_the_generic_sentence()
+    {
+        string rendered = AgentFailurePresentation.RenderStartFailure("workspace_busy", message: null);
+
+        Assert.Equal("Workspace is currently in use by another Agent session.", rendered);
+    }
+
+    [Fact]
     public void An_unknown_start_failure_still_names_its_code()
     {
         // The code is the only handle support has; it must survive into the copy.

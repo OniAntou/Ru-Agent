@@ -17,6 +17,12 @@ public sealed class WebSearchAdapter
     private static readonly Regex ResultLinkPattern = new(
         "<a\\b(?=[^>]*\\bclass=[\\\"'][^\\\"']*\\bresult__a\\b[^\\\"']*[\\\"'])[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex BingResultPattern = new(
+        "<li[^>]*\\bclass=\"[^\"]*\\bb_algo\\b[^\"]*\"[^>]*>.*?<a[^>]+href=[\\\"'](?<url>https?://[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex MojeekResultPattern = new(
+        "<a[^>]*\\bclass=\"[^\"]*\\btitle\\b[^\"]*\"[^>]*\\bhref=[\\\"'](?<url>[^\\\"']+)[\\\"'][^>]*>(?<title>.*?)</a>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
     private static readonly string[] GoogleUserAgents =
     [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -24,6 +30,7 @@ public sealed class WebSearchAdapter
     private readonly HttpClient _http;
     private readonly WebPolicy _policy;
     private readonly Uri _endpoint;
+    private readonly IReadOnlyList<Uri> _fallbackEndpoints;
     private readonly int _maxResponseBytes;
 
     public WebSearchAdapter(
@@ -31,12 +38,14 @@ public sealed class WebSearchAdapter
         WebPolicy policy,
         WebContentSanitizer sanitizer,
         Uri endpoint,
-        int maxResponseBytes = WebOptions.DefaultMaxResponseBytes)
+        int maxResponseBytes = WebOptions.DefaultMaxResponseBytes,
+        IReadOnlyList<Uri>? fallbackEndpoints = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         ArgumentNullException.ThrowIfNull(sanitizer);
         _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+        _fallbackEndpoints = fallbackEndpoints ?? Array.Empty<Uri>();
         if (maxResponseBytes is < 1 or > WebOptions.MaxConfiguredResponseBytes)
         {
             throw new ArgumentOutOfRangeException(nameof(maxResponseBytes));
@@ -56,10 +65,53 @@ public sealed class WebSearchAdapter
         }
 
         maxResults = Math.Clamp(maxResults, 1, 10);
-        // One engine, no fallback. A failure or an unparsable layout surfaces as its
-        // own bounded code instead of being retried against a service the user never
-        // configured.
-        return await SearchEngineAsync(_endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
+        // Fixed fallback chain: the configured primary first, then the built-in
+        // free engines. Every request still passes WebPolicy (redirect and
+        // private-host validation), so a fallback never widens the network
+        // boundary the call was granted under. The first engine with usable
+        // results wins; an empty or failed engine moves to the next.
+        Exception? firstError = null;
+        foreach (var endpoint in Engines())
+        {
+            IReadOnlyList<SourceCitation> results;
+            try
+            {
+                results = await SearchEngineAsync(endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is InvalidDataException or HttpRequestException or UnauthorizedAccessException
+                || (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                // Engine failure (block page, layout change, timeout, denied
+                // host): remember the first one and try the next engine. User
+                // cancellation still throws immediately.
+                firstError ??= error;
+                continue;
+            }
+
+            if (results.Count > 0)
+            {
+                return results;
+            }
+        }
+
+        if (firstError is not null)
+        {
+            throw firstError;
+        }
+
+        return Array.Empty<SourceCitation>();
+    }
+
+    private IEnumerable<Uri> Engines()
+    {
+        yield return _endpoint;
+        foreach (var fallback in _fallbackEndpoints)
+        {
+            if (!Uri.Equals(fallback, _endpoint))
+            {
+                yield return fallback;
+            }
+        }
     }
 
     private async Task<IReadOnlyList<SourceCitation>> SearchEngineAsync(
@@ -168,15 +220,41 @@ public sealed class WebSearchAdapter
             request.Headers.TryAddWithoutValidation("User-Agent", GoogleUserAgents[0]);
             request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
         }
+        else if (endpoint.Host.EndsWith("bing.com", StringComparison.OrdinalIgnoreCase)
+            || endpoint.Host.EndsWith("mojeek.com", StringComparison.OrdinalIgnoreCase))
+        {
+            request.Headers.TryAddWithoutValidation("User-Agent", GoogleUserAgents[0]);
+        }
     }
 
-    private static int CountResultAnchors(string html, Uri endpoint) =>
-        IsGoogleEndpoint(endpoint)
-            ? GoogleResultPattern.Matches(html).Count
-            : ResultLinkPattern.Matches(html).Count;
+    private static int CountResultAnchors(string html, Uri endpoint)
+    {
+        if (IsGoogleEndpoint(endpoint))
+        {
+            return GoogleResultPattern.Matches(html).Count;
+        }
+
+        if (IsBingEndpoint(endpoint))
+        {
+            return BingResultPattern.Matches(html).Count;
+        }
+
+        if (IsMojeekEndpoint(endpoint))
+        {
+            return MojeekResultPattern.Matches(html).Count;
+        }
+
+        return ResultLinkPattern.Matches(html).Count;
+    }
 
     private static bool IsGoogleEndpoint(Uri endpoint) =>
         endpoint.Host.EndsWith("google.com", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBingEndpoint(Uri endpoint) =>
+        endpoint.Host.EndsWith("bing.com", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsMojeekEndpoint(Uri endpoint) =>
+        endpoint.Host.EndsWith("mojeek.com", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<SearchCandidate> ParseHtmlCandidates(string html, Uri endpoint)
     {
@@ -188,6 +266,34 @@ public sealed class WebSearchAdapter
                     WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
                     null))
                 .ToArray();
+        }
+
+        if (IsBingEndpoint(endpoint))
+        {
+            var bing = BingResultPattern.Matches(html)
+                .Select(match => new SearchCandidate(
+                    WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
+                    WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
+                    null))
+                .ToArray();
+            if (bing.Length > 0)
+            {
+                return bing;
+            }
+        }
+
+        if (IsMojeekEndpoint(endpoint))
+        {
+            var mojeek = MojeekResultPattern.Matches(html)
+                .Select(match => new SearchCandidate(
+                    WebUtility.HtmlDecode(match.Groups["url"].Value.Trim()),
+                    WebUtility.HtmlDecode(match.Groups["title"].Value.Trim()),
+                    null))
+                .ToArray();
+            if (mojeek.Length > 0)
+            {
+                return mojeek;
+            }
         }
 
         return ParseGenericHtmlCandidates(html);

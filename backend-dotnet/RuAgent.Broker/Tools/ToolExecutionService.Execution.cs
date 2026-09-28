@@ -527,6 +527,18 @@ public sealed partial class ToolExecutionService
                 "Tool response data was rejected.",
                 VerificationFailure(binding));
         }
+        catch (EditMatchException error)
+        {
+            // An edit that matched zero or an unexpected number of spans keeps
+            // its stable code but tells the model how to repair the call. Only
+            // the match count travels; no file content leaks into the receipt.
+            outcome = ToolExecutionOutcome.Failed(
+                error.Code,
+                error.MatchCount > 0
+                    ? $"old_string matched {error.MatchCount} times. Set expected_occurrences to {error.MatchCount} to replace all, or narrow old_string to a unique span."
+                    : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace.",
+                VerificationFailure(binding));
+        }
         catch (Exception)
         {
             outcome = ToolExecutionOutcome.Failed(

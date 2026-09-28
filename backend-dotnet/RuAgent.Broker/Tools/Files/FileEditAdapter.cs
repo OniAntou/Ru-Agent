@@ -4,6 +4,26 @@ using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Tools.Files;
 
+/// <summary>
+/// An edit that matched zero or an unexpected number of spans. The file is
+/// never modified: the model gets the code plus the match count so it can
+/// repair the call (re-read for no-match, expected_occurrences for ambiguity)
+/// instead of guessing. Message stays the stable code.
+/// </summary>
+public sealed class EditMatchException : InvalidOperationException
+{
+    public EditMatchException(string code, int matchCount)
+        : base(code)
+    {
+        Code = code;
+        MatchCount = matchCount;
+    }
+
+    public string Code { get; }
+
+    public int MatchCount { get; }
+}
+
 public sealed class FileEditAdapter
 {
     public const int MaxInputBytes = 4 * 1024 * 1024;
@@ -37,12 +57,12 @@ public sealed class FileEditAdapter
         var count = CountOccurrences(normalizedText, normalizedOld);
         if (count == 0)
         {
-            throw new InvalidOperationException("edit_no_match");
+            throw new EditMatchException("edit_no_match", 0);
         }
 
         if (count != expectedOccurrences)
         {
-            throw new InvalidOperationException("edit_not_unique");
+            throw new EditMatchException("edit_not_unique", count);
         }
 
         var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);
@@ -118,12 +138,12 @@ public sealed class FileEditAdapter
         var count = CountOccurrences(normalizedText, normalizedOld);
         if (count == 0)
         {
-            throw new InvalidOperationException("edit_no_match");
+            throw new EditMatchException("edit_no_match", 0);
         }
 
         if (count != expectedOccurrences)
         {
-            throw new InvalidOperationException("edit_not_unique");
+            throw new EditMatchException("edit_not_unique", count);
         }
 
         var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);

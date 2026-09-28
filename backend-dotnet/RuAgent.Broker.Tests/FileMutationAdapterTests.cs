@@ -237,15 +237,18 @@ public sealed class FileMutationAdapterTests : IDisposable
         File.WriteAllText(Full("edit2.txt"), "foo foo");
         var hash2 = FileHashService.ComputeFileHash(Full("edit2.txt"));
         var argsMismatch = new JsonObject { ["path"] = "edit2.txt", ["old_string"] = "foo", ["new_string"] = "bar", ["expected_sha256"] = hash2, ["expected_occurrences"] = 1 };
-        var ex = Assert.Throws<InvalidOperationException>(() => _edit.Execute(argsMismatch));
+        var ex = Assert.Throws<EditMatchException>(() => _edit.Execute(argsMismatch));
         Assert.Equal("edit_not_unique", ex.Message);
+        Assert.Equal("edit_not_unique", ex.Code);
+        Assert.Equal(2, ex.MatchCount);
         Assert.Equal("foo foo", File.ReadAllText(Full("edit2.txt")));
 
         File.WriteAllText(Full("edit3.txt"), "hello");
         var hash3 = FileHashService.ComputeFileHash(Full("edit3.txt"));
         var argsNoMatch = new JsonObject { ["path"] = "edit3.txt", ["old_string"] = "missing", ["new_string"] = "x", ["expected_sha256"] = hash3 };
-        var ex2 = Assert.Throws<InvalidOperationException>(() => _edit.Execute(argsNoMatch));
+        var ex2 = Assert.Throws<EditMatchException>(() => _edit.Execute(argsNoMatch));
         Assert.Equal("edit_no_match", ex2.Message);
+        Assert.Equal(0, ex2.MatchCount);
     }
 
     [Fact]

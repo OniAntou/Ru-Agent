@@ -1192,4 +1192,87 @@ public sealed class ToolExecutionServiceTests
         var wrong = new RuAgent.Broker.Policy.ApprovalBinding("run_11111111111111111111111111111111", "session-1", "files.read", "1.0.0", "hash", DateTimeOffset.UtcNow.AddMinutes(5), SnapshotVersion: 5, IntentHash: new string('b', 64));
         Assert.False(service.TryConsume(token, wrong, out _));
     }
+
+    [Fact]
+    public async Task Ambiguous_edit_fails_with_match_count_repair_hint()
+    {
+        var fixture = CreateFullAccessService("ru-edit-hint-");
+        var workspace = Path.Combine(fixture.Root, "workspace");
+        try
+        {
+            File.WriteAllText(Path.Combine(workspace, "dup.txt"), "val = 1\nval = 1\n");
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersionV2,
+                    "edit-hint-1",
+                    AgentMessageTypes.ToolExecute,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "edit",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["arguments"] = new JsonObject
+                        {
+                            ["path"] = "dup.txt",
+                            ["old_string"] = "val = 1",
+                            ["new_string"] = "val = 2",
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("edit_not_unique", result.ErrorCode);
+            Assert.Contains("2", result.SafeSummary, StringComparison.Ordinal);
+            Assert.Equal("val = 1\nval = 1\n", File.ReadAllText(Path.Combine(workspace, "dup.txt")));
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Missing_edit_target_fails_with_reread_hint()
+    {
+        var fixture = CreateFullAccessService("ru-edit-miss-");
+        var workspace = Path.Combine(fixture.Root, "workspace");
+        try
+        {
+            File.WriteAllText(Path.Combine(workspace, "one.txt"), "hello\n");
+            var result = await fixture.Service.ExecuteAuthenticatedV2Async(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersionV2,
+                    "edit-miss-1",
+                    AgentMessageTypes.ToolExecute,
+                    fixture.SessionId,
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "edit",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["run_id"] = fixture.RunId,
+                        ["arguments"] = new JsonObject
+                        {
+                            ["path"] = "one.txt",
+                            ["old_string"] = "absent",
+                            ["new_string"] = "x",
+                        },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("edit_no_match", result.ErrorCode);
+            Assert.Contains("Re-read", result.SafeSummary, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
 }

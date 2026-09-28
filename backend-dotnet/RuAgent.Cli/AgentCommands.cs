@@ -1948,11 +1948,8 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 return;
             }
 
-            if (sticky.Active)
-            {
-                sticky.RestoreTranscriptCursor();
-            }
-
+            // The tracked append point already continues the streamed row; rewinding to
+            // the row start would overwrite it.
             sessionRenderer.Transcript.AppendAssistant(missing);
             sessionRenderer.Flush();
             Tui.TuiDebug.Log("recover", $"reprinted {missing.Length} chars of {full.Length}");
@@ -2252,10 +2249,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
                     else
                     {
-                        if (sticky.Active)
-                        {
-                            sticky.RestoreTranscriptCursor();
-                        }
+                        // No per-frame cursor restore: the surface tracks the transcript
+                        // append point across footer repaints, and rewinding to the row
+                        // start here would overwrite a partially streamed row.
                         sessionRenderer.RenderFrame(frame);
                         if (sticky.Active && typeAheadLive)
                         {

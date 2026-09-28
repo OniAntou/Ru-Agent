@@ -59,7 +59,14 @@ internal sealed class TuiScreenSimulator
             }
             else if (c == '\t')
             {
-                Put(' ');
+                // Tab stops every 8 cells, mirroring TuiSurface's tracked cursor exactly:
+                // the simulator and the tracker must agree, or the test proves nothing.
+                var target = (_col / 8 + 1) * 8;
+                while (_col < target)
+                {
+                    Put(' ');
+                }
+
                 i++;
             }
             else if (char.IsControl(c))

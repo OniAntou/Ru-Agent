@@ -72,6 +72,7 @@ public sealed class TuiStickyRegion
         FooterHeight = footerHeight;
         FooterFirst = bottom + 1;
         Active = true;
+        _surface.TrackTranscriptCursor(bottom - 1);
         Write($"\u001b[1;{bottom}r\u001b[{bottom};1H");
         TuiDebug.Log("sticky", $"enter rows={rows} footer={footerHeight} first={FooterFirst} bottom={bottom}");
         return true;
@@ -102,6 +103,7 @@ public sealed class TuiStickyRegion
         FooterHeight = footerHeight;
         FooterFirst = bottom + 1;
         Active = true;
+        _surface.TrackTranscriptCursor(bottom - 1);
 
         var builder = new StringBuilder();
         builder.Append("\u001b[r");
@@ -129,6 +131,7 @@ public sealed class TuiStickyRegion
         Width = 0;
         FooterHeight = 0;
         FooterFirst = 0;
+        _surface.StopTranscriptCursorTracking();
 
         var builder = new StringBuilder();
         builder.Append("\u001b[r");
@@ -138,7 +141,13 @@ public sealed class TuiStickyRegion
         TuiDebug.Log("sticky", $"exit first={first}");
     }
 
-    /// <summary>Moves the hardware cursor to the last transcript row so appends land in the scrolling region.</summary>
+    /// <summary>
+    /// Parks the hardware cursor at the start of a fresh transcript row and resets the
+    /// tracked append point there. Only for turn starts and other places that genuinely
+    /// begin a new row: calling it between two writes of the same row rewinds the column
+    /// and the next bytes overwrite the row from the start. Mid-turn appends rely on the
+    /// tracked point instead and must not call this.
+    /// </summary>
     public void RestoreTranscriptCursor(TextWriter? writer = null)
     {
         if (!Active || FooterFirst <= 1)
@@ -146,6 +155,7 @@ public sealed class TuiStickyRegion
             return;
         }
 
+        _surface.TrackTranscriptCursor(FooterFirst - 2);
         var seq = $"\u001b[{Math.Max(1, FooterFirst - 1)};1H";
         if (writer is not null)
         {

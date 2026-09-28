@@ -310,6 +310,23 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void Assistant_block_row_count_tracks_recorded_rows_for_paint_diagnosis()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        Assert.Equal(0, transcript.AssistantBlockRowCount);
+
+        transcript.AppendAssistant("first line\nsecond line\n");
+        // The mark is taken before the assistant header is written, so the header row
+        // counts as part of the turn's block alongside the two body rows.
+        Assert.Equal(3, transcript.AssistantBlockRowCount);
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+        transcript.BeginTurn();
+        Assert.Equal(0, transcript.AssistantBlockRowCount);
+    }
+
+    [Fact]
     public void Real_short_reply_from_the_host_renders_completely()
     {
         // The exact 162-character answer the host persisted, em dash and all. Three or four

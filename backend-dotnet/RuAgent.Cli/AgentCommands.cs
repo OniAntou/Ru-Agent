@@ -1915,7 +1915,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
             var full = expected.ToString();
             var streamed = sessionRenderer.Transcript.StreamedAssistantText;
-            Tui.TuiDebug.Log("recover", $"streamed {streamed.Length} of {full.Length} chars");
+            Tui.TuiDebug.Log("recover", $"streamed {streamed.Length} of {full.Length} chars, {sessionRenderer.Transcript.AssistantBlockRowCount} rows recorded, suppress={sessionRenderer.Surface.SuppressRepaints}");
             var decision = Tui.AssistantTextReconciler.Decide(streamed, full);
             if (decision == Tui.AssistantTextRecovery.Complete
                 || decision == Tui.AssistantTextRecovery.None)

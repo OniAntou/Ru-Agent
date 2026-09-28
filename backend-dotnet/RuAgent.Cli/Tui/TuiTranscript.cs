@@ -71,6 +71,14 @@ public sealed class TuiTranscript
     public IReadOnlyList<string> RepaintPreview(int maxLines = 200) =>
         _surface.SnapshotTail(maxLines, Width);
 
+    /// <summary>
+    /// How many recorded lines this turn's assistant block currently occupies. The surface
+    /// records every finished line even when the screen erases it, so comparing this with
+    /// what is visible tells a paint loss apart from a stream loss.
+    /// </summary>
+    public int AssistantBlockRowCount =>
+        _assistantBlockStartRow < 0 ? 0 : Math.Max(0, _surface.HistoryCount - _assistantBlockStartRow);
+
     /// <summary>Recorded-line index where this turn's assistant output began, or -1.</summary>
     private int _assistantBlockStartRow = -1;
 

@@ -114,7 +114,10 @@ public sealed class WebSearchAdapter
                 }
             }
 
-            return Array.Empty<SourceCitation>();
+            // Unreachable while SearchEngineAsync fails closed on an empty
+            // parse; kept as an explicit failure so the contract cannot drift
+            // back to a silent empty result.
+            throw new InvalidDataException("web_search_parse_failed");
         }
         finally
         {
@@ -257,7 +260,11 @@ public sealed class WebSearchAdapter
                 }
             }
 
-            if (htmlResultAnchorCount > 0 && results.Count == 0)
+            // An unreadable layout is a failure, never an empty answer: the tool
+            // description and agent-tools.md both promise a bounded error
+            // instead of a silent empty result, and a consent or block page has
+            // no result anchors at all.
+            if (results.Count == 0)
             {
                 throw new InvalidDataException("web_search_parse_failed");
             }

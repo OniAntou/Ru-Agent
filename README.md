@@ -10,7 +10,7 @@ Manager and your project never leaves your disk.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-4%2C675%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-4%2C676%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -68,8 +68,11 @@ descriptor. Every preset change is recorded in the activity log.
 Approvals remain exact-intent and single-use. The current reasons include
 `external_directory_required`, `terminal_delete_requires_approval`,
 `terminal_unknown_executable`,
-`terminal_external_mutation_requires_approval`, and
-`terminal_timeout_requires_approval`. `web_approval_required` remains a
+`terminal_external_mutation_requires_approval`,
+`terminal_timeout_requires_approval`, and
+`terminal_protected_path_requires_approval` (the last names a protected location
+in the approval and is never offered as a reusable `allow_always` rule).
+`web_approval_required` remains a
 compatibility reason for an explicit ask rule, but the canonical `plan` profile
 allows Web and does not synthesize that approval. No provider, model, protocol,
 or tool fallback bypasses a denial.
@@ -123,7 +126,7 @@ model, open a project folder, and start chatting.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,675 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,676 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

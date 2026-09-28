@@ -66,26 +66,6 @@ internal static class PublicHostServiceRegistration
             configuration,
             agentWorkerPort,
             agentWorkerToken));
-        services.AddHttpClient<AgentWebToolExecutor>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(20);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("RuAgent/1.0");
-        })
-        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            AutomaticDecompression = DecompressionMethods.All,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-            MaxConnectionsPerServer = 10,
-            ConnectCallback = WebConnectionPolicy.CreateConnectCallback(),
-        });
-        services.AddSingleton<AgentWebToolExecutor>(services =>
-            new AgentWebToolExecutor(
-                new WebOptions(
-                    enabled: true,
-                    searchEndpoint: new Uri(ManagedRuntimeBootstrapper.BrokerWebSearchEndpoint)),
-                services.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(AgentWebToolExecutor))));
         services.AddSingleton<AgentReplyPolicy>();
         services.AddSingleton<IAgentReplyPolicy>(services =>
             services.GetRequiredService<AgentReplyPolicy>());

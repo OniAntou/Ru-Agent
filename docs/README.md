@@ -64,7 +64,9 @@ The canonical profiles do not synthesize `web_approval_required`; that legacy
 reason remains available to an explicit ask rule. Current approval reasons also
 include `external_directory_required`, `terminal_delete_requires_approval`,
 `terminal_external_mutation_requires_approval`,
-`terminal_timeout_requires_approval`, and `terminal_unknown_executable`.
+`terminal_timeout_requires_approval`, `terminal_unknown_executable`, and
+`terminal_protected_path_requires_approval` (shown with its own copy, and never
+offered as a reusable `allow_always` rule).
 Folder grants remain session-scoped, while workspace trust follows the canonical
 identity. Full-access terminal runs as the current Windows user, can access data
 outside the workspace, and is not a network/path sandbox. Hard timeout, output

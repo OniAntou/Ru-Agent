@@ -16,6 +16,10 @@ public sealed class ApprovalPrompt
     public const string AllowAlways = "always";
     public const string Deny = "deny";
 
+    // A protected-path ask is deliberately absent from this set: it is not
+    // remembered, so a single approval cannot become standing access to a
+    // credential directory. The GUI mirrors this in
+    // AgentApprovalPresentation.OneTimeOnlyReasons.
     private static readonly HashSet<string> RememberableAskReasons = new(StringComparer.Ordinal)
     {
         "terminal_delete_requires_approval",

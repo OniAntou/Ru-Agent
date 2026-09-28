@@ -13,7 +13,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness.Broker;
 
-public sealed class BrokerToolGateway : IToolGateway, IApprovalCleanupGateway, IAsyncDisposable
+public sealed class BrokerToolGateway : IToolGateway, IToolRunCancellation, IApprovalCleanupGateway, IAsyncDisposable
 {
     internal const string AuthorizationTokenPrefix = "auth:";
 
@@ -255,6 +255,7 @@ public sealed class BrokerToolGateway : IToolGateway, IApprovalCleanupGateway, I
                 "terminal_external_mutation_requires_approval" => "terminal_external_mutation_requires_approval",
                 "terminal_timeout_requires_approval" => "terminal_timeout_requires_approval",
                 "terminal_unknown_executable" => "terminal_unknown_executable",
+                "terminal_protected_path_requires_approval" => "terminal_protected_path_requires_approval",
                 "web_approval_required" => "web_approval_required",
                 _ => "approval_required",
             },
@@ -522,6 +523,38 @@ public sealed class BrokerToolGateway : IToolGateway, IApprovalCleanupGateway, I
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Forwards run-scoped cancellation to the Broker so an in-flight terminal
+    /// execution terminates its whole process tree through the Job Object.
+    ///
+    /// Best effort by contract: the caller commits the durable cancelled
+    /// projection straight after this returns, so anything that escapes here
+    /// would fail the cancel request and leave the run running *and* uncancelled.
+    /// The Broker keys the cancel by the run id in the payload and reports how
+    /// many executions it stopped, so the run actually asked for is the one sent.
+    /// </summary>
+    public async Task CancelRunAsync(RunId runId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RpcAsync(
+                AgentMessageTypes.Cancel,
+                _ => new JsonObject { ["run_id"] = runId.Value },
+                static (reply, _) => reply,
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException
+            || !cancellationToken.IsCancellationRequested)
+        {
+            // A closed socket needs no cancel: the Broker cancels its
+            // per-connection dispatch token on close, so the linked run token is
+            // already cancelled and the runner is unwinding on its own. Any other
+            // transport failure is equally non-actionable here -- the durable
+            // cancel is what the caller actually promised the user.
+        }
     }
 
     /// Forwards an approval resolution to the Broker on this gateway's

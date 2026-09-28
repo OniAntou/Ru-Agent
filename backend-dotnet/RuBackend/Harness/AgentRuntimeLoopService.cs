@@ -179,7 +179,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly ISettingsStore _settings;
     private readonly ITimeProvider _time;
     private readonly IModelContextLimitProvider _contextLimit;
-    private readonly Broker.AgentWebToolExecutor? _webExecutor;
+    private readonly Prompting.AgentToolRuntimeAvailability _runtimeAvailability;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly InMemoryRetainedApprovalStash _retainedStash;
@@ -199,7 +199,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         ISettingsStore? settings = null,
         ITimeProvider? time = null,
         IModelContextLimitProvider? contextLimit = null,
-        Broker.AgentWebToolExecutor? webExecutor = null,
+        Prompting.AgentToolRuntimeAvailability? runtimeAvailability = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
         Broker.BrokerToolGatewayFactory? brokerGateways = null)
     {
@@ -218,7 +218,12 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _contextLimit = contextLimit
             ?? new DynamicModelContextLimitProvider(_settings);
-        _webExecutor = webExecutor;
+        // The Broker is the execution authority for web tools, so the model is
+        // told about them from the Broker's own configuration. The Host holds
+        // no web adapter of its own to ask.
+        _runtimeAvailability = runtimeAvailability ?? new Prompting.AgentToolRuntimeAvailability(
+            WebSearchEnabled: true,
+            WebFetchEnabled: true);
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _brokerGateways = brokerGateways;
         _retainedStash = new InMemoryRetainedApprovalStash(_time);
@@ -233,9 +238,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         string? agentSessionId = null,
         ContextBudgetPolicy? contextBudgetPolicy = null)
     {
-        var availability = new AgentToolRuntimeAvailability(
-            _webExecutor?.IsSearchEnabled == true,
-            _webExecutor?.IsFetchEnabled == true);
+        var availability = _runtimeAvailability;
         if (_brokerGateways is not { IsConfigured: true }
             || policySnapshot is null
             || runId is not { } brokerRunId)

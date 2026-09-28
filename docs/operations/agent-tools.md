@@ -42,8 +42,9 @@ not advertised Agent tools.
 >   for `external_directory_required`, ephemeral token for
 >   `terminal_delete_requires_approval`,
 >   `terminal_external_mutation_requires_approval`,
->   `terminal_timeout_requires_approval`, `web_approval_required`, or
->   `terminal_unknown_executable`).
+>   `terminal_timeout_requires_approval`, `web_approval_required`,
+>   `terminal_unknown_executable`, or
+>   `terminal_protected_path_requires_approval`).
 >   `--json` cannot confirm any approval.
 >   Policy/approval/reconcile routes are active on the Agent v2 headless path.
 >   `POST /agent/v1/runs/{runId}/reconcile` resolves ambiguous dispatch and
@@ -419,6 +420,15 @@ reason code:
   mutation ngoài workspace (push/fetch mạng, cài package, restore).
   The approval returns an ephemeral one-time terminal token, never a
   reusable rule.
+- `terminal_protected_path_requires_approval` — Lệnh terminal này trỏ vào một
+  **vị trí được bảo vệ** (`.ssh`, `.aws`, `.gnupg`, `.env*`, `.git/**`,
+  `id_rsa`, credential store của Windows). Terminal vốn **không** bị
+  protected-path confinement — `full_access` vẫn chạy như user hiện tại, đúng
+  như `README.md` đã ghi — nên reason này **không** nâng quyền lên deny; nó
+  chỉ để người duyệt thấy đúng câu hỏi thay vì một thư mục "ngoài" trung
+  tính. Approval này **không thể nhớ lâu dài**: GUI và CLI đều không hiện lựa
+  chọn `allow_always` cho reason này, nên một lần duyệt không biến thành quyền
+  truy cập thường trực vào thư mục credential.
 - `terminal_timeout_requires_approval` — compatibility reason retained for an
   explicit ask rule. Canonical profile fallback no longer creates a 900-second
   approval gate; a timeout above the protocol hard maximum is denied in every

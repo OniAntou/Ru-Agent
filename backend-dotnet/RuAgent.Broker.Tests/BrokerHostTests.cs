@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -1315,6 +1316,78 @@ public sealed class BrokerHostTests
         await SendAsync(socket, Execute("execute-full-protected-terminal", sessionId, runId, "terminal.run", authorizationToken, arguments.DeepClone().AsObject()), cts.Token);
         var execution = await ReceiveAsync(socket, cts.Token);
         Assert.Equal(ToolResultStatuses.Succeeded, execution.Payload["status"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_cancel_terminates_an_in_flight_terminal_execution()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        // The command and the envelope deadline are both far longer than this
+        // test allows, so the only thing that can end the execution is the
+        // cancel. Without it the run is still going when the token fires.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        const string sessionId = "session-cancel-terminal";
+        const string runId = "run_cancel_terminal1111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "open-cancel-terminal", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.FullAccessEmpty())),
+            cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, (await ReceiveAsync(socket, cts.Token)).MessageType);
+
+        var arguments = new JsonObject
+        {
+            ["mode"] = "run",
+            ["executable"] = "ping",
+            ["arguments"] = new JsonArray("-n", "61", "127.0.0.1"),
+            ["working_directory"] = fixture.Root,
+            ["timeout_ms"] = 600_000,
+        };
+        await SendAsync(socket, Evaluate("evaluate-cancel-terminal", sessionId, runId, "terminal.run", arguments.DeepClone().AsObject()), cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        var authorizationToken = decision.Payload["authorization_token"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "execute-cancel-terminal", AgentMessageTypes.ToolExecute, sessionId, null,
+                AgentEnvelopeCodec.MaxDeadlineMs,
+                new JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "bash",
+                    ["tool_version"] = "1.0.0",
+                    ["authorization_token"] = authorizationToken,
+                    ["arguments"] = arguments.DeepClone().AsObject(),
+                }),
+            cts.Token);
+
+        // Let the child process actually start; cancelling before dispatch would
+        // prove nothing about the process tree.
+        await Task.Delay(2_000, cts.Token);
+        var stopwatch = Stopwatch.StartNew();
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "cancel-cancel-terminal", AgentMessageTypes.Cancel, sessionId, null, 10_000,
+                new JsonObject { ["run_id"] = runId }),
+            cts.Token);
+
+        var acknowledgement = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolResult, acknowledgement.MessageType);
+        Assert.Equal(ToolResultStatuses.Cancelled, acknowledgement.Payload["status"]!.GetValue<string>());
+        Assert.Equal(1, acknowledgement.Payload["cancelled_executions"]!.GetValue<int>());
+
+        var execution = await ReceiveAsync(socket, cts.Token);
+        stopwatch.Stop();
+        Assert.Equal(AgentMessageTypes.ToolExecuteResult, execution.MessageType);
+        Assert.Equal(ToolResultStatuses.Cancelled, execution.Payload["status"]!.GetValue<string>());
+        Assert.Equal("process_cancelled", execution.Payload["error_code"]!.GetValue<string>());
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(20),
+            $"cancel took {stopwatch.Elapsed}; the process was not stopped by the cancel");
     }
 
     [Fact]

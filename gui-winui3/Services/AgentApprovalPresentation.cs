@@ -24,16 +24,27 @@ public static class AgentApprovalPresentation
             StringComparison.Ordinal);
 
     /// <summary>
+    /// Ask reasons that are shown with dedicated copy but must never become a
+    /// reusable project rule. A protected path stays one-time: remembering it
+    /// would turn one approval into standing access to a credential directory.
+    /// </summary>
+    private static readonly IReadOnlyList<string> OneTimeOnlyReasons =
+    [
+        AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval,
+    ];
+
+    /// <summary>
     /// Whether the pending approval may be remembered as a project rule. The
     /// server only honours allow_always for known ask reasons that are not
     /// external-directory asks (those keep the session grant instead); unknown
-    /// reasons stay one-time.
+    /// reasons and one-time-only reasons stay one-time.
     /// </summary>
     public static bool CanRememberAllowAlways(string? askReason)
     {
         var trimmed = askReason?.Trim();
         return !string.IsNullOrWhiteSpace(trimmed)
             && !CanAllowSessionDirectory(trimmed)
+            && !OneTimeOnlyReasons.Contains(trimmed, StringComparer.Ordinal)
             && AgentApprovalSummaryPresentation.MappedReasonCodes.Contains(trimmed, StringComparer.Ordinal);
     }
 

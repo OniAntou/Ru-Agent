@@ -40,6 +40,7 @@ public sealed class AgentApprovalUiContractTests
             "terminal_timeout_requires_approval",
             "web_approval_required",
             "terminal_unknown_executable",
+            "terminal_protected_path_requires_approval",
         };
 
         Assert.Equal(
@@ -159,6 +160,20 @@ public sealed class AgentApprovalUiContractTests
             AgentApprovalSummaryPresentation.ExternalDirectoryRequired));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(null));
         Assert.False(AgentApprovalPresentation.CanRememberAllowAlways("future_reason_code"));
+    }
+
+    [Fact]
+    public void A_protected_path_ask_is_never_remembered()
+    {
+        // The reason has dedicated copy so the user sees why, but "always" would
+        // turn one approval into standing access to a credential directory.
+        Assert.False(AgentApprovalPresentation.CanRememberAllowAlways(
+            AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval));
+        Assert.Contains(
+            "protected",
+            AgentApprovalSummaryPresentation.Render(
+                AgentApprovalSummaryPresentation.TerminalProtectedPathRequiresApproval),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

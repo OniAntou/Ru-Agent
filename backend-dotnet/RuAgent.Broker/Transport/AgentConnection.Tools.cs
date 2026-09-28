@@ -171,9 +171,15 @@ public sealed partial class AgentConnection
             return preparation.Error;
         }
 
+        // Registered so an explicit cancel, or a run close, terminates the live
+        // process tree instead of leaving it running behind a cancelled run.
+        using var registration = _runCancellations.Register(
+            ReadRunIdOrSession(request),
+            cancellationToken);
+        var executionToken = registration.Token;
         var result = _authenticatedToolHandler is { } authenticatedHandler
-            ? await authenticatedHandler(request, cancellationToken).ConfigureAwait(false)
-            : await preparation.Handler!(request, cancellationToken).ConfigureAwait(false);
+            ? await authenticatedHandler(request, executionToken).ConfigureAwait(false)
+            : await preparation.Handler!(request, executionToken).ConfigureAwait(false);
         return new AgentEnvelope(
             result.ProtocolVersion,
             result.RequestId,
@@ -269,6 +275,13 @@ public sealed partial class AgentConnection
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
             ? result
             : null;
+
+    /// <summary>
+    /// The run a cancel applies to. A connection owns one lease per run, so the
+    /// session id is only the fallback for envelopes that omit run_id.
+    /// </summary>
+    private static string ReadRunIdOrSession(AgentEnvelope request) =>
+        ReadOptionalPayloadString(request.Payload, "run_id") ?? request.SessionId;
 
     /// <summary>
     /// Nearest existing ancestor directory of the evaluation boundary.

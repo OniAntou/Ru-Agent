@@ -25,6 +25,7 @@ public sealed partial class AgentConnection
     private readonly IReadOnlyList<string>? _advertisedCapabilities;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
     private readonly SemaphoreSlim _lifecycleGate;
+    private readonly RunToolCancellationRegistry _runCancellations = new();
 
     public AgentConnection(
         BrokerSession session,
@@ -315,10 +316,11 @@ public sealed partial class AgentConnection
                     .ConfigureAwait(false);
             case AgentMessageTypes.Cancel:
                 return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
-            {
-                ["status"] = ToolResultStatuses.Cancelled,
-                ["safe_summary"] = "request cancelled",
-            });
+                {
+                    ["status"] = ToolResultStatuses.Cancelled,
+                    ["cancelled_executions"] = _runCancellations.CancelRun(ReadRunIdOrSession(request)),
+                    ["safe_summary"] = "request cancelled",
+                });
             default:
                 return ToolError(request, "unsupported_message", "message type is not supported");
         }

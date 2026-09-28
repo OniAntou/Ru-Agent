@@ -20,6 +20,7 @@ public static class AgentApprovalSummaryPresentation
     public const string TerminalTimeoutRequiresApproval = "terminal_timeout_requires_approval";
     public const string WebApprovalRequired = "web_approval_required";
     public const string TerminalUnknownExecutable = "terminal_unknown_executable";
+    public const string TerminalProtectedPathRequiresApproval = "terminal_protected_path_requires_approval";
 
     /// <summary>
     /// Every reason code that has dedicated copy. Kept public so a test can assert
@@ -33,6 +34,7 @@ public static class AgentApprovalSummaryPresentation
         TerminalTimeoutRequiresApproval,
         WebApprovalRequired,
         TerminalUnknownExecutable,
+        TerminalProtectedPathRequiresApproval,
     ];
 
     /// <summary>
@@ -57,6 +59,8 @@ public static class AgentApprovalSummaryPresentation
                 "Ru needs approval to fetch this web content.",
             TerminalUnknownExecutable =>
                 "Ru has not recognized the executable for this terminal command.",
+            TerminalProtectedPathRequiresApproval =>
+                "This terminal command points at a protected location (SSH keys, cloud credentials, .env).",
             "" => "Agent is requesting an action that requires approval.",
             _ => trimmed,
         };

@@ -61,7 +61,7 @@ public sealed class WebAdapterTests
     public async Task Search_does_not_query_a_second_engine_when_no_fallback_is_configured()
     {
         // Without fallbacks the engine is contacted exactly once: a page this
-        // parser cannot read yields no results for this call.
+        // parser cannot read is a bounded failure, not an empty answer.
         var handler = new GoogleThenDuckHandler();
         using var http = new HttpClient(handler);
         var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
@@ -71,15 +71,19 @@ public sealed class WebAdapterTests
             new WebContentSanitizer(),
             new Uri("https://93.184.216.34/google"));
 
-        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => adapter.SearchAsync("dotnet docs", CancellationToken.None));
 
-        Assert.Empty(result);
+        Assert.Equal("web_search_parse_failed", error.Message);
         Assert.Equal(1, handler.RequestCount);
     }
 
     [Fact]
-    public async Task Search_returns_empty_when_the_only_engine_has_no_anchors()
+    public async Task Search_fails_closed_when_the_only_engine_has_no_anchors()
     {
+        // A consent or block page carries no result anchors at all, so the
+        // parser cannot tell "no results" from "not a results page". Failing
+        // closed keeps an unreadable page from reading as an empty answer.
         using var http = new HttpClient(new FakeHandler("text/html", "<html><body><p>consent</p></body></html>"));
         var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
         var adapter = new WebSearchAdapter(
@@ -88,9 +92,10 @@ public sealed class WebAdapterTests
             new WebContentSanitizer(),
             new Uri("https://93.184.216.34/google"));
 
-        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => adapter.SearchAsync("dotnet docs", CancellationToken.None));
 
-        Assert.Empty(result);
+        Assert.Equal("web_search_parse_failed", error.Message);
     }
 
     [Fact]
@@ -270,7 +275,7 @@ public sealed class WebAdapterTests
     }
 
     [Fact]
-    public async Task Search_skips_a_fallback_duplicating_the_primary()
+    public async Task Search_fails_closed_when_every_engine_is_unreadable()
     {
         var fake = new FakeHandler("text/html", "<html><body><p>nothing</p></body></html>");
         using var http = new HttpClient(fake);
@@ -282,9 +287,11 @@ public sealed class WebAdapterTests
             new Uri("https://primary.invalid/search"),
             fallbackEndpoints: new[] { new Uri("https://primary.invalid/search") });
 
-        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => adapter.SearchAsync("dotnet docs", CancellationToken.None));
 
-        Assert.Empty(result);
+        Assert.Equal("web_search_parse_failed", error.Message);
+        // The duplicate endpoint is skipped, so the primary is asked exactly once.
         Assert.Equal(1, fake.RequestCount);
     }
 

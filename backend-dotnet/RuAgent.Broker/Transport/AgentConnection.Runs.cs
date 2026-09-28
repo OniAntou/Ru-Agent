@@ -131,6 +131,9 @@ public sealed partial class AgentConnection
         }
 
         var runId = request.Payload["run_id"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : request.RequestId;
+        // A closed lease owns no more live work: terminate anything still
+        // running for it rather than leaving the process tree orphaned.
+        _runCancellations.CancelRun(runId);
         if (_session.TryCloseRun(runId))
         {
             return Reply(request, AgentMessageTypes.RunClosed, new JsonObject

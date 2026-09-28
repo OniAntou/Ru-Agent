@@ -150,6 +150,39 @@ public sealed class TerminalIntentClassifierTests
     }
 
     [Fact]
+    public void Protected_argument_path_names_the_protected_reason()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        var secret = Path.Combine(workspace.Root, ".env");
+
+        var result = _classifier.Classify(Terminal(factory, "dotnet", "test", secret));
+
+        Assert.Equal(
+            new TerminalIntentClassification(false, "terminal_protected_path_requires_approval"),
+            result);
+    }
+
+    [Fact]
+    public void Protected_working_directory_names_the_protected_reason()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        var protectedDirectory = Path.Combine(workspace.Outside, ".git");
+        Directory.CreateDirectory(protectedDirectory);
+
+        var result = _classifier.Classify(TerminalAt(
+            factory,
+            protectedDirectory,
+            "git",
+            "status"));
+
+        Assert.Equal(
+            new TerminalIntentClassification(false, "terminal_protected_path_requires_approval"),
+            result);
+    }
+
+    [Fact]
     public void External_executable_path_is_not_bounded_local()
     {
         using var workspace = new TemporaryWorkspace();

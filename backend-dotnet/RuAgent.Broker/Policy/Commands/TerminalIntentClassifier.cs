@@ -11,6 +11,16 @@ public sealed record TerminalIntentClassification(
 public sealed class TerminalIntentClassifier
 {
     private static readonly char[] ShellSyntax = ['|', '>', '<', ';', '&', '\r', '\n', '`'];
+
+    /// <summary>
+    /// The terminal path rule is not a sandbox: a protected path reached by a
+    /// command still asks (or runs under full_access, as documented). The reason
+    /// code names the protected path so the approval prompt does not present a
+    /// credential directory as a plain external directory.
+    /// </summary>
+    internal const string ProtectedPathReason = "terminal_protected_path_requires_approval";
+
+    private const string ExternalArgvReason = "terminal_external_argv_requires_approval";
     private readonly CommandAnalyzerRegistry _analyzers;
 
     public TerminalIntentClassifier(CommandAnalyzerRegistry? analyzers = null)
@@ -79,9 +89,9 @@ public sealed class TerminalIntentClassifier
             return Reject(WorkingDirectoryReason(context));
         }
 
-        if (HasUnsafeArgvPath(context))
+        if (HasUnsafeArgvPath(context) is { } argvPathReason)
         {
-            return Reject("terminal_external_argv_requires_approval");
+            return Reject(argvPathReason);
         }
 
         return new TerminalIntentClassification(true, "bounded_local");
@@ -188,15 +198,22 @@ public sealed class TerminalIntentClassifier
             StringComparison.OrdinalIgnoreCase);
 
     private static string WorkingDirectoryReason(PolicyContext context) =>
-        context.WorkingDirectory is { IsOutsideWorkspace: true }
-            ? "terminal_external_cwd_requires_approval"
-            : "terminal_cwd_untrusted";
+        context.WorkingDirectory is { IsProtected: true }
+            ? ProtectedPathReason
+            : context.WorkingDirectory is { IsOutsideWorkspace: true }
+                ? "terminal_external_cwd_requires_approval"
+                : "terminal_cwd_untrusted";
 
-    private static bool HasUnsafeArgvPath(PolicyContext context)
+    /// <summary>
+    /// Returns the reason a path argument is not bounded-local, or null when every
+    /// path argument resolves inside the workspace. A protected path is named
+    /// explicitly so an approval prompt cannot read as a plain external path.
+    /// </summary>
+    private static string? HasUnsafeArgvPath(PolicyContext context)
     {
         if (string.IsNullOrWhiteSpace(context.CanonicalCwd))
         {
-            return true;
+            return ExternalArgvReason;
         }
 
         CanonicalPathResolver resolver;
@@ -206,7 +223,7 @@ public sealed class TerminalIntentClassifier
         }
         catch (ArgumentException)
         {
-            return true;
+            return ExternalArgvReason;
         }
 
         foreach (var argument in context.Argv)
@@ -223,18 +240,23 @@ public sealed class TerminalIntentClassifier
                     ? candidate
                     : Path.Combine(context.CanonicalCwd, candidate);
                 var resolved = resolver.Resolve(absolute);
+                if (resolved.IsProtected)
+                {
+                    return ProtectedPathReason;
+                }
+
                 if (!resolved.IsInsideWorkspace)
                 {
-                    return true;
+                    return ExternalArgvReason;
                 }
             }
             catch (ArgumentException)
             {
-                return true;
+                return ExternalArgvReason;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static string? PathArgument(string argument)

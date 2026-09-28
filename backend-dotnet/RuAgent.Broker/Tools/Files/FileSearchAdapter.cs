@@ -46,14 +46,45 @@ public sealed class FileSearchAdapter
         if (maxResults < 1 || maxResults > FileToolLimits.MaxResults) throw new ArgumentException("invalid_max_results");
         var fileGlobRegex = fileGlob is null ? null : GlobToRegex(fileGlob);
         var baseResolved = ResolveChecked(basePath);
-        if (!Directory.Exists(baseResolved.CanonicalPath)) throw new IOException("not_a_directory");
-
         var stopwatch = Stopwatch.StartNew();
         var candidates = new List<(string Path, string Relative)>();
         long candidateBytes = 0;
-        var stack = new Stack<string>([baseResolved.CanonicalPath]);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var traversalCapped = false;
+        if (!Directory.Exists(baseResolved.CanonicalPath))
+        {
+            // A file path searches just that file through the same guards
+            // (protected/outside already rejected above; hard-link and size
+            // below). Anything else is still not_a_directory.
+            if (!File.Exists(baseResolved.CanonicalPath))
+            {
+                throw new IOException("not_a_directory");
+            }
+
+            var relative = WorkspacePathGuard.ToWorkspaceRelative(_resolver.CanonicalRoot, baseResolved.CanonicalPath);
+            if (fileGlobRegex is null
+                || fileGlobRegex.IsMatch(relative)
+                || fileGlobRegex.IsMatch(Path.GetFileName(relative)))
+            {
+                try
+                {
+                    HardLinkGuard.RequireSingleLink(baseResolved.CanonicalPath);
+                    var info = new FileInfo(baseResolved.CanonicalPath);
+                    if (info.Exists && info.Length <= FileToolLimits.MaxSearchFileSize)
+                    {
+                        candidates.Add((baseResolved.CanonicalPath, relative));
+                        candidateBytes += info.Length;
+                    }
+                }
+                catch
+                {
+                    // Guarded file: search nothing rather than fail the call.
+                }
+            }
+        }
+        else
+        {
+        var stack = new Stack<string>([baseResolved.CanonicalPath]);
         while (stack.Count > 0 && candidates.Count < FileToolLimits.MaxEntries * 32)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -91,6 +122,7 @@ public sealed class FileSearchAdapter
                 candidates.Add((resolved.CanonicalPath, relative));
                 if (candidates.Count >= FileToolLimits.MaxEntries * 32) { traversalCapped = true; break; }
             }
+        }
         }
 
         var outcomes = new ConcurrentBag<FileSearchOutcome>();

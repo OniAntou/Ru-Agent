@@ -36,6 +36,37 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     // ---------- deterministic ordinal relative paths ----------
 
     [Fact]
+    public async Task Search_file_path_searches_just_that_file()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "a.txt"), "needle here\n");
+        File.WriteAllText(Path.Combine(_root, "src", "b.txt"), "needle there\n");
+        var result = await _search.ExecuteAsync(
+            new JsonObject { ["path"] = "src/a.txt", ["query"] = "needle" },
+            CancellationToken.None);
+        var paths = result["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
+        Assert.Equal(new[] { "src/a.txt" }, paths);
+    }
+
+    [Fact]
+    public async Task Search_missing_path_still_reports_not_a_directory()
+    {
+        var ex = await Assert.ThrowsAsync<IOException>(() => _search.ExecuteAsync(
+            new JsonObject { ["path"] = "src/nope.txt", ["query"] = "needle" },
+            CancellationToken.None));
+        Assert.Equal("not_a_directory", ex.Message);
+    }
+
+    [Fact]
+    public async Task Search_file_path_respects_file_glob()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "a.txt"), "needle\n");
+        var result = await _search.ExecuteAsync(
+            new JsonObject { ["path"] = "src/a.txt", ["query"] = "needle", ["file_glob"] = "*.md" },
+            CancellationToken.None);
+        Assert.Equal(0, result["count"]!.GetValue<int>());
+    }
+
+    [Fact]
     public void List_deterministic_ordinal_relative_paths()
     {
         File.WriteAllText(Path.Combine(_root, "src", "z.txt"), "z");

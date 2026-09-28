@@ -217,6 +217,20 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
+    public void Web_search_description_matches_the_raced_fallback_chain()
+    {
+        // The Broker races the configured primary against WebOptions'
+        // DefaultFallbackEndpoints, so a description claiming one engine or
+        // no fallback tells the model a behavior the adapter does not have.
+        var search = AgentToolDefinitionCatalog.Find("web_search", "1.0.0")!.Description;
+
+        Assert.Contains("fallback", search, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("only configured engine", search, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("rather than being retried elsewhere", search, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("bounded", search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Skill_definition_loads_body_without_granting_capabilities()
     {
         var skill = AgentToolDefinitionCatalog.Find("skill", "1.0.0")!;

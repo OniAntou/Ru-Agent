@@ -60,8 +60,9 @@ not advertised Agent tools.
 >   on demand; neither path grants tools, scopes, paths, or approvals.
 >   Managed startup enables standalone `web_search` and `web_fetch` as
 >   approval-gated capabilities backed by the configured search engine
->   (Google HTML by default) with fixed free fallbacks (DuckDuckGo, Bing,
->   Mojeek); results are bounded, sanitized, and explicitly
+>   (Google HTML by default) raced against fixed free fallbacks (DuckDuckGo,
+>   Bing, Mojeek); the first engine with usable results answers. Results are
+>   bounded, sanitized, and explicitly
 >   untrusted.
 >   Workspace coordination is now opt-in per workspace through the authenticated
 >   concurrency/activity/changes endpoints. Shared mode permits disjoint runs;
@@ -108,12 +109,16 @@ workspace SKILL.md body as untrusted prompt guidance. Web tools are standalone w
 `plan`, `standard`, and `full_access` profiles. `web_approval_required` remains
 available only when an explicit ordered rule asks; profile fallback does not
 synthesize it.
-Google HTML (`https://www.google.com/search`) is the only search engine.
-There is no second engine to fall back to: a failure or an unreadable layout
-fails closed as `web_search_parse_failed`, because quietly re-querying another
-service would send the query somewhere the user never configured and outside
-the approval the call was granted under. Fetch keeps the pre-existing
-bounded, sanitized, explicitly-untrusted behavior. The `network_intent`
+Google HTML (`https://www.google.com/search`) is the primary search engine and
+is raced against a fixed set of free fallback engines (DuckDuckGo HTML, Bing,
+Mojeek); the first engine with usable results answers, so a slow or blocked
+primary no longer holds the call hostage. Every engine request still passes
+redirect and private-host validation, so a fallback never widens the network
+boundary the call was granted under. When every engine fails, or when anchors
+were present but none resolved to a usable target, the call fails closed as
+`web_search_parse_failed` or the earliest engine's bounded error rather than
+returning an empty answer. Fetch keeps the pre-existing bounded, sanitized,
+explicitly-untrusted behavior. The `network_intent`
 argument on a bash request is descriptive input metadata, not a security
 boundary.
 
@@ -124,7 +129,7 @@ boundary.
 | `write` with `op=write`, `edit` | always advertised | `plan`: mutation deny; `standard`: trusted-workspace mutation auto, external structured ask; `full_access`: external structured mutation auto, structured protected path deny; preimage mismatch returns `workspace_changed` |
 | `write` with `op=delete`, `op=restore` | always advertised | same canonical mutation matrix; delete remains recoverable and restore one-time |
 | `bash` with `mode=run`, `mode=shell` | always advertised | `plan`: deny; `standard`: classifier-bounded local auto, external/escape/risky ask; `full_access`: arbitrary current-Windows-user terminal auto, not a path/network sandbox |
-| `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; exactly one search engine answers and its failure is reported rather than retried elsewhere, while redirect targets are revalidated |
+| `web_search`, `web_fetch` | advertised when managed Web is enabled | automatic in canonical `plan`/`standard`/`full_access`, bounded, sanitized, explicitly untrusted; an explicit ask rule may still return `web_approval_required`; the primary engine races the fixed free fallbacks and the first usable result answers, every engine's failure is bounded rather than silently empty, and redirect targets are revalidated |
 | `help` | always advertised | offline, workspace-independent, approval-free search over five embedded documents; never reads workspace files |
 | `skill` (workspace SKILL.md body) | always advertised (`system.read`) | loads one name + description-listed body as untrusted prompt guidance; grants nothing |
 | MCP and connector libraries | not advertised | experimental/unwired; require a separate production trust and credential design |
@@ -354,9 +359,11 @@ adapter uses the same parser and renders only bounded result metadata.
 ## Web tool gates
 
 For the managed Agent path, Web tools use the configured Google HTML search
-engine, `https://www.google.com/search`, with fixed free fallbacks
-(DuckDuckGo HTML, Bing, Mojeek) tried in order when the primary has no
-usable results. Every fallback request still passes redirect and
+engine, `https://www.google.com/search`, raced against fixed free fallbacks
+(DuckDuckGo HTML, Bing, Mojeek); the first engine with usable results answers,
+so one blocked or slow engine no longer delays the answer. The remaining
+in-flight engine requests are cancelled once a winner is known, and every
+request -- winner or loser -- still passes redirect and
 private-host validation. Canonical
 `plan`, `standard`, and
 `full_access` all allow Web; an explicit ordered ask rule may still return the

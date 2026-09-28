@@ -65,41 +65,96 @@ public sealed class WebSearchAdapter
         }
 
         maxResults = Math.Clamp(maxResults, 1, 10);
-        // Fixed fallback chain: the configured primary first, then the built-in
+        // Fixed engine set: the configured primary first, then the built-in
         // free engines. Every request still passes WebPolicy (redirect and
         // private-host validation), so a fallback never widens the network
-        // boundary the call was granted under. The first engine with usable
-        // results wins; an empty or failed engine moves to the next.
-        Exception? firstError = null;
-        foreach (var endpoint in Engines())
+        // boundary the call was granted under.
+        //
+        // Engines race: a slow or blocked primary no longer holds the call
+        // hostage while a fallback already has usable results. The first
+        // engine with usable results wins; empty or failed engines are
+        // skipped. When every engine fails, the earliest engine's error is
+        // rethrown so the failure stays deterministic.
+        var engines = Engines().ToArray();
+        using var race = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var tasks = new Task<EngineOutcome>[engines.Length];
+        for (var index = 0; index < engines.Length; index++)
         {
-            IReadOnlyList<SourceCitation> results;
-            try
-            {
-                results = await SearchEngineAsync(endpoint, query, maxResults, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception error) when (error is InvalidDataException or HttpRequestException or UnauthorizedAccessException
-                || (error is TaskCanceledException && !cancellationToken.IsCancellationRequested))
-            {
-                // Engine failure (block page, layout change, timeout, denied
-                // host): remember the first one and try the next engine. User
-                // cancellation still throws immediately.
-                firstError ??= error;
-                continue;
-            }
-
-            if (results.Count > 0)
-            {
-                return results;
-            }
+            tasks[index] = RunEngineAsync(engines[index], index, query, maxResults, race.Token, cancellationToken);
         }
 
-        if (firstError is not null)
+        try
         {
-            throw firstError;
-        }
+            var pending = new HashSet<Task<EngineOutcome>>(tasks);
+            var errors = new Exception?[engines.Length];
+            while (pending.Count > 0)
+            {
+                var done = await Task.WhenAny(pending).ConfigureAwait(false);
+                pending.Remove(done);
+                // RunEngineAsync only throws when the caller itself cancelled;
+                // engine failures travel as Error and keep the race going.
+                var outcome = await done.ConfigureAwait(false);
+                if (outcome.Error is not null)
+                {
+                    errors[outcome.Index] ??= outcome.Error;
+                    continue;
+                }
 
-        return Array.Empty<SourceCitation>();
+                if (outcome.Results is { Count: > 0 })
+                {
+                    return outcome.Results;
+                }
+            }
+
+            for (var index = 0; index < errors.Length; index++)
+            {
+                if (errors[index] is not null)
+                {
+                    throw errors[index]!;
+                }
+            }
+
+            return Array.Empty<SourceCitation>();
+        }
+        finally
+        {
+            // Stop the losers; observe them so a faulted loser never escapes
+            // as an unobserved task exception after the winner returned.
+            race.Cancel();
+            foreach (var task in tasks)
+            {
+                _ = task.ContinueWith(
+                    static settled => _ = settled.Exception,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+        }
+    }
+
+    private sealed record EngineOutcome(int Index, IReadOnlyList<SourceCitation>? Results, Exception? Error);
+
+    private async Task<EngineOutcome> RunEngineAsync(
+        Uri endpoint,
+        int index,
+        string query,
+        int maxResults,
+        CancellationToken raceToken,
+        CancellationToken callerToken)
+    {
+        try
+        {
+            var results = await SearchEngineAsync(endpoint, query, maxResults, raceToken).ConfigureAwait(false);
+            return new EngineOutcome(index, results, null);
+        }
+        catch (Exception error) when (error is InvalidDataException or HttpRequestException or UnauthorizedAccessException
+            || (error is TaskCanceledException && !callerToken.IsCancellationRequested))
+        {
+            // Engine failure (block page, layout change, timeout, denied
+            // host): the race continues with the remaining engines. User
+            // cancellation still throws immediately.
+            return new EngineOutcome(index, null, error);
+        }
     }
 
     private IEnumerable<Uri> Engines()

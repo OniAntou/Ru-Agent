@@ -362,9 +362,16 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         }
 
         var reason = ReadOptionalString(choice["finish_reason"]);
-        return reason is "stop" or "tool_calls" or "length"
-            ? reason
-            : throw new ModelProviderException("malformed_payload", retryable: false);
+        return reason switch
+        {
+            "stop" or "tool_calls" or "length" => reason,
+            // Gateways pass provider-native stop markers (end_turn, complete,
+            // content_filter, ...) through their OpenAI-compatible surface. An
+            // unknown marker still ends the turn: failing the run on vocabulary
+            // turned answers into protocol_failure after tools already ran.
+            { Length: > 0 } => "stop",
+            _ => throw new ModelProviderException("malformed_payload", retryable: false),
+        };
     }
 
     private static string? ReadOptionalString(JsonNode? node)

@@ -231,6 +231,11 @@ def test_current_sections_do_not_claim_stale_worker_or_permission_models() -> No
         "`plan` (ask)",
         "workspace trust and approval are challenge-bound to canonical identity and current lease",
         "workspace trust is challenge-bound to canonical identity and current lease",
+        "the only search engine",
+        "as its only search engine",
+        "no fallback engine",
+        "rather than being retried elsewhere",
+        "one configured google html engine with no fallback",
     )
     stale: list[str] = []
     for path in CURRENT_DOCS:

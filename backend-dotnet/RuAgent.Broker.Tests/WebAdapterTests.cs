@@ -393,6 +393,41 @@ public sealed class WebAdapterTests
         Assert.Equal("web_redirect_limit", error.Message);
     }
 
+    [Fact]
+    public async Task Search_returns_the_fast_fallback_without_waiting_for_a_slow_primary()
+    {
+        // Engines race: a hung primary must not hold the call hostage while
+        // the fallback already answers. The primary would take 10s; the call
+        // must return the fallback result far sooner.
+        const string duckHtml = """
+            <html><body>
+              <a class="result__a" href="https://example.com/fast">Fast result</a>
+            </body></html>
+            """;
+        var handler = new DelayedRoutingHandler(new Dictionary<string, (int DelayMs, string ContentType, HttpStatusCode Status, string Body)>
+        {
+            ["primary.invalid"] = (10_000, "text/html", HttpStatusCode.OK, "<html><body><p>slow</p></body></html>"),
+            ["fallback.invalid"] = (0, "text/html", HttpStatusCode.OK, duckHtml),
+        });
+        using var http = new HttpClient(handler);
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        var adapter = new WebSearchAdapter(
+            http,
+            policy,
+            new WebContentSanitizer(),
+            new Uri("https://primary.invalid/search"),
+            fallbackEndpoints: new[] { new Uri("https://fallback.invalid/search") });
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await adapter.SearchAsync("dotnet docs", CancellationToken.None);
+        stopwatch.Stop();
+
+        var single = Assert.Single(result);
+        Assert.Equal("https://example.com/fast", single.Url.AbsoluteUri.TrimEnd('/'));
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(8), $"race took {stopwatch.Elapsed}");
+        Assert.Equal(2, handler.RequestCount);
+    }
+
     private sealed class RedirectChainHandler : HttpMessageHandler
     {
         private readonly int _hops;
@@ -431,10 +466,43 @@ public sealed class WebAdapterTests
         }
     }
 
+    private sealed class DelayedRoutingHandler : HttpMessageHandler
+    {
+        private readonly Dictionary<string, (int DelayMs, string ContentType, HttpStatusCode Status, string Body)> _routes;
+        private int _requestCount;
+
+        public DelayedRoutingHandler(Dictionary<string, (int DelayMs, string ContentType, HttpStatusCode Status, string Body)> routes) => _routes = routes;
+
+        public int RequestCount => _requestCount;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _requestCount);
+            var host = request.RequestUri?.Host ?? string.Empty;
+            if (!_routes.TryGetValue(host, out var route))
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            if (route.DelayMs > 0)
+            {
+                await Task.Delay(route.DelayMs, cancellationToken).ConfigureAwait(false);
+            }
+
+            var response = new HttpResponseMessage(route.Status)
+            {
+                Content = new StringContent(route.Body),
+            };
+            response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(route.ContentType);
+            return response;
+        }
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly string _contentType;
         private readonly string _body;
+        private int _requestCount;
 
         public FakeHandler(string contentType, string body)
         {
@@ -442,11 +510,11 @@ public sealed class WebAdapterTests
             _body = body;
         }
 
-        public int RequestCount { get; private set; }
+        public int RequestCount => _requestCount;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            RequestCount++;
+            Interlocked.Increment(ref _requestCount);
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_body),
@@ -459,14 +527,15 @@ public sealed class WebAdapterTests
     private sealed class HostRoutingHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)> _routes;
+        private int _requestCount;
 
         public HostRoutingHandler(Dictionary<string, (string ContentType, HttpStatusCode Status, string Body)> routes) => _routes = routes;
 
-        public int RequestCount { get; private set; }
+        public int RequestCount => _requestCount;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            RequestCount++;
+            Interlocked.Increment(ref _requestCount);
             var host = request.RequestUri?.Host ?? string.Empty;
             if (!_routes.TryGetValue(host, out var route))
             {
@@ -485,17 +554,18 @@ public sealed class WebAdapterTests
     private sealed class GoogleThenDuckHandler : HttpMessageHandler
     {
         private readonly string? _googleBody;
+        private int _requestCount;
 
         public GoogleThenDuckHandler(string? googleBody = null)
         {
             _googleBody = googleBody;
         }
 
-        public int RequestCount { get; private set; }
+        public int RequestCount => _requestCount;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            RequestCount++;
+            Interlocked.Increment(ref _requestCount);
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
             var body = path.Contains("duckduckgo", StringComparison.Ordinal)
                 ? "<a class=\"result__a\" href=\"https://93.184.216.34/result\">Duck result</a>"

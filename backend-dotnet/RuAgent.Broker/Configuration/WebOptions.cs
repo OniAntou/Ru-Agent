@@ -11,10 +11,10 @@ public sealed record WebOptions
     public static readonly Uri DefaultGoogleEndpoint = new("https://www.google.com/search");
 
     /// <summary>
-    /// Free fallback engines tried in order when the configured primary has
-    /// no usable results. Fixed public services (no keys); every request still
-    /// passes WebPolicy, so a fallback never widens the network boundary the
-    /// call was granted under.
+    /// Free fallback engines raced against the configured primary; the first
+    /// engine with usable results answers. Fixed public services (no keys);
+    /// every request still passes WebPolicy, so a fallback never widens the
+    /// network boundary the call was granted under.
     /// </summary>
     public static readonly IReadOnlyList<Uri> DefaultFallbackEndpoints = new[]
     {
@@ -40,8 +40,8 @@ public sealed record WebOptions
 
         Enabled = enabled;
         // The primary engine is whatever is configured (Google by default).
-        // Free fallback engines (DuckDuckGo, Bing, Mojeek) are tried in order
-        // when the primary has no usable results. The set is fixed public
+        // Free fallback engines (DuckDuckGo, Bing, Mojeek) race it; the first
+        // engine with usable results answers. The set is fixed public
         // services and every request still passes WebPolicy, so a fallback
         // never widens the network boundary the call was granted under.
         SearchEndpoint = searchEndpoint ?? (enabled ? DefaultGoogleEndpoint : null);

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **fix(broker,web)**: **Các engine tìm kiếm chạy song song thay vì xếp hàng — primary bị chặn không còn giữ call hostage.** Chain fallback trước gọi tuần tự: primary treo 10s thì cả `web_search` treo 10s dù fallback đã có kết quả từ giây thứ nhất. Nay `WebSearchAdapter` bắt đầu mọi engine đồng thời qua linked `CancellationTokenSource`, `Task.WhenAny` lấy engine đầu có kết quả dùng được, và `finally` cancel phần còn lại. Fail-closed giữ nguyên: mọi engine lỗi thì ném lại lỗi của engine **đầu tiên** để kết quả tất định, không đổi thứ tự lỗi. Engine thua được quan sát bằng continuation `OnlyOnFaulted` để không nổ thành unobserved task exception sau khi winner đã trả về.
+
+  **Mọi request — kể cả engine thua — vẫn đi qua `WebPolicy`**, nên fallback không nới rộng biên mạng mà call được cấp. Đây là bản sửa *tốc độ*, không phải *bỏ ranh giới*: chain fallback (Google → DDG → Bing → Mojeek) đã có từ trước và nay chạy đồng thời thay vì tuần tự.
+
+- **fix(worker,adapter)**: **`finish_reason` lạ từ OpenAI-compatible gateway không còn giết run sau khi tool đã chạy.** `OpenAiCompatibleModelProvider` chỉ nhận `stop`/`tool_calls`/`length`; gateway kiểu Kilo forward marker native của provider (`end_turn`, `complete`, `content_filter`, ...) qua surface OpenAI-compatible, nên một từ vựng lạ biến thành `malformed_payload` **sau khi tool đã chạy xong** — mất công cả bước lẫn tool call đã trả kết quả. Nay marker không rỗng đều kết thúc turn thành `stop`; `null`/chuỗi rỗng vẫn là `malformed_payload`.
+
+  **Không phải fallback**: đây là chuẩn hoá một trường *terminal marker* theo nghĩa của nó, không phải thử provider/model khác. Run vẫn kết thúc bình thường sau đúng một generation.
+
+- **fix(protocol,docs)**: **Mô tả `web_search` không còn kể một engine không tồn tại.** `AgentToolDefinitionCatalog` mô tả *"One configured engine answers each query... rather than being retried elsewhere"* trong khi code đã có chain 4 engine — và đây là chỗ **model thực sự đọc**, nên model bị dạy một hành vi không có thật. Description nay nói rõ engine đua nhau, engine đầu có kết quả thắng, và mọi engine lỗi thì fail với lỗi bounded chứ không trả về kết quả rỗng.
+
+  Drift này đã lan sang `agent-tools.md` (3 chỗ, trong đó một bảng capability và một mục "Web tool gates"), `runtime-behavior.md` (2 chỗ **mâu thuẫn nhau trong cùng file**: một đoạn nói "no fallback engine", đoạng kế nói có fallback), `backend-dotnet/README.md`, và comment `WebOptions`/`WebSearchAdapter` vẫn mô tả chuỗi gọi tuần tự. Tất cả đã đồng bộ theo hành vi race thật.
+
+  **Hai guard mới chặn tái phát**, cả hai đã mutation-test (revert lại thành drift thì phải đỏ):
+  - `test_current_documentation.py` cấm 4 cụm "single engine" trong mọi current doc.
+  - `AgentToolDefinitionCatalogTests.Web_search_description_matches_the_raced_fallback_chain` pin description phải nói tới fallback và không được nói "retried elsewhere".
+
 - **fix(gui)**: **Dòng lỗi hiện trên dòng `Searched` dù sinh ra sau — thứ tự feed bị lùi chỗ.** `InsertActivityInFeedOrder` đi ngược tới row `Thinking` gần nhất rồi chèn vào đó, với lý do ghi nguyên văn là *"a settled Thinking row stays above the tool rows that followed it"*. **Không thứ nào hưởng lợi:** `ProjectModelStep` publish Thinking **một lần mỗi model step, id chính là step id, lúc step bắt đầu** (`AgentModelInvocation.cs:55`, trước cả khi dựng prompt, nên trước mọi tool của step) — row của chính nó luôn được chèn trước, nên rule **không bao giờ nổ** đúng case nó được viết ra. Nó chỉ nổ khi một step **mới** bắt đầu sau tool, và khi đó nó đặt failure của step mới **lên trên** việc của step cũ.
 
   Trace thật của anh (`run_dcdc029d`): `step_started` → `reasoning_recorded` → `tool.execution_completed` → `model.step_started`(step 2) → `run.failed`. Đúng phải là **Thought · Searched · Failed**; nó hiện **Thought · Failed · Searched**, tức lỗi của step 2 đọc như nó xảy ra **trước** cái tool vừa chạy. Nay append theo thứ tự tới — cũng là thứ tự harness phát ra.

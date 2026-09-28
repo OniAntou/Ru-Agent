@@ -375,6 +375,34 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_maps_unknown_gateway_stop_markers_to_stop()
+    {
+        // Kilo-style gateways forward provider-native terminal markers
+        // (end_turn, complete, ...) through the OpenAI-compatible surface.
+        // Rejecting the vocabulary killed the run with protocol_failure after
+        // tools already executed, so unknown markers end the turn as stop.
+        foreach (var marker in new[] { "end_turn", "complete", "content_filter" })
+        {
+            var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"gold price\"}}]}\n\n" +
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"" + marker + "\"}]}\n\n" +
+                    "data: [DONE]\n\n",
+                    Encoding.UTF8,
+                    "text/event-stream"),
+            });
+            var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+            var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+            var done = Assert.Single(deltas, delta => delta.Completed);
+            Assert.Equal("stop", done.FinishReason);
+            Assert.Contains("gold price", string.Concat(deltas.Select(d => d.Text ?? string.Empty)), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsync_observes_cancellation()
     {
         using var cancellation = new CancellationTokenSource();

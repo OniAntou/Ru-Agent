@@ -187,6 +187,16 @@ public static class TuiFailureCatalog
                 "Unrunnable model action",
                 "the model produced an action the host could not run",
                 "rephrase your request and send it again"),
+            "model_tool_call_invalid" => new(
+                key,
+                "Invalid model tool call",
+                "the model produced a tool call the host could not run",
+                "rephrase and retry; if the same model repeats this, switch model with /model"),
+            "model_tool_call_unavailable" => new(
+                key,
+                "Unavailable model tool call",
+                "the model tried a tool that is not available",
+                "rephrase your request and send it again"),
             "prompt_contract_invalid" => new(
                 key,
                 "Prompt contract invalid",

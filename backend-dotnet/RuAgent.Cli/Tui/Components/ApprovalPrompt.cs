@@ -13,7 +13,17 @@ public sealed class ApprovalPrompt
 {
     public const string AllowOnce = "once";
     public const string AllowDirectory = "session_directory";
+    public const string AllowAlways = "always";
     public const string Deny = "deny";
+
+    private static readonly HashSet<string> RememberableAskReasons = new(StringComparer.Ordinal)
+    {
+        "terminal_delete_requires_approval",
+        "terminal_external_mutation_requires_approval",
+        "terminal_unknown_executable",
+        "terminal_timeout_requires_approval",
+        "web_approval_required",
+    };
 
     private readonly List<ApprovalChoice> _choices;
     private readonly ChoiceList _list;
@@ -57,8 +67,9 @@ public sealed class ApprovalPrompt
     /// only offered for external-directory asks: the server fails any other
     /// allow_session_directory with invalid_approval_command, so offering it
     /// elsewhere turns a silent escalation into an ordinary approval error.
-    /// Callers pass the wire SafeCode (the ask reason); anything else denies
-    /// the folder choice.
+    /// A remember-me choice is offered for known non-external asks instead;
+    /// the server persists it as a project rule. Callers pass the wire
+    /// SafeCode (the ask reason); anything else denies the folder choice.
     /// </summary>
     public static ApprovalPrompt For(string safeSummary, bool offerDirectory = false)
     {
@@ -76,6 +87,10 @@ public sealed class ApprovalPrompt
         if (offerDirectory && directoryAllowed)
         {
             choices.Add(new("3 · folder", "allow this folder for the session", AllowDirectory));
+        }
+        else if (!directoryAllowed && RememberableAskReasons.Contains(safeSummary?.Trim() ?? string.Empty))
+        {
+            choices.Add(new("3 · always", "allow and remember for this project", AllowAlways));
         }
 
         return new ApprovalPrompt(TuiText.Truncate(safeSummary, 60), choices, defaultIndex: 1);

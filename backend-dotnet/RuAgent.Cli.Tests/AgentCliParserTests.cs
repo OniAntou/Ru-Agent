@@ -517,6 +517,25 @@ public sealed class AgentCliParserTests
         Assert.True(res.Success);
         var cmd = Assert.IsType<ApproveCommand>(res.Command);
         Assert.Equal(ApprovalScope.Once, cmd.Scope);
+        Assert.False(cmd.Always);
+    }
+
+    [Fact]
+    public void ParseApprove_AlwaysSetsRememberMe()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--always" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.True(Assert.IsType<ApproveCommand>(res.Command).Always);
+    }
+
+    [Fact]
+    public void ParseApprove_RejectsDuplicateAlways()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--always", "--always" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("duplicate_switch", res.ErrorCode);
     }
 
     [Fact]

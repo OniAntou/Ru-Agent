@@ -67,7 +67,8 @@ public sealed record ApproveCommand(
     string RunId,
     string ApprovalId,
     ApprovalScope Scope,
-    bool Json) : AgentCommand(CliCommandKind.Approve, Json);
+    bool Json,
+    bool Always = false) : AgentCommand(CliCommandKind.Approve, Json);
 
 public sealed record DenyCommand(
     string RunId,
@@ -618,9 +619,11 @@ public static class AgentCliParser
 
     private static AgentCliParseResult ParseApprove(string[] args)
     {
-        // agent approve <run-id> <approval-id> [--json]
+        // agent approve <run-id> <approval-id> [--always] [--json]
         bool json = false;
         bool jsonSeen = false;
+        bool always = false;
+        bool alwaysSeen = false;
         string? runId = null;
         string? approvalId = null;
 
@@ -633,6 +636,14 @@ public static class AgentCliParser
                     return Fail("duplicate_switch", "Duplicate --json.");
                 json = true;
                 jsonSeen = true;
+                continue;
+            }
+            if (token == "--always")
+            {
+                if (alwaysSeen)
+                    return Fail("duplicate_switch", "Duplicate --always.");
+                always = true;
+                alwaysSeen = true;
                 continue;
             }
             if (token == "--scope")
@@ -668,7 +679,7 @@ public static class AgentCliParser
         if (json)
             return Fail("interactive_required", "--json cannot confirm approval; interactive required.");
 
-        return Success(new ApproveCommand(runId, approvalId, ApprovalScope.Once, json));
+        return Success(new ApproveCommand(runId, approvalId, ApprovalScope.Once, json, always));
     }
 
     private static AgentCliParseResult ParseDeny(string[] args)

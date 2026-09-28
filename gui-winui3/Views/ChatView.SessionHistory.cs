@@ -746,6 +746,10 @@ namespace RuApp.Views
                 {
                     action = () => _agentController.ApproveSessionDirectoryAsync();
                 }
+                else if (string.Equals(e.Scope, "always", StringComparison.Ordinal))
+                {
+                    action = () => _agentController.ApproveAlwaysAsync();
+                }
                 else
                 {
                     action = () => _agentController.ApproveAsync();

@@ -26,6 +26,59 @@ public sealed class TerminalIntentClassifierTests
         Assert.Equal(new TerminalIntentClassification(true, "bounded_local"), result);
     }
 
+    [Theory]
+    [InlineData("git", "--version")]
+    [InlineData("python", "--version")]
+    [InlineData("dotnet", "--version")]
+    public void Diagnostics_flags_are_bounded_without_asking(string executable, string flag)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+
+        var result = _classifier.Classify(Terminal(factory, executable, flag));
+
+        Assert.Equal(new TerminalIntentClassification(true, "bounded_local"), result);
+    }
+
+    [Fact]
+    public void Git_directory_override_inside_workspace_follows_the_inner_verb()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        Directory.CreateDirectory(Path.Combine(workspace.Root, "subdir"));
+
+        var result = _classifier.Classify(Terminal(factory, "git", "-C", "subdir", "status"));
+
+        Assert.Equal(new TerminalIntentClassification(true, "bounded_local"), result);
+    }
+
+    [Fact]
+    public void Git_directory_override_outside_workspace_still_asks()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+
+        var result = _classifier.Classify(Terminal(factory, "git", "-C", workspace.Outside, "status"));
+
+        Assert.Equal(
+            new TerminalIntentClassification(false, "git_directory_override_requires_approval"),
+            result);
+    }
+
+    [Fact]
+    public void Git_directory_override_with_network_verb_still_asks()
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+        Directory.CreateDirectory(Path.Combine(workspace.Root, "subdir"));
+
+        var result = _classifier.Classify(Terminal(factory, "git", "-C", "subdir", "push"));
+
+        Assert.Equal(
+            new TerminalIntentClassification(false, "terminal_external_mutation_requires_approval"),
+            result);
+    }
+
     [Fact]
     public void Arbitrary_shell_mode_is_not_bounded_local()
     {

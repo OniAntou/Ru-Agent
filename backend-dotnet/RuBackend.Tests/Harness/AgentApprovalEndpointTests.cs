@@ -466,9 +466,12 @@ public sealed class AgentApprovalEndpointTests
         BackendWebApplicationFactory? factory = null;
         try
         {
-            var argumentsJson = executable == "git"
-                ? JsonSerializer.Serialize(new { executable, arguments = new[] { "push" } })
-                : JsonSerializer.Serialize(new { executable, arguments = new[] { "--version" } });
+            var argumentsJson = executable switch
+            {
+                "git" => JsonSerializer.Serialize(new { executable, arguments = new[] { "push" } }),
+                "unknown-tool-xyz.exe" => JsonSerializer.Serialize(new { executable, arguments = new[] { "--query-approval-state" } }),
+                _ => JsonSerializer.Serialize(new { executable, arguments = new[] { "--version" } }),
+            };
             var runner = new ScriptedRunner(
                 ToolCall("terminal.run", argumentsJson),
                 FinalStep("done"));
@@ -602,9 +605,71 @@ public sealed class AgentApprovalEndpointTests
         }
     }
 
+    [Fact]
+    public async Task Approval_AllowAlways_SavesProjectRule_AndSecondRunSkipsApproval()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new ScriptedRunner(
+                ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember me");
+            var runId = created.GetProperty("run_id").GetString()!;
+            var workspaceId = created.GetProperty("workspace_id").GetString()!;
+            var approvalId = await WaitForApprovalIdAsync(client, runId, StateDeadline);
+            Assert.NotNull(approvalId);
+
+            RuBackend.Harness.AgentV1Service.ClearHostApprovalsForTests();
+            using var resp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/approvals/{approvalId}", new { command = "allow_always" });
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("authorized", json.GetProperty("status").GetString());
+            Assert.True(json.GetProperty("rule_saved").GetBoolean());
+            Assert.False(string.IsNullOrWhiteSpace(json.GetProperty("rule_id").GetString()));
+            Assert.Equal("project", json.GetProperty("matcher_preview").GetProperty("scope").GetString());
+
+            using var policies = await client.GetAsync($"/agent/v1/policies?scope=project&workspace_id={Uri.EscapeDataString(workspaceId)}");
+            policies.EnsureSuccessStatusCode();
+            Assert.Equal(1, (await policies.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("items").GetArrayLength());
+
+            // Let the first run release the workspace before starting the second.
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "first run did not finish after allow_always");
+
+            // The identical call on a second run must not ask again.
+            var created2 = await CreateRunAndTrustAsync(client, sessionId, wsPath, "remember me");
+            var runId2 = created2.GetProperty("run_id").GetString()!;
+            Assert.True(
+                await WaitForStatusAsync(
+                    client,
+                    runId2,
+                    new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" },
+                    StateDeadline),
+                "second run did not finish");
+            var events2 = await ReadEventsAsync(client, runId2);
+            Assert.DoesNotContain(events2, e => e.TryGetProperty("event_type", out var type) && type.GetString() == "approval.requested");
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear();
+        }
+    }
+
     private static async Task<(BackendWebApplicationFactory Factory, HttpClient Client, string RunId, string ApprovalId)> StartWaitingApprovalRunAsync(string wsPath, RuBackend.Business.DataPaths dataPaths)
     {
-        var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--version"]}"""));
+        var runner = new ScriptedRunner(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
         var factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner, withInProcessBroker: true);
         var client = factory.CreateAuthenticatedClient();
         var sessionId = await CreateSessionAsync(client);
@@ -798,7 +863,7 @@ public sealed class AgentApprovalEndpointTests
                     "bash",
                     "1.0.0",
                     JsonDocument.Parse(
-                        "{\"mode\":\"run\",\"executable\":\"unknown-tool-batch.exe\",\"arguments\":[\"--version\"]}")
+                        "{\"mode\":\"run\",\"executable\":\"unknown-tool-batch.exe\",\"arguments\":[\"--query-approval-state\"]}")
                         .RootElement.Clone()),
                 new ModelToolCall(
                     "provider-batch-3",

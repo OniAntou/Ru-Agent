@@ -971,7 +971,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             return 1;
         }
 
-        var scopeStr = "once";
+        var scopeStr = cmd.Always ? "always" : "once";
 
         try
         {
@@ -1976,7 +1976,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                                     else
                                     {
                                         await _agentClient.ApproveAsync(targetRunId, envelope.ApprovalId, decision, frameCt).ConfigureAwait(false);
-                                        var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session" : "once";
+                                        var scope = decision == Tui.ApprovalPrompt.AllowDirectory ? "folder for this session"
+                                            : decision == Tui.ApprovalPrompt.AllowAlways ? "remembered for this project"
+                                            : "once";
                                         sessionRenderer.Note("approved · " + scope, Tui.TuiToken.Ok);
                                     }
 

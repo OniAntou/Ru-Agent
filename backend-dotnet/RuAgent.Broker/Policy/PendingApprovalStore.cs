@@ -22,6 +22,7 @@ public enum ApprovalCommandV2
 {
     AllowOnce,
     AllowSessionDirectory,
+    AllowAlways,
     Deny,
 }
 

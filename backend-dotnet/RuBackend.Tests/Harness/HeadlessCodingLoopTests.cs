@@ -26,7 +26,7 @@ public sealed class HeadlessCodingLoopTests
         runner.Enqueue(ToolCall("files.edit", $$"""{"path":"seed.txt","old_string":"seed","new_string":"repaired"}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"rg","arguments":["--files"]}"""));
         runner.Enqueue(ToolCall("terminal.run", """{"executable":"git","arguments":["status","--porcelain=v2"]}"""));
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--version"]}"""));
+        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
 
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
         using var client = factory.CreateAuthenticatedClient();
@@ -118,7 +118,7 @@ public sealed class HeadlessCodingLoopTests
     {
         using var workspace = GitWorkspace.Create();
         var runner = new ScriptedRunner();
-        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--version"]}"""));
+        runner.Enqueue(ToolCall("terminal.run", """{"executable":"unknown-tool-xyz.exe","arguments":["--query-approval-state"]}"""));
 
         using var factory = new BackendWebApplicationFactory(dataPaths: workspace.DataPaths, modelStepRunner: runner, withInProcessBroker: true);
         using var desktopClient = factory.CreateAuthenticatedClient();

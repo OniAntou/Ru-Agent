@@ -456,6 +456,25 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Approves once and remembers the exact intent as a project rule. Offered
+    /// for known non-external asks; the server fails external-directory asks
+    /// closed for this scope and unknown reasons stay one-time.
+    /// </summary>
+    public async Task ApproveAlwaysAsync(CancellationToken cancellationToken = default)
+    {
+        var runId = CurrentRun?.RunId;
+        var approvalId = PendingApprovalId;
+        if (runId is null || approvalId is null)
+        {
+            throw new InvalidOperationException("No Agent approval is pending.");
+        }
+
+        RunOnUi(() => _statusText = "Submitting approval...");
+        await _client.ApproveAsync(runId, approvalId, "always", cancellationToken).ConfigureAwait(false);
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task DenyAsync(CancellationToken cancellationToken = default)
     {
         var runId = CurrentRun?.RunId;

@@ -1,6 +1,7 @@
 using System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 
 namespace RuApp.Controls
 {
@@ -15,7 +16,7 @@ namespace RuApp.Controls
 
         public bool Approved { get; }
 
-        /// <summary>Approval scope: "once" or "session" (external folders only).</summary>
+        /// <summary>Approval scope: "once", "session" (external folders only), or "always" (remember as a project rule).</summary>
         public string Scope { get; }
     }
 
@@ -52,10 +53,12 @@ namespace RuApp.Controls
         /// <summary>
         /// Presents one pending approval. A blank command hides the command block, so
         /// a non-terminal approval does not show an empty code box. The Always
-        /// affordance appears only for external-directory asks; every other reason
-        /// stays one-time because the server fails session scope closed for them.
+        /// affordance appears only for external-directory asks; the Remember
+        /// affordance appears for every other known ask reason and saves a
+        /// project rule. Every other reason stays one-time because the server
+        /// fails session scope closed for them.
         /// </summary>
-        public void Show(string summary, string? command, bool allowSessionDirectory = false)
+        public void Show(string summary, string? command, bool allowSessionDirectory = false, bool allowRememberAlways = false)
         {
             SummaryText.Text = summary ?? string.Empty;
 
@@ -71,7 +74,22 @@ namespace RuApp.Controls
             }
 
             AlwaysButton.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
-            SessionScopeHint.Visibility = allowSessionDirectory ? Visibility.Visible : Visibility.Collapsed;
+            RememberButton.Visibility = !allowSessionDirectory && allowRememberAlways ? Visibility.Visible : Visibility.Collapsed;
+            if (allowSessionDirectory)
+            {
+                SessionScopeHint.Text = "Always opens this folder for the chat only. The grant is lost when the app closes.";
+                SessionScopeHint.Visibility = Visibility.Visible;
+            }
+            else if (allowRememberAlways)
+            {
+                SessionScopeHint.Text = "Remember saves an allow rule for this exact action in this project. Manage it under Policies.";
+                SessionScopeHint.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                SessionScopeHint.Visibility = Visibility.Collapsed;
+            }
+
             Panel.Visibility = Visibility.Visible;
         }
 
@@ -81,6 +99,7 @@ namespace RuApp.Controls
             CommandText.Text = string.Empty;
             CommandContainer.Visibility = Visibility.Collapsed;
             AlwaysButton.Visibility = Visibility.Collapsed;
+            RememberButton.Visibility = Visibility.Collapsed;
             SessionScopeHint.Visibility = Visibility.Collapsed;
         }
 
@@ -92,17 +111,57 @@ namespace RuApp.Controls
         {
             ApproveButton.IsEnabled = enabled;
             AlwaysButton.IsEnabled = enabled;
+            RememberButton.IsEnabled = enabled;
             DenyButton.IsEnabled = enabled;
         }
 
-        /// <summary>Moves focus onto Approve so a keyboard user can decide immediately.</summary>
-        public void FocusDecision() => ApproveButton?.Focus(FocusState.Programmatic);
+        /// <summary>
+        /// Moves focus onto Deny so a keyboard user is on the safe button, not the
+        /// dangerous one.
+        /// </summary>
+        /// <remarks>
+        /// This used to land on Approve, on the reasoning that a keyboard user should be
+        /// able to decide immediately. In an app that runs arbitrary shell commands that
+        /// reasoning has the wrong sign: Enter is the reflex for dismissing something, and
+        /// the button under it would be the one that executes a command the user has not
+        /// read. Landing on Deny means a reflexive Enter answers "no" and the agent asks
+        /// again, which costs a round trip. Landing on Approve means a reflexive Enter
+        /// runs the command.
+        ///
+        /// Deny is not the only way out either. Escape answers Deny from anywhere in the
+        /// panel, and Tab reaches Approve in one press, so nothing is hidden from a user
+        /// who means to approve — it just is not what happens to the user who does not
+        /// look.
+        /// </remarks>
+        public void FocusDecision() => DenyButton?.Focus(FocusState.Programmatic);
+
+        /// <summary>
+        /// Escape, from any part of the panel, answers Deny.
+        /// </summary>
+        /// <remarks>
+        /// Hooked here rather than on the chat surface so the prompt answers Escape in
+        /// its own voice wherever its focus happens to be. It bubbles from the buttons,
+        /// so it does not matter which of the three the user reached with Tab.
+        /// </remarks>
+        private void OnPanelKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            if (e.Key != Windows.System.VirtualKey.Escape || !IsDecisionEnabled)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: false));
+        }
 
         private void OnApproveClick(object sender, RoutedEventArgs e) =>
             DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "once"));
 
         private void OnAlwaysClick(object sender, RoutedEventArgs e) =>
             DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "session"));
+
+        private void OnRememberClick(object sender, RoutedEventArgs e) =>
+            DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: true, scope: "always"));
 
         private void OnDenyClick(object sender, RoutedEventArgs e) =>
             DecisionRequested?.Invoke(this, new AgentApprovalDecidedEventArgs(approved: false));

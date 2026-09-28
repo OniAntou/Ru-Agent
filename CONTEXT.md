@@ -162,7 +162,9 @@ lease, and policy snapshot for an ask decision. Approval proposals are retained
 in memory while live and reconstructed from durable events and encrypted
 argument payloads after restart; resume re-evaluates the complete batch and
 never asks the model to reissue it. A repeated identical deny still terminates
-the run, and there is no provider/model/protocol/tool fallback.
+the run, and there is no provider/model/protocol/tool fallback. The explicit
+`allow_always` decision additionally remembers the exact intent as a
+project-scope allow rule; `allow_once` and session grants stay single-use.
 _Avoid_: reusable confirmation flag or approval-time reissue
 
 **Policy Snapshot**:

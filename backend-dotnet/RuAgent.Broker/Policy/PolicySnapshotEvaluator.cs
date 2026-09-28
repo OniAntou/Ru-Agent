@@ -139,11 +139,31 @@ public sealed class PolicySnapshotEvaluator
         // user-authored deny wins on every target, including one outside the
         // workspace. Only the deny verdict is taken from them here: an allow or
         // ask rule still cannot grant the external access the profile asks for.
+        // Precedence is deny, then ask, then allow regardless of creation
+        // order, matching Claude-style rule semantics: a remembered allow can
+        // never override an explicit ask or deny.
         string? matchedDecision = null;
         string? matchedRuleId = null;
         foreach (var rule in snapshot.OrderedRules)
         {
-            if (PolicyRuleMatcher.Matches(rule, context, now))
+            if (!PolicyRuleMatcher.Matches(rule, context, now))
+            {
+                continue;
+            }
+
+            if (string.Equals(rule.Decision, "deny", StringComparison.Ordinal))
+            {
+                matchedDecision = "deny";
+                matchedRuleId = rule.RuleId;
+                break;
+            }
+
+            if (string.Equals(rule.Decision, "ask", StringComparison.Ordinal))
+            {
+                matchedDecision = "ask";
+                matchedRuleId = rule.RuleId;
+            }
+            else if (matchedDecision is null)
             {
                 matchedDecision = rule.Decision;
                 matchedRuleId = rule.RuleId;

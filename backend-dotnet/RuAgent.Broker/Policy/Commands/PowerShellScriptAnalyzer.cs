@@ -106,7 +106,7 @@ public sealed class PowerShellScriptAnalyzer
             .Skip(1)
             .Select(ElementText)
             .ToArray();
-        return _commands.Analyze(name, arguments);
+        return _commands.Analyze(name, arguments, allowDiagnosticsAuto: false);
     }
 
     private static bool IsKnownPowerShellCommand(string name) =>

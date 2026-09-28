@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using RuAgent.Protocol.Harness;
 using RuApp.Models;
 
@@ -21,6 +22,20 @@ public static class AgentApprovalPresentation
             askReason?.Trim(),
             AgentApprovalSummaryPresentation.ExternalDirectoryRequired,
             StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether the pending approval may be remembered as a project rule. The
+    /// server only honours allow_always for known ask reasons that are not
+    /// external-directory asks (those keep the session grant instead); unknown
+    /// reasons stay one-time.
+    /// </summary>
+    public static bool CanRememberAllowAlways(string? askReason)
+    {
+        var trimmed = askReason?.Trim();
+        return !string.IsNullOrWhiteSpace(trimmed)
+            && !CanAllowSessionDirectory(trimmed)
+            && AgentApprovalSummaryPresentation.MappedReasonCodes.Contains(trimmed, StringComparer.Ordinal);
+    }
 
     /// <summary>
     /// The terminal command to show in the approval panel. The controller's own

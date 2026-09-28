@@ -81,8 +81,9 @@ approve.
   - Approval bridging: the Host approval endpoint forwards the resolution to
     the Broker (`approval.respond`) before resuming the run and the resumed
     proposal executes with the returned one-time `authorization_token`
-    (60 s). Approvals never persist reusable rules; the token or the
-    session-directory grant is the whole authorization, and the Broker lease
+    (60 s). Only the explicit `allow_always` decision persists a reusable
+    project-scope allow rule for the exact intent; `allow_once` and the
+    session-directory grant stay single-use, and the Broker lease
     rebind remains future work.
   - Web wiring: web options are defined once on the Host, forwarded to the
     Broker process through the environment, and the v2 lease enables the

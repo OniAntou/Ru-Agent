@@ -28,15 +28,16 @@ not advertised Agent tools.
 >   payloads, idempotent conversation outbox, workspace trust,
 >   session permissions with monotonic version, encrypted `PolicySnapshot`
 >   snapshots, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering
->   `consume one-time approval → execute under N → receipt → N+1` with no
->   reusable rule persisted; every approval is `allow_once`,
+>   `consume one-time approval → execute under N → receipt → N+1` with a
+>   reusable project rule persisted only for the explicit `allow_always`
+>   decision; every other approval is `allow_once`,
 >   `allow_session_directory` (external folders only), or `deny`) and a thin
 >   `RuAgent.Cli` tracer (safe envelope only, NDJSON `--json` `v:1`, no private
 >   payload auto-fetch, `policy list`/`import --global FILE`/`remove`,
->   `approve <run-id> <approval-id>`/`deny`, `run --workspace PATH "prompt"`,
->   with no `--scope`/`--preset` flags exposed; the Host accepts exactly
->   `allow_once`, `allow_session_directory` (external folders only), and
->   `deny` — the server picks the right one-time token from the pending
+>   `approve <run-id> <approval-id> [--always]`/`deny`, `run --workspace PATH "prompt"`,
+>   with no `--scope`/`--preset` flags exposed; the Host accepts
+>   `allow_once`, `allow_session_directory` (external folders only),
+>   `allow_always`, and `deny` — the server picks the right one-time token from the pending
 >   binding — session-scoped directory grant
 >   for `external_directory_required`, ephemeral token for
 >   `terminal_delete_requires_approval`,
@@ -515,7 +516,8 @@ run with `approval_denied`,
 so the model cannot immediately request the same permission again. Changed
 fields and expired or moved-workspace replays return `approval_stale`. The
 Broker reply carries the exact matcher preview plus one `authorization_token`
-(60s); no reusable rule is ever produced. Ordering is
+(60s); a reusable project rule is produced only for the explicit
+`allow_always` decision. Ordering is
 `consume one-time approval under snapshot N
 → execute already-authorized call under N → persist final receipt → build/bind
 N+1 → invalidate other pending N decisions`; Broker restart before dispatch

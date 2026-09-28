@@ -15,6 +15,7 @@
             CornerRadius="{StaticResource AppCardCornerRadius}"
             Padding="14,12"
             Margin="0,0,0,4"
+            KeyDown="OnPanelKeyDown"
             AutomationProperties.AutomationId="AgentApprovalPanel">
         <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -111,7 +112,29 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
-                <Button x:Name="DenyButton"
+                <Button x:Name="RememberButton"
+                         Click="OnRememberClick"
+                         Visibility="Collapsed"
+                         AutomationProperties.AutomationId="AgentRememberButton"
+                         AutomationProperties.Name="Approve and remember this action"
+                         Background="Transparent"
+                         Foreground="{StaticResource RuInkBrush}"
+                         BorderBrush="{StaticResource RuLineBrush}"
+                         BorderThickness="1"
+                         CornerRadius="{StaticResource AppControlCornerRadius}"
+                         Padding="14,6"
+                         Height="32">
+                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                         <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{StaticResource RuMutedBrush}" />
+                         <TextBlock Text="Remember"
+                                    FontFamily="{StaticResource RuUiFontFamily}"
+                                    FontSize="12"
+                                    FontWeight="Medium"
+                                    Foreground="{StaticResource RuInkBrush}"
+                                    VerticalAlignment="Center" />
+                     </StackPanel>
+                 </Button>
+                 <Button x:Name="DenyButton"
                         Click="OnDenyClick"
                         AutomationProperties.AutomationId="AgentDenyButton"
                         AutomationProperties.Name="Deny agent action"

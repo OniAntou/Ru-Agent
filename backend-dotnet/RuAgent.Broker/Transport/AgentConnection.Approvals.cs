@@ -48,6 +48,7 @@ public sealed partial class AgentConnection
             var normalizedCommand = commandRaw.ToLowerInvariant();
             if (normalizedCommand is not ("allow_once" or "allowonce"
                 or "allow_session_directory" or "allowsessiondirectory"
+                or "allow_always" or "allowalways"
                 or "deny"))
             {
                 return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
@@ -62,6 +63,7 @@ public sealed partial class AgentConnection
             {
                 "allow_once" or "allowonce" => ApprovalCommandV2.AllowOnce,
                 "allow_session_directory" or "allowsessiondirectory" => ApprovalCommandV2.AllowSessionDirectory,
+                "allow_always" or "allowalways" => ApprovalCommandV2.AllowAlways,
                 "deny" => ApprovalCommandV2.Deny,
                 _ => throw new InvalidOperationException("invalid_command"),
             };
@@ -144,7 +146,7 @@ public sealed partial class AgentConnection
         // A policy snapshot bump between the request and the decision invalidates
         // every pending allow: the decision must be re-evaluated against the new
         // snapshot instead of authorizing an intent the current rules never saw.
-        if ((command is ApprovalCommandV2.AllowOnce or ApprovalCommandV2.AllowSessionDirectory)
+        if ((command is ApprovalCommandV2.AllowOnce or ApprovalCommandV2.AllowSessionDirectory or ApprovalCommandV2.AllowAlways)
             && lease.Snapshot.Version != pending.Binding.SnapshotVersion)
         {
             return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject

@@ -387,9 +387,14 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         if (string.IsNullOrWhiteSpace(approvalId)) throw new AgentApiException("invalid_approval_id", "approval_id invalid");
         // Session scope exists only for external-directory approvals; the server
         // fails anything else closed, so map explicitly and keep once as default.
+        // "always" authorizes once and remembers the exact intent as a
+        // project-scope allow rule.
         string command = string.Equals(scope, "session", StringComparison.OrdinalIgnoreCase)
             || string.Equals(scope, "allow_session_directory", StringComparison.OrdinalIgnoreCase)
             ? "allow_session_directory"
+            : string.Equals(scope, "always", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(scope, "allow_always", StringComparison.OrdinalIgnoreCase)
+            ? "allow_always"
             : "allow_once";
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/approvals/{approvalId}");
         var payload = JsonSerializer.Serialize(new { command });

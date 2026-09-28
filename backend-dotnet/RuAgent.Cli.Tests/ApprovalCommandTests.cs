@@ -170,6 +170,31 @@ public sealed class ApprovalCommandTests
     }
 
     [Fact]
+    public async Task Approve_SendsAllowAlwaysCommand_WhenAlways()
+    {
+        var session = CreateSession();
+        var runId = "run_" + new string('a', 32);
+        var approvalId = "apr_" + new string('a', 32).Replace('a', '8');
+        string? observedCommand = null;
+        var handler = CreateFakeClient(async req =>
+        {
+            var body = await req.Content!.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(body);
+            observedCommand = doc.RootElement.GetProperty("command").GetString();
+            var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized", rule_saved = true });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(respJson, Encoding.UTF8, "application/json") };
+        });
+
+        var outWriter = new StringWriter();
+        var commands = new AgentCommands(session, handler, outWriter, new StringWriter());
+        var cmd = new ApproveCommand(runId, approvalId, ApprovalScope.Once, false, Always: true);
+        var exit = await commands.ApproveAsync(cmd, CancellationToken.None);
+        Assert.Equal(0, exit);
+        Assert.Equal("allow_always", observedCommand);
+        Assert.Contains("rule_saved", outWriter.ToString());
+    }
+
+    [Fact]
     public async Task Approve_SendsAllowOnceCommand_ForProjectScope()
     {
         var session = CreateSession();

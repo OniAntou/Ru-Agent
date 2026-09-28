@@ -39,6 +39,21 @@ public sealed class TerminalIntentClassifier
         var analysis = context.BashMode == "shell"
             ? context.TerminalAnalysis ?? _analyzers.Analyze(context.ResolvedExecutable, context.Argv)
             : _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
+        if (IsGitDirectoryOverride(context, analysis))
+        {
+            // `git -C <dir>` reaches here as Unknown (the registry promotes
+            // unclassified git forms to ExternalMutation). When the target
+            // stays inside the workspace, re-analyze the remaining argv so
+            // `git -C subdir status` follows the same verdict as running with
+            // cwd=subdir. Outside or protected targets keep asking.
+            var reanalysis = TryAnalyzeInWorkspaceGitOverride(context);
+            if (reanalysis is null)
+            {
+                return Reject("git_directory_override_requires_approval");
+            }
+
+            analysis = reanalysis;
+        }
         if (context.BashMode == "shell")
         {
             return Reject(RiskReason(analysis));
@@ -78,6 +93,78 @@ public sealed class TerminalIntentClassifier
         TerminalOperationClass.DirectDelete => "terminal_delete_requires_approval",
         _ => "terminal_unknown_executable",
     };
+
+    private static bool IsGitDirectoryOverride(PolicyContext context, CommandAnalysis analysis) =>
+        !string.IsNullOrWhiteSpace(context.ResolvedExecutable)
+        && string.Equals(GitCommandAnalyzer.BaseName(context.ResolvedExecutable), "git", StringComparison.OrdinalIgnoreCase)
+        && (string.Equals(analysis.ReasonCode, "git_directory_override_requires_approval", StringComparison.Ordinal)
+            || string.Equals(analysis.ReasonCode, "recognized_executable_unclassified_form", StringComparison.Ordinal))
+        && context.Argv.Any(argument => string.Equals(argument, "-C", StringComparison.Ordinal));
+
+    private static CommandAnalysis? TryAnalyzeInWorkspaceGitOverride(PolicyContext context)
+    {
+        if (string.IsNullOrWhiteSpace(context.CanonicalCwd)
+            || string.IsNullOrWhiteSpace(context.CanonicalWorkspaceRoot)
+            || string.IsNullOrWhiteSpace(context.ResolvedExecutable))
+        {
+            return null;
+        }
+
+        var argv = context.Argv;
+        var overrideIndex = -1;
+        for (var i = 0; i < argv.Count; i++)
+        {
+            if (string.Equals(argv[i], "-C", StringComparison.Ordinal))
+            {
+                overrideIndex = i;
+                break;
+            }
+        }
+
+        if (overrideIndex < 0 || overrideIndex + 1 >= argv.Count)
+        {
+            return null;
+        }
+
+        var overrideDir = argv[overrideIndex + 1];
+        if (string.IsNullOrWhiteSpace(overrideDir))
+        {
+            return null;
+        }
+
+        CanonicalPathResolver resolver;
+        try
+        {
+            resolver = new CanonicalPathResolver(context.CanonicalWorkspaceRoot);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+
+        ResolvedPath resolved;
+        try
+        {
+            var combined = Path.IsPathRooted(overrideDir)
+                ? overrideDir
+                : Path.Combine(context.CanonicalCwd, overrideDir);
+            resolved = resolver.Resolve(combined);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+
+        if (!resolved.IsInsideWorkspace || resolved.IsProtected)
+        {
+            return null;
+        }
+
+        var stripped = argv
+            .Where((_, index) => index != overrideIndex && index != overrideIndex + 1)
+            .ToArray();
+        return new GitCommandAnalyzer().Analyze(context.ResolvedExecutable, stripped);
+    }
 
     private static bool HasPathQualifiedExecutable(string? executable) =>
         !string.IsNullOrWhiteSpace(executable)

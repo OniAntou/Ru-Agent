@@ -23,7 +23,7 @@ public sealed class CommandAnalyzerRegistry
         new RipgrepCommandAnalyzer(),
     ];
 
-    public CommandAnalysis Analyze(string? resolvedExecutable, IReadOnlyList<string> argv)
+    public CommandAnalysis Analyze(string? resolvedExecutable, IReadOnlyList<string> argv, bool allowDiagnosticsAuto = true)
     {
         if (string.IsNullOrWhiteSpace(resolvedExecutable))
         {
@@ -34,6 +34,16 @@ public sealed class CommandAnalyzerRegistry
         if (baseName is "rm" or "del" or "erase")
         {
             return new(Version, TerminalOperationClass.DirectDelete, "none", "terminal_direct_delete");
+        }
+
+        // Pure diagnostics flags have no side effects for any executable:
+        // `git --version` and `python --version` used to ask on every call.
+        // Downstream checks (path-qualified executable, cwd, network, argv
+        // paths) still apply, so this only removes the unknown-executable ask.
+        // Shell scripts keep fail-closed and never take this path.
+        if (allowDiagnosticsAuto && IsDiagnosticsOnly(argv))
+        {
+            return new(Version, TerminalOperationClass.ReadOnly, "none", "diagnostics_flag");
         }
 
         var analysis = baseName switch
@@ -62,4 +72,10 @@ public sealed class CommandAnalyzerRegistry
 
     private static CommandAnalysis Unknown(string reasonCode) =>
         new(Version, TerminalOperationClass.Unknown, "none", reasonCode);
+
+    private static bool IsDiagnosticsOnly(IReadOnlyList<string> argv) =>
+        argv.Count == 1
+        && (string.Equals(argv[0], "--version", StringComparison.Ordinal)
+            || string.Equals(argv[0], "--help", StringComparison.Ordinal)
+            || string.Equals(argv[0], "-h", StringComparison.Ordinal));
 }

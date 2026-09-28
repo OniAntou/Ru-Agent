@@ -65,9 +65,11 @@ public sealed partial class AgentV1Service
         }
 
         // Parse command. Pi-style UX: exactly 3 commands — allow_once,
-        // allow_session_directory (external folders only), deny.
-        // run/project/global are rejected outright below; approvals never
-        // create reusable rules.
+        // allow_session_directory (external folders only), deny — plus
+        // allow_always, which authorizes once and remembers the exact intent
+        // as a project-scope allow rule (Claude-style "yes, and remember").
+        // run/project/global are rejected outright below; only allow_always
+        // creates a reusable rule.
         string? decisionRaw = null;
         string? commandRaw = null;
         if (body.HasValue && body.Value.ValueKind == JsonValueKind.Object)
@@ -103,7 +105,8 @@ public sealed partial class AgentV1Service
         bool isDeny = commandRaw is "deny" or "reject";
         bool isAllowSessionDirectory = commandRaw is "allow_session_directory" or "allowsessiondirectory";
         var isAllowOnce = commandRaw is "allow_once" or "allowonce" or "once";
-        if (!isDeny && !isAllowOnce && !isAllowSessionDirectory)
+        var isAllowAlways = commandRaw is "allow_always" or "allowalways" or "always";
+        if (!isDeny && !isAllowOnce && !isAllowSessionDirectory && !isAllowAlways)
         {
             return BoundedError(400, "invalid_approval_command", "Approval command is invalid.");
         }
@@ -269,12 +272,14 @@ public sealed partial class AgentV1Service
             StringComparison.Ordinal);
         // The Broker command follows the pending kind, never the caller's
         // wording: external folders become a session grant, everything else
-        // stays a one-time token.
+        // stays a one-time token. allow_always bridges as itself so the
+        // execution authority binds the same exact intent; the reusable rule
+        // is a Host-side project record created below.
         if (_brokerGateways is { IsConfigured: true })
         {
             var brokerCommand = externalDirectoryRequested
                 ? "allow_session_directory"
-                : "allow_once";
+                : isAllowAlways ? "allow_always" : "allow_once";
             bool bridged;
             try
             {
@@ -309,8 +314,24 @@ public sealed partial class AgentV1Service
                 "Approval requires the execution authority, which is not configured.");
         }
 
-        // Pi-style: approvals never create reusable rules. The Broker grant or
-        // one-time token is the whole authorization.
+        // allow_always remembers the exact intent as a project-scope allow
+        // rule so the next identical call authorizes without asking. A rule
+        // save never widens the current authorization: the Broker token above
+        // is still single-use and bound to this intent, protected paths still
+        // deny before rules, and a save failure degrades to allow_once.
+        // External-directory approvals keep the session grant only: an allow
+        // rule cannot grant outside access by evaluator design.
+        string? savedRuleId = null;
+        var ruleSaved = false;
+        if (isAllowAlways && !externalDirectoryRequested)
+        {
+            (ruleSaved, savedRuleId) = await TrySaveAllowAlwaysRuleAsync(
+                run, approvalBinding, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Pi-style: approvals never create reusable rules, except the explicit
+        // allow_always remember-me above. The Broker grant or one-time token
+        // is otherwise the whole authorization.
         var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
         if (!allowTransition.Accepted)
         {
@@ -339,7 +360,8 @@ public sealed partial class AgentV1Service
         }
 
         // The Broker grant or one-time token is the whole authorization; the
-        // Host keeps no reusable rule and no shadow grant ledger.
+        // Host keeps no reusable rule and no shadow grant ledger, except the
+        // explicit allow_always project record above.
         var matcherPreview = new
         {
             tool_id = approvalBinding.ToolId,
@@ -350,7 +372,7 @@ public sealed partial class AgentV1Service
             cwd_pattern = approvalBinding.Cwd,
             operation_class = approvalBinding.OperationClass,
             network_intent = approvalBinding.NetworkIntent,
-            scope = "once"
+            scope = ruleSaved ? "project" : "once"
         };
 
         var resultBody = new
@@ -360,14 +382,61 @@ public sealed partial class AgentV1Service
             authorization_token = brokerAuthorizationToken,
             expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
             matcher_preview = matcherPreview,
-            rule_saved = false,
-            reusable_rule_not_saved = false,
-            rule_id = (string?)null,
+            rule_saved = ruleSaved,
+            reusable_rule_not_saved = !ruleSaved,
+            rule_id = savedRuleId,
             safe_summary = "approval authorized",
             run_state = MapRunState(commitResult.Run!.Status),
         };
 
         return new AgentServiceResult(200, resultBody);
+    }
+
+    private async Task<(bool Saved, string? RuleId)> TrySaveAllowAlwaysRuleAsync(
+        AgentRun run,
+        ToolApprovalBinding approvalBinding,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var wsId = new WorkspaceId(run.WorkspaceId.Value);
+            var ws = await _workspaceStore.GetAsync(wsId, cancellationToken).ConfigureAwait(false);
+            if (ws is null)
+            {
+                return (false, null);
+            }
+
+            var store = new SqlitePolicyRuleStore(_options, _keyStore);
+            var existing = await store.ListProjectAsync(wsId, cancellationToken).ConfigureAwait(false);
+            var creationOrder = existing.Count == 0 ? 0 : existing.Max(r => r.CreationOrder) + 1;
+
+            var matcher = new PolicyMatcher(
+                approvalBinding.ToolId,
+                approvalBinding.ToolVersion,
+                approvalBinding.CanonicalPath,
+                approvalBinding.ResolvedExecutable,
+                approvalBinding.Argv,
+                approvalBinding.Cwd,
+                approvalBinding.OperationClass,
+                approvalBinding.NetworkIntent);
+            var rule = new PolicyRule(
+                _ids.NewPolicyRuleId(),
+                PolicyRuleScope.Project,
+                PolicyDecision.Allow,
+                matcher,
+                creationOrder,
+                null);
+            await store.CreateAsync(rule, wsId, null, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+            return (true, rule.RuleId.Value);
+        }
+        catch (Exception ex) when (ex is ArgumentException
+            or ArgumentOutOfRangeException
+            or InvalidOperationException
+            or HarnessStoreException
+            or IOException)
+        {
+            return (false, null);
+        }
     }
 
     private async Task<ToolApprovalBinding?> BuildApprovalBindingAsync(

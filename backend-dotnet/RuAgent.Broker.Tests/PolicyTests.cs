@@ -498,7 +498,7 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void Last_matching_rule_wins_in_snapshot_order()
+    public void Deny_beats_allow_regardless_of_snapshot_order()
     {
         var allowThenDeny = PolicyEvalSnapshots.SnapshotWith(
             PolicyEvalSnapshots.Rule("r-allow", "allow", PolicyEvalSnapshots.Matcher(toolId: "read")),
@@ -522,8 +522,37 @@ public sealed class PolicyEvaluationTests
             secondFactory.Create("read", "1.0.0", new JsonObject { ["path"] = "a.txt" }),
             PolicyRequestInvariants.Valid,
             Now);
-        Assert.Equal("allow", second.Decision);
-        Assert.Equal("r-allow", second.MatchedRuleId);
+        Assert.Equal("deny", second.Decision);
+        Assert.Equal("r-deny", second.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Ask_beats_allow_regardless_of_snapshot_order()
+    {
+        var allowThenAsk = PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-allow", "allow", PolicyEvalSnapshots.Matcher(toolId: "read")),
+            PolicyEvalSnapshots.Rule("r-ask", "ask", PolicyEvalSnapshots.Matcher(toolId: "read")));
+        var askThenAllow = PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-ask", "ask", PolicyEvalSnapshots.Matcher(toolId: "read")),
+            PolicyEvalSnapshots.Rule("r-allow", "allow", PolicyEvalSnapshots.Matcher(toolId: "read")));
+
+        var (firstLease, firstFactory) = Bind(allowThenAsk);
+        var first = new PolicySnapshotEvaluator().Evaluate(
+            firstLease.Snapshot,
+            firstFactory.Create("read", "1.0.0", new JsonObject { ["path"] = "a.txt" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("ask", first.Decision);
+        Assert.Equal("r-ask", first.MatchedRuleId);
+
+        var (secondLease, secondFactory) = Bind(askThenAllow);
+        var second = new PolicySnapshotEvaluator().Evaluate(
+            secondLease.Snapshot,
+            secondFactory.Create("read", "1.0.0", new JsonObject { ["path"] = "a.txt" }),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("ask", second.Decision);
+        Assert.Equal("r-ask", second.MatchedRuleId);
     }
 
     [Fact]
@@ -648,10 +677,11 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
-    public void The_last_matching_rule_still_decides_an_external_file()
+    public void Explicit_deny_rule_denies_an_external_file_despite_a_later_allow()
     {
-        // Last-match-wins is the snapshot contract. Hoisting the deny check must
-        // not turn a later allow into a deny.
+        // Deny beats allow regardless of snapshot order, including outside
+        // the workspace: a remembered allow can never override an explicit
+        // deny.
         var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
             PolicyEvalSnapshots.Rule(
                 "r-deny-client-secrets",
@@ -667,8 +697,8 @@ public sealed class PolicyEvaluationTests
             PolicyRequestInvariants.Valid,
             Now);
 
-        Assert.Equal("ask", evaluation.Decision);
-        Assert.Equal("external_directory_required", evaluation.ReasonCode);
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("rule_denied", evaluation.ReasonCode);
     }
 
     [Fact]

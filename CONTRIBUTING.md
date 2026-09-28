@@ -34,7 +34,7 @@ gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, ~4,620 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, ~4,623 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

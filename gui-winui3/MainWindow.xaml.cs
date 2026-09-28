@@ -798,59 +798,113 @@ namespace RuApp
 
         private async Task DisposeWindowResourcesAsync()
         {
+            // The caller is a background task because the Host shutdown POST is
+            // I/O, but the views below are XAML objects: touching them from this
+            // thread throws RPC_E_WRONG_THREAD. Dispose them on the UI thread.
+            await RunOnDispatcherAsync(DisposeWindowResourcesOnUiThread);
+            await _startupTask;
+            DisposeSafely("startup", _startup.Dispose);
+            await DisposeSafelyAsync("sessions refresh", () => _sessionsRefreshController?.DisposeAsync());
+            _sessionsRefreshController = null;
+            await DisposeSafelyAsync("health refresh", () => _healthRefreshController?.DisposeAsync());
+            _healthRefreshController = null;
+            await DisposeSafelyAsync("provider catalog", () => _providerCatalogController?.DisposeAsync());
+            _providerCatalogController = null;
+            await DisposeSafelyAsync("grouped catalogs", () => _groupedCatalogs?.DisposeAsync());
+            _groupedCatalogs = null;
+            // The composition owns the Host process and the Worker/Broker Job, so
+            // it is disposed last and unconditionally: a view that throws on the
+            // way out must never leave those children running.
+            DisposeSafely("composition", _composition.Dispose);
+        }
+
+        private void DisposeWindowResourcesOnUiThread()
+        {
+            if (_chatView != null)
+            {
+                _chatView.SessionOpened -= OnChatSessionOpened;
+                _chatView.SessionForked -= OnChatSessionForked;
+                DisposeSafely("chat view", _chatView.Dispose);
+            }
+
+            DisposeSafely("settings view", () => _settingsView?.Dispose());
+            DisposeSafely("log view", () => _logView?.Dispose());
+            DisposeSafely("diagnostics view", () => _diagnosticsView?.Dispose());
+            DisposeSafely("api service", () => _apiService?.Dispose());
+            _healthStatusService = null;
+            _backendProvider.BackendExited -= OnBackendExited;
+            DisposeSafely("agent controller", () => _agentController?.Dispose());
+            _agentController = null;
+            DisposeSafely("policy controller", () => _policyController?.Dispose());
+            _policyController = null;
+            if (_policyControlPanel != null)
+            {
+                _policyControlPanel.Controller = null;
+                _policyControlPanel = null;
+            }
+
+            if (_auditPanel != null)
+            {
+                _auditPanel.Log = null;
+                _auditPanel = null;
+            }
+
+            if (ReferenceEquals(Instance, this))
+            {
+                Instance = null;
+            }
+        }
+
+        private Task RunOnDispatcherAsync(Action action)
+        {
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!DispatcherQueue.TryEnqueue(() =>
+                {
+                    try
+                    {
+                        action();
+                    }
+                    catch (Exception ex)
+                    {
+                        GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] UI teardown error: {ex.Message}");
+                    }
+
+                    completion.SetResult();
+                }))
+            {
+                // The dispatcher is gone with the window: the remaining teardown
+                // still has to run so the Host process is not orphaned.
+                completion.SetResult();
+            }
+
+            return completion.Task;
+        }
+
+        private static void DisposeSafely(string name, Action dispose)
+        {
             try
             {
-                await _startupTask;
-                _startup.Dispose();
-                if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
-                _sessionsRefreshController = null;
-                if (_healthRefreshController != null) await _healthRefreshController.DisposeAsync();
-                _healthRefreshController = null;
-                if (_providerCatalogController != null)
-                {
-                    await _providerCatalogController.DisposeAsync();
-                    _providerCatalogController = null;
-                }
-                if (_groupedCatalogs != null)
-                {
-                    await _groupedCatalogs.DisposeAsync();
-                    _groupedCatalogs = null;
-                }
-                if (_chatView != null)
-                {
-                    _chatView.SessionOpened -= OnChatSessionOpened;
-                    _chatView.SessionForked -= OnChatSessionForked;
-                    _chatView.Dispose();
-                }
-                _settingsView?.Dispose();
-                _logView?.Dispose();
-                _diagnosticsView?.Dispose();
-                _apiService?.Dispose();
-                _healthStatusService = null;
-                _backendProvider.BackendExited -= OnBackendExited;
-                _agentController?.Dispose();
-                _agentController = null;
-                _policyController?.Dispose();
-                _policyController = null;
-                if (_policyControlPanel != null)
-                {
-                    _policyControlPanel.Controller = null;
-                    _policyControlPanel = null;
-                }
-                if (_auditPanel != null)
-                {
-                    _auditPanel.Log = null;
-                    _auditPanel = null;
-                }
-                if (ReferenceEquals(Instance, this))
-                {
-                    Instance = null;
-                }
-                _composition.Dispose();
+                dispose();
             }
             catch (Exception ex)
             {
-                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Shutdown error: {ex.Message}");
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Disposing {name} failed: {ex.Message}");
+            }
+        }
+
+        private static async Task DisposeSafelyAsync(string name, Func<ValueTask?> dispose)
+        {
+            try
+            {
+                var pending = dispose();
+                if (pending.HasValue)
+                {
+                    await pending.Value.ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Disposing {name} failed: {ex.Message}");
             }
         }
 

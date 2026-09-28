@@ -388,7 +388,13 @@ public static class AgentV1Endpoints
             summaryWritten = true;
         }
 
-        await StreamDurablesAsync();
+        // One try covers every await from here on. The lease is acquired above,
+        // so any failure between the subscribe and the tail loop -- a client
+        // disconnect mid-drain, a store error -- used to escape before the
+        // finally and leave the subscription in the hub forever.
+        try
+        {
+            await StreamDurablesAsync();
 
         // If terminal, send final snapshot and close cleanly
         if (isTerminal)
@@ -402,10 +408,6 @@ public static class AgentV1Endpoints
             await WriteTerminalSummaryAsync(run);
             await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
             await context.Response.Body.FlushAsync(ct);
-            if (hubLease is { } terminalLease)
-            {
-                await terminalLease.DisposeAsync();
-            }
             return;
         }
 
@@ -416,15 +418,9 @@ public static class AgentV1Endpoints
         if (!live || isTerminal)
         {
             await context.Response.Body.FlushAsync(ct);
-            if (hubLease is { } replayLease)
-            {
-                await replayLease.DisposeAsync();
-            }
             return;
         }
 
-try
-            {
                 while (!ct.IsCancellationRequested && !isTerminal)
                 {
                     var reloadedRun = await store.GetRunAsync(runIdObj, ct);

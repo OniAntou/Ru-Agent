@@ -23,6 +23,14 @@ public sealed partial class SessionStore : ISessionStore
     private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    // On Windows a session file cannot be replaced while any handle is open --
+    // sharing delete does not help, the move fails with access denied. So the
+    // atomic replace and the read that feeds it are serialized, per file
+    // operation and not for the length of a poll: the gate-free sidebar read
+    // still interleaves with a chat send instead of stalling behind it, but a
+    // send can no longer lose the race and drop the turn.
+    private readonly SemaphoreSlim _fileGate = new(1, 1);
+
     public SessionStore(DataPaths paths, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -383,7 +391,16 @@ public sealed partial class SessionStore : ISessionStore
                 return null;
             }
 
-            var bytes = await ReadBoundedBytesAsync(path, MaximumSessionFileBytes, cancellationToken).ConfigureAwait(false);
+            await _fileGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            byte[] bytes;
+            try
+            {
+                bytes = await ReadBoundedBytesAsync(path, MaximumSessionFileBytes, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _fileGate.Release();
+            }
             var root = JsonNode.Parse(bytes) as JsonObject;
             if (root is null || root["messages"] is not JsonArray messagesNode)
             {
@@ -473,6 +490,7 @@ public sealed partial class SessionStore : ISessionStore
         var temporary = Path.Combine(
             _sessionDirectory,
             $".{document.Id}.{Guid.NewGuid():N}.tmp");
+        await _fileGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
@@ -497,6 +515,7 @@ public sealed partial class SessionStore : ISessionStore
         }
         finally
         {
+            _fileGate.Release();
             File.Delete(temporary);
         }
     }

@@ -154,6 +154,52 @@ public sealed class SessionStoreTests
     }
 
     [Fact]
+    public async Task A_sidebar_listing_never_costs_a_chat_turn()
+    {
+        // ListAsync deliberately runs without the store gate on a three second
+        // poll, and a write replaces the session file with File.Move(overwrite).
+        // On Windows the replace fails while any handle is open, so the poll and
+        // a send used to collide: the append lost and reported a bare false, and
+        // the user's turn was dropped with nothing to show for it. Reads and the
+        // replace are serialized per file operation now, so every append lands.
+        var (store, _) = CreateStore();
+        var sessionIds = new List<string>();
+        for (var index = 0; index < 12; index++)
+        {
+            sessionIds.Add((await store.CreateAsync(CancellationToken.None))!);
+        }
+
+        const int rounds = 5;
+        const int perRound = 6;
+        for (var round = 0; round < rounds; round++)
+        {
+            var listing = store.ListAsync(CancellationToken.None);
+            var sends = sessionIds
+                .Select((sessionId, index) => store.AppendAsync(
+                    sessionId,
+                    [new SessionMessage("user", $"turn-{round}-{index}")],
+                    CancellationToken.None))
+                .Take(perRound)
+                .ToArray();
+
+            var outcomes = await Task.WhenAll(sends);
+            await listing;
+
+            Assert.All(outcomes, appended => Assert.True(
+                appended,
+                "a turn was dropped because the sidebar was listing at the same time"));
+        }
+
+        for (var index = 0; index < perRound; index++)
+        {
+            var session = await store.GetAsync(sessionIds[index], CancellationToken.None);
+            Assert.Equal(
+                rounds,
+                session!.Messages.Count(message => message.Content.StartsWith("turn-", StringComparison.Ordinal)));
+        }
+    }
+
+    [Fact]
     public async Task Legacy_json_without_source_metadata_still_loads()
     {
         var (store, paths) = CreateStore();

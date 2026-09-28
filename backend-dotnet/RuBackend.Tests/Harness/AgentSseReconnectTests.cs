@@ -269,6 +269,64 @@ public sealed class AgentSseReconnectTests
         Assert.Contains("event: final_snapshot", sse, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_client_that_disconnects_releases_its_live_subscription()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(
+            client,
+            session,
+            tmp.Path,
+            "prompt live lease",
+            "key-lease-" + Guid.NewGuid().ToString("N"));
+        var hub = factory.Services.GetRequiredService<HarnessLiveEventHub>();
+
+        using var stream = new CancellationTokenSource();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        using var response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            stream.Token);
+        response.EnsureSuccessStatusCode();
+
+        Assert.True(
+            await WaitUntilAsync(() => hub.SubscriberCount > 0, TimeSpan.FromSeconds(10)),
+            "the live stream never subscribed to the hub");
+
+        // The client goes away mid-stream. Every exit from the endpoint has to
+        // release its lease; a subscription nobody releases keeps two bounded
+        // channels alive and keeps receiving publishes for a dead reader.
+        stream.Cancel();
+        response.Dispose();
+
+        Assert.True(
+            await WaitUntilAsync(() => hub.SubscriberCount == 0, TimeSpan.FromSeconds(10)),
+            "the hub kept a subscription after the client disconnected");
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            await Task.Delay(25).ConfigureAwait(false);
+        }
+
+        return condition();
+    }
+
     private static async Task<string> GetSseAsync(HttpClient client, string url)
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);

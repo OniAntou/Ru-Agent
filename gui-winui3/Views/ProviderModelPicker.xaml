@@ -6,95 +6,80 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Width="312">
-
-    <UserControl.Resources>
-        <Style x:Key="PickerItemButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="8,6,8,6" />
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="MinHeight" Value="32" />
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="CornerRadius" Value="5" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <ContentPresenter x:Name="Root"
-                                          Content="{TemplateBinding Content}"
-                                          ContentTemplate="{TemplateBinding ContentTemplate}"
-                                          Padding="{TemplateBinding Padding}"
-                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                                          Background="{TemplateBinding Background}"
-                                          BorderBrush="{TemplateBinding BorderBrush}"
-                                          BorderThickness="{TemplateBinding BorderThickness}"
-                                          CornerRadius="{TemplateBinding CornerRadius}" />
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </UserControl.Resources>
+    KeyDown="OnPickerKeyDown"
+    Width="328">
 
     <StackPanel Spacing="0">
-        <!-- Modern Search Box -->
-        <Border Background="{StaticResource RuCanvasBrush}"
-                BorderBrush="{StaticResource RuLineBrush}"
-                BorderThickness="1"
-                CornerRadius="{StaticResource AppControlCornerRadius}"
-                Padding="10,6"
-                Margin="4,4,4,6">
-            <Grid ColumnDefinitions="Auto,*">
-                <FontIcon Glyph="&#xE721;"
-                          FontSize="12"
-                          Foreground="{StaticResource RuMutedBrush}"
-                          VerticalAlignment="Center"
-                          Margin="0,0,8,0" />
-                <TextBox x:Name="PickerSearchBox"
-                         Grid.Column="1"
-                          AutomationProperties.AutomationId="ModelSearchBox"
-                          AutomationProperties.Name="Search models"
-                          PlaceholderText="Search models…"
-                         TextChanged="OnPickerSearchTextChanged"
-                         FontFamily="{StaticResource RuUiFontFamily}"
-                         FontSize="12.5"
-                         MinHeight="0"
-                         Padding="0"
-                         Margin="0"
-                         VerticalAlignment="Center"
-                         VerticalContentAlignment="Center"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         IsSpellCheckEnabled="False"
-                         Foreground="{StaticResource RuInkBrush}">
-                    <TextBox.Resources>
-                        <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
-                        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
-                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
-                        <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
-                        <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
-                        <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
-                        <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
-                        <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
-                        <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
-                        <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
-                        <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
-                        <Thickness x:Key="TextControlThemePadding">0</Thickness>
-                    </TextBox.Resources>
-                </TextBox>
-            </Grid>
-        </Border>
+        <!-- The flyout already has a border, so a second border around the field made a
+             box inside a box. The field is bounded by one rule instead, and that rule
+             is the same line that used to sit below it, so the search costs one edge
+             rather than three. Focus repaints it in code-behind: the field has to say
+             where the caret is, and a TextBox with no border of its own cannot.
 
-        <!-- Subtle Divider Line -->
-<Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.6" Margin="4,0,4,4" />
+             The margins are not a number that looks right, they are two alignments:
+             17 puts the magnifier's left edge on the same line as the model names, and
+             12 puts the rule's right edge on the same line as the context figures. A
+             panel whose whole argument is a column of numbers cannot open with its own
+             field hanging 13px out of line with the column it filters. -->
+        <Grid Margin="17,10,12,0" ColumnDefinitions="Auto,*">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <FontIcon Grid.Row="0"
+                      Glyph="&#xE721;"
+                      FontSize="12"
+                      Foreground="{StaticResource RuMutedBrush}"
+                      VerticalAlignment="Center"
+                      Margin="0,0,8,5" />
+            <Border x:Name="PickerSearchField"
+                    Grid.Row="1"
+                    Height="1"
+                    Background="{StaticResource RuLineBrush}" />
+            <TextBox x:Name="PickerSearchBox"
+                     Grid.Row="0"
+                     Grid.Column="1"
+                     AutomationProperties.AutomationId="ModelSearchBox"
+                     AutomationProperties.Name="Search models"
+                     PlaceholderText="Search models or providers"
+                     TextChanged="OnPickerSearchTextChanged"
+                     FontFamily="{StaticResource RuUiFontFamily}"
+                     FontSize="13"
+                     MinHeight="0"
+                     Padding="0"
+                     Margin="0,0,0,5"
+                     VerticalAlignment="Center"
+                     VerticalContentAlignment="Center"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     IsSpellCheckEnabled="False"
+                     Foreground="{StaticResource RuInkBrush}">
+                <TextBox.Resources>
+                    <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
+                    <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
+                    <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
+                    <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
+                    <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+                    <Thickness x:Key="TextControlThemePadding">0</Thickness>
+                </TextBox.Resources>
+            </TextBox>
+        </Grid>
 
-        <!-- Grouped Model List with Sleek Slim ScrollBar -->
-        <ScrollViewer MaxHeight="250"
+        <!-- A catalog of several hundred models is a list, not a document, so the list
+             is the panel's floor: anything taller than this and the flyout stops being a
+             flyout. The scrollbar resources below stay as they are, tuned thin, because
+             a stock WinUI scrollbar is wider than the row text beside it. -->
+        <ScrollViewer MaxHeight="300"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled"
                       HorizontalScrollMode="Disabled"
-                      Padding="2,0,8,4">
+                      Padding="6,6,6,6">
             <ScrollViewer.Resources>
                 <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
                 <SolidColorBrush x:Key="ScrollBarForeground" Color="Transparent" />
@@ -107,7 +92,7 @@
                 <SolidColorBrush x:Key="ScrollBarTrackFillDisabled" Color="Transparent" />
                 <x:Double x:Key="ScrollBarSize">5</x:Double>
             </ScrollViewer.Resources>
-            <StackPanel x:Name="PickerListContainer" Spacing="2" />
+            <StackPanel x:Name="PickerListContainer" Spacing="0" />
         </ScrollViewer>
     </StackPanel>
 </UserControl>

@@ -35,6 +35,7 @@ public sealed record ProviderModelPickerProjection(
     public const string StaleAnnotation = "Stale data";
     public const string UnavailableAnnotation = "Unavailable";
     public const string NoUsableModelsText = "No available models";
+    public const string NoMatchText = "No model matches";
     public const string TriggerPlaceholderText = "Model...";
 
     public static string RowAutomationText(ProviderModelPickerRow row)
@@ -45,7 +46,14 @@ public sealed record ProviderModelPickerProjection(
             : row.IsStale ? "stale"
             : row.IsSelected ? "selected"
             : "available";
-        return $"{row.ProviderName}, {row.ModelId}, {state}";
+
+        // The context figure is spoken, not just drawn. It is the number a user picks a
+        // model by, and it is the one part of the row that sighted and screen-reader
+        // users would otherwise reach different conclusions about.
+        var context = string.IsNullOrWhiteSpace(row.ContextLabel)
+            ? string.Empty
+            : $", {row.ContextLabel} context";
+        return $"{row.ProviderName}, {row.ModelId}{context}, {state}";
     }
 
     public static string TriggerDisplay(string backend, string model)
@@ -91,7 +99,7 @@ public sealed record ProviderModelPickerProjection(
 
         return new ProviderModelPickerProjection(
             visible,
-            visible.Count == 0 ? NoUsableModelsText : string.Empty);
+            ResolveEmptyStateText(normalizedSearch: searchText, matchedAnything: visible.Count > 0));
     }
 
     /// <summary>
@@ -134,6 +142,27 @@ public sealed record ProviderModelPickerProjection(
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Why the list is empty, said in the terms of what the user actually did.
+    /// </summary>
+    /// <remarks>
+    /// One sentence used to cover both cases: a typo in the search box and a provider
+    /// with nothing to offer both read "No available models", so a mistyped query
+    /// reported the catalog as empty. They are different facts about different actors,
+    /// and the user can only fix one of them.
+    /// </remarks>
+    private static string ResolveEmptyStateText(string? normalizedSearch, bool matchedAnything)
+    {
+        if (matchedAnything)
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(normalizedSearch)
+            ? NoUsableModelsText
+            : NoMatchText;
     }
 
     private static ProviderModelPickerGroup? BuildGroup(
@@ -202,11 +231,18 @@ public sealed record ProviderModelPickerProjection(
             definition.Alias,
             definition.DisplayName,
             model.Id,
-            string.Empty,
+            // Only what the catalog published. ModelContextSpecs would have guessed a
+            // figure from the model's name, and this column is what a user reads to
+            // choose between two models — a guess there picks the wrong one.
+            ModelContextSpecs.FormatPublishedContext(model.ContextLength) ?? string.Empty,
             string.Equals(definition.Alias, selectedBackend, StringComparison.Ordinal) &&
                 string.Equals(model.Id, selectedModel, StringComparison.Ordinal),
             IsEnabled: true,
             isStale,
-            isStale ? StaleAnnotation : string.Empty,
+            // Staleness is a fact about the provider's catalog, not about one model, and
+            // the group heading already carries it. Repeating it on every row printed
+            // the same sentence N times and, on a long model id, put it behind the
+            // ellipsis where it was never read.
+            string.Empty,
             ContextLength: model.ContextLength);
 }

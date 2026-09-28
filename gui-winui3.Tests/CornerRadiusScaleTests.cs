@@ -63,6 +63,22 @@ public sealed class CornerRadiusScaleTests
     private static readonly Regex LiteralAttribute =
         new(@"CornerRadius\s*=\s*""([\d.,\s]+)""", RegexOptions.Compiled);
 
+    /// <summary>
+    /// A style setter assigns the property by name and the value separately, so it
+    /// reads <c>Property="CornerRadius" Value="5"</c> and the attribute form above
+    /// cannot see it.
+    /// </summary>
+    /// <remarks>
+    /// Found by a radius that had already been in the model picker for months, five on
+    /// a scale whose nearest steps are three and six, sitting in a style the guard
+    /// walked past on every run. A guard that only sees one of the two ways a radius
+    /// gets written is a guard that reports a clean scale while the scale is drifting.
+    /// </remarks>
+    private static readonly Regex LiteralSetter =
+        new(
+            @"Property\s*=\s*""CornerRadius""\s+Value\s*=\s*""([\d.,\s]+)""",
+            RegexOptions.Compiled);
+
     private static readonly Regex LiteralConstructor =
         new(@"new\s+CornerRadius\(\s*([\d.,\s]+?)\s*\)", RegexOptions.Compiled);
 
@@ -128,6 +144,16 @@ public sealed class CornerRadiusScaleTests
                 {
                     offenders.Add(
                         $"{Relative(file)}:{LineOf(text, match.Index)} declares CornerRadius=\"{value}\"");
+                }
+            }
+
+            foreach (Match match in LiteralSetter.Matches(text))
+            {
+                string value = Normalize(match.Groups[1].Value);
+                if (!allowed.Contains(value))
+                {
+                    offenders.Add(
+                        $"{Relative(file)}:{LineOf(text, match.Index)} sets a style CornerRadius to \"{value}\"");
                 }
             }
         }

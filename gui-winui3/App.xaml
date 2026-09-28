@@ -565,6 +565,42 @@
                 </Setter>
             </Style>
 
+            <!-- Ru Option Row: one row of a flyout that the keyboard can walk.
+                 Deliberately has no PointerOver visual state, unlike
+                 RuDropdownItemButtonStyle above. A visual state ends when the pointer
+                 leaves, and a keyboard cursor has to outlive the pointer: the whole
+                 point is that the row Enter will pick stays marked after the mouse has
+                 moved off it. A template cannot express that, so the row's background
+                 is painted from code by the cursor controller. -->
+            <Style x:Key="RuOptionRowStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="0,5,6,5" />
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="MinHeight" Value="28" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter x:Name="Root"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              Padding="{TemplateBinding Padding}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Background="{TemplateBinding Background}"
+                                              BorderBrush="{TemplateBinding BorderBrush}"
+                                              BorderThickness="{TemplateBinding BorderThickness}"
+                                              CornerRadius="{TemplateBinding CornerRadius}" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style x:Key="RuNavLabelStyle" TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
                 <Setter Property="FontSize" Value="13.5" />

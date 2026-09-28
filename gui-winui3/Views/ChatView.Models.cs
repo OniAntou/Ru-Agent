@@ -30,6 +30,23 @@ namespace RuApp.Views
 {
     public sealed partial class ChatView
     {
+        /// <summary>
+        /// Width the reasoning rows reserve for the margin beside the selection rule, so
+        /// every label starts on the same line whether or not the rule is drawn.
+        /// </summary>
+        /// <remarks>
+        /// The same 11px the model picker reserves, and for the same reason: a rule that
+        /// only exists on the selected row must not push that row's label out of line
+        /// with the other three.
+        /// </remarks>
+        private const double ReasoningSelectionColumnWidth = 11;
+
+        private readonly List<Button> _reasoningRows = new();
+        private readonly List<string> _reasoningEfforts = new();
+        private OptionListKeyboard _reasoningKeyboard = new(0, _ => { }, () => { });
+        private Brush? _reasoningCursorBrush;
+        private Brush? _reasoningRestBrush;
+
         public async Task LoadChatModelsAsync()
         {
             if (_apiService == null) return;
@@ -144,6 +161,19 @@ namespace RuApp.Views
             ChatModelFlyout.Hide();
             _ = SelectChatModelAsync(e.Model, e.Backend);
         }
+
+        /// <summary>
+        /// Escape, or any other way the list asked to be left without a choice.
+        /// </summary>
+        /// <remarks>
+        /// The flyout hides here rather than in the picker because the picker does not
+        /// own it: the Flyout is declared in this view so it can sit on the toolbar
+        /// button. Relying on light dismiss alone was not good enough, because a focused
+        /// text field is exactly the case where Escape is least certain to reach the
+        /// popup, and being unable to back out of a list is worse than a redundant close.
+        /// </remarks>
+        private void OnModelPickerDismissRequested(object? sender, EventArgs e) =>
+            ChatModelFlyout.Hide();
 
         private void OnGroupedStateChanged(object? sender, GroupedProviderCatalogState state)
         {
@@ -369,9 +399,37 @@ namespace RuApp.Views
             }
         }
 
+        /// <summary>
+        /// Builds the reasoning effort list.
+        /// </summary>
+        /// <remarks>
+        /// The rows are the same shape the model picker uses, and deliberately so: one
+        /// style from App.xaml, the same 28px rhythm, the same rule in the margin for the
+        /// row in use, the same cursor fill for the row the keys are on. Two option lists
+        /// in one toolbar answering the same question should not be two designs, and a
+        /// shared style makes the next change to one a change to both rather than
+        /// something somebody has to remember.
+        ///
+        /// The check glyph is gone for the reason it is gone from the model picker: a rule
+        /// in the margin is found faster in a list that moves, and the check was a second
+        /// signal for a fact the rule already carries. It was also not doing what its
+        /// comment claimed. The old row held the check in an auto-width column and
+        /// collapsed it when the row was not selected, so the label did shift sideways by
+        /// the width of a check on every state change; "always present" was true of the
+        /// object and false of the layout.
+        ///
+        /// No descriptions. "low" and "high" are the levels the provider publishes, and
+        /// any sentence written under them about what they feel like would be prose nobody
+        /// can check. The values are the interface.
+        ///
+        /// The container takes the focus and the rows are not tab stops, so Tab leaves the
+        /// flyout rather than walking four buttons to get out of it.
+        /// </remarks>
         private void OnChatReasoningFlyoutOpened(object sender, object e)
         {
             ReasoningOptionsContainer.Children.Clear();
+            _reasoningRows.Clear();
+            _reasoningEfforts.Clear();
             SyncEffortFromCatalog();
             var options = GetCurrentReasoningOptions();
 
@@ -379,77 +437,129 @@ namespace RuApp.Views
             var font = (FontFamily)resources["RuUiFontFamily"];
             var ink = (Brush)resources["RuInkBrush"];
             var accent = (Brush)resources["RuAccentBrush"];
-            var canvas = (Brush)resources["RuCanvasBrush"];
-            var corner = (CornerRadius)resources["AppControlCornerRadius"];
+            _reasoningCursorBrush = (Brush)resources["RuAccentSoftBrush"];
+            _reasoningRestBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            var rowStyle = (Style)resources["RuOptionRowStyle"];
 
+            int selectedIndex = 0;
             foreach (var option in options)
             {
                 bool isSelected = string.Equals(option.Value, _selectedReasoningEffort, StringComparison.OrdinalIgnoreCase);
                 string label = option.Label ?? option.Value;
+                int index = _reasoningRows.Count;
+                if (isSelected)
+                {
+                    selectedIndex = index;
+                }
 
                 var btn = new Button
                 {
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(10, 6, 10, 6),
-                    CornerRadius = corner,
-                    MinHeight = 30,
-                    Tag = option.Value,
+                    Style = rowStyle,
+                    Background = _reasoningRestBrush,
+                    Tag = index,
                 };
-                btn.Resources["ButtonBackgroundPointerOver"] = canvas;
-                btn.Resources["ButtonBackgroundPressed"] = canvas;
-                btn.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                btn.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
                 AutomationProperties.SetName(btn, $"Reasoning effort: {label}");
+                btn.PointerEntered += OnReasoningRowPointerEntered;
 
                 var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ReasoningSelectionColumnWidth) });
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                if (isSelected)
+                {
+                    var bar = new Border
+                    {
+                        Width = 3,
+                        Background = accent,
+                        Margin = new Thickness(2, 0, 0, 0),
+                        VerticalAlignment = VerticalAlignment.Stretch,
+                    };
+                    Grid.SetColumn(bar, 0);
+                    grid.Children.Add(bar);
+                }
 
                 var titleBlock = new TextBlock
                 {
                     Text = label,
                     FontFamily = font,
-                    FontSize = 12,
+                    FontSize = 13,
                     Foreground = ink,
+                    FontWeight = isSelected
+                        ? Microsoft.UI.Text.FontWeights.SemiBold
+                        : Microsoft.UI.Text.FontWeights.Normal,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
-                Grid.SetColumn(titleBlock, 0);
+                Grid.SetColumn(titleBlock, 1);
                 grid.Children.Add(titleBlock);
-
-                // Always present, toggled: the label must not shift sideways
-                // when the check appears.
-                var checkIcon = new FontIcon
-                {
-                    Glyph = "\uE73E",
-                    FontSize = 12,
-                    Foreground = accent,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(16, 0, 2, 0),
-                    Visibility = isSelected ? Visibility.Visible : Visibility.Collapsed,
-                };
-                Grid.SetColumn(checkIcon, 1);
-                grid.Children.Add(checkIcon);
 
                 btn.Content = grid;
                 btn.Click += OnReasoningOptionClicked;
                 ReasoningOptionsContainer.Children.Add(btn);
+                _reasoningRows.Add(btn);
+                _reasoningEfforts.Add(option.Value);
+            }
+
+            _reasoningKeyboard = new OptionListKeyboard(
+                _reasoningRows.Count,
+                ActivateReasoningRow,
+                () => ChatReasoningFlyout.Hide());
+            _reasoningKeyboard.CursorChanged += OnReasoningCursorChanged;
+            _reasoningKeyboard.MoveCursor(selectedIndex);
+
+            ReasoningOptionsContainer.Focus(FocusState.Programmatic);
+        }
+
+        /// <summary>
+        /// The pointer is the cursor, exactly as in the model picker: one marked row, so
+        /// "what will Enter pick" has a single answer whichever device the user reached
+        /// for.
+        /// </summary>
+        private void OnReasoningRowPointerEntered(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is Button { Tag: int index })
+            {
+                _reasoningKeyboard.MoveCursor(index, show: false);
             }
         }
 
+        private void OnReasoningCursorChanged(int index)
+        {
+            for (int i = 0; i < _reasoningRows.Count; i++)
+            {
+                _reasoningRows[i].Background = i == index ? _reasoningCursorBrush : _reasoningRestBrush;
+            }
+        }
+
+        private void OnReasoningContainerKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            // No text field holds the focus here, so Space is free to commit.
+            if (_reasoningKeyboard.HandleKey(e.Key, spaceActivates: true))
+            {
+                e.Handled = true;
+            }
+        }
+
+        private void ActivateReasoningRow(int index) => _ = CommitReasoningEffortAsync(index);
+
         private async void OnReasoningOptionClicked(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button { Tag: int index })
+            {
+                await CommitReasoningEffortAsync(index);
+            }
+        }
+
+        private async Task CommitReasoningEffortAsync(int index)
         {
             try
             {
-                if (sender is not Button { Tag: string effort })
+                if (index < 0 || index >= _reasoningEfforts.Count)
                 {
                     return;
                 }
 
                 ChatReasoningFlyout.Hide();
-                await ApplyReasoningEffortAsync(effort);
+                await ApplyReasoningEffortAsync(_reasoningEfforts[index]);
             }
             catch (Exception ex)
             {

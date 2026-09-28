@@ -62,11 +62,13 @@ public sealed class ProviderModelPickerProjectionTests
     private static ProviderCatalogModel CatalogModel(
         string id,
         bool supported = true,
-        string protocol = ChatCompletions) => new()
+        string protocol = ChatCompletions,
+        int? contextLength = null) => new()
     {
         Id = id,
         Supported = supported,
         Protocol = protocol,
+        ContextLength = contextLength,
     };
 
     private static ProviderCatalogState State(
@@ -203,8 +205,86 @@ public sealed class ProviderModelPickerProjectionTests
         {
             Assert.True(row.IsEnabled);
             Assert.True(row.IsStale);
-            Assert.Equal(ProviderModelPickerProjection.StaleAnnotation, row.Annotation);
+            // Staleness is a fact about the provider's catalog, so it is carried by the
+            // group and the view prints it on the group's heading. The rows used to
+            // repeat it, which put the same sentence on every line and, on a long model
+            // id, pushed it past the ellipsis where nothing read it.
+            Assert.Equal(string.Empty, row.Annotation);
         });
+    }
+
+    [Fact]
+    public void A_typed_query_that_matches_nothing_says_the_query_missed()
+    {
+        // Both cases used to read "No available models", so a typo reported the
+        // provider's catalog as empty. Only one of them is the user's to fix.
+        var openai = State("openai", catalog: [CatalogModel("gpt-4o")]);
+
+        var projection = ProviderModelPickerProjection.Create(
+            groups: [openai],
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
+            searchText: "qzx-nonexistent",
+            definitions: DefinitionsOf(openai));
+
+        Assert.Empty(projection.Groups);
+        Assert.Equal(ProviderModelPickerProjection.NoMatchText, projection.EmptyStateText);
+        Assert.NotEqual(ProviderModelPickerProjection.NoUsableModelsText, projection.EmptyStateText);
+    }
+
+    [Fact]
+    public void The_context_column_shows_the_figure_the_catalog_published()
+    {
+        var openai = State("openai", catalog: [CatalogModel("gpt-4o", contextLength: 128_000)]);
+
+        var projection = ProviderModelPickerProjection.Create(
+            groups: [openai],
+            selectedBackend: "openai",
+            selectedModel: "gpt-4o",
+            searchText: string.Empty,
+            definitions: DefinitionsOf(openai));
+
+        Assert.Equal("128K", Assert.Single(Assert.Single(projection.Groups).Rows).ContextLabel);
+    }
+
+    [Fact]
+    public void The_context_column_is_empty_when_the_catalog_published_no_figure()
+    {
+        // ModelContextSpecs answers "128K" for a model it has never heard of, by
+        // substring-matching the vendor's name and falling through to a default. This
+        // column is what someone picks a model by, so a guess in it is worse than a
+        // blank: models.dev publishes no context for most models, and a filled column
+        // would have claimed a figure for every one of them.
+        var openai = State("openai", catalog: [CatalogModel("some-unheard-of-model")]);
+
+        var projection = ProviderModelPickerProjection.Create(
+            groups: [openai],
+            selectedBackend: "openai",
+            selectedModel: "some-unheard-of-model",
+            searchText: string.Empty,
+            definitions: DefinitionsOf(openai));
+
+        var row = Assert.Single(Assert.Single(projection.Groups).Rows);
+        Assert.Equal(string.Empty, row.ContextLabel);
+        Assert.Equal("128K", ModelContextSpecs.GetContextSpec(row.ModelId, null).DisplayText);
+    }
+
+    [Fact]
+    public void A_row_announces_its_context_to_a_screen_reader()
+    {
+        var row = new ProviderModelPickerRow(
+            "openai", "OpenAI", "gpt-4o", "128K", IsSelected: true, IsEnabled: true, false, string.Empty);
+
+        Assert.Equal("OpenAI, gpt-4o, 128K context, selected", ProviderModelPickerProjection.RowAutomationText(row));
+    }
+
+    [Fact]
+    public void A_row_with_no_published_context_announces_no_number()
+    {
+        var row = new ProviderModelPickerRow(
+            "openai", "OpenAI", "gpt-4o", string.Empty, IsSelected: false, IsEnabled: true, false, string.Empty);
+
+        Assert.Equal("OpenAI, gpt-4o, available", ProviderModelPickerProjection.RowAutomationText(row));
     }
 
     [Fact]
@@ -362,7 +442,7 @@ public sealed class ProviderModelPickerProjectionTests
     }
 
     [Fact]
-    public void Search_that_matches_nothing_produces_the_empty_state_text()
+    public void Search_that_matches_nothing_blames_the_query_not_the_catalog()
     {
         var kilo = State("openai", catalog: [CatalogModel("gpt-4o")]);
 
@@ -374,7 +454,7 @@ public sealed class ProviderModelPickerProjectionTests
             definitions: DefinitionsOf(kilo));
 
         Assert.Empty(projection.Groups);
-        Assert.Equal(ProviderModelPickerProjection.NoUsableModelsText, projection.EmptyStateText);
+        Assert.Equal(ProviderModelPickerProjection.NoMatchText, projection.EmptyStateText);
     }
 
     [Fact]

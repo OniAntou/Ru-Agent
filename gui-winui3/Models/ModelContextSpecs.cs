@@ -84,5 +84,26 @@ namespace RuApp.Models
         {
             return RuAgent.SessionInterchange.TranscriptText.FormatTokens(tokens);
         }
+
+        /// <summary>
+        /// A context figure the provider actually published, or null when it published
+        /// none.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately not <see cref="GetContextSpec"/>. That one guesses: it matches
+        /// substrings of the model name and, failing every branch, returns 128K for a
+        /// model it knows nothing about. A guess is right often enough to be
+        /// useless — it is wrong silently, and a caller has no way to tell a published
+        /// figure from a substring match on the vendor's name.
+        ///
+        /// The context meter is allowed the guess, because it exists to warn before a
+        /// request is rejected and says so. A picker lists models next to each other,
+        /// so a wrong number there is a wrong number someone will choose a model by.
+        /// Null is the honest answer and the caller shows nothing.
+        /// </remarks>
+        public static string? FormatPublishedContext(int? publishedTokens)
+        {
+            return publishedTokens is > 0 ? FormatTokens(publishedTokens.Value) : null;
+        }
     }
 }

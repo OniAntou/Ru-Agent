@@ -1098,10 +1098,10 @@
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
                                                 <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
-                                                <Setter Property="Padding" Value="4" />
-                                                <Setter Property="Width" Value="320" />
-                                                <Setter Property="MinWidth" Value="320" />
-                                                <Setter Property="MaxWidth" Value="320" />
+                                                <Setter Property="Padding" Value="3" />
+                                                <Setter Property="Width" Value="336" />
+                                                <Setter Property="MinWidth" Value="336" />
+                                                <Setter Property="MaxWidth" Value="336" />
                                                 <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
@@ -1109,9 +1109,10 @@
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
                                         <views:ProviderModelPicker x:Name="ModelPicker"
-                                                                   Width="312"
+                                                                   Width="328"
                                                                    SearchTextChanged="OnModelPickerSearchTextChanged"
-                                                                   ModelSelected="OnModelPickerModelSelected" />
+                                                                   ModelSelected="OnModelPickerModelSelected"
+                                                                   DismissRequested="OnModelPickerDismissRequested" />
                                     </Flyout>
                                 </Button.Flyout>
                             </Button>
@@ -1149,16 +1150,19 @@
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
                                                 <Setter Property="CornerRadius" Value="{StaticResource AppFlyoutCornerRadius}" />
-                                                <Setter Property="Padding" Value="4" />
-                                                <Setter Property="MinWidth" Value="140" />
-                                                <Setter Property="MaxWidth" Value="220" />
+                                                <Setter Property="Padding" Value="3" />
+                                                <Setter Property="MinWidth" Value="200" />
+                                                <Setter Property="MaxWidth" Value="240" />
                                                 <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
                                                 <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
-                                        <StackPanel x:Name="ReasoningOptionsContainer" Spacing="2" />
+                                        <StackPanel x:Name="ReasoningOptionsContainer"
+                                                    Spacing="0"
+                                                    IsTabStop="True"
+                                                    KeyDown="OnReasoningContainerKeyDown" />
                                     </Flyout>
                                 </Button.Flyout>
                             </Button>

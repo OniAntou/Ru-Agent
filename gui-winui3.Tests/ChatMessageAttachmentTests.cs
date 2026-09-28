@@ -197,9 +197,55 @@ public sealed class ChatMessageAttachmentTests
             string pickerXaml = File.ReadAllText(pickerPath);
             Assert.Contains("ModelSearchBox", pickerXaml, StringComparison.Ordinal);
             Assert.Contains("PickerListContainer", pickerXaml, StringComparison.Ordinal);
-            Assert.Contains("PlaceholderText=\"Search models…\"", pickerXaml, StringComparison.Ordinal);
+            // The field searches providers as well as models, and the projection keeps
+            // a whole provider's models when its name matches, so promising only models
+            // was the narrower half of what the field actually does.
+            Assert.Contains("PlaceholderText=\"Search models or providers\"", pickerXaml, StringComparison.Ordinal);
             Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", pickerXaml, StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// The search field's two edges sit on the same lines as the two columns it filters.
+    /// </summary>
+    /// <remarks>
+    /// Both numbers are derived, not chosen: the left inset is the list's own padding
+    /// plus the width the row reserves for the selection bar, and the right inset is the
+    /// list's padding plus the row's right padding, which is where the context figures
+    /// end. Change any one of those three and this fails, because the alternative is a
+    /// field hanging out of line with a column of numbers in a panel whose whole argument
+    /// is that column.
+    ///
+    /// Pinned rather than computed on purpose: if it read the constants out of the
+    /// code-behind it would follow any edit to them and never once object. The failure
+    /// message names the numbers so whoever hits it knows which side moved.
+    /// </remarks>
+    [Fact]
+    public void Model_picker_search_field_lines_up_with_the_columns_it_filters()
+    {
+        const int listPadding = 6;
+        const int selectionColumn = 11;
+        const int rowRightPadding = 6;
+        const int expectedLeft = listPadding + selectionColumn;   // 17
+        const int expectedRight = listPadding + rowRightPadding;  // 12
+
+        string xaml = File.ReadAllText(PickerXamlPath());
+
+        Assert.Contains(
+            $"Margin=\"{expectedLeft},10,{expectedRight},0\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            $"Padding=\"{listPadding},6,{listPadding},6\"",
+            xaml,
+            StringComparison.Ordinal);
+    }
+
+    private static string PickerXamlPath()
+    {
+        string path = Path.Combine(
+            "..", "..", "..", "..", "gui-winui3", "Views", "ProviderModelPicker.xaml");
+        return File.Exists(path) ? path : Path.Combine("Views", "ProviderModelPicker.xaml");
     }
 
     [Fact]

@@ -63,18 +63,36 @@ public sealed class GuiResourceKeyTests
     }
 
     [Fact]
-    public void The_picker_item_style_is_view_scoped_not_application_scoped()
+    public void The_option_row_style_is_application_scoped_because_two_views_use_it()
     {
-        // Pins the specific mistake: this style belongs to the control that uses it.
-        string pickerXaml = GuiSource.Text("Views", "ProviderModelPicker.xaml");
-        string pickerCode = GuiSource.Text("Views", "ProviderModelPicker.xaml.cs");
+        // This overturns an earlier decision, so the reason is worth stating.
+        //
+        // PickerItemButtonStyle was deliberately view-scoped, and the rule behind it was
+        // sound: a style with one user belongs to that user, and reading a view-scoped key
+        // from the application dictionary is what took the whole chat surface down once.
+        // The reason no longer applies. The reasoning list is the second user, it is
+        // built in code rather than markup, and leaving the style view-scoped would mean
+        // the two lists are the same design only until someone edits one of them.
+        //
+        // The crash half of the old hazard is still covered: the test above walks every
+        // Application.Current.Resources lookup in code and fails on a key App.xaml does
+        // not declare, so "put it in the view and read it from the app" cannot come back.
+        string appXaml = GuiSource.Text("App.xaml");
 
-        Assert.Contains("x:Key=\"PickerItemButtonStyle\"", pickerXaml, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"RuOptionRowStyle\"", appXaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "x:Key=\"PickerItemButtonStyle\"",
-            GuiSource.Text("App.xaml"),
+            appXaml,
             StringComparison.Ordinal);
-        Assert.Contains("controlResources[\"PickerItemButtonStyle\"]", pickerCode, StringComparison.Ordinal);
+
+        // Both users read it from the application dictionary, and neither keeps a private
+        // copy that could drift.
+        Assert.Contains("resources[\"RuOptionRowStyle\"]", GuiSource.Text("Views", "ProviderModelPicker.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("resources[\"RuOptionRowStyle\"]", GuiSource.Text("Views", "ChatView.Models.cs"), StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "PickerItemButtonStyle",
+            GuiSource.Text("Views", "ProviderModelPicker.xaml.cs"),
+            StringComparison.Ordinal);
     }
 
     private static class ResourceKeys

@@ -238,6 +238,26 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void ResetAssistant_drops_superseded_text_from_gap_detection()
+    {
+        // A retried attempt replaces the previous answer: the head sitting in the
+        // render buffer must not stay in the raw text used for gap detection, or the
+        // reconciler sees a complete answer while the screen is missing its head.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("Hi! **");
+        transcript.ResetAssistant();
+
+        Assert.Equal(string.Empty, transcript.StreamedAssistantText);
+        var text = TuiText.Strip(output.ToString());
+        Assert.Contains("Hi!", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", text, StringComparison.Ordinal);
+
+        transcript.AppendAssistant("fresh retry");
+        Assert.Equal("fresh retry", transcript.StreamedAssistantText);
+    }
+
+    [Fact]
     public void Repaint_replaces_a_truncated_turn_with_the_complete_answer()
     {
         // What the live hub actually costs: the deltas that carried the head were published

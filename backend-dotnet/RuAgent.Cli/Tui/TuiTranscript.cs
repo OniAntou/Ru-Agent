@@ -229,7 +229,16 @@ public sealed class TuiTranscript
     /// </summary>
     public void ResetAssistant()
     {
+        // A superseded attempt's answer is replaced by the retry: drop its pending
+        // render buffer, and its raw text from gap tracking, so the retry -- not the
+        // stale head it replaced -- is what gets compared against the durable payload.
+        // Already rendered rows cannot be un-written; the retry supersedes them visually.
+        // The turn's block marker is intentionally kept so a later repaint can still
+        // target the whole turn, and the header is not reprinted.
         _lineBuffer = string.Empty;
+        _streamedAssistant.Clear();
+        _markdown.Reset();
+        _proseContinuesWord = false;
     }
 
     public void Flush()

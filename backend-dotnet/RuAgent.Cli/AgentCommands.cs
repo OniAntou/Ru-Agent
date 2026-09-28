@@ -1886,24 +1886,14 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             {
                 foreach (var payloadRef in payloadRefs)
                 {
-                    var raw = await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false);
-                    if (string.IsNullOrWhiteSpace(raw))
+                    // GetPayloadAsync unwraps the host's envelope and returns the assistant
+                    // text itself, so there is nothing to parse here -- this is prose, and
+                    // parsing it as JSON throws.
+                    var text = await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(text))
                     {
-                        continue;
+                        expected.Append(text);
                     }
-
-                    using var document = JsonDocument.Parse(raw);
-                    var payload = document.RootElement;
-                    if (payload.ValueKind != JsonValueKind.Object
-                        || !payload.TryGetProperty("kind", out var kind)
-                        || !string.Equals(kind.GetString(), "assistanttext", StringComparison.Ordinal)
-                        || !payload.TryGetProperty("content", out var content)
-                        || content.ValueKind != JsonValueKind.String)
-                    {
-                        continue;
-                    }
-
-                    expected.Append(content.GetString());
                 }
             }
             catch (OperationCanceledException)

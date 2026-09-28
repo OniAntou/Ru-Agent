@@ -1878,6 +1878,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         {
             if (payloadRefs.Count == 0)
             {
+                Tui.TuiDebug.Log("recover", "no step payload refs seen on the stream");
                 return;
             }
 
@@ -1908,11 +1909,13 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
             if (expected.Length == 0)
             {
+                Tui.TuiDebug.Log("recover", $"no durable text behind {payloadRefs.Count} refs");
                 return;
             }
 
             var full = expected.ToString();
             var streamed = sessionRenderer.Transcript.StreamedAssistantText;
+            Tui.TuiDebug.Log("recover", $"streamed {streamed.Length} of {full.Length} chars");
             var decision = Tui.AssistantTextReconciler.Decide(streamed, full);
             if (decision == Tui.AssistantTextRecovery.Complete
                 || decision == Tui.AssistantTextRecovery.None)

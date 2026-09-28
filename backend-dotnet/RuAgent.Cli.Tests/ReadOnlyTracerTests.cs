@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -27,7 +28,7 @@ public sealed class ReadOnlyTracerTests
         var workspace = Path.GetTempPath().TrimEnd('\\', '/');
         var calls = new List<string>();
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             calls.Add($"{req.Method} {uri}");
@@ -43,7 +44,7 @@ public sealed class ReadOnlyTracerTests
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
             {
                 // Read body to verify preset standard etc handled in next test; just return run creation
-                var body = req.Content!.ReadAsStringAsync().Result;
+                var body = await req.Content!.ReadAsStringAsync();
                 var doc = JsonDocument.Parse(body);
                 // Validate preset present
                 Assert.True(doc.RootElement.TryGetProperty("preset", out var preset) && preset.GetString() == "standard");
@@ -86,7 +87,7 @@ public sealed class ReadOnlyTracerTests
         var idempotencyKeys = new List<string>();
 
         FakeHandler handler = null!;
-        handler = new FakeHandler(req =>
+        handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/new"))
@@ -98,7 +99,7 @@ public sealed class ReadOnlyTracerTests
                 return JsonResponse(JsonSerializer.Serialize(new { session_id = generatedSessionId, preset = "standard", version = 1 }));
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
             {
-                var body = req.Content!.ReadAsStringAsync().Result;
+                var body = await req.Content!.ReadAsStringAsync();
                 var doc = JsonDocument.Parse(body);
                 Assert.True(doc.RootElement.TryGetProperty("preset", out var p) && p.GetString() == "standard", "Must use Standard preset");
                 Assert.True(doc.RootElement.TryGetProperty("idempotency_key", out var k), "Missing idempotency_key");
@@ -147,7 +148,7 @@ public sealed class ReadOnlyTracerTests
         var workspace = Path.GetTempPath().TrimEnd('\\', '/');
         var capturedAfterSequence = new List<string>();
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/new"))
@@ -199,7 +200,7 @@ public sealed class ReadOnlyTracerTests
         var workspace = Path.GetTempPath().TrimEnd('\\', '/');
         bool cancelPosted = false;
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/new"))
@@ -253,7 +254,7 @@ public sealed class ReadOnlyTracerTests
         var workspace = Path.GetTempPath().TrimEnd('\\', '/');
         int sessionCreates = 0;
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/new"))
@@ -266,7 +267,7 @@ public sealed class ReadOnlyTracerTests
                 return JsonResponse(JsonSerializer.Serialize(new { session_id = existingSessionId, preset = "standard", version = 1 }));
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
             {
-                var body = req.Content!.ReadAsStringAsync().Result;
+                var body = await req.Content!.ReadAsStringAsync();
                 var doc = JsonDocument.Parse(body);
                 var sid = doc.RootElement.GetProperty("session_id").GetString();
                 Assert.Equal(existingSessionId, sid);
@@ -296,7 +297,7 @@ public sealed class ReadOnlyTracerTests
         var calls = new List<string>();
         long expectedVersion = -1;
         long requestVersion = -1;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/sessions/new"))
@@ -304,14 +305,14 @@ public sealed class ReadOnlyTracerTests
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 calls.Add("preset");
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 expectedVersion = document.RootElement.GetProperty("expected_version").GetInt64();
                 return JsonResponse(JsonSerializer.Serialize(new { session_id = sessionId, preset = "standard", version = 1 }));
             }
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
             {
                 calls.Add("run");
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 var versionElement = document.RootElement.GetProperty("preset_selection_version");
                 requestVersion = versionElement.ValueKind == JsonValueKind.Number
                     ? versionElement.GetInt64()
@@ -340,12 +341,12 @@ public sealed class ReadOnlyTracerTests
         var runId = ValidRunId;
         string? token = null;
         var runCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 token = document.RootElement.GetProperty("snapshot_token").GetString();
                 Assert.Matches("^sps_[0-9a-f]{32}$", token);
                 return JsonResponse(JsonSerializer.Serialize(new { session_id = sessionId, preset = "standard", version = 1, snapshot_token = token }));
@@ -376,12 +377,12 @@ public sealed class ReadOnlyTracerTests
         var state = "standard";
         var restoreCalled = false;
         var runCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -422,12 +423,12 @@ public sealed class ReadOnlyTracerTests
         var state = "plan";
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -471,12 +472,12 @@ public sealed class ReadOnlyTracerTests
         var state = "plan";
         var restoreCalled = false;
         var runCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -512,12 +513,12 @@ public sealed class ReadOnlyTracerTests
         var sessionId = new string('b', 32);
         var state = "plan";
         var restoreCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -546,12 +547,12 @@ public sealed class ReadOnlyTracerTests
     public async Task RunAsync_PreCommitPresetFailureDoesNotReportRestoreFailure()
     {
         var restoreCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -587,12 +588,12 @@ public sealed class ReadOnlyTracerTests
     {
         var sessionId = new string('3', 32);
         var restoreCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -623,12 +624,12 @@ public sealed class ReadOnlyTracerTests
         var sessionId = new string('2', 32);
         var mutationCalls = 0;
         var restoreCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -658,12 +659,12 @@ public sealed class ReadOnlyTracerTests
         var state = "plan";
         var restoreCalled = false;
         var runCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -698,12 +699,12 @@ public sealed class ReadOnlyTracerTests
         var runId = ValidRunId;
         var versions = new List<long>();
         long requestVersion = -1;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 var version = document.RootElement.GetProperty("expected_version").GetInt64();
                 versions.Add(version);
                 if (versions.Count < 4)
@@ -712,7 +713,7 @@ public sealed class ReadOnlyTracerTests
             }
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/runs"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 var versionElement = document.RootElement.GetProperty("preset_selection_version");
                 requestVersion = versionElement.ValueKind == JsonValueKind.Number
                     ? versionElement.GetInt64()
@@ -738,12 +739,12 @@ public sealed class ReadOnlyTracerTests
         var sessionId = new string('7', 32);
         var versions = new List<long>();
         var createCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 versions.Add(document.RootElement.GetProperty("expected_version").GetInt64());
                 return JsonResponse("{\"error_code\":\"preset_version_conflict\"}", HttpStatusCode.Conflict);
             }
@@ -774,12 +775,12 @@ public sealed class ReadOnlyTracerTests
         var restoreCalled = false;
         var state = "plan";
         var reader = new TrackingReader();
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -823,7 +824,7 @@ public sealed class ReadOnlyTracerTests
         var displayHash = new string('b', 64);
         var createCalls = 0;
         var trustCalls = 0;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
@@ -836,7 +837,7 @@ public sealed class ReadOnlyTracerTests
             if (req.Method == HttpMethod.Post && uri.EndsWith($"/agent/v1/runs/{runId}/trust"))
             {
                 trustCalls++;
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 Assert.Equal("approve", document.RootElement.GetProperty("decision").GetString());
                 Assert.Equal(trustRequestId, document.RootElement.GetProperty("trust_request_id").GetString());
                 Assert.Equal(displayHash, document.RootElement.GetProperty("display_identity_hash").GetString());
@@ -865,12 +866,12 @@ public sealed class ReadOnlyTracerTests
         var state = "full_access";
         var restoreCalls = 0;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalls++;
@@ -914,12 +915,12 @@ public sealed class ReadOnlyTracerTests
         var runId = ValidRunId;
         var restoreCalls = 0;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalls++;
@@ -960,12 +961,12 @@ public sealed class ReadOnlyTracerTests
         var runId = ValidRunId;
         var restoreCalls = 0;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalls++;
@@ -1011,12 +1012,12 @@ public sealed class ReadOnlyTracerTests
         var sessionId = new string('1', 32);
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1051,12 +1052,12 @@ public sealed class ReadOnlyTracerTests
         var eventsCalled = false;
         var restoreCalled = false;
         var state = "plan";
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1094,12 +1095,12 @@ public sealed class ReadOnlyTracerTests
         var runId = ValidRunId;
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1133,12 +1134,12 @@ public sealed class ReadOnlyTracerTests
         var sessionId = new string('5', 32);
         var runId = ValidRunId;
         var restoreCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1171,12 +1172,12 @@ public sealed class ReadOnlyTracerTests
         var runId = ValidRunId;
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1210,7 +1211,7 @@ public sealed class ReadOnlyTracerTests
     public async Task RunAsync_FullAccessRequiresConfirmationBeforeHttp()
     {
         var calls = 0;
-        var handler = new FakeHandler(_ =>
+        var handler = new FakeHandler(async _ =>
         {
             calls++;
             return JsonResponse("{}", HttpStatusCode.InternalServerError);
@@ -1249,9 +1250,10 @@ public sealed class ReadOnlyTracerTests
 
     private sealed class FakeHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 
     private sealed class BlockingStream : System.IO.Stream
@@ -1264,7 +1266,7 @@ public sealed class ReadOnlyTracerTests
         public override void Flush() { }
         public override int Read(byte[] buffer, int offset, int count)
         {
-            Task.Delay(Timeout.Infinite).Wait();
+            Thread.Sleep(Timeout.Infinite);
             return 0;
         }
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();

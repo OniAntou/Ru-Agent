@@ -19,7 +19,7 @@ public sealed class AgentApiClientTests
     public async Task GetRunStrictParsingRejectsUnknownFields()
     {
         var s = Session();
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             Assert.Contains("/agent/v1/runs/run_", req.RequestUri!.ToString());
             var payload = new { run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", workspace_id = "ws_123", status = "running", preset = "standard", policy_snapshot_version = 1, policy_snapshot_sha256 = new string('a', 64), version = 0, last_sequence = 1, created_at = DateTimeOffset.UtcNow.ToString("O"), updated_at = DateTimeOffset.UtcNow.ToString("O"), unknown = "field" };
@@ -34,7 +34,7 @@ public sealed class AgentApiClientTests
     public async Task GetPayloadRunBindingEnforced()
     {
         var s = Session();
-        var handler = new FakeHandler(_ =>
+        var handler = new FakeHandler(async _ =>
         {
             var json = JsonSerializer.Serialize(new { run_id = "run_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", payload_id = "payload_cccccccccccccccccccccccccccccccc", kind = "user_prompt", encoding = "utf8_text", content = "hello" });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
@@ -49,7 +49,7 @@ public sealed class AgentApiClientTests
     {
         var bearer = new string('d', 64);
         var s = Session(bearer);
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             Assert.Equal("Bearer", req.Headers.Authorization?.Scheme);
             Assert.Equal(bearer, req.Headers.Authorization?.Parameter);
@@ -65,7 +65,7 @@ public sealed class AgentApiClientTests
     [Fact]
     public async Task CreateRun_rejects_wrong_session_before_returning_response()
     {
-        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(async _ => Response(new
         {
             run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             session_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -84,7 +84,7 @@ public sealed class AgentApiClientTests
     [Fact]
     public async Task CreateRun_rejects_wrong_preset_before_returning_response()
     {
-        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(async _ => Response(new
         {
             run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -108,7 +108,7 @@ public sealed class AgentApiClientTests
     [InlineData("interrupted")]
     public async Task CreateRun_rejects_missing_or_unsafe_status_before_returning_response(string status)
     {
-        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(async _ => Response(new
         {
             run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -127,7 +127,7 @@ public sealed class AgentApiClientTests
     [Fact]
     public async Task CreateRun_rejects_missing_workspace_id_before_returning_response()
     {
-        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(async _ => Response(new
         {
             run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -145,7 +145,7 @@ public sealed class AgentApiClientTests
     [Fact]
     public async Task CreateRun_rejects_waiting_trust_without_known_challenge_ids()
     {
-        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ => Response(new
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(async _ => Response(new
         {
             run_id = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             session_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -165,7 +165,7 @@ public sealed class AgentApiClientTests
     public async Task CancelRejectsWrongBearer()
     {
         var s = Session();
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{\"error_code\":\"unauthorized\"}") });
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{\"error_code\":\"unauthorized\"}") });
         var client = new AgentApiClient(s, new HttpClient(handler));
         var ex = await Assert.ThrowsAsync<AgentApiException>(() => client.CancelAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         Assert.Equal("unauthorized", ex.ErrorCode);
@@ -175,7 +175,7 @@ public sealed class AgentApiClientTests
     public async Task Client_rejects_non_hex_generated_ids_before_network_io()
     {
         var s = Session();
-        var handler = new FakeHandler(_ => throw new InvalidOperationException("network must not be called"));
+        var handler = new FakeHandler(async _ => throw new InvalidOperationException("network must not be called"));
         var client = new AgentApiClient(s, new HttpClient(handler));
 
         var runError = await Assert.ThrowsAsync<AgentApiException>(
@@ -193,7 +193,7 @@ public sealed class AgentApiClientTests
     public async Task CreateRun_preserves_backend_error_code_for_bad_requests()
     {
         var s = Session();
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
             Content = new StringContent("{\"error_code\":\"invalid_workspace\"}", Encoding.UTF8, "application/json")
         });
@@ -215,7 +215,7 @@ public sealed class AgentApiClientTests
     public async Task Client_rejects_an_oversized_http_response_before_json_parsing()
     {
         var session = Session();
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(new string('x', 8 * 1024 * 1024 + 1), Encoding.UTF8, "application/json"),
         });
@@ -238,7 +238,7 @@ public sealed class AgentApiClientTests
     {
         var bearer = new string('e', 64);
         var session = Session(bearer);
-        var handler = new FakeHandler(request =>
+        var handler = new FakeHandler(async request =>
         {
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.EndsWith(
@@ -269,7 +269,7 @@ public sealed class AgentApiClientTests
     public async Task DispatchCommand_sends_typed_text_and_parses_bounded_result()
     {
         var session = Session(new string('f', 64));
-        var handler = new FakeHandler(request =>
+        var handler = new FakeHandler(async request =>
         {
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.EndsWith(
@@ -304,9 +304,9 @@ public sealed class AgentApiClientTests
     {
         var session = Session();
         string? sentCommand = null;
-        var handler = new FakeHandler(request =>
+        var handler = new FakeHandler(async request =>
         {
-            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            var body = await request.Content!.ReadAsStringAsync();
             sentCommand = JsonDocument.Parse(body).RootElement.GetProperty("command").GetString();
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -325,9 +325,9 @@ public sealed class AgentApiClientTests
     {
         var session = Session();
         var token = "sps_" + new string('a', 32);
-        var handler = new FakeHandler(request =>
+        var handler = new FakeHandler(async request =>
         {
-            using var document = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
             Assert.Equal("session_preset", document.RootElement.GetProperty("kind").GetString());
             Assert.Equal(token, document.RootElement.GetProperty("snapshot_token").GetString());
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -353,10 +353,10 @@ public sealed class AgentApiClientTests
     {
         var session = Session();
         var token = "sps_" + new string('b', 32);
-        var handler = new FakeHandler(request =>
+        var handler = new FakeHandler(async request =>
         {
             Assert.EndsWith("/agent/v1/policies", request.RequestUri!.ToString(), StringComparison.Ordinal);
-            using var document = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
             Assert.Equal("session_preset_restore", document.RootElement.GetProperty("kind").GetString());
             Assert.Equal(token, document.RootElement.GetProperty("snapshot_token").GetString());
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -385,7 +385,7 @@ public sealed class AgentApiClientTests
     {
         var session = Session();
         var token = "sps_" + new string('c', 32);
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(RestoreBody(mode), Encoding.UTF8, "application/json")
         });
@@ -424,8 +424,9 @@ public sealed class AgentApiClientTests
 
     private sealed class FakeHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 }

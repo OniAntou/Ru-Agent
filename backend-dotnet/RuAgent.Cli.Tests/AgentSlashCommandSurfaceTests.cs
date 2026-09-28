@@ -40,6 +40,17 @@ public sealed class AgentSlashCommandSurfaceTests
         return new AgentSlashCommands(client, output, new StringWriter()) { PanelWidth = 80 };
     }
 
+    private static AgentSlashCommands Create(
+        StringWriter output,
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> respond,
+        string settingsJson = "{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\",\"has_openai_api_key\":true,\"anthropic_model\":\"claude-sonnet-4-5\"}")
+    {
+        var client = new SettingsApiClient(
+            Session(),
+            new HttpClient(new FakeHandler(respond)));
+        return new AgentSlashCommands(client, output, new StringWriter()) { PanelWidth = 80 };
+    }
+
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -107,11 +118,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -157,11 +168,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -220,11 +231,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -242,11 +253,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -280,11 +291,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -305,7 +316,7 @@ public sealed class AgentSlashCommandSurfaceTests
     public async Task Model_WithLiveCatalog_OffersCatalogModels()
     {
         var output = new StringWriter();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("/models", StringComparison.Ordinal))
@@ -333,7 +344,7 @@ public sealed class AgentSlashCommandSurfaceTests
     public async Task Model_WhenCatalogFails_FallsBackToConfiguredModels()
     {
         var output = new StringWriter();
-        var commands = Create(output, request => request.RequestUri!.AbsolutePath.EndsWith("/models", StringComparison.Ordinal)
+        var commands = Create(output, async request => request.RequestUri!.AbsolutePath.EndsWith("/models", StringComparison.Ordinal)
             ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
             : Json("{\"status\":\"ok\",\"backend\":\"models.dev:openrouter\",\"model\":\"b-model\"}"));
 
@@ -349,11 +360,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -385,7 +396,7 @@ public sealed class AgentSlashCommandSurfaceTests
     public async Task Key_WithoutArgs_ShowsSignInState()
     {
         var output = new StringWriter();
-        var commands = Create(output, request => request.RequestUri!.AbsolutePath.EndsWith("/settings/models-dev-keys", StringComparison.Ordinal)
+        var commands = Create(output, async request => request.RequestUri!.AbsolutePath.EndsWith("/settings/models-dev-keys", StringComparison.Ordinal)
             ? Json("{\"status\":\"ok\",\"provider_ids\":[\"opencode\"]}")
             : Json("{\"status\":\"ok\",\"backend\":\"OpenAI\",\"openai_model\":\"gpt-4o\",\"has_openai_api_key\":true,\"has_anthropic_api_key\":false}"));
 
@@ -403,11 +414,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"success\"}");
             }
 
@@ -430,11 +441,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -455,7 +466,7 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
@@ -499,11 +510,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -529,7 +540,7 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
@@ -552,11 +563,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"ok\"}");
             }
 
@@ -604,11 +615,11 @@ public sealed class AgentSlashCommandSurfaceTests
     {
         var output = new StringWriter();
         var posted = new List<string>();
-        var commands = Create(output, request =>
+        var commands = Create(output, async request =>
         {
             if (request.Method == HttpMethod.Post)
             {
-                posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                posted.Add(await request.Content!.ReadAsStringAsync());
                 return Json("{\"status\":\"success\",\"message\":\"Signed out.\"}");
             }
 
@@ -645,11 +656,9 @@ public sealed class AgentSlashCommandSurfaceTests
 
     private sealed class FakeHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 }

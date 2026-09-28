@@ -518,7 +518,7 @@ public sealed class TuiInteractiveTests
         bool trustCalled = false;
         bool restoreCalled = false;
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
@@ -532,7 +532,7 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 calls.Add("preset");
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -543,7 +543,7 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
             {
                 calls.Add("run");
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 var versionElement = document.RootElement.GetProperty("preset_selection_version");
                 requestVersion = versionElement.ValueKind == JsonValueKind.Number
                     ? versionElement.GetInt64()
@@ -822,7 +822,7 @@ public sealed class TuiInteractiveTests
         bool trustCalled = false;
         bool restoreCalled = false;
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
@@ -836,7 +836,7 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 calls.Add("preset");
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -847,7 +847,7 @@ public sealed class TuiInteractiveTests
             if (req.Method == HttpMethod.Post && uri.Contains("/agent/v1/runs") && !uri.Contains("/trust"))
             {
                 calls.Add("run");
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 var versionElement = document.RootElement.GetProperty("preset_selection_version");
                 requestVersion = versionElement.ValueKind == JsonValueKind.Number
                     ? versionElement.GetInt64()
@@ -913,14 +913,14 @@ public sealed class TuiInteractiveTests
         var state = "plan";
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -984,14 +984,14 @@ public sealed class TuiInteractiveTests
         var state = "plan";
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1058,14 +1058,14 @@ public sealed class TuiInteractiveTests
         var state = "plan";
         var restoreCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1107,14 +1107,14 @@ public sealed class TuiInteractiveTests
         var restoreCalled = false;
         var runCalled = false;
         var eventsCalled = false;
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                 {
                     restoreCalled = true;
@@ -1157,7 +1157,7 @@ public sealed class TuiInteractiveTests
         var session = PublicHostSession.FromDescriptor(desc);
 
         var blockingRunId = "run_" + new string('e', 32);
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/settings"))
@@ -1170,7 +1170,7 @@ public sealed class TuiInteractiveTests
             }
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 if (document.RootElement.GetProperty("kind").GetString() == "session_preset_restore")
                     return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"status\":\"ok\",\"session_id\":\"sess_123\",\"preset\":\"standard\",\"version\":1,\"restored\":true,\"replayed\":false}", Encoding.UTF8, "application/json") };
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { session_id = "sess_123", preset = "standard", version = 1 }), Encoding.UTF8, "application/json") };
@@ -1264,7 +1264,7 @@ public sealed class TuiInteractiveTests
             terminal_error_code = (string?)null,
         });
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/events"))
@@ -1368,8 +1368,9 @@ public sealed class TuiInteractiveTests
     }
 
     private sealed class FakeHandler : HttpMessageHandler    {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 }

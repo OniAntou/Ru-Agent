@@ -21,20 +21,26 @@ public sealed class PolicyCommandTests
         return new HttpClient(fake);
     }
 
+    private static HttpClient CreateFakeClient(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
+    {
+        var fake = new FakeHandler(handler);
+        return new HttpClient(fake);
+    }
+
     [Fact]
     public async Task RunFullAccessPresetSendsInteractiveConfirmationHeader()
     {
         var sessionId = new string('8', 32);
         var runId = "run_" + new string('9', 32);
         var policySeen = false;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
             {
                 Assert.True(req.Headers.Contains("X-Interactive-Confirmed"));
                 Assert.Contains("true", req.Headers.GetValues("X-Interactive-Confirmed"));
-                using var document = JsonDocument.Parse(req.Content!.ReadAsStringAsync().Result);
+                using var document = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
                 Assert.Equal("full_access", document.RootElement.GetProperty("preset").GetString());
                 Assert.Equal(0, document.RootElement.GetProperty("expected_version").GetInt64());
                 policySeen = true;
@@ -111,7 +117,7 @@ public sealed class PolicyCommandTests
     public async Task PolicyList_WithFakeHttp_Succeeds()
     {
         var session = CreateSession();
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Get && uri.Contains("/agent/v1/policies"))
@@ -141,7 +147,7 @@ public sealed class PolicyCommandTests
         File.WriteAllText(tempFile, policyJson);
 
         bool headerChecked = false;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.EndsWith("/agent/v1/policies"))
@@ -151,7 +157,7 @@ public sealed class PolicyCommandTests
                 var values = req.Headers.GetValues("X-Interactive-Confirmed");
                 Assert.Contains("true", values);
                 headerChecked = true;
-                var body = req.Content!.ReadAsStringAsync().Result;
+                var body = await req.Content!.ReadAsStringAsync();
                 var doc = JsonDocument.Parse(body);
                 Assert.Equal("global", doc.RootElement.GetProperty("scope").GetString());
                 var respJson = JsonSerializer.Serialize(new { rule_id = "rule_" + new string('b', 32), scope = "global", decision = "allow" });
@@ -182,7 +188,7 @@ public sealed class PolicyCommandTests
         var policyJson = "{\"version\":1,\"rules\":[{\"scope\":\"global\",\"decision\":\"allow\",\"matcher\":{\"tool_id\":\"read\"}}]}";
         File.WriteAllText(tempFile, policyJson);
 
-        var handler = CreateFakeClient(req => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+        var handler = CreateFakeClient(async req => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
         var outWriter = new StringWriter();
         var errWriter = new StringWriter();
         var inReader = new StringReader("n\n");
@@ -201,7 +207,7 @@ public sealed class PolicyCommandTests
         var session = CreateSession();
         var tempFile = Path.GetTempFileName();
         File.WriteAllText(tempFile, "{\"version\":2,\"rules\":[]}");
-        var handler = CreateFakeClient(req => throw new Exception("Should not call HTTP for invalid version"));
+        var handler = CreateFakeClient(async req => throw new Exception("Should not call HTTP for invalid version"));
         var commands = new AgentCommands(session, handler, new StringWriter(), new StringWriter(), new StringReader("y\n"));
         var cmd = new PolicyImportCommand(true, tempFile, false);
         var exit = await commands.PolicyImportAsync(cmd, CancellationToken.None);
@@ -215,7 +221,7 @@ public sealed class PolicyCommandTests
         var session = CreateSession();
         var ruleId = "rule_" + new string('c', 32);
         bool headerChecked = false;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
             if (req.Method == HttpMethod.Delete && req.RequestUri!.ToString().Contains(ruleId))
             {
@@ -256,8 +262,9 @@ public sealed class PolicyCommandTests
 
     private sealed class FakeHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 }

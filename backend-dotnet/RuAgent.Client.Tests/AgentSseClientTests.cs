@@ -23,7 +23,7 @@ public sealed class AgentSseClientTests
             "id: 2\n" +
             "data: {\"protocol_version\":1,\"event_id\":\"evt_2\",\"run_id\":\"" + runId + "\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sequence\":2,\"event_type\":\"tool.proposed\",\"occurred_at\":\"2026-08-24T00:00:01Z\",\"status\":\"running\",\"safe_summary\":\"proposed\"}\n\n";
 
-        var handler = new FakeHandler(req =>
+        var handler = new FakeHandler(async req =>
         {
             var uri = req.RequestUri!.ToString();
             // Should contain after_sequence query
@@ -60,7 +60,7 @@ public sealed class AgentSseClientTests
             "data: {\"kind\":\"assistant.delta\",\"data\":\"hello\"}\n\n" +
             "id: 2\n" +
             "data: {\"protocol_version\":1,\"event_id\":\"evt_2\",\"run_id\":\"" + runId + "\",\"session_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sequence\":2,\"event_type\":\"tool.execution_completed\",\"occurred_at\":\"2026-08-24T00:00:01Z\",\"status\":\"running\",\"safe_summary\":\"done\"}\n\n";
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sseBody, Encoding.UTF8, "text/event-stream") });
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sseBody, Encoding.UTF8, "text/event-stream") });
         var client = new AgentSseClient(Session(), new HttpClient(handler));
         var frames = new List<SseFrame>();
         await foreach (var f in client.ReadEventsAsync(runId))
@@ -79,7 +79,7 @@ public sealed class AgentSseClientTests
     {
         var runId = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         var sseBody = "id: 1\n" + "data: " + new string('x', 512 * 1024) + "\n\n";
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(sseBody, Encoding.UTF8, "text/event-stream"),
         });
@@ -99,7 +99,7 @@ public sealed class AgentSseClientTests
     public async Task CancellationStopsStream()
     {
         var runId = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BlockingStream()) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") } } });
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BlockingStream()) { Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") } } });
         var client = new AgentSseClient(Session(), new HttpClient(handler));
         using var cts = new CancellationTokenSource();
         cts.CancelAfter(100);
@@ -114,7 +114,7 @@ public sealed class AgentSseClientTests
     [Fact]
     public async Task Supplied_http_client_is_not_reconfigured_or_disposed()
     {
-        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var handler = new FakeHandler(async _ => new HttpResponseMessage(HttpStatusCode.OK));
         using var http = new HttpClient(handler)
         {
             Timeout = TimeSpan.FromMinutes(2),
@@ -139,7 +139,7 @@ public sealed class AgentSseClientTests
         public override int Read(byte[] buffer, int offset, int count)
         {
             // Block indefinitely; StreamReader will call ReadAsync in async path, but provide sync fallback that also respects blocking
-            Task.Delay(Timeout.Infinite).Wait();
+            Thread.Sleep(Timeout.Infinite);
             return 0;
         }
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
@@ -159,8 +159,9 @@ public sealed class AgentSseClientTests
 
     private sealed class FakeHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 }

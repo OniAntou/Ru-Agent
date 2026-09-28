@@ -21,6 +21,12 @@ public sealed class ApprovalCommandTests
         return new HttpClient(fake);
     }
 
+    private static HttpClient CreateFakeClient(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
+    {
+        var fake = new FakeHandler(handler);
+        return new HttpClient(fake);
+    }
+
     [Fact]
     public async Task Approve_SendsAllowOnceCommandAndShowsPreview()
     {
@@ -28,12 +34,12 @@ public sealed class ApprovalCommandTests
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('b', 32);
         bool commandChecked = false;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
             var uri = req.RequestUri!.ToString();
             if (req.Method == HttpMethod.Post && uri.Contains($"/approvals/{approvalId}"))
             {
-                var body = req.Content!.ReadAsStringAsync().Result;
+                var body = await req.Content!.ReadAsStringAsync();
                 var doc = JsonDocument.Parse(body);
                 Assert.Equal("allow_once", doc.RootElement.GetProperty("command").GetString());
                 commandChecked = true;
@@ -68,9 +74,9 @@ public sealed class ApprovalCommandTests
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('c', 32);
         string? observedCommand = null;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
-            var body = req.Content!.ReadAsStringAsync().Result;
+            var body = await req.Content!.ReadAsStringAsync();
             var doc = JsonDocument.Parse(body);
             observedCommand = doc.RootElement.GetProperty("command").GetString();
             var respJson = JsonSerializer.Serialize(new
@@ -97,7 +103,7 @@ public sealed class ApprovalCommandTests
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('e', 32);
         int callCount = 0;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
             callCount++;
             if (callCount == 1)
@@ -126,9 +132,9 @@ public sealed class ApprovalCommandTests
         var session = CreateSession();
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('f', 32);
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
-            var body = req.Content!.ReadAsStringAsync().Result;
+            var body = await req.Content!.ReadAsStringAsync();
             var doc = JsonDocument.Parse(body);
             Assert.Equal("deny", doc.RootElement.GetProperty("command").GetString());
             var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "denied" });
@@ -170,9 +176,9 @@ public sealed class ApprovalCommandTests
         var runId = "run_" + new string('a', 32);
         var approvalId = "apr_" + new string('a', 32).Replace('a', '9');
         string? observedCommand = null;
-        var handler = CreateFakeClient(req =>
+        var handler = CreateFakeClient(async req =>
         {
-            var body = req.Content!.ReadAsStringAsync().Result;
+            var body = await req.Content!.ReadAsStringAsync();
             var doc = JsonDocument.Parse(body);
             observedCommand = doc.RootElement.GetProperty("command").GetString();
             var respJson = JsonSerializer.Serialize(new { approval_id = approvalId, status = "authorized" });
@@ -188,8 +194,9 @@ public sealed class ApprovalCommandTests
 
     private sealed class FakeHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;
-        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = func;
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(_func(request));
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _func;
+        public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> func) => _func = req => Task.FromResult(func(req));
+        public FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> func) => _func = func;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => _func(request);
     }
 }

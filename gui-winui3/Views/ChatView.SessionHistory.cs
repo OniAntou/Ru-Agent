@@ -824,15 +824,19 @@ namespace RuApp.Views
                 var openToken = _sessionOpenCts.Token;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
+                // A preset belongs to the session it was set for. The send path
+                // pushes the composer's preset onto whichever session is open,
+                // so carrying Full Access across would silently elevate a
+                // session the user never chose it for. Plan and Standard are
+                // preferences and may follow the user; an elevation may not.
+                if (_agentPreset == AgentPermissionPreset.FullAccess
+                    && !string.Equals(_agentPresetSessionId, sessionId, StringComparison.Ordinal))
+                {
+                    SetAgentPreset(AgentPermissionPreset.Standard);
+                }
+
                 JumpToLatestForNewTurn();
                 RestoreComposerDraft(sessionId);
-                // The preset is not forced here. It used to be pinned to plan on
-                // every session open, which silently overrode whatever the
-                // session -- or the user, via Settings -- had selected: a
-                // standard session reopened in the GUI came back read-only, and
-                // the first write came back `plan_preset_requires_approval`.
-                // ResetAgentState has already set the documented default
-                // (standard); anything more specific stays the caller's choice.
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 DetachAgentActivitiesFromMessages();
                 // Bulk load: one reset notification for the whole transcript

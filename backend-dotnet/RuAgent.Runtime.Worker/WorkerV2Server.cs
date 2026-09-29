@@ -381,6 +381,36 @@ public sealed class WorkerV2Server
         && char.IsAsciiLetterLower(value[0])
         && value.All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character is '_' or '.');
 
+    /// <summary>
+    /// The first frame inside the step service, so a flat protocol_failure names
+    /// the site that raised it. Without it several throw sites produce one code
+    /// and there is no way to tell them apart after the fact.
+    /// </summary>
+    private static string StepServiceFrame(Exception error)
+    {
+        try
+        {
+            var trace = new System.Diagnostics.StackTrace(error, false);
+            foreach (var frame in trace.GetFrames() ?? [])
+            {
+                var method = frame.GetMethod();
+                var declaring = method?.DeclaringType;
+                if (declaring is null || !declaring.Name.Contains("WorkerV2StepService", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                return $"{declaring.Name}.{method!.Name}";
+            }
+        }
+        catch (Exception)
+        {
+            // A missing site is still better than a missing record.
+        }
+
+        return "unknown";
+    }
+
     private static async Task TrySendErrorAsync(
         WebSocket socket,
         SemaphoreSlim sendLock,

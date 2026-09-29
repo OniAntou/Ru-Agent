@@ -490,6 +490,12 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 case WorkerV2Contracts.Error:
                     var code = reply.Payload["code"] is JsonValue cv2 && cv2.TryGetValue<string>(out var c) ? c : "generation_failed";
                     var retryable = reply.Payload["retryable"] is JsonValue rv2 && rv2.TryGetValue<bool>(out var r) ? r : false;
+                    // The Worker's own step failures are already reported with
+                    // their cause on its stderr. This covers the codes raised here:
+                    // a frame the Worker sent that this side could not accept is
+                    // invisible from the other end, and it is the only remaining
+                    // place a run can die without a recorded cause.
+                    Console.Error.WriteLine($"ru.host step_rejected code={code} retryable={retryable}");
                     // Preserve the Worker's retry signal; the step driver retries
                     // bounded transient failures instead of failing the run.
                     throw new WorkerProtocolException(code, retryable);
@@ -532,6 +538,18 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             // next attempt instead of failing the run closed.
             selectionFeedbackCode = error.Code;
             attempt++;
+        }
+        catch (WorkerProtocolException error)
+        {
+            // A non-retryable protocol rejection used to escape this method with
+            // nothing recorded: the run ended in a flat code and the frame the
+            // Worker sent that this side refused vanished with the exception.
+            // The Host already redirects its own stderr into a log file, so one
+            // bounded line is the difference between a diagnosable failure and
+            // a guess.
+            Console.Error.WriteLine(
+                $"ru.host step_failed code={error.Code} attempt={attempt} retryable=false");
+            throw;
         }
         catch (WorkerUnavailableException) when (
             attempt + 1 < MaxModelStepAttempts

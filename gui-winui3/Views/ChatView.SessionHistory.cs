@@ -783,7 +783,10 @@ namespace RuApp.Views
             finally
             {
                 _agentActionPending = false;
-                UpdateAgentInlineState();
+                // The status described one moment of the action; once it is over
+                // the run's own status has to come back, or the composer keeps
+                // reading "Submitting approval…" over a finished turn.
+                ClearComposerStatus();
             }
         }
 

@@ -37,6 +37,17 @@ namespace RuApp.Views
         }
 
         /// <summary>
+        /// Drops a composer-local message so the live run status is shown again.
+        /// Without this a transient message ("Submitting approval…") outlives
+        /// the moment that described and keeps overwriting the run's own status.
+        /// </summary>
+        private void ClearComposerStatus()
+        {
+            _localComposerStatus = string.Empty;
+            UpdateAgentInlineState();
+        }
+
+        /// <summary>
         /// A composer-local message (a rejected attachment, a picker failure) has no
         /// run behind it, so AgentInlinePanelPolicy reports the panel hidden and
         /// <see cref="UpdateAgentInlineState"/> would erase whatever was just written.
@@ -505,16 +516,17 @@ namespace RuApp.Views
             _workspaceTrustDialogController = null;
             _isSendingUserTurn = false;
             _activeAgentUsage = null;
-            _agentPreset = AgentPermissionPreset.Standard;
+            // The preset is deliberately not reset here. It is session-scoped
+            // and owned by the user: a Full Access session reopened in the GUI
+            // came back Standard, and a Standard one came back Plan, both
+            // without a word on screen. The default is already in the field
+            // initialiser and the XAML SelectedIndex; these lines only ever
+            // narrowed what the user had chosen.
             _agentPresetSessionId = null;
             _agentPresetVersion = null;
             AbandonActiveAgentReply();
 
             UpdateAgentComposerVisuals();
-            if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 1)
-            {
-                AgentPresetBox.SelectedIndex = 1;
-            }
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             ApprovalPanel.Hide();
             AgentStopButton.Visibility = Visibility.Collapsed;
@@ -1029,7 +1041,6 @@ namespace RuApp.Views
                 BeginAgentReply(text, attachments, displayUserText, addUserMessage);
                 JumpToLatestForNewTurn();
                 ScrollChatToBottom();
-                ShowAgentInlineStatus("Preparing action…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 UpdateSendButtonMode(isAgentRunning: true);
                 UpdateAgentInlineState();

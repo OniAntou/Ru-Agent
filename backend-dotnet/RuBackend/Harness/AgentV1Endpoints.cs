@@ -10,7 +10,11 @@ public static class AgentV1Endpoints
 {
     private const int MaxJsonBodyBytes = 64 * 1024;
     private const int MaxJsonBodyBytesDefault = MaxJsonBodyBytes;
-    private const int MaxJsonBodyBytesAgentRun = 1024 * 1024;
+
+    // Four data URLs at the per-image character cap (5,600,000) plus the JSON
+    // envelope. The service-level 4MB/20MB image caps are only reachable when the
+    // transport cap is at least this large.
+    private const int MaxJsonBodyBytesAgentRun = 24 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     public static void Map(WebApplication app)

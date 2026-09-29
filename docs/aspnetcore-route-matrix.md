@@ -29,9 +29,13 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 16 entries intentionally have empty `winui_callers`: the two session
 interchange routes (`GET /sessions/{sessionId}/export` and `POST /sessions/import`),
-which the CLI and session flows drive, plus the additive `POST|GET|PUT|DELETE
-/agent/v1/*` run, policy, session-run, and workspace surface, which is driven
-through the Agent harness flow rather than direct WinUI callers.
+which the CLI and session flows drive, plus 14 additive `/agent/v1/*` routes —
+the 11 run routes (creation, run read, event stream, payload read, approvals,
+trust, cancel, continue, compact, commands, and reconcile) and the three policy
+routes (`GET`/`POST /agent/v1/policies` and `DELETE /agent/v1/policies/{ruleId}`)
+— which are driven through the Agent harness flow rather than direct WinUI
+callers. The remaining `/agent/v1/*` routes (run activities, session run listing,
+and the five workspace routes) do have direct `ApiService` callers.
 
 Empty `winui_callers` is therefore expected for these reserved lifecycle routes and is not a dead-route signal.
 

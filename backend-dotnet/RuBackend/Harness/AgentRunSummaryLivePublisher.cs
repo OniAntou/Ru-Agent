@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Protocol.Harness;
 using CoreActivityKind = RuAgent.Harness.Core.AgentActivityKind;
 using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
@@ -23,10 +24,10 @@ public sealed class AgentRunSummaryLivePublisher : IAgentActivitySink
     private readonly ConcurrentDictionary<string, AgentRunSummary> _terminalSummaries = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _terminalOrder = new();
 
-    public AgentRunSummaryLivePublisher(HarnessLiveEventHub liveEvents)
+    public AgentRunSummaryLivePublisher(HarnessLiveEventHub liveEvents, KnownSecretRedactor? secrets = null)
     {
         _liveEvents = liveEvents ?? throw new ArgumentNullException(nameof(liveEvents));
-        _activityPublisher = new AgentActivityLivePublisher(liveEvents);
+        _activityPublisher = new AgentActivityLivePublisher(liveEvents, secrets);
     }
 
     /// <summary>

@@ -372,10 +372,18 @@ namespace RuApp.Views
         /// </summary>
         private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
         {
-            if (ProviderConnectionTestPresentation.ReportsFailure(
-                    ProviderConnectionTestPresentation.Project(state)))
+            var outcome = ProviderConnectionTestPresentation.Project(state);
+            if (!ProviderConnectionTestPresentation.ReportsFailure(outcome))
             {
-                ShowProviderTestResult(ProviderConnectionTestPresentation.Project(state));
+                return;
+            }
+
+            // The catalog also refreshes on a timer, so this fires off the UI thread;
+            // touching the status controls directly would be a cross-thread write.
+            if (!DispatcherQueue.TryEnqueue(() => ShowProviderTestResult(outcome)))
+            {
+                GuiDiagnosticWriter.AppendTraceLine(
+                    "[Settings] dispatcher rejected a provider test status update during shutdown.");
             }
         }
 
@@ -737,11 +745,11 @@ namespace RuApp.Views
             _modelsDevKeyProbeRunning = true;
             try
             {
-                SetModelsDevKeyStatus("Đang kiểm tra key…", "info");
+                SetModelsDevKeyStatus("Checking key…", "info");
                 bool saved = await _apiService.SaveModelsDevKeyAsync(providerId, apiKey);
                 if (!saved)
                 {
-                    SetModelsDevKeyStatus("Lưu thất bại, thử lại.", ProviderConnectionTest.ErrorTone);
+                    SetModelsDevKeyStatus("Save failed; try again.", ProviderConnectionTest.ErrorTone);
                     return;
                 }
 
@@ -754,18 +762,18 @@ namespace RuApp.Views
                     await LoadSettingsAsync();
                     // LoadSettingsAsync clears the status line, so the success
                     // message must land after the reload, not before it.
-                    SetModelsDevKeyStatus($"Đã lưu key cho {displayId}.", ProviderConnectionTest.SuccessTone);
+                    SetModelsDevKeyStatus($"Saved key for {displayId}.", ProviderConnectionTest.SuccessTone);
                 }
                 else if (string.Equals(state?.ErrorCode, "catalog_unauthorized", StringComparison.OrdinalIgnoreCase))
                 {
                     await _apiService.RemoveProviderAsync(providerId);
-                    SetModelsDevKeyStatus("Key không hợp lệ, chưa lưu.", ProviderConnectionTest.ErrorTone);
+                    SetModelsDevKeyStatus("Invalid key; not saved.", ProviderConnectionTest.ErrorTone);
                 }
                 else
                 {
                     string code = state?.ErrorCode?.Trim() ?? "unknown";
                     SetModelsDevKeyStatus(
-                        $"Không kiểm tra được kết nối [{code}], đã giữ key.",
+                        $"Could not verify the connection [{code}]; key kept.",
                         "info");
                 }
             }

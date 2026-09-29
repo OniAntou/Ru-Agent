@@ -178,7 +178,7 @@ namespace RuApp.Views
             string? streamedReply = _activeAgentAssistantMessage is { Content: { } content }
                 ? StripDisplayMarkers(content)
                 : null;
-            var history = await _apiService.GetSessionMessagesAsync(sessionId);
+            var history = await _apiService.GetSessionMessagesAsync(sessionId, cancellationToken);
             if (history is null || cancellationToken.IsCancellationRequested || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal))
             {
                 return null;
@@ -797,6 +797,9 @@ namespace RuApp.Views
         }
 
         public async Task OpenSessionAsync(string sessionId, string title)       {
+            // Visible to the catch below: a superseded load must not paint its
+            // failure into the session that replaced it.
+            long generation = -1;
             try
             {
                 if (_apiService == null) return;
@@ -820,7 +823,7 @@ namespace RuApp.Views
                 _sessionOpenCts = new CancellationTokenSource();
                 previousOpenCts?.Cancel();
                 previousOpenCts?.Dispose();
-                var generation = ++_sessionOpenGeneration;
+                generation = ++_sessionOpenGeneration;
                 var openToken = _sessionOpenCts.Token;
                 _activeSessionTitle = string.IsNullOrWhiteSpace(title) ? "New Chat" : title;
                 ResetAgentState();
@@ -846,7 +849,7 @@ namespace RuApp.Views
                 // session out of order used to paint its history under the newer session's
                 // title, and the backend's active session (activation is a POST) could end
                 // up on a different session than the one on screen.
-                var history = await _apiService.GetSessionMessagesAsync(sessionId);
+                var history = await _apiService.GetSessionMessagesAsync(sessionId, openToken);
                 if (!IsCurrentOpen(generation)) return;
                 // Durable replay: session messages persist only role/content, so a session
                 // opened fresh would show a transcript of prose with every tool row missing.
@@ -942,6 +945,13 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"Error in OpenSessionAsync: {ex.Message}");
+                // A superseded load must not paint its failure into the session
+                // that replaced it.
+                if (!IsCurrentOpen(generation))
+                {
+                    return;
+                }
+
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "assistant",

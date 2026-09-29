@@ -196,8 +196,9 @@ public sealed partial class ToolExecutionService
                 ToolVerificationStates.NotRequired,
                 adapterInvoked: false);
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            LogAdapterFailure(request, error);
             return Result(
                 request,
                 ToolResultStatuses.Failed,
@@ -316,7 +317,7 @@ public sealed partial class ToolExecutionService
 
     private ToolPolicyDecision EvaluateWithOpScope(string sessionId, ToolManifest manifest, JsonObject arguments)
     {
-        var grant = new PolicyGrant(sessionId, _session.Scopes, _session.Descriptor.ExpiresAt);
+        var grant = new PolicyGrant(sessionId, _session.ScopesFor(sessionId), _session.Descriptor.ExpiresAt);
         var decision = _policy.Evaluate(grant, manifest);
         if (!decision.Allowed)
         {
@@ -453,7 +454,7 @@ public sealed partial class ToolExecutionService
                 adapterInvoked: false);
         }
 
-        var sessionScopes = _session.Scopes;
+        var sessionScopes = _session.ScopesFor(contextRequest.SessionId);
         var context = new ToolExecutionContext(
             contextRequest.RequestId,
             contextRequest.SessionId,
@@ -539,8 +540,9 @@ public sealed partial class ToolExecutionService
                     : "old_string was not found in the file. Re-read the file and copy the exact text including whitespace.",
                 VerificationFailure(binding));
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            LogAdapterFailure(receiptRequest, error);
             outcome = ToolExecutionOutcome.Failed(
             "adapter_error",
             "Tool adapter failed. The broker diagnostic log carries the adapter error.",

@@ -635,11 +635,19 @@ public sealed class AgentRunCoordinator
             return ApprovalResolutionState.Missing;
         }
 
+        // A committed resolution wins over the wall-clock expiry: the user did
+        // decide before (or around) the deadline, and the durable approval_resolved
+        // event is the authority. Expiry only applies while no resolution exists —
+        // otherwise approving late in the 30-minute window could fail the run
+        // after the decision was already recorded.
+        if (resolved)
+        {
+            return ApprovalResolutionState.Resolved;
+        }
+
         return ApprovalState.IsExpired(request.OccurredAt, _time.UtcNow)
             ? ApprovalResolutionState.Expired
-            : resolved
-                ? ApprovalResolutionState.Resolved
-                : ApprovalResolutionState.Pending;
+            : ApprovalResolutionState.Pending;
     }
 
     private static bool SameRetainedApproval(

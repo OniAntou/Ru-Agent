@@ -57,6 +57,10 @@ public sealed partial class AgentV1Service
             return BoundedError(400, "invalid_snapshot_hash", "snapshot_hash must be a sha-256 hex digest.");
         }
 
+        // Hex digests are case-insensitive; the host computes and stores lowercase,
+        // so a client echoing uppercase must not be reported as stale.
+        var normalizedSnapshotHash = snapshotHash.ToLowerInvariant();
+
         if (_snapshots is null || _inspectionGate is null)
         {
             return BoundedError(409, "reconciliation_unavailable", "Reconciliation services are not available.");
@@ -83,7 +87,7 @@ public sealed partial class AgentV1Service
 
         var intentCode = reconciliation.IntentCode;
         var freshHash = await _snapshots.ComputeFreshHashAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (freshHash is null || !string.Equals(freshHash, snapshotHash, StringComparison.Ordinal))
+        if (freshHash is null || !string.Equals(freshHash, normalizedSnapshotHash, StringComparison.Ordinal))
         {
             return new AgentServiceResult(409, new
             {
@@ -272,7 +276,7 @@ public sealed partial class AgentV1Service
                     run.Version);
 
             case AgentCommandKind.Skills:
-                return await DispatchSkillsAsync(run, runIdRaw, cancellationToken).ConfigureAwait(false);
+                return DispatchSkills(run, runIdRaw, cancellationToken);
 
             case AgentCommandKind.Compact:
             {
@@ -292,19 +296,18 @@ public sealed partial class AgentV1Service
             }
 
             case AgentCommandKind.Skill:
-                return await DispatchSkillAsync(run, runIdRaw, command, cancellationToken).ConfigureAwait(false);
+                return DispatchSkill(run, runIdRaw, command, cancellationToken);
 
             default:
                 return BoundedError(400, "command_invalid", "Unsupported Agent command.");
         }
     }
 
-    private async Task<AgentServiceResult> DispatchSkillsAsync(
+    private AgentServiceResult DispatchSkills(
         AgentRun run,
         string runIdRaw,
         CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
         var workspaceRoot = ResolveRunWorkspaceRoot(run.RunId);
         if (workspaceRoot is null)
         {
@@ -317,7 +320,7 @@ public sealed partial class AgentV1Service
             Path.Combine(workspaceRoot, "skills"),
             Path.Combine(workspaceRoot, ".ru", "skills"),
         };
-        var loaded = loader.Load(roots);
+        var loaded = loader.Load(roots, cancellationToken);
         var items = loaded.Skills
             .OrderBy(skill => skill.Id, StringComparer.Ordinal)
             .Select(skill => new
@@ -329,13 +332,12 @@ public sealed partial class AgentV1Service
         return CommandSucceeded(runIdRaw, "skills", new { items }, run.Version);
     }
 
-    private async Task<AgentServiceResult> DispatchSkillAsync(
+    private AgentServiceResult DispatchSkill(
         AgentRun run,
         string runIdRaw,
         AgentCommand command,
         CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
         if (command.SkillId is null)
         {
             return BoundedError(400, "command_invalid", "Skill requires a skill name.");
@@ -353,7 +355,7 @@ public sealed partial class AgentV1Service
             Path.Combine(workspaceRoot, "skills"),
             Path.Combine(workspaceRoot, ".ru", "skills"),
         };
-        var loaded = loader.Load(roots);
+        var loaded = loader.Load(roots, cancellationToken);
         var skill = loaded.Skills.FirstOrDefault(item =>
             string.Equals(item.Id, command.SkillId, StringComparison.OrdinalIgnoreCase));
         if (skill is null)

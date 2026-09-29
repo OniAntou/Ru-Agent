@@ -286,8 +286,6 @@ public sealed partial class AgentV1Service
         {
             if (clientVersion is null)
             {
-                var idemShaCheck = ComputeSha256(idempotencyKey);
-                await FindIdempotentNormalizedHashAsync(sessionIdRaw, idemShaCheck, cancellationToken).ConfigureAwait(false);
                 effectiveVersion = existingSelection.Version;
             }
             else
@@ -439,7 +437,8 @@ public sealed partial class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(400, ex.Code ?? "harness_error", ex.Message);
+            _logger?.LogWarning(ex, "create run failed");
+            return BoundedError(400, ex.Code ?? "harness_error", "Unable to create run.");
         }
 
         if (storeResult.Outcome == CreateRunOutcome.Created)
@@ -653,7 +652,8 @@ public sealed partial class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(500, ex.Code ?? "payload_error", ex.Message);
+            _logger?.LogWarning(ex, "payload read failed");
+            return BoundedError(500, ex.Code ?? "payload_error", "Unable to read payload.");
         }
     }
 
@@ -697,19 +697,20 @@ public sealed partial class AgentV1Service
             return new AgentServiceResult(200, MapRun(run));
         }
 
-        // Stop live terminal processes before committing the durable cancelled
-        // projection. The runtime registry points at the same per-run coordinator
-        // that owns the gateway/Job Object; merely changing SQLite state leaves a
-        // child process running.
-        if (_runtimeRoots is not null)
-        {
-            await _runtimeRoots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
-        }
-
         var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Cancel);
         if (!transition.Accepted)
         {
             return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Cancel rejected.");
+        }
+
+        // Stop live terminal processes before committing the durable cancelled
+        // projection. The runtime registry points at the same per-run coordinator
+        // that owns the gateway/Job Object; merely changing SQLite state leaves a
+        // child process running. The transition is validated first so a rejected
+        // cancel cannot kill a healthy run's tools.
+        if (_runtimeRoots is not null)
+        {
+            await _runtimeRoots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
         }
 
         var now = _time.UtcNow;
@@ -782,13 +783,11 @@ public sealed partial class AgentV1Service
 
         // An explicit user Continue overrides the inspection gate: the user has
         // seen the ambiguous outcome and chosen to proceed. The override is
-        // audited beside the continue request.
-        var gateCleared = false;
-        if (_inspectionGate is { } gate && gate.IsMutationDenied(runId))
-        {
-            gate.RecordInspection(runId);
-            gateCleared = true;
-        }
+        // audited beside the continue request and is applied only after the
+        // durable commit succeeds, so a commit conflict cannot leave the
+        // in-memory gate open while the durable state still says otherwise.
+        var inspectionGate = _inspectionGate;
+        var gateCleared = inspectionGate is not null && inspectionGate.IsMutationDenied(runId);
 
         var now = _time.UtcNow;
         var (nextRun, commitEvents) = PlanContinueCommit(run, transition.Next, gateCleared, _ids, now);
@@ -798,6 +797,11 @@ public sealed partial class AgentV1Service
         if (result.Outcome != HarnessCommitOutcome.Committed)
         {
             return BoundedError(409, "commit_conflict", "Commit conflict.");
+        }
+
+        if (gateCleared)
+        {
+            inspectionGate!.RecordInspection(runId);
         }
 
         return new AgentServiceResult(200, MapRun(result.Run!));
@@ -948,17 +952,6 @@ public sealed partial class AgentV1Service
             terminalAt,
             terminalErrorCode,
             current.PermissionProfileVersion);
-    }
-
-    private async Task<string?> FindIdempotentNormalizedHashAsync(string sessionId, string idempotencySha, CancellationToken ct)
-    {
-        await using var conn = await OpenHarnessConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT normalized_request_sha256 FROM agent_runs WHERE session_id = $sid AND idempotency_key_sha256 = $key LIMIT 1";
-        cmd.Parameters.AddWithValue("$sid", sessionId);
-        cmd.Parameters.AddWithValue("$key", idempotencySha);
-        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return result as string;
     }
 
     // Helpers (slice 1: pure logic lives in AgentV1Shared; wrappers keep API stable)

@@ -990,9 +990,13 @@ internal sealed class AgentToolExecutionPipeline
             }
             catch (ToolTransportException) when (attempt < maximumAttempts)
             {
-                // One retry for transport blips regardless of access kind: the
-                // call never reached the tool, so retrying cannot double-apply a
-                // mutation. The second failure still reports terminally below.
+                // One retry for transport blips. A non-read-only call only lets a
+                // ToolTransportException escape the gateway when the gateway can
+                // attest the request was never dispatched; post-dispatch mutation
+                // failures are converted into an OutcomeUnknown receipt at the
+                // broker gateway instead of thrown. Read-only calls may retry
+                // even after dispatch because a read cannot double-apply. The
+                // second failure still reports terminally below.
                 if (proposals.TryGetValue(execution.ModelOrder, out var retryProposal))
                 {
                     AgentActivityProjector.PublishSafe(

@@ -3,8 +3,10 @@ using RuAgent.Harness.Core.Policy;
 namespace RuAgent.Harness.Core.Approval;
 
 /// <summary>
-/// The immutable canonical intent one pending approval is bound to. Any change to any
-/// field produces a new hash and therefore a stale approval, per the approved design.
+/// The immutable canonical intent one pending approval is bound to. Any change to a
+/// field compared by <see cref="ApprovalState.SameBinding"/> makes the approval stale;
+/// <see cref="ExpiresAt"/> is the exception — it is enforced as its own expiry check,
+/// not as a binding field, so it is not part of SameBinding.
 /// </summary>
 public sealed record ToolApprovalBinding
 {

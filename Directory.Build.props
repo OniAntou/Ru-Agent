@@ -15,7 +15,9 @@
   -->
   <PropertyGroup>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <AnalysisLevel>latest</AnalysisLevel>
+    <!-- Pinned so a newer SDK cannot silently enable a larger analyzer set on the
+         same source and turn the warning-free build red on another machine. -->
+    <AnalysisLevel>10.0</AnalysisLevel>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
   </PropertyGroup>
 

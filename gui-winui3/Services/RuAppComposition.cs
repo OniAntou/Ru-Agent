@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Microsoft.UI.Dispatching;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
@@ -7,6 +8,13 @@ namespace RuApp.Services;
 public sealed class RuAppComposition : IDisposable
 {
     private readonly AgentAuditLog _auditLog = new();
+
+    // Long-lived clients: one per composition, shared by every run it drives.
+    // Creating an HttpClient per run/stream wastes sockets on TIME_WAIT reuse,
+    // and mutating a shared client's timeout is not an option, so the API and
+    // SSE transports get separate instances.
+    private HttpClient? _agentApiHttpClient;
+    private HttpClient? _agentSseHttpClient;
 
     private RuAppComposition(
         IRuBackendSessionProvider backendProvider,
@@ -88,6 +96,8 @@ public sealed class RuAppComposition : IDisposable
         HarnessEvents?.Dispose();
         BackendProvider.Dispose();
         _auditLog.Dispose();
+        _agentApiHttpClient?.Dispose();
+        _agentSseHttpClient?.Dispose();
     }
 
     public static PublicHostSession ToPublicHostSession(BackendSession session)
@@ -111,16 +121,26 @@ public sealed class RuAppComposition : IDisposable
             return null;
         }
 
-        var client = new AgentRunClientAdapter(ToPublicHostSession(session));
-        Action<Action>? synchronize = dispatcher is null ? null : action =>
+        _agentApiHttpClient ??= new HttpClient(new SocketsHttpHandler
         {
-            if (!dispatcher.TryEnqueue(() => action()))
-            {
-                // During shutdown the dispatcher may reject work. Preserve the
-                // state transition instead of dropping it silently.
-                action();
-            }
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        });
+        _agentSseHttpClient ??= new HttpClient(new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        })
+        {
+            // An SSE connection is long-lived by design; the caller token bounds
+            // it. Sharing the API client would impose its request timeout instead.
+            Timeout = Timeout.InfiniteTimeSpan,
         };
+
+        var hostSession = ToPublicHostSession(session);
+        var client = new AgentRunClientAdapter(
+            hostSession,
+            _agentApiHttpClient,
+            sseHttpClient: _agentSseHttpClient);
+        Action<Action>? synchronize = dispatcher is null ? null : action => DispatchToUi(dispatcher, action);
         return new AgentRunController(client, HarnessEvents, synchronize, _auditLog.Record);
     }
 
@@ -133,13 +153,28 @@ public sealed class RuAppComposition : IDisposable
         }
 
         var client = new AgentApiClient(ToPublicHostSession(session));
-        Action<Action>? synchronize = dispatcher is null ? null : action =>
-        {
-            if (!dispatcher.TryEnqueue(() => action()))
-            {
-                action();
-            }
-        };
+        Action<Action>? synchronize = dispatcher is null ? null : action => DispatchToUi(dispatcher, action);
         return new AgentPolicyController(client, synchronize);
+    }
+
+    /// <summary>
+    /// Marshals an action onto the UI thread. On the UI thread it runs inline;
+    /// when the dispatcher has closed (shutdown), it is dropped and traced —
+    /// running a UI-bound assignment on the calling pool thread is corruption,
+    /// not a fallback.
+    /// </summary>
+    private static void DispatchToUi(DispatcherQueue dispatcher, Action action)
+    {
+        if (dispatcher.HasThreadAccess)
+        {
+            action();
+            return;
+        }
+
+        if (!dispatcher.TryEnqueue(() => action()))
+        {
+            GuiDiagnosticWriter.AppendTraceLine(
+                "[RuAppComposition] dispatcher rejected a UI transition during shutdown; update dropped.");
+        }
     }
 }

@@ -54,6 +54,23 @@ public sealed class AgentTurnQueueUiSourceContractTests
     }
 
     [Fact]
+    public void A_turn_that_did_not_start_is_put_back_in_the_queue()
+    {
+        // A handover that never became a run (a run still in hand, a declined
+        // Full Access confirmation) must not consume the turn.
+        string code = GuiSource.ViewText("ChatView");
+
+        Assert.Contains(
+            "Task<bool> SendAgentTurnAsync",
+            code,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RequeueFirst",
+            GuiSource.MethodBody(code, "DrainQueuedTurnsAsync"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Switching_session_drops_the_queue()
     {
         string code = GuiSource.ViewText("ChatView");

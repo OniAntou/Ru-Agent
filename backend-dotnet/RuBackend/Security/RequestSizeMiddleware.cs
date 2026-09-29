@@ -19,6 +19,11 @@ public sealed class RequestSizeMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var maxBytes = _options.Value.MaxRequestBodyBytes;
+        if (context.Request.Path.Equals("/agent/v1/runs", StringComparison.OrdinalIgnoreCase))
+        {
+            maxBytes = Math.Max(maxBytes, _options.Value.AgentRunMaxRequestBodyBytes);
+        }
+
         if (maxBytes < 0)
         {
             maxBytes = 0;

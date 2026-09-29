@@ -53,8 +53,16 @@ public sealed class AgentRunControllerTests
         public bool ThrowOnSubscribe;
         public string PayloadContent { get; set; } = "{}";
         public TaskCompletionSource<bool>? SubscriptionGate;
-        public Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
-            => Task.FromResult(Run!);
+        public TaskCompletionSource<bool>? CreateRunGate;
+        public async Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
+        {
+            if (CreateRunGate is not null)
+            {
+                await CreateRunGate.Task.ConfigureAwait(false);
+            }
+
+            return Run!;
+        }
 
         public Task<AgentRunModel> GetRunAsync(string runId, CancellationToken ct = default)
         {
@@ -284,6 +292,67 @@ public sealed class AgentRunControllerTests
         Assert.Equal("Xin chào", item.Text);
         Assert.Equal(7, item.TransientSequence);
         Assert.True(dispatches > 0);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_does_not_drop_a_delta_that_arrives_before_the_ui_queue_runs()
+    {
+        // The SSE thread reads _currentRunId; from the moment the create call is
+        // released, the UI queue is held back the way it is while the dispatcher
+        // is busy. Assigning the id inside the queued lambda would leave it null
+        // and silently drop this frame.
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            CreateRunGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        fake.AssistantDeltaStream.Add(new AgentAssistantDeltaModel(
+            "first",
+            "step_0123456789abcdef0123456789abcdef",
+            null,
+            1));
+        var queued = new List<Action>();
+        var defer = false;
+        var received = new List<AgentAssistantDeltaModel>();
+        var controller = new AgentRunController(
+            fake,
+            synchronize: action =>
+            {
+                if (defer)
+                {
+                    queued.Add(action);
+                }
+                else
+                {
+                    action();
+                }
+            });
+        controller.AssistantDeltaReceived += (_, item) => received.Add(item);
+
+        var runTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1",
+            "C:\\work",
+            "do it",
+            "standard",
+            null,
+            "idem-delta-race"));
+
+        defer = true;
+        fake.CreateRunGate.SetResult(true);
+        await runTask;
+
+        Assert.Empty(received);
+        int safety = 0;
+        while (queued.Count > 0 && safety++ < 100)
+        {
+            // A UI action can marshal further work, so the queue grows while drained.
+            var action = queued[0];
+            queued.RemoveAt(0);
+            action();
+        }
+
+        var item = Assert.Single(received);
+        Assert.Equal("first", item.Text);
     }
 
     [Fact]

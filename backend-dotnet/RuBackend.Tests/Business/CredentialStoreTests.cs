@@ -72,15 +72,27 @@ public sealed class CredentialStoreTests
     }
 
     [Fact]
-    public async Task Set_rejects_an_oversized_secret_before_calling_Windows()
+    public async Task Set_rejects_a_secret_over_the_windows_blob_limit_before_calling_Windows()
     {
         var native = new FakeWindowsCredentialApi();
         var store = new WindowsCredentialStore(native);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            store.SetAsync("mini_gpt", "api_key", new string('x', 32 * 1024 + 1), CancellationToken.None));
+            store.SetAsync("mini_gpt", "api_key", new string('x', 1281), CancellationToken.None));
 
         Assert.Empty(native.Values);
+    }
+
+    [Fact]
+    public async Task Set_accepts_the_maximum_windows_blob_secret()
+    {
+        var native = new FakeWindowsCredentialApi();
+        var store = new WindowsCredentialStore(native);
+        var secret = new string('x', 1280);
+
+        await store.SetAsync("mini_gpt", "api_key", secret, CancellationToken.None);
+
+        Assert.Equal(new WindowsCredentialEntry("api_key", secret), native.Values["mini_gpt"]);
     }
 
     [Fact]

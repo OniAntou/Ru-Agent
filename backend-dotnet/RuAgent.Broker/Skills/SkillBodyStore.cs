@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Skills;
 
@@ -98,7 +99,26 @@ public sealed class SkillBodyStore
                 return null;
             }
 
-            var read = ReadSkillFile(skillFile, fullRoot);
+            // A SKILL.md reached through a link could name a file outside the
+            // skill root it was discovered under. Resolve the final path and read
+            // only that, so a reparse point cannot escape its root.
+            string canonicalFile;
+            try
+            {
+                var resolved = new CanonicalPathResolver(fullRoot).Resolve(skillFile);
+                if (!resolved.IsInsideWorkspace)
+                {
+                    return null;
+                }
+
+                canonicalFile = resolved.CanonicalPath;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+
+            var read = ReadSkillFile(canonicalFile);
             if (read is null)
             {
                 return null;
@@ -112,7 +132,7 @@ public sealed class SkillBodyStore
         return null;
     }
 
-    private static string? ReadSkillFile(string path, string root)
+    private static string? ReadSkillFile(string path)
     {
         try
         {

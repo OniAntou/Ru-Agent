@@ -156,6 +156,42 @@ public sealed partial class AgentConnection
         messageType is AgentMessageTypes.ToolEvaluate
             or AgentMessageTypes.ToolExecute;
 
+    /// <summary>
+    /// Bounded, redacted diagnostic for a handler exception. Only the request id
+    /// and the exception type reach stderr: the reply contract and any payload
+    /// or message content stay untouched.
+    /// </summary>
+    private static void LogToolHandlerFailure(AgentEnvelope request, Exception error)
+    {
+        try
+        {
+            Console.Error.WriteLine(
+                $"ru.broker tool_handler_failed request_id={BoundDiagnostic(request.RequestId)} exception={error.GetType().Name}");
+        }
+        catch
+        {
+            // A diagnostic must never change the outcome of a tool request.
+        }
+    }
+
+    private static string BoundDiagnostic(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "-";
+        }
+
+        var length = Math.Min(value.Length, 128);
+        var builder = new StringBuilder(length);
+        for (var index = 0; index < length; index++)
+        {
+            var character = value[index];
+            builder.Append(char.IsControl(character) ? '_' : character);
+        }
+
+        return builder.ToString();
+    }
+
     private async Task DispatchRequestAsync(
         WebSocket socket,
         AgentEnvelope request,
@@ -170,8 +206,12 @@ public sealed partial class AgentConnection
         {
             return;
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            // The wire reply stays bounded and redacted; the stderr diagnostic
+            // names the request and exception type so a flat tool_handler_failed
+            // is discoverable. Payload and message never travel.
+            LogToolHandlerFailure(request, error);
             reply = ToolError(request, "tool_handler_failed", "tool request failed");
         }
 
@@ -213,8 +253,9 @@ public sealed partial class AgentConnection
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            LogToolHandlerFailure(request, error);
             return ToolError(request, "tool_handler_failed", "tool request failed");
         }
     }
@@ -342,7 +383,7 @@ public sealed partial class AgentConnection
         return Reply(request, AgentMessageTypes.SessionOpened, new JsonObject
         {
             ["status"] = ToolResultStatuses.Succeeded,
-            ["scopes"] = new JsonArray(_session.Scopes
+            ["scopes"] = new JsonArray(_session.ScopesFor(request.SessionId)
                 .OrderBy(scope => scope, StringComparer.Ordinal)
                 .Select(scope => (JsonNode?)scope).ToArray()),
             ["safe_summary"] = "session opened",
@@ -399,7 +440,7 @@ public sealed partial class AgentConnection
         if (_session.Owns(request.SessionId))
         {
             capabilities = capabilities
-                .Where(capability => capability.Scopes.All(_session.Scopes.Contains))
+                .Where(capability => capability.Scopes.All(_session.ScopesFor(request.SessionId).Contains))
                 .ToArray();
         }
         else

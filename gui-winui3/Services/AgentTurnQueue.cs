@@ -150,6 +150,16 @@ public sealed class AgentTurnQueue
         return first;
     }
 
+    /// <summary>
+    /// Puts a taken turn back at the head of the queue. Used when a handover
+    /// could not start a run, so the turn is not lost with its order intact.
+    /// </summary>
+    public void RequeueFirst(QueuedAgentTurn turn)
+    {
+        ArgumentNullException.ThrowIfNull(turn);
+        Items.Insert(0, turn);
+    }
+
     /// <summary>Drops one turn by identity, so two identical turns stay distinguishable.</summary>
     public bool Remove(QueuedAgentTurn turn)
     {

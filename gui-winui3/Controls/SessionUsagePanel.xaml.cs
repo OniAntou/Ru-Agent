@@ -34,9 +34,21 @@ namespace RuApp.Controls
         /// </summary>
         private static readonly TimeSpan LedgerArrival = TimeSpan.FromMilliseconds(180);
 
+        // One read at a time: a second open cancels the first, and a late answer
+        // from the old session never paints over the new one.
+        private CancellationTokenSource? _loadCts;
+        private long _loadGeneration;
+
         public SessionUsagePanel()
         {
             InitializeComponent();
+            Unloaded += (_, _) =>
+            {
+                // Cancel only: the in-flight read still holds this token, so
+                // disposing here could surface an ObjectDisposedException mid-walk.
+                // The next LoadAsync disposes it.
+                _loadCts?.Cancel();
+            };
         }
 
         /// <summary>
@@ -88,15 +100,32 @@ namespace RuApp.Controls
             PaintShareCell(CacheReadShareBar, CacheReadValueText, "—", 0, "RuInfoBrush", false);
             PaintShareCell(CacheWriteShareBar, CacheWriteValueText, "—", 0, "RuPinkBrush", false);
 
+            var previous = _loadCts;
+            _loadCts = new CancellationTokenSource();
+            previous?.Cancel();
+            previous?.Dispose();
+            var generation = ++_loadGeneration;
+            var token = _loadCts.Token;
+
             IReadOnlyList<SessionUsageRow>? rows;
             try
             {
-                rows = await api.ListSessionUsageAsync(sessionId, CancellationToken.None);
+                rows = await api.ListSessionUsageAsync(sessionId, token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return;
             }
             catch (Exception exception)
             {
                 GuiDiagnosticWriter.AppendTraceLine($"Session usage read failed: {exception.Message}");
                 rows = null;
+            }
+
+            if (generation != _loadGeneration)
+            {
+                // A newer open took over while this read was in flight.
+                return;
             }
 
             Render(rows, SessionUsagePricing.RatesFrom(catalog));

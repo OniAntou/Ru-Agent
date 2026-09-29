@@ -346,7 +346,9 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
     private static string? OptionalSecret(JsonObject payload, string key)
     {
         var value = OptionalString(payload, key, 4096);
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        // Secrets are stored byte-exact: surrounding whitespace can be part of a
+        // pasted key, so only an empty value is rejected here.
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static string? OptionalString(JsonObject payload, string key, int maximum)

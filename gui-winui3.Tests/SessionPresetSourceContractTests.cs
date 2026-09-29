@@ -83,7 +83,7 @@ public sealed class SessionPresetSourceContractTests
         // composer channel is the one that outlives every refresh.
         Assert.DoesNotContain(
             "ShowAgentInlineStatus(\"Preparing action",
-            Body("ChatView.AgentRun.cs", "private async Task SendAgentTurnAsync"),
+            Body("ChatView.AgentRun.cs", "private async Task<bool> SendAgentTurnAsync"),
             StringComparison.Ordinal);
     }
 }

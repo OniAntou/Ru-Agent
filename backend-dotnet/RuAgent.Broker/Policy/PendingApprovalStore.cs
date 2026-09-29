@@ -274,20 +274,26 @@ public sealed class PendingApprovalStore
             return new V2ApprovalResolution(V2ApprovalOutcome.NotFound);
         }
 
+        if (candidate.ExpiresAt <= now)
+        {
+            _v2.TryRemove(new KeyValuePair<string, V2PendingApproval>(approvalId, candidate));
+            return new V2ApprovalResolution(V2ApprovalOutcome.Expired);
+        }
+
+        // A response that does not match the issued binding must not consume it:
+        // the identifier is opaque, and a stray or replayed mismatch would
+        // otherwise destroy the pending approval the real caller still needs.
+        // Binding and expiry are validated while the entry is still present, then
+        // the conditional remove below decides the single winner atomically.
+        if (!SameBindingV2(candidate.Binding, expectedBinding))
+        {
+            return new V2ApprovalResolution(V2ApprovalOutcome.Stale);
+        }
+
         // One-time consumption: remove first, exactly one winner.
         if (!_v2.TryRemove(new KeyValuePair<string, V2PendingApproval>(approvalId, candidate)))
         {
             return new V2ApprovalResolution(V2ApprovalOutcome.NotFound);
-        }
-
-        if (candidate.ExpiresAt <= now)
-        {
-            return new V2ApprovalResolution(V2ApprovalOutcome.Expired);
-        }
-
-        if (!SameBindingV2(candidate.Binding, expectedBinding))
-        {
-            return new V2ApprovalResolution(V2ApprovalOutcome.Stale);
         }
 
         if (command == ApprovalCommandV2.Deny)

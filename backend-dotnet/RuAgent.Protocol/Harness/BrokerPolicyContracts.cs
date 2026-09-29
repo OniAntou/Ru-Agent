@@ -130,7 +130,9 @@ public static class BrokerPolicyContracts
     /// <summary>
     /// Computes the SHA-256 lowercase hex hash over the canonical UTF-8 encoding of the snapshot.
     /// Mirrors the Core canonicalizer layout byte-for-byte: version, preset, workspace,
-    /// ordered_rules (rule_id, scope, decision, matcher, creation_order, expires_at), created_at.
+    /// ordered_rules (rule_id, scope, decision, matcher, creation_order, expires_at).
+    /// <c>created_at</c> stays on the wire as metadata but is deliberately excluded from the
+    /// hash so a snapshot re-loaded after a restart still matches its durable hash.
     /// </summary>
     public static string ComputeCanonicalSnapshotHash(BrokerPolicySnapshotWire snapshot)
     {
@@ -183,8 +185,6 @@ public static class BrokerPolicyContracts
             }
 
             writer.WriteEndArray();
-
-            writer.WriteString("created_at", NormalizeTimestamp(snapshot.CreatedAt));
             writer.WriteEndObject();
         }
 

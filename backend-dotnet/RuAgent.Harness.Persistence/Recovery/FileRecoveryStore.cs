@@ -224,14 +224,20 @@ public sealed class FileRecoveryStore
             throw new HarnessStoreException("payload_recovery_consumed");
         }
 
-        // Decrypt payload bytes via payload store (this also marks consumed_at_utc in agent_payloads)
-        // We need to fetch the encrypted payload directly and decrypt, but also mark payload consumed
-        // Use HarnessPayloadStore.ReadRecoveryOnceAsync – it handles transaction internally, but we already are in transaction.
-        // To avoid double transaction, we will manually load and decrypt.
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        // Decrypt and mark the payload consumed on this same transaction. The
+        // mapping marker above and the payload marker now commit or roll back
+        // together: a crash can no longer commit "consumed" without the bytes
+        // having been handed back at least once.
+        var content = await _payloadStore.ReadRecoveryOnceAsync(
+                connection,
+                transaction,
+                runId,
+                recoveryId,
+                now,
+                cancellationToken)
+            .ConfigureAwait(false);
 
-        // Now use the payload store's recovery read which does its own transaction and marks payload consumed
-        var content = await _payloadStore.ReadRecoveryOnceAsync(runId, recoveryId, now, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return content.Plaintext.ToArray();
     }
 

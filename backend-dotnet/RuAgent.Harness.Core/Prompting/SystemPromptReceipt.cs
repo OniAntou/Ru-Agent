@@ -20,9 +20,9 @@ public sealed record SystemPromptReceipt
     public const string SupportedComposerVersion = "2.0.0";
 
     /// <summary>
-    /// A deterministic receipt for the transitional empty context used by legacy
-    /// direct-runner test fixtures. Production requests are always bound to a
-    /// root-derived context before dispatch.
+    /// A deterministic receipt for the transitional empty context. It is kept for
+    /// fixture shape compatibility only: <see cref="ValidateAgainst(SystemPromptContext)"/>
+    /// rejects it, because a zero prompt digest never comes from a rendered prompt.
     /// </summary>
     public static SystemPromptReceipt Empty => new(
         SupportedComposerVersion,
@@ -86,6 +86,15 @@ public sealed record SystemPromptReceipt
             || !PromptHash.IsLowerHexSha256(PromptSha256))
         {
             throw new ArgumentException("Invalid prompt receipt version or digest.");
+        }
+
+        // A zero prompt digest is the transitional test fixture shape, never a
+        // receipt of a rendered prompt: the chance of a real SHA-256 being all
+        // zeros is negligible, so accepting it would let a fabricated receipt
+        // through as evidence.
+        if (PromptSha256.All(character => character == '0'))
+        {
+            throw new ArgumentException("Prompt receipt does not bind a rendered prompt.");
         }
 
         var expectedIds = new List<string>

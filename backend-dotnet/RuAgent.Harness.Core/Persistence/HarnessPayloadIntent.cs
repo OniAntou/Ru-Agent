@@ -2,17 +2,17 @@ namespace RuAgent.Harness.Core.Persistence;
 
 public enum HarnessPayloadKind
 {
-    UserPrompt,
-    AssistantText,
-    ToolArguments,
-    ToolOutput,
-    Diff,
-    ContinuationSummary,
-    RecoveryOpaque,
-    AssistantStep,
-    ModelContextBase,
-    ModelContextSummary,
-    PromptReceipt,
+    UserPrompt = 0,
+    AssistantText = 1,
+    ToolArguments = 2,
+    ToolOutput = 3,
+    Diff = 4,
+    ContinuationSummary = 5,
+    RecoveryOpaque = 6,
+    AssistantStep = 7,
+    ModelContextBase = 8,
+    ModelContextSummary = 9,
+    PromptReceipt = 10,
     UserImage = 11,
     ModelUsage = 12,
     ModelContextNote = 13,
@@ -30,9 +30,9 @@ public enum HarnessPayloadAudience
 
 public enum HarnessPayloadEncoding
 {
-    Utf8Text,
-    Json,
-    Opaque,
+    Utf8Text = 0,
+    Json = 1,
+    Opaque = 2,
 }
 
 public sealed record HarnessPayloadIntent

@@ -224,6 +224,62 @@ public sealed class CanonicalPathResolverTests : IDisposable
     }
 
     [Fact]
+    public void Alternate_data_stream_hidden_behind_a_file_link_is_rejected()
+    {
+        var target = Path.Combine(_root, "src", "a.txt");
+        var streamed = target + ":evil";
+        if (!TryCreateAds(streamed))
+        {
+            return;
+        }
+
+        var link = Path.Combine(_root, "ads-link.txt");
+        if (!TryCreateFileLink(link, streamed))
+        {
+            return;
+        }
+
+        try
+        {
+            var ex = Assert.Throws<ArgumentException>(() => _resolver.Resolve("ads-link.txt"));
+            Assert.Contains("Alternate data streams", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(link);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    private static bool TryCreateAds(string streamedPath)
+    {
+        try
+        {
+            var info = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c echo hidden> \"{streamedPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var process = System.Diagnostics.Process.Start(info);
+            process?.WaitForExit(5_000);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    [Fact]
     public void Broken_link_is_classified_by_its_target_not_its_location()
     {
         var missingTarget = Path.Combine(Path.GetTempPath(), "ru-broken-target-" + Guid.NewGuid().ToString("N"));

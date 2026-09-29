@@ -220,7 +220,18 @@ public class BrokerToolGatewayFactory : IAsyncDisposable
 
         if (gateway is not null)
         {
-            gateway.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _ = DisposeGatewayAsync(gateway);
+        }
+    }
+
+    private static async Task DisposeGatewayAsync(BrokerToolGateway gateway)
+    {
+        try
+        {
+            await gateway.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
         }
     }
 

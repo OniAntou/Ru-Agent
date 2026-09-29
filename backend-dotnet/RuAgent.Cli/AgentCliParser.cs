@@ -177,7 +177,7 @@ public static class AgentCliParser
     public const int MaxSessionIdLength = 64;
     public const int MaxRunIdLength = 36;
     public const int MaxPresetLength = 16;
-    public const int MaxApprovalIdLength = 128;
+    public const int MaxApprovalIdLength = 36;
     public const int MaxRuleIdLength = 37;
     public const int MaxFilePathLength = 4096;
 
@@ -969,10 +969,13 @@ public static class AgentCliParser
 
     private static AgentCliParseResult? ValidateApprovalId(string approvalId)
     {
-        if (approvalId.Length > MaxApprovalIdLength || approvalId.Length < 4)
-            return Fail("invalid_approval_id", $"Approval id length must be 1..{MaxApprovalIdLength}.");
-        if (!ApprovalIdRegex.IsMatch(approvalId) && !approvalId.StartsWith("apr_", StringComparison.Ordinal))
-            return Fail("invalid_approval_id", $"Approval id must match apr_[0-9a-f]{{32}} or be apr_ prefixed. Got '{approvalId}'.");
+        // Exactly the format the host mints (apr_ + 32 lowercase hex). Accepting
+        // any apr_-prefixed token let a truncated or mistyped id through to a 404
+        // that reads like the approval no longer exists.
+        if (approvalId.Length != MaxApprovalIdLength)
+            return Fail("invalid_approval_id", $"Approval id must be length {MaxApprovalIdLength} (apr_ + 32 hex). Got {approvalId.Length}.");
+        if (!ApprovalIdRegex.IsMatch(approvalId))
+            return Fail("invalid_approval_id", $"Approval id must match apr_[0-9a-f]{{32}}. Got '{approvalId}'.");
         return null;
     }
 

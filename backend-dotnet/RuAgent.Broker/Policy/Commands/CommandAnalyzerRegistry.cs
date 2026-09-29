@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Policy.Commands;
@@ -23,6 +24,20 @@ public sealed class CommandAnalyzerRegistry
         new RipgrepCommandAnalyzer(),
     ];
 
+    // Pure diagnostics flags have no side effects for the executable families
+    // this registry recognizes: `git --version` and `python --version` used to
+    // ask on every call. The shortcut is deliberately limited to those known
+    // families — an arbitrary PATH binary with `--version`/`--help`/`-h` stays
+    // Unknown and asks, because its identity gives no reason to trust it.
+    // Downstream checks (path-qualified executable, cwd, network, argv paths)
+    // still apply. Shell scripts keep fail-closed and never take this path.
+    private static readonly FrozenSet<string> DiagnosticsExecutables =
+        new[]
+        {
+            "git", "dotnet", "python", "python3", "py",
+            "pytest", "ruff", "mypy", "pip", "pip3", "rg",
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     public CommandAnalysis Analyze(string? resolvedExecutable, IReadOnlyList<string> argv, bool allowDiagnosticsAuto = true)
     {
         if (string.IsNullOrWhiteSpace(resolvedExecutable))
@@ -36,12 +51,9 @@ public sealed class CommandAnalyzerRegistry
             return new(Version, TerminalOperationClass.DirectDelete, "none", "terminal_direct_delete");
         }
 
-        // Pure diagnostics flags have no side effects for any executable:
-        // `git --version` and `python --version` used to ask on every call.
-        // Downstream checks (path-qualified executable, cwd, network, argv
-        // paths) still apply, so this only removes the unknown-executable ask.
-        // Shell scripts keep fail-closed and never take this path.
-        if (allowDiagnosticsAuto && IsDiagnosticsOnly(argv))
+        if (allowDiagnosticsAuto
+            && DiagnosticsExecutables.Contains(baseName)
+            && IsDiagnosticsOnly(argv))
         {
             return new(Version, TerminalOperationClass.ReadOnly, "none", "diagnostics_flag");
         }

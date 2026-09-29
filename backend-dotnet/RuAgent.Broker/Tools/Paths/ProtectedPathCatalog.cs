@@ -64,9 +64,11 @@ public static class ProtectedPathCatalog
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries);
 
-        // .git/** at any depth, and .env* files at any depth.
-        foreach (var segment in segments)
+        // .git/** at any depth, and .env* files at any depth. Segments are trimmed
+        // of the trailing dots/spaces Win32 ignores, so `.git ` cannot alias `.git`.
+        foreach (var rawSegment in segments)
         {
+            var segment = rawSegment.TrimEnd('.', ' ');
             if (string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
@@ -79,17 +81,21 @@ public static class ProtectedPathCatalog
         }
 
         var fileName = segments.Length > 0 ? segments[^1] : string.Empty;
+        // Win32 opens `id_rsa.` / `id_rsa ` as `id_rsa` when the file exists, and
+        // the resolver keeps the raw leaf for a missing create target: normalize
+        // trailing dots and spaces before matching so the alias cannot slip past.
+        var normalizedFileName = fileName.TrimEnd('.', ' ');
 
         // Agent harness key/descriptor/database artifacts, wherever they live.
-        if (fileName.StartsWith("agent_harness", StringComparison.OrdinalIgnoreCase)
-            || fileName.StartsWith("harness_key", StringComparison.OrdinalIgnoreCase))
+        if (normalizedFileName.StartsWith("agent_harness", StringComparison.OrdinalIgnoreCase)
+            || normalizedFileName.StartsWith("harness_key", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         foreach (var protectedName in ProtectedFileNames)
         {
-            if (string.Equals(fileName, protectedName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalizedFileName, protectedName, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

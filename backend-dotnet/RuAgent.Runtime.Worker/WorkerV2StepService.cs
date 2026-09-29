@@ -108,20 +108,46 @@ public sealed class WorkerV2StepService
             providerBootstrap.Protocol,
             ProviderProtocols.ChatCompletions,
             StringComparison.Ordinal);
-        var snapshot = SystemPromptComposer.Compose(start.Context, nativeToolCalling);
-        var requestTurns = nativeToolCalling
-            ? start.EffectiveTurns
-            : WorkerV2PromptCodec.ProjectTextTurns(start.EffectiveTurns, start.Settings);
-        var request = new ModelRequest(
-            providerBootstrap.Model,
-            snapshot.Text,
-            start.Prompt,
-            requestTurns,
-            BuildRequestSettings(start.Settings, providerBootstrap.RequestOptions),
-            providerBootstrap.Endpoint,
-            providerBootstrap.Credential,
-            providerBootstrap.MaximumOutputTokens,
-            start.Images ?? Array.Empty<ModelImage>());
+        // The receipt returned with this step must bind the text it was actually
+        // composed from, not just the context shape. The text exists only here,
+        // so the rendered-prompt hash is verified before the step is dispatched.
+        // Composing and building the request is part of interpreting the Host's
+        // input: a malformed history or an oversized prompt is deterministic, so
+        // it must fail as a non-retryable input error instead of escaping to the
+        // generic generation_failed mapping (which would spend the retry budget).
+        SystemPromptSnapshot snapshot;
+        ModelRequest request;
+        try
+        {
+            snapshot = SystemPromptComposer.Compose(start.Context, nativeToolCalling);
+            snapshot.Receipt.ValidateAgainst(start.Context, snapshot.Text);
+            var requestTurns = nativeToolCalling
+                ? start.EffectiveTurns
+                : WorkerV2PromptCodec.ProjectTextTurns(start.EffectiveTurns, start.Settings);
+            request = new ModelRequest(
+                providerBootstrap.Model,
+                snapshot.Text,
+                start.Prompt,
+                requestTurns,
+                BuildRequestSettings(start.Settings, providerBootstrap.RequestOptions),
+                providerBootstrap.Endpoint,
+                providerBootstrap.Credential,
+                providerBootstrap.MaximumOutputTokens,
+                start.Images ?? Array.Empty<ModelImage>());
+        }
+        catch (WorkerV2StepException)
+        {
+            throw;
+        }
+        catch (ArgumentException error) when (error.ParamName == "turns")
+        {
+            throw new WorkerV2StepException("model_history_invalid", retryable: false, error);
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            throw new WorkerV2StepException("invalid_request", retryable: false, error);
+        }
+
         var holdback = new DeltaHoldback(onDelta);
 
         var providerGateEntered = false;

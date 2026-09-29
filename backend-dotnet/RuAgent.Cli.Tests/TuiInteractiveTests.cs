@@ -897,8 +897,11 @@ public sealed class TuiInteractiveTests
         Assert.Equal(1, exit);
         Assert.False(trustCalled);
         Assert.True(restoreCalled);
+        // --json owns stdout: the human notice lands on stderr, so an NDJSON
+        // consumer parsing stdout never sees a bare sentence.
         var outStr = outWriter.ToString();
-        Assert.Contains("workspace_trust_required", outStr);
+        Assert.DoesNotContain("workspace_trust_required", outStr);
+        Assert.Contains("workspace_trust_required", errWriter.ToString());
         Assert.DoesNotContain("Trust this workspace?", outStr);
     }
 

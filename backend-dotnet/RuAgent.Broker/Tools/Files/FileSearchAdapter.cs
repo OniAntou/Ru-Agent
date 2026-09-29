@@ -158,7 +158,21 @@ public sealed class FileSearchAdapter
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 lineNumber++;
-                var match = queryRegex is null ? null : queryRegex.Match(line);
+                Match? match = null;
+                if (queryRegex is not null)
+                {
+                    try
+                    {
+                        match = queryRegex.Match(line);
+                    }
+                    catch (RegexMatchTimeoutException)
+                    {
+                        // Catastrophic backtracking on one line must not fail the
+                        // whole search: this line simply reports no match.
+                        continue;
+                    }
+                }
+
                 var index = queryRegex is null ? line.IndexOf(query, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase) : (match!.Success ? match.Index : -1);
                 if (index >= 0 && matches.Count < maxResults)
                 {

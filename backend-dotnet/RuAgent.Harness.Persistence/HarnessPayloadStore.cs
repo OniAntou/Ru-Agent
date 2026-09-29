@@ -286,49 +286,16 @@ public sealed partial class HarnessPayloadStore
         await using var connection = await options.OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var transaction = connection.BeginTransaction(deferred: false);
-        var stored = await LoadAsync(
+        var content = await ReadRecoveryOnceAsync(
                 connection,
                 transaction,
                 runId,
                 payloadId,
-                requireActiveRun: true,
+                consumedAt,
                 cancellationToken)
             .ConfigureAwait(false);
-        if (stored.Intent.Kind != HarnessPayloadKind.RecoveryOpaque)
-        {
-            throw new HarnessStoreException("payload_recovery_forbidden");
-        }
-
-        if (stored.ConsumedAt is not null)
-        {
-            throw new HarnessStoreException("payload_recovery_consumed");
-        }
-
-        var plaintext = await _cryptography.DecryptAsync(
-                runId,
-                stored.Intent,
-                stored.Encrypted,
-                cancellationToken)
-            .ConfigureAwait(false);
-        await using var update = connection.CreateCommand();
-        update.Transaction = transaction;
-        update.CommandText = """
-            UPDATE agent_payloads
-            SET consumed_at_utc = $consumed_at
-            WHERE run_id = $run_id
-              AND payload_id = $payload_id
-              AND consumed_at_utc IS NULL
-            """;
-        update.Parameters.AddWithValue("$consumed_at", HarnessSqliteMapper.Utc(consumedAt));
-        update.Parameters.AddWithValue("$run_id", runId.Value);
-        update.Parameters.AddWithValue("$payload_id", payloadId.Value);
-        if (await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
-        {
-            throw new HarnessStoreException("payload_recovery_consumed");
-        }
-
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return Content(runId, stored.Intent, plaintext);
+        return content;
     }
 
     internal ValueTask<ReadOnlyMemory<byte>> DecryptAsync(

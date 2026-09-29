@@ -73,7 +73,17 @@ namespace RuApp.Models
         [JsonPropertyName("active_session_id")]
         public string ActiveSessionId { get; set; } = string.Empty;
 
+        private List<SessionInfo> _sessions = new();
+
+        /// <summary>
+        /// The session rows. A wire <c>"sessions": null</c> is an empty list: the
+        /// sidebar rebuild iterates this directly, and a null here crashed it.
+        /// </summary>
         [JsonPropertyName("sessions")]
-        public List<SessionInfo> Sessions { get; set; } = new();
+        public List<SessionInfo> Sessions
+        {
+            get => _sessions;
+            set => _sessions = value ?? new();
+        }
     }
 }

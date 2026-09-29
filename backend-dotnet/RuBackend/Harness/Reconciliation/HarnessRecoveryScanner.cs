@@ -432,6 +432,20 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
     {
         try
         {
+            // Recovery queries agent_runs directly, so make the schema an explicit
+            // dependency instead of racing the warmup hosted service on a fresh
+            // database where the table does not exist yet.
+            var health = await HarnessSqliteSchema
+                .InitializeAsync(_sqliteOptions, stoppingToken)
+                .ConfigureAwait(false);
+            if (!health.IsAvailable)
+            {
+                _logger.LogWarning(
+                    "startup recovery postponed: harness store unavailable ({ErrorCode})",
+                    health.ErrorCode);
+                return false;
+            }
+
             var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
             var scanned = await ScanRunsStageAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
             await RearmInspectionGatesAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);

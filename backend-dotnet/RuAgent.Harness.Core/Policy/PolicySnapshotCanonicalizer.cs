@@ -38,7 +38,11 @@ public static class PolicySnapshotCanonicalizer
             rule.Validate();
         }
 
-        // Normalize CreatedAt to UTC for deterministic hash as per contract.
+        // CreatedAt is metadata only: it is not part of the hash bytes, because a
+        // snapshot re-loaded after a restart carries a fresh timestamp while the
+        // durable run stores the hash computed at creation time. Hashing the
+        // timestamp made every recovery comparison fail and parked every
+        // non-terminal run. The hash binds version, preset, workspace, and rules.
         var normalizedCreatedAt = createdAt.ToUniversalTime();
         var unhashed = new PolicySnapshot(
             version,
@@ -77,9 +81,6 @@ public static class PolicySnapshotCanonicalizer
             writer.WriteString("preset", PresetName(snapshot.Preset));
             WriteWorkspace(writer, snapshot.Workspace);
             WriteRules(writer, snapshot.OrderedRules);
-            writer.WriteString(
-                "created_at",
-                snapshot.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
             writer.WriteEndObject();
         }
 

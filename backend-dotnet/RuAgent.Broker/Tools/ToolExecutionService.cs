@@ -35,7 +35,6 @@ public sealed partial class ToolExecutionService
     private readonly ApprovalTokenService _approvalTokens;
     private readonly PendingApprovalStore _approvals = new();
     private readonly WorkspacePathGuard _workspace;
-    private readonly FileTools _files;
     private readonly FileListAdapter _fileList;
     private readonly FileGlobAdapter _fileGlob;
     private readonly FileSearchAdapter _fileSearch;
@@ -62,7 +61,6 @@ public sealed partial class ToolExecutionService
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = new WorkspacePathGuard(workspaceRoot);
-        _files = new FileTools(_workspace);
         _fileList = new FileListAdapter(_workspace.Root);
         _fileGlob = new FileGlobAdapter(_workspace.Root);
         _fileSearch = new FileSearchAdapter(_workspace.Root);
@@ -230,6 +228,47 @@ public sealed partial class ToolExecutionService
         candidate is not null && StableCodePattern.IsMatch(candidate)
             ? candidate
             : fallback;
+
+    /// <summary>
+    /// Bounded, redacted adapter-failure diagnostic for the broker stderr log.
+    /// Only the request id, tool id, exception type, and a stable-code-shaped
+    /// message travel; payloads, arguments, and free-form messages never do.
+    /// </summary>
+    private static void LogAdapterFailure(AgentEnvelope request, Exception error)
+    {
+        try
+        {
+            var toolId = request.Payload["tool_id"] is JsonValue value
+                && value.TryGetValue<string>(out var id)
+                    ? id
+                    : "-";
+            var code = StableCodePattern.IsMatch(error.Message) ? error.Message : "-";
+            Console.Error.WriteLine(
+                $"ru.broker tool_adapter_failed request_id={BoundDiagnostic(request.RequestId)} tool_id={BoundDiagnostic(toolId)} exception={error.GetType().Name} code={code}");
+        }
+        catch
+        {
+            // A diagnostic must never change the outcome of a tool call.
+        }
+    }
+
+    private static string BoundDiagnostic(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return "-";
+        }
+
+        var length = Math.Min(value.Length, 128);
+        var builder = new StringBuilder(length);
+        for (var index = 0; index < length; index++)
+        {
+            var character = value[index];
+            builder.Append(char.IsControl(character) ? '_' : character);
+        }
+
+        return builder.ToString();
+    }
 
     private sealed class ToolExecutionException : Exception
     {

@@ -219,8 +219,56 @@ public sealed class GitCommandAnalyzerTests
         Assert.Equal(
             TerminalOperationClass.ExternalMutation,
             _analyzer.Analyze(@"C:\tools\git.exe", ["config", "--edit"]).OperationClass);
-        Assert.Equal(
-            TerminalOperationClass.GitMutation,
-            _analyzer.Analyze(@"C:\tools\git.exe", ["config", "user.name", "x"]).OperationClass);
+    }
+
+    [Fact]
+    public void Repository_local_config_writes_never_take_the_automatic_path()
+    {
+        // A repo-local write can install program-selecting keys (core.fsmonitor,
+        // core.hooksPath, diff.external, aliases). It must ask even though the
+        // file lives inside the workspace.
+        string[][] writes =
+        [
+            ["config", "user.name", "x"],
+            ["config", "core.hooksPath", @"C:\probe-hooks"],
+            ["config", "core.fsmonitor", "true"],
+            ["config", "--add", "alias.x", "!calc"],
+            ["config", "--unset", "core.fsmonitor"],
+            ["config", "--unset-all", "alias.x"],
+            ["config", "--replace-all", "core.hooksPath", @"C:\probe-hooks"],
+            ["config", "--rename-section", "a", "b"],
+            ["config", "--remove-section", "a"],
+        ];
+
+        foreach (var form in writes)
+        {
+            var analysis = _analyzer.Analyze(@"C:\tools\git.exe", form);
+            Assert.Equal(TerminalOperationClass.Unknown, analysis.OperationClass);
+            Assert.Equal("git_config_mutation_requires_approval", analysis.ReasonCode);
+            Assert.False(TerminalAutoPolicy.IsAutoExecutable(analysis.OperationClass));
+        }
+    }
+
+    [Fact]
+    public void Repository_local_config_reads_stay_read_only()
+    {
+        string[][] reads =
+        [
+            ["config", "user.name"],
+            ["config", "--get", "user.name"],
+            ["config", "--get-all", "user.name"],
+            ["config", "--get-regexp", "user\\..*"],
+            ["config", "--list"],
+            ["config", "-l"],
+            ["config", "--show-origin", "--get", "user.name"],
+            ["config", "--type", "bool", "--get", "core.autocrlf"],
+        ];
+
+        foreach (var form in reads)
+        {
+            var analysis = _analyzer.Analyze(@"C:\tools\git.exe", form);
+            Assert.Equal(TerminalOperationClass.ReadOnly, analysis.OperationClass);
+            Assert.Equal("git_config_read", analysis.ReasonCode);
+        }
     }
 }

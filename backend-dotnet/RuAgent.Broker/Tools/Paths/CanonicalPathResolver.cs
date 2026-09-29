@@ -69,6 +69,14 @@ public sealed class CanonicalPathResolver
 
         var canonical = ResolveFinalPath(logicalCandidate);
 
+        // The input check above cannot see a stream name that only appears after
+        // link resolution (a link target may carry `file:stream`). Re-check the
+        // resolved path so classification never runs on an ADS name.
+        if (HasAlternateDataStream(canonical))
+        {
+            throw new ArgumentException("Alternate data streams are not allowed.", nameof(inputPath));
+        }
+
         PathClassification classification;
         if (ProtectedPathCatalog.IsProtected(canonical))
         {

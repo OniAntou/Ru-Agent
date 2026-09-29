@@ -361,6 +361,61 @@ public sealed class FilePatchAdapterTests : IDisposable
         Assert.Equal("patch_too_large", ex.Message);
     }
 
+    [Fact]
+    public void Patch_with_mismatched_context_is_rejected_before_mutation()
+    {
+        File.WriteAllText(Full("a.txt"), "hello world");
+        var hash = FileHashService.ComputeFileHash(Full("a.txt"));
+        var patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,1 @@\n-goodbye world\n+hello there\n";
+        var adapter = new FilePatchAdapter(_root);
+        var args = new JsonObject
+        {
+            ["patch"] = patch,
+            ["expected_hashes"] = new JsonObject { ["a.txt"] = hash }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => adapter.Prepare(args));
+        Assert.Equal("patch_context_mismatch", ex.Message);
+        Assert.Equal("hello world", File.ReadAllText(Full("a.txt")));
+    }
+
+    [Fact]
+    public void Patch_with_fewer_old_lines_than_the_hunk_header_declares_is_rejected()
+    {
+        File.WriteAllText(Full("a.txt"), "only one line");
+        var hash = FileHashService.ComputeFileHash(Full("a.txt"));
+        // The header claims two old-side lines; the hunk carries one context line.
+        var patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n only one line\n+added\n";
+        var adapter = new FilePatchAdapter(_root);
+        var args = new JsonObject
+        {
+            ["patch"] = patch,
+            ["expected_hashes"] = new JsonObject { ["a.txt"] = hash }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => adapter.Prepare(args));
+        Assert.Equal("patch_context_mismatch", ex.Message);
+    }
+
+    [Fact]
+    public void Dev_null_source_header_parses_as_a_new_file_patch()
+    {
+        var patch = "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+first\n+second\n";
+        var adapter = new FilePatchAdapter(_root);
+        var args = new JsonObject
+        {
+            ["patch"] = patch,
+            ["expected_hashes"] = new JsonObject { ["new.txt"] = "missing" }
+        };
+
+        var prepared = adapter.Prepare(args);
+        Assert.Equal(1, prepared["count"]!.GetValue<int>());
+
+        var result = adapter.Execute(args);
+        Assert.Equal(1, result["count"]!.GetValue<int>());
+        Assert.Equal("first\nsecond", File.ReadAllText(Full("new.txt")));
+    }
+
     private static bool TryCreateJunction(string junctionPath, string targetPath)
     {
         try

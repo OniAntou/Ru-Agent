@@ -699,18 +699,19 @@ public sealed class BrokerToolGateway : IToolGateway, IToolRunCancellation, IApp
                 StringComparison.Ordinal);
     }
 
-    private static string ApprovalArgsKey(string toolId, JsonElement arguments)
+    internal static string ApprovalArgsKey(string toolId, JsonElement arguments)
     {
-        var canonicalArguments = CanonicalizeJson(JsonNode.Parse(arguments.GetRawText())!);
-        return toolId + "|" + canonicalArguments.ToJsonString();
+        var canonicalArguments = CanonicalizeJson(JsonNode.Parse(arguments.GetRawText()));
+        return toolId + "|" + (canonicalArguments?.ToJsonString() ?? "null");
     }
 
-    private static JsonNode CanonicalizeJson(JsonNode node) => node switch
+    private static JsonNode? CanonicalizeJson(JsonNode? node) => node switch
     {
+        null => null,
         JsonObject obj => new JsonObject(
             obj.OrderBy(item => item.Key, StringComparer.Ordinal)
-                .Select(item => KeyValuePair.Create<string, JsonNode?>(item.Key, CanonicalizeJson(item.Value!)))),
-        JsonArray array => new JsonArray(array.Select(item => (JsonNode?)CanonicalizeJson(item!)).ToArray()),
+                .Select(item => KeyValuePair.Create<string, JsonNode?>(item.Key, CanonicalizeJson(item.Value)))),
+        JsonArray array => new JsonArray(array.Select(item => (JsonNode?)CanonicalizeJson(item)).ToArray()),
         _ => node.DeepClone(),
     };
 

@@ -305,12 +305,20 @@ namespace RuApp.Views
                     AgentApprovalPresentation.CanRememberAllowAlways(controller.PendingApprovalSummary));
 
                 // Approval arrives via SSE while the user may be scrolled up; bring
-                // the Approve/Deny prompt into view and put the keyboard on it.
+                // the Approve/Deny prompt into view and put the keyboard on it. The
+                // focus move happens once per new approval only: this projection
+                // reruns on every refresh while the panel is open, and re-grabbing
+                // the keyboard would make the rest of the panel unusable.
                 ScrollChatToBottom();
-                ApprovalPanel.FocusDecision();
+                if (!string.Equals(_focusedApprovalId, controller.PendingApprovalId, StringComparison.Ordinal))
+                {
+                    _focusedApprovalId = controller.PendingApprovalId;
+                    ApprovalPanel.FocusDecision();
+                }
             }
             else
             {
+                _focusedApprovalId = null;
                 ApprovalPanel.Hide();
             }
 
@@ -934,16 +942,27 @@ namespace RuApp.Views
 
             try
             {
-                await SendAgentTurnAsync(
+                bool started = await SendAgentTurnAsync(
                     BuildEffectivePrompt(next.Text, next.Attachments),
                     cancellationToken,
                     attachments: next.Attachments.ToList(),
                     displayUserText: next.DisplayText);
+                if (!started)
+                {
+                    // The turn never became a run (a run is still in hand, or the
+                    // Full Access confirmation was declined). Put it back at the
+                    // head so it is not silently lost.
+                    _queuedTurns.RequeueFirst(next);
+                }
             }
             catch (Exception exception)
             {
                 FailActiveAgentReply(exception);
                 ShowAgentError(exception);
+            }
+            finally
+            {
+                UpdateQueuedTurnsPanel();
             }
         }
 
@@ -964,7 +983,12 @@ namespace RuApp.Views
             QueuedTurnsSendButton.Visibility = canSendNow ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private async Task SendAgentTurnAsync(
+        /// <summary>
+        /// Sends one turn. Returns false when no run was started (a run is still in
+        /// hand, or the caller declined Full Access), so a queued turn can be put
+        /// back instead of being lost.
+        /// </summary>
+        private async Task<bool> SendAgentTurnAsync(
             string text,
             CancellationToken cancellationToken,
             bool allowSessionRecovery = true,
@@ -985,7 +1009,7 @@ namespace RuApp.Views
             if (IsControllerRunPending())
             {
                 ShowAgentInlineStatus("Coding Agent is already running. Please complete or stop the current turn first.");
-                return;
+                return false;
             }
 
 
@@ -1007,7 +1031,7 @@ namespace RuApp.Views
                     }
                     _agentPreset = AgentPermissionPreset.Standard;
                     UpdateAgentInlineState();
-                    return;
+                    return false;
                 }
 
                 _agentPreset = preset;
@@ -1056,13 +1080,12 @@ namespace RuApp.Views
                 // session and retrying this same logical turn once.
                 AbandonActiveAgentReply(removeUserMessage: true);
                 await RecoverAgentSessionAsync(cancellationToken);
-                await SendAgentTurnAsync(
+                return await SendAgentTurnAsync(
                     text,
                     cancellationToken,
                     allowSessionRecovery: false,
                     attachments: attachments,
                     displayUserText: displayUserText);
-                return;
             }
 
             if (IsTerminalStatus(_agentController.CurrentRun?.Status))
@@ -1074,6 +1097,7 @@ namespace RuApp.Views
                 StartAgentMonitor();
             }
             UpdateAgentInlineState();
+            return true;
         }
 
         private void BeginAgentReply(string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null, bool addUserMessage = true)

@@ -163,6 +163,34 @@ public sealed class NdjsonRendererPrivacyTests
         Assert.False(NdjsonEventRenderer.ContainsForbidden(line));
     }
 
+    /// <summary>
+    /// A durable frame the privacy guard rejects is skipped with an error line
+    /// instead of throwing: the cursor has already advanced past it, and an
+    /// exception would kill the rest of the stream (terminal snapshot included).
+    /// </summary>
+    [Fact]
+    public void Ndjson_RenderFrame_SkipsAForbiddenFrameInsteadOfThrowing()
+    {
+        var data = JsonSerializer.Serialize(new HarnessSafeEventEnvelope(
+            1,
+            "evt_" + new string('a', 32),
+            "run_" + new string('a', 32),
+            new string('b', 32),
+            3,
+            "run.state_changed",
+            "2026",
+            "running",
+            "the \"output\" field",
+            null));
+        var frame = new SseFrame(3, "message", data, false, null);
+
+        var sw = new StringWriter();
+        NdjsonEventRenderer.RenderFrame(frame, sw);
+
+        var doc = JsonDocument.Parse(sw.ToString().Trim());
+        Assert.Equal("error", doc.RootElement.GetProperty("type").GetString());
+    }
+
     [Fact]
     public void Ndjson_RenderFrame_TransientDoesNotAdvanceDurableCursor()
     {
@@ -231,6 +259,25 @@ public sealed class NdjsonRendererPrivacyTests
         Assert.DoesNotContain("data_preview", line, StringComparison.Ordinal);
         var doc = JsonDocument.Parse(line);
         Assert.Equal(rawContent.Length, doc.RootElement.GetProperty("data_bytes").GetInt32());
+    }
+
+    /// <summary>
+    /// The field is named data_bytes, so a non-ASCII payload must report its
+    /// UTF-8 wire size, not its UTF-16 char count.
+    /// </summary>
+    [Fact]
+    public void Ndjson_TransientFrameReportsUtf8ByteCount()
+    {
+        const string multibyte = "mèo 🐱";
+        var frame = new SseFrame(null, "transient", multibyte, true, 5);
+
+        var sw = new StringWriter();
+        NdjsonEventRenderer.RenderFrame(frame, sw);
+        var doc = JsonDocument.Parse(sw.ToString().Trim());
+
+        int reported = doc.RootElement.GetProperty("data_bytes").GetInt32();
+        Assert.Equal(Encoding.UTF8.GetByteCount(multibyte), reported);
+        Assert.NotEqual(multibyte.Length, reported);
     }
 
     [Fact]

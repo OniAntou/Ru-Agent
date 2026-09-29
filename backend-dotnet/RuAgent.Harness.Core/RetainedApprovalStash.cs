@@ -48,6 +48,10 @@ public sealed class InMemoryRetainedApprovalStash : IRetainedApprovalStash
     {
         lock (_gate)
         {
+            // Sweep here too: without it, entries for runs other than this one
+            // stay in the dictionary until the next Stash, even though every
+            // read already treats them as gone.
+            SweepExpired();
             if (_steps.TryGetValue(runId.Value, out var found)
                 && !IsExpired(found))
             {
@@ -95,6 +99,7 @@ public sealed class InMemoryRetainedApprovalStash : IRetainedApprovalStash
         lock (_gate)
         {
             _steps.Remove(runId.Value);
+            SweepExpired();
         }
     }
 

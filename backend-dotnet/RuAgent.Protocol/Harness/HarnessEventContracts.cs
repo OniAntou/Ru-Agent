@@ -37,8 +37,15 @@ public static class HarnessEventContractValidator
         "approval.requested",
         "continue.requested",
         "reconciliation.required",
+        "reconciliation.resolved",
         "transient.frames_dropped",
         "run.note_added",
+        "context.compacted",
+        "model.usage_recorded",
+        "model.reasoning_recorded",
+        // "model.prompt_composed" is deliberately absent: it is host-internal
+        // evidence that the SSE reader advances past without ever mapping, so a
+        // reconnecting client can never see one.
     };
 
     private static readonly HashSet<string> ForbiddenFields = new(StringComparer.OrdinalIgnoreCase)

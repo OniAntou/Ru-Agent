@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from scripts.check_python_runtime_boundary import (
     _summary,
     interpreter_files_in_product,
+    main,
     scan_runtime_boundary,
 )
 
@@ -31,7 +33,27 @@ def test_inventory_identifies_known_entrypoints_without_claiming_reachability(tm
     summary = _summary(records)
     assert summary["schema_version"] == 2
     assert summary["known_managed_startup_count"] == 1
+    assert summary["truncated"] is False
     assert "reachable_count" not in summary
+
+
+def test_a_scan_that_hits_the_file_cap_is_reported_and_fails(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("a.py", "b.py", "c.py"):
+        (scripts / name).write_text("pass", encoding="utf-8")
+    monkeypatch.setattr("scripts.check_python_runtime_boundary._MAX_FILES", 2)
+
+    exit_code = main(["--root", str(tmp_path)])
+    output = capsys.readouterr().out.splitlines()
+    summary = json.loads(output[0])
+
+    assert exit_code == 1
+    assert summary["truncated"] is True
+    assert summary["file_count"] == 2
+    assert json.loads(output[1])["truncated"] is True
 
 
 def test_inventory_skips_generated_files_and_bounds_hash_input(tmp_path: Path) -> None:

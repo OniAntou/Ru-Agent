@@ -52,7 +52,10 @@ public sealed record WorkspaceChangeRecord(
     string Status,
     DateTimeOffset CreatedAtUtc);
 
-public sealed record WorkspaceFileSnapshotRecord(
+// Internal on purpose: the snapshot store keeps content bytes in plaintext and
+// has no production caller. Keeping the surface inside this assembly prevents a
+// future caller from mistaking it for an encrypted, supported API.
+internal sealed record WorkspaceFileSnapshotRecord(
     string SnapshotId,
     string WorkspaceId,
     string RunId,
@@ -693,7 +696,24 @@ public sealed class WorkspaceCoordinatorStore
         }
 
         await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await LoadChangeEnvelopeAsync(
+                connection,
+                transaction: null,
+                workspaceId.Value,
+                changeId,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<WorkspaceChangeEnvelope?> LoadChangeEnvelopeAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string workspaceId,
+        string changeId,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT change_id, workspace_id, run_id, commit_sequence, normalized_path,
                    before_sha256, after_sha256, protected_payload, nonce,
@@ -701,7 +721,7 @@ public sealed class WorkspaceCoordinatorStore
             FROM workspace_change_journal
             WHERE workspace_id = $workspace_id AND change_id = $change_id
             """;
-        command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
+        command.Parameters.AddWithValue("$workspace_id", workspaceId);
         command.Parameters.AddWithValue("$change_id", changeId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -748,26 +768,60 @@ public sealed class WorkspaceCoordinatorStore
         string changeId,
         CancellationToken cancellationToken)
     {
-        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE workspace_change_journal
-            SET status = 'restored'
-            WHERE workspace_id = $workspace_id AND change_id = $change_id
-            """;
-        command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
-        command.Parameters.AddWithValue("$change_id", changeId);
-        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        _ = workspaceId.Value;
+        if (string.IsNullOrWhiteSpace(changeId) || changeId.Length > 256)
         {
-            throw new HarnessStoreException("workspace_change_not_found");
+            throw new HarnessStoreException("invalid_workspace_change");
         }
 
-        var envelope = await GetChangeEnvelopeAsync(workspaceId, changeId, cancellationToken).ConfigureAwait(false)
-            ?? throw new HarnessStoreException("workspace_change_not_found");
-        return envelope.Change;
+        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE workspace_change_journal
+                SET status = 'restored'
+                WHERE workspace_id = $workspace_id AND change_id = $change_id
+                  AND status IN ('prepared', 'committed')
+                """;
+            command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
+            command.Parameters.AddWithValue("$change_id", changeId);
+            if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                throw new HarnessStoreException("workspace_change_not_found");
+            }
+
+            var envelope = await LoadChangeEnvelopeAsync(
+                    connection,
+                    transaction,
+                    workspaceId.Value,
+                    changeId,
+                    cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new HarnessStoreException("workspace_change_not_found");
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return envelope.Change;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException)
+        {
+            throw new HarnessStoreException("workspace_change_store_failed", exception);
+        }
     }
 
-    public async Task<WorkspaceFileSnapshotRecord> CaptureSnapshotAsync(
+    // Internal on purpose: see WorkspaceFileSnapshotRecord. Content is stored
+    // plaintext; a conflicting snapshot id is silently ignored today, so callers
+    // must not treat the returned record as proof the row now holds these bytes.
+    internal async Task<WorkspaceFileSnapshotRecord> CaptureSnapshotAsync(
         WorkspaceId workspaceId,
         RunId runId,
         string snapshotId,
@@ -861,8 +915,25 @@ public sealed class WorkspaceCoordinatorStore
             var existingChange = await ReadChangeByIdAsync(connection, transaction, changeId, cancellationToken).ConfigureAwait(false);
             if (existingChange is not null)
             {
-                if (!string.Equals(existingChange.WorkspaceId, workspaceId.Value, StringComparison.Ordinal)
-                    || !string.Equals(existingChange.NormalizedPath, normalizedPath, StringComparison.Ordinal))
+                // Idempotent append: the same change id may only replay with the
+                // exact same content. Matching just path+workspace let a replay
+                // silently return a record whose hashes, run binding, status, or
+                // encrypted payload (the undo bytes) belonged to another write.
+                var existingEnvelope = await LoadChangeEnvelopeAsync(
+                        connection,
+                        transaction,
+                        workspaceId.Value,
+                        changeId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (existingEnvelope is null
+                    || !string.Equals(existingChange.WorkspaceId, workspaceId.Value, StringComparison.Ordinal)
+                    || !string.Equals(existingChange.NormalizedPath, normalizedPath, StringComparison.Ordinal)
+                    || !string.Equals(existingChange.RunId, runId is null ? null : runId.Value.Value, StringComparison.Ordinal)
+                    || !string.Equals(existingChange.BeforeSha256, beforeSha256, StringComparison.Ordinal)
+                    || !string.Equals(existingChange.AfterSha256, afterSha256, StringComparison.Ordinal)
+                    || !string.Equals(existingChange.Status, status, StringComparison.Ordinal)
+                    || !MatchesEncrypted(existingEnvelope.Journal, encrypted))
                 {
                     throw new HarnessStoreException("workspace_change_id_conflict");
                 }
@@ -1114,6 +1185,14 @@ public sealed class WorkspaceCoordinatorStore
             DateTimeOffset.Parse(reader.GetString(5), null, System.Globalization.DateTimeStyles.RoundtripKind),
             DateTimeOffset.Parse(reader.GetString(6), null, System.Globalization.DateTimeStyles.RoundtripKind));
     }
+
+    private static bool MatchesEncrypted(
+        EncryptedWorkspaceJournal existing,
+        EncryptedWorkspaceJournal incoming) =>
+        existing.ProtectionVersion == incoming.ProtectionVersion
+        && existing.Nonce.Span.SequenceEqual(incoming.Nonce.Span)
+        && existing.Ciphertext.Span.SequenceEqual(incoming.Ciphertext.Span)
+        && existing.AuthenticationTag.Span.SequenceEqual(incoming.AuthenticationTag.Span);
 
     private static async Task<WorkspaceChangeRecord?> ReadChangeByIdAsync(
         SqliteConnection connection,

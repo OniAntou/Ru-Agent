@@ -155,6 +155,14 @@ public sealed partial class AgentConnection
 
     private async Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
+        // Registered before the authorization token is consumed, so a run close
+        // or an explicit cancel that lands between the lease check and the handler
+        // start still reaches the runner; registering afterwards left a window in
+        // which the token was already spent but the execution was untracked.
+        using var registration = _runCancellations.Register(
+            ReadRunIdOrSession(request),
+            cancellationToken);
+
         ToolExecutePreparation preparation;
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -171,12 +179,21 @@ public sealed partial class AgentConnection
             return preparation.Error;
         }
 
-        // Registered so an explicit cancel, or a run close, terminates the live
-        // process tree instead of leaving it running behind a cancelled run.
-        using var registration = _runCancellations.Register(
-            ReadRunIdOrSession(request),
-            cancellationToken);
+        // The registration may already have been signalled (a cancel or a run
+        // close raced with the preparation): the token is one-time, so check the
+        // lease again before invoking the handler.
+        var runId = ReadRunIdOrSession(request);
+        if (!TryGetOwnedRunLease(request, runId, out _, out var leaseError))
+        {
+            return ToolError(request, leaseError, "run lease is not open");
+        }
+
         var executionToken = registration.Token;
+        if (executionToken.IsCancellationRequested)
+        {
+            return ToolError(request, "run_not_open", "run was cancelled before execution started");
+        }
+
         var result = _authenticatedToolHandler is { } authenticatedHandler
             ? await authenticatedHandler(request, executionToken).ConfigureAwait(false)
             : await preparation.Handler!(request, executionToken).ConfigureAwait(false);

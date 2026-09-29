@@ -1,10 +1,12 @@
 """Run the real PowerShell entrypoint against isolated projects and fake dotnet."""
 from __future__ import annotations
 
+import ctypes
 import os
 import shutil
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -26,7 +28,8 @@ def _project(root: Path, relative: str) -> Path:
 
 
 def _run(root: Path, *options: str, missing_dotnet: bool = False,
-         discovery_error: bool = False) -> subprocess.CompletedProcess[str]:
+         discovery_error: bool = False,
+         mutex_name: str | None = None) -> subprocess.CompletedProcess[str]:
     pwsh = shutil.which("pwsh") or shutil.which("powershell")
     assert pwsh, "powershell or pwsh is required to test the runner"
     fake_bin = root / "fake-bin"
@@ -40,12 +43,14 @@ def _run(root: Path, *options: str, missing_dotnet: bool = False,
         )
     environment = os.environ.copy()
     environment["PATH"] = str(fake_bin) if missing_dotnet else os.pathsep.join((str(fake_bin), environment["PATH"]))
-    arguments = ["-File", str(SCRIPT), "-WorkspaceRoot", str(root), *options]
+    if mutex_name is None:
+        mutex_name = f"ru-test-runner-{uuid4().hex}"
+    arguments = ["-File", str(SCRIPT), "-WorkspaceRoot", str(root), "-MutexName", mutex_name, *options]
     if discovery_error:
         quoted_script = str(SCRIPT).replace("'", "''")
         quoted_root = str(root).replace("'", "''")
         arguments = ["-Command", "function Get-ChildItem { throw 'injected discovery failure' }; "
-                     f"& '{quoted_script}' -WorkspaceRoot '{quoted_root}'"]
+                     f"& '{quoted_script}' -WorkspaceRoot '{quoted_root}' -MutexName '{mutex_name}'"]
     return subprocess.run(
         [pwsh, "-NoProfile", *arguments], cwd=root, env=environment,
         capture_output=True, text=True, check=False, timeout=30,
@@ -116,4 +121,20 @@ def test_discovery_error_cannot_be_silently_ignored(workspace: Path) -> None:
     result = _run(workspace, discovery_error=True)
     assert result.returncode != 0
     assert "injected discovery failure" in result.stderr
+    assert not (workspace / "dotnet.log").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="named kernel mutexes are a Windows primitive")
+def test_runner_refuses_to_start_while_the_named_lock_is_held(workspace: Path) -> None:
+    mutex_name = f"ru-test-runner-held-{uuid4().hex}"
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.CreateMutexW(None, True, mutex_name)
+    assert handle, ctypes.get_last_error()
+    try:
+        result = _run(workspace, mutex_name=mutex_name)
+    finally:
+        kernel32.CloseHandle(handle)
+
+    assert result.returncode == 75, result.stdout + result.stderr
+    assert "Another test matrix is already running" in result.stderr
     assert not (workspace / "dotnet.log").exists()

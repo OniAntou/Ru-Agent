@@ -11,7 +11,7 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
 
-public sealed class AgentCommands
+public sealed class AgentCommands : IDisposable
 {
     private readonly PublicHostSession _session;
     private readonly HttpClient _httpClient;
@@ -24,7 +24,13 @@ public sealed class AgentCommands
     private readonly SettingsApiClient _settingsClient;
     private readonly AgentSlashCommands _slashCommands;
 
-    public AgentCommands(PublicHostSession session, HttpClient httpClient, TextWriter outWriter, TextWriter errWriter, TextReader? inReader = null)
+    public AgentCommands(
+        PublicHostSession session,
+        HttpClient httpClient,
+        TextWriter outWriter,
+        TextWriter errWriter,
+        TextReader? inReader = null,
+        HttpClient? sseHttpClient = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -33,9 +39,17 @@ public sealed class AgentCommands
         _in = inReader ?? Console.In;
         _sessionClient = new SessionApiClient(session, httpClient);
         _agentClient = new AgentApiClient(session, httpClient);
-        _sseClient = new AgentSseClient(session, httpClient);
+        _sseClient = new AgentSseClient(session, sseHttpClient ?? httpClient);
         _settingsClient = new SettingsApiClient(session, httpClient);
         _slashCommands = new AgentSlashCommands(_settingsClient, _sessionClient, outWriter, errWriter);
+    }
+
+    public void Dispose()
+    {
+        // Injected clients stay owned by the caller (ownsHttpClient is false), so
+        // this only releases the wrappers the CLI created around them.
+        _agentClient.Dispose();
+        _sseClient.Dispose();
     }
 
     public static async Task<AgentCommands> CreateWithStarterAsync(
@@ -328,6 +342,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         string expectedSessionId,
         string expectedPreset,
         bool trustWorkspace,
+        bool json,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(response.RunId)
@@ -345,7 +360,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         {
             if (!trustWorkspace)
             {
-                await _out.WriteLineAsync(
+                await (json ? _err : _out).WriteLineAsync(
                     $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.").ConfigureAwait(false);
                 return false;
             }
@@ -459,7 +474,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             try
             {
                 sessionId = await _sessionClient.CreateAsync(cancellationToken).ConfigureAwait(false);
-                await _out.WriteLineAsync($"session_id: {sessionId}").ConfigureAwait(false);
+                // --json owns stdout: human-facing ids go to stderr so the NDJSON
+                // trace stays machine-parseable line by line.
+                await (cmd.Json ? _err : _out).WriteLineAsync($"session_id: {sessionId}").ConfigureAwait(false);
             }
             catch (AgentApiException ex)
             {
@@ -529,13 +546,15 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         bool trustAccepted;
         try
         {
-            await _out.WriteLineAsync($"session_id: {response.SessionId}").ConfigureAwait(false);
-            await _out.WriteLineAsync($"run_id: {response.RunId}").ConfigureAwait(false);
+            var humanOut = cmd.Json ? _err : _out;
+            await humanOut.WriteLineAsync($"session_id: {response.SessionId}").ConfigureAwait(false);
+            await humanOut.WriteLineAsync($"run_id: {response.RunId}").ConfigureAwait(false);
             trustAccepted = await HandleWorkspaceTrustAsync(
                 response,
                 sessionId,
                 cmd.Preset,
                 cmd.TrustWorkspace,
+                cmd.Json,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -574,10 +593,18 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (OperationCanceledException)
         {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                // A transport timeout is not the operator's cancel, and the host may
+                // still own the run; do not cancel it, point at attach instead.
+                await _err.WriteLineAsync("stream_timeout: the event stream did not complete in time; rerun 'ru agent attach <run-id>' to follow.").ConfigureAwait(false);
+                return 1;
+            }
+
             try
             {
                 await _agentClient.CancelAsync(response.RunId, CancellationToken.None).ConfigureAwait(false);
-                await _out.WriteLineAsync("cancelled").ConfigureAwait(false);
+                await (cmd.Json ? _err : _out).WriteLineAsync("cancelled").ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -598,7 +625,10 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         try
         {
             var run = await _agentClient.GetRunAsync(cmd.RunId, cancellationToken).ConfigureAwait(false);
-            await _out.WriteLineAsync($"run_id: {run.RunId} status: {run.Status}").ConfigureAwait(false);
+            if (!cmd.Json)
+            {
+                await _out.WriteLineAsync($"run_id: {run.RunId} status: {run.Status}").ConfigureAwait(false);
+            }
         }
         catch (AgentApiException ex)
         {
@@ -612,6 +642,12 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         }
         catch (OperationCanceledException)
         {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                await _err.WriteLineAsync("stream_timeout: the event stream did not complete in time; rerun 'ru agent attach <run-id>' to follow.").ConfigureAwait(false);
+                return 1;
+            }
+
             try { await _agentClient.CancelAsync(cmd.RunId, CancellationToken.None).ConfigureAwait(false); } catch { }
             return 130;
         }
@@ -903,7 +939,8 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             return 1;
         }
 
-        await _out.WriteLineAsync($"reconciled {cmd.RunId}: {body}").ConfigureAwait(false);
+        // --json owns stdout: the human confirmation goes to stderr.
+        await (cmd.Json ? _err : _out).WriteLineAsync($"reconciled {cmd.RunId}: {body}").ConfigureAwait(false);
         return 0;
     }
 
@@ -1026,20 +1063,19 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
     {
         try
         {
-            string? scope = cmd.Global ? "global" : (cmd.WorkspacePath is not null ? "project" : null);
-            string? workspaceId = null;
-            // For project scope, we need workspace_id; but CLI provides path, we can canonicalize and try to resolve?
-            // For now, if workspace path provided, we can just pass via query as workspace_id param (server expects workspace_id)
-            // We'll attempt to use provided path directly as workspace_id if it looks like ws_..., otherwise skip
             if (cmd.WorkspacePath is not null)
             {
-                // Try to canonicalize and use as workspace_id? For tests, workspace path is not needed; we can just call without workspace_id and let server return global
-                // For real, we would resolve via API, but for now pass null
-                // We'll just call ListPolicies with scope project and no id -> server will error, but tests don't use this path
-                scope = "project";
+                // The client has no path -> workspace_id resolution, and sending the
+                // path as an id would make the server filter on a key that cannot
+                // match. Fail clearly instead of silently listing the wrong scope.
+                await _err.WriteLineAsync(
+                    "workspace_scope_unsupported: 'agent policy list' cannot resolve --workspace PATH; omit --workspace or use --global.")
+                    .ConfigureAwait(false);
+                return 1;
             }
 
-            var items = await _agentClient.ListPoliciesAsync(scope, workspaceId, cancellationToken).ConfigureAwait(false);
+            string? scope = cmd.Global ? "global" : null;
+            var items = await _agentClient.ListPoliciesAsync(scope, null, cancellationToken).ConfigureAwait(false);
             if (cmd.Json)
             {
                 var obj = new { v = 1, type = "policy_list", items = items.Select(e => JsonSerializer.Deserialize<object>(e.GetRawText())).ToList() };
@@ -1196,6 +1232,11 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     {
                         afterSequence = seq;
                     }
+
+                    // A delivered frame is progress: refill the resume budget so a
+                    // long run that breaks once per hour is not killed by three
+                    // unrelated transport outages.
+                    resumes = 0;
                     await onFrameAsync(frame, ct).ConfigureAwait(false);
                 }
             }
@@ -1342,7 +1383,11 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
         backendName ??= "(provider unknown)";
 
-        if (_out == Console.Out && !Console.IsOutputRedirected)
+        // --json owns stdout: every human-facing line a command prints goes to
+        // stderr instead, so a consumer can parse stdout line by line as NDJSON.
+        var humanOut = cmd.Json ? _err : _out;
+
+        if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
         {
             try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
         }
@@ -1471,6 +1516,13 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         /// </summary>
         void RedrawScreenForResize()
         {
+            if (cmd.Json)
+            {
+                // The NDJSON trace has no screen to clear, and Console.Clear/ANSI
+                // bytes would corrupt stdout.
+                return;
+            }
+
             sticky.Exit();
             sessionRenderer.Status.InFooter = false;
             if (_out == Console.Out && !Console.IsOutputRedirected)
@@ -1774,15 +1826,18 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 {
                     landingScreenVisible = false;
                 }
-                await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                if (!cmd.Json)
+                {
+                    await _out.WriteLineAsync(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: Tui.TuiViewport.Width())).ConfigureAwait(false);
+                }
                 var parts = line.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
                 var slashCmd = parts[0].ToLowerInvariant();
                 var arg = parts.Length > 1 ? parts[1].Trim() : null;
 
                 if (slashCmd is "/exit" or "/quit")
                 {
-                    await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
-                    await _out.FlushAsync().ConfigureAwait(false);
+                    await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("Exiting interactive terminal. Goodbye!")).ConfigureAwait(false);
+                    await humanOut.FlushAsync().ConfigureAwait(false);
                     return 0;
                 }
                 if (slashCmd is "/history")
@@ -1790,17 +1845,17 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     var history = lineReader.History;
                     if (history.Count == 0)
                     {
-                        await _out.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint("  (No prompt history yet)")).ConfigureAwait(false);
                     }
                     else
                     {
-                        await _out.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.BoldPaint("Prompt History:")).ConfigureAwait(false);
                         for (int i = 0; i < history.Count; i++)
                         {
-                            await _out.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
+                            await humanOut.WriteLineAsync(Tui.TuiPalette.DimPaint($"  {i + 1,3}: ") + history[i]).ConfigureAwait(false);
                         }
                     }
-                    await _out.FlushAsync().ConfigureAwait(false);
+                    await humanOut.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
                 if (slashCmd is "/clear")
@@ -1808,12 +1863,12 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     turn = 0;
                     landingScreenVisible = true;
                     lastTotalTokens = null;
-                    if (_out == Console.Out && !Console.IsOutputRedirected)
+                    if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
                     {
                         try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                     }
                     RenderLandingScreen();
-                    await _out.FlushAsync().ConfigureAwait(false);
+                    await humanOut.FlushAsync().ConfigureAwait(false);
                     continue;
                 }
                 if (await _slashCommands.TryHandleAsync(slashCmd, arg, sessionId, cmd.Preset, canonicalWorkspace, cancellationToken).ConfigureAwait(false))
@@ -1829,7 +1884,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                         if (forked.TryGetProperty("session", out var sess) && sess.TryGetProperty("id", out var newId))
                         {
                             sessionId = newId.GetString()!;
-                            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Forked to new branch: {sessionId}")).ConfigureAwait(false);
+                            await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Forked to new branch: {sessionId}")).ConfigureAwait(false);
                         }
                         else
                         {
@@ -1857,7 +1912,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     try
                     {
                         await _sessionClient.RewindAsync(sessionId, toIndex, cancellationToken).ConfigureAwait(false);
-                        await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
+                        await humanOut.WriteLineAsync(Tui.TuiPalette.Ok($"✓ Rewound session {sessionId} to message index {toIndex}")).ConfigureAwait(false);
                     }
                     catch (AgentApiException ex)
                     {
@@ -1878,7 +1933,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             if (landingScreenVisible)
             {
                 landingScreenVisible = false;
-                if (_out == Console.Out && !Console.IsOutputRedirected)
+                if (!cmd.Json && _out == Console.Out && !Console.IsOutputRedirected)
                 {
                     try { Console.Clear(); _out.Write("\u001b[3J\u001b[H"); } catch (IOException) { /* No live console to clear. */ }
                 }
@@ -1917,7 +1972,10 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 {
                     sticky.RestoreTranscriptCursor();
                 }
-                sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: sessionRenderer.Width));
+                if (!cmd.Json)
+                {
+                    sessionRenderer.Surface.WriteLine(Tui.InteractiveLineReader.BuildSubmitEcho(line, width: sessionRenderer.Width));
+                }
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
@@ -1926,6 +1984,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                         sessionId,
                         cmd.Preset,
                         cmd.TrustWorkspace,
+                        cmd.Json,
                         turnCts.Token).ConfigureAwait(false))
                 {
                     if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
@@ -2029,7 +2088,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     return 1;
                 }
                 await FinishTurnAsync().ConfigureAwait(false);
-                await _out.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
+                await humanOut.WriteLineAsync(Tui.TuiPalette.Warn("Run interrupted by user.")).ConfigureAwait(false);
             }
             catch (AgentApiException ex) when (ex.ErrorCode == "workspace_busy")
             {
@@ -2101,7 +2160,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             var element = await _sessionClient.ListAsync(cancellationToken).ConfigureAwait(false);
             if (cmd.Json)
             {
-                await _out.WriteLineAsync(JsonSerializer.Serialize(element)).ConfigureAwait(false);
+                await _out.WriteLineAsync(JsonEnvelope("session_list", element)).ConfigureAwait(false);
                 return 0;
             }
 
@@ -2194,7 +2253,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
             if (cmd.Json)
             {
-                await _out.WriteLineAsync(JsonSerializer.Serialize(new
+                await _out.WriteLineAsync(JsonEnvelope("session_export", new
                 {
                     status = "ok",
                     harness = result.Harness,
@@ -2264,7 +2323,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
 
                     openCodeSessionId = sessions[0].Id;
-                    await _out.WriteLineAsync(
+                    await (cmd.Json ? _err : _out).WriteLineAsync(
                         $"  taking opencode session {Tui.TuiPalette.Accent(openCodeSessionId)} ({sessions[0].Title}).")
                         .ConfigureAwait(false);
                 }
@@ -2280,7 +2339,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
 
             if (cmd.Json)
             {
-                await _out.WriteLineAsync(JsonSerializer.Serialize(new
+                await _out.WriteLineAsync(JsonEnvelope("session_import", new
                 {
                     status = "ok",
                     harness,
@@ -2318,7 +2377,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             var element = await _sessionClient.ForkAsync(cmd.SessionId, cmd.UpToMessageIndex, cmd.NewTitle, cancellationToken).ConfigureAwait(false);
             if (cmd.Json)
             {
-                await _out.WriteLineAsync(JsonSerializer.Serialize(element)).ConfigureAwait(false);
+                await _out.WriteLineAsync(JsonEnvelope("session_fork", element)).ConfigureAwait(false);
                 return 0;
             }
 
@@ -2344,7 +2403,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             var element = await _sessionClient.RewindAsync(cmd.SessionId, cmd.ToMessageIndex, cancellationToken).ConfigureAwait(false);
             if (cmd.Json)
             {
-                await _out.WriteLineAsync(JsonSerializer.Serialize(element)).ConfigureAwait(false);
+                await _out.WriteLineAsync(JsonEnvelope("session_rewind", element)).ConfigureAwait(false);
                 return 0;
             }
 
@@ -2356,6 +2415,18 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             await _err.WriteLineAsync($"session_rewind_error: {ex.Message}").ConfigureAwait(false);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// The one --json output shape: every command emits {"v":1,"type":...} so a
+    /// consumer can parse any stdout line without knowing which command wrote it.
+    /// </summary>
+    private static string JsonEnvelope(string type, object payload)
+    {
+        var node = JsonSerializer.SerializeToNode(payload) as JsonObject ?? new JsonObject();
+        node["v"] = 1;
+        node["type"] = type;
+        return node.ToJsonString();
     }
 
     private static async Task<string> ReadBoundedBodyAsync(HttpContent content, CancellationToken cancellationToken)

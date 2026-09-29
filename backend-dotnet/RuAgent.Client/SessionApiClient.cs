@@ -13,8 +13,8 @@ public sealed class SessionApiClient
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _httpClient = httpClient ?? new HttpClient();
-        if (_httpClient.DefaultRequestHeaders.Authorization is null)
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.BearerToken);
+        // The bearer is attached per request; a default header on a shared client
+        // would leak one session's token onto another's calls.
     }
 
     public async Task<string> CreateAsync(CancellationToken cancellationToken = default)

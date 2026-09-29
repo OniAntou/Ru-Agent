@@ -39,7 +39,7 @@ public sealed partial class AgentV1Service
         try
         {
             var workspaceId = new WorkspaceId(workspaceIdRaw);
-            var coordinator = await _workspaceCoordinatorStore.GetOrCreateAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+            var coordinator = await ReadWorkspaceCoordinatorAsync(workspaceId, cancellationToken).ConfigureAwait(false);
             var activeClaims = await _workspaceCoordinatorStore.CountActiveClaimsAsync(workspaceId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
             return new AgentServiceResult(
                 200,
@@ -58,6 +58,69 @@ public sealed partial class AgentV1Service
         {
             return new AgentServiceResult(404, new AgentErrorResponse(exception.Code));
         }
+    }
+
+    /// <summary>
+    /// Reads the coordinator policy for a GET without materializing a row: a read
+    /// request must not write, so a workspace with no coordinator yet answers with
+    /// the same defaults the write path would have created.
+    /// </summary>
+    private async Task<WorkspaceCoordinatorRecord> ReadWorkspaceCoordinatorAsync(
+        WorkspaceId workspaceId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = """
+                SELECT mode, max_concurrent_runs, lease_ttl_seconds,
+                       merge_text_conflicts, external_writer_detection, commit_sequence,
+                       policy_json, version, created_at_utc, updated_at_utc
+                FROM workspace_coordinators
+                WHERE workspace_id = $workspace_id
+                """;
+            read.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return new WorkspaceCoordinatorRecord(
+                    workspaceId.Value,
+                    reader.GetString(0),
+                    reader.GetInt32(1),
+                    reader.GetInt32(2),
+                    reader.GetInt32(3) == 1,
+                    reader.GetInt32(4) == 1,
+                    reader.GetInt64(5),
+                    reader.GetString(6),
+                    reader.GetInt64(7),
+                    DateTimeOffset.Parse(reader.GetString(8), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                    DateTimeOffset.Parse(reader.GetString(9), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+            }
+        }
+
+        await using (var workspace = connection.CreateCommand())
+        {
+            workspace.CommandText = "SELECT 1 FROM agent_workspaces WHERE workspace_id = $workspace_id";
+            workspace.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
+            if (await workspace.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+            {
+                throw new HarnessStoreException("workspace_not_found");
+            }
+        }
+
+        var now = _time.UtcNow;
+        return new WorkspaceCoordinatorRecord(
+            workspaceId.Value,
+            "exclusive",
+            1,
+            30,
+            true,
+            true,
+            0,
+            "{}",
+            1,
+            now,
+            now);
     }
 
     public async Task<AgentServiceResult> UpdateWorkspaceConcurrencyAsync(
@@ -184,6 +247,32 @@ public sealed partial class AgentV1Service
     private static readonly TimeSpan MinRestoreInterval = TimeSpan.FromSeconds(1); // Rate limit: max 1 restore/sec per workspace
     private static readonly ConcurrentDictionary<string, DateTimeOffset> _lastRestoreTime = new(StringComparer.Ordinal);
 
+    private static bool TryReserveRestoreSlot(string workspaceId, DateTimeOffset now)
+    {
+        while (true)
+        {
+            if (!_lastRestoreTime.TryGetValue(workspaceId, out var current))
+            {
+                if (_lastRestoreTime.TryAdd(workspaceId, now))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (now - current < MinRestoreInterval)
+            {
+                return false;
+            }
+
+            if (_lastRestoreTime.TryUpdate(workspaceId, now, current))
+            {
+                return true;
+            }
+        }
+    }
+
     public async Task<AgentServiceResult> RestoreWorkspaceChangeAsync(
         string workspaceIdRaw,
         string changeId,
@@ -206,14 +295,12 @@ public sealed partial class AgentV1Service
             return new AgentServiceResult(400, new AgentErrorResponse("invalid_expected_current_sha256"));
         }
 
-        // Rate limiting per workspace
+        // Rate limiting per workspace. The slot is reserved atomically before any
+        // work starts, so two concurrent restores cannot both pass a stale check.
         var now = _time.UtcNow;
-        if (_lastRestoreTime.TryGetValue(workspaceIdRaw, out var lastTime))
+        if (!TryReserveRestoreSlot(workspaceIdRaw, now))
         {
-            if (now - lastTime < MinRestoreInterval)
-            {
-                return new AgentServiceResult(429, new AgentErrorResponse("workspace_restore_rate_limited"));
-            }
+            return new AgentServiceResult(429, new AgentErrorResponse("workspace_restore_rate_limited"));
         }
 
         try
@@ -310,8 +397,6 @@ public sealed partial class AgentV1Service
             {
                 return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_verification_failed"));
             }
-
-            _lastRestoreTime[workspaceIdRaw] = now;
 
             await _workspaceCoordinatorStore.AppendChangeAsync(
                 workspaceId,

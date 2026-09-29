@@ -12,7 +12,10 @@ namespace RuAgent.Broker.Tools.Terminal;
 /// this adapter enforces the same verdict for the execution leg. Read-only, test,
 /// build, lint, and local-git run payloads execute on an authorization token;
 /// external mutation, delete, shell scripts, and unknown always ask for a
-/// one-time approval token bound to the exact intent hash.
+/// one-time approval token bound to the exact intent hash. The local-git class
+/// only covers clean repository writes: `git config` mutations, `git -C`
+/// overrides, and program-selecting git options are analyzed as unknown forms
+/// and ask despite their verb.
 /// </summary>
 public static class TerminalAutoPolicy
 {

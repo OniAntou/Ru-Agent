@@ -2,7 +2,7 @@ namespace RuAgent.Harness.Core.Policy;
 
 public enum PolicyDecision
 {
-    Allow,
-    Ask,
-    Deny,
+    Allow = 0,
+    Ask = 1,
+    Deny = 2,
 }

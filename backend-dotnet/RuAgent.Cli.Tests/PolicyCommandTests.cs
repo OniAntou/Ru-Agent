@@ -139,6 +139,24 @@ public sealed class PolicyCommandTests
     }
 
     [Fact]
+    public async Task PolicyList_WithWorkspacePath_FailsInsteadOfListingTheWrongScope()
+    {
+        var session = CreateSession();
+        var handler = CreateFakeClient(_ => new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent("{}"),
+        });
+
+        var errWriter = new StringWriter();
+        var commands = new AgentCommands(session, handler, new StringWriter(), errWriter);
+        var cmd = new PolicyListCommand(Global: false, WorkspacePath: @"C:\temp", Json: false);
+        var exit = await commands.PolicyListAsync(cmd, CancellationToken.None);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("workspace_scope_unsupported", errWriter.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PolicyImport_WithInteractiveConfirmation_Succeeds()
     {
         var session = CreateSession();

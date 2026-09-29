@@ -259,4 +259,57 @@ public sealed class FileRecoveryStoreTests
         Assert.False(HarnessPayloadStore.CanReadForClient(new HarnessPayloadIntent(reference.RecoveryId, kind, audience, encoding, 1, Array.Empty<byte>())));
         Assert.False(HarnessPayloadStore.CanReadForModel(new HarnessPayloadIntent(reference.RecoveryId, kind, audience, encoding, 1, Array.Empty<byte>())));
     }
+
+    [Fact]
+    public async Task Recovery_markers_roll_back_together_when_decryption_fails()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var run = fixture.NewRun(1, 1, 1);
+        await fixture.CreateEventStore().TryCreateRunAsync(run, CancellationToken.None);
+
+        var store = new FileRecoveryStore(
+            fixture.Options,
+            new HarnessPayloadCryptography(new FakeHarnessKeyStore()),
+            KnownSecretRedactor.Empty);
+        var content = Encoding.UTF8.GetBytes("marker rollback");
+        var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+        var reference = await store.CreateRecoveryAsync(
+            run.Run.RunId,
+            "/tmp/workspace/rollback.txt",
+            content,
+            hash,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            await using var corrupt = connection.CreateCommand();
+            corrupt.CommandText = "UPDATE agent_payloads SET protected_content = $bytes WHERE payload_id = $id";
+            corrupt.Parameters.AddWithValue("$bytes", new byte[] { 1, 2, 3 });
+            corrupt.Parameters.AddWithValue("$id", reference.RecoveryId.Value);
+            await corrupt.ExecuteNonQueryAsync();
+        }
+
+        var error = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            store.ConsumeRecoveryAsync(run.Run.RunId, reference.RecoveryId, CancellationToken.None));
+        Assert.Equal("payload_authentication_failed", error.Code);
+
+        // The failed consume must not leave either marker behind: the payload
+        // bytes were never handed back, so the recovery has to stay restorable
+        // (here it stays listed as active) and the payload stays unconsumed.
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_file_recovery WHERE consumed_at_utc IS NOT NULL"));
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_payloads WHERE consumed_at_utc IS NOT NULL"));
+        Assert.Single(await store.ListActiveAsync(run.Run.RunId, CancellationToken.None));
+    }
+
+    private static async Task<long> ScalarAsync(HarnessStoreTestFixture fixture, string sql)
+    {
+        await using var conn = fixture.CreateRawConnection();
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        return (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+    }
 }

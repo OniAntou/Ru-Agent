@@ -159,6 +159,9 @@ reconciliation surfaces from Phase 3:
   harden it. Measured on git 2.55, a repository-supplied `core.fsmonitor`
   program is not invoked by `git status` at all, so the terminal path is
   accepted as-is rather than hardened at the cost of that verification.
+  Writing repository-local configuration is no longer automatic: a model `git
+  config` write can install the same program-selecting keys, so writes ask
+  while `--get`/`--list` reads stay auto-executable.
 - Managed Web: `web_search` resolves the configured engine against a fixed set
   of public HTML engines and returns the first usable result, rather than
   substituting a second tool or a second provider. It is the one documented

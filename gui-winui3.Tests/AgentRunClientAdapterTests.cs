@@ -68,17 +68,12 @@ public sealed class AgentRunClientAdapterTests
     [Fact]
     public async Task SubscribeEvents_parses_durable_stream()
     {
-        var sse =
-            "id:5\nevent:message\n" +
-            "data:{\"protocol_version\":1,\"event_id\":\"evt_1\",\"run_id\":\"run_12345678901234567890123456789012\"," +
-            "\"session_id\":\"sess_1\",\"sequence\":5,\"event_type\":\"run.state_changed\"," +
-            "\"occurred_at\":\"2026\",\"status\":\"running\",\"safe_summary\":\"started\"}\n\n";
+        var sse = DurableSseFrame(5, "started");
         var handler = new FakeHttpHandler
         {
-            Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
-            },
+            Responder = request => request.RequestUri!.ToString().Contains("/events", StringComparison.Ordinal)
+                ? SseResponse(sse)
+                : RunStatusResponse("completed"),
         };
         using var http = new HttpClient(handler);
         var adapter = new AgentRunClientAdapter(MakeSession(), http);
@@ -94,6 +89,83 @@ public sealed class AgentRunClientAdapterTests
         Assert.Equal("run.state_changed", received[0].EventType);
         Assert.Equal(5, received[0].Sequence);
     }
+
+    [Fact]
+    public async Task SubscribeEvents_resumes_from_the_last_durable_sequence_when_the_run_is_still_active()
+    {
+        var handler = new FakeHttpHandler();
+        var eventsCalls = 0;
+        handler.Responder = request =>
+        {
+            if (request.RequestUri!.ToString().Contains("/events", StringComparison.Ordinal))
+            {
+                eventsCalls++;
+                // The first stream breaks after sequence 5; the second delivers 6.
+                return SseResponse(DurableSseFrame(eventsCalls == 1 ? 5 : 6, eventsCalls == 1 ? "first" : "second"));
+            }
+
+            // The run is provably still active after the first break, terminal
+            // only after the resumed stream ends.
+            return RunStatusResponse(eventsCalls <= 1 ? "running" : "completed");
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+
+        var received = new List<AgentEventModel>();
+        await adapter.SubscribeEventsAsync(RunId, 0, m =>
+        {
+            received.Add(m);
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal(2, received.Count);
+        Assert.Equal(new long?[] { 5, 6 }, received.Select(item => item.Sequence).ToArray());
+        Assert.Contains(
+            handler.Requests,
+            r => r.RequestUri!.Query.Contains("after_sequence=5", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SubscribeEvents_gives_up_after_bounded_resumes()
+    {
+        var handler = new FakeHttpHandler
+        {
+            Responder = request => request.RequestUri!.ToString().Contains("/events", StringComparison.Ordinal)
+                ? SseResponse(DurableSseFrame(5, "started"))
+                : RunStatusResponse("running"),
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+
+        var error = await Assert.ThrowsAsync<AgentApiException>(() =>
+            adapter.SubscribeEventsAsync(RunId, 0, _ => Task.CompletedTask));
+
+        Assert.Equal("stream_interrupted", error.ErrorCode);
+    }
+
+    private static HttpResponseMessage SseResponse(string sse) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        };
+
+    private static HttpResponseMessage RunStatusResponse(string status) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"run_id\":\"run_12345678901234567890123456789012\",\"session_id\":\"sess_1\"," +
+                $"\"workspace_id\":\"ws_1\",\"status\":\"{status}\",\"preset\":\"standard\",\"policy_snapshot_version\":1," +
+                "\"policy_snapshot_sha256\":\"\",\"version\":1,\"last_sequence\":6," +
+                "\"created_at\":\"2026\",\"updated_at\":\"2026\"}",
+                Encoding.UTF8,
+                "application/json"),
+        };
+
+    private static string DurableSseFrame(long sequence, string summary) =>
+        $"id:{sequence}\nevent:message\n" +
+        "data:{\"protocol_version\":1,\"event_id\":\"evt_1\",\"run_id\":\"run_12345678901234567890123456789012\"," +
+        "\"session_id\":\"sess_1\",\"sequence\":" + sequence + ",\"event_type\":\"run.state_changed\"," +
+        "\"occurred_at\":\"2026\",\"status\":\"running\",\"safe_summary\":\"" + summary + "\"}\n\n";
 
     [Fact]
     public async Task SubscribeEvents_delivers_only_valid_agent_activity_to_separate_callback()

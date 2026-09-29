@@ -345,10 +345,6 @@ namespace RuApp
                 };
                 _sessionsTimer.Start();
 
-                if (!_composition.IsHarness)
-                {
-                }
-
                 if (_composition.IsHarness && WelcomeOverlay != null && !WelcomeOverlay.IsDismissed)
                 {
                     _ = WelcomeOverlay.DismissAsync();
@@ -436,8 +432,16 @@ namespace RuApp
 
         private async void OnChatSessionForked(object? sender, SessionInfo forkedSession)
         {
-            await LoadSessionsAsync();
-            SyncSidebarSelection(forkedSession.Id);
+            try
+            {
+                await LoadSessionsAsync();
+                SyncSidebarSelection(forkedSession.Id);
+            }
+            catch (Exception ex)
+            {
+                // async void: an unhandled exception here tears the process down.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] Session fork refresh failed: {ex.Message}");
+            }
         }
 
         private void OnSettingsSaved(object? sender, EventArgs e)
@@ -717,9 +721,6 @@ namespace RuApp
             _diagnosticsView?.Initialize(_apiService);
 
             _sessionsTimer?.Start();
-            if (!_composition.IsHarness)
-            {
-            }
             _providerCatalogTimer?.Start();
 
             if (_sessionsRefreshController != null)
@@ -1060,18 +1061,18 @@ namespace RuApp
         private async void OnNewChatClick(object sender, RoutedEventArgs e)
         {
             if (_apiService == null || _chatView == null) return;
-            var session = await _apiService.CreateSessionAsync();
-            if (session is null)
+            try
             {
-                // A dead button with no explanation is indistinguishable from a
-                // broken one: say the session could not be created.
-                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
-                StatusText.Text = "Could not create a new chat session";
-                return;
-            }
+                var session = await _apiService.CreateSessionAsync();
+                if (session is null)
+                {
+                    // A dead button with no explanation is indistinguishable from a
+                    // broken one: say the session could not be created.
+                    StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                    StatusText.Text = "Could not create a new chat session";
+                    return;
+                }
 
-            if (session != null)
-            {
                 await LoadSessionsAsync();
 
                 var selectedPath = _selectedWorkspaceKey is null
@@ -1096,6 +1097,13 @@ namespace RuApp
 
                 // Tell ChatView to switch to this new session
                 await _chatView.OpenSessionAsync(session.Id, session.Title);
+            }
+            catch (Exception ex)
+            {
+                // async void: an unhandled exception here tears the process down.
+                GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] New chat failed: {ex.Message}");
+                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                StatusText.Text = "Could not create a new chat session";
             }
         }
 

@@ -11,11 +11,19 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
     private readonly Func<AgentSseClient> _sseFactory;
     private readonly DispatcherQueue? _dispatcher;
 
-    public AgentRunClientAdapter(PublicHostSession session, HttpClient? httpClient = null, DispatcherQueue? dispatcher = null)
+    public AgentRunClientAdapter(
+        PublicHostSession session,
+        HttpClient? httpClient = null,
+        DispatcherQueue? dispatcher = null,
+        HttpClient? sseHttpClient = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         _apiClient = new AgentApiClient(session, httpClient);
-        _sseFactory = () => new AgentSseClient(session, httpClient);
+        // A caller may share one client for both transports (tests do), or hand
+        // the SSE side its own client with an infinite timeout so a long stream
+        // is not cut off by the API request timeout.
+        var sseClient = sseHttpClient ?? httpClient;
+        _sseFactory = () => new AgentSseClient(session, sseClient);
         _dispatcher = dispatcher;
     }
 
@@ -90,6 +98,16 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
         => _apiClient.ContinueAsync(runId, cancellationToken);
 
 
+    private const int MaxStreamResumes = 3;
+    private static readonly TimeSpan StreamResumeDelay = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Streams run events, transparently resuming from the last durable sequence
+    /// when the transport breaks mid-stream (bounded retries), mirroring the CLI
+    /// tracer. A clean stream end only completes when the run itself is terminal;
+    /// an inconclusive status check (backend unreachable) ends the subscription
+    /// the way it always did instead of spinning.
+    /// </summary>
     public async Task SubscribeEventsAsync(
         string runId,
         long afterSequence,
@@ -101,55 +119,155 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
         Func<AgentToolOutputModel, Task>? onToolOutput = null)
     {
         ArgumentNullException.ThrowIfNull(onEvent);
-        using var sse = _sseFactory();
-        await foreach (var frame in sse.ReadEventsAsync(runId, afterSequence, cancellationToken).ConfigureAwait(false))
+
+        var cursor = afterSequence;
+        var resumes = 0;
+        while (true)
         {
-            if (frame.IsTransient)
+            cancellationToken.ThrowIfCancellationRequested();
+            AgentApiException? transportFailure = null;
+            try
             {
-                if (onAssistantDelta is not null
-                    && AgentAssistantDeltaModel.TryParse(frame, out var assistantDelta)
-                    && assistantDelta is not null)
+                using var sse = _sseFactory();
+                await foreach (var frame in sse.ReadEventsAsync(runId, cursor, cancellationToken).ConfigureAwait(false))
                 {
-                    await DispatchAsync(() => onAssistantDelta(assistantDelta), cancellationToken)
+                    if (frame.DurableSequence is { } sequence && sequence > cursor)
+                    {
+                        cursor = sequence;
+                    }
+
+                    await DispatchFrameAsync(
+                            frame,
+                            onEvent,
+                            onActivity,
+                            onSummary,
+                            onAssistantDelta,
+                            onToolOutput,
+                            cancellationToken)
                         .ConfigureAwait(false);
-                    continue;
                 }
-
-                if (onSummary is not null
-                    && AgentRunSummaryModel.TryParse(frame, out var summary)
-                    && summary is not null)
-                {
-                    await DispatchAsync(() => onSummary(summary), cancellationToken)
-                        .ConfigureAwait(false);
-                    continue;
-                }
-
-                if (onToolOutput is not null
-                    && AgentToolOutputModel.TryParse(frame, out var toolOutput)
-                    && toolOutput is not null)
-                {
-                    await DispatchAsync(() => onToolOutput(toolOutput), cancellationToken)
-                        .ConfigureAwait(false);
-                    continue;
-                }
-
-                if (onActivity is null
-                    || !AgentActivityModel.TryParse(frame, out var activity)
-                    || activity is null)
-                {
-                    // Raw assistant/tool deltas and malformed activity frames are not
-                    // durable events and must never reach the audit/status collection.
-                    continue;
-                }
-
-                await DispatchAsync(() => onActivity(activity), cancellationToken)
-                    .ConfigureAwait(false);
-                continue;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException or HttpRequestException or System.Net.Sockets.SocketException)
+            {
+                transportFailure = new AgentApiException(
+                    "stream_interrupted",
+                    $"event stream broke: {ex.Message}",
+                    inner: ex);
             }
 
-            var model = AgentEventModel.FromSseFrame(frame);
-            await DispatchAsync(() => onEvent(model), cancellationToken)
+            if (transportFailure is null
+                && await IsRunTerminalAsync(runId, cancellationToken).ConfigureAwait(false) != false)
+            {
+                // True: terminal. Null: the status check itself failed, so keep
+                // the historical behavior of treating a clean stream end as done
+                // rather than spinning against an unreachable backend.
+                return;
+            }
+
+            resumes++;
+            if (resumes > MaxStreamResumes)
+            {
+                throw transportFailure
+                    ?? new AgentApiException(
+                        "stream_interrupted",
+                        "event stream ended before the run reached a terminal state");
+            }
+
+            await Task.Delay(StreamResumeDelay, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task DispatchFrameAsync(
+        SseFrame frame,
+        Func<AgentEventModel, Task> onEvent,
+        Func<AgentActivityModel, Task>? onActivity,
+        Func<AgentRunSummaryModel, Task>? onSummary,
+        Func<AgentAssistantDeltaModel, Task>? onAssistantDelta,
+        Func<AgentToolOutputModel, Task>? onToolOutput,
+        CancellationToken cancellationToken)
+    {
+        if (frame.IsTransient)
+        {
+            if (onAssistantDelta is not null
+                && AgentAssistantDeltaModel.TryParse(frame, out var assistantDelta)
+                && assistantDelta is not null)
+            {
+                await DispatchAsync(() => onAssistantDelta(assistantDelta), cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (onSummary is not null
+                && AgentRunSummaryModel.TryParse(frame, out var summary)
+                && summary is not null)
+            {
+                await DispatchAsync(() => onSummary(summary), cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (onToolOutput is not null
+                && AgentToolOutputModel.TryParse(frame, out var toolOutput)
+                && toolOutput is not null)
+            {
+                await DispatchAsync(() => onToolOutput(toolOutput), cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (onActivity is null
+                || !AgentActivityModel.TryParse(frame, out var activity)
+                || activity is null)
+            {
+                // Raw assistant/tool deltas and malformed activity frames are not
+                // durable events and must never reach the audit/status collection.
+                return;
+            }
+
+            await DispatchAsync(() => onActivity(activity), cancellationToken)
                 .ConfigureAwait(false);
+            return;
+        }
+
+        AgentEventModel model;
+        try
+        {
+            model = AgentEventModel.FromSseFrame(frame);
+        }
+        catch (InvalidOperationException)
+        {
+            // One malformed durable frame must not kill the whole subscription:
+            // the cursor already advanced past it, so the rest of the stream
+            // (including the terminal snapshot) still arrives.
+            return;
+        }
+
+        await DispatchAsync(() => onEvent(model), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <returns>
+    /// True when the run is provably terminal, false when provably still active,
+    /// null when the status check itself failed (inconclusive).
+    /// </returns>
+    private async Task<bool?> IsRunTerminalAsync(string runId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var run = await _apiClient.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            return run.Status is "completed" or "failed" or "cancelled" or "interrupted";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

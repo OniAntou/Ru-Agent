@@ -38,7 +38,6 @@ class RouteEntry:
     safety: RouteSafety
     request_factory: RequestFactory | None
     skip_reason: str | None = None
-    optional_device_unavailable: bool = False
 
     @property
     def check_id(self) -> str:
@@ -112,15 +111,15 @@ def _factory_for(method: str, path: str) -> RequestFactory:
     return make
 
 
-def _classify(entry: Mapping[str, Any]) -> tuple[RouteSafety, str | None, bool]:
+def _classify(entry: Mapping[str, Any]) -> tuple[RouteSafety, str | None]:
     path = str(entry["path"])
     method = str(entry["method"])
     transport = str(entry["transport"])
     if path == "/host/shutdown":
-        return RouteSafety.EXTERNAL_SKIP, "destructive_route_skipped", False
+        return RouteSafety.EXTERNAL_SKIP, "destructive_route_skipped"
     if transport == "websocket" or method == "GET":
-        return RouteSafety.READ_ONLY, None, False
-    return RouteSafety.FIXTURE_MUTATION, None, False
+        return RouteSafety.READ_ONLY, None
+    return RouteSafety.FIXTURE_MUTATION, None
 
 
 def build_route_registry(contract: list[dict[str, Any]]) -> list[RouteEntry]:
@@ -141,7 +140,7 @@ def build_route_registry(contract: list[dict[str, Any]]) -> list[RouteEntry]:
         if identity in identities:
             raise ValueError(f"duplicate route registry entry: {identity!r}")
         identities.add(identity)
-        safety, skip_reason, optional_device = _classify(raw)
+        safety, skip_reason = _classify(raw)
         request_factory = _factory_for(method, path)
         registry.append(
             RouteEntry(
@@ -153,7 +152,6 @@ def build_route_registry(contract: list[dict[str, Any]]) -> list[RouteEntry]:
                 safety=safety,
                 request_factory=request_factory,
                 skip_reason=skip_reason,
-                optional_device_unavailable=optional_device,
             )
         )
     return registry

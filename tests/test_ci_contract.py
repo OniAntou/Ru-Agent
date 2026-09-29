@@ -25,6 +25,18 @@ def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
     assert "pip check" in workflow
 
 
+def test_ci_never_hides_findings_behind_permanent_escapes() -> None:
+    """verification.md: ruff and pip check findings are never suppressed.
+
+    A gate that can be marked non-blocking (or short-circuited to success) stops
+    being a gate, so the workflow must not carry those escapes at all.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "continue-on-error" not in workflow
+    assert "|| true" not in workflow
+    assert "if: false" not in workflow
+
+
 def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     dotnet_job = workflow.split("  dotnet:\n", maxsplit=1)[1]

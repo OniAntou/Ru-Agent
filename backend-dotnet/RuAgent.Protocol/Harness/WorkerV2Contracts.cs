@@ -324,6 +324,18 @@ public static class WorkerV2Contracts
             throw new AgentProtocolException("invalid_request");
         }
 
+        // max_tokens is the one numeric setting the wire admits. Validate it
+        // explicitly here: a wrong type or an out-of-range value must be
+        // rejected at the contract, not land in a stored payload.
+        if (settings["max_tokens"] is { } maxTokensNode
+            && (maxTokensNode is not JsonValue maxTokensValue
+                || maxTokensValue.TryGetValue<bool>(out _)
+                || !maxTokensValue.TryGetValue<int>(out var maxTokens)
+                || maxTokens is < 1 or > 1_000_000))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
         var toolsNode = settings["model_tools"];
         JsonArray tools = toolsNode as JsonArray ?? new JsonArray();
         if (toolsNode is not null && toolsNode is not JsonArray)
@@ -698,12 +710,13 @@ public static class WorkerV2Contracts
         try
         {
             var profile = AgentPolicyProfileCatalog.ReadProfile(effectivePolicyNode);
+            // Semantic comparison only: the reader rebuilds the profile field by
+            // field, and the writer's key order is not part of the meaning. A
+            // raw JSON comparison rejected semantically identical policies for
+            // wire formatting alone while adding no validation the reader has
+            // not already done.
             if (!string.Equals(profile.Preset, preset, StringComparison.Ordinal)
-                || !profile.HasSameSemanticsAs(AgentPolicyProfileCatalog.Get(preset))
-                || !string.Equals(
-                    AgentPolicyProfileCatalog.WriteProfile(profile).ToJsonString(),
-                    effectivePolicyNode.ToJsonString(),
-                    StringComparison.Ordinal))
+                || !profile.HasSameSemanticsAs(AgentPolicyProfileCatalog.Get(preset)))
             {
                 throw new AgentProtocolException("invalid_request");
             }
@@ -1141,86 +1154,6 @@ public static class WorkerV2Contracts
 
         result = 0;
         return false;
-    }
-
-    private static void ValidateOptionalInt(JsonObject settings, string field, int min, int max)
-    {
-        var node = settings[field];
-        if (node is JsonValue value)
-        {
-            if (value.TryGetValue<bool>(out _))
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
-
-            if (!value.TryGetValue<int>(out var intVal) && !value.TryGetValue<long>(out var longVal))
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
-
-            long actual = node is JsonValue v && v.TryGetValue<int>(out var iv) ? iv : (value.TryGetValue<long>(out var lv) ? lv : 0);
-            // Need to ensure we get correct value; simplify check via TryGet int.
-            if (value.TryGetValue<int>(out var checkedInt))
-            {
-                if (checkedInt < min || checkedInt > max)
-                {
-                    throw new AgentProtocolException("invalid_request");
-                }
-            }
-            else if (value.TryGetValue<long>(out var checkedLong))
-            {
-                if (checkedLong < min || checkedLong > max || checkedLong != (int)checkedLong)
-                {
-                    throw new AgentProtocolException("invalid_request");
-                }
-            }
-            else if (value.TryGetValue<double>(out var d))
-            {
-                // integer field cannot be double
-                throw new AgentProtocolException("invalid_request");
-            }
-        }
-        else if (node is not null)
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
-    }
-
-    private static void ValidateOptionalNumber(JsonObject settings, string field, double min, double max)
-    {
-        var node = settings[field];
-        if (node is not JsonValue value)
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
-
-        if (value.TryGetValue<bool>(out _))
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
-
-        double actual;
-        if (value.TryGetValue<int>(out var iv))
-        {
-            actual = iv;
-        }
-        else if (value.TryGetValue<long>(out var lv))
-        {
-            actual = lv;
-        }
-        else if (value.TryGetValue<double>(out var dv))
-        {
-            actual = dv;
-        }
-        else
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
-
-        if (!double.IsFinite(actual) || actual < min || actual > max)
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
     }
 
     private static void ValidateModelTool(JsonNode? node, HashSet<string> toolIds)

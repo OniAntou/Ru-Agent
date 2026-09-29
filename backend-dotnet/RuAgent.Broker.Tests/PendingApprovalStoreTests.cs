@@ -255,6 +255,26 @@ public sealed class PendingApprovalStoreTests
         Assert.Equal(V2ApprovalOutcome.ConsumedDenied, res.Outcome);
     }
 
+    [Fact]
+    public void V2_stale_response_does_not_consume_the_pending_approval()
+    {
+        var store = new PendingApprovalStore();
+        var binding = V2Binding();
+        var id = store.IssueV2(binding, DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var stale = store.TryConsumeV2(
+            id,
+            ApprovalCommandV2.AllowOnce,
+            V2Binding(intentHash: new string('1', 64)),
+            DateTimeOffset.UtcNow);
+        Assert.Equal(V2ApprovalOutcome.Stale, stale.Outcome);
+
+        // The mismatched attempt must not destroy the approval the real caller
+        // still owns: the identifier is opaque and a stray replay is not consent.
+        var actual = store.TryConsumeV2(id, ApprovalCommandV2.AllowOnce, binding, DateTimeOffset.UtcNow);
+        Assert.Equal(V2ApprovalOutcome.ConsumedApproved, actual.Outcome);
+    }
+
     private static V2ApprovalBinding V2Binding(
         string? canonicalPath = "a.txt",
         string? exe = null,

@@ -166,6 +166,33 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task PostSettings_stores_secret_byte_exact_without_trimming()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var credentials = new FakeCredentialStore();
+        using var factory = CreateAspNetFactory(
+            data.Paths,
+            credentials: credentials);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings",
+            new
+            {
+                backend_choice = "openai",
+                openai_model = "gpt-4o",
+                openai_api_key = "  padded-private-key  ",
+                max_new_tokens = 192,
+                allow_online_search = false,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "  padded-private-key  ",
+            await credentials.GetAsync("Ru", "openai_api_key", CancellationToken.None));
+    }
+
+    [Fact]
     public async Task PostSettings_with_gguf_payload_migrates_to_models_dev()
     {
         using var data = TemporaryBusinessData.Create();

@@ -520,6 +520,18 @@ public sealed class AgentCliParserTests
         Assert.False(cmd.Always);
     }
 
+    [Theory]
+    [InlineData("apr_not-a-real-id")]
+    [InlineData("apr_" + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")] // upper-case hex is not the minted shape
+    [InlineData("apr_" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]  // one char short
+    public void ParseApprove_RejectsAnApprovalIdThatIsNotTheMintedFormat(string approvalId)
+    {
+        var args = new[] { "agent", "approve", ValidRunId, approvalId };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("invalid_approval_id", res.ErrorCode);
+    }
+
     [Fact]
     public void ParseApprove_AlwaysSetsRememberMe()
     {

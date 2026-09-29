@@ -3,7 +3,11 @@ param(
     [string]$WorkspaceRoot = "",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
-    [switch]$NoRestore
+    [switch]$NoRestore,
+
+    # Tests pass a unique name so they are not blocked by a real matrix running
+    # on the same machine. Interactive callers keep the shared default.
+    [string]$MutexName = "Global\ru-test-matrix-run"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,15 +22,22 @@ $ErrorActionPreference = "Stop"
 #
 # Refusing to start is the honest answer: a gate that runs anyway and reports contention as a
 # defect teaches people to ignore it.
-$mutexName = "Global\ru-test-matrix-run"
-$matrixMutex = New-Object System.Threading.Mutex($false, $mutexName)
+$matrixMutex = $null
 $holdsMutex = $false
 try {
+    $matrixMutex = New-Object System.Threading.Mutex($false, $MutexName)
     $holdsMutex = $matrixMutex.WaitOne(0)
 }
 catch [System.Threading.AbandonedMutexException] {
     # A previous run died without releasing it. The mutex is ours now.
     $holdsMutex = $true
+}
+catch [System.UnauthorizedAccessException] {
+    # Some other principal owns the lock and will not let this session open it.
+    # That is still "a matrix may be running", so report it like contention.
+    [Console]::Error.WriteLine(
+        "Cannot open the test-matrix lock '$MutexName': $($_.Exception.Message)")
+    exit 75
 }
 
 if (-not $holdsMutex) {

@@ -265,43 +265,11 @@ public sealed partial class AgentV1Service
             });
         }
 
-        string? brokerAuthorizationToken = null;
         var externalDirectoryRequested = string.Equals(
             pendingApprovalEvent?.SafeCode,
             "external_directory_required",
             StringComparison.Ordinal);
-        // The Broker command follows the pending kind, never the caller's
-        // wording: external folders become a session grant, everything else
-        // stays a one-time token. allow_always bridges as itself so the
-        // execution authority binds the same exact intent; the reusable rule
-        // is a Host-side project record created below.
-        if (_brokerGateways is { IsConfigured: true })
-        {
-            var brokerCommand = externalDirectoryRequested
-                ? "allow_session_directory"
-                : isAllowAlways ? "allow_always" : "allow_once";
-            bool bridged;
-            try
-            {
-                (bridged, brokerAuthorizationToken) = await _brokerGateways
-                    .RespondApprovalAsync(runIdRaw, approvalIdRaw, brokerCommand, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (ToolTransportException)
-            {
-                bridged = false;
-            }
-
-            if (!bridged || string.IsNullOrWhiteSpace(brokerAuthorizationToken))
-            {
-                HostApprovalLedger.TryRemove(key, out _);
-                return BoundedError(
-                    409,
-                    "approval_stale",
-                    "Approval could not be authorized by the execution authority.");
-            }
-        }
-        else
+        if (_brokerGateways is not { IsConfigured: true })
         {
             // An approval is a request for the execution authority to permit a call.
             // With no authority to ask, there is nothing to authorize and the call
@@ -316,8 +284,8 @@ public sealed partial class AgentV1Service
 
         // allow_always remembers the exact intent as a project-scope allow
         // rule so the next identical call authorizes without asking. A rule
-        // save never widens the current authorization: the Broker token above
-        // is still single-use and bound to this intent, protected paths still
+        // save never widens the current authorization: the Broker token is
+        // still single-use and bound to this intent, protected paths still
         // deny before rules, and a save failure degrades to allow_once.
         // External-directory approvals keep the session grant only: an allow
         // rule cannot grant outside access by evaluator design.
@@ -357,6 +325,39 @@ public sealed partial class AgentV1Service
         {
             HostApprovalLedger.TryRemove(key, out _);
             return BoundedError(409, "commit_conflict", "Commit conflict.");
+        }
+
+        // The grant is issued only after the durable approval resolution is
+        // committed: a commit conflict must not consume a Broker authorization
+        // that the Host then reports as stale.
+        // The Broker command follows the pending kind, never the caller's
+        // wording: external folders become a session grant, everything else
+        // stays a one-time token. allow_always bridges as itself so the
+        // execution authority binds the same exact intent; the reusable rule
+        // is a Host-side project record created above.
+        string? brokerAuthorizationToken = null;
+        var brokerCommand = externalDirectoryRequested
+            ? "allow_session_directory"
+            : isAllowAlways ? "allow_always" : "allow_once";
+        bool bridged;
+        try
+        {
+            (bridged, brokerAuthorizationToken) = await _brokerGateways
+                .RespondApprovalAsync(runIdRaw, approvalIdRaw, brokerCommand, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ToolTransportException)
+        {
+            bridged = false;
+        }
+
+        if (!bridged || string.IsNullOrWhiteSpace(brokerAuthorizationToken))
+        {
+            HostApprovalLedger.TryRemove(key, out _);
+            return BoundedError(
+                502,
+                "approval_authorization_failed",
+                "The approval was recorded but the execution authority did not authorize it.");
         }
 
         // The Broker grant or one-time token is the whole authorization; the

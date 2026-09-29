@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
@@ -220,6 +222,75 @@ public sealed class PolicyRuleStoreTests
         Assert.Equal(PolicyDecision.Allow, globals[0].Decision);
     }
 
+    [Fact]
+    public async Task Matcher_metadata_tampering_fails_closed()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var store = new SqlitePolicyRuleStore(fixture.Options, new FakeHarnessKeyStore());
+        var rule = Rule(50, PolicyRuleScope.Global, PolicyDecision.Allow, path: "src/tamper.ts", creationOrder: 50);
+        await store.CreateAsync(rule, null, null, HarnessStoreTestFixture.Timestamp, CancellationToken.None);
+
+        var raw = await RawRuleDocumentAsync(fixture, "agent_global_rules", rule.RuleId.Value);
+        var document = JsonNode.Parse(raw)!.AsObject();
+        Assert.Equal(2, document["matcher_encrypted"]!["version"]!.GetValue<int>());
+        document["decision"] = (int)PolicyDecision.Deny;
+        await WriteRuleDocumentAsync(
+            fixture,
+            "agent_global_rules",
+            rule.RuleId.Value,
+            Encoding.UTF8.GetBytes(document.ToJsonString()));
+
+        var error = await Assert.ThrowsAsync<HarnessStoreException>(
+            () => store.ListGlobalAsync(CancellationToken.None));
+        Assert.Equal("policy_decryption_failed", error.Code);
+    }
+
+    [Fact]
+    public async Task Legacy_version_one_documents_still_decrypt()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var store = new SqlitePolicyRuleStore(fixture.Options, new FakeHarnessKeyStore());
+        var ruleId = "rule_" + new string('f', 32);
+        var matcherJson = Encoding.UTF8.GetBytes("{\"tool_id\":\"files.read\"}");
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[matcherJson.Length];
+        var tag = new byte[16];
+        using (var aes = new AesGcm(Enumerable.Repeat((byte)0x5a, 32).ToArray(), 16))
+        {
+            aes.Encrypt(nonce, matcherJson, ciphertext, tag, Encoding.UTF8.GetBytes(ruleId));
+        }
+
+        var document = new JsonObject
+        {
+            ["rule_id"] = ruleId,
+            ["scope"] = (int)PolicyRuleScope.Global,
+            ["decision"] = (int)PolicyDecision.Allow,
+            ["creation_order"] = 7,
+            ["expires_at_utc"] = null,
+            ["version"] = 1,
+            ["created_at_utc"] = HarnessStoreTestFixture.Timestamp.ToString("O"),
+            ["updated_at_utc"] = HarnessStoreTestFixture.Timestamp.ToString("O"),
+            ["matcher_encrypted"] = new JsonObject
+            {
+                ["nonce"] = Convert.ToBase64String(nonce),
+                ["ciphertext"] = Convert.ToBase64String(ciphertext),
+                ["tag"] = Convert.ToBase64String(tag),
+                ["version"] = 1,
+            },
+        };
+        await WriteRuleDocumentAsync(
+            fixture,
+            "agent_global_rules",
+            ruleId,
+            Encoding.UTF8.GetBytes(document.ToJsonString()));
+
+        var loaded = await store.ListGlobalAsync(CancellationToken.None);
+        var single = Assert.Single(loaded);
+        Assert.Equal(ruleId, single.RuleId.Value);
+        Assert.Equal("files.read", single.Matcher.ToolId);
+        Assert.Equal(7, single.CreationOrder);
+    }
+
     private static PolicyRule Rule(int number, PolicyRuleScope scope, PolicyDecision decision, string path, long creationOrder)
     {
         var id = new PolicyRuleId("rule_" + number.ToString("x32"));
@@ -236,6 +307,29 @@ public sealed class PolicyRuleStoreTests
         var result = await cmd.ExecuteScalarAsync();
         Assert.NotNull(result);
         return (byte[])result!;
+    }
+
+    private static async Task WriteRuleDocumentAsync(
+        HarnessStoreTestFixture fixture,
+        string table,
+        string ruleId,
+        byte[] document)
+    {
+        await using var conn = fixture.CreateRawConnection();
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = table == "agent_global_rules"
+            ? "INSERT OR REPLACE INTO agent_global_rules(rule_id, rule_document, version, created_at_utc, updated_at_utc) VALUES ($id, $document, 1, $now, $now)"
+            : "INSERT OR REPLACE INTO agent_project_rules(rule_id, workspace_id, rule_document, version, created_at_utc, updated_at_utc) VALUES ($id, $workspace, $document, 1, $now, $now)";
+        cmd.Parameters.AddWithValue("$id", ruleId);
+        cmd.Parameters.AddWithValue("$document", document);
+        cmd.Parameters.AddWithValue("$now", HarnessStoreTestFixture.Timestamp.ToString("O"));
+        if (table != "agent_global_rules")
+        {
+            cmd.Parameters.AddWithValue("$workspace", HarnessStoreTestFixture.Workspace(1).WorkspaceId.Value);
+        }
+
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task<long> ScalarAsync(HarnessStoreTestFixture fixture, string sql)

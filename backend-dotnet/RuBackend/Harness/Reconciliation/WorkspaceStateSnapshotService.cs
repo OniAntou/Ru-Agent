@@ -150,6 +150,17 @@ public sealed class WorkspaceStateSnapshotService
             catch (TimeoutException)
             {
                 TryKill(process);
+                // Observe the pipe readers after the kill: leaving them unawaited
+                // risks an unobserved faulted task and leaks the read buffers.
+                try
+                {
+                    await stdoutTask.ConfigureAwait(false);
+                    await stderrTask.ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                }
+
                 return null;
             }
 

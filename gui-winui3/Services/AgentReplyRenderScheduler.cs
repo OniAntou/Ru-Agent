@@ -65,7 +65,16 @@ public sealed class AgentReplyRenderScheduler
         return snapshot;
     }
 
-    private void Enqueue(long generation)
+    /// <summary>
+    /// How often a rejected dispatch is retried. One retry covers a transient
+    /// rejection (a dispatch that races teardown); an unbounded retry would spin
+    /// forever when the dispatcher is already closed.
+    /// </summary>
+    private const int MaxDispatchRetries = 1;
+
+    private void Enqueue(long generation) => Enqueue(generation, attempts: 0);
+
+    private void Enqueue(long generation, int attempts)
     {
         try
         {
@@ -80,7 +89,7 @@ public sealed class AgentReplyRenderScheduler
                 // The callback was rejected, so it cannot clear ownership later.
                 _callbackPending = false;
                 currentGeneration = _generation;
-                retryForCurrentGeneration = _pendingWork;
+                retryForCurrentGeneration = _pendingWork && attempts < MaxDispatchRetries;
                 if (retryForCurrentGeneration)
                 {
                     _callbackPending = true;
@@ -89,7 +98,7 @@ public sealed class AgentReplyRenderScheduler
 
             if (retryForCurrentGeneration)
             {
-                Enqueue(currentGeneration);
+                Enqueue(currentGeneration, attempts + 1);
             }
         }
         catch

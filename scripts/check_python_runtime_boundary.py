@@ -45,7 +45,7 @@ def classify(path: str) -> tuple[str, str]:
     return "legacy", "outside-classified-source-groups"
 
 
-def _relative_files(root: Path) -> tuple[Path, ...]:
+def _relative_files(root: Path) -> tuple[tuple[Path, ...], bool]:
     candidates: list[Path] = []
     for relative_root in _SCAN_ROOTS:
         directory = root / Path(*relative_root.split("/"))
@@ -67,7 +67,8 @@ def _relative_files(root: Path) -> tuple[Path, ...]:
                 *_INTERPRETER_SUFFIXES,
             }:
                 candidates.append(path)
-    return tuple(sorted(candidates, key=lambda item: item.relative_to(root).as_posix()))[:_MAX_FILES]
+    ordered = tuple(sorted(candidates, key=lambda item: item.relative_to(root).as_posix()))
+    return ordered[:_MAX_FILES], len(ordered) > _MAX_FILES
 
 
 def _bounded_sha256(path: Path) -> tuple[str, int]:
@@ -76,10 +77,11 @@ def _bounded_sha256(path: Path) -> tuple[str, int]:
     return hashlib.sha256(data).hexdigest(), path.stat().st_size
 
 
-def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
+def _scan_runtime_boundary(root: Path) -> tuple[tuple[RuntimeBoundaryRecord, ...], bool]:
     root = root.resolve()
+    paths, truncated = _relative_files(root)
     records: list[RuntimeBoundaryRecord] = []
-    for path in _relative_files(root):
+    for path in paths:
         relative = path.relative_to(root).as_posix()
         classification, reason = classify(relative)
         sha256, size_bytes = _bounded_sha256(path)
@@ -91,7 +93,12 @@ def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
             sha256=sha256,
             size_bytes=size_bytes,
         ))
-    return tuple(records)
+    return tuple(records), truncated
+
+
+def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
+    records, _ = _scan_runtime_boundary(root)
+    return records
 
 
 def interpreter_files_in_product(records: Iterable[RuntimeBoundaryRecord]) -> list[str]:
@@ -109,7 +116,9 @@ def interpreter_files_in_product(records: Iterable[RuntimeBoundaryRecord]) -> li
     )
 
 
-def _summary(records: Iterable[RuntimeBoundaryRecord]) -> dict[str, object]:
+def _summary(
+    records: Iterable[RuntimeBoundaryRecord], *, truncated: bool = False
+) -> dict[str, object]:
     records = tuple(records)
     counts: dict[str, int] = {}
     for item in records:
@@ -117,6 +126,7 @@ def _summary(records: Iterable[RuntimeBoundaryRecord]) -> dict[str, object]:
     return {
         "schema_version": 2,
         "file_count": len(records),
+        "truncated": truncated,
         "known_managed_startup_count": sum(item.is_known_managed_startup for item in records),
         "classification_counts": dict(sorted(counts.items())),
         "interpreter_files_in_product_count": len(interpreter_files_in_product(records)),
@@ -134,9 +144,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "Repeatable.",
     )
     args = parser.parse_args(argv)
-    records = scan_runtime_boundary(args.root)
-    print(json.dumps(_summary(records), sort_keys=True))
-    failed = False
+    records, truncated = _scan_runtime_boundary(args.root)
+    print(json.dumps(_summary(records, truncated=truncated), sort_keys=True))
+    failed = truncated
+    if truncated:
+        # A silently capped inventory claims completeness it does not have; the
+        # cap is high enough that hitting it means the scan configuration is wrong.
+        print(json.dumps(
+            {"truncated": True, "file_cap": _MAX_FILES},
+            sort_keys=True,
+        ))
     # The interpreter boundary is always enforced: it is the one property of this
     # inventory that must hold, and a check nobody runs is not a check.
     interpreters = interpreter_files_in_product(records)

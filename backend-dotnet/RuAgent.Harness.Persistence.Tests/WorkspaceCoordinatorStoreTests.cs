@@ -162,6 +162,84 @@ public sealed class WorkspaceCoordinatorStoreTests
     }
 
     [Fact]
+    public async Task Append_change_replay_with_different_content_conflicts()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var identity = await fixture.RegisterWorkspaceAsync(50);
+        var store = new WorkspaceCoordinatorStore(fixture.Options);
+        await store.GetOrCreateAsync(identity.WorkspaceId, CancellationToken.None);
+        var protector = new WorkspaceJournalProtector(new FakeHarnessKeyStore());
+        var encrypted = await protector.EncryptAsync(
+            identity.WorkspaceId,
+            "chg_50",
+            "src/app.cs",
+            Encoding.UTF8.GetBytes("external"),
+            CancellationToken.None);
+
+        await store.AppendChangeAsync(
+            identity.WorkspaceId,
+            runId: null,
+            "chg_50",
+            "src/app.cs",
+            new string('a', 64),
+            new string('b', 64),
+            encrypted,
+            "committed",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        // Same id, same path, but a different after hash: replay must conflict
+        // instead of silently returning the stored record.
+        var error = await Assert.ThrowsAsync<HarnessStoreException>(() => store.AppendChangeAsync(
+            identity.WorkspaceId,
+            runId: null,
+            "chg_50",
+            "src/app.cs",
+            new string('a', 64),
+            new string('c', 64),
+            encrypted,
+            "committed",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None));
+        Assert.Equal("workspace_change_id_conflict", error.Code);
+    }
+
+    [Fact]
+    public async Task Mark_change_restored_requires_a_restorable_status_and_is_not_replayable()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var identity = await fixture.RegisterWorkspaceAsync(51);
+        var store = new WorkspaceCoordinatorStore(fixture.Options);
+        await store.GetOrCreateAsync(identity.WorkspaceId, CancellationToken.None);
+        var protector = new WorkspaceJournalProtector(new FakeHarnessKeyStore());
+        var encrypted = await protector.EncryptAsync(
+            identity.WorkspaceId,
+            "chg_51",
+            "src/app.cs",
+            Encoding.UTF8.GetBytes("external"),
+            CancellationToken.None);
+        await store.AppendChangeAsync(
+            identity.WorkspaceId,
+            runId: null,
+            "chg_51",
+            "src/app.cs",
+            new string('a', 64),
+            new string('b', 64),
+            encrypted,
+            "committed",
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        var restored = await store.MarkChangeRestoredAsync(identity.WorkspaceId, "chg_51", CancellationToken.None);
+        Assert.Equal("restored", restored.Status);
+
+        // A second restore finds no prepared/committed row and must not report success.
+        var error = await Assert.ThrowsAsync<HarnessStoreException>(
+            () => store.MarkChangeRestoredAsync(identity.WorkspaceId, "chg_51", CancellationToken.None));
+        Assert.Equal("workspace_change_not_found", error.Code);
+    }
+
+    [Fact]
     public async Task Membership_lease_expires_and_release_is_idempotent()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

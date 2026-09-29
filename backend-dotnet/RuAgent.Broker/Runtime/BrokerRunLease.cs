@@ -53,11 +53,9 @@ public sealed record BrokerRunLease(
             throw new AgentProtocolException("invalid_workspace_id");
         }
 
+        // GetFullPath both normalizes and guarantees a rooted result, so a
+        // separate IsPathRooted check after it could never fail.
         var canonical = Path.GetFullPath(canonicalRoot);
-        if (!Path.IsPathRooted(canonical))
-        {
-            throw new AgentProtocolException("invalid_canonical_root");
-        }
 
         if (string.IsNullOrWhiteSpace(volumeSerial) || volumeSerial.Length > 64)
         {

@@ -42,7 +42,7 @@ public sealed partial class ToolExecutionService
         var tools = ResolveRootToolSet(context, workingDirectory);
         var grant = new PolicyGrant(
             context.SessionId,
-            context.SessionScopes ?? _session.Scopes,
+            context.SessionScopes ?? _session.ScopesFor(context.SessionId),
             _session.Descriptor.ExpiresAt);
         var result = await tools.Terminal.RunAsync(
             grant,

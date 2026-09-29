@@ -474,12 +474,6 @@ public sealed class RetainedApprovalRehydrator
                 throw Invalid("retained_approval_execution_order");
             }
 
-            if (item.ToolOutcome == ToolExecutionOutcome.OutcomeUnknown
-                && unresolvedReconciliations.Contains(executionId.Value))
-            {
-                throw Invalid("retained_approval_execution_unknown");
-            }
-
             if (approvals.Count > 0
                 && !string.Equals(request.SafeCode, "policy_denied", StringComparison.Ordinal))
             {

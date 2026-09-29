@@ -63,7 +63,9 @@ public static class NdjsonEventRenderer
                 type = "transient",
                 transient_sequence = frame.TransientSequence,
                 event_type = frame.EventType,
-                data_bytes = frame.Data.Length,
+                // Bytes, not chars: it is named data_bytes and a consumer sizing
+                // buffers against it needs the wire size.
+                data_bytes = System.Text.Encoding.UTF8.GetByteCount(frame.Data),
             };
             writer.WriteLine(JsonSerializer.Serialize(obj));
             return;
@@ -91,7 +93,19 @@ public static class NdjsonEventRenderer
             writer.WriteLine(JsonSerializer.Serialize(err));
             return;
         }
-        Render(envelope, writer);
+
+        try
+        {
+            Render(envelope, writer);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // One frame the privacy guard rejects (or that otherwise fails to
+            // render) must not kill the subscription: the durable cursor already
+            // advanced past it, so the rest of the stream still arrives.
+            var err = new { v = Version, type = "error", message = "invalid_frame", detail = ex.Message };
+            writer.WriteLine(JsonSerializer.Serialize(err));
+        }
     }
 
     /// <summary>

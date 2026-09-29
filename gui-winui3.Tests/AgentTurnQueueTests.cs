@@ -70,6 +70,21 @@ public sealed class AgentTurnQueueTests
     }
 
     [Fact]
+    public void Requeue_puts_a_taken_turn_back_at_the_head()
+    {
+        var queue = new AgentTurnQueue();
+        queue.TryEnqueue("first", "first", null);
+        queue.TryEnqueue("second", "second", null);
+
+        var taken = queue.TakeFirst()!;
+        queue.RequeueFirst(taken);
+
+        Assert.Equal(2, queue.Items.Count);
+        Assert.Same(taken, queue.Items[0]);
+        Assert.Equal("second", queue.Items[1].Text);
+    }
+
+    [Fact]
     public void Remove_drops_the_exact_turn_even_when_two_are_identical()
     {
         var queue = new AgentTurnQueue();

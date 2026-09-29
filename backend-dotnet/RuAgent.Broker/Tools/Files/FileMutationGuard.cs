@@ -1,9 +1,12 @@
 namespace RuAgent.Broker.Tools.Files;
 
 /// <summary>
-/// Serializes adapter mutations and performs the final preimage check immediately
-/// before the filesystem operation. Approval and preparation intentionally happen
-/// earlier; this guard closes the in-process TOCTOU window at execution time.
+/// Serializes adapter mutations in this process and performs the final preimage
+/// check immediately before the filesystem operation. Approval and preparation
+/// intentionally happen earlier; the static gate closes the in-process TOCTOU
+/// window at execution time. It cannot serialize a different process writing the
+/// same file: that race remains, and the preimage hash comparison turns it into a
+/// bounded <c>workspace_changed</c> failure rather than an undetected overwrite.
 /// </summary>
 internal static class FileMutationGuard
 {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,10 +14,18 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts" / "install_gui_shortcuts.ps1"
-PUBLISH_RELATIVE_PATH = Path(
-    "gui-winui3/bin/Release/net10.0-windows10.0.26100.0/"
-    "win-x64/publish/RuApp.exe"
-)
+
+
+def _published_gui_relative_path() -> Path:
+    csproj = (ROOT / "gui-winui3" / "RuApp.csproj").read_text(encoding="utf-8")
+    match = re.search(r"<TargetFramework>([^<]+)</TargetFramework>", csproj)
+    assert match is not None, "gui-winui3/RuApp.csproj must declare a TargetFramework"
+    return Path(
+        f"gui-winui3/bin/Release/{match.group(1).strip()}/win-x64/publish/RuApp.exe"
+    )
+
+
+PUBLISH_RELATIVE_PATH = _published_gui_relative_path()
 SHELL = shutil.which("pwsh") or shutil.which("powershell")
 
 

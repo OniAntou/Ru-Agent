@@ -224,7 +224,9 @@ namespace RuApp.Services
                 return null;
             }
 
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            // Bounded read: the replay body is a run's whole event log and an
+            // unbounded string would let a large one pin memory on the UI thread.
+            var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken);
             var lines = body.Split('\n');
             string? payloadRef = SessionUsageReplayPolicy.FindLatestUsagePayloadRef(lines);
             if (string.IsNullOrWhiteSpace(payloadRef))

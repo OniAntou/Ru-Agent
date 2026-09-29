@@ -24,10 +24,10 @@ public sealed class PolicySnapshotCanonicalizerTests
             PolicySnapshotCanonicalizer.GetCanonicalUtf8(snapshot));
 
         Assert.Equal(
-            "{\"version\":1,\"preset\":\"standard\",\"workspace\":{\"workspace_id\":\"ws_11111111111111111111111111111111\",\"volume_serial_number\":\"A1B2-C3D4\",\"root_file_id\":\"root-a\",\"display_identity_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"ordered_rules\":[],\"created_at\":\"2026-08-24T08:00:00.0000000+00:00\"}",
+            "{\"version\":1,\"preset\":\"standard\",\"workspace\":{\"workspace_id\":\"ws_11111111111111111111111111111111\",\"volume_serial_number\":\"A1B2-C3D4\",\"root_file_id\":\"root-a\",\"display_identity_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"ordered_rules\":[]}",
             canonical);
         Assert.Equal(
-            "cce0e0a6677226ded25745c3aff6facdea655d6ce29147391800120bf21c8823",
+            "a67923f5a23bf318895b8effa9d52349d80ffb25e29b49b04489c8f0ab81989a",
             snapshot.Sha256);
     }
 
@@ -56,7 +56,6 @@ public sealed class PolicySnapshotCanonicalizerTests
             Create(version: 2),
             Create(preset: AgentPermissionPreset.FullAccess),
             Create(identity: Identity("root-moved", 'b')),
-            Create(createdAt: CreatedAt.AddTicks(1)),
             withRule,
         };
 
@@ -65,6 +64,14 @@ public sealed class PolicySnapshotCanonicalizerTests
             PolicySnapshotCanonicalizer.GetCanonicalUtf8(baseline),
             PolicySnapshotCanonicalizer.GetCanonicalUtf8(repeated));
         Assert.All(variants, variant => Assert.NotEqual(baseline.Sha256, variant.Sha256));
+
+        // created_at is metadata, not a hash-bound field: a snapshot re-loaded after
+        // a restart carries a fresh timestamp and must still match its durable hash.
+        var laterTimestamp = Create(createdAt: CreatedAt.AddTicks(1));
+        Assert.Equal(baseline.Sha256, laterTimestamp.Sha256);
+        Assert.Equal(
+            PolicySnapshotCanonicalizer.GetCanonicalUtf8(baseline),
+            PolicySnapshotCanonicalizer.GetCanonicalUtf8(laterTimestamp));
     }
 
     [Fact]
@@ -88,7 +95,7 @@ public sealed class PolicySnapshotCanonicalizerTests
 
         Assert.Empty(snapshot.OrderedRules);
         Assert.Equal(
-            "cce0e0a6677226ded25745c3aff6facdea655d6ce29147391800120bf21c8823",
+            "a67923f5a23bf318895b8effa9d52349d80ffb25e29b49b04489c8f0ab81989a",
             snapshot.Sha256);
     }
 
@@ -141,11 +148,10 @@ public sealed class PolicySnapshotCanonicalizerTests
         var presetIdx = canonical.IndexOf("\"preset\"", StringComparison.Ordinal);
         var workspaceIdx = canonical.IndexOf("\"workspace\"", StringComparison.Ordinal);
         var orderedRulesIdx = canonical.IndexOf("\"ordered_rules\"", StringComparison.Ordinal);
-        var createdAtIdx = canonical.IndexOf("\"created_at\"", StringComparison.Ordinal);
         Assert.True(versionIdx < presetIdx);
         Assert.True(presetIdx < workspaceIdx);
         Assert.True(workspaceIdx < orderedRulesIdx);
-        Assert.True(orderedRulesIdx < createdAtIdx);
+        Assert.DoesNotContain("\"created_at\"", canonical, StringComparison.Ordinal);
     }
 
     [Fact]

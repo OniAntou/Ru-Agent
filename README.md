@@ -10,7 +10,7 @@ Manager and your project never leaves your disk.
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](#requirements)
 [![WinUI 3](https://img.shields.io/badge/UI-WinUI%203-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows&logoColor=white)](#requirements)
-[![Tests](https://img.shields.io/badge/tests-4%2C691%20passing-3FB950)](#build-and-test)
+[![Tests](https://img.shields.io/badge/tests-4%2C738%20passing-3FB950)](#build-and-test)
 [![Tools](https://img.shields.io/badge/tools-12-8B5CF6)](#what-ru-can-do)
 [![Routes](https://img.shields.io/badge/routes-42%20HTTP-6E7681)](#your-data-stays-local)
 
@@ -126,7 +126,7 @@ model, open a project folder, and start chatting.
 ## Build and test
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,691 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, 4,738 tests
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

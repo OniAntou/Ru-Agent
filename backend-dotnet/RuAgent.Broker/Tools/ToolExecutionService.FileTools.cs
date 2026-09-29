@@ -240,30 +240,13 @@ public sealed partial class ToolExecutionService
 
     private ValueTask<ToolExecutionOutcome> ExecuteFileEdit(ToolExecutionContext context, JsonObject arguments)
     {
-        try
-        {
-            var tools = ResolveTools(context, TargetPathOf(arguments));
-            int occurrences = 1;
-            if (arguments["expected_occurrences"] is JsonValue value
-                && value.TryGetValue<int>(out var parsed))
-            {
-                occurrences = parsed;
-            }
-
-            return Succeeded(
-                tools.Edit.Execute(
-                    WithInternalExpectedHash(tools.MutationResolver, arguments)),
-                "Workspace file edited.");
-        }
-        catch (FileEditException error)
-        {
-            return ValueTask.FromResult(new ToolExecutionOutcome(
-                ToolResultStatuses.Failed,
-                error.Details ?? new JsonObject(),
-                error.Code,
-                "Workspace file was not edited.",
-                ToolVerificationStates.NotRequired));
-        }
+        var tools = ResolveTools(context, TargetPathOf(arguments));
+        // EditMatchException is deliberately not caught here: the executor catch in
+        // ExecuteBindingAsync turns it into the repair hint handed back to the model.
+        return Succeeded(
+            tools.Edit.Execute(
+                WithInternalExpectedHash(tools.MutationResolver, arguments)),
+            "Workspace file edited.");
     }
 
     private ValueTask<ToolExecutionOutcome> ExecuteRestore(ToolExecutionContext context, JsonObject arguments)
@@ -296,32 +279,36 @@ public sealed partial class ToolExecutionService
         }
 
         var grants = _session.DirectoryGrants.GetGrantedDirectories(context.SessionId);
+        var baseTools = ToolsFor(context);
         if (string.IsNullOrWhiteSpace(pathInput) || grants.Count == 0)
         {
-            return ToolsFor(context);
+            return baseTools;
         }
 
         try
         {
+            // Resolve against the same root the policy/approval leg used: the run
+            // lease root on v2 executions (never the broker's configured root,
+            // which may differ from the lease the user actually approved).
             var selected = FileToolRootSelector.SelectRoot(
-                _mutationResolver,
-                _mutationResolver.CanonicalRoot,
+                baseTools.MutationResolver,
+                baseTools.CanonicalRoot,
                 grants,
                 pathInput!);
-            if (string.Equals(selected, _mutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(selected, baseTools.MutationResolver.CanonicalRoot, StringComparison.OrdinalIgnoreCase))
             {
-                return ToolsFor(context);
+                return baseTools;
             }
 
             return ToolsForRoot(selected);
         }
         catch (ArgumentException)
         {
-            return ToolsFor(context);
+            return baseTools;
         }
         catch (UnauthorizedAccessException)
         {
-            return ToolsFor(context);
+            return baseTools;
         }
     }
 

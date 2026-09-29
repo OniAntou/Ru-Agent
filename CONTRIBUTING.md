@@ -15,7 +15,7 @@ this repository for tooling and guards only, never as part of the product.
 
 - **Windows 10 or 11, 64-bit**
 - **.NET SDK 10.0 (x64)** — to build; published output is self-contained
-- **Python 3.11–3.14** — repository tooling and documentation guards only
+- **Python 3.11–3.13** — repository tooling and documentation guards only
 - **VS 2022 C++ Build Tools** — only if building native components from source
 
 ## Build and run
@@ -34,7 +34,7 @@ gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe
 ## Testing
 
 ```powershell
-.\scripts\test_dotnet.ps1 -Configuration Debug   # 13 projects, ~4,675 tests
+.\scripts\test_dotnet.ps1 -Configuration Debug   # the full .NET suite, 13 projects
 .venv\Scripts\python.exe -m pytest tests -q      # documentation and route guards
 ```
 

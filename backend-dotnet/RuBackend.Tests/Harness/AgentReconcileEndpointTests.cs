@@ -141,6 +141,32 @@ public sealed class AgentReconcileEndpointTests
     }
 
     [Fact]
+    public async Task Applied_resolution_accepts_an_uppercase_snapshot_hash()
+    {
+        var factory = await CreateHostAsync();
+        try
+        {
+            await SeedRunAsync(factory, HarnessRunState.ReconciliationRequired);
+            var service = factory.Services.GetRequiredService<WorkspaceStateSnapshotService>();
+            var hash = await service.ComputeFreshHashAsync(new RunId(ReconciledRunId), CancellationToken.None);
+            Assert.False(string.IsNullOrWhiteSpace(hash));
+
+            using var client = factory.CreateAuthenticatedClient();
+            using var response = await client.PostAsJsonAsync(
+                $"/agent/v1/runs/{ReconciledRunId}/reconcile",
+                new { outcome = "applied", snapshot_hash = hash.ToUpperInvariant() });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("applied", json.GetProperty("resolution").GetString());
+        }
+        finally
+        {
+            factory.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Applied_resolution_preserves_known_execution_identity()
     {
         var factory = await CreateHostAsync();

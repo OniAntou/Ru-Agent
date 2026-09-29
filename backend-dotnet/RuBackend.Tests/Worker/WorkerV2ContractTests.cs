@@ -581,23 +581,24 @@ public sealed class WorkerV2ContractTests
 
         public static JsonObject Receipt(SystemPromptContext context)
         {
-            var zero = new string('0', 64);
-            var blocks = new JsonArray(
-                new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = zero },
-                new JsonObject { ["block_id"] = "agent.contract", ["sha256"] = zero },
-                new JsonObject { ["block_id"] = "environment", ["sha256"] = zero },
-                new JsonObject { ["block_id"] = "profile", ["sha256"] = zero },
-                new JsonObject
+            // A receipt the coordinator accepts: composed from the same context,
+            // with a real rendered-prompt digest (the zero fixture shape is
+            // rejected by ValidateAgainst).
+            var receipt = SystemPromptComposer.Compose(context, nativeToolCalling: true).Receipt;
+            var blocks = new JsonArray();
+            foreach (var block in receipt.BlockDigests)
+            {
+                blocks.Add(new JsonObject
                 {
-                    ["block_id"] = "instruction.root:Ru.md",
-                    ["sha256"] = context.InstructionBlocks[0].ContentSha256,
-                },
-                new JsonObject { ["block_id"] = "capabilities", ["sha256"] = zero },
-                new JsonObject { ["block_id"] = "runtime", ["sha256"] = zero });
+                    ["block_id"] = block.BlockId,
+                    ["sha256"] = block.Sha256,
+                });
+            }
+
             return new JsonObject
             {
-                ["composer_version"] = "2.0.0",
-                ["prompt_sha256"] = zero,
+                ["composer_version"] = receipt.ComposerVersion,
+                ["prompt_sha256"] = receipt.PromptSha256,
                 ["block_digests"] = blocks,
             };
         }

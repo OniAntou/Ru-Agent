@@ -73,6 +73,18 @@ public sealed class BrokerToolGatewayFactoryTests : IAsyncLifetime
         Assert.False(missing.IsConfigured);
     }
 
+    [Fact]
+    public void ApprovalArgsKey_canonicalizes_null_properties_without_throwing()
+    {
+        using var document = JsonDocument.Parse("{\"path\":null,\"nested\":{\"z\":null,\"a\":1}}");
+
+        var key = global::RuBackend.Harness.Broker.BrokerToolGateway.ApprovalArgsKey(
+            "read",
+            document.RootElement);
+
+        Assert.Equal("read|{\"nested\":{\"a\":1,\"z\":null},\"path\":null}", key);
+    }
+
     [Theory]
     [InlineData("lease")]
     [InlineData("version")]

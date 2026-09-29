@@ -1,4 +1,5 @@
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Persistence.Privacy;
 using CoreActivityKind = RuAgent.Harness.Core.AgentActivityKind;
 using CoreActivityState = RuAgent.Harness.Core.AgentActivityState;
 using ProtocolActivityKind = RuAgent.Protocol.Harness.AgentActivityKind;
@@ -16,16 +17,23 @@ namespace RuBackend.Harness;
 public sealed class AgentActivityLivePublisher : IAgentActivitySink
 {
     private readonly HarnessLiveEventHub _liveEvents;
+    private readonly KnownSecretRedactor _secrets;
 
-    public AgentActivityLivePublisher(HarnessLiveEventHub liveEvents)
+    public AgentActivityLivePublisher(HarnessLiveEventHub liveEvents, KnownSecretRedactor? secrets = null)
     {
         _liveEvents = liveEvents ?? throw new ArgumentNullException(nameof(liveEvents));
+        _secrets = secrets ?? KnownSecretRedactor.Empty;
     }
 
     public void Publish(RunId runId, AgentActivity activity)
     {
         ArgumentNullException.ThrowIfNull(activity);
 
+        // Terminal activities carry the model-supplied command line, which may
+        // quote a credential (an Authorization header, an API key in argv). This
+        // transient surface is client-visible, so it gets the same secret
+        // redaction as streamed assistant text.
+        var detail = activity.Detail is { Length: > 0 } raw ? _secrets.Redact(raw) : activity.Detail;
         var wire = new ProtocolActivityWire(
             activity.ActivityId,
             MapKind(activity.Kind),
@@ -40,7 +48,7 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
             activity.DurationMs,
             activity.SafeCode,
             activity.ToolDisplay,
-            activity.Detail,
+            detail,
             MapTodos(activity.Todos));
         AgentActivityWireValidator.Validate(wire);
         var json = AgentActivityWireCodec.Serialize(wire);

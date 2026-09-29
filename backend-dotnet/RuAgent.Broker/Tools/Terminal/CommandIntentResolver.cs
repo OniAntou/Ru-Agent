@@ -292,7 +292,7 @@ public sealed class CommandIntentResolver
             var candidate = Path.Combine(directory, executableName);
             if (File.Exists(candidate))
             {
-                return Path.GetFullPath(candidate);
+                return CanonicalizeExistingFile(candidate);
             }
         }
 
@@ -306,7 +306,7 @@ public sealed class CommandIntentResolver
                 : Path.Combine(fallback, "WindowsPowerShell", "v1.0", executableName);
             if (File.Exists(knownPath))
             {
-                return Path.GetFullPath(knownPath);
+                return CanonicalizeExistingFile(knownPath);
             }
         }
 

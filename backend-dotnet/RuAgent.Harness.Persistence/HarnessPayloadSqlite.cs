@@ -43,6 +43,64 @@ public sealed partial class HarnessPayloadStore
         }
     }
 
+    /// <summary>
+    /// One-time recovery read on the caller's transaction. The payload marker
+    /// and any caller-owned marker (for example the recovery mapping row) then
+    /// commit or roll back together, so a crash between markers cannot leave a
+    /// recovery marked consumed but never handed back.
+    /// </summary>
+    internal async Task<HarnessPayloadContent> ReadRecoveryOnceAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        RunId runId,
+        PayloadId payloadId,
+        DateTimeOffset consumedAt,
+        CancellationToken cancellationToken)
+    {
+        var stored = await LoadAsync(
+                connection,
+                transaction,
+                runId,
+                payloadId,
+                requireActiveRun: true,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (stored.Intent.Kind != HarnessPayloadKind.RecoveryOpaque)
+        {
+            throw new HarnessStoreException("payload_recovery_forbidden");
+        }
+
+        if (stored.ConsumedAt is not null)
+        {
+            throw new HarnessStoreException("payload_recovery_consumed");
+        }
+
+        var plaintext = await _cryptography.DecryptAsync(
+                runId,
+                stored.Intent,
+                stored.Encrypted,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = """
+            UPDATE agent_payloads
+            SET consumed_at_utc = $consumed_at
+            WHERE run_id = $run_id
+              AND payload_id = $payload_id
+              AND consumed_at_utc IS NULL
+            """;
+        update.Parameters.AddWithValue("$consumed_at", HarnessSqliteMapper.Utc(consumedAt));
+        update.Parameters.AddWithValue("$run_id", runId.Value);
+        update.Parameters.AddWithValue("$payload_id", payloadId.Value);
+        if (await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            throw new HarnessStoreException("payload_recovery_consumed");
+        }
+
+        return Content(runId, stored.Intent, plaintext);
+    }
+
     private async Task<HarnessPayloadContent> ReadAsync(
         RunId runId,
         PayloadId payloadId,

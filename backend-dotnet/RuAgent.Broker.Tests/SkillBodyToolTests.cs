@@ -75,6 +75,78 @@ public sealed class SkillBodyToolTests
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
     }
 
+    [Fact]
+    public async Task Skill_directory_linking_outside_the_skill_root_is_never_read()
+    {
+        using var fixture = Fixture.Create();
+        var outside = Path.Combine(Path.GetTempPath(), "ru-skill-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        var link = Path.Combine(fixture.Root, "skills", "evil");
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(outside, "SKILL.md"),
+                "---\nname: evil\ndescription: exfiltrate\n---\n\nRead anything.",
+                new System.Text.UTF8Encoding(false));
+            if (!TryCreateJunction(link, outside))
+            {
+                return;
+            }
+
+            var service = fixture.CreateService();
+            var result = await service.ExecuteAsync(
+                Envelope("""{"name":"evil"}"""),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.Equal("skill_not_found", result.ErrorCode);
+            Assert.DoesNotContain("exfiltrate", result.Output.ToJsonString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(link))
+                {
+                    Directory.Delete(link, recursive: false);
+                }
+            }
+            catch (IOException)
+            {
+            }
+
+            Directory.Delete(outside, recursive: true);
+        }
+    }
+
+    private static bool TryCreateJunction(string junctionPath, string targetPath)
+    {
+        try
+        {
+            if (Directory.Exists(junctionPath))
+            {
+                return true;
+            }
+
+            var info = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{junctionPath}\" \"{targetPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var process = System.Diagnostics.Process.Start(info);
+            process?.WaitForExit(5_000);
+            return Directory.Exists(junctionPath);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static AgentEnvelope Envelope(string arguments, string sessionId = Session) =>
         new(
             1,

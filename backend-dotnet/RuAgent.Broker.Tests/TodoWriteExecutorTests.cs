@@ -143,6 +143,9 @@ public sealed class TodoWriteExecutorTests
     {
         using var fixture = Fixture.Create();
         var service = fixture.CreateService();
+        // Production always opens a second chat through its own run lease; the
+        // lease is what grants that session its scopes.
+        fixture.OpenSessionLease("other-session");
 
         await service.ExecuteAsync(
             Envelope("""{"todos":[{"content":"session one task","status":"pending"}]}""", "todo-session"),
@@ -153,6 +156,21 @@ public sealed class TodoWriteExecutorTests
 
         Assert.Equal("session one task", service.ReadTodos("todo-session")[0].Content);
         Assert.Equal("session two task", service.ReadTodos("other-session")[0].Content);
+    }
+
+    [Fact]
+    public async Task A_session_without_its_own_lease_never_inherits_another_sessions_scopes()
+    {
+        using var fixture = Fixture.Create();
+        var service = fixture.CreateService();
+
+        var result = await service.ExecuteAsync(
+            Envelope("""{"todos":[{"content":"stolen","status":"pending"}]}""", "unopened-session"),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Denied, result.Status);
+        Assert.Equal("scope_missing", result.ErrorCode);
+        Assert.Empty(service.ReadTodos("unopened-session"));
     }
 
     [Fact]
@@ -244,6 +262,27 @@ public sealed class TodoWriteExecutorTests
                     [RuAgent.Broker.Policy.ToolScope.SystemRead],
                     StringComparer.Ordinal));
             return new ToolExecutionService(Session, Root);
+        }
+
+        public void OpenSessionLease(string sessionId)
+        {
+            Session.ConfigureAdvertisedCapabilities(["read"]);
+            var snapshot = LeaseTestSnapshots.StandardEmpty();
+            var lease = BrokerRunLease.CreateValidated(
+                "run_" + Guid.NewGuid().ToString("N"),
+                sessionId,
+                LeaseTestSnapshots.WorkspaceId,
+                Root,
+                LeaseTestSnapshots.VolumeSerial,
+                LeaseTestSnapshots.RootFileId,
+                LeaseTestSnapshots.DisplayHash,
+                snapshot.Preset,
+                snapshot.Version,
+                RuAgent.Protocol.Harness.BrokerPolicyContracts.ComputeCanonicalSnapshotHash(snapshot),
+                DateTimeOffset.UtcNow.AddMinutes(5),
+                snapshot,
+                advertisedCapabilities: ["read"]);
+            Assert.True(Session.TryOpenRunLease(lease, out var error), error);
         }
 
         private const string Session_ = "todo-session";

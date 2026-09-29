@@ -52,13 +52,25 @@ def run_gate(fixture: Path) -> dict[str, Any]:
         raise ValueError("shared workspace fixture must be a non-empty list")
     with tempfile.TemporaryDirectory(prefix="ru-shared-workspace-gate-") as temp:
         root = Path(temp)
-        results = [evaluate_scenario(item, root, index) for index, item in enumerate(scenarios, 1)]
-    sequences = [item["sequence"] for item in results]
+        results: list[dict[str, Any]] = []
+        failed = 0
+        for index, item in enumerate(scenarios, 1):
+            try:
+                results.append(evaluate_scenario(item, root, index))
+            except (AssertionError, KeyError, OSError) as error:
+                failed += 1
+                name = item.get("name") if isinstance(item, dict) else None
+                results.append({"name": name, "error": str(error)})
+    sequences = [item["sequence"] for item in results if "sequence" in item]
     if sequences != sorted(set(sequences)):
         raise AssertionError("coordinator sequences are not strictly monotonic")
-    if any(item["writer_kind"] != "unknown_external" for item in results if "codex" in item["name"] or "opencode" in item["name"]):
+    if any(
+        item["writer_kind"] != "unknown_external"
+        for item in results
+        if "writer_kind" in item and ("codex" in (item["name"] or "") or "opencode" in (item["name"] or ""))
+    ):
         raise AssertionError("external identity leaked into writer classification")
-    return {"scenarios": len(results), "failed": 0, "results": results}
+    return {"scenarios": len(results), "failed": failed, "results": results}
 
 
 def main() -> int:

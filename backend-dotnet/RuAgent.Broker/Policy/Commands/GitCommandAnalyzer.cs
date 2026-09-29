@@ -132,9 +132,14 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
                 return new(AnalyzerVersion, TerminalOperationClass.ExternalMutation, "declared", "git_network_external");
 
             case "config":
-                return IsExternalConfigForm(rest)
-                    ? new(AnalyzerVersion, TerminalOperationClass.ExternalMutation, "none", "git_config_external_mutation")
-                    : new(AnalyzerVersion, TerminalOperationClass.GitMutation, "none", "git_mutation");
+                if (IsExternalConfigForm(rest))
+                {
+                    return new(AnalyzerVersion, TerminalOperationClass.ExternalMutation, "none", "git_config_external_mutation");
+                }
+
+                return IsConfigReadForm(rest)
+                    ? new(AnalyzerVersion, TerminalOperationClass.ReadOnly, "none", "git_config_read")
+                    : Unknown("git_config_mutation_requires_approval");
 
             default:
                 return IsKnownLocalMutation(verb)
@@ -158,7 +163,7 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
     {
         "commit" or "add" or "rm" or "mv" or "merge" or "rebase" or "reset" or "checkout" or
         "switch" or "restore" or "clean" or "stash" or "tag" or "cherry-pick" or "revert" or
-        "am" or "apply" or "bisect" or "config" or "worktree" or "gc" or
+        "am" or "apply" or "bisect" or "worktree" or "gc" or
         "prune" or "replace" or "notes" or "filter-branch" or "format-patch" => true,
         _ => false,
     };
@@ -189,6 +194,91 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
         }
 
         return false;
+    }
+
+    // Repository-local writes are never auto-executable: `git config` can set
+    // keys that make later automatic git commands hand control to another
+    // program (core.fsmonitor, core.hooksPath, diff.external, aliases, ...).
+    // Only read forms of repository-local config keep the automatic path.
+    private static readonly HashSet<string> ConfigWriteFlags = new(StringComparer.Ordinal)
+    {
+        "--unset",
+        "--unset-all",
+        "--add",
+        "--replace-all",
+        "--rename-section",
+        "--remove-section",
+    };
+
+    private static readonly HashSet<string> ConfigReadFlags = new(StringComparer.Ordinal)
+    {
+        "--get",
+        "--get-all",
+        "--get-regexp",
+        "--get-urlmatch",
+        "--list",
+        "-l",
+        "--show-origin",
+        "--show-scope",
+        "--name-only",
+        "--null",
+        "-z",
+        "--includes",
+        "--no-includes",
+    };
+
+    private static bool IsConfigReadForm(IReadOnlyList<string> arguments)
+    {
+        var positionals = 0;
+        var hasReadFlag = false;
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            var argument = arguments[index];
+            if (ConfigWriteFlags.Contains(argument))
+            {
+                return false;
+            }
+
+            if (ConfigReadFlags.Contains(argument))
+            {
+                hasReadFlag = true;
+                continue;
+            }
+
+            // Value-taking modifiers that keep the read shape.
+            if (argument is "--default" or "--type")
+            {
+                index++;
+                continue;
+            }
+
+            if (argument.StartsWith("--default=", StringComparison.Ordinal)
+                || argument.StartsWith("--type=", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (argument is "--bool" or "--int" or "--bool-or-int" or "--path" or "--expiry-date")
+            {
+                continue;
+            }
+
+            if (argument.StartsWith('-'))
+            {
+                // Unknown flag: fail closed to approval rather than guessing.
+                return false;
+            }
+
+            positionals++;
+        }
+
+        if (hasReadFlag)
+        {
+            return true;
+        }
+
+        // `git config <key>` reads the value; `git config <key> <value>` writes.
+        return positionals <= 1;
     }
 
     private static bool IsInertConfigOverride(string assignment)

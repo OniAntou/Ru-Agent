@@ -51,15 +51,8 @@ public static class UnifiedPatchParser
                 continue;
             }
 
-            if (line.StartsWith("index ", StringComparison.Ordinal)
-                || line.StartsWith("--- /dev/null", StringComparison.Ordinal)
-                || line.StartsWith("+++ /dev/null", StringComparison.Ordinal))
+            if (line.StartsWith("index ", StringComparison.Ordinal))
             {
-                // Will be handled with surrounding headers
-                if (line == "--- /dev/null" || line == "+++ /dev/null")
-                {
-                    // Keep for later parsing via next headers
-                }
                 i++;
                 continue;
             }
@@ -201,6 +194,7 @@ public static class UnifiedPatchParser
                 origIdx++;
             }
 
+            int oldLinesConsumed = 0;
             foreach (var hl in hunk.Lines)
             {
                 if (hl.Length == 0)
@@ -213,15 +207,15 @@ public static class UnifiedPatchParser
                 switch (prefix)
                 {
                     case ' ':
-                        if (origIdx >= originalLines.Count || !string.Equals(originalLines[origIdx], content, StringComparison.Ordinal))
-                        {
-                        }
-
+                        RequireOriginalLine(originalLines, origIdx, content);
                         newLines.Add(content);
                         origIdx++;
+                        oldLinesConsumed++;
                         break;
                     case '-':
+                        RequireOriginalLine(originalLines, origIdx, content);
                         origIdx++;
+                        oldLinesConsumed++;
                         break;
                     case '+':
                         newLines.Add(content);
@@ -229,6 +223,14 @@ public static class UnifiedPatchParser
                     case '\\':
                         break;
                 }
+            }
+
+            // The hunk header declares how many old-side lines the hunk covers;
+            // a short or long old side means the patch does not describe the file
+            // it claims to patch.
+            if (oldLinesConsumed != hunk.OldCount)
+            {
+                throw new ArgumentException("patch_context_mismatch");
             }
         }
 
@@ -239,6 +241,15 @@ public static class UnifiedPatchParser
         }
 
         return string.Join("\n", newLines);
+    }
+
+    private static void RequireOriginalLine(List<string> originalLines, int index, string expected)
+    {
+        if (index >= originalLines.Count
+            || !string.Equals(originalLines[index], expected, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("patch_context_mismatch");
+        }
     }
 
     private static (int oldStart, int oldCount, int newStart, int newCount) ParseHunkHeader(string header)

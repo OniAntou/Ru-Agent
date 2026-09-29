@@ -72,8 +72,19 @@ builder.Services
     .AddRuActivityAndDiagnostics();
 // The Public Contract is a loopback-only surface guarded by a bearer token that
 // desktop clients read from local files. A misconfigured or edited BindUrl must
-// not silently widen it to every interface on the machine.
-var bindUrl = builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000";
+// not silently widen it to every interface on the machine. The hosted default
+// lives in BackendOptions (standalone) and PublicHostRuntimeOptions (managed),
+// so the fallback here cannot drift from the configured surface.
+var bindUrl = builder.Configuration["RuBackend:BindUrl"];
+if (bindUrl is null)
+{
+    // Only the managed launcher passes --urls; honoring it there keeps the
+    // desktop client's port while a stray ASPNETCORE_URLS cannot retarget a
+    // standalone host.
+    bindUrl = isManagedRuntime
+        ? builder.Configuration["urls"] ?? PublicHostRuntimeOptions.DefaultBindUrl
+        : new BackendOptions().BindUrl;
+}
 if (!IsLoopbackBindUrl(bindUrl))
 {
     Console.Error.WriteLine(

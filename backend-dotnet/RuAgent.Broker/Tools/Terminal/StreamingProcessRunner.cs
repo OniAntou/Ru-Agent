@@ -92,7 +92,17 @@ public sealed class StreamingProcessRunner
                 throw new InvalidOperationException("process_start_failed");
             }
 
-            job.Assign(process.Id);
+            try
+            {
+                job.Assign(process.Id);
+            }
+            catch (Win32Exception) when (process.WaitForExit(milliseconds: 250))
+            {
+                // The child finished before the job assignment landed. There is no
+                // live tree left to contain, so the normal drain path below reports
+                // the real exit code and output instead of a synthetic start failure.
+            }
+
             // Tool calls are non-interactive by contract. Redirect and close
             // stdin immediately so a child that reads from Console/stdin gets
             // EOF instead of hanging until the timeout.

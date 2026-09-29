@@ -207,10 +207,18 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         try
         {
             var run = await _client.CreateRunAsync(request, token).ConfigureAwait(false);
+            // Hand the run id over before subscribing: the delta/activity handlers
+            // read it on the SSE thread, and a UI-queued assignment lets the first
+            // frames (a fast model's opening delta) arrive while it is still null
+            // and be dropped.
+            lock (_gate)
+            {
+                _currentRunId = run.RunId;
+            }
+
             RunOnUi(() =>
             {
                 CurrentRun = run;
-                _currentRunId = run.RunId;
                 _waitKind = WaitKindFor(run);
                 _statusText = $"Running: {run.RunId}";
                 RefreshCommands();

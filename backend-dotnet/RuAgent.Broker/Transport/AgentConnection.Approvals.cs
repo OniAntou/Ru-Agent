@@ -157,10 +157,12 @@ public sealed partial class AgentConnection
             }));
         }
 
-        // Build expected binding: by default use pending's binding, but if payload supplies overrides, use those to trigger stale.
+        // Build expected binding: by default use pending's binding. The optional
+        // override fields exist so a test can drive the stale path; they are a
+        // test seam only and are compiled out of Release, where caller-supplied
+        // fields can never influence what the approval is compared against.
         var expectedBinding = pending.Binding;
-        // Optional overrides for testing stale paths: if payload contains matcher_preview overrides, we treat them as expected.
-        // For general flow without overrides, expected == pending => not stale.
+#if DEBUG
         var overrideHash = ReadOptionalPayloadString(payload, "expected_intent_hash");
         var overrideVersionRaw = payload["expected_snapshot_version"] is JsonValue sv && sv.TryGetValue<long>(out var ov) ? (long?)ov : null;
         var overrideToolId = ReadOptionalPayloadString(payload, "expected_tool_id");
@@ -180,6 +182,7 @@ public sealed partial class AgentConnection
                 SnapshotVersion: overrideVersionRaw ?? pending.Binding.SnapshotVersion,
                 IntentHash: overrideHash ?? pending.Binding.IntentHash);
         }
+#endif
 
         var now = DateTimeOffset.UtcNow;
         var resolution = _pendingV2.TryConsumeV2(approvalId!, command, expectedBinding, now);

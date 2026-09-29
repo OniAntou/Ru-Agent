@@ -27,12 +27,16 @@ or generates a cross-language baseline.
 
 Current boundary classes are:
 
-- `managed-startup`: the configured C# entrypoint files;
-- `tooling`: scripts, tests, and build/verification helpers;
-- `legacy`: other files under the scanned roots (`backend-dotnet/**`) that are
-  neither entrypoints nor tooling.
+- `managed-startup`: the two configured C# entrypoint files,
+  `backend-dotnet/RuBackend/Program.cs` and
+  `backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs`;
+- `tooling`: every file under `scripts/`, `tools/`, and `tests/`;
+- `legacy`: every other scanned file — the rest of `backend-dotnet/**` plus
+  `gui-winui3/**`, `gui-winui3.Tests/**`, and `gui-winui3.Harness/**` — that is
+  neither an entrypoint nor tooling.
 
-The scan roots are `scripts`, `tools`, `tests`, and `backend-dotnet`.
+The scan roots are `scripts`, `tools`, `tests`, `backend-dotnet`, `gui-winui3`,
+`gui-winui3.Tests`, and `gui-winui3.Harness`.
 
 The managed runtime is the C# Agent Worker: one process that serves
 `/worker/v2` on one loopback port with a single-use DPAPI-protected provider

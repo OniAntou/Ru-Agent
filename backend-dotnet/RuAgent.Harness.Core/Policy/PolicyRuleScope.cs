@@ -2,8 +2,8 @@ namespace RuAgent.Harness.Core.Policy;
 
 public enum PolicyRuleScope
 {
-    Global,
-    Project,
-    Run,
-    Once,
+    Global = 0,
+    Project = 1,
+    Run = 2,
+    Once = 3,
 }

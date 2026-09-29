@@ -112,4 +112,17 @@ public sealed class ProtectedPathCatalogTests
         Assert.True(ProtectedPathCatalog.IsProtected(@"D:\srv\.git-credentials"));
         Assert.False(ProtectedPathCatalog.IsProtected(@"D:\project\src\credentials.json"));
     }
+
+    [Theory]
+    [InlineData(@"D:\srv\id_rsa.")]
+    [InlineData(@"D:\srv\id_rsa ")]
+    [InlineData(@"D:\srv\.netrc.")]
+    [InlineData(@"C:\ws\repo\.git \config")]
+    [InlineData(@"C:\Users\u\.ssh\id_ed25519.")]
+    public void Trailing_dots_and_spaces_cannot_alias_protected_names(string path)
+    {
+        // Win32 drops trailing dots and spaces when it opens an existing name, so
+        // `id_rsa.` is `id_rsa`; the catalog must normalize before matching.
+        Assert.True(ProtectedPathCatalog.IsProtected(path, _ => @"C:\Users\u"));
+    }
 }

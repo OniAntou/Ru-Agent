@@ -571,9 +571,11 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["text"] = "done",
                     ["tool_calls"] = new JsonArray(),
                     ["finish_reason"] = "stop",
+                    // Deliberately invalid: an unbound zero receipt that must fail
+                    // the step even though its deltas already streamed.
                     ["prompt_receipt"] = new JsonObject
                     {
-            ["composer_version"] = "2.0.0",
+                        ["composer_version"] = "2.0.0",
                         ["prompt_sha256"] = new string('0', 64),
                         ["block_digests"] = new JsonArray(),
                     },
@@ -1420,32 +1422,26 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
 
     private static JsonObject PromptReceiptJson(SystemPromptContext? context = null)
     {
-        var blocks = new JsonArray(
-            new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = new string('0', 64) },
-            new JsonObject { ["block_id"] = "agent.contract", ["sha256"] = new string('0', 64) },
-            new JsonObject { ["block_id"] = "environment", ["sha256"] = new string('0', 64) },
-            new JsonObject { ["block_id"] = "profile", ["sha256"] = new string('0', 64) },
-            new JsonObject { ["block_id"] = "capabilities", ["sha256"] = new string('0', 64) },
-            new JsonObject { ["block_id"] = "runtime", ["sha256"] = new string('0', 64) });
-        if (context is not null)
+        // A receipt the coordinator accepts: composed from the same context the
+        // step is checked against, with a real rendered-prompt digest. The
+        // all-zero fixture shape is rejected by ValidateAgainst now.
+        var receipt = SystemPromptComposer
+            .Compose(context ?? SystemPromptContext.Empty, nativeToolCalling: true)
+            .Receipt;
+        var blocks = new JsonArray();
+        foreach (var block in receipt.BlockDigests)
         {
-            var insertionIndex = 4;
-            foreach (var instruction in context.InstructionBlocks)
+            blocks.Add(new JsonObject
             {
-                blocks.Insert(
-                    insertionIndex++,
-                    new JsonObject
-                    {
-                        ["block_id"] = $"instruction.{instruction.SourceId}",
-                        ["sha256"] = instruction.ContentSha256,
-                    });
-            }
+                ["block_id"] = block.BlockId,
+                ["sha256"] = block.Sha256,
+            });
         }
 
         return new JsonObject
         {
-            ["composer_version"] = "2.0.0",
-            ["prompt_sha256"] = new string('0', 64),
+            ["composer_version"] = receipt.ComposerVersion,
+            ["prompt_sha256"] = receipt.PromptSha256,
             ["block_digests"] = blocks,
         };
     }

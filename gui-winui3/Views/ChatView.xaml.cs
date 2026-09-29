@@ -115,6 +115,7 @@ namespace RuApp.Views
         private string? _requestedWorkspace;
         private bool _agentActionPending;
         private bool _isSendingUserTurn;
+        private string? _focusedApprovalId;
         private readonly AgentTurnQueue _queuedTurns = new();
         /// <summary>
         /// The transcript, bound to the chat list. A batch collection so the two

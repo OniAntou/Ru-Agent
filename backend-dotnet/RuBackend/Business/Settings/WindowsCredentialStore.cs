@@ -18,7 +18,9 @@ public interface IWindowsCredentialApi
 
 public sealed class WindowsCredentialStore : ICredentialStore
 {
-    private const int MaximumSecretCharacters = 32 * 1024;
+    // CredWrite caps the credential blob at CRED_MAX_CREDENTIAL_BLOB_SIZE
+    // (2560 bytes) and UTF-16 encodes two bytes per character.
+    private const int MaximumSecretCharacters = 2560 / 2;
     private readonly IWindowsCredentialApi _native;
 
     public WindowsCredentialStore()

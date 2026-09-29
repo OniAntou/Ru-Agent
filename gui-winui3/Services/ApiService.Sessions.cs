@@ -80,14 +80,19 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<List<(string Role, string Content)>?> GetSessionMessagesAsync(string sessionId)
+        public async Task<List<(string Role, string Content)>?> GetSessionMessagesAsync(
+            string sessionId,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                using var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
+                using var response = await _httpClient.PostAsync(
+                    $"{_baseUrl}/sessions/{sessionId}/activate",
+                    null,
+                    cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
                     if (result.TryGetProperty("session", out var sessionProp) &&
                         sessionProp.TryGetProperty("messages", out var messagesProp))
                     {

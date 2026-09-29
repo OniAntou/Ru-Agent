@@ -13,6 +13,31 @@ public sealed class AgentActivityLivePublisherTests
     private const string ExecutionId = "exec_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
     [Fact]
+    public async Task A_terminal_activity_redacts_credentials_before_the_client_sees_it()
+    {
+        var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(Run);
+        var publisher = new AgentActivityLivePublisher(
+            hub,
+            new RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor(["sk-live-secret-123"]));
+
+        publisher.Publish(Run, new AgentActivity(
+            "act_dddddddddddddddddddddddddddddddd",
+            AgentActivityKind.Terminal,
+            AgentActivityState.Completed,
+            Detail: "curl -H \"Authorization: Bearer sk-live-secret-123\" https://example.test",
+            SafeCode: "succeeded"));
+
+        var frame = await lease.ActivityReader.ReadAsync(CancellationToken.None);
+
+        Assert.DoesNotContain("sk-live-secret-123", frame.Data, StringComparison.Ordinal);
+        Assert.Contains(
+            RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Replacement,
+            frame.Data,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_todo_activity_carries_its_whole_list_to_the_client()
     {
         var hub = new HarnessLiveEventHub();

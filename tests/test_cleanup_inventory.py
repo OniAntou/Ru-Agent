@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 from pathlib import Path
@@ -192,8 +193,19 @@ def test_inventory_source_exposes_no_delete_capability() -> None:
     source = (root / "tools" / "maintenance" / "cleanup_inventory.py").read_text(
         encoding="utf-8"
     )
-    forbidden = ("unlink(", "rmtree(", "remove(", "removedirs(", "Delete(", "Remove-Item")
-    assert not any(value in source for value in forbidden)
+    tree = ast.parse(source)
+    forbidden = {"unlink", "rmtree", "remove", "removedirs", "delete", "remove_item"}
+    calls: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        function = node.func
+        if isinstance(function, ast.Name):
+            calls.append(function.id)
+        elif isinstance(function, ast.Attribute):
+            calls.append(function.attr)
+    found = sorted({name for name in calls if name.lower() in forbidden})
+    assert found == [], f"cleanup inventory must stay read-only; found calls to {found}"
 
 
 def test_cli_rejects_output_outside_its_checkout(tmp_path: Path) -> None:

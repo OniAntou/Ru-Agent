@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
@@ -11,7 +10,6 @@ namespace RuAgent.Harness.Persistence.Policy;
 
 public sealed class PolicySnapshotLoader
 {
-    private const int CurrentProtectionVersion = 1;
     private const int NonceSize = 12;
     private const int TagSize = 16;
     private const int MaximumDocumentBytes = 1024 * 1024;
@@ -45,18 +43,24 @@ public sealed class PolicySnapshotLoader
             throw new ArgumentException("Timestamp must be valid.", nameof(now));
         }
 
-        // Load and decrypt all relevant rules. Any failure fails closed with no partial snapshot.
-        var global = await LoadGlobalAsync(cancellationToken).ConfigureAwait(false);
-        var project = await LoadProjectAsync(workspace.WorkspaceId, cancellationToken).ConfigureAwait(false);
+        // One read transaction spans the global, project, and run tables so a
+        // concurrent rule write cannot produce a hybrid snapshot that never
+        // existed in the database.
+        await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = connection.BeginTransaction();
+        var global = await LoadGlobalAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var project = await LoadProjectAsync(connection, transaction, workspace.WorkspaceId, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<PolicyRule> run = Array.Empty<PolicyRule>();
         if (runId is not null)
         {
-            var isActive = await IsRunActiveAsync(runId.Value, cancellationToken).ConfigureAwait(false);
+            var isActive = await IsRunActiveAsync(connection, transaction, runId.Value, cancellationToken).ConfigureAwait(false);
             if (isActive)
             {
-                run = await LoadRunAsync(runId.Value, cancellationToken).ConfigureAwait(false);
+                run = await LoadRunAsync(connection, transaction, runId.Value, cancellationToken).ConfigureAwait(false);
             }
         }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         // Filter expired
         global = FilterExpired(global, now);
@@ -99,39 +103,54 @@ public sealed class PolicySnapshotLoader
         return rules.Where(r => !r.IsExpired(now)).ToArray();
     }
 
-    private async Task<IReadOnlyList<PolicyRule>> LoadGlobalAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<PolicyRule>> LoadGlobalAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken ct)
     {
-        await using var connection = await _options.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT rule_document FROM agent_global_rules";
         var docs = await ReadDocumentsAsync(command, ct).ConfigureAwait(false);
         return await DecryptDocumentsAsync(docs, ct).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<PolicyRule>> LoadProjectAsync(WorkspaceId workspaceId, CancellationToken ct)
+    private async Task<IReadOnlyList<PolicyRule>> LoadProjectAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        WorkspaceId workspaceId,
+        CancellationToken ct)
     {
-        await using var connection = await _options.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT rule_document FROM agent_project_rules WHERE workspace_id = $workspace_id";
         command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
         var docs = await ReadDocumentsAsync(command, ct).ConfigureAwait(false);
         return await DecryptDocumentsAsync(docs, ct).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<PolicyRule>> LoadRunAsync(RunId runId, CancellationToken ct)
+    private async Task<IReadOnlyList<PolicyRule>> LoadRunAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        RunId runId,
+        CancellationToken ct)
     {
-        await using var connection = await _options.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT rule_document FROM agent_run_rules WHERE run_id = $run_id";
         command.Parameters.AddWithValue("$run_id", runId.Value);
         var docs = await ReadDocumentsAsync(command, ct).ConfigureAwait(false);
         return await DecryptDocumentsAsync(docs, ct).ConfigureAwait(false);
     }
 
-    private async Task<bool> IsRunActiveAsync(RunId runId, CancellationToken ct)
+    private async Task<bool> IsRunActiveAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        RunId runId,
+        CancellationToken ct)
     {
-        await using var connection = await _options.OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT terminal_at_utc FROM agent_runs WHERE run_id = $run_id";
         command.Parameters.AddWithValue("$run_id", runId.Value);
         var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
@@ -167,24 +186,27 @@ public sealed class PolicySnapshotLoader
             var scope = (PolicyRuleScope)root.GetProperty("scope").GetInt32();
             var decision = (PolicyDecision)root.GetProperty("decision").GetInt32();
             var creationOrder = root.GetProperty("creation_order").GetInt64();
+            string? expiresRaw = null;
             DateTimeOffset? expiresAt = null;
             if (root.TryGetProperty("expires_at_utc", out var exp) && exp.ValueKind != JsonValueKind.Null)
             {
-                expiresAt = DateTimeOffset.Parse(exp.GetString()!, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                expiresRaw = exp.GetString()!;
+                expiresAt = DateTimeOffset.Parse(expiresRaw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
             }
             var matcherEncrypted = root.GetProperty("matcher_encrypted");
             var nonce = Convert.FromBase64String(matcherEncrypted.GetProperty("nonce").GetString()!);
             var ciphertext = Convert.FromBase64String(matcherEncrypted.GetProperty("ciphertext").GetString()!);
             var tag = Convert.FromBase64String(matcherEncrypted.GetProperty("tag").GetString()!);
             var version = matcherEncrypted.GetProperty("version").GetInt32();
-            if (version != CurrentProtectionVersion
+            if (version is not (PolicyMatcherProtection.LegacyVersion or PolicyMatcherProtection.CurrentVersion)
                 || nonce.Length != NonceSize
                 || tag.Length != TagSize
                 || ciphertext.Length > MaximumMatcherBytes)
             {
                 throw new HarnessStoreException("policy_matcher_envelope_invalid");
             }
-            var matcherJson = await DecryptMatcherAsync(ruleId, nonce, ciphertext, tag, cancellationToken).ConfigureAwait(false);
+            var aad = PolicyMatcherProtection.BuildAad(ruleId.Value, (int)scope, (int)decision, creationOrder, expiresRaw, version);
+            var matcherJson = await DecryptMatcherAsync(ruleId, nonce, ciphertext, tag, aad, cancellationToken).ConfigureAwait(false);
             var matcher = ParseMatcher(matcherJson);
             var rule = new PolicyRule(ruleId, scope, decision, matcher, creationOrder, expiresAt);
             ValidateRule(rule);
@@ -200,7 +222,7 @@ public sealed class PolicySnapshotLoader
         }
     }
 
-    private async Task<byte[]> DecryptMatcherAsync(PolicyRuleId ruleId, byte[] nonce, byte[] ciphertext, byte[] tag, CancellationToken ct)
+    private async Task<byte[]> DecryptMatcherAsync(PolicyRuleId ruleId, byte[] nonce, byte[] ciphertext, byte[] tag, byte[] aad, CancellationToken ct)
     {
         var key = await _keyStore.GetOrCreateKeyAsync(ct).ConfigureAwait(false);
         try
@@ -214,7 +236,7 @@ public sealed class PolicySnapshotLoader
             using var aes = new AesGcm(key, TagSize);
             try
             {
-                aes.Decrypt(nonce, ciphertext, tag, plaintext, Encoding.UTF8.GetBytes(ruleId.Value));
+                aes.Decrypt(nonce, ciphertext, tag, plaintext, aad);
             }
             catch (CryptographicException ex)
             {

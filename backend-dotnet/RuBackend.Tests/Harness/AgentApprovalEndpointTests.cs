@@ -844,7 +844,11 @@ public sealed class AgentApprovalEndpointTests
         {
             RequestCount++;
             var step = _steps.Count > 0 ? _steps.Dequeue() : FinalStep("script exhausted; done");
-            return Task.FromResult(new ModelStepResult(step, SystemPromptReceipt.Empty));
+            return Task.FromResult(new ModelStepResult(
+                step,
+                RuAgent.Harness.Core.Prompting.SystemPromptComposer
+                    .Compose(request.PromptContext, nativeToolCalling: true)
+                    .Receipt));
         }
     }
 

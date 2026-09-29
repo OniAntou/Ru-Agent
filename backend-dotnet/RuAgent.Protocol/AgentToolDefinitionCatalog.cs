@@ -178,13 +178,8 @@ public static class AgentToolDefinitionCatalog
         ("write_set", ArraySchema(256, TerminalLimits.MaxWorkingDirectoryChars)),
     ];
     private static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
-    private static JsonObject FileGlobSchema() => ObjectSchema(["pattern"], [("path", StringSchema()), ("pattern", StringSchema()), ("max_results", IntegerSchema(1, 64))]);
-    private static JsonObject FileSearchSchema() => ObjectSchema(["query"], [("path", StringSchema()), ("query", StringSchema()), ("file_glob", StringSchema()), ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()), ("max_results", IntegerSchema(1, 64))]);
     private static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 256 * 1024))]);
-    private static JsonObject FileWriteSchema() => ObjectSchema(["path", "content"], [("path", StringSchema()), ("content", StringSchema()), ("overwrite", BooleanSchema())]);
     private static JsonObject FileEditSchema() => ObjectSchema(["path", "old_string"], [("path", StringSchema()), ("old_string", StringSchema(minLength: 1)), ("new_string", StringSchema()), ("expected_occurrences", IntegerSchema(1, 1024))]);
-    private static JsonObject FileDeleteSchema() => ObjectSchema(["path"], [("path", StringSchema())]);
-    private static JsonObject FileRestoreSchema() => ObjectSchema(["recovery_id"], [("recovery_id", StringSchema(maxLength: 256))]);
     private static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
 
     // The catalog declares its own bounds, as every other schema here does. Sharing the
@@ -216,8 +211,6 @@ public static class AgentToolDefinitionCatalog
             ("content", StringSchema(maxLength: MaximumTodoContentLength)),
             ("status", StringSchema(maxLength: 32))),
     };
-    private static JsonObject TerminalRunSchema() => ObjectSchema(["executable"], [("executable", StringSchema(TerminalLimits.MaxExecutableChars)), ("arguments", ArraySchema(TerminalLimits.MaxArguments, TerminalLimits.MaxArgumentChars)), ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)), ("timeout_ms", IntegerSchema(1, TerminalLimits.HardMaxTimeoutMs)), ("network_intent", BooleanSchema()), ..TerminalWriteSetProperties()]);
-    private static JsonObject TerminalShellSchema() => ObjectSchema(["script"], [("script", StringSchema(TerminalLimits.MaxScriptChars)), ("working_directory", StringSchema(TerminalLimits.MaxWorkingDirectoryChars)), ("timeout_ms", IntegerSchema(1, TerminalLimits.HardMaxTimeoutMs)), ("network_intent", BooleanSchema()), ..TerminalWriteSetProperties()]);
     private static JsonObject WebSearchSchema() => ObjectSchema(["query"], [("query", StringSchema(512)), ("max_results", IntegerSchema(1, 10))]);
     private static JsonObject WebFetchSchema() => ObjectSchema(["url"], [("url", StringSchema(2048))]);
     private static JsonObject SkillSchema() => ObjectSchema(["name"], [("name", StringSchema(minLength: 1, maxLength: 96))]);

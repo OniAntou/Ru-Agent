@@ -21,7 +21,7 @@ public sealed class BrokerSession
     private const long MaximumDescriptorBytes = 1 * 1024 * 1024;
     private readonly object _gate = new();
     private string? _activeSessionId;
-    private IReadOnlySet<string> _activeScopes = new HashSet<string>(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _scopesBySession = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BrokerRunLease> _runLeases = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _advertisedCapabilities =
         RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
@@ -87,7 +87,7 @@ public sealed class BrokerSession
             if (_activeSessionId is null)
             {
                 _activeSessionId = sessionId;
-                _activeScopes = scopes is null
+                _scopesBySession[sessionId] = scopes is null
                     ? new HashSet<string>(StringComparer.Ordinal)
                     : new HashSet<string>(scopes, StringComparer.Ordinal);
                 return true;
@@ -106,14 +106,39 @@ public sealed class BrokerSession
         }
     }
 
+    /// <summary>
+    /// Union of every live session's scopes. Prefer <see cref="ScopesFor"/>:
+    /// the union is only for callers that genuinely speak about the whole
+    /// process, never for a policy grant belonging to one session.
+    /// </summary>
     public IReadOnlySet<string> Scopes
     {
         get
         {
             lock (_gate)
             {
-                return new HashSet<string>(_activeScopes, StringComparer.Ordinal);
+                var union = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var scopes in _scopesBySession.Values)
+                {
+                    union.UnionWith(scopes);
+                }
+
+                return union;
             }
+        }
+    }
+
+    /// <summary>
+    /// Scopes granted to one session. A lease opened by another session must
+    /// never widen this set.
+    /// </summary>
+    public IReadOnlySet<string> ScopesFor(string sessionId)
+    {
+        lock (_gate)
+        {
+            return _scopesBySession.TryGetValue(sessionId, out var scopes)
+                ? new HashSet<string>(scopes, StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
         }
     }
 
@@ -133,10 +158,10 @@ public sealed class BrokerSession
             }
 
             DirectoryGrants.RevokeSession(sessionId);
+            _scopesBySession.Remove(sessionId);
             if (string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal))
             {
                 _activeSessionId = null;
-                _activeScopes = new HashSet<string>(StringComparer.Ordinal);
             }
         }
     }
@@ -251,12 +276,17 @@ public sealed class BrokerSession
             if (_activeSessionId is null)
             {
                 _activeSessionId = lease.SessionId;
-                _activeScopes = new HashSet<string>(StringComparer.Ordinal);
             }
 
-            _activeScopes = new HashSet<string>(
-                _activeScopes.Concat(lease.AdvertisedCapabilities.SelectMany(WorkspaceScopesFor)),
-                StringComparer.Ordinal);
+            if (!_scopesBySession.TryGetValue(lease.SessionId, out var sessionScopes))
+            {
+                sessionScopes = new HashSet<string>(StringComparer.Ordinal);
+                _scopesBySession[lease.SessionId] = sessionScopes;
+            }
+
+            // Scopes stay scoped to the lease's own session: one chat's lease
+            // must never widen another chat's policy grant.
+            sessionScopes.UnionWith(lease.AdvertisedCapabilities.SelectMany(WorkspaceScopesFor));
 
             errorCode = null;
             return true;

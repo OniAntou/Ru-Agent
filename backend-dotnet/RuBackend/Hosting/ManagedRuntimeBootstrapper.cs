@@ -49,9 +49,13 @@ internal static class ManagedRuntimeBootstrapper
         var descriptorPath = RuAgent.Hosting.PublicHostRuntimeOptions.ResolveDescriptorPath(configDataRoot, configLogRoot, projectRoot);
         var managedDescriptorWriter = new RuAgent.Hosting.RuntimeDescriptorWriter(descriptorPath);
 
-        // Determine public port from BindUrl
-        var bindUrl = configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000";
-        int publicPort = 8000;
+        // Determine public port from BindUrl. The managed launcher passes --urls;
+        // reading it here keeps the conflict/single-instance gate on the same port
+        // the host will actually bind instead of a stale default.
+        var bindUrl = configuration["RuBackend:BindUrl"]
+            ?? configuration["urls"]
+            ?? RuAgent.Hosting.PublicHostRuntimeOptions.DefaultBindUrl;
+        int publicPort = new Uri(RuAgent.Hosting.PublicHostRuntimeOptions.DefaultBindUrl).Port;
         if (Uri.TryCreate(bindUrl, UriKind.Absolute, out var bindUri))
             publicPort = bindUri.Port;
 

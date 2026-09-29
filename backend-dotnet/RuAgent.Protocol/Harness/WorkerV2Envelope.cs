@@ -31,7 +31,7 @@ public static class WorkerV2EnvelopeCodec
             throw new AgentProtocolException("message_too_large");
         }
 
-        DetectDuplicateTopLevelKeys(json);
+        DetectDuplicateKeys(json);
 
         JsonNode? node;
         try
@@ -159,7 +159,13 @@ public static class WorkerV2EnvelopeCodec
         return json;
     }
 
-    private static void DetectDuplicateTopLevelKeys(string json)
+    /// <summary>
+    /// Rejects duplicate property names at any depth before the JSON is parsed
+    /// into a tree. <see cref="JsonNode"/> keeps only the last value for a
+    /// repeated name, so a nested duplicate would let a sender smuggle a second
+    /// value past every later check that reads the parsed object.
+    /// </summary>
+    private static void DetectDuplicateKeys(string json)
     {
         try
         {
@@ -169,20 +175,19 @@ public static class WorkerV2EnvelopeCodec
                 AllowTrailingCommas = false,
                 CommentHandling = JsonCommentHandling.Disallow,
             });
-            var depth = 0;
-            var keys = new HashSet<string>(StringComparer.Ordinal);
+            var scopes = new Stack<HashSet<string>>();
             while (reader.Read())
             {
                 switch (reader.TokenType)
                 {
                     case JsonTokenType.StartObject:
-                        depth++;
+                        scopes.Push(new HashSet<string>(StringComparer.Ordinal));
                         break;
                     case JsonTokenType.EndObject:
-                        depth--;
+                        scopes.Pop();
                         break;
-                    case JsonTokenType.PropertyName when depth == 1:
-                        if (!keys.Add(reader.GetString()!))
+                    case JsonTokenType.PropertyName when scopes.Count > 0:
+                        if (!scopes.Peek().Add(reader.GetString()!))
                         {
                             throw new AgentProtocolException("duplicate_field");
                         }

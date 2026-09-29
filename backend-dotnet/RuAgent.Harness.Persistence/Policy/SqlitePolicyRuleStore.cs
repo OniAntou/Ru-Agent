@@ -21,7 +21,7 @@ public sealed record PolicyDeleteResult(PolicyDeleteOutcome Outcome);
 
 public sealed class SqlitePolicyRuleStore
 {
-    private const int CurrentProtectionVersion = 1;
+    private const int CurrentProtectionVersion = 2;
     private const int NonceSize = 12;
     private const int TagSize = 16;
     private const int MaximumDocumentBytes = 1024 * 1024;
@@ -36,18 +36,6 @@ public sealed class SqlitePolicyRuleStore
         ArgumentNullException.ThrowIfNull(keyStore);
         _options = options;
         _keyStore = keyStore;
-    }
-
-    public SqlitePolicyRuleStore(HarnessSqliteOptions options, HarnessPayloadCryptography cryptography)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(cryptography);
-        _options = options;
-        // Extract keyStore via reflection? For compatibility, create a wrapper that uses same cryptography key.
-        // Instead, require IHarnessKeyStore directly; this overload is for existing call patterns but we will delegate to a dummy.
-        // Use a Fake wrapper that delegates to cryptography's internal keystore via reflection is complex.
-        // For now, throw if this overload is used without keyStore – tests use IHarnessKeyStore overload.
-        throw new NotSupportedException("Use IHarnessKeyStore overload for policy store.");
     }
 
     public async Task CreateAsync(
@@ -92,7 +80,7 @@ public sealed class SqlitePolicyRuleStore
             ArgumentNullException.ThrowIfNull(rule);
             ValidateRule(rule);
             ValidateOwnership(rule.Scope, workspaceId, runId);
-            var encrypted = await EncryptMatcherAsync(rule.Matcher, rule.RuleId, cancellationToken).ConfigureAwait(false);
+            var encrypted = await EncryptMatcherAsync(rule, cancellationToken).ConfigureAwait(false);
             prepared.Add((rule, BuildDocument(rule, encrypted, now)));
         }
 
@@ -464,10 +452,12 @@ public sealed class SqlitePolicyRuleStore
             var scope = (PolicyRuleScope)root.GetProperty("scope").GetInt32();
             var decision = (PolicyDecision)root.GetProperty("decision").GetInt32();
             var creationOrder = root.GetProperty("creation_order").GetInt64();
+            string? expiresRaw = null;
             DateTimeOffset? expiresAt = null;
             if (root.TryGetProperty("expires_at_utc", out var expiresProp) && expiresProp.ValueKind != JsonValueKind.Null)
             {
-                expiresAt = DateTimeOffset.Parse(expiresProp.GetString()!, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                expiresRaw = expiresProp.GetString()!;
+                expiresAt = DateTimeOffset.Parse(expiresRaw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
             }
 
             var matcherEncrypted = root.GetProperty("matcher_encrypted");
@@ -475,7 +465,7 @@ public sealed class SqlitePolicyRuleStore
             var ciphertext = Convert.FromBase64String(matcherEncrypted.GetProperty("ciphertext").GetString()!);
             var tag = Convert.FromBase64String(matcherEncrypted.GetProperty("tag").GetString()!);
             var version = matcherEncrypted.GetProperty("version").GetInt32();
-            if (version != CurrentProtectionVersion
+            if (version is not (PolicyMatcherProtection.LegacyVersion or PolicyMatcherProtection.CurrentVersion)
                 || nonce.Length != NonceSize
                 || tag.Length != TagSize
                 || ciphertext.Length > MaximumMatcherBytes)
@@ -483,7 +473,8 @@ public sealed class SqlitePolicyRuleStore
                 throw new HarnessStoreException("policy_matcher_envelope_invalid");
             }
 
-            var matcherJson = await DecryptMatcherAsync(ruleId, nonce, ciphertext, tag, cancellationToken).ConfigureAwait(false);
+            var aad = PolicyMatcherProtection.BuildAad(ruleId.Value, (int)scope, (int)decision, creationOrder, expiresRaw, version);
+            var matcherJson = await DecryptMatcherAsync(ruleId, nonce, ciphertext, tag, aad, cancellationToken).ConfigureAwait(false);
             var matcher = ParseMatcher(matcherJson);
 
             var rule = new PolicyRule(ruleId, scope, decision, matcher, creationOrder, expiresAt);
@@ -500,7 +491,7 @@ public sealed class SqlitePolicyRuleStore
         }
     }
 
-    private async Task<byte[]> DecryptMatcherAsync(PolicyRuleId ruleId, byte[] nonce, byte[] ciphertext, byte[] tag, CancellationToken cancellationToken)
+    private async Task<byte[]> DecryptMatcherAsync(PolicyRuleId ruleId, byte[] nonce, byte[] ciphertext, byte[] tag, byte[] aad, CancellationToken cancellationToken)
     {
         var key = await _keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -517,7 +508,7 @@ public sealed class SqlitePolicyRuleStore
             using var aes = new AesGcm(key, TagSize);
             try
             {
-                aes.Decrypt(nonce, ciphertext, tag, plaintext, Encoding.UTF8.GetBytes(ruleId.Value));
+                aes.Decrypt(nonce, ciphertext, tag, plaintext, aad);
             }
             catch (CryptographicException ex)
             {
@@ -535,9 +526,9 @@ public sealed class SqlitePolicyRuleStore
         }
     }
 
-    private async Task<EncryptedMatcherPayload> EncryptMatcherAsync(PolicyMatcher matcher, PolicyRuleId ruleId, CancellationToken cancellationToken)
+    private async Task<EncryptedMatcherPayload> EncryptMatcherAsync(PolicyRule rule, CancellationToken cancellationToken)
     {
-        var json = SerializeMatcher(matcher);
+        var json = SerializeMatcher(rule.Matcher);
         var key = await _keyStore.GetOrCreateKeyAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -549,7 +540,14 @@ public sealed class SqlitePolicyRuleStore
             var ciphertext = new byte[json.Length];
             var tag = new byte[TagSize];
             using var aes = new AesGcm(key, TagSize);
-            aes.Encrypt(nonce, json, ciphertext, tag, Encoding.UTF8.GetBytes(ruleId.Value));
+            var aad = PolicyMatcherProtection.BuildAad(
+                rule.RuleId.Value,
+                (int)rule.Scope,
+                (int)rule.Decision,
+                rule.CreationOrder,
+                rule.ExpiresAt?.ToString("O"),
+                PolicyMatcherProtection.CurrentVersion);
+            aes.Encrypt(nonce, json, ciphertext, tag, aad);
             return new EncryptedMatcherPayload(nonce, ciphertext, tag);
         }
         finally
@@ -673,5 +671,58 @@ public sealed class SqlitePolicyRuleStore
         {
             throw new HarnessStoreException("policy_matcher_invalid", ex);
         }
+    }
+}
+
+/// <summary>
+/// Matcher envelope protection versions and their associated data.
+/// </summary>
+/// <remarks>
+/// Version 1 authenticated only the rule id, so the plaintext metadata next to
+/// the ciphertext (scope, decision, creation order, expiry) could be edited by
+/// anyone with write access to the database without failing decryption; a
+/// project rule could be rewritten as global, or an allow into a deny, while
+/// the matcher itself stayed valid. Version 2 binds that metadata into the AAD,
+/// so any tampering now fails closed. Readers accept both versions -- existing
+/// version 1 rows keep decrypting with the legacy AAD -- while every new write
+/// is version 2.
+/// </remarks>
+internal static class PolicyMatcherProtection
+{
+    internal const int LegacyVersion = 1;
+    internal const int CurrentVersion = 2;
+
+    internal static byte[] BuildAad(
+        string ruleId,
+        int scope,
+        int decision,
+        long creationOrder,
+        string? expiresAtUtc,
+        int protectionVersion)
+    {
+        if (protectionVersion == LegacyVersion)
+        {
+            return Encoding.UTF8.GetBytes(ruleId);
+        }
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("rule_id", ruleId);
+            writer.WriteNumber("scope", scope);
+            writer.WriteNumber("decision", decision);
+            writer.WriteNumber("creation_order", creationOrder);
+            if (expiresAtUtc is null)
+            {
+                writer.WriteNull("expires_at_utc");
+            }
+            else
+            {
+                writer.WriteString("expires_at_utc", expiresAtUtc);
+            }
+            writer.WriteEndObject();
+        }
+        return stream.ToArray();
     }
 }

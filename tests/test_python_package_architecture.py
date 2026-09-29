@@ -16,18 +16,14 @@ RETIRED_MODULES = (
 
 def test_active_python_imports_do_not_cross_retired_runtime_boundaries() -> None:
     offenders = []
-    for folder in ("src", "scripts", "tools", "tests"):
+    for folder in ("scripts", "tools", "tests"):
+        if not (ROOT / folder).is_dir():
+            continue
         for path in (ROOT / folder).rglob("*.py"):
             if {"__pycache__", "bin", "obj", "out"}.intersection(path.parts):
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-            import_root = ROOT / "src" if folder == "src" else ROOT
-            module = ".".join(path.relative_to(import_root).with_suffix("").parts)
-            if folder == "src" and any(
-                module == retired or module.startswith(retired + ".")
-                for retired in RETIRED_MODULES
-            ):
-                offenders.append(f"retired source package: {path.relative_to(ROOT)}")
+            module = ".".join(path.relative_to(ROOT).with_suffix("").parts)
             for node in ast.walk(tree):
                 names = []
                 if isinstance(node, ast.Import):
@@ -43,6 +39,11 @@ def test_active_python_imports_do_not_cross_retired_runtime_boundaries() -> None
                 ):
                     offenders.append(f"{path.relative_to(ROOT)}:{getattr(node, 'lineno', 0)}")
     assert offenders == []
+
+
+def test_python_sources_live_outside_a_src_package_tree() -> None:
+    """Python is repository tooling; a product-shaped `src/` package must not return."""
+    assert not (ROOT / "src").exists()
 
 
 def test_python_distribution_excludes_retired_host_and_device_dependencies() -> None:

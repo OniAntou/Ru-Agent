@@ -172,8 +172,10 @@ _Avoid_: reusable confirmation flag or approval-time reissue
 
 **Policy Snapshot**:
 The immutable, versioned, SHA-256-canonical binding of preset, trusted
-workspace identity, ordered `PolicyRule`/`PolicyMatcher` list, and creation
-time that Broker v2 validates before advertising capabilities; a new
+workspace identity, and ordered `PolicyRule`/`PolicyMatcher` list that Broker v2
+validates before advertising capabilities; creation time stays metadata on the
+wire and is deliberately excluded from the hash, so a snapshot re-loaded after a
+restart still matches its durable hash. A new
 snapshot `N+1` invalidates other pending `N` decisions after the
 authorizing call completes.
 _Avoid_: mutable rule set

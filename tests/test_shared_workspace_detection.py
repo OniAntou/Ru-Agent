@@ -21,4 +21,21 @@ def test_fixture_never_assigns_external_identity() -> None:
     scenarios = json.loads(fixture.read_text(encoding="utf-8"))
     external = [item for item in scenarios if item["writer"] == "unknown_external"]
     assert external
-    assert all(item["writer"] == "unknown_external" for item in external)
+    named_rivals = [item for item in scenarios if "codex" in item["name"] or "opencode" in item["name"]]
+    assert named_rivals
+    # A scenario that names another agent must still classify its writer as an
+    # unknown external process: Ru never attributes the identity it cannot prove.
+    assert all(item["writer"] == "unknown_external" for item in named_rivals)
+
+
+def test_gate_reports_real_failures(tmp_path: Path) -> None:
+    broken = tmp_path / "broken.json"
+    broken.write_text(
+        json.dumps([{"path": "a.txt", "writer": "unknown_external"}]),
+        encoding="utf-8",
+    )
+
+    summary = run_gate(broken)
+
+    assert summary["failed"] == 1
+    assert summary["scenarios"] == 1

@@ -164,3 +164,19 @@ def test_the_wildcard_catch_all_is_kept_out_of_the_declared_comparison(
 
 def test_source_that_maps_nothing_yields_nothing(tmp_path: Path) -> None:
     assert mapped_routes(tmp_path) == (set(), [])
+
+
+def test_commented_out_map_calls_are_not_treated_as_registrations(tmp_path: Path) -> None:
+    source_dir = tmp_path / "backend-dotnet" / "RuBackend"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "Comments.cs").write_text(
+        '// app.MapGet("/agent/v1/ghost", Handler);\n'
+        '/* app.MapPost("/agent/v1/phantom", Handler); */\n'
+        'app.MapGet("/status", StatusAsync);\n',
+        encoding="utf-8",
+    )
+
+    routes, wildcards = mapped_routes(tmp_path)
+
+    assert routes == {("GET", "/status")}
+    assert wildcards == []

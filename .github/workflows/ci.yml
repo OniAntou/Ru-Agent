@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -24,7 +27,9 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev,tooling]"
-      - run: git log --check --format= -n 50
+      # No -n cap: the checkout is shallow, so this inspects every commit the
+      # checkout contains rather than silently stopping at an arbitrary window.
+      - run: git log --check --format=
       - run: python -m pytest -q
       - run: python scripts/check_aspnetcore_route_matrix.py
       - run: python scripts/check_python_runtime_boundary.py
@@ -39,7 +44,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - run: git log --check --format= -n 50
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      - run: git log --check --format=
         shell: pwsh
       - name: Run all .NET tests
         shell: pwsh

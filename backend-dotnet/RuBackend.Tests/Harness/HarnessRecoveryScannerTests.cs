@@ -1488,7 +1488,11 @@ public sealed class HarnessRecoveryScannerTests
                 },
                 AssistantFinishReason.ToolCalls,
                 1);
-            return Task.FromResult(new ModelStepResult(step, SystemPromptReceipt.Empty));
+            return Task.FromResult(new ModelStepResult(
+                step,
+                RuAgent.Harness.Core.Prompting.SystemPromptComposer
+                    .Compose(request.PromptContext, nativeToolCalling: true)
+                    .Receipt));
         }
     }
 

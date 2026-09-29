@@ -28,8 +28,9 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             _httpClient = httpClient;
         }
 
-        if (_httpClient.DefaultRequestHeaders.Authorization is null)
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.BearerToken);
+        // No DefaultRequestHeaders here: a shared client may serve more than one
+        // session, and EnsureAuth already attaches the bearer per request. Setting
+        // a default would make one session's token leak onto another's calls.
     }
 
     public void Dispose()
@@ -431,12 +432,17 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         var body = await ReadBoundedResponseAsync(resp.Content, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
             throw new AgentApiException(ExtractErrorCode(body) ?? "policy_list_failed", body, (int)resp.StatusCode);
-        using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(body); }
+        catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        using (doc)
         {
-            var list = new List<JsonElement>();
-            foreach (var el in items.EnumerateArray()) list.Add(el.Clone());
-            return list;
+            if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<JsonElement>();
+                foreach (var el in items.EnumerateArray()) list.Add(el.Clone());
+                return list;
+            }
         }
         return Array.Empty<JsonElement>();
     }
@@ -534,8 +540,17 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 
     private static JsonElement ParseJsonClone(string json)
     {
-        using var document = JsonDocument.Parse(json);
-        return document.RootElement.Clone();
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException exception)
+        {
+            // Callers catch AgentApiException; a raw JsonException from a malformed
+            // body would otherwise escape every command's error handling.
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
     }
 
     private static JsonElement ParseRestoreResponseStrict(string json, string expectedSessionId)

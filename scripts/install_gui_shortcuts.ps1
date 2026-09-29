@@ -19,7 +19,19 @@ $executable = Get-ChildItem -LiteralPath $publishRoot -Filter 'RuApp.exe' -Recur
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1 -ExpandProperty FullName
 if ([string]::IsNullOrWhiteSpace($executable)) {
-    $executable = Join-Path $project 'gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe'
+    # Follow the project's own target framework instead of a hardcoded one, so a
+    # TFM bump cannot leave the installer pointing at a stale publish directory.
+    $targetFramework = 'net10.0-windows10.0.26100.0'
+    $projectFile = Join-Path $project 'gui-winui3\RuApp.csproj'
+    if (Test-Path -LiteralPath $projectFile -PathType Leaf) {
+        $declared = [regex]::Match(
+            (Get-Content -LiteralPath $projectFile -Raw),
+            '<TargetFramework>([^<]+)</TargetFramework>')
+        if ($declared.Success) {
+            $targetFramework = $declared.Groups[1].Value.Trim()
+        }
+    }
+    $executable = Join-Path $project "gui-winui3\bin\Release\$targetFramework\win-x64\publish\RuApp.exe"
 }
 
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {

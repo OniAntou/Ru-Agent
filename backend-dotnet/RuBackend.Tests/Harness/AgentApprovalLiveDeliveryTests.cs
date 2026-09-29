@@ -191,7 +191,11 @@ public sealed class AgentApprovalLiveDeliveryTests
             }
 
             var step = _steps.Count > 0 ? _steps.Dequeue() : FinalStep("done");
-            return new ModelStepResult(step, SystemPromptReceipt.Empty);
+            return new ModelStepResult(
+                step,
+                RuAgent.Harness.Core.Prompting.SystemPromptComposer
+                    .Compose(request.PromptContext, nativeToolCalling: true)
+                    .Receipt);
         }
     }
 

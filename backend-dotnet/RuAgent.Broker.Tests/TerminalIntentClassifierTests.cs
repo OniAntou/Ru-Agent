@@ -40,6 +40,20 @@ public sealed class TerminalIntentClassifierTests
         Assert.Equal(new TerminalIntentClassification(true, "bounded_local"), result);
     }
 
+    [Theory]
+    [InlineData("frobnicate.exe", "--version")]
+    [InlineData("frobnicate.exe", "--help")]
+    [InlineData("frobnicate.exe", "-h")]
+    public void Diagnostics_flags_on_an_unrecognized_binary_still_ask(string executable, string flag)
+    {
+        using var workspace = new TemporaryWorkspace();
+        var factory = CreateFactory(workspace.Root);
+
+        var result = _classifier.Classify(Terminal(factory, executable, flag));
+
+        Assert.Equal(new TerminalIntentClassification(false, "terminal_unknown_executable"), result);
+    }
+
     [Fact]
     public void Git_directory_override_inside_workspace_follows_the_inner_verb()
     {

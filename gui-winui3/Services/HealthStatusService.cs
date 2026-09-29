@@ -37,9 +37,6 @@ public sealed class HealthStatusService
             workerError = error;
         }
 
-        {
-        }
-
         return new HealthStatusSnapshot(
             backendRunning,
             workerOk,

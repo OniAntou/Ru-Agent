@@ -99,8 +99,6 @@ def probe_auth_ownership(
 def safe_probe_status_ok(entry: RouteEntry, status_code: int) -> bool:
     if 200 <= status_code < 300:
         return True
-    if status_code == 503 and entry.optional_device_unavailable:
-        return True
     # Agent v2 routes use authenticated contract probes in the managed test suites.
     # may receive deterministic 400/404/409 (invalid workspace, unknown run, phase_not_available)
     # and still proves route existence + bearer auth.
@@ -131,12 +129,11 @@ def probe_http_routes(
 ) -> list[CheckResult]:
     """Probe every HTTP registry entry; destructive routes are explicit skips."""
 
-    del timeout_seconds
     owned_client = client is None
     if owned_client:
         import httpx
 
-        client = httpx.Client(timeout=10.0)
+        client = httpx.Client(timeout=timeout_seconds)
     assert client is not None
     results: list[CheckResult] = []
     session_id: str | None = None

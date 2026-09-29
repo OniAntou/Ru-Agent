@@ -2,17 +2,17 @@ namespace RuAgent.Harness.Core;
 
 public enum HarnessRunState
 {
-    Created,
-    WaitingWorkspaceTrust,
-    WaitingHistory,
-    Running,
-    WaitingApproval,
-    WaitingUser,
-    ReconciliationRequired,
-    Completed,
-    Failed,
-    Cancelled,
-    Interrupted,
+    Created = 0,
+    WaitingWorkspaceTrust = 1,
+    WaitingHistory = 2,
+    Running = 3,
+    WaitingApproval = 4,
+    WaitingUser = 5,
+    ReconciliationRequired = 6,
+    Completed = 7,
+    Failed = 8,
+    Cancelled = 9,
+    Interrupted = 10,
 }
 
 public static class HarnessRunStateExtensions

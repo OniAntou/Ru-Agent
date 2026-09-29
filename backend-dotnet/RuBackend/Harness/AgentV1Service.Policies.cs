@@ -79,7 +79,8 @@ public sealed partial class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(500, ex.Code ?? "policy_list_failed", ex.Message);
+            _logger?.LogWarning(ex, "policy list failed");
+            return BoundedError(500, ex.Code ?? "policy_list_failed", "Unable to list policies.");
         }
     }
 
@@ -441,7 +442,8 @@ public sealed partial class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(500, ex.Code ?? "preset_restore_failed", ex.Message);
+            _logger?.LogWarning(ex, "session preset restore failed");
+            return BoundedError(500, ex.Code ?? "preset_restore_failed", "Unable to restore session preset.");
         }
         catch (Exception)
         {
@@ -621,7 +623,8 @@ public sealed partial class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(500, ex.Code ?? "policy_delete_failed", ex.Message);
+            _logger?.LogWarning(ex, "policy delete failed");
+            return BoundedError(500, ex.Code ?? "policy_delete_failed", "Unable to delete policy.");
         }
 
         return deleteResult.Outcome switch

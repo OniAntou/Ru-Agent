@@ -40,7 +40,9 @@ def test_readme_route_count_matches_the_contract() -> None:
     assert f"{non_agent}\nnon-Agent" in text or f"({non_agent} " in text, (
         f"README does not break the routes down as {non_agent} non-Agent"
     )
-    assert f"{len(agent)} " in text, f"README does not name {len(agent)} agent routes"
+    assert f"{len(agent)} under `/agent/v1/*`" in text, (
+        f"README does not name {len(agent)} agent routes under /agent/v1/*"
+    )
 
 
 def test_readme_tool_count_matches_the_catalog() -> None:

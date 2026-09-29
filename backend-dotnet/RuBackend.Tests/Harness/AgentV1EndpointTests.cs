@@ -300,12 +300,13 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
-    public async Task Create_run_rejects_http_body_larger_than_1mb()
+    public async Task Create_run_rejects_http_body_larger_than_the_transport_cap()
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var largeBytes = new byte[1024 * 1024];
-        var largeBase64 = "data:image/png;base64," + Convert.ToBase64String(largeBytes);
+        // Above the 24MB runner cap but below the 26MB middleware bound, so the
+        // endpoint itself must issue the 413.
+        var oversized = "data:image/png;base64," + new string('A', 25 * 1024 * 1024);
         using var response = await client.PostAsJsonAsync(
             "/agent/v1/runs",
             new
@@ -315,12 +316,41 @@ public sealed class AgentV1EndpointTests
                 prompt = "inspect image",
                 preset = "standard",
                 idempotency_key = "image-large-http-test",
-                image_attachments = new[] { largeBase64 },
+                image_attachments = new[] { oversized },
             });
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("request_too_large", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_accepts_an_image_above_the_legacy_1mb_transport_cap()
+    {
+        using var tmp = TempWorkspace.Create();
+        var snapshot = CreateSettingsSnapshot("OpenAI", "gpt-4o");
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths, settingsStore: new StubSettingsStore(snapshot));
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+
+        // 2.5MB decoded → ~3.4M base64 characters, well above the old 1MB body
+        // cap but inside the 4MB per-image and 20MB total service bounds.
+        var imageBytes = new byte[2_500_000];
+        Random.Shared.NextBytes(imageBytes);
+        var largeBase64 = "data:image/png;base64," + Convert.ToBase64String(imageBytes);
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = sessionId,
+                workspace_path = tmp.Path,
+                prompt = "inspect large image",
+                preset = "standard",
+                idempotency_key = "image-large-accepted-" + Guid.NewGuid().ToString("N"),
+                image_attachments = new[] { largeBase64 },
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     [Fact]

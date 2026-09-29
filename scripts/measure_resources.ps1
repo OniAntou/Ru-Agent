@@ -147,7 +147,7 @@ public static System.Collections.Generic.Dictionary<int, int> SnapshotParents() 
 
 function Get-Percentile {
     param(
-        [Parameter(Mandatory = $true)][double[]]$Values,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][double[]]$Values,
         [Parameter(Mandatory = $true)][double]$Percentile
     )
 
@@ -163,7 +163,7 @@ function Get-Percentile {
 }
 
 function Get-Summary {
-    param([Parameter(Mandatory = $true)][double[]]$Values)
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][double[]]$Values)
 
     if ($Values.Count -eq 0) {
         return [ordered]@{ sample_count = 0; p50 = $null; p95 = $null; p99 = $null; max = $null }
@@ -289,6 +289,7 @@ function Read-TreeCounters {
 
 $root = Resolve-RootProcess -ProcessName $Name -ProcessId $Id
 $rootId = $root.Id
+$rootStartedAt = $root.StartTime.ToUniversalTime().ToString('o')
 $logicalProcessors = [Environment]::ProcessorCount
 if ($logicalProcessors -lt 1) { $logicalProcessors = 1 }
 
@@ -324,6 +325,17 @@ while ([datetime]::UtcNow -lt $deadline) {
     $now = [datetime]::UtcNow
     $elapsedSeconds = ($now - $previousAt).TotalSeconds
     if ($elapsedSeconds -le 0) { continue }
+
+    # A target that died mid-run would otherwise contribute all-zero samples and
+    # exit 0, which reads as a passing budget. Abort with a real error instead.
+    $rootAlive = $true
+    try { $rootAlive = -not (Get-Process -Id $rootId -ErrorAction Stop).HasExited }
+    catch { $rootAlive = $false }
+    if (-not $rootAlive) {
+        [Console]::Error.WriteLine(
+            "Target process $rootId exited during sampling; measurement aborted.")
+        exit 1
+    }
 
     $parents = [Ru.ToolHelp]::SnapshotParents()
     $counters = Read-TreeCounters -ProcessIds (Get-DescendantIds -RootId $rootId -Parents $parents)
@@ -384,7 +396,7 @@ $report = [ordered]@{
     target           = [ordered]@{
         name       = $root.ProcessName
         root_pid   = $rootId
-        started_at = $root.StartTime.ToUniversalTime().ToString('o')
+        started_at = $rootStartedAt
     }
     machine          = [ordered]@{
         logical_processors = $logicalProcessors

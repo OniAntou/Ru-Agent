@@ -140,18 +140,15 @@ public sealed class PublicHostStarter : IDisposable
         Timeout = TimeSpan.FromSeconds(2),
     };
 
-    private static async Task<bool> DefaultHealthProbeAsync(string baseUrl, CancellationToken ct)
+    private async Task<bool> DefaultHealthProbeAsync(string baseUrl, CancellationToken ct)
     {
         try
         {
-            // Extract bearer from descriptor file via locator? But health probe needs bearer; we try read descriptor's bearer
-            // Instead, try to probe /settings with bearer from descriptor content
-            // For simplicity, if baseUrl is provided alone, try health endpoint without auth? But spec requires authenticated health.
-            // We will locate descriptor's bearer via reading file and using it.
-            // For this default, we will attempt to GET /settings with descriptor bearer if available via locator env? Let's attempt naive: fetch descriptor path via env, read bearer.
-            var locator = new PublicHostLocator();
+            // The bearer has to come from the same descriptor store this starter
+            // reads; constructing a fresh locator here silently ignored the
+            // instance one and could probe a host the caller never pointed at.
             string bearer = string.Empty;
-            if (locator.TryGetValidDescriptor(out var desc, out _))
+            if (_locator.TryGetValidDescriptor(out var desc, out _))
                 bearer = desc!.BearerToken;
             if (string.IsNullOrWhiteSpace(bearer))
                 return false;
@@ -255,13 +252,6 @@ public sealed class PublicHostStarter : IDisposable
             _startedProcess?.Dispose();
             _startedProcess = null;
         }
-    }
-
-    // Overload for testing with direct bearer probe
-    public async Task<PublicHostSession> GetOrStartAsync(string projectRoot, string bearer, HttpClient? probeClient, CancellationToken ct)
-    {
-        // Variant used in tests where bearer is known; we inject healthProbe that uses supplied client
-        return await GetOrStartAsync(projectRoot, ct);
     }
 
     private static string GenerateBearerToken()

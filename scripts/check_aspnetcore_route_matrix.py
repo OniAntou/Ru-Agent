@@ -24,10 +24,19 @@ _MAP_CALL = re.compile(
     re.IGNORECASE,
 )
 _MAP_METHODS = re.compile(r"new\[\]\s*\{\s*HttpMethods\.(?P<method>\w+)")
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 # Wildcard patterns are deliberate non-contract surface: the CORS-style OPTIONS
 # catch-all and anything else that matches every path. They are excluded from the
 # comparison but still reported, so a new one is a visible decision.
 _WILDCARD_MARKER = "**"
+
+
+def _strip_comments(text: str) -> str:
+    """Remove C# comments so a commented-out Map call cannot satisfy the scan."""
+    without_blocks = _BLOCK_COMMENT.sub("", text)
+    return "\n".join(
+        line for line in without_blocks.splitlines() if not line.lstrip().startswith("//")
+    )
 
 
 def load_route_contract(repo_root: Path) -> list[dict[str, Any]]:
@@ -111,7 +120,7 @@ def mapped_routes(repo_root: Path) -> tuple[set[tuple[str, str]], list[str]]:
     for source in sorted(root.rglob("*.cs")):
         if "bin" in source.parts or "obj" in source.parts:
             continue
-        text = source.read_text(encoding="utf-8")
+        text = _strip_comments(source.read_text(encoding="utf-8"))
         for match in _MAP_CALL.finditer(text):
             verb = match.group(1).upper()
             path = match.group("path")

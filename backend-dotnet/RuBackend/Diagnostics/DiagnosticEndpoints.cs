@@ -111,15 +111,25 @@ public static class DiagnosticEndpoints
 
         if (Directory.Exists(logDir))
         {
-            var files = Directory.GetFiles(logDir, "*.jsonl");
-            fileCount = files.Length;
-            foreach (var f in files)
+            try
             {
-                try
+                var files = Directory.GetFiles(logDir, "*.jsonl");
+                fileCount = files.Length;
+                foreach (var f in files)
                 {
-                    totalBytes += new FileInfo(f).Length;
+                    try
+                    {
+                        totalBytes += new FileInfo(f).Length;
+                    }
+                    catch { }
                 }
-                catch { }
+            }
+            catch
+            {
+                // An unreadable log directory must degrade to a zeroed snapshot
+                // instead of failing the status endpoint.
+                totalBytes = 0;
+                fileCount = 0;
             }
         }
 

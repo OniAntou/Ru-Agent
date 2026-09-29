@@ -31,8 +31,12 @@ public static class Program
         // PublicHostStarter ensures host running before any API call.
         // Use project root as workspace canonical parent or current directory for starter.
         var projectRoot = ResolveProjectRoot(command);
-        var starter = new PublicHostStarter();
-        var httpClient = new HttpClient();
+        using var starter = new PublicHostStarter();
+        using var httpClient = new HttpClient();
+        // The API client keeps its request timeout; an SSE connection is intentionally
+        // long-lived and is bounded by the caller token instead, so it gets its own
+        // client with no timeout rather than inheriting the API one.
+        using var sseHttpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
 
         AgentCommands commands;
         try
@@ -40,7 +44,7 @@ public static class Program
             // Use starter to get authenticated session; include cancellation for Ctrl+C
             using var starterCts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
             var session = await starter.GetOrStartAsync(projectRoot, starterCts.Token).ConfigureAwait(false);
-            commands = new AgentCommands(session, httpClient, Console.Out, Console.Error);
+            commands = new AgentCommands(session, httpClient, Console.Out, Console.Error, sseHttpClient: sseHttpClient);
         }
         catch (AgentApiException ex)
         {
@@ -54,9 +58,11 @@ public static class Program
         }
 
         using var cts = new CancellationTokenSource();
+        var userCancelled = false;
         Console.CancelKeyPress += (sender, e) =>
         {
             e.Cancel = true;
+            userCancelled = true;
             cts.Cancel();
         };
 
@@ -87,10 +93,31 @@ public static class Program
                 _ => 1
             };
         }
-        catch (OperationCanceledException)
+        catch (AgentApiException ex)
+        {
+            Console.Error.WriteLine(CliErrorText.Format(ex));
+            return 1;
+        }
+        catch (OperationCanceledException) when (userCancelled)
         {
             Console.Error.WriteLine("cancelled");
             return 130;
+        }
+        catch (OperationCanceledException)
+        {
+            // TaskCanceledException from an HttpClient timeout derives from
+            // OperationCanceledException; only the operator's own Ctrl+C is a cancel.
+            Console.Error.WriteLine("request_timeout: the request did not complete in time.");
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"unexpected_error: {ex.Message}");
+            return 1;
+        }
+        finally
+        {
+            commands.Dispose();
         }
     }
 
@@ -137,7 +164,7 @@ public static class Program
         Console.Error.WriteLine("  agent cancel <run-id>");
         Console.Error.WriteLine("  agent continue <run-id>");
         Console.Error.WriteLine("  agent status <run-id> [--json]");
-        Console.Error.WriteLine("  agent policy list [--global | --workspace PATH] [--json]");
+        Console.Error.WriteLine("  agent policy list [--global] [--json]");
         Console.Error.WriteLine("  agent policy import --global FILE");
         Console.Error.WriteLine("  agent policy remove <rule-id>");
         Console.Error.WriteLine("  agent command <run-id> \"/help|/skills|/compact ...|/skill ...\" [--json]");

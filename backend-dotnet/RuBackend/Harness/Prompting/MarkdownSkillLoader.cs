@@ -37,9 +37,13 @@ public sealed class MarkdownSkillLoader
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    public MarkdownSkillLoadResult Load(IReadOnlyList<string> roots)
+    public MarkdownSkillLoadResult Load(IReadOnlyList<string> roots) =>
+        Load(roots, CancellationToken.None);
+
+    public MarkdownSkillLoadResult Load(IReadOnlyList<string> roots, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(roots);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var skills = new List<MarkdownSkill>();
         var skips = new List<MarkdownSkillSkip>();
@@ -48,6 +52,7 @@ public sealed class MarkdownSkillLoader
 
         foreach (var configuredRoot in roots)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(configuredRoot))
             {
                 continue;
@@ -130,6 +135,7 @@ public sealed class MarkdownSkillLoader
 
             foreach (var directory in directories)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (IsReparsePoint(directory))
                 {
                     skips.Add(new MarkdownSkillSkip(directory, "reparse_point"));

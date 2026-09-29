@@ -266,6 +266,17 @@ public sealed class SessionUsagePanelUiSourceContractTests
     }
 
     [Fact]
+    public void A_superseded_read_never_paints_over_the_new_session()
+    {
+        string code = GuiSource.Text("Controls", "SessionUsagePanel.xaml.cs");
+        string load = GuiSource.MethodBody(code, "LoadAsync");
+
+        Assert.Contains("_loadGeneration", load, StringComparison.Ordinal);
+        Assert.Contains("token", load, StringComparison.Ordinal);
+        Assert.DoesNotContain("CancellationToken.None", load, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_read_is_bounded_and_skips_runs_that_cannot_have_reported()
     {
         string history = GuiSource.Text("Services", "ApiService.AgentHistory.cs");

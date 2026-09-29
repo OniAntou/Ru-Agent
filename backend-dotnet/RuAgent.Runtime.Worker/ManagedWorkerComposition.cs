@@ -131,7 +131,11 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
             }
             else
             {
-                var modelHttpClient = Own(owned, new HttpClient());
+                // HttpClient.Timeout would cancel the response stream itself once
+                // the whole request/response exceeds it, cutting a healthy long SSE
+                // generation at 100 seconds. The step token governs the request:
+                // the Host cancels a silent step, and the caller cancels the run.
+                var modelHttpClient = Own(owned, new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
                 providerResolver = new ModelProviderResolver(new Dictionary<string, IModelProvider>
                 {
                     ["chat_completions"] = new OpenAiCompatibleModelProvider(modelHttpClient),

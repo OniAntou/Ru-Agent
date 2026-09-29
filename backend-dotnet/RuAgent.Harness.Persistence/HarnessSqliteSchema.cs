@@ -55,7 +55,7 @@ public static class HarnessSqliteSchema
                 await foreignKeysCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
+            var existingVersion = await ReadUserVersionAsync(connection, transaction: null, cancellationToken)
                 .ConfigureAwait(false);
             if (existingVersion is not 0 and not 2 and not 3 and not 4 and not 5 and not 6 and not 7 and not 8 and not 9 and not CurrentVersion)
             {
@@ -66,6 +66,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
                     + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
@@ -74,6 +75,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionThreeToFour + SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
                     + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
@@ -82,6 +84,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionFourFinalGate + SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
                     + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
@@ -90,6 +93,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionFiveToSix + SchemaVersionSixToSeven + SchemaVersionSevenToEight
                     + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
@@ -98,6 +102,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionSixToSeven + SchemaVersionSevenToEight
                     + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
@@ -106,6 +111,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionSevenToEight + SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -113,6 +119,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionEightToNine + SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -120,6 +127,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     SchemaVersionNineToTen,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -127,6 +135,7 @@ public static class HarnessSqliteSchema
             {
                 await ApplyMigrationAsync(
                     connection,
+                    existingVersion,
                     // A fresh database must reach the same shape a migrated one does, so
                     // every migration constant belongs in this batch. Omitting one left
                     // new installs a version behind the schema the validator expects.
@@ -160,9 +169,11 @@ public static class HarnessSqliteSchema
 
     private static async Task<long> ReadUserVersionAsync(
         SqliteConnection connection,
+        SqliteTransaction? transaction,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version";
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
     }
@@ -179,9 +190,16 @@ public static class HarnessSqliteSchema
     /// not be opened again at all. SQLite rolls back DDL, and <c>user_version</c> is part of
     /// the transaction too, so one transaction makes an interrupted upgrade indistinguishable
     /// from one that never started: the next start simply repeats it.
+    ///
+    /// The version is also re-read *inside* the transaction. Two processes starting at the
+    /// same time both read the old version before either transaction, but the second one
+    /// blocks on the write lock until the first commits; without the re-read it would then
+    /// replay the batch against the already-migrated schema. If the version moved since the
+    /// pre-transaction read, this batch is skipped instead.
     /// </remarks>
     private static async Task ApplyMigrationAsync(
         SqliteConnection connection,
+        long expectedVersion,
         string migrationSql,
         CancellationToken cancellationToken)
     {
@@ -203,6 +221,18 @@ public static class HarnessSqliteSchema
             await using var transaction = connection.BeginTransaction(deferred: false);
             try
             {
+                var versionUnderLock = await ReadUserVersionAsync(connection, transaction, cancellationToken)
+                    .ConfigureAwait(false);
+                if (versionUnderLock != expectedVersion)
+                {
+                    // Another process migrated the database after this call read the
+                    // version but before the batch took the write lock. The schema has
+                    // moved on, so the batch must not run again; the post-initialize
+                    // validator judges the resulting shape.
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 await using (var migration = connection.CreateCommand())
                 {
                     migration.Transaction = transaction;
@@ -217,11 +247,11 @@ public static class HarnessSqliteSchema
                     await version.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                transaction.Commit();
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch
             {
-                transaction.Rollback();
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 throw;
             }
         }

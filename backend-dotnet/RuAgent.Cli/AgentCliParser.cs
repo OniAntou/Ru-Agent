@@ -25,6 +25,7 @@ public enum CliCommandKind
     SessionRewind,
     SessionExport,
     SessionImport,
+    Rpc,
 }
 
 public enum ApprovalScope
@@ -163,6 +164,8 @@ public sealed record SessionImportCommand(
     string? SessionId,
     bool Json) : AgentCommand(CliCommandKind.SessionImport, Json);
 
+public sealed record RpcCommand() : AgentCommand(CliCommandKind.Rpc, Json: false);
+
 public sealed record AgentCliParseResult(
     bool Success,
     AgentCommand? Command,
@@ -241,6 +244,7 @@ public static class AgentCliParser
             "command" => ParseDispatchCommand(args),
             "chat" or "repl" => ParseChat(args, 2),
             "session" => ParseSession(args, 2),
+            "rpc" => ParseRpc(args),
             _ => Fail("unknown_subcommand", $"Unknown agent subcommand '{sub}'.")
         };
     }
@@ -290,6 +294,17 @@ public static class AgentCliParser
             return Fail("missing_command_text", "Missing required <command-text> for 'agent command'.");
 
         return Success(new DispatchCommandCommand(runId, text, json));
+    }
+
+    private static AgentCliParseResult ParseRpc(string[] args)
+    {
+        // agent rpc — the process carries state on stdin/stdout, so no other arguments exist.
+        if (args.Length != 2)
+        {
+            return Fail("unknown_switch", "agent rpc accepts no additional arguments.");
+        }
+
+        return Success(new RpcCommand());
     }
 
     private static AgentCliParseResult ParseReconcile(string[] args)

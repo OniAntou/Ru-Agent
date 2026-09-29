@@ -14,8 +14,8 @@ Each entry contains:
 - `method`, `path`, and `transport` — the stable public wire identity;
 - `source` — the ASP.NET source file that maps the endpoint;
 - `classification` — `aspnet-direct`;
-- `winui_callers` — known desktop call sites, which may be empty for reserved
-  lifecycle routes.
+- `winui_callers` — known desktop call sites, which may be empty for routes
+  without a WinUI caller.
 
 `aspnet-direct` means ASP.NET performs the business operation itself, including
 `GET /status` and the `GET /models` provider catalog read from the host settings
@@ -27,17 +27,18 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-16 entries intentionally have empty `winui_callers`: the two session
+21 entries intentionally have empty `winui_callers`: the two session
 interchange routes (`GET /sessions/{sessionId}/export` and `POST /sessions/import`),
-which the CLI and session flows drive, plus 14 additive `/agent/v1/*` routes —
+which the CLI and session flows drive; 14 additive `/agent/v1/*` routes —
 the 11 run routes (creation, run read, event stream, payload read, approvals,
 trust, cancel, continue, compact, commands, and reconcile) and the three policy
 routes (`GET`/`POST /agent/v1/policies` and `DELETE /agent/v1/policies/{ruleId}`)
 — which are driven through the Agent harness flow rather than direct WinUI
-callers. The remaining `/agent/v1/*` routes (run activities, session run listing,
-and the five workspace routes) do have direct `ApiService` callers.
+callers; and the five workspace coordination routes, which external clients
+drive over HTTP. The remaining `/agent/v1/*` routes (run activities and session
+run listing) do have direct `ApiService` callers.
 
-Empty `winui_callers` is therefore expected for these reserved lifecycle routes and is not a dead-route signal.
+Empty `winui_callers` is therefore expected for these reserved routes and is not a dead-route signal.
 
 ## Verification
 

@@ -53,9 +53,10 @@ public sealed class StreamingGitCli : IGitCli
         }
 
         // Fixed defenses for every read the Broker itself performs: no optional
-        // index locks, and never a repo-supplied fsmonitor program. The same rule
-        // covers the model-visible terminal path, which pins these flags in
-        // StreamingProcessRunner.
+        // index locks, and never a repo-supplied fsmonitor program. The
+        // model-visible terminal path does not pin these -- see the note on
+        // BuildStartInfo in StreamingProcessRunner, and the accepted limitation
+        // in docs/architecture.md.
         var argv = new List<string>(arguments.Count + 3)
         {
             "--no-optional-locks",

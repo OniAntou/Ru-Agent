@@ -22,7 +22,11 @@ CURRENT_CONTRACT_DOCS = [
     ROOT / "backend-dotnet/RuAgent.Cli/README.md",
     ROOT / "docs/adr/0011-model-autonomy-and-workspace-trust-boundary.md",
 ]
-CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_OPERATIONS_DOCS]))
+CURRENT_RULE_DOCS = [
+    ROOT / "AGENTS.md",
+    ROOT / "CONTRIBUTING.md",
+]
+CURRENT_DOCS = list(dict.fromkeys([*CURRENT_CONTRACT_DOCS, *CURRENT_OPERATIONS_DOCS, *CURRENT_RULE_DOCS]))
 CURRENT_REASON_DOCS = [
     ROOT / "README.md",
     ROOT / "docs/README.md",
@@ -236,6 +240,9 @@ def test_current_sections_do_not_claim_stale_worker_or_permission_models() -> No
         "no fallback engine",
         "rather than being retried elsewhere",
         "one configured google html engine with no fallback",
+        "no provider, model, protocol, or tool fallback paths",
+        "no provider/model/protocol/tool fallback paths",
+        "no provider, model, protocol, tool, or workspace-cleanliness fallback.",
     )
     stale: list[str] = []
     for path in CURRENT_DOCS:

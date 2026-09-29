@@ -137,6 +137,33 @@ reconciliation surfaces from Phase 3:
 - Tool Definition ownership: `RuAgent.Protocol` contains exactly 12 immutable, model-visible definitions (`read`, `list`, `help`, `todo_write`, `grep`, `glob`, `write`, `edit`, `bash`, `web_search`, `web_fetch`, `skill`). `read`, `list` and `help` are separate tools: `read` carries no discriminator, and `list` and `help` take the argument shapes that `read op=list` and `read op=help` accepted, so the split added no capability. `todo_write` replaces the session task list and touches neither disk nor network. `skill` loads one workspace SKILL.md body on demand; the prompt lists name + description only, and skill bodies never grant tools, scopes, paths, or approvals. `AgentModelToolContractCatalog` directly projects that catalog; the Host feeds the same ID/version/scope/strict proposal schema/example/digest to the prompt and Worker `model_tools`. `ToolCatalog` retains Broker risk/approval/timeout/output policy and validates every manifest against the definition catalog. `RuAgentBroker` is the only managed tool execution authority.
 - File tools: `read` returns one file's UTF-8 content with `offset`/`limit` and no discriminator; `list` enumerates one directory (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation); and `help` searches the five bundled offline documentation resources, is workspace-independent and never reads workspace files. `grep` (regex content search with `file_glob`/`case_sensitive`/`is_regex` filters and bounded results) and `glob` (ordinal path-pattern results with traversal caps) remain standalone tools, alongside Host-prepared hash-guarded `write` with `op=write`/`edit` and recoverable `write` with `op=delete`/`op=restore` (preimage hashes are captured internally, never supplied in model proposal JSON; encrypted recovery copy remains bounded, opaque, one-time, and never in diagnostics). Model-facing definitions require preservation of user-supplied absolute paths inside a session-granted directory; Broker canonicalization and containment remain authoritative. `edit` preserves CRLF style when LF markers are supplied; `grep` uses canonical `is_regex`, bounded concurrent reads, cancellation, and ordinal output ordering; recovery caps are configurable below a 4 MiB hard maximum. `files.apply_patch` remains an internal/non-advertised adapter and is not model-usable.
 - Worker v2 model surface: the twelve Protocol definitions are projected into the prompt and native `model_tools`; the Broker alone decides and executes each request. Plan, Standard, and Full Access use the matrix above. Managed Web remains bounded, redirect-validated, sanitized, and untrusted; Plan Web is automatic. Full-access terminal runs as the current Windows user, can access data outside the workspace, and can open sockets: it is not a network/path sandbox. Timeout, output cap, cancellation, and process-tree cleanup remain enforced. The managed Git workflow retains temporary-index isolation and rollback attribution. MCP stdio bridge code remains test infrastructure and is not production-composed; mail/calendar/task connectors are not advertised Agent tools.
+- Accepted limitation — executable identity on the terminal path: the policy
+  classifies a `bash` command by the executable token the model supplied
+  (`PolicyContextFactory` keeps it verbatim and the analyzers match on
+  `Path.GetFileName`), while `CommandIntentResolver` later resolves that token
+  through the process `PATH`. A program placed in a directory already on `PATH`
+  can therefore be the one that runs. Closing this needs a policy decision, not
+  a patch: resolving the real path inside the policy would make
+  `HasPathQualifiedExecutable` reject every path-qualified command and turn all
+  bounded-local terminal execution into an approval, and refusing a bare name
+  that resolves into a user-writable directory would break toolchains installed
+  under the user profile (scoop, chocolatey, portable installs). Both options
+  change who may run what without approval, so neither is taken unilaterally.
+  The exposure already requires write access to a directory on `PATH`, which is
+  strictly more than the same actor needs to run the program directly.
+  The same shape applies to a repository's own git configuration on the
+  terminal path: `GitCli` pins `core.fsmonitor` for the reads the Broker does
+  itself, but `StreamingProcessRunner` deliberately does not, because it also
+  carries the managed-commit calls that verify a `git diff --cached` hash
+  before committing, and an extra `-c` would break that check rather than
+  harden it. Measured on git 2.55, a repository-supplied `core.fsmonitor`
+  program is not invoked by `git status` at all, so the terminal path is
+  accepted as-is rather than hardened at the cost of that verification.
+- Managed Web: `web_search` resolves the configured engine against a fixed set
+  of public HTML engines and returns the first usable result, rather than
+  substituting a second tool or a second provider. It is the one documented
+  exception to the no-substitution invariant, and every request still passes
+  `WebPolicy`, so it cannot widen the network boundary or bypass a denial.
 - Bundled help path: `help` (`help@1.0.0`) is a model-visible `system.read` tool backed by five explicitly embedded Markdown resources. It is offline, workspace-independent, approval-free, and bounded; it returns stable document IDs and excerpts only. It never reads workspace files or live process/device state, and its reference text cannot override higher-priority instructions.
 - CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; it renders only safe envelope fields and exposes `agent approve`/`deny`, policy commands, and run/chat preset selection. `run` and `chat` require `--trust-workspace` for an untrusted canonical identity and `--confirm-full-access` for `full_access`; `--json` is accepted only with the explicit trust/full-access flags and cannot confirm an approval. The canonical Plan profile does not synthesize `web_approval_required`; an explicit ask rule may still surface that compatibility reason.
 

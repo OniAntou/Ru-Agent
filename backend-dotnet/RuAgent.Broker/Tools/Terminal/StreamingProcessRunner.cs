@@ -252,10 +252,12 @@ public sealed class StreamingProcessRunner
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+
         foreach (var argument in spec.Arguments)
         {
             info.ArgumentList.Add(argument);
         }
+
 
         info.Environment.Clear();
         foreach (var pair in spec.Environment)
@@ -265,6 +267,14 @@ public sealed class StreamingProcessRunner
 
         return info;
     }
+
+    // No git config hardening on this path, deliberately. This runner also
+    // carries the Broker's own managed-commit calls, and those compare a
+    // `git diff --cached` hash against the preview before committing -- an extra
+    // -c that changes diff behaviour breaks that check instead of hardening it.
+    // GitCli already pins core.fsmonitor for the reads the Broker performs
+    // itself. The terminal path is left alone and the gap is recorded in
+    // docs/architecture.md as an accepted limitation.
 
     private async Task<long> DrainAsync(
         StreamReader reader,

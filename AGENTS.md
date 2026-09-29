@@ -33,8 +33,13 @@ product.
 - **One execution authority.** Model-visible tool calls execute only inside
   `RuAgentBroker` via the `IToolGateway` seam. Never add an in-process Host
   copy of tool semantics.
-- **No fallbacks.** No provider/model/protocol/tool fallback paths; errors
-  surface as bounded, named codes.
+- **No fallbacks.** No provider, model, protocol, or tool *substitution*: a
+  failure surfaces as a bounded, named code rather than being retried on a
+  different backend. One narrow exception is deliberate and documented — a
+  single tool may race a fixed set of its own upstream endpoints (`web_search`
+  over its configured engine plus three public HTML engines). That is one tool,
+  one policy decision, one result contract: every request still passes
+  `WebPolicy`, so it can never widen the network boundary or bypass a denial.
 - **Loopback + bearer only.** The Public Contract is the 42 routes in
   `public-route-contract.json`. No new public transport, no WebSocket routes.
 - **Permissions are session-scoped.** Approval tokens are single-use,

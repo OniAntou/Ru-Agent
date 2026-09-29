@@ -136,7 +136,10 @@ twelve Protocol definitions, one purpose per tool: `read` (`offset`/`limit`),
 `list` (`max_entries`), `grep`, `glob`, `help` (five bundled offline documents),
 `todo_write`, `write` with `op=write|delete|restore`, `edit`, `bash`, `skill`,
 and standalone `web_search`/`web_fetch`. There is no provider, model, protocol,
-tool, or workspace-cleanliness fallback.
+tool, or workspace-cleanliness *substitution*: a failure is a bounded, named
+code, never a retry on a different backend. The one exception is that
+`web_search` races its configured engine against a fixed set of public HTML
+engines inside the same tool decision, every request still passing `WebPolicy`.
 _Avoid_: permission inferred from prompt text, repository cleanliness, or a
 client-local preset table
 

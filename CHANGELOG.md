@@ -152,6 +152,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(gui)**: **Dropdown provider bỏ dải chữ cái A–Z.** Dải 26 chữ cạnh tranh với ô search mà không giúp tìm nhanh hơn; list nay chỉ còn search + cuộn (virtualized sẵn), lấy lại 28px padding phải và 36px chiều cao. Xoá `JumpTargets`/`JumpLetterFor` khỏi `ProviderSetupGuidance` cùng 7 contract tests pin strip, thay bằng 1 test pin thiết kế không-strip.
 
 ### Fixed
+- **docs(policy)**: **Invariant "No fallbacks" được sửa cho khớp với thứ code vốn làm — đây là quyết định, không phải sửa lỗi.** `AGENTS.md`, `CONTRIBUTING.md` và `CONTEXT.md` đều cấm *mọi* fallback, trong khi `WebOptions.cs:19-24` + `ToolExecutionService.cs:102` luôn bật ba engine HTML công khai cạnh engine đã cấu hình. Bằng chứng nghiêng hẳn về "có chủ ý": mô tả tool mà model đọc (`AgentToolDefinitionCatalog.cs:50`), `docs/operations/agent-tools.md`, các test, và commit `f34a7f04` tối ưu nó kèm lập luận cẩn thận — chỉ ba câu tiếng Anh nói ngược.
+
+  Giữ multi-engine, sửa invariant thành **không thay thế** (no substitution): lỗi phải là bounded named code, không phải thử lại trên backend khác. Ngoại lệ hẹp được viết rõ — một tool có thể race tập endpoint upstream **của chính nó**, và mọi request vẫn qua `WebPolicy` nên không thể nới biên mạng hay bypass denial. Bỏ engine race sẽ làm `web_search` yếu đi vô nghĩa mà không đổi bất kỳ thuộc tính bảo mật nào.
+
+  **Lỗ hổng guard đã đóng:** `tests/test_current_documentation.py` **không** nằm trong `CURRENT_DOCS`, nên `AGENTS.md` và `CONTRIBUTING.md` không bao giờ được soi, và `banned` chỉ cấm 5 cụm — không cụm nào nằm trong câu đang sai. Nay cả hai file vào `CURRENT_RULE_DOCS` và ba câu cũ vào `banned`. Đã mutation-test: đặt lại câu cũ thì guard đỏ đúng chỗ.
+
+- **docs(terminal)**: **Comment nói dối về `core.fsmonitor` được sửa, và giới hạn được ghi lại thay vì để thành bí mật.** `GitCli.cs:56-58` khẳng định *"The same rule covers the model-visible terminal path, which pins these flags in StreamingProcessRunner"* — nhưng `BuildStartInfo` **không pin gì cả**. Cả hai comment nay nói đúng sự thật, và cả hai đường được ghi là accepted limitation trong `docs/architecture.md`.
+
+  **Hai lần em đo ra mình sai, và cả hai đều đáng ghi:**
+
+  **(1)** Claim ban đầu — repo tải về chạy được chương trình của riêng nó qua `git status` — **không tái hiện được**. Đo trực tiếp với git 2.55: repo có `core.fsmonitor` trỏ tới script ghi marker, `git status` không bao giờ gọi nó, form hook-path đã bị git loại bỏ.
+
+  **(2)** Em thử pin `-c core.fsmonitor=false -c core.pager= -c diff.external=` vào runner và **làm hỏng 10 test `ManagedCommitServiceTests`**. Nguyên nhân đáng nhớ: runner này mang cả các lệnh commit do Broker quản lý, mà chúng so `DiffHash` của `git diff --cached` với preview **trước khi commit** — một `-c` làm đổi hành vi diff sẽ phá đúng bước kiểm tra đó. Gia cố bằng cách làm hỏng một kiểm tra an toàn thì không phải gia cố, nên em gỡ hết. Comment còn lại nói rõ **vì sao không pin**, để người sau không dựng lại cái bẫy đó.
+
+  Test end-to-end em viết ra **không tái hiện được** (marker không xuất hiện dù có pin hay không) nên đã bỏ, thay bằng ghi chú trong docs. Một test xanh giả tệ hơn không có test.
+
 - **fix(backend,broker)**: **`POST /agent/v1/runs/{id}/cancel` thực sự dừng tool đang chạy, thay vì chỉ ghi `cancelled` vào SQLite.** Chuỗi huỷ đi qua `AgentV1Service.Runs.cs:706` → `AgentRunCoordinator.cs:81` (`gateway as IToolRunCancellation`) → `AgentRunLifecycle.cs:195` (`_cancellation?.CancelRunAsync(...) ?? Task.CompletedTask`) — nhưng **không type nào trong repo implement `IToolRunCancellation`**, nên nhánh phải về luôn là `Task.CompletedTask`. Comment ngay tại `AgentV1Service.Runs.cs:700-703` mô tả đúng cái hành vi không tồn tại: *"Stop live terminal processes before committing the durable cancelled projection … merely changing SQLite state leaves a child process running"*.
 
   Hệ quả kép: process con (terminal/PowerShell) vẫn mutate workspace sau khi run đã terminal; và vì `HarnessRecoveryScanner.ScanRunAsync` bỏ qua run terminal, execution treo không bao giờ được đưa vào `ReconciliationRequired`. Nay: Broker giữ `RunToolCancellationRegistry` (mỗi `tool.execute` đăng ký một token nối với token của request), `AgentMessageTypes.Cancel` và `run.close` huỷ token đó, `StreamingProcessRunner` nhận token đã huỷ nên `job.KillTree()` giết cả cây tiến trình và trả `process_cancelled`; phía Host, `BrokerToolGateway` implement `IToolRunCancellation` và forward `agent.cancel` mang đúng `run_id` được yêu cầu.

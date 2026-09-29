@@ -88,8 +88,11 @@ trustworthy. A change that weakens one is rejected even if every test passes.
 2. **One execution authority.** Every model-visible tool call executes inside
    `RuAgentBroker`, reached through the `IToolGateway` seam. No in-process
    Host copy of tool semantics may exist.
-3. **No fallbacks.** No provider, model, protocol, or tool fallback paths. A
-   failure surfaces as a bounded, named error code.
+3. **No fallbacks.** No provider, model, protocol, or tool *substitution*; a
+   failure surfaces as a bounded, named error code. The one documented
+   exception is `web_search` racing a fixed set of its own upstream engines —
+   one tool, one policy decision, and every request still passes `WebPolicy`,
+   so it cannot widen the network boundary or bypass a denial.
 4. **The protocol is versioned and digest-bound.** The 12 tool definitions
    live only in `RuAgent.Protocol`. A Broker manifest that disagrees with its
    Protocol digest refuses to start.

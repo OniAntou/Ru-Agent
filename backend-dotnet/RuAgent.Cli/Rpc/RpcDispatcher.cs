@@ -111,6 +111,13 @@ public sealed class RpcDispatcher
             return request.Method switch
             {
                 "host.status" => await HostStatusAsync(cancellationToken).ConfigureAwait(false),
+                "session.create" => await SessionCreateAsync(cancellationToken).ConfigureAwait(false),
+                "session.list" => await SessionListAsync(cancellationToken).ConfigureAwait(false),
+                "session.fork" => await SessionForkAsync(request, cancellationToken).ConfigureAwait(false),
+                "session.rewind" => await SessionRewindAsync(request, cancellationToken).ConfigureAwait(false),
+                "policy.list" => await PolicyListAsync(request, cancellationToken).ConfigureAwait(false),
+                "policy.import" => await PolicyImportAsync(request, cancellationToken).ConfigureAwait(false),
+                "policy.remove" => await PolicyRemoveAsync(request, cancellationToken).ConfigureAwait(false),
                 _ => throw new RpcDispatchException(RpcProtocol.MethodNotFound, $"method_not_found: {request.Method}"),
             };
         }
@@ -161,5 +168,179 @@ public sealed class RpcDispatcher
             ["ready"] = true,
             ["base_url"] = _session.BaseUri.ToString(),
         };
+    }
+
+    private async Task<JsonNode> SessionCreateAsync(CancellationToken ct)
+    {
+        var sessionId = await _sessionClient.CreateAsync(ct).ConfigureAwait(false);
+        return new JsonObject { ["session_id"] = sessionId };
+    }
+
+    private async Task<JsonNode> SessionListAsync(CancellationToken ct)
+    {
+        var result = await _sessionClient.ListAsync(ct).ConfigureAwait(false);
+        return JsonNode.Parse(result.GetRawText())!;
+    }
+
+    private async Task<JsonNode> SessionForkAsync(RpcRequest request, CancellationToken ct)
+    {
+        var sessionId = RequireString(request, "sessionId", 64);
+        var index = RequireInt(request, "index");
+        var title = OptionalString(request, "title", 200);
+        var result = await _sessionClient.ForkAsync(sessionId, index, title, ct).ConfigureAwait(false);
+        return JsonNode.Parse(result.GetRawText())!;
+    }
+
+    private async Task<JsonNode> SessionRewindAsync(RpcRequest request, CancellationToken ct)
+    {
+        var sessionId = RequireString(request, "sessionId", 64);
+        var index = RequireInt(request, "index");
+        var result = await _sessionClient.RewindAsync(sessionId, index, ct).ConfigureAwait(false);
+        return JsonNode.Parse(result.GetRawText())!;
+    }
+
+    private async Task<JsonNode> PolicyListAsync(RpcRequest request, CancellationToken ct)
+    {
+        var scope = OptionalString(request, "scope", 16);
+        var policies = await _agentClient.ListPoliciesAsync(scope, null, ct).ConfigureAwait(false);
+        var array = new JsonArray();
+        foreach (var policy in policies)
+        {
+            array.Add(JsonNode.Parse(policy.GetRawText()));
+        }
+
+        return array;
+    }
+
+    private async Task<JsonNode> PolicyImportAsync(RpcRequest request, CancellationToken ct)
+    {
+        var file = RequireString(request, "file", 4096);
+        if (OptionalBool(request, "confirm") != true)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: policy.import requires confirm=true.");
+        }
+
+        PolicyFile parsed;
+        try
+        {
+            parsed = PolicyJsonCodec.LoadFromFile(file);
+        }
+        catch (PolicyJsonException ex)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, $"{ex.ErrorCode}: {ex.Message}", ex.ErrorCode);
+        }
+        catch (Exception ex)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, $"file_error: {ex.Message}", "file_error");
+        }
+
+        var imported = new JsonArray();
+        foreach (var rule in parsed.Rules)
+        {
+            var body = new
+            {
+                scope = rule.Scope,
+                decision = rule.Decision,
+                matcher = new
+                {
+                    tool_id = rule.Matcher.ToolId,
+                    tool_version = rule.Matcher.ToolVersion,
+                    canonical_path_pattern = rule.Matcher.CanonicalPathPattern,
+                    resolved_executable = rule.Matcher.ResolvedExecutable,
+                    argv_pattern = rule.Matcher.ArgvPattern,
+                    cwd_pattern = rule.Matcher.CwdPattern,
+                    operation_class = rule.Matcher.OperationClass,
+                    network_intent = rule.Matcher.NetworkIntent,
+                },
+            };
+            var result = await _agentClient.CreatePolicyAsync(body, interactive: true, ct).ConfigureAwait(false);
+            imported.Add(JsonNode.Parse(result.GetRawText()));
+        }
+
+        return new JsonObject { ["imported"] = imported };
+    }
+
+    private async Task<JsonNode> PolicyRemoveAsync(RpcRequest request, CancellationToken ct)
+    {
+        var ruleId = RequireString(request, "ruleId", 37);
+        if (OptionalBool(request, "confirm") != true)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: policy.remove requires confirm=true.");
+        }
+
+        await _agentClient.DeletePolicyAsync(ruleId, interactive: true, ct).ConfigureAwait(false);
+        return new JsonObject { ["removed"] = ruleId };
+    }
+
+    private static string RequireString(RpcRequest request, string name, int maxLength)
+    {
+        if (!request.Params.TryGetProperty(name, out var element)
+            || element.ValueKind != JsonValueKind.String
+            || element.GetString() is not { Length: > 0 } value
+            || value.Length > maxLength)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, $"invalid_params: {name} must be a bounded string.");
+        }
+
+        return value;
+    }
+
+    private static string? OptionalString(RpcRequest request, string name, int maxLength)
+    {
+        if (!request.Params.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.String
+            || element.GetString() is not { } value
+            || value.Length > maxLength)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, $"invalid_params: {name} must be a string or null.");
+        }
+
+        return value;
+    }
+
+    private static int RequireInt(RpcRequest request, string name)
+    {
+        if (!request.Params.TryGetProperty(name, out var element)
+            || element.ValueKind != JsonValueKind.Number
+            || !element.TryGetInt32(out var value))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, $"invalid_params: {name} must be an integer.");
+        }
+
+        return value;
+    }
+
+    private static bool? OptionalBool(RpcRequest request, string name)
+    {
+        if (!request.Params.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => throw new RpcDispatchException(RpcProtocol.InvalidParams, $"invalid_params: {name} must be a boolean."),
+        };
+    }
+
+    private static long? OptionalLong(RpcRequest request, string name)
+    {
+        if (!request.Params.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.Number || !element.TryGetInt64(out var value) || value < 0)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, $"invalid_params: {name} must be a non-negative integer.");
+        }
+
+        return value;
     }
 }

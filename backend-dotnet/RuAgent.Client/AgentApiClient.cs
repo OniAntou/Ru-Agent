@@ -248,8 +248,8 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 
     /// <summary>
     /// Fetches a payload together with the encoding the host declared for it
-    /// ("utf8" text or "opaque" base64 on the wire), so byte-oriented callers
-    /// can decode the content once instead of guessing from the body.
+    /// ("utf8text"/"json" text or "opaque" base64 on the wire), so byte-oriented
+    /// callers can decode the content once instead of guessing from the body.
     /// </summary>
     public async Task<(string Encoding, string Content)> GetPayloadEnvelopeAsync(string runId, string payloadId, CancellationToken ct = default)
     {
@@ -275,27 +275,27 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         try { doc = JsonDocument.Parse(body); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
         using (doc)
         {
-        var root = doc.RootElement;
-        if (root.TryGetProperty("run_id", out var rid) && rid.ValueKind == JsonValueKind.String)
-        {
-            var returnedRunId = rid.GetString();
-            if (!string.Equals(returnedRunId, runId, StringComparison.Ordinal))
-                throw new AgentApiException("payload_run_mismatch", "Payload run_id mismatch");
-        }
-        else
-        {
-            throw new AgentApiException("invalid_response", "Missing run_id");
-        }
+            var root = doc.RootElement;
+            if (root.TryGetProperty("run_id", out var rid) && rid.ValueKind == JsonValueKind.String)
+            {
+                var returnedRunId = rid.GetString();
+                if (!string.Equals(returnedRunId, runId, StringComparison.Ordinal))
+                    throw new AgentApiException("payload_run_mismatch", "Payload run_id mismatch");
+            }
+            else
+            {
+                throw new AgentApiException("invalid_response", "Missing run_id");
+            }
 
-        var encoding = root.TryGetProperty("encoding", out var encodingElement) && encodingElement.ValueKind == JsonValueKind.String
-            ? encodingElement.GetString()
-            : null;
-        if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-        {
-            return (encoding, content.GetString() ?? string.Empty);
-        }
+            var encoding = root.TryGetProperty("encoding", out var encodingElement) && encodingElement.ValueKind == JsonValueKind.String
+                ? encodingElement.GetString()
+                : null;
+            if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
+            {
+                return (encoding, content.GetString() ?? string.Empty);
+            }
 
-        return (encoding, body);
+            return (encoding, body);
         }
     }
 

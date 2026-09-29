@@ -2271,7 +2271,8 @@ public sealed class AgentCommands : IDisposable
         var runBridge = new Rpc.RpcRunBridge(
             _sseClient,
             _agentClient,
-            publish: notification => _rpcServer is not null && _rpcServer.TryPublish(notification));
+            publish: notification => _rpcServer is not null && _rpcServer.TryPublish(notification),
+            log: message => _err.WriteLine(message));
         var dispatcher = new Rpc.RpcDispatcher(
             _session,
             _sessionClient,

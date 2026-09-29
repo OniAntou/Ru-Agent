@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Cli.Rpc;
 using RuAgent.Client;
 using Xunit;
@@ -9,7 +10,9 @@ public sealed class RpcBridgeServerTests
 {
     private static (RpcBridgeServer Server, StringWriter Out) CreateServer(
         string input,
-        Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> handler,
+        int outboundCapacity = RpcProtocol.MaxOutboundMessages,
+        Action<int>? terminate = null)
     {
         var session = RpcTestHost.CreateSession();
         var http = RpcTestHost.CreateClient(handler);
@@ -27,7 +30,7 @@ public sealed class RpcBridgeServerTests
             runBridge,
             log: TextWriter.Null,
             httpClient: http);
-        var server = new RpcBridgeServer(new StringReader(input), outWriter, TextWriter.Null, dispatcher, runBridge);
+        var server = new RpcBridgeServer(new StringReader(input), outWriter, TextWriter.Null, dispatcher, runBridge, outboundCapacity, terminate);
         return (server, outWriter);
     }
 
@@ -85,6 +88,28 @@ public sealed class RpcBridgeServerTests
         Assert.Equal(0, exit);
         Assert.Contains("request_too_large", output.ToString());
         Assert.Contains("\"protocolVersion\":1", output.ToString());
+    }
+
+    [Fact]
+    public void Backpressure_fails_closed()
+    {
+        var terminated = new List<int>();
+        var (server, _) = CreateServer(
+            string.Empty,
+            _ => Task.FromResult(RpcTestHost.Json("{}")),
+            outboundCapacity: 1,
+            terminate: code => terminated.Add(code));
+        var notification = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["method"] = "run.event",
+            ["params"] = new JsonObject { ["sequence"] = 1 },
+        };
+
+        Assert.True(server.TryPublish(notification));
+        Assert.False(server.TryPublish(notification));
+        Assert.Equal(3, Assert.Single(terminated));
+        Assert.False(server.TryPublish(notification));
     }
 
     [Fact]

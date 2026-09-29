@@ -380,4 +380,113 @@ public sealed class RpcDispatchSurfaceTests
             () => dispatcher.DispatchAsync(Req("run.reconcile", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None));
         Assert.Equal(RpcProtocol.InvalidParams, ex.RpcErrorCode);
     }
+
+    [Fact]
+    public async Task Run_attach_preflights_an_unknown_run()
+    {
+        var runId = "run_" + new string('a', 32);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(
+            RpcTestHost.Json("{\"error_code\":\"run_not_found\",\"message\":\"unknown run\"}", HttpStatusCode.NotFound)), seen);
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(Req("run.attach", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None));
+        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
+        Assert.Equal("run_not_found", ex.RuCode);
+        Assert.Equal(404, ex.HttpStatus);
+        Assert.Contains($"GET /agent/v1/runs/{runId}", seen);
+    }
+
+    [Fact]
+    public async Task Run_output_rejects_payloads_over_the_frame_cap()
+    {
+        var runId = "run_" + new string('a', 32);
+        var payloadId = "payload_" + new string('b', 32);
+        var content = new string('a', 900_000);
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(
+            JsonSerializer.Serialize(new
+            {
+                run_id = runId,
+                payload_id = payloadId,
+                kind = "tool_output",
+                encoding = "utf8text",
+                content,
+            }))));
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(
+                Req("run.output", $"{{\"runId\":\"{runId}\",\"payloadId\":\"{payloadId}\"}}"),
+                CancellationToken.None));
+        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
+        Assert.Equal("output_frame_exceeds_limit", ex.RuCode);
+        Assert.Contains("agent output", ex.Message);
+    }
+
+    [Fact]
+    public async Task Run_reconcile_success_passes_the_body_through()
+    {
+        var runId = "run_" + new string('a', 32);
+        var hash = new string('c', 64);
+        string? body = null;
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(async request =>
+        {
+            body = await request.Content!.ReadAsStringAsync();
+            return RpcTestHost.Json($"{{\"outcome\":\"applied\",\"snapshot_hash\":\"{hash}\"}}");
+        }, seen);
+        var result = await dispatcher.DispatchAsync(
+            Req("run.reconcile", $"{{\"runId\":\"{runId}\",\"outcome\":\"applied\",\"hash\":\"{hash}\"}}"),
+            CancellationToken.None);
+        Assert.Contains($"POST /agent/v1/runs/{runId}/reconcile", seen);
+        Assert.Contains("\"outcome\":\"applied\"", body);
+        Assert.Contains($"\"snapshot_hash\":\"{hash}\"", body);
+        Assert.Equal("applied", result!["outcome"]!.GetValue<string>());
+        Assert.Equal(hash, result["snapshot_hash"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Run_reconcile_maps_the_host_error_code()
+    {
+        var runId = "run_" + new string('a', 32);
+        var hash = new string('c', 64);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(
+            RpcTestHost.Json("{\"error_code\":\"reconcile_stale\",\"message\":\"stale snapshot\"}", HttpStatusCode.Conflict)), seen);
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(
+                Req("run.reconcile", $"{{\"runId\":\"{runId}\",\"outcome\":\"applied\",\"hash\":\"{hash}\"}}"),
+                CancellationToken.None));
+        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
+        Assert.Equal("reconcile_stale", ex.RuCode);
+        Assert.Equal(409, ex.HttpStatus);
+        Assert.Equal("stale snapshot", ex.Message);
+    }
+
+    [Fact]
+    public void MethodNames_matches_the_documented_v1_surface()
+    {
+        Assert.Equal(
+            [
+                "initialize",
+                "host.status",
+                "session.create",
+                "session.list",
+                "session.fork",
+                "session.rewind",
+                "run.start",
+                "run.attach",
+                "run.detach",
+                "run.trust",
+                "run.approve",
+                "run.cancel",
+                "run.continue",
+                "run.status",
+                "run.command",
+                "run.reconcile",
+                "run.output",
+                "policy.list",
+                "policy.import",
+                "policy.remove",
+            ],
+            RpcDispatcher.MethodNames);
+        Assert.Equal(["run.event", "run.transient", "bridge.shutdown"], RpcDispatcher.NotificationNames);
+    }
 }

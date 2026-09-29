@@ -116,7 +116,7 @@ public sealed class RpcDispatcher
                 "session.fork" => await SessionForkAsync(request, cancellationToken).ConfigureAwait(false),
                 "session.rewind" => await SessionRewindAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.start" => await RunStartAsync(request, cancellationToken).ConfigureAwait(false),
-                "run.attach" => RunAttach(request),
+                "run.attach" => await RunAttachAsync(request).ConfigureAwait(false),
                 "run.detach" => RunDetach(request),
                 "run.trust" => await RunTrustAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.approve" => await RunApproveAsync(request, cancellationToken).ConfigureAwait(false),
@@ -261,11 +261,18 @@ public sealed class RpcDispatcher
         }
     }
 
-    private JsonNode RunAttach(RpcRequest request)
+    private async Task<JsonNode> RunAttachAsync(RpcRequest request)
     {
         var runId = RequireRunId(request);
         var afterSequence = OptionalLong(request, "afterSequence") ?? 0;
         var includeTransient = OptionalBool(request, "includeTransient") ?? false;
+
+        // Preflight the run before starting a pump: an unknown or expired run id
+        // must fail here with a JSON-RPC error, not as a subscription that never
+        // delivers an event. The probe stays uncancellable so a cancelled bridge
+        // cannot leave a half-started subscription behind.
+        await _agentClient.GetRunAsync(runId, CancellationToken.None).ConfigureAwait(false);
+
         if (_runBridge is null)
         {
             throw new RpcDispatchException(RpcProtocol.InternalError, "run bridge is not configured.");
@@ -346,10 +353,21 @@ public sealed class RpcDispatcher
                 throw new RpcDispatchException(RpcProtocol.ApplicationError, "unsupported payload encoding", "unsupported_payload_encoding");
         }
 
+        var data = Convert.ToBase64String(bytes);
+        if (data.Length > RpcProtocol.MaxFrameCharacters)
+        {
+            // The client rejects oversized frames, and a killed transport loses
+            // every later event: fail this one call with a named code instead.
+            throw new RpcDispatchException(
+                RpcProtocol.ApplicationError,
+                "output_frame_exceeds_limit: payload exceeds the 1 MiB RPC frame cap; fetch it with the CLI 'agent output' command.",
+                ruCode: "output_frame_exceeds_limit");
+        }
+
         return new JsonObject
         {
             ["encoding"] = "base64",
-            ["data"] = Convert.ToBase64String(bytes),
+            ["data"] = data,
             ["byte_length"] = bytes.Length,
         };
     }
@@ -423,10 +441,44 @@ public sealed class RpcDispatcher
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new RpcDispatchException(RpcProtocol.ApplicationError, body, "reconcile_failed", (int)response.StatusCode);
+            var (ruCode, message) = MapReconcileFailure(body);
+            throw new RpcDispatchException(RpcProtocol.ApplicationError, message, ruCode, (int)response.StatusCode);
         }
 
         return JsonNode.Parse(body) ?? new JsonObject();
+    }
+
+    private static (string RuCode, string Message) MapReconcileFailure(string body)
+    {
+        string? errorCode = null;
+        string? message = null;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (document.RootElement.TryGetProperty("error_code", out var code) && code.ValueKind == JsonValueKind.String)
+                {
+                    errorCode = code.GetString();
+                }
+
+                if (document.RootElement.TryGetProperty("message", out var text) && text.ValueKind == JsonValueKind.String)
+                {
+                    message = text.GetString();
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        var bounded = (string.IsNullOrWhiteSpace(message) ? body : message).ReplaceLineEndings(" ").Trim();
+        if (bounded.Length > 200)
+        {
+            bounded = bounded[..200];
+        }
+
+        return (string.IsNullOrWhiteSpace(errorCode) ? "reconcile_failed" : errorCode, bounded);
     }
 
     private static string RequireRunId(RpcRequest request)

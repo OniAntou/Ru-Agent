@@ -16,6 +16,7 @@ public sealed class RpcBridgeServer
     private readonly TextWriter _log;
     private readonly RpcDispatcher _dispatcher;
     private readonly Channel<JsonObject> _outbound;
+    private readonly Action<int> _terminate;
     private bool _backpressured;
 
     public RpcBridgeServer(
@@ -24,13 +25,15 @@ public sealed class RpcBridgeServer
         TextWriter log,
         RpcDispatcher dispatcher,
         IRunBridge runBridge,
-        int outboundCapacity = RpcProtocol.MaxOutboundMessages)
+        int outboundCapacity = RpcProtocol.MaxOutboundMessages,
+        Action<int>? terminate = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _output = output ?? throw new ArgumentNullException(nameof(output));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _ = runBridge ?? throw new ArgumentNullException(nameof(runBridge));
+        _terminate = terminate ?? Environment.Exit;
         _outbound = Channel.CreateBounded<JsonObject>(new BoundedChannelOptions(outboundCapacity)
         {
             SingleReader = true,
@@ -52,7 +55,13 @@ public sealed class RpcBridgeServer
             return true;
         }
 
+        // Fail closed: a full queue means a durable notification cannot be
+        // delivered, so the bridge stops instead of dropping it. The writer may
+        // even be gone, hence the best-effort shutdown frame.
         _backpressured = true;
+        _outbound.Writer.TryWrite(RpcMessage.Notification("bridge.shutdown", new JsonObject { ["reason"] = "backpressure" }));
+        _outbound.Writer.TryComplete();
+        _terminate(3);
         return false;
     }
 

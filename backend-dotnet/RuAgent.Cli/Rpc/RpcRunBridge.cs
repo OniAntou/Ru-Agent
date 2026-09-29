@@ -21,16 +21,22 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
     private readonly AgentSseClient _sseClient;
     private readonly AgentApiClient _agentClient;
     private readonly Func<JsonObject, bool> _publish;
+    private readonly Action<string> _log;
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new();
     private readonly object _gate = new();
     private int _nextSubscriptionId;
     private bool _disposed;
 
-    public RpcRunBridge(AgentSseClient sseClient, AgentApiClient agentClient, Func<JsonObject, bool> publish)
+    public RpcRunBridge(
+        AgentSseClient sseClient,
+        AgentApiClient agentClient,
+        Func<JsonObject, bool> publish,
+        Action<string>? log = null)
     {
         _sseClient = sseClient ?? throw new ArgumentNullException(nameof(sseClient));
         _agentClient = agentClient ?? throw new ArgumentNullException(nameof(agentClient));
         _publish = publish ?? throw new ArgumentNullException(nameof(publish));
+        _log = log ?? (_ => { });
     }
 
     public string Attach(string runId, long afterSequence, bool includeTransient)
@@ -75,7 +81,7 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
                 break;
             }
 
-            await Task.WhenAll(pumps!).WaitAsync(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+            await Task.WhenAny(Task.WhenAll(pumps!), Task.Delay(50)).ConfigureAwait(false);
         }
     }
 
@@ -132,6 +138,16 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
         }
         catch (OperationCanceledException)
         {
+        }
+        catch (AgentApiException ex)
+        {
+            // A dead subscription must not fault the pump task into the void: the
+            // client can only recover if the failure is visible on stderr.
+            _log($"rpc run subscription ended: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _log($"rpc run subscription ended: {ex.Message}");
         }
         finally
         {

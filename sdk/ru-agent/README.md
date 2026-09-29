@@ -1,0 +1,49 @@
+# @ru/agent-sdk
+
+TypeScript client for the Ru agent RPC bridge. It spawns `ru agent rpc` as a child
+process, speaks newline-delimited JSON-RPC over stdio (protocol v1), and exposes
+typed session and run handles, including streaming run events.
+
+## Requirements
+
+- Node.js >= 22
+- A Ru CLI binary reachable either as `ru` on `PATH` or through the `RU_CLI_PATH`
+  environment variable (or pass `command` explicitly).
+
+## Usage
+
+```ts
+import { RuAgent } from "@ru/agent-sdk";
+
+const ru = await RuAgent.start();
+
+const sessionId = await ru.sessions.create();
+const run = await ru.runs.start({ workspace: "C:\\work\\repo", prompt: "fix the failing test", sessionId });
+
+for await (const event of run.events()) {
+  console.log(event.sequence, event.event_type, event.status ?? "");
+}
+
+await run.cancel();
+await ru.close();
+```
+
+`RuAgent.start` accepts `command`, `args`, `agentArgs`, `cwd`, and `env` to
+control how the bridge process is spawned. `run.events()` can also stream
+transient events (`{ includeTransient: true }`) and replay from a sequence
+number (`{ afterSequence: n }`).
+
+## Protocol
+
+This SDK targets RPC protocol **v1**. The wire contract (methods,
+notifications, and error codes) is documented in
+[`docs/operations/rpc.md`](../../docs/operations/rpc.md).
+
+## Development
+
+```sh
+npm install
+npm test        # vitest
+npm run typecheck
+npm run build   # tsup -> dist/
+```

@@ -67,6 +67,11 @@ export class BridgeTransport {
     this.#notificationHandlers.push(handler);
   }
 
+  offNotification(handler: NotificationHandler): void {
+    const index = this.#notificationHandlers.indexOf(handler);
+    if (index >= 0) this.#notificationHandlers.splice(index, 1);
+  }
+
   async request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<T> {
     if (this.#closed) {
       throw this.#exitError ?? new BridgeTransportError("transport is closed");

@@ -39,4 +39,12 @@ describe("BridgeTransport", () => {
     const transport = start("garbage");
     await expect(transport.request("anything", {})).rejects.toThrow(/invalid json/i);
   });
+
+  it("requests_after_the_bridge_died_fail_fast", async () => {
+    const transport = start("crash");
+    await expect(transport.request("anything", {})).rejects.toThrow(/bridge exited/);
+    const started = Date.now();
+    await expect(transport.request("anything", {}, 60_000)).rejects.toThrow(/bridge exited/);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
 });

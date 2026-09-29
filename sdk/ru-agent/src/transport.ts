@@ -45,6 +45,11 @@ export class BridgeTransport {
       this.#exitError = new BridgeTransportError(`bridge process error: ${error.message}`);
       this.#rejectAll(this.#exitError);
     });
+    child.stdin.on("error", (error) => {
+      if (this.#exitError) return;
+      this.#exitError = new BridgeTransportError(`bridge stdin error: ${error.message}`);
+      this.#rejectAll(this.#exitError);
+    });
     child.on("close", () => this.#rejectAll(this.#exitError ?? new BridgeTransportError("bridge stdout closed")));
   }
 
@@ -66,6 +71,9 @@ export class BridgeTransport {
     if (this.#closed) {
       throw this.#exitError ?? new BridgeTransportError("transport is closed");
     }
+    if (this.#exitError) {
+      throw this.#exitError;
+    }
     const id = this.#nextId++;
     return await new Promise<T>((resolve, reject) => {
       const pending: PendingRequest = { resolve: resolve as (value: unknown) => void, reject };
@@ -83,6 +91,10 @@ export class BridgeTransport {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    if (this.#exitError !== undefined || this.#child.exitCode !== null) {
+      this.#rejectAll(this.#exitError ?? new BridgeTransportError("transport closed"));
+      return;
+    }
     this.#child.stdin.end();
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {

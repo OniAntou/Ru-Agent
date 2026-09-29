@@ -115,6 +115,10 @@ public sealed class RpcDispatcher
                 "session.list" => await SessionListAsync(cancellationToken).ConfigureAwait(false),
                 "session.fork" => await SessionForkAsync(request, cancellationToken).ConfigureAwait(false),
                 "session.rewind" => await SessionRewindAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.start" => await RunStartAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.trust" => await RunTrustAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.status" => await RunStatusAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.list" => await PolicyListAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.import" => await PolicyImportAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.remove" => await PolicyRemoveAsync(request, cancellationToken).ConfigureAwait(false),
@@ -197,6 +201,110 @@ public sealed class RpcDispatcher
         var index = RequireInt(request, "index");
         var result = await _sessionClient.RewindAsync(sessionId, index, ct).ConfigureAwait(false);
         return JsonNode.Parse(result.GetRawText())!;
+    }
+
+    private async Task<JsonNode> RunStartAsync(RpcRequest request, CancellationToken ct)
+    {
+        var workspace = RequireString(request, "workspace", AgentCliParser.MaxWorkspacePathLength);
+        var prompt = RequireString(request, "prompt", AgentCliParser.MaxPromptLength);
+        var preset = OptionalString(request, "preset", 16) ?? "standard";
+        if (preset is not ("plan" or "standard" or "full_access"))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_preset: preset must be plan, standard, or full_access.", "invalid_preset");
+        }
+
+        var confirmFullAccess = OptionalBool(request, "confirmFullAccess") ?? false;
+        if (preset == "full_access" && !confirmFullAccess)
+        {
+            throw new RpcDispatchException(
+                RpcProtocol.ApplicationError,
+                "full_access_confirmation_required: --confirm-full-access is required.",
+                "full_access_confirmation_required");
+        }
+
+        if (_runStarter is null)
+        {
+            throw new RpcDispatchException(RpcProtocol.InternalError, "run starter is not configured.");
+        }
+
+        try
+        {
+            var outcome = await _runStarter.StartAsync(
+                new RunStartRequest(
+                    workspace,
+                    prompt,
+                    preset,
+                    OptionalString(request, "sessionId", 64),
+                    OptionalBool(request, "trustWorkspace") ?? false,
+                    confirmFullAccess,
+                    Json: true),
+                onSessionCreated: null,
+                ct).ConfigureAwait(false);
+            return new JsonObject
+            {
+                ["run_id"] = outcome.RunId,
+                ["session_id"] = outcome.SessionId,
+                ["status"] = outcome.Status,
+                ["workspace_id"] = outcome.WorkspaceId,
+            };
+        }
+        catch (RunStartException ex)
+        {
+            throw new RpcDispatchException(RpcProtocol.ApplicationError, ex.Line, ex.Code);
+        }
+    }
+
+    private async Task<JsonNode> RunTrustAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var approve = OptionalBool(request, "approve") ?? false;
+        var run = await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(run.TrustRequestId) || string.IsNullOrWhiteSpace(run.DisplayIdentityHash))
+        {
+            throw new RpcDispatchException(RpcProtocol.ApplicationError, "trust_failed: run has no pending trust challenge", "trust_failed");
+        }
+
+        var response = await _agentClient.TrustAsync(
+            runId,
+            new RuAgent.Protocol.Harness.TrustAgentRunRequest(run.TrustRequestId, run.DisplayIdentityHash, approve ? "approve" : "deny"),
+            ct).ConfigureAwait(false);
+        return new JsonObject
+        {
+            ["run_id"] = response.RunId,
+            ["status"] = response.Status,
+        };
+    }
+
+    private async Task<JsonNode> RunStatusAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var run = await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
+        return JsonSerializer.SerializeToNode(run, JsonOptions) ?? new JsonObject();
+    }
+
+    private async Task<JsonNode> RunOutputAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var payloadId = RequireString(request, "payloadId", 64);
+        var content = await _agentClient.GetPayloadAsync(runId, payloadId, ct).ConfigureAwait(false);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        return new JsonObject
+        {
+            ["encoding"] = "base64",
+            ["data"] = Convert.ToBase64String(bytes),
+            ["byte_length"] = bytes.Length,
+        };
+    }
+
+    private static string RequireRunId(RpcRequest request)
+    {
+        var runId = RequireString(request, "runId", 36);
+        if (runId.Length != 36 || !runId.StartsWith("run_", StringComparison.Ordinal))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: runId must be run_ + 32 lower hex.");
+        }
+
+        return runId;
     }
 
     private async Task<JsonNode> PolicyListAsync(RpcRequest request, CancellationToken ct)

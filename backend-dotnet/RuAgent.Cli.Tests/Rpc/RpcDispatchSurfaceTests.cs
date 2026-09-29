@@ -192,4 +192,69 @@ public sealed class RpcDispatchSurfaceTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task Run_start_rejects_an_unknown_preset_before_any_http_call()
+    {
+        var seen = new List<string>();
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")), seen);
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(
+                Req("run.start", "{\"workspace\":\"C:\\\\w\",\"prompt\":\"p\",\"preset\":\"yolo\"}"),
+                CancellationToken.None));
+        Assert.Equal(RpcProtocol.InvalidParams, ex.RpcErrorCode);
+        Assert.Empty(seen);
+    }
+
+    [Fact]
+    public async Task Run_start_requires_full_access_confirmation()
+    {
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")));
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(
+                Req("run.start", "{\"workspace\":\"C:\\\\w\",\"prompt\":\"p\",\"preset\":\"full_access\"}"),
+                CancellationToken.None));
+        Assert.Equal("full_access_confirmation_required", ex.RuCode);
+    }
+
+    [Fact]
+    public async Task Run_start_without_a_starter_fails_closed()
+    {
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")));
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(
+                Req("run.start", "{\"workspace\":\"C:\\\\w\",\"prompt\":\"p\"}"),
+                CancellationToken.None));
+        Assert.Equal(RpcProtocol.InternalError, ex.RpcErrorCode);
+    }
+
+    [Fact]
+    public async Task Run_status_serializes_the_run_response_with_snake_case_fields()
+    {
+        var runId = "run_" + new string('a', 32);
+        var body = "{\"run_id\":\"" + runId + "\",\"session_id\":\"s1\",\"workspace_id\":\"w1\",\"status\":\"running\",\"history_wait_kind\":null,\"preset\":\"standard\",\"policy_snapshot_version\":1,\"policy_snapshot_sha256\":\"x\",\"version\":2,\"last_sequence\":9,\"created_at\":\"2026-09-29T00:00:00Z\",\"updated_at\":\"2026-09-29T00:00:00Z\",\"terminal_at\":null,\"terminal_error_code\":null}";
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(body)), seen);
+        var result = await dispatcher.DispatchAsync(Req("run.status", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None);
+        Assert.Equal("running", result!["status"]!.GetValue<string>());
+        Assert.Equal(9, result["last_sequence"]!.GetValue<long>());
+        Assert.Contains($"GET /agent/v1/runs/{runId}", seen);
+    }
+
+    [Fact]
+    public async Task Run_output_returns_base64_bytes()
+    {
+        var runId = "run_" + new string('a', 32);
+        var payloadId = "payload_" + new string('b', 32);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(
+            $"{{\"run_id\":\"{runId}\",\"payload_id\":\"{payloadId}\",\"kind\":\"tool_output\",\"encoding\":\"utf8\",\"content\":\"hello\"}}")), seen);
+        var result = await dispatcher.DispatchAsync(
+            Req("run.output", $"{{\"runId\":\"{runId}\",\"payloadId\":\"{payloadId}\"}}"),
+            CancellationToken.None);
+        Assert.Equal("base64", result!["encoding"]!.GetValue<string>());
+        Assert.Equal("aGVsbG8=", result["data"]!.GetValue<string>());
+        Assert.Equal(5, result["byte_length"]!.GetValue<int>());
+        Assert.Contains($"GET /agent/v1/runs/{runId}/payloads/{payloadId}", seen);
+    }
 }

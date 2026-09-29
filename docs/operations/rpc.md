@@ -19,9 +19,11 @@ session and run handles.
   `\r` from Windows text mode is stripped.
 - **stdout carries JSON-RPC only**; diagnostics are written to stderr. Nothing else
   may write to stdout while the bridge runs.
-- Every line is capped at **1 MiB**, in both directions. An oversized line is answered
-  with a `request_too_large` error (`-32600`) and skipped; the bridge does not guess at
-  content it cannot read.
+- Inbound request lines are capped at **1 MiB**. An oversized line is answered with a
+  `request_too_large` error (`-32600`) and skipped; the bridge does not guess at content
+  it cannot read. Outbound frames are not measured against that cap — they are bounded
+  only by the content each result carries (for example the payload `run.output`
+  returns), so a large but legal result may exceed 1 MiB on the wire.
 - A line that is not valid JSON is answered with `parse_error` (`-32700`) and skipped.
 - Requests without an `id` are notifications and get no response.
 - `$/cancelRequest` is accepted and ignored: v1 requests are short-lived, so there is no
@@ -144,11 +146,15 @@ Details that are easy to get wrong:
   `output_tokens`, `total_tokens`. The envelope is safe by construction: it carries a
   summary and a payload reference, never raw model or tool text. The bridge never
   follows `payload_ref` on its own — a client that wants the bytes calls `run.output`.
-- **`run.transient`** — live frames (`assistant.delta`, `tool.output.delta`,
-  `transient.frames_dropped`), delivered **only** when the subscription was created
-  with `includeTransient: true`. Params: `subscription_id`, `transient_sequence`,
-  `event_type`, `data` (the frame text). Transient frames are never replayed and never
-  buffered, so a reconnect starts without them.
+- **`run.transient`** — live frames delivered **only** when the subscription was
+  created with `includeTransient: true`. The SSE wire tags every one of them
+  `event: transient`, so `event_type` is always `"transient"`; the actual kind
+  (`assistant.delta`, `tool.output.delta`, `agent.activity`, `agent.summary`) rides
+  inside `data` as a `{"kind":"...","data":"..."}` JSON string. Params:
+  `subscription_id`, `transient_sequence`, `event_type`, `data`. Transient frames are
+  never replayed and never buffered, so a reconnect starts without them.
+  `transient.frames_dropped` is **not** one of these — it is a durable event and
+  arrives as `run.event`.
 - **`bridge.shutdown`** — written best-effort immediately before the process exits.
   Params: `reason` (`stdin_closed`, `backpressure`, or `cancelled`), matching the exit
   code.
@@ -168,17 +174,23 @@ Standard JSON-RPC codes:
 Bridge-level codes: `-32001` `not_initialized`, `-32002` `already_initialized`.
 
 Application errors use `-32000` with `data.ruCode` carrying the host's error catalog
-code and, when the failure came from an HTTP response, `data.httpStatus`:
+code and, when the failure came from an HTTP response, `data.httpStatus`. The
+`message` mirrors the host's bounded error body rather than a reworded summary:
 
 ```json
-{"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"Approval is missing, expired, or already used.","data":{"ruCode":"approval_stale","httpStatus":409}}}
+{"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"{\"error_code\":\"approval_stale\",\"message\":\"Approval is missing, expired, or already used.\"}","data":{"ruCode":"approval_stale","httpStatus":409}}}
 ```
 
-Codes such as `approval_stale`, `workspace_trust_required`, `invalid_preset`,
-`trust_failed`, `reconcile_failed`, `full_access_confirmation_required`,
+Codes such as `approval_stale`, `workspace_trust_required`, `trust_failed`,
+`reconcile_failed`, `full_access_confirmation_required`,
 `invalid_payload_encoding` and `unsupported_payload_encoding` all arrive this way. The
 bridge does not retry, rewrite or fall back on host failures; the mapped code is the
 original one.
+
+`-32602` can also carry `data.ruCode` when the rejection has a named cause: `run.start`
+rejects an unknown preset with `-32602` plus `data.ruCode: "invalid_preset"`, and
+`policy.import` maps file failures the same way (`file_error` and the policy codec's
+own codes).
 
 ## Security notes
 

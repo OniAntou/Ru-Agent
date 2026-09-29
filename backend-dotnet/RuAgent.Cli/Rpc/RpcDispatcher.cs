@@ -116,6 +116,8 @@ public sealed class RpcDispatcher
                 "session.fork" => await SessionForkAsync(request, cancellationToken).ConfigureAwait(false),
                 "session.rewind" => await SessionRewindAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.start" => await RunStartAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.attach" => RunAttach(request),
+                "run.detach" => RunDetach(request),
                 "run.trust" => await RunTrustAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.status" => await RunStatusAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
@@ -252,6 +254,36 @@ public sealed class RpcDispatcher
         {
             throw new RpcDispatchException(RpcProtocol.ApplicationError, ex.Line, ex.Code);
         }
+    }
+
+    private JsonNode RunAttach(RpcRequest request)
+    {
+        var runId = RequireRunId(request);
+        var afterSequence = OptionalLong(request, "afterSequence") ?? 0;
+        var includeTransient = OptionalBool(request, "includeTransient") ?? false;
+        if (_runBridge is null)
+        {
+            throw new RpcDispatchException(RpcProtocol.InternalError, "run bridge is not configured.");
+        }
+
+        var subscriptionId = _runBridge.Attach(runId, afterSequence, includeTransient);
+        return new JsonObject
+        {
+            ["subscription_id"] = subscriptionId,
+            ["run_id"] = runId,
+            ["include_transient"] = includeTransient,
+        };
+    }
+
+    private JsonNode RunDetach(RpcRequest request)
+    {
+        var subscriptionId = RequireString(request, "subscriptionId", 64);
+        if (_runBridge is null || !_runBridge.Detach(subscriptionId))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: unknown subscriptionId.");
+        }
+
+        return new JsonObject { ["detached"] = subscriptionId };
     }
 
     private async Task<JsonNode> RunTrustAsync(RpcRequest request, CancellationToken ct)

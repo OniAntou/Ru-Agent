@@ -136,6 +136,31 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
         private set => SetProperty(ref _detail, value);
     }
 
+    private bool _detailRepeats;
+
+    /// <summary>
+    /// Marks this row's detail as a repeat of the row above.
+    /// </summary>
+    /// <remarks>
+    /// A model that reuses the same deliberation across consecutive steps produces
+    /// one Thinking row per step, and every one of them renders the same
+    /// paragraph. The steps themselves stay -- their durations are what tells the
+    /// reader where the time went -- but the paragraph is read once. The value
+    /// itself is left alone: it is still what the row carries.
+    /// </remarks>
+    internal void SetDetailRepeated(bool repeated)
+    {
+        if (_detailRepeats == repeated)
+        {
+            return;
+        }
+
+        _detailRepeats = repeated;
+        OnPropertyChanged(nameof(HasDetail));
+        OnPropertyChanged(nameof(ShowThinkingDetail));
+        OnPropertyChanged(nameof(ShowPlainDetail));
+    }
+
     /// <summary>
     /// Whether the row shows the plain detail line.
     ///
@@ -151,7 +176,7 @@ public sealed class AgentActivityItem : INotifyPropertyChanged
     /// Thinking rows never use the plain line: their detail lives in the collapsible
     /// quote block below, so a long deliberation does not push the answer off screen.
     /// </summary>
-    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
+    public bool HasDetail => !_detailRepeats && !string.IsNullOrWhiteSpace(Detail) && !IsEditPreview;
 
     public bool IsThinking => Kind == AgentActivityKind.Thinking;
 

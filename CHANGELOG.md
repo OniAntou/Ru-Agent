@@ -176,6 +176,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Test cũ ghim **hành vi sai** (`..._rejects_ambiguous_idless_native_continuation_after_parallel_calls`) nên được viết lại thành khẳng định hai call ghép đúng, và thêm một test riêng cho ca vẫn phải đóng. Sau khi sửa, chạy thật từ A đến Z: Agent tạo được dự án, báo đúng đường dẫn tuyệt đối và kích thước từng file, và tự xác minh thư mục gốc không bị đụng.
 
+  **Cùng lúc đó: một đoạn reasoning bị in lên ba lần.** Đo activity thật của một run cho ra **ba `act_` id khác nhau, cùng detail** — tức đây **không** phải client vẽ một item ba lần, mà model thật sự lặp reasoning ở ba step đầu. Đường replay ở `AgentV1Service.Activities` cũng đúng: nó khóa `reasoningDetails` theo model step id chứ không lấy "bản mới nhất của cả run".
+
+  Thứ tự thì **đúng** như server phát: `thinking · status · thinking · status · thinking · edit×4 …`; các hàng `status` có detail rỗng nên ẩn, nên UI hiện ba hàng thinking liền nhau rồi tới các hàng edit. Feed render trung thực, chỉ là đọc lại cùng một đoạn ba lần. Nay `AgentActivityGrouper` bỏ **phần lặp** chứ không bỏ hàng: mỗi step vẫn còn hàng và thời lượng riêng (đó là thứ duy nhất cho biết thời gian đi đâu), chỉ đoạn văn đã đọc thì hiện một lần. Cờ đánh dấu là trạng thái suy ra, tính lại mỗi lần reconcile chứ không dính vào item.
+
 
 - **fix(gui)**: **Full Access không còn tự bò sang session khác.** Sau khi bỏ reset preset, preset thuộc session A có thể bị đẩy lên session B lúc gửi: `EnsureAgentPresetAsync` đẩy preset của composer lên session đang mở, nên một session người dùng **chưa từng chọn Full Access** sẽ nhận nó trong im lặng. Nay khi mở session, Full Access chỉ đi kèm nếu nó đã được đặt cho đúng session đó; `plan` và `standard` là sở thích nên vẫn đi theo.
 

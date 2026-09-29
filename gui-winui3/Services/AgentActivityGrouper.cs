@@ -25,6 +25,7 @@ internal static class AgentActivityGrouper
         {
             item.IsVisibleInFeed = true;
             item.CollapsedDurationMs = 0;
+            item.SetDetailRepeated(false);
         }
 
         CollapseIdenticalCompleted(items);
@@ -55,11 +56,26 @@ internal static class AgentActivityGrouper
             var previous = items[i - 1];
             var current = items[i];
             if (!current.IsVisibleInFeed
-                || current.Kind == AgentActivityKind.Thinking
                 || current.State != AgentActivityState.Completed
                 || previous.State != AgentActivityState.Completed
                 || !previous.IsVisibleInFeed)
             {
+                continue;
+            }
+
+            // Thinking rows never collapse -- their duration is the only report
+            // of where the step's time went -- but a model that reuses one
+            // deliberation across steps used to print that same paragraph once
+            // per step. The row stays, with its own duration; only the repeat is
+            // dropped, and the value stays on the item.
+            if (current.Kind == AgentActivityKind.Thinking)
+            {
+                if (previous.Kind == AgentActivityKind.Thinking
+                    && string.Equals(current.Detail, previous.Detail, StringComparison.Ordinal))
+                {
+                    current.SetDetailRepeated(true);
+                }
+
                 continue;
             }
 

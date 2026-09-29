@@ -86,4 +86,16 @@ public sealed class RpcBridgeServerTests
         Assert.Contains("request_too_large", output.ToString());
         Assert.Contains("\"protocolVersion\":1", output.ToString());
     }
+
+    [Fact]
+    public async Task Cancellation_returns_130_and_emits_shutdown()
+    {
+        var (server, output) = CreateServer(string.Empty, _ => Task.FromResult(RpcTestHost.Json("{}")));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var exit = await server.RunAsync(cts.Token);
+        Assert.Equal(130, exit);
+        Assert.Contains("bridge.shutdown", output.ToString());
+        Assert.Contains("\"reason\":\"cancelled\"", output.ToString());
+    }
 }

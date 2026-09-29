@@ -149,7 +149,17 @@ public sealed class RpcBridgeServer
             _outbound.Writer.TryComplete();
         }
 
-        await writerTask.ConfigureAwait(false);
+        try
+        {
+            await writerTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation stops the reader, not the writer: the queued messages
+            // (including bridge.shutdown) are still delivered best-effort, so the
+            // computed exit code is the result rather than the writer's OCE.
+        }
+
         return exitCode;
     }
 
@@ -157,7 +167,17 @@ public sealed class RpcBridgeServer
     {
         await foreach (var message in _outbound.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
         {
-            await RpcFrameCodec.WriteFrameAsync(_output, message, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await RpcFrameCodec.WriteFrameAsync(_output, message, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // WriteFrameAsync throws before writing anything when the token is
+                // canceled, so one retry without the token delivers the frame exactly
+                // once and keeps bridge.shutdown on the wire during cancellation.
+                await RpcFrameCodec.WriteFrameAsync(_output, message, CancellationToken.None).ConfigureAwait(false);
+            }
         }
     }
 }

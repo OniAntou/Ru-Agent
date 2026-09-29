@@ -6,7 +6,9 @@ namespace RuAgent.Cli.Tests.Rpc;
 
 internal static class RpcTestHost
 {
-    internal static PublicHostSession CreateSession(string bearer = "bearer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    internal const string TestBearer = "test-bearer";
+
+    internal static PublicHostSession CreateSession(string bearer = TestBearer)
     {
         var proc = System.Diagnostics.Process.GetCurrentProcess();
         var desc = new RuAgent.Protocol.Harness.RuntimeDescriptor(1, "http://127.0.0.1:8000/", bearer, proc.Id, proc.StartTime.ToUniversalTime().ToString("O"), new string('a', 32), DateTimeOffset.UtcNow.ToString("O"));

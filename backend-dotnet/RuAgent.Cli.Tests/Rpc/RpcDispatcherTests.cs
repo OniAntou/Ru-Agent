@@ -102,6 +102,6 @@ public sealed class RpcDispatcherTests
         var result = await dispatcher.DispatchAsync(Request("host.status"), CancellationToken.None);
         Assert.True(result!["ready"]!.GetValue<bool>());
         Assert.Contains(requests, r => r.Contains("/settings"));
-        Assert.DoesNotContain("test-bearer", result.ToJsonString());
+        Assert.DoesNotContain(RpcTestHost.TestBearer, result.ToJsonString());
     }
 }

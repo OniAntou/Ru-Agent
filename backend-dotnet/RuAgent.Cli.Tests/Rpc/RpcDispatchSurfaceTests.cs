@@ -248,13 +248,37 @@ public sealed class RpcDispatchSurfaceTests
         var payloadId = "payload_" + new string('b', 32);
         List<string> seen = [];
         var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(
-            $"{{\"run_id\":\"{runId}\",\"payload_id\":\"{payloadId}\",\"kind\":\"tool_output\",\"encoding\":\"utf8\",\"content\":\"hello\"}}")), seen);
+            $"{{\"run_id\":\"{runId}\",\"payload_id\":\"{payloadId}\",\"kind\":\"tool_output\",\"encoding\":\"utf8text\",\"content\":\"hello\"}}")), seen);
         var result = await dispatcher.DispatchAsync(
             Req("run.output", $"{{\"runId\":\"{runId}\",\"payloadId\":\"{payloadId}\"}}"),
             CancellationToken.None);
         Assert.Equal("base64", result!["encoding"]!.GetValue<string>());
         Assert.Equal("aGVsbG8=", result["data"]!.GetValue<string>());
         Assert.Equal(5, result["byte_length"]!.GetValue<int>());
+        Assert.Contains($"GET /agent/v1/runs/{runId}/payloads/{payloadId}", seen);
+    }
+
+    [Fact]
+    public async Task Run_output_encodes_json_payloads_as_utf8_base64()
+    {
+        var runId = "run_" + new string('a', 32);
+        var payloadId = "payload_" + new string('b', 32);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(
+            JsonSerializer.Serialize(new
+            {
+                run_id = runId,
+                payload_id = payloadId,
+                kind = "assistant_text",
+                encoding = "json",
+                content = "{\"answer\":1}",
+            }))), seen);
+        var result = await dispatcher.DispatchAsync(
+            Req("run.output", $"{{\"runId\":\"{runId}\",\"payloadId\":\"{payloadId}\"}}"),
+            CancellationToken.None);
+        Assert.Equal("base64", result!["encoding"]!.GetValue<string>());
+        Assert.Equal("eyJhbnN3ZXIiOjF9", result["data"]!.GetValue<string>());
+        Assert.Equal(12, result["byte_length"]!.GetValue<int>());
         Assert.Contains($"GET /agent/v1/runs/{runId}/payloads/{payloadId}", seen);
     }
 

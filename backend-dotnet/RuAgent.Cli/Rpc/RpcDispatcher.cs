@@ -290,7 +290,8 @@ public sealed class RpcDispatcher
         byte[] bytes;
         switch (payload.Encoding)
         {
-            case "utf8":
+            case "utf8text":
+            case "json":
                 bytes = System.Text.Encoding.UTF8.GetBytes(payload.Content);
                 break;
             case "opaque":

@@ -246,12 +246,15 @@ try {
     $scriptPath = Join-Path $work "scripted.json"
     Copy-Item -LiteralPath $fixtureSource -Destination $scriptPath -Force
     try {
-        $scripted = Get-Content -LiteralPath $scriptPath -Raw | ConvertFrom-Json
+        # @() forces array semantics on both hosts: PowerShell 5.1 enumerates a
+        # JSON array into the pipeline, PowerShell 7 unwraps a one-element array
+        # to a bare object, and the count check below has to read the same either way.
+        $scripted = @((Get-Content -LiteralPath $scriptPath -Raw) | ConvertFrom-Json)
     } catch {
         throw "the scripted-model fixture is not valid JSON: $($_.Exception.Message)"
     }
 
-    if ($scripted -isnot [System.Array] -or $scripted.Count -lt 1) {
+    if ($scripted.Count -lt 1) {
         throw "the scripted-model fixture must be a non-empty JSON array of steps."
     }
 
@@ -353,7 +356,7 @@ try {
     while ($null -eq $terminalEvent) {
         $remaining = [int]($deadline - (Get-Date)).TotalMilliseconds
         if ($remaining -lt 1) {
-            throw "timed out after 60 s waiting for a terminal run.event (last run status: $lastRunStatus)."
+            throw "timed out after 60 s waiting for a terminal run.event (last run status: $lastRunStatus). stderr: $(Get-BridgeStderr)"
         }
 
         $null = Read-BridgeMessage -TimeoutMilliseconds $remaining -Context "run events"
@@ -419,13 +422,19 @@ try {
         [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], "Process")
     }
 
+    $workRemoved = $false
     for ($attempt = 0; $attempt -lt 5; $attempt++) {
         try {
             Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction Stop
+            $workRemoved = $true
             break
         } catch {
             Start-Sleep -Milliseconds 250
         }
+    }
+
+    if (-not $workRemoved) {
+        Write-Warning "rpc smoke: could not remove the temp work directory $work; remove it manually."
     }
 }
 

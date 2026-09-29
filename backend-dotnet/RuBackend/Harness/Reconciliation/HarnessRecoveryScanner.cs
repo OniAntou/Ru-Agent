@@ -51,6 +51,16 @@ public sealed class HarnessRecoveryScanner(
         run.State == HarnessRunState.WaitingApproval
         && ApprovalState.IsExpired(run.UpdatedAt, now);
 
+    /// <summary>
+    /// True when a run waits on a workspace-trust challenge that has outlived
+    /// <see cref="WorkspaceTrustTimeout"/>: the decision endpoint refuses it as
+    /// <c>trust_request_expired</c>, so the run can never leave the wait through a
+    /// client and would hold its workspace's active-run lock forever.
+    /// </summary>
+    public static bool IsExpiredWorkspaceTrustWait(AgentRun run, DateTimeOffset now) =>
+        run.State == HarnessRunState.WaitingWorkspaceTrust
+        && run.UpdatedAt <= now - WorkspaceTrustTimeout;
+
     public async Task<RecoverySweepResult> SweepPendingRunsAsync(
         CancellationToken cancellationToken)
     {
@@ -114,8 +124,7 @@ public sealed class HarnessRecoveryScanner(
         // keep the workspace's unique active-run lock forever. Trust is a
         // pre-execution gate, so cancelling an expired request cannot roll back
         // any tool side effect.
-        if (run.State == HarnessRunState.WaitingWorkspaceTrust
-            && run.UpdatedAt <= time.UtcNow - WorkspaceTrustTimeout)
+        if (IsExpiredWorkspaceTrustWait(run, time.UtcNow))
         {
             return await CancelExpiredWorkspaceTrustAsync(run, cancellationToken).ConfigureAwait(false);
         }
@@ -308,7 +317,13 @@ public sealed class HarnessRecoveryScanner(
         return await FailRunAsync(run, "approval_expired", cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<RecoveredRunSummary?> CancelExpiredWorkspaceTrustAsync(
+    /// <summary>
+    /// Cancels an abandoned workspace-trust wait so its workspace's active-run lock is
+    /// released. Trust is a pre-execution gate, so cancelling an expired challenge cannot
+    /// roll back a tool side effect. Called both by the startup sweep and by the runtime
+    /// loop, so a long-lived host does not park the run until the next restart.
+    /// </summary>
+    public async Task<RecoveredRunSummary?> CancelExpiredWorkspaceTrustAsync(
         AgentRun run,
         CancellationToken cancellationToken)
     {

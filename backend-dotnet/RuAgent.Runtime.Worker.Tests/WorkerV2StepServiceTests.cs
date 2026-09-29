@@ -284,6 +284,9 @@ public sealed class WorkerV2StepServiceTests
 
         Assert.Equal("protocol_failure", error.Code);
         Assert.True(error.Retryable);
+        Assert.NotNull(error.Trace);
+        Assert.Contains("site=zero_fragments", error.Trace);
+        Assert.Contains("finishIsToolCalls=1", error.Trace);
     }
 
     [Fact]

@@ -78,6 +78,12 @@ public sealed class AgentSlashCommands
             return true;
         }
 
+        if (slashCmd is "/reasoning")
+        {
+            await HandleReasoningAsync(arg, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         if (slashCmd is "/tree")
         {
             await HandleTreeAsync(currentSessionId, cancellationToken).ConfigureAwait(false);
@@ -188,6 +194,27 @@ public sealed class AgentSlashCommands
         return states;
     }
 
+    /// <summary>
+    /// The live models.dev catalog for the backend picker, plus the reason it is missing.
+    /// A failed lookup must reach the operator: the WinUI settings surface had the same
+    /// fetch failure and swallowed it into a silently short list, so the caller prints
+    /// the reason and falls back to the providers the CLI has always known.
+    /// </summary>
+    private async Task<(IReadOnlyList<(string Id, string Name)>? Providers, string? Error)> ReadModelsDevProvidersAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var providers = await _settingsClient.GetModelsDevAsync(cancellationToken).ConfigureAwait(false);
+            return providers.Count > 0
+                ? (providers, null)
+                : (null, "provider list empty");
+        }
+        catch (Exception ex)
+        {
+            return (null, CliErrorText.ShortMessage(ex.Message));
+        }
+    }
+
     private async Task HandleBackendAsync(string? arg, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(arg))
@@ -198,14 +225,18 @@ public sealed class AgentSlashCommands
             var keyStates = settings.HasValue
                 ? await ReadAllKeyStatesAsync(settings.Value, cancellationToken).ConfigureAwait(false)
                 : null;
-            var list = new Tui.ChoiceList("backend", Tui.TuiSurfaces.BackendChoices(current, keyStates));
+            var (providers, providerError) = await ReadModelsDevProvidersAsync(cancellationToken).ConfigureAwait(false);
+            await WriteProviderListNoticeAsync(providers, providerError).ConfigureAwait(false);
+
+            var choices = Tui.TuiSurfaces.BackendChoices(current, keyStates, providers);
+            var list = new Tui.ChoiceList("backend", choices);
             var picked = Picker is null ? null : await Picker(list, cancellationToken).ConfigureAwait(false);
             if (picked is null)
             {
                 // Cancelled (nothing to add) or not interactive (list the options).
                 if (Picker is null || !IsInteractiveConsole())
                 {
-                    WriteBackendPanel(current, keyStates);
+                    WriteBackendPanel(current, keyStates, providers);
                 }
 
                 await _out.FlushAsync().ConfigureAwait(false);
@@ -218,11 +249,152 @@ public sealed class AgentSlashCommands
         await SwitchBackendAsync(arg, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Says which provider list is on screen. Without this the operator cannot tell a
+    /// short catalog from a failed fetch, which is exactly the confusion the WinUI
+    /// provider list hit with the same call.
+    /// </summary>
+    private async Task WriteProviderListNoticeAsync(
+        IReadOnlyList<(string Id, string Name)>? providers,
+        string? error)
+    {
+        if (providers is not null)
+        {
+            await _out.WriteLineAsync(Tui.TuiPalette.DimPaint(
+                $"  {providers.Count} providers from models.dev")).ConfigureAwait(false);
+            return;
+        }
+
+        await _out.WriteLineAsync(Tui.TuiPalette.DimPaint(
+            $"  models.dev list unavailable ({error}) - showing the known providers only")).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Shows or sets the active model's reasoning effort. With no argument it offers a
+    /// picker when there is something to choose, matching <c>/backend</c>: only the bare
+    /// form needs a terminal, the argument form writes either way.
+    /// </summary>
+    private async Task HandleReasoningAsync(string? arg, CancellationToken cancellationToken)
+    {
+        ModelReasoningSnapshot snapshot;
+        try
+        {
+            var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
+            snapshot = await _settingsClient.GetReasoningAsync(ReadBackend(settings), cancellationToken).ConfigureAwait(false);
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync($"reasoning_unavailable: {CliErrorText.Format(ex)}").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"reasoning_unavailable: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
+        var choices = Tui.TuiSurfaces.ReasoningChoices(snapshot.SelectedEffort, snapshot.Options);
+        if (string.IsNullOrWhiteSpace(arg))
+        {
+            if (choices.Count == 0)
+            {
+                await _out.WriteLineAsync(Tui.TuiPalette.DimPaint(
+                    $"  {snapshot.SelectedModel ?? "(no model)"} offers no reasoning effort ({snapshot.State}).")).ConfigureAwait(false);
+                await _out.FlushAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (Picker is null || !IsInteractiveConsole())
+            {
+                WriteReasoningPanel(snapshot, choices);
+                return;
+            }
+
+            var picked = await Picker(new Tui.ChoiceList("reasoning", choices), cancellationToken).ConfigureAwait(false);
+            if (picked is null)
+            {
+                return;
+            }
+
+            arg = picked;
+        }
+
+        await SaveReasoningAsync(snapshot, choices, arg.Trim(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private void WriteReasoningPanel(ModelReasoningSnapshot snapshot, IReadOnlyList<Tui.ChoiceItem> choices)
+    {
+        var rows = choices
+            .Select(item => new Tui.PanelRow(item.Label, item.Detail))
+            .ToList();
+
+        foreach (var line in Tui.TuiPanel.Compose(PanelWidth, "reasoning", [new Tui.PanelSection(snapshot.SelectedModel, rows)], "/reasoning <effort>"))
+        {
+            _out.WriteLine(line);
+        }
+
+        _out.Flush();
+    }
+
+    private async Task SaveReasoningAsync(
+        ModelReasoningSnapshot snapshot,
+        IReadOnlyList<Tui.ChoiceItem> choices,
+        string effort,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot.SelectedModel) || string.IsNullOrEmpty(snapshot.Identity))
+        {
+            await _err.WriteLineAsync("reasoning_unavailable: the host returned no model to bind the effort to.").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
+        // default is always a legal save: the host only resolves a non-default effort
+        // against the catalog, so a model with no published level can still be reset.
+        var allowed = new HashSet<string>(choices.Select(item => item.Value), StringComparer.Ordinal) { "default" };
+        if (!allowed.Contains(effort))
+        {
+            await _err.WriteLineAsync($"reasoning_unsupported: '{effort}' is not offered by {snapshot.SelectedModel}. Try: {string.Join(", ", allowed)}").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            // Exactly these three fields: the host rejects a reasoning save that carries
+            // anything else, and it checks identity/model against the catalog snapshot.
+            var body = new JsonObject
+            {
+                ["reasoning_effort"] = effort,
+                ["reasoning_model"] = snapshot.SelectedModel,
+                ["reasoning_identity"] = snapshot.Identity,
+            };
+            await _settingsClient.UpdateAsync(body, cancellationToken).ConfigureAwait(false);
+            await _out.WriteLineAsync(Tui.TuiPalette.Ok($"✓ reasoning effort: {effort}")).ConfigureAwait(false);
+            await _out.FlushAsync().ConfigureAwait(false);
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync(CliErrorText.Format(ex)).ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _err.WriteLineAsync($"reasoning_save_failed: {CliErrorText.ShortMessage(ex.Message)}").ConfigureAwait(false);
+            await _err.FlushAsync().ConfigureAwait(false);
+        }
+    }
+
     private static bool IsInteractiveConsole() => !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
-    private void WriteBackendPanel(string? current, IReadOnlyDictionary<string, bool>? keyStates)
+    private void WriteBackendPanel(
+        string? current,
+        IReadOnlyDictionary<string, bool>? keyStates,
+        IReadOnlyList<(string Id, string Name)>? providers)
     {
-        var rows = Tui.TuiSurfaces.BackendChoices(current, keyStates)
+        var rows = Tui.TuiSurfaces.BackendChoices(current, keyStates, providers)
             .Select(item => new Tui.PanelRow(item.Label, item.Detail))
             .ToList();
 

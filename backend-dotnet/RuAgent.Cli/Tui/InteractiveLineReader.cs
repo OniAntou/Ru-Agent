@@ -14,6 +14,7 @@ public sealed class InteractiveLineReader
         new("/model", "Switch or show the active model", "/model [name]"),
         new("/key", "Show or update provider API keys", "/key [provider]"),
         new("/backend", "Switch provider backend (openai, anthropic, custom...)", "/backend <name>"),
+        new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
         new("/fork", "Branch this conversation", "/fork [title]"),
         new("/tree", "Show the session tree", "/tree"),
         new("/stats", "Show token and session stats", "/stats"),
@@ -1377,10 +1378,23 @@ public sealed class InteractiveLineReader
 
             if (choosing)
             {
-                switch (choice!.HandleKey(key))
+                var picker = choice!;
+                if (key.Key == ConsoleKey.Backspace && picker.TryTrimFilter())
+                {
+                    await RefreshAsync().ConfigureAwait(false);
+                    continue;
+                }
+
+                if (key.Key != ConsoleKey.Backspace && picker.TryAppendFilter(key.KeyChar))
+                {
+                    await RefreshAsync().ConfigureAwait(false);
+                    continue;
+                }
+
+                switch (picker.HandleKey(key))
                 {
                     case ChoiceOutcome.Confirmed:
-                        var picked = choice.Current.Value;
+                        var picked = picker.Current.Value;
                         LeaveBox(echo: false);
                         return picked;
 

@@ -212,6 +212,277 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
+    public void Streamed_assistant_text_records_the_raw_deltas_for_gap_detection()
+    {
+        // The live hub has no replay buffer, so deltas published before the client
+        // subscribes are gone. The raw text actually received is what a gap check has to
+        // compare the run's durable assistant payload against.
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("or the web, and more");
+
+        Assert.Equal("or the web, and more", transcript.StreamedAssistantText);
+    }
+
+    [Fact]
+    public void Streamed_assistant_text_starts_empty_and_resets_each_turn()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("first turn");
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        transcript.BeginTurn();
+
+        Assert.Equal(string.Empty, transcript.StreamedAssistantText);
+    }
+
+    [Fact]
+    public void ResetAssistant_drops_superseded_text_from_gap_detection()
+    {
+        // A retried attempt replaces the previous answer: the head sitting in the
+        // render buffer must not stay in the raw text used for gap detection, or the
+        // reconciler sees a complete answer while the screen is missing its head.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("Hi! **");
+        transcript.ResetAssistant();
+
+        Assert.Equal(string.Empty, transcript.StreamedAssistantText);
+        var text = TuiText.Strip(output.ToString());
+        Assert.Contains("Hi!", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("**", text, StringComparison.Ordinal);
+
+        transcript.AppendAssistant("fresh retry");
+        Assert.Equal("fresh retry", transcript.StreamedAssistantText);
+    }
+
+    [Fact]
+    public void Repaint_replaces_a_truncated_turn_with_the_complete_answer()
+    {
+        // What the live hub actually costs: the deltas that carried the head were published
+        // before the client subscribed and are gone, so the turn rendered only its tail. A
+        // terminal cannot unprint, so the block is replaced in the surface's recorded lines
+        // and the screen is rebuilt from them -- the path a resize already uses.
+        const string full =
+            "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("running commands, and more.");
+        transcript.Flush();
+
+        Assert.True(transcript.RepaintAssistantText(full));
+        Assert.Equal(full, transcript.StreamedAssistantText);
+
+        // The rebuilt screen must show the head again, from the recorded lines rather than
+        // from a fresh append.
+        var rebuilt = string.Join("\n", transcript.RepaintPreview());
+        Assert.Contains("ready to help you with your workspace", rebuilt, StringComparison.Ordinal);
+        Assert.Contains("running commands, and more", rebuilt, StringComparison.Ordinal);
+        Assert.DoesNotContain("◆", rebuilt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Repaint_declines_when_nothing_was_streamed_this_turn()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+
+        // Nothing streamed means there is no block to place the answer in; the caller appends
+        // instead, and the repaint must not invent one.
+        Assert.False(transcript.RepaintAssistantText("some text"));
+    }
+
+    [Fact]
+    public void Repaint_marks_a_fresh_block_for_each_turn()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("first tail");
+        transcript.Flush();
+        Assert.True(transcript.RepaintAssistantText("first head and tail"));
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+        transcript.BeginTurn();
+
+        // The next turn must not try to repaint the previous turn's rows.
+        Assert.False(transcript.RepaintAssistantText("second turn text"));
+    }
+
+    [Fact]
+    public void Assistant_block_row_count_tracks_recorded_rows_for_paint_diagnosis()
+    {
+        var (transcript, _) = Create();
+        transcript.BeginTurn();
+        Assert.Equal(0, transcript.AssistantBlockRowCount);
+
+        transcript.AppendAssistant("first line\nsecond line\n");
+        // The mark is taken before the assistant header is written, so the header row
+        // counts as part of the turn's block alongside the two body rows.
+        Assert.Equal(3, transcript.AssistantBlockRowCount);
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+        transcript.BeginTurn();
+        Assert.Equal(0, transcript.AssistantBlockRowCount);
+    }
+
+    [Fact]
+    public void Replayed_turn_keeps_its_head_on_the_visible_screen()
+    {
+        // The exact failing turn, judged the only honest way: drive the real transcript
+        // and surface with erases enabled exactly like a live console, then read the FINAL
+        // SCREEN instead of the byte stream. Byte assertions strip the erase codes and
+        // therefore cannot see this class of loss at all.
+        const string full =
+            "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
+        TuiPalette.Level = TuiColorLevel.None;
+        var writer = new StringWriter();
+        var surface = new TuiSurface(writer) { SuppressRepaints = false };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
+
+        transcript.BeginTurn();
+        foreach (var piece in Chunk(full, 11))
+        {
+            transcript.AppendAssistant(piece);
+        }
+
+        transcript.Flush();
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var screen = new TuiScreenSimulator(rows: 41, cols: 120);
+        screen.Write(writer.ToString());
+        var text = screen.ScreenText();
+        Assert.Contains("ready to help you with your workspace", text, StringComparison.Ordinal);
+        Assert.Contains("running commands, and more", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Live_frame_sequence_keeps_text_coherent_on_the_visible_screen()
+    {
+        // Faithful emulation of the live loop: sticky region entered once, then per frame
+        // the transcript write followed by a footer paint, exactly like processing frames
+        // followed by PaintStickyFooter. No cursor restore between the frames of one row:
+        // the surface tracks the append point, so each chunk continues where the previous
+        // one ended instead of restarting over painted text.
+        const string full =
+            "Hi! I'm ready to help you with your workspace — reading and editing files, running commands, and more.";
+        TuiPalette.Level = TuiColorLevel.None;
+        var writer = new StringWriter();
+        var surface = new TuiSurface(writer) { SuppressRepaints = false };
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { Width = 80 };
+        var sticky = new TuiStickyRegion(surface);
+        Assert.True(sticky.Enter(41, 4, 120));
+
+        var footer = new List<string> { "status row", "composer box" };
+        transcript.BeginTurn();
+        foreach (var piece in Chunk(full, 11))
+        {
+            transcript.AppendAssistant(piece);
+            sticky.Paint(footer, 120);
+        }
+
+        transcript.Flush();
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var screen = new TuiScreenSimulator(rows: 41, cols: 120);
+        screen.Write(writer.ToString());
+        var text = screen.ScreenText();
+        Assert.Contains("ready to help you with your workspace", text, StringComparison.Ordinal);
+        Assert.Contains("running commands, and more", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Real_short_reply_from_the_host_renders_completely()
+    {
+        // The exact 162-character answer the host persisted, em dash and all. Three or four
+        // wrapped lines cannot overflow a transcript area, so a turn that renders nothing at
+        // all is not the lost-head scroll bug. If this passes, the loss is downstream of the
+        // transcript: the pinned-footer paint, which a StringWriter cannot show because it
+        // has no screen, no scrollback and no cursor.
+        const string answer =
+            "Hi! I'm ready to help you with your workspace — reading and editing files, "
+            + "running commands, searching the web, or planning out a task. What would you "
+            + "like to do?";
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+
+        foreach (var piece in Chunk(answer, 11))
+        {
+            transcript.AppendAssistant(piece);
+        }
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var text = TuiText.Strip(string.Join(" ", Rows(output)));
+        Assert.Contains("Hi! I'm ready to help you with your workspace", text, StringComparison.Ordinal);
+        Assert.Contains("What would you like to do?", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("no text arrived", text, StringComparison.Ordinal);
+    }
+
+    private static IEnumerable<string> Chunk(string text, int size)
+    {
+        for (var offset = 0; offset < text.Length; offset += size)
+        {
+            yield return text.Substring(offset, Math.Min(size, text.Length - offset));
+        }
+    }
+
+    [Fact]
+    public void Completed_turn_with_no_text_and_no_tools_says_so_instead_of_ending_silent()
+    {
+        // A finished run that delivered nothing used to leave only "✓ idle · 10.6s",
+        // which reads exactly like a very short answer. The operator has to be told.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        var rows = Rows(output);
+        Assert.Contains(rows, row => row.Contains("no text arrived from the model"));
+        Assert.Contains(rows, row => row.Contains("/model"));
+    }
+
+    [Fact]
+    public void Completed_turn_that_streamed_text_adds_no_note()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.AppendAssistant("PONG");
+        output.Clear();
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        Assert.DoesNotContain(Rows(output), row => row.Contains("no text arrived"));
+    }
+
+    [Fact]
+    public void Completed_turn_with_only_tool_rows_adds_no_note()
+    {
+        // Work that did run is visible as tool rows, so silence there is not a blank turn.
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+        transcript.ApplyDurable(Durable("tool.execution_completed", "succeeded", "read_only"));
+        output.Clear();
+
+        transcript.EndTurn(TuiTurnOutcome.Completed, null);
+
+        Assert.DoesNotContain(Rows(output), row => row.Contains("no text arrived"));
+    }
+
+    [Fact]
+    public void Failed_turn_keeps_its_failure_card_and_adds_no_note()
+    {
+        var (transcript, output) = Create();
+        transcript.BeginTurn();
+
+        transcript.EndTurn(TuiTurnOutcome.Failed, "empty_model_reply");
+
+        var rows = Rows(output);
+        Assert.Contains(rows, row => row.Contains("Empty model reply"));
+        Assert.DoesNotContain(rows, row => row.Contains("no text arrived"));
+    }
+
+    [Fact]
     public void BuildFooter_JoinsFactsWithTheSummaryDetail()    {
         var footer = TuiTranscript.BuildFooter(18.4, 4, "3 files changed · verified");
 
@@ -267,7 +538,7 @@ public sealed class TuiTranscriptTests
         transcript.ApplyActivity(Activity(AgentActivityKind.Terminal, AgentActivityState.Failed, durationMs: 2300, toolDisplay: "Terminal"));
         transcript.ApplyDurable(Durable("tool.execution_completed", "failed", "exit_1"));
 
-        Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("terminal", StringComparison.Ordinal));
+        Assert.Contains(Rows(output), row => row.Contains('✗') && row.Contains("ran", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -362,7 +633,76 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void AssistantText_StreamsVerbatimAndSwallowsToolMarkers()
+    public void StreamedMarkdownReachesTheSurfaceStyled()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("Fix applied:\n\n- first **bold** item\n- `second` item\n");
+            transcript.Flush();
+
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.DoesNotContain("**", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("`second`", text, StringComparison.Ordinal);
+            Assert.Contains("•  first bold item", text, StringComparison.Ordinal);
+            Assert.Contains("•  second item", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AFencedCodeBlockReachesTheSurfaceWithAGutterAndVerbatimContent()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("Here:\n```csharp\nvar x = 1; // **not** bold\n```\nafter\n");
+            transcript.Flush();
+
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.Contains("var x = 1; // **not** bold", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("```", text, StringComparison.Ordinal);
+            Assert.Contains("after", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AMarkerSplitAcrossDeltasNeverLosesOrDuplicatesText()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("see **x");
+            transcript.AppendAssistant("** and more");
+            transcript.Flush();
+
+            // Emphasis is best effort across a delta boundary, but the characters are not:
+            // whatever the model said reaches the surface exactly once, in order.
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.Contains("see **x** and more", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AWellFormedRunInOneDeltaIsRenderedNotPrinted()
+    {
+        using (TuiPalette.PinLevel(TuiColorLevel.None))
+        {
+            var (transcript, output) = Create();
+            transcript.BeginTurn();
+            transcript.AppendAssistant("a **bold** word\n");
+            transcript.Flush();
+
+            var text = TuiText.Strip(output.ToString()).Replace("\r", string.Empty);
+            Assert.Contains("a bold word", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("**", text, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AssistantText_StreamsAndSwallowsToolMarkers()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
@@ -400,7 +740,7 @@ public sealed class TuiTranscriptTests
     }
 
     [Fact]
-    public void ThinkingCompleted_WithDetail_EmitsNotice()
+    public void ThinkingCompleted_StaysOutOfTheTranscriptUntilExpanded()
     {
         var (transcript, output) = Create();
         transcript.BeginTurn();
@@ -422,6 +762,14 @@ public sealed class TuiTranscriptTests
             TransientSequence: null,
             Detail: "considering folder scope",
             Todos: null));
+
+        // The deliberation itself is never in the transcript; the row only says it is there.
+        Assert.DoesNotContain(
+            Rows(output),
+            row => row.Contains("considering folder scope", StringComparison.Ordinal));
+        Assert.Contains(Rows(output), row => row.Contains("ctrl+o", StringComparison.Ordinal));
+
+        transcript.ToggleExpand();
 
         Assert.Contains(
             Rows(output),

@@ -70,12 +70,25 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                 // for every run; instead, completion is remembered and only the
                 // usage tail is still consumed afterwards.
                 var completionSeen = false;
+                // A chunk cut mid-string cannot parse on its own. Sloppy emitters also
+                // split escape sequences across chunks, so a lone trailing backslash is
+                // a continuation, never content to repair yet.
+                const int MaxCarriedChunkChars = 64 * 1024;
+                string? carriedPrefix = null;
                 await foreach (var serverEvent in BoundedSseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
                 {
                     sawData = true;
                     var payload = serverEvent.Data.Trim();
                     if (payload == "[DONE]")
                     {
+                        if (carriedPrefix is not null)
+                        {
+                            // The truncated chunk never completed: accepting the stream
+                            // here would deliver a half-written answer the caller has no
+                            // way to recognize as incomplete.
+                            throw new ModelProviderException("malformed_payload", retryable: false);
+                        }
+
                         if (!completionSeen)
                         {
                             yield return new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "stop");
@@ -83,15 +96,27 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                         yield break;
                     }
 
-                    JsonObject data;
-                    try
+                    var candidate = carriedPrefix is null ? payload : carriedPrefix + payload;
+                    carriedPrefix = null;
+                    var data = TryParseChunk(candidate);
+                    if (data is null)
                     {
-                        data = JsonNode.Parse(payload) as JsonObject
-                            ?? throw new JsonException("payload is not an object");
-                    }
-                    catch (JsonException error)
-                    {
-                        throw new ModelProviderException("malformed_payload", retryable: false, error);
+                        if (JsonEscapeRepair.LooksTruncated(candidate)
+                            && candidate.Length <= MaxCarriedChunkChars)
+                        {
+                            carriedPrefix = candidate;
+                            continue;
+                        }
+
+                        if (JsonEscapeRepair.TryRepairInvalidEscapes(candidate, out var repaired)
+                            && TryParseChunk(repaired) is { } fixedChunk)
+                        {
+                            data = fixedChunk;
+                        }
+                        else
+                        {
+                            throw new ModelProviderException("malformed_payload", retryable: false);
+                        }
                     }
 
                     var usage = ReadUsage(data["usage"], request.Model);
@@ -166,6 +191,23 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                     throw new ModelProviderException("malformed_payload", retryable: false);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Parses one SSE data chunk, returning null instead of throwing when it is not a
+    /// JSON object. Callers decide whether to buffer (truncated), repair (invalid
+    /// escapes) or reject, so every malformed shape keeps flowing through one place.
+    /// </summary>
+    private static JsonObject? TryParseChunk(string candidate)
+    {
+        try
+        {
+            return JsonNode.Parse(candidate) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 

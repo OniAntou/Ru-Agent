@@ -15,6 +15,7 @@ public sealed class ApprovalPrompt
     public const string AllowDirectory = "session_directory";
     public const string AllowAlways = "always";
     public const string Deny = "deny";
+    public const string TrustApprove = "trust_approve";
 
     // A protected-path ask is deliberately absent from this set: it is not
     // remembered, so a single approval cannot become standing access to a
@@ -32,7 +33,11 @@ public sealed class ApprovalPrompt
     private readonly List<ApprovalChoice> _choices;
     private readonly ChoiceList _list;
 
-    public ApprovalPrompt(string summary, IReadOnlyList<ApprovalChoice> choices, int defaultIndex = 1)
+    public ApprovalPrompt(
+        string summary,
+        IReadOnlyList<ApprovalChoice> choices,
+        int defaultIndex = 1,
+        string? title = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(summary);
         ArgumentNullException.ThrowIfNull(choices);
@@ -44,7 +49,7 @@ public sealed class ApprovalPrompt
         Summary = TuiText.Truncate(summary, 60);
         _choices = [.. choices];
         _list = new ChoiceList(
-            "approval · " + Summary,
+            title ?? "approval · " + Summary,
             _choices.Select(c => new ChoiceItem(c.Label, c.Description, c.Decision)).ToList(),
             defaultIndex,
             "↑↓ · 1-9 · enter · esc");
@@ -99,6 +104,25 @@ public sealed class ApprovalPrompt
 
         return new ApprovalPrompt(TuiText.Truncate(safeSummary, 60), choices, defaultIndex: 1);
     }
+
+    /// <summary>
+    /// The workspace-trust ask. Trust is a one-time grant per canonical workspace
+    /// identity, so the prompt says what is being trusted and that the host keeps it.
+    /// The default sits on cancel: a bare Enter must never widen what the agent may read,
+    /// and while this ask is open nothing has executed yet, so cancelling rolls back
+    /// nothing. The same <see cref="ChoiceList"/> frame and keyboard drive it, which is
+    /// what lets the composer ask at all — the type-ahead loop already owns stdin.
+    /// </summary>
+    public static ApprovalPrompt ForWorkspaceTrust(string workspacePath) =>
+        new(
+            TuiText.Truncate(workspacePath, 60),
+            new List<ApprovalChoice>
+            {
+                new("1 · trust", "allow this workspace once, kept on this host", TrustApprove),
+                new("2 · cancel", "do not trust; this run is cancelled", Deny),
+            },
+            defaultIndex: 1,
+            title: "trust · " + TuiText.Truncate(workspacePath, 44));
 
     public void Move(int delta) => _list.Move(delta);
 

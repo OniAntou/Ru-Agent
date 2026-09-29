@@ -356,6 +356,79 @@ public sealed class AgentRunControllerTests
     }
 
     [Fact]
+    public async Task Assistant_delta_drops_are_counted_by_the_gate_that_refused_them()
+    {
+        // A duplicate frame is refused by the dedup gate and an already-finished run by
+        // the ingress gate. Both used to be a bare `return`, so a lost tail left no trace
+        // and looked exactly like a short answer.
+        var fake = new FakeClient { Run = MakeRun() };
+        var delta = new AgentAssistantDeltaModel(
+            "Xin chào",
+            "step_0123456789abcdef0123456789abcdef",
+            null,
+            7);
+        fake.AssistantDeltaStream.Add(delta);
+        fake.AssistantDeltaStream.Add(delta);
+        var received = new List<AgentAssistantDeltaModel>();
+        var controller = new AgentRunController(fake);
+        controller.AssistantDeltaReceived += (_, item) => received.Add(item);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1",
+            "C:\\work",
+            "do it",
+            "standard",
+            null,
+            "idem-drop-count"));
+
+        var drops = controller.AssistantDeltaDrops;
+        Assert.Single(received);
+        Assert.Equal(1, drops.AsDuplicates);
+        Assert.Equal(0, drops.Lost);
+    }
+
+    [Fact]
+    public async Task Assistant_delta_dropped_after_the_run_finished_is_reported_as_lost()
+    {
+        // Reproduces the window the operator saw: a frame that arrives once the run is no
+        // longer the active one can no longer reach the view, and the transcript is short
+        // one reply with no error anywhere. The report is what makes that visible.
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            SubscriptionGate = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var received = new List<AgentAssistantDeltaModel>();
+        var controller = new AgentRunController(fake);
+        controller.AssistantDeltaReceived += (_, item) => received.Add(item);
+
+        var runTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1",
+            "C:\\work",
+            "do it",
+            "standard",
+            null,
+            "idem-drop-late"));
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (controller.CurrentRun is null && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
+        Assert.NotNull(controller.CurrentRun);
+        var cancelTask = controller.CancelAsync();
+        fake.SubscriptionGate.SetResult(true);
+        await cancelTask;
+        await runTask;
+
+        Assert.Empty(received);
+        // A cancelled tail is intentional, so it must never count as lost text.
+        Assert.Equal(0, controller.AssistantDeltaDrops.Lost);
+    }
+
+    [Fact]
     public async Task CreateAndRun_delivers_tool_output_once_per_transient_frame()
     {
         var fake = new FakeClient { Run = MakeRun() };

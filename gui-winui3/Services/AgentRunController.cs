@@ -12,6 +12,26 @@ using RuApp.Services;
 
 namespace RuApp.Services;
 
+/// <summary>
+/// Why transient assistant deltas never reached the view. Every gate that refuses a
+/// frame is otherwise a silent <c>return</c>, so a reply can lose its tail with no
+/// trace; a non-zero count here is the difference between "the model said little" and
+/// "the transcript lost what the model said".
+/// </summary>
+/// <param name="AtIngress">Refused on the SSE thread: the run was no longer the active one.</param>
+/// <param name="AtUiGate">Refused on the UI thread because a different run had taken over the view.</param>
+/// <param name="AsDuplicates">The same run/step/sequence had already been delivered.</param>
+/// <param name="AfterCancel">The operator cancelled, so the tail is intentionally dropped.</param>
+public readonly record struct AgentTransientDropReport(
+    int AtIngress,
+    int AtUiGate,
+    int AsDuplicates,
+    int AfterCancel)
+{
+    /// <summary>Drops that lost text the run had already produced.</summary>
+    public int Lost => AtIngress + AtUiGate;
+}
+
 public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 {
     private readonly IAgentRunClient _client;
@@ -43,6 +63,27 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private string? _streamTerminalStatus;
     private bool _isCancelRequested;
     private CancellationTokenSource? _subscriptionCts;
+
+    // Why a transient frame never reached the view. Every one of these gates is a
+    // silent `return`, so a reply can lose its tail with no trace at all -- the
+    // symptom is a completed turn with a blank bubble, which reads like a very short
+    // answer. The counters make the loss countable instead of a guess, and name the
+    // gate that caused it. Read-only for the view; only the gates below write.
+    private int _droppedDeltasAtIngress;
+    private int _droppedDeltasAtUiGate;
+    private int _droppedDeltasAsDuplicates;
+    private int _droppedDeltasAfterCancel;
+
+    /// <summary>
+    /// Transient assistant deltas this controller refused, split by the gate that
+    /// refused them. Non-zero means the transcript is missing text the run produced.
+    /// </summary>
+    public AgentTransientDropReport AssistantDeltaDrops =>
+        new(
+            _droppedDeltasAtIngress,
+            _droppedDeltasAtUiGate,
+            _droppedDeltasAsDuplicates,
+            _droppedDeltasAfterCancel);
 
     public AgentRunController(IAgentRunClient client, HarnessEventSink? sink = null, Action<Action>? synchronize = null, Action<AgentEventModel>? auditSink = null)
     {
@@ -741,6 +782,15 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         {
             if (!_isBusy || _isCancelRequested || _currentRunId is null)
             {
+                if (!_isCancelRequested)
+                {
+                    Interlocked.Increment(ref _droppedDeltasAtIngress);
+                }
+                else
+                {
+                    Interlocked.Increment(ref _droppedDeltasAfterCancel);
+                }
+
                 return Task.CompletedTask;
             }
 
@@ -757,12 +807,22 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                         || _isCancelRequested
                         || !string.Equals(_currentRunId, runId, StringComparison.Ordinal))
                     {
+                        if (_isCancelRequested)
+                        {
+                            Interlocked.Increment(ref _droppedDeltasAfterCancel);
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref _droppedDeltasAtUiGate);
+                        }
+
                         return;
                     }
 
                     var key = $"{runId}:{model.ModelStepId}:{model.TransientSequence}";
                     if (!_assistantDeltaKeys.Add(key))
                     {
+                        Interlocked.Increment(ref _droppedDeltasAsDuplicates);
                         return;
                     }
                 }

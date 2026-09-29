@@ -6,6 +6,7 @@ public enum TuiRunState
     Thinking,
     Tool,
     WaitingApproval,
+    WaitingTrust,
     Failed,
 }
 
@@ -136,6 +137,18 @@ public sealed class TuiStatusLine
                     + TuiPalette.Paint(" · " + FormatElapsed(_elapsedSeconds), TuiToken.Line);
             case TuiRunState.WaitingApproval:
                 return TuiPalette.Paint("▲ ", TuiToken.Warn) + TuiPalette.Paint("approval needed", TuiToken.Warn);
+            case TuiRunState.WaitingTrust:
+                // No work is in flight while the workspace-trust challenge is open, so the
+                // row must not spin. A spinner here read as a slow model when the run was
+                // in fact parked until a human answered, and the elapsed clock kept counting
+                // toward a turn that could never start.
+                var trust = TuiPalette.Paint("▲ ", TuiToken.Warn) + TuiPalette.Paint("workspace needs trust", TuiToken.Warn);
+                if (!string.IsNullOrWhiteSpace(_detail))
+                {
+                    trust += TuiPalette.Paint(" · " + _detail, TuiToken.Line);
+                }
+
+                return trust;
             case TuiRunState.Failed:
                 return TuiPalette.Paint("✗ ", TuiToken.Err) + TuiPalette.Paint("last run failed", TuiToken.Err);
             default:

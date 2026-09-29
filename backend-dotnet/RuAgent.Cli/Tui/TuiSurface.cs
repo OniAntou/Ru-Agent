@@ -24,6 +24,15 @@ public sealed class TuiSurface
     // One process, one console: a single gate serializes every component.
     private static readonly object Gate = new();
 
+    // Transcript append point, 0-based, maintained while the sticky footer is pinned.
+    // Footer, composer and live-row paints move the hardware cursor wherever they need;
+    // without a recorded point the next transcript write would continue there and splice
+    // its bytes into the footer rows. Every transcript write below repositions first.
+    private bool _trackTranscript;
+    private int _transcriptRow;
+    private int _transcriptCol;
+    private int _transcriptBottomRow;
+
     // Bounded record of finished lines, used only to repaint after a resize. Mutable repaints
     // (live rows, composer frames, panels) never enter it.
     private readonly Queue<string> _history = new();
@@ -45,6 +54,223 @@ public sealed class TuiSurface
     /// then dropped instead of polluting a log with carriage-return rows.
     /// </summary>
     public bool SuppressRepaints { get; set; }
+
+    /// <summary>
+    /// Replaces the last <paramref name="count"/> recorded lines with
+    /// <paramref name="replacement"/>, so a rebuilt screen reprints the corrected rows
+    /// instead of what was streamed. The in-progress line is kept: a repaint happens between
+    /// writes, never mid-line. Returns false when the recorded history is shorter than the
+    /// request, which means the rows have already scrolled out of the rebuildable window and
+    /// pretending to repair them would corrupt the transcript.
+    /// </summary>
+    public bool ReplaceRecordedTail(int count, IReadOnlyList<string> replacement)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (count <= 0)
+        {
+            return false;
+        }
+
+        lock (Gate)
+        {
+            if (_history.Count < count)
+            {
+                return false;
+            }
+
+            var kept = new List<string>(_history.Count - count);
+            var index = 0;
+            foreach (var line in _history)
+            {
+                if (index++ >= _history.Count - count)
+                {
+                    break;
+                }
+
+                kept.Add(line);
+            }
+
+            _history.Clear();
+            foreach (var line in kept)
+            {
+                _history.Enqueue(line);
+            }
+
+            foreach (var line in replacement)
+            {
+                _history.Enqueue(line);
+                while (_history.Count > HistoryCapacity)
+                {
+                    _history.Dequeue();
+                }
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Starts pinning transcript appends to the tracked cursor, at the bottom row of the
+    /// pinned region. Called by the sticky region when it takes over the footer; stopped
+    /// by <see cref="StopTranscriptCursorTracking"/> when it leaves. While active, every
+    /// transcript write first moves the hardware cursor back to the recorded point, so a
+    /// footer, composer or live-row repaint that ran between two transcript writes cannot
+    /// strand the next bytes in the wrong row. Emits nothing itself.
+    /// </summary>
+    public void TrackTranscriptCursor(int bottomRow)
+    {
+        lock (Gate)
+        {
+            _trackTranscript = true;
+            _transcriptBottomRow = Math.Max(0, bottomRow);
+            _transcriptRow = _transcriptBottomRow;
+            _transcriptCol = 0;
+        }
+    }
+
+    public void StopTranscriptCursorTracking()
+    {
+        lock (Gate)
+        {
+            _trackTranscript = false;
+        }
+    }
+
+    /// <summary>Moves the hardware cursor to the recorded transcript point. Gate must be held.</summary>
+    private void RepositionTranscriptCursor(TextWriter writer)
+    {
+        if (!_trackTranscript)
+        {
+            return;
+        }
+
+        writer.Write($"\u001b[{_transcriptRow + 1};{_transcriptCol + 1}H");
+    }
+
+    /// <summary>
+    /// Advances the recorded point through text exactly as the terminal would move its
+    /// cursor: printable runes by cell width with wrapping, tab stops every 8 cells,
+    /// carriage return home, newline down with scroll clamped at the region bottom.
+    /// Escape sequences move nothing here. Gate must be held.
+    /// </summary>
+    private void AdvanceTranscriptCursor(string text)
+    {
+        if (!_trackTranscript)
+        {
+            return;
+        }
+
+        var width = TuiViewport.Width(int.MaxValue);
+        if (width < 1)
+        {
+            width = int.MaxValue;
+        }
+
+        var index = 0;
+        while (index < text.Length)
+        {
+            var c = text[index];
+            if (c == '\u001b')
+            {
+                index = SkipEscapeSequence(text, index);
+                continue;
+            }
+
+            if (c == '\r')
+            {
+                _transcriptCol = 0;
+                index++;
+                continue;
+            }
+
+            if (c == '\n')
+            {
+                TranscriptCursorNewLine();
+                index++;
+                continue;
+            }
+
+            if (c == '\t')
+            {
+                _transcriptCol = (_transcriptCol / 8 + 1) * 8;
+                WrapTranscriptCursor(width);
+                index++;
+                continue;
+            }
+
+            var status = System.Text.Rune.DecodeFromUtf16(text.AsSpan(index), out var rune, out var consumed);
+            if (status != System.Buffers.OperationStatus.Done || consumed <= 0)
+            {
+                consumed = 1;
+                AdvanceTranscriptCells(1, width);
+            }
+            else
+            {
+                AdvanceTranscriptCells(TuiText.RuneWidth(rune.Value), width);
+            }
+
+            index += consumed;
+        }
+    }
+
+    private void AdvanceTranscriptCells(int cells, int width)
+    {
+        for (var k = 0; k < cells; k++)
+        {
+            if (_transcriptCol >= width)
+            {
+                _transcriptCol = 0;
+                TranscriptCursorNewLine();
+            }
+
+            _transcriptCol++;
+        }
+    }
+
+    private void WrapTranscriptCursor(int width)
+    {
+        while (_transcriptCol >= width)
+        {
+            _transcriptCol -= width;
+            TranscriptCursorNewLine();
+        }
+    }
+
+    private void TranscriptCursorNewLine()
+    {
+        if (_transcriptRow < _transcriptBottomRow)
+        {
+            _transcriptRow++;
+        }
+
+        // At the bottom the region scrolls underneath: the logical row stays put.
+        _transcriptCol = 0;
+    }
+
+    private static int SkipEscapeSequence(string text, int index)
+    {
+        var i = index + 1;
+        if (i < text.Length && text[i] == '[')
+        {
+            i++;
+            if (i < text.Length && text[i] == '?')
+            {
+                i++;
+            }
+
+            while (i < text.Length && (char.IsDigit(text[i]) || text[i] == ';'))
+            {
+                i++;
+            }
+
+            if (i < text.Length)
+            {
+                i++;
+            }
+        }
+
+        return i;
+    }
 
     /// <summary>
     /// The last <paramref name="maxLines"/> finished lines, oldest first, each clipped to
@@ -72,8 +298,10 @@ public sealed class TuiSurface
     {
         lock (Gate)
         {
+            RepositionTranscriptCursor(Writer);
             Writer.Write(text);
             Record(text);
+            AdvanceTranscriptCursor(text);
         }
     }
 
@@ -81,6 +309,7 @@ public sealed class TuiSurface
     {
         lock (Gate)
         {
+            RepositionTranscriptCursor(Writer);
             if (text.Contains('\n'))
             {
                 var parts = text.Replace("\r", "").Split('\n');
@@ -90,12 +319,14 @@ public sealed class TuiSurface
                     Writer.WriteLine(parts[i]);
                     CompleteLine(parts[i]);
                 }
+                AdvanceTranscriptCursor(text);
                 return;
             }
 
             ClearCurrentRow(Writer);
             Writer.WriteLine(text);
             CompleteLine(text);
+            AdvanceTranscriptCursor(text);
         }
     }
 
@@ -125,15 +356,24 @@ public sealed class TuiSurface
         }
     }
 
+    /// <summary>
+    /// Ends the current row and moves down. This never erases: the row holds transcript
+    /// content written without a trailing newline, and clearing it here destroyed every
+    /// body row on a live console while leaving headers, footers and notices (which erase
+    /// before they write, onto rows that are empty at that point) intact. Erasing belongs
+    /// to explicit clears only (<see cref="ClearSingleLine"/>, <see cref="RepaintSingleLine"/>,
+    /// and the documented leading erase in <see cref="WriteBlock"/>).
+    /// </summary>
     public void Line()
     {
         lock (Gate)
         {
-            ClearCurrentRow(Writer);
+            RepositionTranscriptCursor(Writer);
             Writer.WriteLine();
 
             // Whatever was written without a newline is the row that just ended.
             CompleteLine(_pending.ToString());
+            AdvanceTranscriptCursor("\n");
         }
     }
 
@@ -188,6 +428,13 @@ public sealed class TuiSurface
 
         writer.Write('\r');
         writer.Write("\u001b[2K");
+        // Mirror the carriage return in the tracked point: the row is intentionally
+        // restarted, so whatever column the transcript had reached no longer applies.
+        // Gate is always held by the callers (WriteLine, WriteBlock).
+        if (_trackTranscript)
+        {
+            _transcriptCol = 0;
+        }
     }
 
     public void Flush()
@@ -294,6 +541,7 @@ public sealed class TuiSurface
         var limit = SuppressRepaints ? int.MaxValue : TuiViewport.Width(int.MaxValue);
         Repaint(writer =>
         {
+            RepositionTranscriptCursor(writer);
             ClearCurrentRow(writer);
 
             foreach (var line in lines)
@@ -301,11 +549,14 @@ public sealed class TuiSurface
                 var clipped = limit == int.MaxValue ? line : TuiText.Truncate(line, limit);
                 writer.WriteLine(clipped);
                 CompleteLine(line);
+                AdvanceTranscriptCursor(clipped + "\n");
             }
 
             if (liveRow is not null && !SuppressRepaints)
             {
-                writer.Write(limit == int.MaxValue ? liveRow : TuiText.Truncate(liveRow, limit));
+                var row = limit == int.MaxValue ? liveRow : TuiText.Truncate(liveRow, limit);
+                writer.Write(row);
+                AdvanceTranscriptCursor(row);
             }
         });
     }

@@ -58,6 +58,41 @@ public sealed class ApprovalPromptTests
     }
 
     [Fact]
+    public void ForWorkspaceTrust_DefaultsToCancelAndOffersNoEscalation()
+    {
+        var prompt = ApprovalPrompt.ForWorkspaceTrust(@"C:\work\repo");
+
+        Assert.Equal(2, prompt.Choices.Count);
+        Assert.Equal(ApprovalPrompt.TrustApprove, prompt.Choices[0].Decision);
+        Assert.Equal(ApprovalPrompt.Deny, prompt.Choices[1].Decision);
+
+        // A bare Enter must never widen what the agent may read, so the safe answer is
+        // the one the prompt starts on.
+        Assert.Equal(ApprovalPrompt.Deny, prompt.Current.Decision);
+        Assert.DoesNotContain(prompt.Choices, c => c.Decision == ApprovalPrompt.AllowDirectory);
+    }
+
+    [Fact]
+    public void ForWorkspaceTrust_NamesTheWorkspaceUnderATrustTitle()
+    {
+        var prompt = ApprovalPrompt.ForWorkspaceTrust(@"C:\work\repo");
+        var frame = string.Join("\n", prompt.Render(80).Select(TuiText.Strip));
+
+        Assert.Contains("trust", frame, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(@"C:\work\repo", frame, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ForWorkspaceTrust_EscapeDenies()
+    {
+        var prompt = ApprovalPrompt.ForWorkspaceTrust(@"C:\work\repo");
+
+        Assert.Equal(
+            ChoiceOutcome.Cancelled,
+            prompt.HandleKey(new ConsoleKeyInfo('\0', ConsoleKey.Escape, false, false, false)));
+    }
+
+    [Fact]
     public void Move_WalksAndWrapsTheChoices()
     {
         var prompt = Create(offerDirectory: true);

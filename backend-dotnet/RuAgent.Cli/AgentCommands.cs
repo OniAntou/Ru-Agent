@@ -337,6 +337,22 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
             "completed";
     }
 
+    /// <summary>
+    /// Checks that a create response is really bound to this session and preset before
+    /// anything acts on it. Shared by the non-interactive trust path and the interactive
+    /// prompt, so the interactive path cannot skip the binding check to reach the prompt.
+    /// </summary>
+    private static bool IsCreateResponseBound(
+        CreateAgentRunResponse response,
+        string expectedSessionId,
+        string expectedPreset) =>
+        !string.IsNullOrWhiteSpace(response.RunId)
+        && !string.IsNullOrWhiteSpace(response.SessionId)
+        && !string.IsNullOrWhiteSpace(response.WorkspaceId)
+        && string.Equals(response.SessionId, expectedSessionId, StringComparison.Ordinal)
+        && string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
+        && IsKnownCreateStatus(response.Status);
+
     private async Task<bool> HandleWorkspaceTrustAsync(
         CreateAgentRunResponse response,
         string expectedSessionId,
@@ -345,12 +361,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
         bool json,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(response.RunId)
-            || string.IsNullOrWhiteSpace(response.SessionId)
-            || string.IsNullOrWhiteSpace(response.WorkspaceId)
-            || !string.Equals(response.SessionId, expectedSessionId, StringComparison.Ordinal)
-            || !string.Equals(response.Preset, expectedPreset, StringComparison.Ordinal)
-            || !IsKnownCreateStatus(response.Status))
+        if (!IsCreateResponseBound(response, expectedSessionId, expectedPreset))
         {
             await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
             return false;
@@ -1751,10 +1762,260 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 : Tui.ApprovalPrompt.Deny;
         }
 
+        /// <summary>
+        /// Asks the operator to trust the workspace, in the composer, while the run holds
+        /// the challenge open. No work is in flight at this point, so the type-ahead loop
+        /// can hand the keyboard to the choice list — the same handoff a tool approval uses.
+        /// Returning without a decision is a cancel, never a silent grant.
+        /// </summary>
+        async Task<string?> PromptWorkspaceTrustAsync(
+            Tui.ApprovalPrompt prompt,
+            CancellationToken trustToken)
+        {
+            if (!typeAheadLive || !sticky.Active)
+            {
+                return null;
+            }
+
+            using var registration = trustToken.Register(() => prompt.Decision.TrySetCanceled(trustToken));
+            typeAhead.Approval = prompt;
+            sessionRenderer.Status.SetState(Tui.TuiRunState.WaitingTrust);
+            sessionRenderer.Status.SetDetail(prompt.Summary);
+            ApplyFooterLayout(repaint: false);
+            PaintStickyFooter();
+            try
+            {
+                return await prompt.Decision.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                typeAhead.Approval = null;
+                sessionRenderer.Status.SetDetail(null);
+                // The turn either continues into the run or is about to be wound down;
+                // either way the row must stop claiming it is waiting on trust.
+                sessionRenderer.Status.SetState(Tui.TuiRunState.Thinking);
+                ApplyFooterLayout(repaint: false);
+                PaintStickyFooter();
+            }
+        }
+
+        async Task<bool> PostTrustDecisionAsync(
+            string runId,
+            string trustRequestId,
+            string displayHash,
+            CancellationToken trustToken)
+        {
+            try
+            {
+                var trustResponse = await _agentClient.TrustAsync(
+                        runId,
+                        new TrustAgentRunRequest(trustRequestId, displayHash, "approve"),
+                        trustToken)
+                    .ConfigureAwait(false);
+                if (string.Equals(trustResponse.RunId, runId, StringComparison.Ordinal)
+                    && string.Equals(trustResponse.TrustRequestId, trustRequestId, StringComparison.Ordinal)
+                    && IsAcceptedTrustStatus(trustResponse.Status))
+                {
+                    return true;
+                }
+
+                await _err.WriteLineAsync("workspace_trust_error: trust response does not match the challenge.").ConfigureAwait(false);
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (AgentApiException ex)
+            {
+                await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"workspace_trust_error: {ex.Message}").ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Releases a run the operator declined to trust. The challenge cannot be answered
+        /// later — it is single-use and the workspace is not on the allow list — so leaving
+        /// the run parked would hold the workspace's active-run lock for the whole sweep
+        /// interval. Trust is a pre-execution gate, so cancelling rolls back no tool effect.
+        /// </summary>
+        async Task CancelUntrustedRunAsync(string runId, CancellationToken trustToken)
+        {
+            try
+            {
+                await _agentClient.CancelAsync(runId, trustToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"run_cancel_failed: {ex.Message}").ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Runs the in-composer workspace-trust ask end to end: validate the binding, prompt,
+        /// then post the server-issued challenge. A decline cancels the run, because the
+        /// challenge is single-use and the run would otherwise sit on the workspace's
+        /// active-run lock until the host swept it.
+        /// </summary>
+        async Task<(bool Trusted, bool Declined)> ResolveWorkspaceTrustInPlaceAsync(
+            CreateAgentRunResponse response,
+            string expectedSessionId,
+            string expectedPreset,
+            string workspacePath,
+            bool json,
+            CancellationToken trustToken)
+        {
+            if (!IsCreateResponseBound(response, expectedSessionId, expectedPreset))
+            {
+                await _err.WriteLineAsync("agent_create_failed: invalid create response binding.").ConfigureAwait(false);
+                return (false, false);
+            }
+
+            var trustRequestId = response.TrustRequestId;
+            var displayHash = response.DisplayIdentityHash;
+            if (string.IsNullOrWhiteSpace(trustRequestId) || string.IsNullOrWhiteSpace(displayHash))
+            {
+                await _err.WriteLineAsync("workspace_trust_error: trust challenge is incomplete.").ConfigureAwait(false);
+                return (false, false);
+            }
+
+            var decision = await PromptWorkspaceTrustAsync(
+                    Tui.ApprovalPrompt.ForWorkspaceTrust(workspacePath),
+                    trustToken)
+                .ConfigureAwait(false);
+
+            if (decision is null)
+            {
+                // No composer to ask in, so there is no frame to protect and the bounded
+                // code keeps its established stream. Never read stdin here: the type-ahead
+                // loop may already own it, which is how the old prompt hung forever.
+                // --json owns stdout, so the human notice lands on stderr there.
+                await (json ? _err : _out).WriteLineAsync(
+                        $"workspace_trust_required: rerun with --trust-workspace or use 'ru agent trust {response.RunId} --approve'.")
+                    .ConfigureAwait(false);
+                return (false, false);
+            }
+
+            if (!string.Equals(decision, Tui.ApprovalPrompt.TrustApprove, StringComparison.Ordinal))
+            {
+                await CancelUntrustedRunAsync(response.RunId, trustToken).ConfigureAwait(false);
+                return (false, true);
+            }
+
+            var granted = await PostTrustDecisionAsync(response.RunId, trustRequestId, displayHash, trustToken)
+                .ConfigureAwait(false);
+            return (granted, false);
+        }
+
+        /// <summary>
+        /// Reprints the part of the answer the deltas never carried.
+        ///
+        /// The live event hub has no replay buffer: a delta published while the client is
+        /// still subscribing is dropped, and because deltas are ordered what is lost is the
+        /// head of the reply. The run's own durable <c>assistanttext</c> payload is complete,
+        /// so the gap is recoverable rather than lost. This mirrors what the WinUI surface
+        /// already does by reloading session history when a run ends.
+        ///
+        /// Only a suffix is reprinted, and only when the streamed text is a true prefix of
+        /// the payload. Anything else -- a shorter payload, a rewritten answer, a payload
+        /// that is not assistant text -- is left alone rather than guessed at, because a
+        /// terminal cannot unprint.
+        /// </summary>
+        async Task RecoverMissingAssistantTextAsync(
+            string runId,
+            List<string> payloadRefs,
+            CancellationToken recoveryToken)
+        {
+            if (payloadRefs.Count == 0)
+            {
+                Tui.TuiDebug.Log("recover", "no step payload refs seen on the stream");
+                return;
+            }
+
+            var expected = new StringBuilder();
+            try
+            {
+                foreach (var payloadRef in payloadRefs)
+                {
+                    // GetPayloadAsync unwraps the host's envelope and returns the assistant
+                    // text itself, so there is nothing to parse here -- this is prose, and
+                    // parsing it as JSON throws.
+                    var text = await _agentClient.GetPayloadAsync(runId, payloadRef, recoveryToken).ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        expected.Append(text);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await _err.WriteLineAsync($"assistant_text_recovery_failed: {ex.Message}").ConfigureAwait(false);
+                return;
+            }
+
+            if (expected.Length == 0)
+            {
+                Tui.TuiDebug.Log("recover", $"no durable text behind {payloadRefs.Count} refs");
+                return;
+            }
+
+            var full = expected.ToString();
+            var streamed = sessionRenderer.Transcript.StreamedAssistantText;
+            Tui.TuiDebug.Log("recover", $"streamed {streamed.Length} of {full.Length} chars, {sessionRenderer.Transcript.AssistantBlockRowCount} rows recorded, suppress={sessionRenderer.Surface.SuppressRepaints}");
+            var decision = Tui.AssistantTextReconciler.Decide(streamed, full);
+            if (decision == Tui.AssistantTextRecovery.Complete
+                || decision == Tui.AssistantTextRecovery.None)
+            {
+                return;
+            }
+
+            if (decision == Tui.AssistantTextRecovery.ReportTruncation)
+            {
+                // A terminal cannot unprint, so the head cannot be appended after the tail.
+                // Rewrite the turn's block from the run's own text and rebuild the screen
+                // from the surface history, which is the path a resize already uses.
+                if (sessionRenderer.Transcript.RepaintAssistantText(full))
+                {
+                    RedrawScreenForResize();
+                    Tui.TuiDebug.Log("recover", $"repainted turn from durable text ({full.Length} chars)");
+                    return;
+                }
+
+                await _err.WriteLineAsync(
+                        $"assistant_text_truncated: {streamed.Length} of {full.Length} characters reached this terminal. The full reply is in the session; /status or reopen it to read all of it.")
+                    .ConfigureAwait(false);
+                Tui.TuiDebug.Log("recover", $"head missing: {streamed.Length} of {full.Length}");
+                return;
+            }
+
+            var missing = Tui.AssistantTextReconciler.SuffixFor(decision, streamed, full);
+            if (missing.Length == 0)
+            {
+                return;
+            }
+
+            // The tracked append point already continues the streamed row; rewinding to
+            // the row start would overwrite it.
+            sessionRenderer.Transcript.AppendAssistant(missing);
+            sessionRenderer.Flush();
+            Tui.TuiDebug.Log("recover", $"reprinted {missing.Length} chars of {full.Length}");
+        }
+
         async Task FinishTurnAsync()
         {
-            // Stop capturing keystrokes first, then drain the queue so a prompt typed during
-            // this turn becomes the next turn's input.
             await StopTypeAheadAsync().ConfigureAwait(false);
             queuedLine ??= pendingPrompt.Take();
             Tui.TuiDebug.Log("layout", $"finish turn rows={Tui.TuiViewport.Height()} first={sticky.FooterFirst}");
@@ -1957,6 +2218,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 presetUpdate.Version,
                 idempotencyKey);
             var presetCommitted = false;
+            var assistantPayloadRefs = new List<string>();
 
             try
             {
@@ -1979,13 +2241,61 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, turnCts.Token).ConfigureAwait(false);
 
-                if (!await HandleWorkspaceTrustAsync(
-                        resp,
-                        sessionId,
-                        cmd.Preset,
-                        cmd.TrustWorkspace,
-                        cmd.Json,
-                        turnCts.Token).ConfigureAwait(false))
+                var isTrustWait = string.Equals(
+                    resp.Status,
+                    "waiting_workspace_trust",
+                    StringComparison.OrdinalIgnoreCase);
+
+                // The composer can ask, so ask here rather than parking the run. The old
+                // path wrote the instruction into the transcript and left the turn live,
+                // where the status row kept spinning "Thinking" and the sticky footer
+                // repainted the line away: the operator saw a slow model and a frozen
+                // prompt. Nothing is executing while the challenge is open, so answering it
+                // in place costs nothing and keeps trust an explicit human decision.
+                // --json never reaches the in-composer ask: it requires --trust-workspace,
+                // so the human notice stays on stderr through HandleWorkspaceTrustAsync.
+                var trustDeclined = false;
+                var trusted = isTrustWait && !cmd.TrustWorkspace
+                    ? await ResolveTrust().ConfigureAwait(false)
+                    : await HandleWorkspaceTrustAsync(
+                            resp,
+                            sessionId,
+                            cmd.Preset,
+                            cmd.TrustWorkspace,
+                            cmd.Json,
+                            turnCts.Token)
+                        .ConfigureAwait(false);
+
+                async Task<bool> ResolveTrust()
+                {
+                    var outcome = await ResolveWorkspaceTrustInPlaceAsync(
+                            resp,
+                            sessionId,
+                            cmd.Preset,
+                            canonicalWorkspace,
+                            cmd.Json,
+                            turnCts.Token)
+                        .ConfigureAwait(false);
+                    trustDeclined = outcome.Declined;
+                    return outcome.Trusted;
+                }
+
+                if (!trusted && isTrustWait)
+                {
+                    // Either the operator declined — the run is cancelled — or there was no
+                    // composer to ask in and the bounded code was already reported. Both end
+                    // this turn: nothing is executing, and the live row must not keep spinning
+                    // over a run that is not going to produce a reply.
+                    await FinishTurnAsync().ConfigureAwait(false);
+                    if (trustDeclined)
+                    {
+                        sessionRenderer.Note("workspace not trusted · this run was cancelled", Tui.TuiToken.Err);
+                    }
+
+                    continue;
+                }
+
+                if (!trusted)
                 {
                     if (!await RestorePresetOrReportAsync(presetUpdate).ConfigureAwait(false))
                     {
@@ -1994,8 +2304,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
 
                     await FinishTurnAsync().ConfigureAwait(false);
-                    return 1;
+                    continue;
                 }
+
                 presetCommitted = true;
 
                 async Task OnFrameAsync(SseFrame frame, CancellationToken frameCt)
@@ -2007,10 +2318,9 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                     }
                     else
                     {
-                        if (sticky.Active)
-                        {
-                            sticky.RestoreTranscriptCursor();
-                        }
+                        // No per-frame cursor restore: the surface tracks the transcript
+                        // append point across footer repaints, and rewinding to the row
+                        // start here would overwrite a partially streamed row.
                         sessionRenderer.RenderFrame(frame);
                         if (sticky.Active && typeAheadLive)
                         {
@@ -2055,6 +2365,26 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                             }
                         }
 
+                        if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"model.step_completed\"", StringComparison.Ordinal))
+                        {
+                            // Remember every step's durable assistant payload so a lost
+                            // delta tail can be recovered once the run finishes.
+                            try
+                            {
+                                var stepEnvelope = JsonSerializer.Deserialize<HarnessSafeEventEnvelope>(frame.Data);
+                                if (stepEnvelope is { EventType: "model.step_completed" }
+                                    && !string.IsNullOrWhiteSpace(stepEnvelope.PayloadRef))
+                                {
+                                    assistantPayloadRefs.Add(stepEnvelope.PayloadRef);
+                                }
+                            }
+                            catch (System.Text.Json.JsonException)
+                            {
+                                // Non-conforming frame payload; the recovery falls back to
+                                // whatever steps were already recorded.
+                            }
+                        }
+
                         if (!frame.IsTransient && frame.Data is not null && frame.Data.Contains("\"total_tokens\"", StringComparison.Ordinal))
                         {
                             try
@@ -2076,6 +2406,7 @@ new SessionPresetUpdateResult(sessionId, 0, snapshotToken))
                 }
                 await StreamRunEventsResumedAsync(resp.RunId, OnFrameAsync, turnCts.Token).ConfigureAwait(false);
                 sessionRenderer.Flush();
+                await RecoverMissingAssistantTextAsync(resp.RunId, assistantPayloadRefs, turnCts.Token).ConfigureAwait(false);
                 await _out.FlushAsync().ConfigureAwait(false);
                 await FinishTurnAsync().ConfigureAwait(false);
             }

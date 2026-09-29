@@ -108,11 +108,19 @@ public static class TuiSurfaces
     }
 
     /// <summary>Backends the CLI can switch between, in the order the docs list them.</summary>
-    private static readonly (string Value, string Label, string Detail)[] Backends =
+    private static readonly (string Value, string Label, string Detail)[] BaseBackends =
     [
         ("openai", "openai", "OpenAI"),
         ("anthropic", "anthropic", "Anthropic"),
         ("custom", "custom", "Custom OpenAI"),
+    ];
+
+    /// <summary>
+    /// The models.dev rows used when the live list cannot be fetched, so a network problem
+    /// never empties the picker.
+    /// </summary>
+    private static readonly (string Value, string Label, string Detail)[] FallbackBackends =
+    [
         ("models.dev:opencode", "models.dev:opencode", "Models.dev: OpenCode Zen"),
         ("models.dev:kilo", "models.dev:kilo", "Models.dev: Kilo Gateway"),
         ("models.dev:openrouter", "models.dev:openrouter", "Models.dev: OpenRouter"),
@@ -121,12 +129,31 @@ public static class TuiSurfaces
 
     /// <summary>The backend picker rows, with the current backend marked and a
     /// signed-out provider called out so its absence from a run is not a surprise.</summary>
+    /// <param name="providers">The live models.dev catalog. Null or empty falls back to the
+    /// four providers the CLI has always known.</param>
     public static IReadOnlyList<ChoiceItem> BackendChoices(
         string? currentBackend,
-        IReadOnlyDictionary<string, bool>? keyStates = null)
+        IReadOnlyDictionary<string, bool>? keyStates = null,
+        IReadOnlyList<(string Id, string Name)>? providers = null)
     {
         var current = NormalizeBackend(currentBackend);
-        var items = Backends
+        var rows = BaseBackends.ToList();
+        var baseIndex = rows.FindIndex(r => string.Equals(r.Value, current, StringComparison.OrdinalIgnoreCase));
+        if (baseIndex > 0)
+        {
+            (rows[0], rows[baseIndex]) = (rows[baseIndex], rows[0]);
+        }
+
+        if (providers is { Count: > 0 })
+        {
+            rows.AddRange(ProviderRows(current, keyStates, providers));
+        }
+        else
+        {
+            rows.AddRange(FallbackBackends);
+        }
+
+        return rows
             .Select(b =>
             {
                 var detail = b.Detail;
@@ -143,14 +170,76 @@ public static class TuiSurfaces
                 return new ChoiceItem(b.Label, detail, b.Value);
             })
             .ToList();
+    }
 
-        var index = items.FindIndex(i => string.Equals(i.Value, current, StringComparison.OrdinalIgnoreCase));
-        if (index > 0)
+    /// <summary>
+    /// Live models.dev rows under the base ones: the current provider, then the ones
+    /// already signed in, then the rest by id. The rows an operator can act on sit above
+    /// the long tail, which is why the current provider is duplicated in priority order
+    /// rather than swapped — the list has to stay deduplicated.
+    /// </summary>
+    private static List<(string Value, string Label, string Detail)> ProviderRows(
+        string current,
+        IReadOnlyDictionary<string, bool>? keyStates,
+        IReadOnlyList<(string Id, string Name)> providers)
+    {
+        var all = new List<(string Value, string Label, string Detail)>(providers.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (id, name) in providers)
         {
-            (items[0], items[index]) = (items[index], items[0]);
+            if (string.IsNullOrWhiteSpace(id) || !seen.Add("models.dev:" + id.Trim()))
+            {
+                continue;
+            }
+
+            all.Add(($"models.dev:{id}", $"models.dev:{id}", "Models.dev: " + name));
         }
 
-        return items;
+        var isCurrent = new Func<(string Value, string Label, string Detail), bool>(
+            row => string.Equals(row.Value, current, StringComparison.OrdinalIgnoreCase));
+        var isSignedIn = new Func<(string Value, string Label, string Detail), bool>(
+            row => keyStates is not null && keyStates.TryGetValue(row.Value, out var hasKey) && hasKey);
+
+        var ordered = new List<(string Value, string Label, string Detail)>(all.Count);
+        ordered.AddRange(all.Where(isCurrent));
+        ordered.AddRange(all.Where(row => !isCurrent(row) && isSignedIn(row)));
+        ordered.AddRange(all
+            .Where(row => !isCurrent(row) && !isSignedIn(row))
+            .OrderBy(row => row.Value, StringComparer.Ordinal));
+        return ordered;
+    }
+
+    /// <summary>
+    /// Reasoning-effort rows for the active model: <c>default</c> always leads, then the
+    /// levels the catalog actually offers. An empty list means the model has no effort to
+    /// choose, so the caller reports that instead of opening a picker.
+    /// </summary>
+    public static IReadOnlyList<ChoiceItem> ReasoningChoices(string? currentEffort, IReadOnlyList<string> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var current = string.IsNullOrWhiteSpace(currentEffort) ? "default" : currentEffort.Trim();
+        var seen = new HashSet<string>(StringComparer.Ordinal) { "default" };
+        var levels = new List<string> { "default" };
+        foreach (var option in options)
+        {
+            var value = option?.Trim();
+            if (!string.IsNullOrEmpty(value) && value.Length <= 32 && seen.Add(value))
+            {
+                levels.Add(value);
+            }
+        }
+
+        if (levels.Count == 1)
+        {
+            return [];
+        }
+
+        return levels
+            .Select(level => new ChoiceItem(
+                level,
+                string.Equals(level, current, StringComparison.OrdinalIgnoreCase) ? "current" : string.Empty,
+                level))
+            .ToList();
     }
 
     /// <summary>

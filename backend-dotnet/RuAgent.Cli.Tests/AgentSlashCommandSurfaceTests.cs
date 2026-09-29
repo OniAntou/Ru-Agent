@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RuAgent.Cli;
 using RuAgent.Cli.Tui;
 using RuAgent.Client;
@@ -268,6 +269,186 @@ public sealed class AgentSlashCommandSurfaceTests
 
         Assert.Contains("models.dev:openrouter", posted.Single(), StringComparison.Ordinal);
         Assert.Contains("Switched backend to: models.dev:openrouter", output.ToString(), StringComparison.Ordinal);
+    }
+
+    private const string ReasoningSettings =
+        """{"status":"ok","backend":"openai","openai_model":"gpt-5","has_openai_api_key":true}""";
+
+    private const string ReasoningCatalog =
+        """
+        {"status":"ok","backend":"openai","identity":"ident-42","selected_model":"gpt-5","selected_effort":"default",
+         "catalog":[{"id":"gpt-5","supported":true,"reasoning":{"state":"levels","options":["low","medium","high"]}}],
+         "models":[]}
+        """;
+
+    private static HttpResponseMessage Router(
+        HttpRequestMessage request,
+        string catalog,
+        List<string> posted,
+        string? modelsDev = null)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (request.Method == HttpMethod.Post)
+        {
+            posted.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            return Json("{\"status\":\"ok\"}");
+        }
+
+        if (path.EndsWith("/models-dev", StringComparison.Ordinal))
+        {
+            return modelsDev is null ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : Json(modelsDev);
+        }
+
+        return path.EndsWith("/models", StringComparison.Ordinal) ? Json(catalog) : Json(ReasoningSettings);
+    }
+
+    [Fact]
+    public async Task Reasoning_WithoutAPicker_PrintsTheLevelsTheModelOffers()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request => Router(request, ReasoningCatalog, posted));
+
+        Assert.True(await commands.TryHandleAsync("/reasoning", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None));
+
+        var text = output.ToString();
+        Assert.Contains("╭─ reasoning", text, StringComparison.Ordinal);
+        Assert.Contains("gpt-5", text, StringComparison.Ordinal);
+        Assert.Contains("low", text, StringComparison.Ordinal);
+        Assert.Contains("high", text, StringComparison.Ordinal);
+        Assert.Empty(posted);
+    }
+
+    [Fact]
+    public async Task Reasoning_ForAModelWithNoLevels_ExplainsInsteadOfOpeningAPicker()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        const string noLevels =
+            """
+            {"status":"ok","backend":"models.dev:openrouter","identity":"i","selected_model":"poolside/x:free","selected_effort":"default",
+             "catalog":[{"id":"poolside/x:free","reasoning":{"state":"unknown","options":[]}}],"models":[]}
+            """;
+        var commands = Create(output, request => Router(request, noLevels, posted));
+
+        await commands.TryHandleAsync("/reasoning", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Contains("offers no reasoning effort", text, StringComparison.Ordinal);
+        Assert.Contains("poolside/x:free", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("╭─ reasoning", text, StringComparison.Ordinal);
+        Assert.Empty(posted);
+    }
+
+    [Fact]
+    public async Task Reasoning_WithAnArgument_PostsExactlyTheThreeBindingFields()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request => Router(request, ReasoningCatalog, posted));
+
+        await commands.TryHandleAsync("/reasoning", "high", "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        var body = JsonNode.Parse(posted.Single())!.AsObject();
+        Assert.Equal(3, body.Count);
+        Assert.Equal("high", body["reasoning_effort"]!.GetValue<string>());
+        Assert.Equal("gpt-5", body["reasoning_model"]!.GetValue<string>());
+        Assert.Equal("ident-42", body["reasoning_identity"]!.GetValue<string>());
+        Assert.Contains("reasoning effort: high", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reasoning_AcceptsDefaultEvenWhenTheCatalogPublishesNoLevels()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        const string noLevels =
+            """
+            {"status":"ok","backend":"models.dev:openrouter","identity":"i","selected_model":"poolside/x:free","selected_effort":"default",
+             "catalog":[{"id":"poolside/x:free","reasoning":{"state":"unknown","options":[]}}],"models":[]}
+            """;
+        var commands = Create(output, request => Router(request, noLevels, posted));
+
+        await commands.TryHandleAsync("/reasoning", "default", "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        Assert.Contains("\"reasoning_effort\":\"default\"", posted.Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reasoning_RejectsAnEffortTheModelNeverOffered()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request => Router(request, ReasoningCatalog, posted));
+
+        await commands.TryHandleAsync("/reasoning", "extreme", "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        Assert.Empty(posted);
+    }
+
+    [Fact]
+    public async Task Reasoning_NeverOpensThePickerForANonInteractiveHost()
+    {
+        var output = new StringWriter();
+        var posted = new List<string>();
+        var commands = Create(output, request => Router(request, ReasoningCatalog, posted));
+        var opened = new List<ChoiceList>();
+        commands.Picker = (list, _) =>
+        {
+            opened.Add(list);
+            return Task.FromResult<string?>("high");
+        };
+
+        // A test host has no console, so the bare form must fall back to the panel and
+        // leave the configuration alone rather than picking something.
+        await commands.TryHandleAsync("/reasoning", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        Assert.Empty(opened);
+        Assert.Empty(posted);
+        Assert.Contains("╭─ reasoning", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reasoning_WhenTheCatalogCallFails_ReportsBoundedReasoningUnavailable()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        await commands.TryHandleAsync("/reasoning", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        Assert.Empty(output.ToString());
+    }
+
+    [Fact]
+    public async Task Backend_SaysSoWhenTheProviderCatalogCannotBeFetched()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, request => Router(request, ReasoningCatalog, []));
+
+        await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Contains("models.dev list unavailable", text, StringComparison.Ordinal);
+        Assert.Contains("known providers only", text, StringComparison.Ordinal);
+        Assert.Contains("models.dev:kilo", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Backend_AnnouncesTheLiveProviderCount()
+    {
+        var output = new StringWriter();
+        var commands = Create(output, request => Router(
+            request,
+            ReasoningCatalog,
+            [],
+            """{"status":"ok","providers":[{"id":"openrouter","name":"OpenRouter"},{"id":"groq","name":"Groq"}]}"""));
+
+        await commands.TryHandleAsync("/backend", null, "sess_1", "standard", "D:\\LLM", CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Contains("2 providers from models.dev", text, StringComparison.Ordinal);
+        Assert.Contains("models.dev:groq", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("models.dev list unavailable", text, StringComparison.Ordinal);
     }
 
     [Fact]

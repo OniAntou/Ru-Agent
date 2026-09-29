@@ -49,6 +49,27 @@ public sealed class TuiStatusLineTests
     }
 
     [Fact]
+    public void Waiting_trust_row_does_not_spin_or_count_up()
+    {
+        var status = Create();
+        status.IsLive = true;
+        status.SetState(TuiRunState.WaitingTrust);
+        status.SetDetail(@"C:\untrusted\workspace");
+        // A run waiting on trust has executed nothing, so a spinner frame and a running
+        // elapsed clock read as a slow model. That mislabelling is what this row replaces.
+        status.SetElapsed(937.4);
+
+        var row = TuiText.Strip(status.Compose(80));
+
+        Assert.Contains("workspace needs trust", row);
+        Assert.Contains(@"C:\untrusted\workspace", row);
+        Assert.DoesNotContain("937.4s", row);
+        Assert.DoesNotContain("Thinking", row);
+        Assert.DoesNotContain("⠋", row);
+        Assert.Equal(80, TuiText.VisibleWidth(status.Compose(80)));
+    }
+
+    [Fact]
     public void LiveRow_IsSuppressedInsideTheStickyFooter()
     {
         var status = Create();

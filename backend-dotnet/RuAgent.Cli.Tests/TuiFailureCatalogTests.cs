@@ -57,6 +57,8 @@ public sealed class TuiFailureCatalogTests : IDisposable
     [InlineData("provider_transport_error")]
     [InlineData("provider_bootstrap_invalid")]
     [InlineData("capability_unavailable")]
+    [InlineData("model_tool_call_invalid")]
+    [InlineData("model_tool_call_unavailable")]
     [InlineData("protocol_failure")]
     [InlineData("timeout")]
     [InlineData("transport_error")]

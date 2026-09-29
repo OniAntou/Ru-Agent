@@ -1351,6 +1351,112 @@ public sealed class HarnessRecoveryScannerTests
     }
 
     [Fact]
+    public async Task Runtime_loop_cancels_an_expired_workspace_trust_wait_without_waiting_for_restart()
+    {
+        var fixture = await BackendHarnessTestFixture.CreateAsync();
+        try
+        {
+            var run = await CreateDistinctRunAsync(
+                fixture,
+                new HarnessRunStatus(HarnessRunState.WaitingWorkspaceTrust),
+                "run_66666666666666666666666666666666");
+
+            var roots = new AgentRuntimeRootRegistry();
+            roots.Register(run.RunId, fixture.RootPath);
+            var service = NewRuntimeLoop(fixture, roots);
+
+            await service.ReleaseExpiredWorkspaceTrustAsync(
+                run.RunId.Value,
+                run,
+                CancellationToken.None);
+
+            var after = await fixture.EventStore.GetRunAsync(run.RunId, CancellationToken.None);
+            Assert.Equal(HarnessRunState.Cancelled, after!.State);
+            Assert.Equal("workspace_trust_expired", after.TerminalErrorCode);
+            Assert.False(roots.TryGetRoot(run.RunId, out _));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public void Workspace_trust_wait_is_only_expired_past_its_own_timeout()
+    {
+        var now = Timestamp;
+        var workspace = new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
+            new WorkspaceId($"ws_{Guid.NewGuid():N}"),
+            "volume",
+            "root-file",
+            new string('e', 64));
+
+        AgentRun Waiting(HarnessRunState state, DateTimeOffset updatedAt) => new(
+            new RunId($"run_{Guid.NewGuid():N}"),
+            new SessionId(Guid.NewGuid().ToString("N")),
+            workspace.WorkspaceId,
+            new HarnessRunStatus(state),
+            0,
+            1,
+            1,
+            0,
+            0,
+            AgentPermissionPreset.Standard,
+            1,
+            new string('f', 64),
+            now.AddMinutes(-60),
+            updatedAt,
+            null);
+
+        Assert.True(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-11)),
+            now));
+        Assert.False(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-9)),
+            now));
+
+        // An expired approval is the loop's other expiry. Each predicate must claim only
+        // its own wait, or a live trust prompt would be cancelled out from under the user.
+        Assert.False(HarnessRecoveryScanner.IsExpiredWorkspaceTrustWait(
+            Waiting(HarnessRunState.WaitingApproval, now.AddMinutes(-31)),
+            now));
+        Assert.False(HarnessRecoveryScanner.IsExpiredApprovalWait(
+            Waiting(HarnessRunState.WaitingWorkspaceTrust, now.AddMinutes(-31)),
+            now));
+    }
+
+    private static AgentRuntimeLoopService NewRuntimeLoop(
+        BackendHarnessTestFixture fixture,
+        AgentRuntimeRootRegistry roots)
+    {
+        var sessions = new SessionStore(
+            new DataPaths(
+                Path.Combine(fixture.RootPath, "settings.json"),
+                Path.Combine(fixture.RootPath, "sessions"),
+                Path.Combine(fixture.RootPath, "activity.log")),
+            TimeProvider.System);
+        var dispatcher = new AgentConversationOutboxDispatcher(
+            new HarnessOutboxStore(fixture.Options),
+            fixture.PayloadStore,
+            sessions,
+            new HarnessModelContextBootstrapper(
+                sessions,
+                fixture.PayloadStore,
+                new CryptographicIdGenerator(),
+                TimeProvider.System),
+            new AgentRunHistoryTransitionSink(
+                new UnusedCoordinatorFactory(),
+                roots),
+            TimeProvider.System);
+        return new AgentRuntimeLoopService(
+            dispatcher,
+            fixture.EventStore,
+            new UnusedCoordinatorFactory(),
+            roots,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AgentRuntimeLoopService>.Instance);
+    }
+
+    [Fact]
     public async Task Migrated_active_run_with_old_permission_profile_fails_closed()
     {
         var fixture = await BackendHarnessTestFixture.CreateAsync();

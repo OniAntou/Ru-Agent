@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
@@ -31,20 +32,104 @@ public sealed class TuiTranscript
     private const string ToolCallOpen = "<tool_call>";
     private const string ToolCallClose = "</tool_call>";
 
+    /// <summary>
+    /// Cap on the raw assistant text retained per turn for gap detection against the run's
+    /// durable assistant payload. Matches the worker's own per-step text cap.
+    /// </summary>
+    private const int MaxRetainedAssistantCharacters = 1_000_000;
+
     private readonly TuiSurface _surface;
     private readonly TuiStatusLine _status;
+    private readonly TuiMarkdown _markdown = new();
     private readonly List<ToolDetail> _pendingTools = [];
     private readonly List<string> _retained = [];
+    private readonly StringBuilder _streamedAssistant = new();
     private readonly Stopwatch _turnWatch = new();
 
     private bool _hasStreamedDelta;
     private string _lineBuffer = string.Empty;
     private bool _inToolBlock;
     private bool _atLineStart = true;
+    private bool _proseContinuesWord;
     private int _toolsSettled;
     private string? _terminalCode;
     private string? _summaryDetail;
     private bool _sawCompletion;
+
+    /// <summary>
+    /// The raw assistant text this turn actually received as deltas, before markdown
+    /// rendering. Deltas published before the client subscribes are gone for good -- the
+    /// live hub has no replay buffer -- so this is what a gap check compares the run's
+    /// durable assistant payload against.
+    /// </summary>
+    public string StreamedAssistantText => _streamedAssistant.ToString();
+
+    /// <summary>
+    /// The rows a rebuilt screen would print right now. Exposed so a repaint can be asserted
+    /// on the surface's recorded lines rather than on escape sequences.
+    /// </summary>
+    public IReadOnlyList<string> RepaintPreview(int maxLines = 200) =>
+        _surface.SnapshotTail(maxLines, Width);
+
+    /// <summary>
+    /// How many recorded lines this turn's assistant block currently occupies. The surface
+    /// records every finished line even when the screen erases it, so comparing this with
+    /// what is visible tells a paint loss apart from a stream loss.
+    /// </summary>
+    public int AssistantBlockRowCount =>
+        _assistantBlockStartRow < 0 ? 0 : Math.Max(0, _surface.HistoryCount - _assistantBlockStartRow);
+
+    /// <summary>Recorded-line index where this turn's assistant output began, or -1.</summary>
+    private int _assistantBlockStartRow = -1;
+
+    /// <summary>
+    /// Rewrites this turn's assistant block with the run's complete text.
+    ///
+    /// A terminal cannot unprint, so a reply whose head never arrived cannot be repaired by
+    /// appending: the head would land after the tail and the answer would read as garbage.
+    /// The block is instead replaced in the surface's recorded history and the caller
+    /// rebuilds the screen from it, which is the same path a resize already uses.
+    ///
+    /// Returns false when nothing was streamed this turn, or when the rows have already
+    /// scrolled out of the rebuildable window -- in both cases the answer is not lost but
+    /// cannot be placed correctly, and the caller should say so rather than guess.
+    /// </summary>
+    public bool RepaintAssistantText(string fullText)
+    {
+        if (string.IsNullOrEmpty(fullText) || _assistantBlockStartRow < 0)
+        {
+            return false;
+        }
+
+        var width = Width;
+        var rendered = new List<string>();
+        var markdown = new TuiMarkdown();
+        foreach (var raw in fullText.Replace("\r", string.Empty).Split('\n'))
+        {
+            rendered.AddRange(markdown.RenderLine(raw, width));
+        }
+
+        if (rendered.Count == 0)
+        {
+            return false;
+        }
+
+        // The in-progress line has not been recorded yet, so it is not part of the block.
+        var recorded = _surface.HistoryCount - _assistantBlockStartRow;
+        if (recorded <= 0)
+        {
+            return false;
+        }
+
+        if (!_surface.ReplaceRecordedTail(recorded, rendered))
+        {
+            return false;
+        }
+
+        _streamedAssistant.Clear();
+        _streamedAssistant.Append(fullText);
+        return true;
+    }
 
     public TuiTranscript(TuiSurface surface, TuiStatusLine status)
     {
@@ -75,12 +160,16 @@ public sealed class TuiTranscript
         _lineBuffer = string.Empty;
         _inToolBlock = false;
         _atLineStart = true;
+        _proseContinuesWord = false;
         _terminalCode = null;
         _summaryDetail = null;
         _sawCompletion = false;
         _pendingTools.Clear();
         _retained.Clear();
+        _markdown.Reset();
         _turnWatch.Restart();
+        _streamedAssistant.Clear();
+        _assistantBlockStartRow = -1;
 
         _surface.Line();
     }
@@ -96,6 +185,16 @@ public sealed class TuiTranscript
             return;
         }
 
+        if (_assistantBlockStartRow < 0)
+        {
+            _assistantBlockStartRow = _surface.HistoryCount;
+        }
+
+        if (_streamedAssistant.Length < MaxRetainedAssistantCharacters)
+        {
+            _streamedAssistant.Append(text);
+        }
+
         if (!_hasStreamedDelta)
         {
             _hasStreamedDelta = true;
@@ -109,7 +208,9 @@ public sealed class TuiTranscript
         }
 
         _lineBuffer += text;
-        var hold = PartialMarkerSuffixLength(_lineBuffer);
+        // Both marker families are held back: a tool-call wrapper and a markdown emphasis
+        // can each be cut in half by a delta boundary.
+        var hold = Math.Max(PartialMarkerSuffixLength(_lineBuffer), TuiMarkdown.Holdback(_lineBuffer));
         var emitLength = _lineBuffer.Length - hold;
         if (emitLength <= 0)
         {
@@ -136,7 +237,16 @@ public sealed class TuiTranscript
     /// </summary>
     public void ResetAssistant()
     {
+        // A superseded attempt's answer is replaced by the retry: drop its pending
+        // render buffer, and its raw text from gap tracking, so the retry -- not the
+        // stale head it replaced -- is what gets compared against the durable payload.
+        // Already rendered rows cannot be un-written; the retry supersedes them visually.
+        // The turn's block marker is intentionally kept so a later repaint can still
+        // target the whole turn, and the header is not reprinted.
         _lineBuffer = string.Empty;
+        _streamedAssistant.Clear();
+        _markdown.Reset();
+        _proseContinuesWord = false;
     }
 
     public void Flush()
@@ -204,6 +314,10 @@ public sealed class TuiTranscript
                 _atLineStart = true;
             }
 
+            // Prose on both sides of a tool block is independent text: a fence open when the
+            // tool call started cannot survive it.
+            _markdown.Reset();
+            _proseContinuesWord = false;
             _inToolBlock = isOpen;
             rest = rest[(markerIndex + (isOpen ? ToolCallOpen.Length : ToolCallClose.Length))..];
         }
@@ -218,8 +332,7 @@ public sealed class TuiTranscript
 
         if (!_inToolBlock)
         {
-            _surface.Write(text);
-            _atLineStart = text.EndsWith('\n');
+            WriteProse(text);
             return;
         }
 
@@ -254,6 +367,68 @@ public sealed class TuiTranscript
         }
     }
 
+    /// <summary>
+    /// Prose leaves the surface through the markdown renderer. A completed line goes
+    /// through <see cref="TuiMarkdown.RenderLine"/> so block forms (fence, bullet, heading)
+    /// are decided; the unfinished tail of a line is rendered inline, which is what keeps
+    /// a streamed answer visible while its last line is still arriving.
+    /// </summary>
+    private void WriteProse(string text)
+    {
+        var start = 0;
+        while (true)
+        {
+            var newline = text.IndexOf('\n', start);
+            if (newline < 0)
+            {
+                if (start < text.Length)
+                {
+                    WriteInlineFragment(text[start..]);
+                    _atLineStart = false;
+                }
+
+                return;
+            }
+
+            WriteCompleteLine(text[start..newline]);
+            start = newline + 1;
+            if (start >= text.Length)
+            {
+                _atLineStart = true;
+                return;
+            }
+        }
+    }
+
+    private void WriteInlineFragment(string fragment)
+    {
+        var rendered = TuiMarkdown.RenderInline(fragment, Width, _proseContinuesWord);
+        _proseContinuesWord = EndsWithWordCharacter(rendered);
+        _surface.Write(rendered);
+    }
+
+    private void WriteCompleteLine(string line)
+    {
+        foreach (var row in _markdown.RenderLine(line, Width))
+        {
+            _surface.Write(row);
+            _surface.Line();
+        }
+
+        if (_markdown.InFence)
+        {
+            return;
+        }
+
+        _proseContinuesWord = false;
+    }
+
+    private static bool EndsWithWordCharacter(string rendered)
+    {
+        var last = rendered.Length == 0 ? '\0' : rendered[^1];
+        return char.IsLetterOrDigit(last);
+    }
+
     // ------------------------------------------------------------------
     // Activity frames: detail for the live row and for the settled tool line.
     // ------------------------------------------------------------------
@@ -271,7 +446,7 @@ public sealed class TuiTranscript
                 }
                 else if (!string.IsNullOrWhiteSpace(activity.Detail))
                 {
-                    Notice(activity.Detail, TuiToken.Meta);
+                    RetainThinking(activity.Detail);
                 }
 
                 return;
@@ -326,9 +501,7 @@ public sealed class TuiTranscript
 
     private void ApplyToolActivity(AgentActivityModel activity)
     {
-        var verb = string.IsNullOrWhiteSpace(activity.ToolDisplay)
-            ? "tool"
-            : activity.ToolDisplay!.ToLowerInvariant();
+        var verb = TuiToolVerbs.Past(activity.Kind, activity.ToolDisplay);
 
         switch (activity.State)
         {
@@ -342,7 +515,7 @@ public sealed class TuiTranscript
                     Failed: false));
                 TrimPending();
                 _status.SetState(TuiRunState.Tool);
-                _status.SetActivity(BuildActivityLabel(verb, activity));
+                _status.SetActivity(BuildActivityLabel(TuiToolVerbs.Present(activity.Kind, activity.ToolDisplay), activity));
                 return;
 
             case AgentActivityState.Completed:
@@ -596,6 +769,29 @@ public sealed class TuiTranscript
     /// <summary>An operator-facing one-liner (approval outcomes, reconciliation prompts).</summary>
     public void Note(string text, TuiToken token) => Notice(text, token);
 
+    /// <summary>
+    /// The model's own deliberation is kept out of the transcript and behind <c>ctrl+o</c>.
+    /// The prompt contract calls private reasoning something never to surface in chat, and
+    /// the WinUI surface keeps the same block closed by default; printing it inline buried
+    /// the answer the operator actually came to read.
+    /// </summary>
+    private void RetainThinking(string detail)
+    {
+        var flat = Escape(detail);
+        if (flat.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var line in flat.Split('\n'))
+        {
+            _retained.Add("    " + TuiPalette.DimPaint(line));
+        }
+
+        TrimRetained();
+        Notice("thought · ctrl+o", TuiToken.Line);
+    }
+
     private void Notice(string text, TuiToken token)
     {
         Flush();
@@ -777,6 +973,7 @@ public sealed class TuiTranscript
     public void EndTurn(TuiTurnOutcome outcome, string? errorCode)
     {
         Flush();
+        var streamedText = _hasStreamedDelta;
         if (_hasStreamedDelta)
         {
             if (!_atLineStart)
@@ -803,6 +1000,16 @@ public sealed class TuiTranscript
         {
             case TuiTurnOutcome.Completed:
                 WriteLines(BuildFooter(seconds, _toolsSettled, _summaryDetail));
+                if (!streamedText && _toolsSettled == 0)
+                {
+                    // A run that completed with no assistant text and no tool row used to
+                    // end in total silence: just a "✓ idle · 10.6s" row, which is
+                    // indistinguishable from a healthy short answer. The reply text is
+                    // persisted even when its delta never reaches this client, so say so
+                    // rather than leaving the operator to guess.
+                    WriteLines(ComposeNoTextArrived());
+                }
+
                 break;
             case TuiTurnOutcome.Cancelled:
                 WriteLines(
@@ -821,6 +1028,18 @@ public sealed class TuiTranscript
         _summaryDetail = null;
         _pendingTools.Clear();
     }
+
+    /// <summary>
+    /// Bounded operator note for a turn that finished successfully but delivered no
+    /// assistant text and no tool row. Names the observation and the next step instead
+    /// of leaving an empty turn that looks like a very short answer.
+    /// </summary>
+    public static string ComposeNoTextArrived() =>
+        TuiPalette.Paint("  ▲ ", TuiToken.Warn)
+        + TuiPalette.Paint("no text arrived from the model", TuiToken.Warn)
+        + TuiPalette.Paint(
+            " · the run completed but its reply never reached this terminal · retry, or switch model with /model",
+            TuiToken.Line);
 
     public static string BuildFooter(double seconds, int tools, string? detail)
     {

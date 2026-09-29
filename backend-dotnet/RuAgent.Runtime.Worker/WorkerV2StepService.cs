@@ -18,16 +18,24 @@ public sealed record WorkerV2StepResult(
 
 public sealed class WorkerV2StepException : Exception
 {
-    public WorkerV2StepException(string code, bool retryable, Exception? innerException = null)
+    public WorkerV2StepException(string code, bool retryable, Exception? innerException = null, string? trace = null)
         : base($"worker_v2_{code}", innerException)
     {
         Code = code;
         Retryable = retryable;
+        Trace = trace;
     }
 
     public string Code { get; }
 
     public bool Retryable { get; }
+
+    /// <summary>
+    /// Bounded, metadata-only diagnostic line for this failure (counts, flags, lengths,
+    /// generated ids). Never carries user content, prompts, arguments or model text, so it
+    /// is safe to write to the process stderr log. Null when the throw site predates tracing.
+    /// </summary>
+    public string? Trace { get; }
 }
 
 public sealed class WorkerV2StepService
@@ -333,6 +341,66 @@ public sealed class WorkerV2StepService
         return excerpt.Length == 0 ? null : excerpt;
     }
 
+    /// <summary>
+    /// Builds the metadata-only trace line for a tool-call assembly failure. The line
+    /// carries counts, flags, lengths and generated ids only -- never user content,
+    /// prompts, arguments or model text -- so emitting it to the process stderr log is
+    /// safe. The worker runs in its own process, so this stderr line (drained by the
+    /// host into the per-role log file) is the only way to tell the three
+    /// <c>protocol_failure</c> branches apart after the fact.
+    /// </summary>
+    private static string ToolCallTrace(string site, string modelStepId, string fields) =>
+        $"ru_worker_step_trace site={site} step={modelStepId} code=protocol_failure {fields}";
+
+    private static void EmitToolCallTrace(string line)
+    {
+        try
+        {
+            Console.Error.WriteLine(line);
+        }
+        catch
+        {
+            // Diagnostics must never change the step outcome.
+        }
+    }
+
+    /// <summary>
+    /// Parses one assembled tool-call arguments object. Assembled fragments arrive with
+    /// whatever escaping the provider emitted, so a lone backslash that cannot start a
+    /// valid escape (a Windows path streamed as <c>C:\Users\...</c>) gets one repair
+    /// attempt before the call is rejected. The repair only doubles backslashes that
+    /// have no valid reading at all; anything truncated or still unparseable fails
+    /// exactly where it always did.
+    /// </summary>
+    private static JsonElement ParseToolArguments(string argumentsText)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(argumentsText);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("arguments must be an object");
+            }
+
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            if (!JsonEscapeRepair.TryRepairInvalidEscapes(argumentsText, out var repaired))
+            {
+                throw;
+            }
+
+            using var fixedDocument = JsonDocument.Parse(repaired);
+            if (fixedDocument.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("arguments must be an object");
+            }
+
+            return fixedDocument.RootElement.Clone();
+        }
+    }
+
     private static (List<ModelToolCall> Calls, string? Text) ParseToolCalls(
         IReadOnlyList<ModelToolFragment> fragments,
         JsonObject settings,
@@ -356,8 +424,14 @@ public sealed class WorkerV2StepService
                 // closed on purpose, and unlike the resource caps above, where a
                 // retry would only spend budget to hit the same ceiling. The
                 // Host's bounded retry hands the reason back to the model, so
-                // the next attempt is asked for a different shape.
-                throw new WorkerV2StepException("protocol_failure", retryable: true);
+                // the next attempt is asked for a different shape. The trace
+                // records the shape without carrying any user content.
+                var trace = ToolCallTrace(
+                    "zero_fragments",
+                    modelStepId,
+                    $"finishIsToolCalls=1 textLen={text.Length}");
+                EmitToolCallTrace(trace);
+                throw new WorkerV2StepException("protocol_failure", retryable: true, trace: trace);
             }
 
             // VisibleText already carries the stripped prose when a trailing
@@ -393,7 +467,12 @@ public sealed class WorkerV2StepService
                 var hasExistingCallData = group.ToolName is not null || group.Arguments.Length > 0;
                 if (hasExistingCallData && !string.IsNullOrEmpty(fragment.ToolName))
                 {
-                    throw new WorkerV2StepException("protocol_failure", retryable: false);
+                    var trace = ToolCallTrace(
+                        "chunk_conflict",
+                        modelStepId,
+                        $"groups={groups.Count} group={groups.Count - 1} hasId={(hasProviderCallId ? 1 : 0)} hasName={(!string.IsNullOrEmpty(fragment.ToolName) ? 1 : 0)} argsLen={fragment.ArgumentsFragment?.Length ?? 0}");
+                    EmitToolCallTrace(trace);
+                    throw new WorkerV2StepException("protocol_failure", retryable: false, trace: trace);
                 }
             }
 
@@ -411,11 +490,17 @@ public sealed class WorkerV2StepService
         }
 
         var calls = new List<ModelToolCall>(groups.Count);
-        foreach (var group in groups)
+        for (var groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
+            var group = groups[groupIndex];
             if (string.IsNullOrEmpty(group.ToolName))
             {
-                throw new WorkerV2StepException("protocol_failure", retryable: true);
+                var trace = ToolCallTrace(
+                    "missing_name",
+                    modelStepId,
+                    $"groups={groups.Count} group={groupIndex} hasId={(group.ProviderCallId is null ? 0 : 1)} argsLen={group.Arguments.Length}");
+                EmitToolCallTrace(trace);
+                throw new WorkerV2StepException("protocol_failure", retryable: true, trace: trace);
             }
 
             var tool = settings["model_tools"] is JsonArray modelTools
@@ -436,13 +521,7 @@ public sealed class WorkerV2StepService
             JsonElement arguments;
             try
             {
-                using var document = JsonDocument.Parse(argumentsText);
-                if (document.RootElement.ValueKind != JsonValueKind.Object)
-                {
-                    throw new JsonException("arguments must be an object");
-                }
-
-                arguments = document.RootElement.Clone();
+                arguments = ParseToolArguments(argumentsText);
             }
             catch (JsonException error)
             {

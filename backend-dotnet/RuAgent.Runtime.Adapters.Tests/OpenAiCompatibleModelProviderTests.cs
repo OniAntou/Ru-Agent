@@ -403,6 +403,32 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_ends_the_step_when_the_gateway_sends_an_unreadable_finish_reason()
+    {
+        // A present-but-non-string finish_reason is the same species as an
+        // unknown marker: the step still ends when the stream closes. Throwing
+        // on it killed the run with protocol_failure on the very first step,
+        // with no tool call executed and nothing the user could act on.
+        foreach (var marker in new[] { "42", "{\"code\":\"done\"}", "true" })
+        {
+            var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"gold price\"}}]}\n\n" +
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":" + marker + "}]}\n\n" +
+                    "data: [DONE]\n\n",
+                    Encoding.UTF8,
+                    "text/event-stream"),
+            });
+            var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+            var deltas = await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync();
+
+            Assert.Equal("gold price", string.Concat(deltas.Select(delta => delta.Text)));
+        }
+    }
+
+    [Fact]
     public async Task GenerateAsync_observes_cancellation()
     {
         using var cancellation = new CancellationTokenSource();

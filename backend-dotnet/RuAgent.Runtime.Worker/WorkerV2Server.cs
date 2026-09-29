@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Models;
 
 namespace RuAgent.Runtime.Worker;
 
@@ -312,14 +313,17 @@ public sealed class WorkerV2Server
         }
         catch (WorkerV2StepException error)
         {
+            RecordStepFailure(error.Code, error);
             await TrySendErrorAsync(socket, sendLock, envelope.Id, error.Code, error.Retryable, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (AgentProtocolException)
+        catch (AgentProtocolException error)
         {
+            RecordStepFailure("protocol_failure", error);
             await TrySendErrorAsync(socket, sendLock, envelope.Id, "protocol_failure", false, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            RecordStepFailure("generation_failed", error);
             await TrySendErrorAsync(socket, sendLock, envelope.Id, "generation_failed", true, nextSequence, CancellationToken.None).ConfigureAwait(false);
         }
         finally
@@ -331,6 +335,51 @@ public sealed class WorkerV2Server
             }
         }
     }
+
+    /// <summary>
+    /// Writes the bounded code of what actually failed underneath a step failure
+    /// to stderr, which the Host already redirects to its own worker error log.
+    /// The error frame on the wire stays exactly two fields -- that contract is
+    /// pinned, and its point is to carry no payload -- so without this a run
+    /// that ends in a flat `protocol_failure` is undiagnosable after the fact.
+    /// Only the bounded code travels: an exception message can hold a prompt, a
+    /// path or a provider response.
+    /// </summary>
+    private static void RecordStepFailure(string code, Exception error)
+    {
+        try
+        {
+            Console.Error.WriteLine(
+                $"ru.worker step_failed code={code} cause={BoundedCause(error) ?? "unknown"}");
+        }
+        catch (Exception)
+        {
+            // A diagnostic must never change the outcome of the run.
+        }
+    }
+
+    private static string? BoundedCause(Exception? error)
+    {
+        for (var current = error; current is not null; current = current.InnerException)
+        {
+            switch (current)
+            {
+                case AgentProtocolException protocol when IsBoundedCode(protocol.Code):
+                    return protocol.Code;
+                case ModelProviderException provider when IsBoundedCode(provider.Code):
+                    return provider.Code;
+                case WorkerV2StepException step when IsBoundedCode(step.Code):
+                    return step.Code;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsBoundedCode(string value) =>
+        value.Length is > 0 and <= 64
+        && char.IsAsciiLetterLower(value[0])
+        && value.All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character is '_' or '.');
 
     private static async Task TrySendErrorAsync(
         WebSocket socket,

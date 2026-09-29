@@ -234,6 +234,24 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
+    public async Task A_tool_call_finish_reason_with_no_fragments_is_retryable()
+    {
+        // The provider announced tool_calls and streamed none. There is no
+        // half-parsed call here, so a bounded retry cannot execute the wrong
+        // thing -- and the Host feeds the reason back so the next attempt is
+        // asked for a different shape. The ambiguous idless continuation above
+        // keeps its closed-on-purpose behaviour; this is the opposite case.
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), true, "tool_calls"));
+
+        var error = await Assert.ThrowsAsync<WorkerV2StepException>(() =>
+            new WorkerV2StepService(provider).RunAsync(StartPayload(includeTool: true), CancellationToken.None));
+
+        Assert.Equal("protocol_failure", error.Code);
+        Assert.True(error.Retryable);
+    }
+
+    [Fact]
     public async Task Step_service_assigns_request_scoped_ids_to_native_calls_without_provider_ids()
     {
         var provider = new FakeModelProvider(

@@ -361,7 +361,19 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             return null;
         }
 
-        var reason = ReadOptionalString(choice["finish_reason"]);
+        var reason = TryReadString(choice["finish_reason"]);
+        if (reason is null)
+        {
+            // Present but unreadable -- a number, an object, whatever this
+            // gateway sent. It is the same species as an unknown marker: the
+            // step still ends when the stream closes, and a finished step with
+            // usable content is worth more than a failed conversation. Throwing
+            // here is what turned a preview endpoint's odd vocabulary into
+            // protocol_failure on the very first step, with no tool call and
+            // nothing for the user to fix.
+            return null;
+        }
+
         return reason switch
         {
             "stop" or "tool_calls" or "length" => reason,
@@ -370,7 +382,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             // unknown marker still ends the turn: failing the run on vocabulary
             // turned answers into protocol_failure after tools already ran.
             { Length: > 0 } => "stop",
-            _ => throw new ModelProviderException("malformed_payload", retryable: false),
+            _ => null,
         };
     }
 

@@ -324,7 +324,14 @@ public sealed class WorkerV2StepService
 
             if (finishReason == "tool_calls")
             {
-                throw new WorkerV2StepException("protocol_failure", retryable: false);
+                // The provider announced a tool call and streamed none. Nothing
+                // was half-parsed, so a retry cannot execute the wrong call --
+                // unlike the ambiguous idless continuation below, which stays
+                // closed on purpose, and unlike the resource caps above, where a
+                // retry would only spend budget to hit the same ceiling. The
+                // Host's bounded retry hands the reason back to the model, so
+                // the next attempt is asked for a different shape.
+                throw new WorkerV2StepException("protocol_failure", retryable: true);
             }
 
             // VisibleText already carries the stripped prose when a trailing
@@ -637,7 +644,12 @@ public sealed class WorkerV2StepService
         "rate_limited" => new WorkerV2StepException("provider_rate_limited", retryable: true, error),
         "server_error" => new WorkerV2StepException("provider_server_error", retryable: true, error),
         "transport_error" => new WorkerV2StepException("provider_transport_error", retryable: true, error),
-        "malformed_payload" or "response_too_large" => new WorkerV2StepException("protocol_failure", retryable: false, error),
+        // Split on purpose: an unreadable chunk is a per-response accident and
+        // the next request is a fresh draw, so the Host's bounded retry is the
+        // right response. A response that is simply too large is a ceiling --
+        // retrying spends the attempt budget to reach the same ceiling.
+        "malformed_payload" => new WorkerV2StepException("protocol_failure", retryable: true, error),
+        "response_too_large" => new WorkerV2StepException("protocol_failure", retryable: false, error),
         "http_error" or "vision_unsupported" or "empty_model_reply" => new WorkerV2StepException(error.Code, error.Retryable, error),
         _ => new WorkerV2StepException("generation_failed", error.Retryable, error),
     };

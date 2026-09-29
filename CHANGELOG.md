@@ -162,6 +162,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Nay `"Preparing action…"` không còn đi qua kênh đó (trạng thái run tự hiện phần mình), `RunAgentActionAsync` gọi `ClearComposerStatus()` trong `finally`, và thông báo composer-local thật — file bị từ chối, hàng đợi đầy, thiếu key — vẫn giữ nguyên cơ chế giữ nó qua các lần refresh.
 
+- **fix(worker,provider)**: **Hai lỗi đo được trong đường tool-call của Worker, cùng một dòng chẩn đoán.** Một `tool_calls` mà provider **không stream fragment nào** trước đây là `protocol_failure` không retry — nay retry được (`WorkerV2StepService`), vì không có call nào dở để chạy nhầm. Ngược lại, phần tiếp tục idless sau call song song **vẫn đóng trên có chủ đích** (`WorkerV2StepServiceTests` ghim rõ: retry ở đó có thể chạy sai call), và hai trần tài nguyên cũng vậy — retry chỉ để chạm lại đúng trần đó. Bên cạnh đó, `malformed_payload` được tách khỏi `response_too_large` trong mapping: một chunk không đọc được là tai nạn của từng response nên đáng retry, còn response quá lớn là trần.
+
+  `ReadFinishReason` của adapter OpenAI-compatible gọi nhầm hàm **ném** thay vì hàm đọc mềm đã có sẵn cạnh nó, nên một `finish_reason` không phải chuỗi (số, object — đúng loại endpoint preview hay gửi) giết cả run ở **bước model đầu tiên**, chưa hề có tool call nào. Nay nó dùng `TryReadString` và kết thúc turn, cùng lý do mà một marker lạ đã được xử lý trước đó ngay trong hàm này.
+
+  **Và Worker giờ ghi nguyên nhân ra stderr** (Host đã `RedirectStandardError` sẵn): mỗi step fail ghi đúng một dòng `code=… cause=…`, chỉ bounded code, không phải message — vì message có thể chứa prompt, path hay response của provider. Trước đó `WorkerV2Server` chỉ gửi code phẳng và **vứt hẳn** inner exception, nên một run chết ở `protocol_failure` là không chẩn đoán được sau khi xảy ra. Frame lỗi trên wire **giữ nguyên đúng hai field**: `Phase1WorkerIntegrationTests` ghim tập key đó, và cái tên của nó nói rõ mục đích — fail closed, không echo payload.
+
 
 - **docs(policy)**: **Invariant "No fallbacks" được sửa cho khớp với thứ code vốn làm — đây là quyết định, không phải sửa lỗi.** `AGENTS.md`, `CONTRIBUTING.md` và `CONTEXT.md` đều cấm *mọi* fallback, trong khi `WebOptions.cs:19-24` + `ToolExecutionService.cs:102` luôn bật ba engine HTML công khai cạnh engine đã cấu hình. Bằng chứng nghiêng hẳn về "có chủ ý": mô tả tool mà model đọc (`AgentToolDefinitionCatalog.cs:50`), `docs/operations/agent-tools.md`, các test, và commit `f34a7f04` tối ưu nó kèm lập luận cẩn thận — chỉ ba câu tiếng Anh nói ngược.
 

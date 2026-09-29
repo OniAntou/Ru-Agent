@@ -21,9 +21,12 @@ session and run handles.
   may write to stdout while the bridge runs.
 - Inbound request lines are capped at **1 MiB**. An oversized line is answered with a
   `request_too_large` error (`-32600`) and skipped; the bridge does not guess at content
-  it cannot read. Outbound frames are not measured against that cap — they are bounded
-  only by the content each result carries (for example the payload `run.output`
-  returns), so a large but legal result may exceed 1 MiB on the wire.
+  it cannot read.
+- `run.output` enforces the same 1 MiB cap on the base64 `data` it returns, so a payload
+  that would not fit fails with `output_frame_exceeds_limit` (`-32000`) instead of
+  emitting a frame the client would reject; fetch those bytes with the CLI
+  `agent output` command. Every other outbound frame is bounded by its method-level
+  parameter and result caps.
 - A line that is not valid JSON is answered with `parse_error` (`-32700`) and skipped.
 - Requests without an `id` are notifications and get no response.
 - `$/cancelRequest` is accepted and ignored: v1 requests are short-lived, so there is no

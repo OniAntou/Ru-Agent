@@ -69,7 +69,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install --prefix sdk/ru-agent
+      - run: npm ci --prefix sdk/ru-agent
       - run: npm run typecheck --prefix sdk/ru-agent
       - run: npm test --prefix sdk/ru-agent
       - run: npm run build --prefix sdk/ru-agent

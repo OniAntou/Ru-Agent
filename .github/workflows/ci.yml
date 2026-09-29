@@ -57,3 +57,19 @@ jobs:
         run: .\scripts\test_dotnet.ps1 -Configuration Debug
       - run: dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release --nologo
       - run: dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64 -p:Platform=x64 -p:SelfContained=true
+      - name: RPC smoke (scripted model)
+        shell: pwsh
+        run: .\scripts\rpc_smoke.ps1
+
+  node:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --prefix sdk/ru-agent
+      - run: npm run typecheck --prefix sdk/ru-agent
+      - run: npm test --prefix sdk/ru-agent
+      - run: npm run build --prefix sdk/ru-agent

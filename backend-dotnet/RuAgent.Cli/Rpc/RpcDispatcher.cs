@@ -119,7 +119,12 @@ public sealed class RpcDispatcher
                 "run.attach" => RunAttach(request),
                 "run.detach" => RunDetach(request),
                 "run.trust" => await RunTrustAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.approve" => await RunApproveAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.cancel" => await RunCancelAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.continue" => await RunContinueAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.status" => await RunStatusAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.command" => await RunCommandAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.reconcile" => await RunReconcileAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.list" => await PolicyListAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.import" => await PolicyImportAsync(request, cancellationToken).ConfigureAwait(false),
@@ -347,6 +352,81 @@ public sealed class RpcDispatcher
             ["data"] = Convert.ToBase64String(bytes),
             ["byte_length"] = bytes.Length,
         };
+    }
+
+    private async Task<JsonNode> RunApproveAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var approvalId = RequireString(request, "approvalId", 36);
+        var decision = RequireString(request, "decision", 32);
+        if (decision is not ("allow_once" or "allow_session_directory" or "allow_always" or "deny"))
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: unknown approval decision.");
+        }
+
+        var result = decision == "deny"
+            ? await _agentClient.DenyAsync(runId, approvalId, ct).ConfigureAwait(false)
+            : await _agentClient.ApproveAsync(runId, approvalId, decision, ct).ConfigureAwait(false);
+        return JsonNode.Parse(result.GetRawText()) ?? new JsonObject();
+    }
+
+    private async Task<JsonNode> RunCancelAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        await _agentClient.CancelAsync(runId, ct).ConfigureAwait(false);
+        return new JsonObject { ["cancelled"] = runId };
+    }
+
+    private async Task<JsonNode> RunContinueAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        await _agentClient.ContinueAsync(runId, ct).ConfigureAwait(false);
+        return new JsonObject { ["continued"] = runId };
+    }
+
+    private async Task<JsonNode> RunCommandAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var command = RequireString(request, "command", 8192);
+        var response = await _agentClient.DispatchCommandAsync(runId, command, ct).ConfigureAwait(false);
+        return JsonSerializer.SerializeToNode(response, JsonOptions) ?? new JsonObject();
+    }
+
+    private async Task<JsonNode> RunReconcileAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var outcome = OptionalString(request, "outcome", 32);
+        var hash = OptionalString(request, "hash", 64);
+        if (outcome is null || hash is null || hash.Length != 64)
+        {
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: outcome and a 64-char hash are required.");
+        }
+
+        var wireOutcome = outcome switch
+        {
+            "applied" => "applied",
+            "not_applied" or "not-applied" => "not_applied",
+            "unknown_continue" or "unknown" => "unknown_continue",
+            _ => throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: unknown reconcile outcome."),
+        };
+
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/reconcile");
+        using var http = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new { outcome = wireOutcome, snapshot_hash = hash }),
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        };
+        http.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(http, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new RpcDispatchException(RpcProtocol.ApplicationError, body, "reconcile_failed", (int)response.StatusCode);
+        }
+
+        return JsonNode.Parse(body) ?? new JsonObject();
     }
 
     private static string RequireRunId(RpcRequest request)

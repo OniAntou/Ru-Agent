@@ -24,6 +24,7 @@ public sealed class AgentCommands : IDisposable
     private readonly AgentSlashCommands _slashCommands;
     private readonly RunStarter _runStarter;
     private readonly RunStartCore _runStartCore;
+    private Rpc.RpcBridgeServer? _rpcServer;
 
     public AgentCommands(
         PublicHostSession session,
@@ -2262,6 +2263,34 @@ public sealed class AgentCommands : IDisposable
         {
             await _err.WriteLineAsync($"session_rewind_error: {ex.Message}").ConfigureAwait(false);
             return 1;
+        }
+    }
+
+    public async Task<int> RpcAsync(RpcCommand cmd, CancellationToken cancellationToken)
+    {
+        var runBridge = new Rpc.RpcRunBridge(
+            _sseClient,
+            _agentClient,
+            publish: notification => _rpcServer is not null && _rpcServer.TryPublish(notification));
+        var dispatcher = new Rpc.RpcDispatcher(
+            _session,
+            _sessionClient,
+            _agentClient,
+            _settingsClient,
+            _runStarter,
+            runBridge,
+            log: _err,
+            httpClient: _httpClient);
+        var server = new Rpc.RpcBridgeServer(_in, _out, _err, dispatcher, runBridge);
+        _rpcServer = server;
+        try
+        {
+            return await server.RunAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            runBridge.Dispose();
+            _rpcServer = null;
         }
     }
 

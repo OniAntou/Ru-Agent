@@ -339,4 +339,45 @@ public sealed class RpcDispatchSurfaceTests
         Assert.Contains($"GET /agent/v1/runs/{runId}", seen);
         Assert.DoesNotContain(seen, route => route.Contains("/trust", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData("allow_once", "allow_once")]
+    [InlineData("allow_session_directory", "allow_session_directory")]
+    [InlineData("allow_always", "allow_always")]
+    [InlineData("deny", "deny")]
+    public async Task Run_decide_maps_the_scope_to_the_command_wire(string decision, string expected)
+    {
+        string? body = null;
+        var runId = "run_" + new string('a', 32);
+        var approvalId = "apr_" + new string('b', 32);
+        var dispatcher = await CreateInitializedAsync(async request =>
+        {
+            body = await request.Content!.ReadAsStringAsync();
+            return RpcTestHost.Json("{\"status\":\"ok\"}");
+        });
+        await dispatcher.DispatchAsync(
+            Req("run.approve", $"{{\"runId\":\"{runId}\",\"approvalId\":\"{approvalId}\",\"decision\":\"{decision}\"}}"),
+            CancellationToken.None);
+        Assert.Contains($"\"command\":\"{expected}\"", body);
+    }
+
+    [Fact]
+    public async Task Run_cancel_posts_the_cancel_route()
+    {
+        var runId = "run_" + new string('a', 32);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{\"status\":\"ok\"}")), seen);
+        await dispatcher.DispatchAsync(Req("run.cancel", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None);
+        Assert.Contains($"POST /agent/v1/runs/{runId}/cancel", seen);
+    }
+
+    [Fact]
+    public async Task Run_reconcile_requires_outcome_and_hash()
+    {
+        var runId = "run_" + new string('a', 32);
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json("{}")));
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(Req("run.reconcile", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None));
+        Assert.Equal(RpcProtocol.InvalidParams, ex.RpcErrorCode);
+    }
 }

@@ -85,6 +85,7 @@ public static class Program
                 OutputCommand output => await commands.OutputAsync(output, cts.Token).ConfigureAwait(false),
                 DispatchCommandCommand dispatch => await commands.DispatchCommandAsync(dispatch, cts.Token).ConfigureAwait(false),
                 ChatCommand chat => await commands.ChatAsync(chat, cts.Token).ConfigureAwait(false),
+                RpcCommand rpc => await commands.RpcAsync(rpc, cts.Token).ConfigureAwait(false),
                 SessionListCommand slist => await commands.SessionListAsync(slist, cts.Token).ConfigureAwait(false),
                 SessionForkCommand sfork => await commands.SessionForkAsync(sfork, cts.Token).ConfigureAwait(false),
                 SessionRewindCommand srewind => await commands.SessionRewindAsync(srewind, cts.Token).ConfigureAwait(false),
@@ -168,5 +169,6 @@ public static class Program
         Console.Error.WriteLine("  agent policy import --global FILE");
         Console.Error.WriteLine("  agent policy remove <rule-id>");
         Console.Error.WriteLine("  agent command <run-id> \"/help|/skills|/compact ...|/skill ...\" [--json]");
+        Console.Error.WriteLine("  agent rpc # stdio JSON-RPC 2.0 bridge for external tools");
     }
 }

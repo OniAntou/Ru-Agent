@@ -350,7 +350,7 @@ public sealed class WorkerV2Server
         try
         {
             Console.Error.WriteLine(
-                $"ru.worker step_failed code={code} cause={BoundedCause(error) ?? "unknown"}");
+                $"ru.worker step_failed code={code} cause={BoundedCause(error) ?? "unknown"} site={StepServiceFrame(error)}");
         }
         catch (Exception)
         {

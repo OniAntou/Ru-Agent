@@ -355,8 +355,17 @@ public sealed class WorkerV2StepService
             var group = groups[^1];
             if (!hasProviderCallId)
             {
+                // A fragment with no call id is the ordinary continuation of the
+                // call already in progress: providers put the id and the tool
+                // name on the first fragment only and stream the arguments after
+                // it. Rejecting one merely because a second call had already
+                // started meant any step with two tool calls died here, which is
+                // the shape the Protocol explicitly allows. What is genuinely
+                // ambiguous -- and still closed -- is an id-less fragment that
+                // also names a tool while the current call already has data,
+                // because that would be a second call that never got an id.
                 var hasExistingCallData = group.ToolName is not null || group.Arguments.Length > 0;
-                if (groups.Count > 1 || (hasExistingCallData && !string.IsNullOrEmpty(fragment.ToolName)))
+                if (hasExistingCallData && !string.IsNullOrEmpty(fragment.ToolName))
                 {
                     throw new WorkerV2StepException("protocol_failure", retryable: false);
                 }

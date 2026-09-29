@@ -212,8 +212,13 @@ public sealed class WorkerV2StepServiceTests
     }
 
     [Fact]
-    public async Task Step_service_rejects_ambiguous_idless_native_continuation_after_parallel_calls()
+    public async Task Step_service_assembles_a_second_call_whose_arguments_arrive_without_a_call_id()
     {
+        // Providers put the call id and the tool name on a call's first fragment
+        // and stream its arguments after that. Once a second call had been
+        // opened, an id-less fragment was rejected purely because a second
+        // group existed -- so any step making two tool calls died here, which is
+        // the shape the Protocol explicitly allows.
         var provider = new FakeModelProvider(
             new ModelDelta(
                 null,
@@ -222,6 +227,36 @@ public sealed class WorkerV2StepServiceTests
                     new ModelToolFragment("call-1", "files.read", "{\"path\":\"README.md\"}"),
                     new ModelToolFragment("call-2", "files.read", "{\"path\":\"CHANG"),
                     new ModelToolFragment(null, string.Empty, "E.md\"}"),
+                },
+                true,
+                "tool_calls"));
+
+        var result = await new WorkerV2StepService(provider).RunAsync(
+            StartPayload(includeTool: true),
+            CancellationToken.None);
+
+        Assert.Equal(2, result.ToolCalls.Count);
+        Assert.Equal("call-1", result.ToolCalls[0].ProviderCallId);
+        Assert.Equal("README.md", result.ToolCalls[0].Arguments.GetProperty("path").GetString());
+        Assert.Equal("call-2", result.ToolCalls[1].ProviderCallId);
+        // The two argument fragments spell CHANGE.md across the boundary.
+        Assert.Equal("CHANGE.md", result.ToolCalls[1].Arguments.GetProperty("path").GetString());
+    }
+
+    [Fact]
+    public async Task Step_service_still_rejects_an_idless_fragment_that_also_names_a_tool()
+    {
+        // The remaining ambiguity: a fragment with no call id but a tool name,
+        // arriving while the current call already has data, would be a second
+        // call that never got an id. Retrying that cannot help and guessing
+        // could run the wrong tool, so it stays closed.
+        var provider = new FakeModelProvider(
+            new ModelDelta(
+                null,
+                new[]
+                {
+                    new ModelToolFragment("call-1", "files.read", "{\"path\":\"README.md\"}"),
+                    new ModelToolFragment(null, "files.read", "{\"path\":\"CHANGELOG.md\"}"),
                 },
                 true,
                 "tool_calls"));

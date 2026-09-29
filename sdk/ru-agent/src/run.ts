@@ -1,3 +1,4 @@
+import { BridgeTransportError } from "./errors.js";
 import type { ApprovalDecision, RunEvent, RunTransient } from "./types.js";
 import type { BridgeTransport } from "./transport.js";
 
@@ -32,6 +33,13 @@ export class Run {
     };
 
     const handler = (method: string, params: Record<string, unknown>): void => {
+      if (method === "bridge.shutdown") {
+        // Well before the transport notices the child exit, the bridge says why it
+        // stopped; surface that instead of hanging until stdout closes.
+        closeError ??= new BridgeTransportError("bridge shut down");
+        notify?.();
+        return;
+      }
       if (method !== "run.event" && method !== "run.transient") return;
       if (subscriptionId === undefined) {
         early.push({ method, params });
@@ -42,7 +50,7 @@ export class Run {
     };
 
     const onClose = (error: Error): void => {
-      closeError = error;
+      closeError ??= error;
       notify?.();
     };
 

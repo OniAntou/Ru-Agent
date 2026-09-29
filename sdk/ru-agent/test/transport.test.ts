@@ -3,6 +3,7 @@ import path from "node:path";
 import { BridgeTransport } from "../src/transport.js";
 
 const fixture = path.join(import.meta.dirname, "fixtures", "fake-bridge.mjs");
+const cmdFixture = path.join(import.meta.dirname, "fixtures", "fake-bridge.cmd");
 
 function start(mode = "echo") {
   return BridgeTransport.spawn({
@@ -33,6 +34,23 @@ describe("BridgeTransport", () => {
   it("rejects pending requests when the bridge process dies", async () => {
     const transport = start("crash");
     await expect(transport.request("anything", {})).rejects.toThrow(/bridge exited/);
+  });
+
+  it("includes the child stderr tail in the exit error", async () => {
+    const transport = start("crash-with-stderr");
+    await expect(transport.request("anything", {})).rejects.toThrow(/bridge_stderr_marker/);
+  });
+
+  it.skipIf(process.platform !== "win32")("spawns_a_cmd_bridge_on_windows", async () => {
+    const transport = BridgeTransport.spawn({
+      command: cmdFixture,
+      args: [],
+      agentArgs: [],
+      env: { FAKE_BRIDGE_MODE: "echo" },
+    });
+    const result = await transport.request<{ echoed: { a: number } }>("anything", { a: 1 });
+    expect(result.echoed).toEqual({ a: 1 });
+    await transport.close();
   });
 
   it("fails closed on a non-JSON stdout line", async () => {

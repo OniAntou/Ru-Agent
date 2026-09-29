@@ -13,6 +13,10 @@ rl.on("line", (line) => {
   if (mode === "crash") {
     process.exit(7);
   }
+  if (mode === "crash-with-stderr") {
+    process.stderr.write("bridge_stderr_marker\n", () => setTimeout(() => process.exit(7), 100));
+    return;
+  }
   if (mode === "garbage") {
     process.stdout.write("not json at all\n");
     return;
@@ -41,6 +45,10 @@ rl.on("line", (line) => {
       return;
     }
     send(attached);
+    if (mode === "shutdown-after-attach") {
+      send({ jsonrpc: "2.0", method: "bridge.shutdown", params: { reason: "backpressure" } });
+      return;
+    }
     send({ jsonrpc: "2.0", method: "run.event", params: { subscription_id: "sub_1", sequence: 1, event_type: "run.started", status: "running" } });
     send({ jsonrpc: "2.0", method: "run.event", params: { subscription_id: "sub_1", sequence: 2, event_type: "run.completed", status: "completed" } });
     return;

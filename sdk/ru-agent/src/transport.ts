@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptions } from "node:child_process";
 import { RuRpcError, BridgeTransportError } from "./errors.js";
 
 export interface BridgeSpawnOptions {
@@ -17,7 +17,8 @@ interface PendingRequest {
 
 type NotificationHandler = (method: string, params: Record<string, unknown>) => void;
 
-const MAX_FRAME_CHARS = 1024 * 1024;
+const MAX_BUFFER_CHARS = 1024 * 1024 + 64 * 1024;
+const STDERR_TAIL_CHARS = 8 * 1024;
 
 /**
  * Owns one `ru agent rpc` child process: NDJSON framing over stdin/stdout,
@@ -33,13 +34,20 @@ export class BridgeTransport {
   #closeHandlers: Array<(error: Error) => void> = [];
   #closed = false;
   #exitError: Error | undefined = undefined;
+  #stderrTail = "";
 
   private constructor(child: ChildProcessWithoutNullStreams) {
     this.#child = child;
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => this.#onData(chunk));
+    // Drain stderr or a chatty child eventually blocks on a full pipe. Keep a
+    // bounded tail so an exit message can explain what the child complained about.
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      this.#stderrTail = (this.#stderrTail + chunk).slice(-STDERR_TAIL_CHARS);
+    });
     child.on("exit", (code, signal) => {
-      this.#fail(new BridgeTransportError(`bridge exited (code=${code ?? "null"}, signal=${signal ?? "null"})`));
+      this.#fail(new BridgeTransportError(`bridge exited (code=${code ?? "null"}, signal=${signal ?? "null"})${this.#stderrSuffix()}`));
     });
     child.on("error", (error) => {
       this.#fail(new BridgeTransportError(`bridge process error: ${error.message}`));
@@ -52,12 +60,18 @@ export class BridgeTransport {
   }
 
   static spawn(options: BridgeSpawnOptions): BridgeTransport {
-    const child = spawn(options.command, [...(options.args ?? []), ...(options.agentArgs ?? ["agent", "rpc"])], {
+    const args = [...(options.args ?? []), ...(options.agentArgs ?? ["agent", "rpc"])];
+    const spawnOptions: SpawnOptions = {
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
       env: { ...process.env, ...options.env },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
-    });
+    };
+    // Windows cannot exec a .cmd/.bat directly without a shell; cmd.exe /d /s /c
+    // runs the batch file and forwards the remaining argv.
+    const child = /\.(cmd|bat)$/i.test(options.command)
+      ? spawn("cmd.exe", ["/d", "/s", "/c", options.command, ...args], spawnOptions)
+      : spawn(options.command, args, spawnOptions);
     return new BridgeTransport(child as ChildProcessWithoutNullStreams);
   }
 
@@ -135,10 +149,15 @@ export class BridgeTransport {
       if (line.length > 0) this.#handleLine(line);
       newline = this.#buffer.indexOf("\n");
     }
-    if (this.#buffer.length > MAX_FRAME_CHARS) {
+    if (this.#buffer.length > MAX_BUFFER_CHARS) {
       this.#rejectAll(new BridgeTransportError("bridge emitted an oversized frame"));
       this.#child.kill();
     }
+  }
+
+  #stderrSuffix(): string {
+    const tail = this.#stderrTail.trim();
+    return tail.length > 0 ? `; stderr: ${tail}` : "";
   }
 
   #handleLine(line: string): void {

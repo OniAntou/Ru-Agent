@@ -257,4 +257,62 @@ public sealed class RpcDispatchSurfaceTests
         Assert.Equal(5, result["byte_length"]!.GetValue<int>());
         Assert.Contains($"GET /agent/v1/runs/{runId}/payloads/{payloadId}", seen);
     }
+
+    [Fact]
+    public async Task Run_output_decodes_opaque_payloads_without_double_encoding()
+    {
+        var runId = "run_" + new string('a', 32);
+        var payloadId = "payload_" + new string('b', 32);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(
+            $"{{\"run_id\":\"{runId}\",\"payload_id\":\"{payloadId}\",\"kind\":\"tool_output\",\"encoding\":\"opaque\",\"content\":\"aGVsbG8=\"}}")), seen);
+        var result = await dispatcher.DispatchAsync(
+            Req("run.output", $"{{\"runId\":\"{runId}\",\"payloadId\":\"{payloadId}\"}}"),
+            CancellationToken.None);
+        Assert.Equal("base64", result!["encoding"]!.GetValue<string>());
+        Assert.Equal("aGVsbG8=", result["data"]!.GetValue<string>());
+        Assert.Equal(5, result["byte_length"]!.GetValue<int>());
+        Assert.Contains($"GET /agent/v1/runs/{runId}/payloads/{payloadId}", seen);
+    }
+
+    [Fact]
+    public async Task Run_trust_approves_a_pending_challenge()
+    {
+        var runId = "run_" + new string('a', 32);
+        string? postBody = null;
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(async request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                postBody = await request.Content!.ReadAsStringAsync();
+                return RpcTestHost.Json($"{{\"run_id\":\"{runId}\",\"trust_request_id\":\"tr_1\",\"status\":\"running\"}}");
+            }
+
+            return RpcTestHost.Json($"{{\"run_id\":\"{runId}\",\"session_id\":\"s1\",\"workspace_id\":\"w1\",\"status\":\"waiting_workspace_trust\",\"history_wait_kind\":null,\"preset\":\"standard\",\"policy_snapshot_version\":1,\"policy_snapshot_sha256\":\"x\",\"version\":2,\"last_sequence\":3,\"created_at\":\"2026-09-29T00:00:00Z\",\"updated_at\":\"2026-09-29T00:00:00Z\",\"terminal_at\":null,\"terminal_error_code\":null,\"trust_request_id\":\"tr_1\",\"display_identity_hash\":\"hash_1\"}}");
+        }, seen);
+        var result = await dispatcher.DispatchAsync(
+            Req("run.trust", $"{{\"runId\":\"{runId}\",\"approve\":true}}"),
+            CancellationToken.None);
+        Assert.Contains($"GET /agent/v1/runs/{runId}", seen);
+        Assert.Contains($"POST /agent/v1/runs/{runId}/trust", seen);
+        Assert.Contains("\"decision\":\"approve\"", postBody);
+        Assert.Equal(runId, result!["run_id"]!.GetValue<string>());
+        Assert.Equal("running", result["status"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Run_trust_without_a_pending_challenge_fails()
+    {
+        var runId = "run_" + new string('a', 32);
+        List<string> seen = [];
+        var dispatcher = await CreateInitializedAsync(_ => Task.FromResult(RpcTestHost.Json(
+            $"{{\"run_id\":\"{runId}\",\"session_id\":\"s1\",\"workspace_id\":\"w1\",\"status\":\"running\",\"history_wait_kind\":null,\"preset\":\"standard\",\"policy_snapshot_version\":1,\"policy_snapshot_sha256\":\"x\",\"version\":2,\"last_sequence\":3,\"created_at\":\"2026-09-29T00:00:00Z\",\"updated_at\":\"2026-09-29T00:00:00Z\",\"terminal_at\":null,\"terminal_error_code\":null}}")), seen);
+        var ex = await Assert.ThrowsAsync<RpcDispatchException>(
+            () => dispatcher.DispatchAsync(Req("run.trust", $"{{\"runId\":\"{runId}\"}}"), CancellationToken.None));
+        Assert.Equal(RpcProtocol.ApplicationError, ex.RpcErrorCode);
+        Assert.Equal("trust_failed", ex.RuCode);
+        Assert.Contains($"GET /agent/v1/runs/{runId}", seen);
+        Assert.DoesNotContain(seen, route => route.Contains("/trust", StringComparison.Ordinal));
+    }
 }

@@ -242,6 +242,23 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 
     public async Task<string> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
     {
+        var payload = await FetchPayloadEnvelopeAsync(runId, payloadId, ct).ConfigureAwait(false);
+        return payload.Content;
+    }
+
+    /// <summary>
+    /// Fetches a payload together with the encoding the host declared for it
+    /// ("utf8" text or "opaque" base64 on the wire), so byte-oriented callers
+    /// can decode the content once instead of guessing from the body.
+    /// </summary>
+    public async Task<(string Encoding, string Content)> GetPayloadEnvelopeAsync(string runId, string payloadId, CancellationToken ct = default)
+    {
+        var payload = await FetchPayloadEnvelopeAsync(runId, payloadId, ct).ConfigureAwait(false);
+        return (payload.Encoding ?? string.Empty, payload.Content);
+    }
+
+    private async Task<(string? Encoding, string Content)> FetchPayloadEnvelopeAsync(string runId, string payloadId, CancellationToken ct)
+    {
         ValidateRunId(runId);
         ValidatePayloadId(payloadId);
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/payloads/{payloadId}");
@@ -270,9 +287,15 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             throw new AgentApiException("invalid_response", "Missing run_id");
         }
 
+        var encoding = root.TryGetProperty("encoding", out var encodingElement) && encodingElement.ValueKind == JsonValueKind.String
+            ? encodingElement.GetString()
+            : null;
         if (root.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-            return content.GetString() ?? string.Empty;
-        return body;
+        {
+            return (encoding, content.GetString() ?? string.Empty);
+        }
+
+        return (encoding, body);
         }
     }
 

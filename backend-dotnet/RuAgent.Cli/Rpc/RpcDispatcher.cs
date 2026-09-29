@@ -286,8 +286,28 @@ public sealed class RpcDispatcher
     {
         var runId = RequireRunId(request);
         var payloadId = RequireString(request, "payloadId", 64);
-        var content = await _agentClient.GetPayloadAsync(runId, payloadId, ct).ConfigureAwait(false);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        var payload = await _agentClient.GetPayloadEnvelopeAsync(runId, payloadId, ct).ConfigureAwait(false);
+        byte[] bytes;
+        switch (payload.Encoding)
+        {
+            case "utf8":
+                bytes = System.Text.Encoding.UTF8.GetBytes(payload.Content);
+                break;
+            case "opaque":
+                try
+                {
+                    bytes = Convert.FromBase64String(payload.Content);
+                }
+                catch (FormatException)
+                {
+                    throw new RpcDispatchException(RpcProtocol.ApplicationError, "invalid payload encoding", "invalid_payload_encoding");
+                }
+
+                break;
+            default:
+                throw new RpcDispatchException(RpcProtocol.ApplicationError, "unsupported payload encoding", "unsupported_payload_encoding");
+        }
+
         return new JsonObject
         {
             ["encoding"] = "base64",

@@ -823,10 +823,13 @@ namespace RuApp.Views
                 ResetAgentState();
                 JumpToLatestForNewTurn();
                 RestoreComposerDraft(sessionId);
-                if (AgentPresetBox is not null && AgentPresetBox.SelectedIndex != 0)
-                {
-                    AgentPresetBox.SelectedIndex = 0;
-                }
+                // The preset is not forced here. It used to be pinned to plan on
+                // every session open, which silently overrode whatever the
+                // session -- or the user, via Settings -- had selected: a
+                // standard session reopened in the GUI came back read-only, and
+                // the first write came back `plan_preset_requires_approval`.
+                // ResetAgentState has already set the documented default
+                // (standard); anything more specific stays the caller's choice.
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 DetachAgentActivitiesFromMessages();
                 // Bulk load: one reset notification for the whole transcript

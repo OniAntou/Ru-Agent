@@ -22,7 +22,9 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
     private readonly AgentApiClient _agentClient;
     private readonly Func<JsonObject, bool> _publish;
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new();
+    private readonly object _gate = new();
     private int _nextSubscriptionId;
+    private bool _disposed;
 
     public RpcRunBridge(AgentSseClient sseClient, AgentApiClient agentClient, Func<JsonObject, bool> publish)
     {
@@ -33,17 +35,21 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
 
     public string Attach(string runId, long afterSequence, bool includeTransient)
     {
-        var subscriptionId = $"sub_{Interlocked.Increment(ref _nextSubscriptionId)}";
-        var cts = new CancellationTokenSource();
-        var subscription = new Subscription(subscriptionId, runId, includeTransient, cts);
-        if (!_subscriptions.TryAdd(subscriptionId, subscription))
+        lock (_gate)
         {
-            cts.Dispose();
-            throw new RpcDispatchException(RpcProtocol.InternalError, "subscription id collision.");
-        }
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var subscriptionId = $"sub_{Interlocked.Increment(ref _nextSubscriptionId)}";
+            var cts = new CancellationTokenSource();
+            var subscription = new Subscription(subscriptionId, runId, includeTransient, cts);
+            if (!_subscriptions.TryAdd(subscriptionId, subscription))
+            {
+                cts.Dispose();
+                throw new RpcDispatchException(RpcProtocol.InternalError, "subscription id collision.");
+            }
 
-        subscription.Pump = Task.Run(() => PumpAsync(subscription, afterSequence), CancellationToken.None);
-        return subscriptionId;
+            subscription.Pump = Task.Run(() => PumpAsync(subscription, afterSequence), CancellationToken.None);
+            return subscriptionId;
+        }
     }
 
     public bool Detach(string subscriptionId)
@@ -130,6 +136,7 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
         finally
         {
             _subscriptions.TryRemove(subscription.SubscriptionId, out _);
+            subscription.Cancellation.Dispose();
         }
     }
 
@@ -216,13 +223,22 @@ public sealed class RpcRunBridge : IRunBridge, IDisposable
 
     public void Dispose()
     {
-        foreach (var subscription in _subscriptions.Values)
+        Subscription[] subscriptions;
+        lock (_gate)
         {
-            subscription.Cancel();
-            subscription.Cancellation.Dispose();
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            subscriptions = _subscriptions.Values.ToArray();
         }
 
-        _subscriptions.Clear();
+        foreach (var subscription in subscriptions)
+        {
+            subscription.Cancel();
+        }
     }
 
     private sealed class Subscription(string subscriptionId, string runId, bool includeTransient, CancellationTokenSource cancellation)

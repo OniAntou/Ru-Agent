@@ -24,7 +24,11 @@ public sealed class RpcRunBridgeTests
 
     private static HttpClient TerminalRun() =>
         RpcTestHost.CreateClient(_ => Task.FromResult(RpcTestHost.Json(
-            "{\"run_id\":\"" + RunId + "\",\"status\":\"completed\",\"terminal_at\":\"2026-09-29T00:00:01Z\"}")));
+            "{\"run_id\":\"" + RunId + "\",\"session_id\":\"s1\",\"workspace_id\":\"w1\",\"status\":\"completed\"," +
+            "\"history_wait_kind\":null,\"preset\":\"standard\",\"policy_snapshot_version\":1," +
+            "\"policy_snapshot_sha256\":\"x\",\"version\":2,\"last_sequence\":3," +
+            "\"created_at\":\"2026-09-29T00:00:00Z\",\"updated_at\":\"2026-09-29T00:00:00Z\"," +
+            "\"terminal_at\":\"2026-09-29T00:00:01Z\",\"terminal_error_code\":null}")));
 
     [Fact]
     public async Task Attach_publishes_durable_events_with_the_subscription_id()
@@ -70,6 +74,7 @@ public sealed class RpcRunBridgeTests
         bridge.Attach(RunId, 0, includeTransient: false);
         await bridge.WaitForSubscriptionsAsync(TimeSpan.FromSeconds(5));
         Assert.DoesNotContain(published, p => p["method"]!.GetValue<string>() == "run.transient");
+        Assert.Contains(published, p => p["method"]!.GetValue<string>() == "run.event");
     }
 
     [Fact]
@@ -98,19 +103,22 @@ public sealed class RpcRunBridgeTests
     public async Task A_full_publish_queue_stops_the_pump_without_dropping_silently()
     {
         var published = new List<JsonObject>();
-        var body = "id: 1\nevent: durable\ndata: " + Envelope(1, "run.started", "running") + "\n\n";
+        var body =
+            "id: 1\nevent: durable\ndata: " + Envelope(1, "run.started", "running") + "\n\n" +
+            "id: 2\nevent: durable\ndata: " + Envelope(2, "model.step_started", "running") + "\n\n" +
+            "id: 3\nevent: durable\ndata: " + Envelope(3, "run.state_changed", "running") + "\n\n";
         using var bridge = new RpcRunBridge(
             new AgentSseClient(RpcTestHost.CreateSession(), Sse(body)),
             new AgentApiClient(RpcTestHost.CreateSession(), TerminalRun()),
             publish: notification =>
             {
                 published.Add(notification);
-                return false; // simulate a full outbound queue
+                return published.Count != 1; // full queue on the first event only
             });
 
         bridge.Attach(RunId, 0, includeTransient: false);
         await bridge.WaitForSubscriptionsAsync(TimeSpan.FromSeconds(5));
-        Assert.True(published.Count >= 1);
+        Assert.Single(published);
     }
 
     [Fact]

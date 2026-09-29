@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **RPC bridge + TypeScript SDK** (`ru agent rpc`): stdio JSON-RPC 2.0 cho process ngoài (editor, script) điều khiển Ru qua cùng HTTP/SSE loopback nội bộ; SDK `sdk/ru-agent` bọc spawn + typed events. Spec: `docs/plans/2026-09-29-rpc-sdk-design.md`.
+- **RPC bridge + TypeScript SDK** (`ru agent rpc`): stdio JSON-RPC 2.0 cho process ngoài (editor, script) điều khiển Ru qua cùng HTTP/SSE loopback nội bộ; SDK `sdk/ru-agent` bọc spawn + typed events.
 
 - **feat(gui,attachments)**: **`.docx` / `.pptx` / `.xlsx` gắn được vào và gửi đi, thay vì bị từ chối.** Ba định dạng này là container ZIP của XML, không phải text: đọc thẳng bytes ra UTF-8 sẽ nhét binary noise vào prompt. Nay `OfficeDocumentText` mở container, chọn đúng part mang chữ (`word/document.xml`, `ppt/slides/slideN.xml`, `xl/sharedStrings.xml`, notes slide) và ghép phần text ra. Chỉ phần chữ được đọc — style, numbering, quan hệ và media bị bỏ, vì model cần *từ ngữ* chứ không cần bố cục. Kết quả đi tiếp đúng đường của file text: vào `TextContent` rồi được `BuildEffectivePrompt` nhúng thành fenced block.
 

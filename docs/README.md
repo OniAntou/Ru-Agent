@@ -50,7 +50,6 @@ Git history is the recovery source for removed dated plans and specifications.
 ## Open plans
 
 - [TUI image attachments](plans/tui-image-attachments.md) — `status: pending`
-- [RPC bridge and TypeScript SDK](plans/2026-09-29-rpc-sdk-design.md) — `status: pending`
 
 Agent permissions use the canonical, session-scoped `plan` / `standard` /
 `full_access` profiles from `RuAgent.Protocol`: `plan` allows workspace read and

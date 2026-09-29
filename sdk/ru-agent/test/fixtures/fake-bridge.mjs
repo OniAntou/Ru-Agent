@@ -4,8 +4,8 @@ import readline from "node:readline";
 const mode = process.env.FAKE_BRIDGE_MODE ?? "echo";
 const rl = readline.createInterface({ input: process.stdin });
 
-function send(message) {
-  process.stdout.write(JSON.stringify(message) + "\n");
+function send(message, callback) {
+  process.stdout.write(JSON.stringify(message) + "\n", callback);
 }
 
 rl.on("line", (line) => {
@@ -35,7 +35,12 @@ rl.on("line", (line) => {
     return;
   }
   if (request.method === "run.attach") {
-    send({ jsonrpc: "2.0", id: request.id, result: { subscription_id: "sub_1", run_id: request.params.runId, include_transient: false } });
+    const attached = { jsonrpc: "2.0", id: request.id, result: { subscription_id: "sub_1", run_id: request.params.runId, include_transient: false } };
+    if (mode === "die-after-attach") {
+      send(attached, () => process.exit(9));
+      return;
+    }
+    send(attached);
     send({ jsonrpc: "2.0", method: "run.event", params: { subscription_id: "sub_1", sequence: 1, event_type: "run.started", status: "running" } });
     send({ jsonrpc: "2.0", method: "run.event", params: { subscription_id: "sub_1", sequence: 2, event_type: "run.completed", status: "completed" } });
     return;

@@ -4,8 +4,8 @@ import { RuAgent } from "../src/client.js";
 
 const fixture = path.join(import.meta.dirname, "fixtures", "fake-bridge.mjs");
 
-async function start() {
-  return await RuAgent.start({ command: process.execPath, args: [fixture], agentArgs: [] });
+async function start(mode = "echo") {
+  return await RuAgent.start({ command: process.execPath, args: [fixture], agentArgs: [], env: { FAKE_BRIDGE_MODE: mode } });
 }
 
 describe("RuAgent", () => {
@@ -26,4 +26,20 @@ describe("RuAgent", () => {
     expect(await ru.sessions.create()).toBe("sess_1");
     await ru.close();
   });
+
+  it(
+    "events_rejects_when_the_bridge_dies_mid_stream",
+    async () => {
+      const ru = await start("die-after-attach");
+      const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
+      const drain = async (): Promise<void> => {
+        for await (const event of run.events()) {
+          void event;
+        }
+      };
+      await expect(drain()).rejects.toThrow(/bridge exited/);
+      await ru.close();
+    },
+    2_000,
+  );
 });

@@ -18,6 +18,7 @@ export class Run {
     let subscriptionId: string | undefined;
     let notify: (() => void) | undefined;
     let finished = false;
+    let closeError: Error | undefined;
 
     const push = (method: string, params: Record<string, unknown>): void => {
       if (method === "run.event") {
@@ -40,7 +41,13 @@ export class Run {
       push(method, params);
     };
 
+    const onClose = (error: Error): void => {
+      closeError = error;
+      notify?.();
+    };
+
     this.transport.onNotification(handler);
+    this.transport.onClose(onClose);
     try {
       const attached = await this.transport.request<{ subscription_id: string }>("run.attach", {
         runId: this.runId,
@@ -56,6 +63,7 @@ export class Run {
       while (true) {
         while (queue.length > 0) yield queue.shift()!;
         if (finished) return;
+        if (closeError) throw closeError;
         await new Promise<void>((resolve) => {
           notify = resolve;
         });
@@ -63,7 +71,10 @@ export class Run {
       }
     } finally {
       this.transport.offNotification(handler);
-      await this.transport.request("run.detach", { subscriptionId: subscriptionId ?? "" }).catch(() => undefined);
+      this.transport.offClose(onClose);
+      if (subscriptionId !== undefined && subscriptionId !== "") {
+        await this.transport.request("run.detach", { subscriptionId }).catch(() => undefined);
+      }
     }
   }
 

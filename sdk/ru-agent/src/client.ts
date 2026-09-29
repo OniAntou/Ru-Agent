@@ -18,10 +18,15 @@ export class RuAgent {
       ...(options.env !== undefined ? { env: options.env } : {}),
     });
     const agent = new RuAgent(transport);
-    await transport.request("initialize", {
-      protocolVersion: 1,
-      clientInfo: { name: "@ru/agent-sdk", version: "0.1.0" },
-    });
+    try {
+      await transport.request("initialize", {
+        protocolVersion: 1,
+        clientInfo: { name: "@ru/agent-sdk", version: "0.1.0" },
+      });
+    } catch (error) {
+      await transport.close().catch(() => undefined);
+      throw error;
+    }
     return agent;
   }
 

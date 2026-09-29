@@ -30,6 +30,7 @@ export class BridgeTransport {
   #pending = new Map<string | number, PendingRequest>();
   #nextId = 1;
   #notificationHandlers: NotificationHandler[] = [];
+  #closeHandlers: Array<(error: Error) => void> = [];
   #closed = false;
   #exitError: Error | undefined = undefined;
 
@@ -38,19 +39,16 @@ export class BridgeTransport {
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => this.#onData(chunk));
     child.on("exit", (code, signal) => {
-      this.#exitError = new BridgeTransportError(`bridge exited (code=${code ?? "null"}, signal=${signal ?? "null"})`);
-      this.#rejectAll(this.#exitError);
+      this.#fail(new BridgeTransportError(`bridge exited (code=${code ?? "null"}, signal=${signal ?? "null"})`));
     });
     child.on("error", (error) => {
-      this.#exitError = new BridgeTransportError(`bridge process error: ${error.message}`);
-      this.#rejectAll(this.#exitError);
+      this.#fail(new BridgeTransportError(`bridge process error: ${error.message}`));
     });
     child.stdin.on("error", (error) => {
       if (this.#exitError) return;
-      this.#exitError = new BridgeTransportError(`bridge stdin error: ${error.message}`);
-      this.#rejectAll(this.#exitError);
+      this.#fail(new BridgeTransportError(`bridge stdin error: ${error.message}`));
     });
-    child.on("close", () => this.#rejectAll(this.#exitError ?? new BridgeTransportError("bridge stdout closed")));
+    child.on("close", () => this.#fail(this.#exitError ?? new BridgeTransportError("bridge stdout closed")));
   }
 
   static spawn(options: BridgeSpawnOptions): BridgeTransport {
@@ -70,6 +68,20 @@ export class BridgeTransport {
   offNotification(handler: NotificationHandler): void {
     const index = this.#notificationHandlers.indexOf(handler);
     if (index >= 0) this.#notificationHandlers.splice(index, 1);
+  }
+
+  onClose(handler: (error: Error) => void): void {
+    if (this.#exitError) {
+      const error = this.#exitError;
+      queueMicrotask(() => handler(error));
+      return;
+    }
+    this.#closeHandlers.push(handler);
+  }
+
+  offClose(handler: (error: Error) => void): void {
+    const index = this.#closeHandlers.indexOf(handler);
+    if (index >= 0) this.#closeHandlers.splice(index, 1);
   }
 
   async request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<T> {
@@ -97,7 +109,7 @@ export class BridgeTransport {
     if (this.#closed) return;
     this.#closed = true;
     if (this.#exitError !== undefined || this.#child.exitCode !== null) {
-      this.#rejectAll(this.#exitError ?? new BridgeTransportError("transport closed"));
+      this.#fail(this.#exitError ?? new BridgeTransportError("transport closed"));
       return;
     }
     this.#child.stdin.end();
@@ -111,7 +123,7 @@ export class BridgeTransport {
         resolve();
       });
     });
-    this.#rejectAll(this.#exitError ?? new BridgeTransportError("transport closed"));
+    this.#fail(this.#exitError ?? new BridgeTransportError("transport closed"));
   }
 
   #onData(chunk: string): void {
@@ -165,5 +177,15 @@ export class BridgeTransport {
       if (pending.timer) clearTimeout(pending.timer);
       pending.reject(error);
     }
+  }
+
+  #fail(error: Error): void {
+    const failure = this.#exitError ?? error;
+    this.#exitError = failure;
+    this.#rejectAll(failure);
+    if (this.#closeHandlers.length === 0) return;
+    const handlers = this.#closeHandlers;
+    this.#closeHandlers = [];
+    for (const handler of handlers) handler(failure);
   }
 }
